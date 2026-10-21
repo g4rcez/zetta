@@ -1,0 +1,72 @@
+{
+  "name": "zetta",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "catalog": {
+      "zod": "^4.5.4",
+      "vite": "npm:@voidzero-dev/vite-plus-core@1.1.0",
+      "typescript": "^6.0.3",
+      "@types/bun": "^1.4.2",
+      "varlock": "1.18.0",
+      "better-auth": "1.7.7",
+      "next-themes": "^0.4.6",
+      "sonner": "^2.0.8",
+      "tailwindcss": "^4.3.3",
+      "drizzle-orm": "1.0.0-rc.4"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vp run -r dev",
+    "build": "vp run -r build --filter '!desktop' && vp run --filter desktop build",
+    "check-types": "vp run -r check-types",
+    "check": "oxlint && oxfmt --write",
+    "lint": "vp lint",
+    "format": "vp fmt",
+    "staged": "vp staged",
+    "dev:web": "vp run --filter web dev",
+    "dev:desktop": "vp run --filter desktop dev:hmr",
+    "build:desktop": "vp run --filter desktop build:stable",
+    "build:desktop:canary": "vp run --filter desktop build:canary",
+    "db:push": "vp run --filter @zetta/db db:push",
+    "db:studio": "vp run --filter @zetta/db db:studio",
+    "db:generate": "vp run --filter @zetta/db db:generate",
+    "db:migrate": "vp run --filter @zetta/db db:migrate",
+    "db:start": "docker compose up -d postgres",
+    "db:watch": "docker compose up postgres",
+    "db:stop": "docker compose stop postgres",
+    "db:down": "docker compose down postgres",
+    "deploy:infra": "vp run --filter @zetta/infra deploy",
+    "destroy": "vp run --filter @zetta/infra destroy",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "env:generate": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./packages/db/",
+    "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./packages/db/",
+    "auth:generate": "cd apps/server && bun run auth:generate"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "@zetta/config": "workspace:*",
+    "lefthook": "^2.2.1",
+    "oxfmt": "^0.72.0",
+    "oxlint": "^1.87.0",
+    "rolldown": "1.2.13",
+    "typescript": "catalog:",
+    "varlock": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "1.1.0"
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.1.0"
+  },
+  "packageManager": "bun@1.3.14"
+}

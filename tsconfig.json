@@ -1,0 +1,3 @@
+{
+  "extends": "@zetta/config/tsconfig.base.json"
+}

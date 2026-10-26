@@ -55,10 +55,10 @@ export function createPlugins(db: Database, connections: ConnectionsService | un
     try { const v = JSON.parse(raw); return v && typeof v === "object" ? v as Record<string, string> : {}; } catch { return {}; }
   }
   const revokeQuietly = async (a: ActiveActor, id: string) => { try { const c = (await need().list(a)).find((x) => x.id === id); if (c) await need().revoke(a, id, c.revision); } catch { /* an already revoked secret is fine */ } };
-  async function ctxFor(a: ActiveActor, d: PluginDef, s: ServerRow, preset?: Record<string, string>): Promise<PluginContext> {
+  async function ctxFor(a: ActiveActor, d: PluginDef, s: ServerRow, preset?: Record<string, string>, botId?: string): Promise<PluginContext> {
     let config = preset ?? await load(a, d, s); let connectionId = s.connectionId;
     return {
-      userId: a.userId, get config() { return config; },
+      userId: a.userId, botId, get config() { return config; },
       async setConfig(next) {
         const sealed = seal(d, next); const prev = connectionId;
         const created = sealed ? await need().create(a, { provider: PROVIDER, label: `plugin:${d.id}`, secret: sealed }) : undefined;
@@ -85,6 +85,7 @@ export function createPlugins(db: Database, connections: ConnectionsService | un
     }
     return clean;
   }
+  const toolLines = (d: PluginDef) => (d.tools ?? []).map((t) => `    ${t.name}: ${t.description} args ${JSON.stringify(t.inputSchema.properties ?? {})}${t.inputSchema.required?.length ? ` required ${JSON.stringify(t.inputSchema.required)}` : ""}`).join("\n");
   const render = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v) ?? "").slice(0, MAX_TEXT);
 
   return {
@@ -100,6 +101,7 @@ export function createPlugins(db: Database, connections: ConnectionsService | un
     },
     async install(a: ActiveActor, id: string, config: Record<string, string>, botIds: string[] = []) {
       const d = def(id);
+      if (d.always) throw new PluginError("BUILT_IN", `${d.name} is built in and already on for every bot.`, "Manage it in each bot's settings.");
       if (await mcp().serverByName(a, id)) throw new PluginError("ALREADY_INSTALLED", "That plugin is already installed.");
       const clean = fieldValues(d, config);
       const sealed = seal(d, clean);
@@ -200,14 +202,15 @@ export function createPlugins(db: Database, connections: ConnectionsService | un
     async callTool(a: ActiveActor, botId: string, id: string, tool: string, args: Record<string, unknown>) {
       const outcome = (o: "ok" | "failed" | "timeout") => audit(db, a.userId, { kind: "tool_call", botId, outcome: o, detail: "plugin" });
       const d = getPlugin(id);
-      if (!d || d.kind !== "native" || !(await mcp().bound(a, botId)).some((b) => b.name === id)) throw new PluginError("NOT_BOUND", "That plugin is not connected to this bot.");
+      if (d?.always && !(await d.always.available(botId).catch(() => false))) throw new PluginError("NOT_BOUND", `${d.name} is switched off for this bot.`, `Open the bot's settings and switch ${d.name} back on.`);
+      if (!d || d.kind !== "native" || (!d.always && !(await mcp().bound(a, botId)).some((b) => b.name === id))) throw new PluginError("NOT_BOUND", "That plugin is not connected to this bot.");
       const t = d.tools?.find((x) => x.name === tool);
       if (!t) throw new PluginError("UNKNOWN_TOOL", "That plugin has no such tool.");
       const missing = (t.inputSchema.required ?? []).filter((k) => args[k] === undefined);
       if (missing.length) throw new PluginError("INVALID_ARGS", `Missing: ${missing.join(", ")}`);
       try {
-        const { s } = await installed(a, id);
-        const out = render(await withDeadline(t.handler(await ctxFor(a, d, s), args)));
+        const ctx: PluginContext = d.always ? { userId: a.userId, botId, config: {}, setConfig: () => Promise.reject(new PluginError("FAILED")) } : await ctxFor(a, d, (await installed(a, id)).s, undefined, botId);
+        const out = render(await withDeadline(t.handler(ctx, args)));
         await outcome("ok"); return out;
       } catch (e) { await outcome(e instanceof PluginError && e.code === "TIMEOUT" ? "timeout" : "failed"); throw e instanceof PluginError ? e : new PluginError("FAILED"); }
     },
@@ -243,9 +246,14 @@ export function createPlugins(db: Database, connections: ConnectionsService | un
     async promptFor(a: ActiveActor, botId: string): Promise<string> {
       const bound = await mcp().bound(a, botId); const lines: string[] = []; let native = false, remote = false, vault = false;
       for (const d of listPlugins()) {
+        if (d.always) {
+          if (!(await d.always.available(botId).catch(() => false))) continue;
+          const extra = await d.always.prompt?.(botId).catch(() => undefined);
+          native = true; lines.push(`- ${d.id} (${d.name}): ${d.description}${extra ? `\n    ${extra}` : ""}\n${toolLines(d)}`); continue;
+        }
         const b = bound.find((x) => x.name === d.id); if (!b) continue;
         if (d.credentials) vault = true;
-        if (d.kind === "native") { native = true; lines.push(`- ${d.id} (${d.name}): ${d.description}\n${(d.tools ?? []).map((t) => `    ${t.name}: ${t.description} args ${JSON.stringify(t.inputSchema.properties ?? {})}${t.inputSchema.required?.length ? ` required ${JSON.stringify(t.inputSchema.required)}` : ""}`).join("\n")}`); }
+        if (d.kind === "native") { native = true; lines.push(`- ${d.id} (${d.name}): ${d.description}\n${toolLines(d)}`); }
         else { remote = true; const names = toolNames.get(b.id); lines.push(`- ${d.id} (${d.name}): ${d.description}${names?.length ? ` Tools: ${names.slice(0, 40).join(", ")}.` : ""}`); }
       }
       if (!lines.length) return "";

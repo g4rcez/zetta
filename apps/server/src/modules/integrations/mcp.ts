@@ -16,6 +16,7 @@ import { configureWhatsapp } from "./plugins/whatsapp"; // importing registers t
 import "./plugins/google"; // importing registers the plugin
 import "./plugins/telegram"; // importing registers the plugin
 import "./plugins/reddit"; // importing registers the plugin
+import "../bot-database/plugin"; // importing registers the built-in bot database
 import { configureVault } from "./plugins/vault"; // importing registers 1Password and Bitwarden
 import { createPlugins, NATIVE_URL_PREFIX, type McpCore } from "./plugins/service";
 

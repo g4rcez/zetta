@@ -1,7 +1,7 @@
 import { ENV } from "../../env";
 
 export type BotAvatarValue = { kind: "preset"; preset: string; colors: string[] } | { kind: "image"; src: string };
-export type Bot = { avatar?: BotAvatarValue | null; id: string; kind: "chief" | "specialist"; name: string; description: string; visibility: "private" | "team"; canEdit: boolean; version: number; workspaceId?: string | null; onboarded: boolean; harness: string; model: string | null; personality: string; instructions: string; computerMode?: ComputerMode; codeAccess?: boolean; requiredConnections?: RequiredConnection[] };
+export type Bot = { avatar?: BotAvatarValue | null; id: string; kind: "chief" | "specialist"; name: string; /** Friendly-url id, unique and fixed at creation; names the bot's database. */ slug?: string; description: string; visibility: "private" | "team"; canEdit: boolean; version: number; workspaceId?: string | null; onboarded: boolean; harness: string; model: string | null; personality: string; instructions: string; computerMode?: ComputerMode; codeAccess?: boolean; requiredConnections?: RequiredConnection[] };
 export type ComputerMode = "off" | "browser" | "desktop";
 export type Provider = "anthropic" | "openai" | "google" | "openrouter" | "github";
 export const PROVIDERS: readonly Provider[] = ["anthropic", "openai", "google", "openrouter", "github"];

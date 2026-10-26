@@ -16,7 +16,7 @@ suite("Hermes-style bounded memory against compose postgres", () => {
   beforeAll(async () => {
     const now = new Date();
     for (const id of [A, B]) await db.insert(user).values({ id, name: id, email: `${id}@t.test`, emailVerified: true, createdAt: now, updatedAt: now });
-    const mk = async (owner: string, name: string) => (await db.insert(bot).values({ ownerUserId: owner, name, kind: "specialist", visibility: "private", harness: "fixture" } as never).returning())[0]!.id;
+    const mk = async (owner: string, name: string) => (await db.insert(bot).values({ ownerUserId: owner, name, slug: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${crypto.randomUUID().slice(0, 8)}`, kind: "specialist", visibility: "private", harness: "fixture" } as never).returning())[0]!.id;
     botA = await mk(A, "a1"); botA2 = await mk(A, "a2"); botB = await mk(B, "b1");
   });
   afterAll(async () => { await cleanupTestUsers(db, [A, B]); });

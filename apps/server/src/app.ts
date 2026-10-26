@@ -13,6 +13,7 @@ import { createAgendaRoutes, type AgendaServices } from "./modules/agenda/routes
 import { createDiscussionRoutes, type DiscussionServices } from "./modules/discussions/routes";
 import { createInboundRoutes, type InboundServices } from "./modules/inbound/routes";
 import { createIdentityRoutes, type IdentityServices } from "./modules/identity/routes";
+import { createBotDatabaseRoutes, type BotDatabaseServices } from "./modules/bot-database/routes";
 
 export interface AppAuth extends BetterAuthInstance {
   handler: (request: Request) => Response | Promise<Response>;
@@ -30,13 +31,14 @@ export type CreateAppOptions = {
   agenda?: AgendaServices;
   discussions?: DiscussionServices;
   inbound?: InboundServices;
+  botDatabase?: BotDatabaseServices;
   webOrigin: string;
   desktopOrigins: readonly string[];
   /** Optional; without it evlog writes plain console logs. */
   drain?: EvlogElysiaOptions["drain"];
 };
 
-export function createApp({ auth, identity, chat, features, decisions, computer, connections, integrations, agenda, discussions, inbound, webOrigin, desktopOrigins, drain }: CreateAppOptions) {
+export function createApp({ auth, identity, chat, features, decisions, computer, connections, integrations, agenda, discussions, inbound, botDatabase, webOrigin, desktopOrigins, drain }: CreateAppOptions) {
   // Telemetry must never receive private auth/driver exceptions. Authorization
   // uses the original auth service independently and still fails closed.
   const identifyUser = createAuthMiddleware({ api: { async getSession(input) {
@@ -81,5 +83,6 @@ export function createApp({ auth, identity, chat, features, decisions, computer,
     .use(agenda ? createAgendaRoutes(agenda, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(discussions ? createDiscussionRoutes(discussions, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(inbound ? createInboundRoutes(inbound, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(botDatabase ? createBotDatabaseRoutes(botDatabase, [webOrigin, ...desktopOrigins]) : new Elysia())
     .get("/", () => "OK");
 }

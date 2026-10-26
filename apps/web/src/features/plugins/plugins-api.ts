@@ -5,7 +5,7 @@ import { call, errorMessage } from "../chat/chat-client";
 export type PluginField = { key: string; label: string; secret?: boolean; optional?: boolean; kind?: "text" | "password" | "url" | "textarea"; placeholder?: string; help?: string };
 export type PluginMeta = {
   id: string; name: string; description: string; icon: string; category: string; auth: "none" | "api-key" | "oauth"; kind: "mcp" | "native"; transport: "http" | "stdio" | null; fields: PluginField[];
-  docsUrl: string | null; verified: boolean; notes: string | null; credentials: boolean; tools: { name: string; description: string }[];
+  docsUrl: string | null; verified: boolean; notes: string | null; credentials: boolean; /** Built in and on for every bot: nothing to install. */ always?: boolean; tools: { name: string; description: string }[];
 };
 export type InstalledPlugin = { id: string; serverId: string; hasSecret: boolean };
 export type PluginTest = { status: { state: "connected" | "needs-auth" | "error"; detail?: string; info?: Record<string, unknown> }; tools: { name: string; description: string }[] };

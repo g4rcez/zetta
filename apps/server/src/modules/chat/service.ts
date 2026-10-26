@@ -30,6 +30,8 @@ import { AccessError, requireOwned, type ActiveActor } from "../identity/access"
 import { AgendaError, type AgendaService } from "../agenda/service";
 import { untrustedList } from "../integrations/plugins/untrusted";
 import { DiscussionError, type Claimed, type DiscussionStore } from "../discussions/store";
+import { insertWithSlug, isUniqueViolation } from "../bot-database/allocate";
+import { user } from "@zetta/db/schema/auth";
 import { discussionPrompt, MEMBER_TOOLS, openToolText } from "../discussions/prompt";
 
 /** Why a desktop credential fill typed nothing, for the user and the bot. */
@@ -66,7 +68,7 @@ export class DiscussionConversationError extends Error { constructor() { super("
 export type ChatEvent = { type: "user"; message: typeof message.$inferSelect } | { type: "start"; messageId: string; botId: string; botName: string } | { type: "delta"; botId: string; text: string } | { type: "message"; message: typeof message.$inferSelect; botName: string } | { type: "proposal"; proposalId: string } | { type: "summary"; text: string } | { type: "computer"; messageId: string; botId: string; vm: { id: string; name: string } } | { type: "done" };
 
 /** Later additions, kept in one object so positional callers stay unchanged. */
-export type ChatDeps = { discussions?: DiscussionStore };
+export type ChatDeps = { discussions?: DiscussionStore; /** Provisions each new bot's private database (modules/bot-database). */ botDatabase?: { ensure(botId: string): Promise<unknown> } };
 
 export function createChatService(db: Database, run: ReturnType<typeof createTurnRunner> = createTurnRunner(db), fileStore?: FileStore, computer?: ComputerService, decisions?: DecisionService, connections?: ConnectionsService, creators?: Creators, mcp?: Mcp, jev?: JevDecider, desktop?: DesktopService, vms?: VmService, agenda?: AgendaService, deps: ChatDeps = {}) {
   const routing = createRouting(db, decisions, jev);
@@ -453,6 +455,8 @@ export function createChatService(db: Database, run: ReturnType<typeof createTur
     if (!row) throw new AccessError("NOT_FOUND");
     return row;
   }
+  /** Best effort: a failure here is retried by the first database tool call. */
+  const provisionDatabase = (botId: string) => { void deps.botDatabase?.ensure(botId).catch((e) => console.warn(`bot database not provisioned yet code=${(e as { code?: string })?.code ?? "unknown"}`)); };
   async function loadConversation(actor: ActiveActor, id: string) {
     const [row] = await db.select().from(conversation).where(and(eq(conversation.id, id), eq(conversation.ownerUserId, actor.userId)));
     return requireOwned(actor, row);
@@ -462,19 +466,25 @@ export function createChatService(db: Database, run: ReturnType<typeof createTur
     routing,
     harnessReadiness: (userId: string) => harnessReadiness(db, userId),
     async ensureChief(actor: ActiveActor) {
-      await db.insert(bot).values({ ownerUserId: actor.userId, kind: "chief", visibility: "private", name: "Chief", description: "Your personal chief of staff." }).onConflictDoNothing();
-      const [row] = await db.select().from(bot).where(and(eq(bot.ownerUserId, actor.userId), eq(bot.kind, "chief")));
-      return row;
+      const chief = async () => (await db.select().from(bot).where(and(eq(bot.ownerUserId, actor.userId), eq(bot.kind, "chief"))))[0];
+      const found = await chief(); if (found) return found;
+      // Every user has a "Chief": its slug carries the owner's name (allan-chief -> allan_chief_bot) instead of chief-2, chief-17...
+      const [owner] = await db.select({ name: user.name }).from(user).where(eq(user.id, actor.userId));
+      try {
+        const row = await insertWithSlug(db, `${owner?.name ?? ""} chief`, async (slug) => (await db.insert(bot).values({ ownerUserId: actor.userId, kind: "chief", visibility: "private", name: "Chief", slug, description: "Your personal chief of staff." }).returning())[0]!);
+        provisionDatabase(row.id); return row;
+      } catch (e) { if (isUniqueViolation(e, "bot_one_chief_per_owner")) return chief(); throw e; } // a concurrent request created it
     },
     /** Owners get their full configuration; other members only see the public card of team bots (no prompts, instructions or ownership). */
     async listBots(actor: ActiveActor) {
       const rows = await db.select().from(bot).where(and(visibleBot(actor), eq(bot.archived, false))).orderBy(asc(bot.createdAt));
-      return rows.map((b) => b.ownerUserId === actor.userId ? b : { id: b.id, kind: b.kind, visibility: b.visibility, workspaceId: null, name: b.name, description: b.description, harness: b.harness, model: null, personality: "", instructions: "", onboarded: b.onboarded, avatar: b.avatar, computerMode: b.computerMode, codeAccess: b.codeAccess, requiredConnections: b.requiredConnections, archived: false, version: b.version, createdAt: b.createdAt, updatedAt: b.updatedAt, ownerUserId: "" });
+      return rows.map((b) => b.ownerUserId === actor.userId ? b : { id: b.id, kind: b.kind, visibility: b.visibility, workspaceId: null, name: b.name, slug: b.slug, description: b.description, harness: b.harness, model: null, personality: "", instructions: "", onboarded: b.onboarded, avatar: b.avatar, computerMode: b.computerMode, codeAccess: b.codeAccess, requiredConnections: b.requiredConnections, archived: false, version: b.version, createdAt: b.createdAt, updatedAt: b.updatedAt, ownerUserId: "" });
     },
     async createBot(actor: ActiveActor, input: BotInput) {
       assertModel(input.harness ?? "fixture", input.model);
-      const [row] = await db.insert(bot).values({ ownerUserId: actor.userId, kind: "specialist", visibility: input.visibility ?? "team", name: input.name.trim(),
-        description: input.description ?? "", harness: input.harness ?? "fixture", model: input.model ?? null, personality: input.personality ?? "", instructions: input.instructions ?? "", avatar: input.avatar ?? null, computerMode: input.computerMode ?? "off", codeAccess: input.codeAccess ?? true, requiredConnections: input.requiredConnections ?? [] }).returning();
+      const row = await insertWithSlug(db, input.name, async (slug) => (await db.insert(bot).values({ ownerUserId: actor.userId, kind: "specialist", visibility: input.visibility ?? "team", name: input.name.trim(), slug,
+        description: input.description ?? "", harness: input.harness ?? "fixture", model: input.model ?? null, personality: input.personality ?? "", instructions: input.instructions ?? "", avatar: input.avatar ?? null, computerMode: input.computerMode ?? "off", codeAccess: input.codeAccess ?? true, requiredConnections: input.requiredConnections ?? [] }).returning())[0]);
+      provisionDatabase(row!.id);
       await db.insert(botRevision).values({ botId: row!.id, version: row!.version, config: snapshotConfig(row!), changedByUserId: actor.userId });
       return row;
     },

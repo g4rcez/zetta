@@ -8,3 +8,4 @@ export * from "./features";
 export * from "./agenda";
 export * from "./discussions";
 export * from "./inbound";
+export * from "./bot-database";

@@ -3,7 +3,7 @@ import { initLogger } from "evlog";
 import { createApp } from "./app";
 import { sweepHarnessContainers } from "./modules/chat/harness";
 import { desktopOrigins, ENV } from "./env.server";
-import { agendaServices, auth, chatServices, computerServices, connectionServices, discussionServices, inboundServices, integrationServices, decisionServices, featureServices, identity } from "./services";
+import { agendaServices, auth, botDatabaseServices, chatServices, computerServices, connectionServices, discussionServices, inboundServices, integrationServices, decisionServices, featureServices, identity } from "./services";
 
 initLogger({
   env: { service: "zetta-server" },
@@ -21,6 +21,7 @@ createApp({
   agenda: agendaServices,
   discussions: discussionServices,
   inbound: inboundServices,
+  botDatabase: botDatabaseServices,
   webOrigin: ENV.CORS_ORIGIN,
   desktopOrigins,
 }).listen({ port: Number(process.env.PORT ?? 3000), idleTimeout: 120 }, () => { // Bun's default (10s) cuts a chat stream while a tool such as WhatsApp is still working

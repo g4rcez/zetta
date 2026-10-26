@@ -14,6 +14,8 @@
  *   - Handlers receive the decrypted config only for the duration of one call, through `ctx.config`. Use `ctx.setConfig(next)` to
  *     persist refreshed state (OAuth tokens, session ids); it re-seals and revokes the previous secret.
  *   - A bot may call a plugin only when the calling user bound it to that bot (`bot_integration`); ownership is re-checked per call.
+ *   - Exception: `always` plugins (native, no fields) are built in. Nothing is installed or bound; `always.available(botId)` decides per call
+ *     and tool handlers get `ctx.botId` with an empty config (the bot database: modules/bot-database).
  *
  * Handlers must throw `PluginError(code, safe, fix)`: `safe` says what went wrong and `fix` what the USER can do about it. Both are shown to the
  * user (as a callout in the chat) and to the bot, so write them for a person and never include secrets. Common codes (AUTH, NEEDS_AUTH, TIMEOUT,
@@ -33,6 +35,8 @@ export type PluginContext = {
   config: Readonly<Record<string, string>>;
   /** Replaces the stored config (re-sealed). Call only from a handler/lifecycle hook of the same user. */
   setConfig(next: Record<string, string>): Promise<void>;
+  /** The bot that called the tool (tool calls only). */
+  botId?: string;
 };
 export type JsonSchema = { type: "object"; properties?: Record<string, unknown>; required?: string[]; additionalProperties?: boolean };
 export type PluginTool = {
@@ -101,6 +105,8 @@ export type PluginDef = {
   credentials?: PluginCredentials;
   /** Channel plugins only: lets a bot answer new outside messages (see PluginInbound). */
   inbound?: PluginInbound;
+  /** Built in and on for every bot (no install, fields or binding). `available` is checked on every call and prompt. */
+  always?: { available(botId: string): Promise<boolean>; /** Extra prompt text for this bot (no secrets). */ prompt?(botId: string): Promise<string> };
 };
 
 export const DEFAULT_SAFE = "The plugin could not complete that.";
@@ -118,6 +124,7 @@ export function registerPlugin(def: PluginDef): PluginDef {
   if (!ID.test(def.id)) throw new Error(`invalid plugin id: ${def.id}`);
   if (def.kind === "mcp" && !def.mcp) throw new Error(`mcp plugin ${def.id} needs "mcp"`);
   if (def.kind === "native" && !def.tools) throw new Error(`native plugin ${def.id} needs "tools"`);
+  if (def.always && (def.kind !== "native" || def.fields.length)) throw new Error(`always-on plugin ${def.id} must be native without fields`);
   if (def.inbound && !def.tools?.some((t) => t.name === def.inbound!.reply.tool)) throw new Error(`inbound plugin ${def.id} needs its reply tool`);
   for (const t of def.tools ?? []) if (!TOOL.test(t.name)) throw new Error(`invalid tool name: ${t.name}`);
   for (const f of def.fields) if (!/^[a-zA-Z0-9_]{1,40}$/.test(f.key)) throw new Error(`invalid field key: ${f.key}`);
@@ -133,7 +140,7 @@ export const unregisterPlugin = (id: string) => registry.delete(id);
 
 /** Browser-safe description of a plugin (no handlers, no secrets). */
 export const pluginMeta = (d: PluginDef) => ({
-  id: d.id, name: d.name, description: d.description, icon: d.icon, category: d.category, auth: d.auth, kind: d.kind, transport: d.mcp?.transport ?? null, fields: d.fields, docsUrl: d.docsUrl ?? null, verified: d.verified !== false, notes: d.notes ?? null, credentials: Boolean(d.credentials), inbound: d.inbound ? { label: d.inbound.label } : null,
+  id: d.id, name: d.name, description: d.description, icon: d.icon, category: d.category, auth: d.auth, kind: d.kind, transport: d.mcp?.transport ?? null, fields: d.fields, docsUrl: d.docsUrl ?? null, verified: d.verified !== false, notes: d.notes ?? null, credentials: Boolean(d.credentials), always: Boolean(d.always), inbound: d.inbound ? { label: d.inbound.label } : null,
   tools: (d.tools ?? []).map((t) => ({ name: t.name, description: t.description })),
 });
 export type PluginMeta = ReturnType<typeof pluginMeta>;

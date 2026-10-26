@@ -1,4 +1,4 @@
-import { Bug, BookOpen, ChartLine, Cloud, GitBranch, Globe, KeyRound, Library, ListChecks, Mail, MessageCircle, NotebookText, Plug } from "lucide-react";
+import { Bug, BookOpen, ChartLine, Cloud, Database, GitBranch, Globe, KeyRound, Library, ListChecks, Mail, MessageCircle, NotebookText, Plug } from "lucide-react";
 import type { ComponentType } from "react";
 
 import chromeDevtools from "./logos/chrome-devtools.png";
@@ -19,7 +19,7 @@ type IconProps = { className?: string; "aria-hidden"?: boolean };
 
 const ICONS: Record<string, ComponentType<IconProps>> = {
   bug: Bug, "bug-play": Bug, "chart-line": ChartLine, cloud: Cloud, "book-open": BookOpen, github: GitBranch, "list-checks": ListChecks, notebook: NotebookText, library: Library, globe: Globe,
-  mail: Mail, "message-circle": MessageCircle, telegram: TelegramLogo, reddit: RedditLogo, "key-round": KeyRound,
+  mail: Mail, "message-circle": MessageCircle, telegram: TelegramLogo, reddit: RedditLogo, "key-round": KeyRound, database: Database,
 };
 
 /** Brand marks downloaded from each vendor's own site (favicon / brand asset), keyed by plugin id. `plate` sits a light tile behind marks that are dark-on-transparent. */

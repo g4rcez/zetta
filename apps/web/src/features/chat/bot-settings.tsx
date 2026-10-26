@@ -8,6 +8,7 @@ import { BotDecision } from "./bot-decision";
 import { BotHooks } from "./bot-hooks";
 import { harnessOptions, isAllowedModel, modelOptions } from "./bot-presets";
 import { registeredBotSections, type BotSection } from "./bot-sections";
+import "../bot-database/register"; // every bot has a database, so its tab is always part of the settings
 import { chatClient, errorMessage, type Bot, type BotAvatarValue, type BotPatch, type Workspace } from "./chat-client";
 
 const UNGROUPED = "__ungrouped";

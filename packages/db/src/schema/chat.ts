@@ -31,6 +31,8 @@ export const bot = pgTable(
     visibility: text("visibility", { enum: ["private", "team"] }).notNull(),
     workspaceId: uuid("workspace_id").references(() => workspace.id, restrict),
     name: text("name").notNull(),
+    // Friendly-url id, unique across the installation and fixed at creation (renames keep it). Names the bot's database schema (`<snake>_bot`).
+    slug: text("slug").notNull(),
     description: text("description").default("").notNull(),
     harness: text("harness", { enum: ["pi", "codex", "omp", "claude-code", "opencode", "cursor", "fixture"] }).default("fixture").notNull(),
     model: text("model"),
@@ -56,6 +58,8 @@ export const bot = pgTable(
     uniqueIndex("bot_one_chief_per_owner").on(table.ownerUserId).where(sql`${table.kind} = 'chief'`),
     check("bot_chief_private_check", sql`${table.kind} <> 'chief' or ${table.visibility} = 'private'`),
     check("bot_name_check", sql`length(btrim(${table.name})) between 1 and 80`),
+    uniqueIndex("bot_slug_key").on(table.slug),
+    check("bot_slug_check", sql`${table.slug} ~ '^[a-z][a-z0-9]*(-[a-z0-9]+)*$' and length(${table.slug}) <= 48 and ${table.slug} !~ '^pg-'`),
   ],
 );
 

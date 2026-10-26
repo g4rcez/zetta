@@ -20,6 +20,8 @@ import { createAgendaScheduler } from "./modules/agenda/scheduler";
 import { createDiscussionStore } from "./modules/discussions/store";
 import { createDiscussionWorker } from "./modules/discussions/worker";
 import { createInbound } from "./modules/inbound/service";
+import { createBotDatabase } from "./modules/bot-database/service";
+import { configureBotDatabase } from "./modules/bot-database/plugin";
 import { createEnrollmentService } from "./modules/identity/enrollment";
 import { createIdentityAccess, createMembershipLookup } from "./modules/identity/access";
 import { createFirstAccountSetup, createSetupState } from "./modules/identity/first-account";
@@ -66,10 +68,16 @@ const sources = createSources(db, computer, { connections: { list: (a) => connec
 const features = createFeaturesService(db, undefined, decisions, computer, sources as never);
 const agenda = createAgenda(db);
 const discussions = createDiscussionStore(db);
-export const chatServices = { access: identity.access, chat: createChatService(db, undefined, files, computer, decisions, connections, { routine: features.routines.create as never, workflow: features.workflows.save as never }, mcp, jev, desktop, vms, agenda, { discussions }), files };
+// Each bot's private Postgres schema (modules/bot-database). Bot passwords are derived from this key; the app's database user needs CREATEROLE.
+const botDbKey = process.env.ZETTA_BOT_DATABASE_KEY || process.env.ZETTA_CONNECTION_KEY;
+const botDatabase = botDbKey ? createBotDatabase(db, { databaseUrl: ENV.DATABASE_URL, key: botDbKey, quotaMb: num(process.env.ZETTA_BOT_DATABASE_QUOTA_MB) }) : undefined;
+configureBotDatabase(botDatabase);
+if (botDatabase) void botDatabase.available().then((ok) => { if (!ok) console.warn("Bot databases disabled: the app's database user needs the CREATEROLE permission."); });
+export const chatServices = { access: identity.access, chat: createChatService(db, undefined, files, computer, decisions, connections, { routine: features.routines.create as never, workflow: features.workflows.save as never }, mcp, jev, desktop, vms, agenda, { discussions, botDatabase }), files };
 const discussionWorker = createDiscussionWorker(db, discussions, chatServices.chat, membershipLookup);
 discussions.onEnqueue = discussionWorker.kick;
 export const discussionServices = { access: identity.access, store: discussions, worker: discussionWorker };
+export const botDatabaseServices = { access: identity.access, db, database: botDatabase };
 export const inboundServices = { access: identity.access, inbound: createInbound(db, mcp.plugins, chatServices.chat, membershipLookup) };
 export const featureServices = { access: identity.access, features };
 export const decisionServices = { access: identity.access, decisions };

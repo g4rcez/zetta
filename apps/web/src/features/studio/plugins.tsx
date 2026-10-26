@@ -142,6 +142,13 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
     <div className="space-y-6">
       <section aria-label="Installed plugins" className="space-y-3">
         <h3 className="font-medium">Installed</h3>
+        {(catalog ?? []).filter((m) => m.always).map((m) => (
+          <div key={m.id} className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-4">
+            <PluginIcon id={m.id} name={m.icon} className="size-6 shrink-0" />
+            <div className="min-w-0 flex-1"><p className="font-medium">{m.name} <span className="rounded bg-primary/15 px-1.5 py-0.5 text-xs text-primary">Built in</span></p>
+              <p className="text-xs text-muted-foreground">{m.notes ?? m.description}</p></div>
+          </div>
+        ))}
         {installed === undefined ? <Empty>Loading...</Empty> : installed.length === 0 ? <Empty>Nothing installed yet. Pick one from the catalog below.</Empty> : (
           <ul className="space-y-2">{installed.map((i) => { const m = byId.get(i.id); if (!m) return null; const p = probes[i.id]; return (
             <li key={i.id} className="rounded-lg border bg-card p-4">
@@ -186,7 +193,7 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
               {!m.verified && <p className="text-xs text-amber-700 dark:text-amber-300">Not fully verified</p>}
               <div className="flex items-center justify-between gap-2">
                 {m.docsUrl ? <a href={m.docsUrl} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-xs underline">Docs <ExternalLink aria-hidden className="size-3" /></a> : <span />}
-                {installedIds.has(m.id) ? <span className="text-xs text-muted-foreground">Installed</span> : <Button size="sm" onClick={() => setInstalling(m)}>Install</Button>}
+                {m.always ? <span className="text-xs text-muted-foreground">Built in, on for every bot</span> : installedIds.has(m.id) ? <span className="text-xs text-muted-foreground">Installed</span> : <Button size="sm" onClick={() => setInstalling(m)}>Install</Button>}
               </div>
             </li>))}</ul>
         )}

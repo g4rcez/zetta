@@ -11,7 +11,7 @@ import { ComputerError, type Actor } from "./service";
  * the host computer or any `relay:`/`direct:` target. Control/takeover works like browser sessions: agent actions are refused while a
  * person holds control, and an epoch invalidates stale agent turns.
  */
-export type McpCall = (tool: string, args: Record<string, unknown>) => Promise<{ text: string; imageBase64?: string; isError: boolean }>;
+export type McpCall = (tool: string, args: Record<string, unknown>) => Promise<{ text: string; imageBase64?: string; isError: boolean; /** The tool's structuredContent, when it returns one. */ structured?: unknown }>;
 export type DesktopAction =
   | { type: "click"; x: number; y: number } | { type: "type"; text: string } | { type: "key"; key: string }
   | { type: "scroll"; direction: "up" | "down" | "left" | "right"; amount?: number } | { type: "launch"; app: string };

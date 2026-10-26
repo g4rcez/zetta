@@ -4,6 +4,8 @@ import { ComputerActivity } from "../computer/computer-activity";
 import "../code/register";
 import "../computer/register";
 import "../plugins/register";
+import "../discussions/register";
+import "../inbound/register";
 import { ChevronDown, Hash, Lock, Menu, Monitor, Share2, SlidersHorizontal, X } from "lucide-react";
 import { Skeleton } from "@g4rcez/components";
 
@@ -102,6 +104,8 @@ export function ChatPage() {
   const refreshBots = () => chatClient.bots().then(setBots).catch(() => {});
   const me: Author = { name: session?.user.name ?? "You", image: session?.user.image };
   const authorOf = useCallback((row: Row): Author => {
+    // Outside people writing through a channel plugin are not the signed-in user.
+    if (row.role === "user" && row.meta?.inbound) return { name: `${row.meta.inbound.label} · ${row.meta.inbound.chatName}` };
     if (row.role === "user") return me;
     const bot = bots.find((b) => b.id === (row.botId ?? botId));
     return { name: bot?.name ?? row.botName ?? "Bot", bot };

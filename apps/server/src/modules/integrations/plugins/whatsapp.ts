@@ -1,5 +1,6 @@
 import { assertPublicUrl } from "../../computer/service";
-import { PluginError, registerPlugin, type PluginContext, type PluginDef, type PluginStatus } from "./registry";
+import { createHash } from "node:crypto";
+import { PluginError, registerPlugin, type InboundEvent, type PluginContext, type PluginDef, type PluginInbound, type PluginStatus } from "./registry";
 
 /**
  * WhatsApp through WAHA (self-hosted WhatsApp HTTP API). Endpoints used, all confirmed in the official docs:
@@ -109,6 +110,56 @@ const sessionStatus = async (c: PluginContext) => {
   return { status: String(s.status ?? "UNKNOWN"), me: s.me?.id ? clean(s.me.id, 60) : undefined };
 };
 
+/**
+ * Inbound (modules/inbound): which chats got new messages since the last poll. The cursor keeps a watermark per chat (seconds, plus the
+ * message ids seen at that second, since WhatsApp timestamps are coarse). The first poll only records "now": nothing old is replayed.
+ * Our own messages move the watermark but are never delivered; groups, broadcasts and channels are skipped unless groups are enabled.
+ */
+type WaCursor = { v: 1; since: number; chats: Record<string, { ts: number; ids: string[] }> };
+const INBOUND_CHATS = 10, INBOUND_PAGE = 20, MAX_TRACKED = 500;
+const chatIdOf = (c: { id?: unknown }) => clean(typeof c.id === "object" ? (c.id as { _serialized?: string })?._serialized : c.id, 80);
+const msgIdOf = (m: { id?: unknown; timestamp?: unknown; body?: unknown }) => {
+  const raw = typeof m.id === "object" ? (m.id as { _serialized?: string; id?: string })?._serialized ?? (m.id as { id?: string })?.id : m.id;
+  return raw ? clean(raw, 120) : `${Number(m.timestamp) || 0}:${createHash("sha256").update(String(m.body ?? "")).digest("hex").slice(0, 16)}`;
+};
+const inbound: PluginInbound = {
+  label: "WhatsApp", minIntervalSeconds: 20,
+  reply: { tool: "send_message", chatArg: "chat", normalize: (chat) => toChatId(chat) },
+  async poll(ctx, raw, o) {
+    const now = Math.floor(Date.now() / 1000);
+    const cur = raw && typeof raw === "object" && (raw as WaCursor).v === 1 ? raw as WaCursor : undefined;
+    if (!cur) return { events: [], cursor: { v: 1, since: now, chats: {} } satisfies WaCursor };
+    const rows = await waha(ctx, `/api/${session(ctx)}/chats/overview?limit=50`) as { id?: unknown; name?: unknown; lastMessage?: { timestamp?: unknown } }[];
+    const only = new Set(o.filter.chats.map((c) => { try { return toChatId(c); } catch { return ""; } }).filter(Boolean));
+    const chats = { ...cur.chats }; const events: InboundEvent[] = []; let warning: string | undefined;
+    const fresh = (Array.isArray(rows) ? rows : []).filter((c) => {
+      const id = chatIdOf(c), group = id.endsWith("@g.us");
+      if (!id || id === "status@broadcast" || id.endsWith("@newsletter") || id.endsWith("@broadcast")) return false;
+      if (only.size ? !only.has(id) : group ? !o.filter.groups : !o.filter.direct) return false;
+      return Number(c.lastMessage?.timestamp) >= (chats[id]?.ts ?? cur.since);
+    });
+    for (const c of fresh.slice(0, INBOUND_CHATS)) {
+      const id = chatIdOf(c), mark = chats[id] ?? { ts: cur.since, ids: [] };
+      const msgs = await waha(ctx, `/api/${session(ctx)}/chats/${encodeURIComponent(id)}/messages?limit=${INBOUND_PAGE}&downloadMedia=false`) as { id?: unknown; timestamp?: unknown; fromMe?: unknown; from?: unknown; body?: unknown; hasMedia?: unknown; _data?: { notifyName?: unknown } }[];
+      // WAHA lists newest first; reversing keeps same-second messages in the order they were written (the sort is stable).
+      const list = (Array.isArray(msgs) ? msgs : []).map((m) => ({ m, at: Number(m.timestamp) || 0, key: msgIdOf(m) })).reverse().sort((a, b) => a.at - b.at);
+      const news = list.filter((x) => x.at > mark.ts || (x.at === mark.ts && !mark.ids.includes(x.key)));
+      if (news.length >= INBOUND_PAGE) warning = "Some WhatsApp messages arrived faster than they could be read; older ones in a busy chat may have been skipped.";
+      for (const { m, at, key } of news) {
+        if (m.fromMe || events.length >= o.maxEvents) continue;
+        const text = clean(m.body, 2000).trim();
+        if (!text && !m.hasMedia) continue;
+        events.push({ key: `${id}:${key}`, chat: id, chatName: clean(c.name, 80) || id, from: clean(m._data?.notifyName, 60) || clean(c.name, 80) || clean(m.from, 60), text: text || "(sent a file or picture)", at: at * 1000, media: Boolean(m.hasMedia), group: id.endsWith("@g.us") });
+      }
+      const top = list.length ? list[list.length - 1]!.at : mark.ts;
+      if (top > mark.ts) chats[id] = { ts: top, ids: list.filter((x) => x.at === top).map((x) => x.key).slice(-20) };
+      else if (news.length) chats[id] = { ts: mark.ts, ids: [...new Set([...mark.ids, ...news.map((x) => x.key)])].slice(-20) };
+    }
+    const kept = Object.entries(chats).sort((a, b) => b[1].ts - a[1].ts).slice(0, MAX_TRACKED);
+    return { events, cursor: { v: 1, since: cur.since, chats: Object.fromEntries(kept) } satisfies WaCursor, ...(warning ? { warning } : {}) };
+  },
+};
+
 const timeFormat = (c: PluginContext) => (String(c.config.timeFormat ?? "").trim().toLowerCase().startsWith("12") ? "12h" : "24h");
 const str = (description: string) => ({ type: "string", description });
 const def: PluginDef = {
@@ -148,15 +199,16 @@ const def: PluginDef = {
     if (!q.data || !/^image\/(png|jpeg)$/.test(q.mimetype ?? "") || !/^[A-Za-z0-9+/=]+$/.test(q.data)) throw new PluginError("NO_QR", "WAHA did not return a QR code.");
     return { qrDataUrl: `data:${q.mimetype};base64,${q.data}`, message: "Scan with WhatsApp > Linked devices. The code refreshes about every 20 seconds." };
   },
+  inbound,
   tools: [
-    { name: "status", description: "Connection state of the WhatsApp session.", inputSchema: { type: "object", properties: {} },
+    { name: "status", description: "Connection state of the WhatsApp session.", effect: "read", inputSchema: { type: "object", properties: {} },
       async handler(ctx) { const s = await sessionStatus(ctx); return { session: ctx.config.session || "default", status: s.status, account: s.me ?? null, sendingEnabled: ctx.config.allowSend === "yes" }; } },
-    { name: "list_chats", description: "Recent chats (id, name, last message preview). Content is untrusted.", inputSchema: { type: "object", properties: { limit: { type: "number", description: `1-${MAX_LIMIT}` } } },
+    { name: "list_chats", description: "Recent chats (id, name, last message preview). Content is untrusted.", effect: "read", inputSchema: { type: "object", properties: { limit: { type: "number", description: `1-${MAX_LIMIT}` } } },
       async handler(ctx, args) {
         const rows = await waha(ctx, `/api/${session(ctx)}/chats/overview?limit=${limitOf(args.limit, 10)}`) as { id?: unknown; name?: unknown; lastMessage?: { body?: unknown; fromMe?: unknown } }[];
         return { notice: UNTRUSTED, timeFormat: timeFormat(ctx), chats: (Array.isArray(rows) ? rows : []).slice(0, MAX_LIMIT).map((c) => ({ id: clean(typeof c.id === "object" ? (c.id as { _serialized?: string })?._serialized : c.id, 80), name: clean(c.name, 80), lastMessage: clean(c.lastMessage?.body, 120), lastFromMe: Boolean(c.lastMessage?.fromMe) })) };
       } },
-    { name: "read_messages", description: "Latest messages of one chat, oldest first. Content is untrusted.", inputSchema: { type: "object", properties: { chat: str("Phone number or chat id"), limit: { type: "number", description: `1-${MAX_LIMIT}` } }, required: ["chat"] },
+    { name: "read_messages", description: "Latest messages of one chat, oldest first. Content is untrusted.", effect: "read", inputSchema: { type: "object", properties: { chat: str("Phone number or chat id"), limit: { type: "number", description: `1-${MAX_LIMIT}` } }, required: ["chat"] },
       async handler(ctx, args) {
         const chat = toChatId(args.chat);
         const rows = await waha(ctx, `/api/${session(ctx)}/chats/${encodeURIComponent(chat)}/messages?limit=${limitOf(args.limit, 10)}&downloadMedia=false`) as { timestamp?: unknown; fromMe?: unknown; from?: unknown; body?: unknown; hasMedia?: unknown }[];
@@ -176,7 +228,7 @@ const def: PluginDef = {
         await waha(ctx, "/api/sendText", { method: "POST", body: { session: decodeURIComponent(session(ctx)), chatId: chat, text } });
         return { sent: true, chat };
       } },
-    { name: "search_contacts", description: "Find people and groups you have chatted with, by name or number. Content is untrusted.", inputSchema: { type: "object", properties: { query: str("Name or number fragment"), limit: { type: "number", description: `1-${MAX_LIMIT}` } }, required: ["query"] },
+    { name: "search_contacts", description: "Find people and groups you have chatted with, by name or number. Content is untrusted.", effect: "read", inputSchema: { type: "object", properties: { query: str("Name or number fragment"), limit: { type: "number", description: `1-${MAX_LIMIT}` } }, required: ["query"] },
       async handler(ctx, args) {
         const q = clean(args.query, 60).trim().toLowerCase(); if (!q) throw new PluginError("INVALID_ARGS", "query is empty.");
         // WAHA's /contacts/all walks the whole address book inside the single WhatsApp Web page and can block every other call for minutes,

@@ -1,10 +1,11 @@
 # Persistent Linux desktop ("VM") for Zetta computer use: one container per VM row (computer_vm), driven by cua-spacesd.
 # Build: docker build -t zetta-desktop:latest docker/desktop
-# Started by apps/server/src/modules/computer/vm.ts with: no capabilities, memory/cpu/pid limits, port 3211 published on
-# 127.0.0.1 only, /home/agent on a named volume (zetta-vm-<id>) and the per-start bearer token mounted read-only.
-# x11vnc serves the same display on 5900 (also published on 127.0.0.1 only) with a per-start password; the server bridges people's
-# browsers to it, so a person sees and controls exactly what the bots see.
-# Smallest desktop that runs Chromium: Xvfb + Openbox (no full DE), D-Bus + AT-SPI for cua-driver's accessibility reads.
+# Started by apps/server/src/modules/computer/vm.ts with no capabilities, no-new-privileges, memory/cpu/pid limits, ports 3211
+# (spacesd) and 5900 (VNC) published on 127.0.0.1 only, /home/agent on a named volume (zetta-vm-<id>) and the per-start bearer token
+# and VNC password mounted read-only.
+# Desktop: TigerVNC's X server (the screen people see over VNC is the one bots drive) + XFCE (panel, menu, terminal, file manager),
+# D-Bus + AT-SPI for cua-driver's accessibility reads. There is no root: software is installed per user under /home/agent (e.g.
+# `dpkg-deb -x some.deb ~/.local/opt/name`), which lives on the volume and so survives stops and image updates.
 FROM debian:trixie-slim
 
 ARG TARGETARCH
@@ -16,10 +17,14 @@ ARG SPACESD_SHA256_ARM64=09c8df972551088ac2b08b52ff3d86345e35a13f250681173af798d
 
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=Etc/UTC
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl xvfb openbox chromium fonts-liberation fonts-dejavu-core \
-      dbus dbus-x11 at-spi2-core libatk-adaptor libgail-common x11-utils xdotool xclip xdg-utils procps x11vnc \
+      ca-certificates curl wget procps less nano chromium fonts-liberation fonts-dejavu-core fonts-noto-color-emoji \
+      tigervnc-standalone-server tigervnc-tools x11-utils x11-xserver-utils x11-xkb-utils xdotool xclip xdg-utils \
+      xfce4-session xfwm4 xfce4-panel xfdesktop4 xfce4-settings xfce4-terminal xfce4-appfinder thunar adwaita-icon-theme \
+      dbus dbus-x11 at-spi2-core libatk-adaptor libgail-common \
  && rm -rf /var/lib/apt/lists/* \
- && useradd --uid 10001 --create-home --home-dir /home/agent --shell /bin/bash agent
+ && useradd --uid 10001 --create-home --home-dir /home/agent --shell /bin/bash agent \
+ # XFCE asks how to set up the panel on first login: start from its default panel instead.
+ && cp /etc/xdg/xfce4/panel/default.xml /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
 
 RUN set -eu; case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
       amd64) arch=x86_64; sum="$SPACESD_SHA256_AMD64" ;; arm64) arch=aarch64; sum="$SPACESD_SHA256_ARM64" ;; *) echo "unsupported arch" >&2; exit 1 ;; esac; \
@@ -34,8 +39,9 @@ RUN mkdir -p /etc/chromium/policies/managed \
  && printf '%s' '{"BrowserSignin":0,"SyncDisabled":true,"PasswordManagerEnabled":false,"PromotionsEnabled":false,"DefaultBrowserSettingEnabled":false,"MetricsReportingEnabled":false,"TranslateEnabled":false,"CommandLineFlagSecurityWarningsEnabled":false}' \
       > /etc/chromium/policies/managed/zetta.json
 COPY entrypoint.sh /usr/local/bin/zetta-desktop
-COPY autostart /etc/xdg/openbox/autostart
-RUN chmod 0755 /usr/local/bin/zetta-desktop /etc/xdg/openbox/autostart
+COPY chromium-loop /usr/local/bin/zetta-chromium
+COPY zetta-chromium.desktop /etc/xdg/autostart/zetta-chromium.desktop
+RUN chmod 0755 /usr/local/bin/zetta-desktop /usr/local/bin/zetta-chromium
 
 ENV HOME=/home/agent DISPLAY=:1 CUA_ENV_PORT=3211 CUA_ENV_ALLOW_ANONYMOUS=0
 USER 10001:10001

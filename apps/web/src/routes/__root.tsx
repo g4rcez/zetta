@@ -42,7 +42,9 @@ function RootComponent() {
         disableTransitionOnChange
         storageKey="vite-ui-theme"
       >
-        {app ? (
+        {/^\/computer\/[^/]+$/.test(pathname) ? (
+          <main className="h-svh overflow-hidden"><Outlet /></main>
+        ) : app ? (
           <div className="flex h-svh flex-col-reverse md:flex-row">
             <AppRail />
             <main className="min-h-0 min-w-0 flex-1 overflow-hidden"><Outlet /></main>

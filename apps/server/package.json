@@ -7,7 +7,7 @@
     "check-types": "tsc --noEmit",
     "compile": "bun build --compile --no-compile-autoload-dotenv --minify --sourcemap --bytecode ./src/index.ts --outfile server",
     "start": "bun run dist/index.mjs",
-    "dev": "varlock run -- bun run --hot src/index.ts",
+    "dev:server": "varlock run -- bun run --hot src/index.ts",
     "dev:bare": "bun run --hot src/index.ts",
     "env:generate": "varlock codegen",
     "auth:generate": "varlock run -- bun x auth@latest generate --config src/services.ts --output ../../packages/db/src/schema/auth.ts --yes"

@@ -7,18 +7,22 @@ export type Provider = "anthropic" | "openai" | "google" | "openrouter" | "githu
 export const PROVIDERS: readonly Provider[] = ["anthropic", "openai", "google", "openrouter", "github"];
 export type RequiredConnection = { key: string; provider: Provider };
 export type BotPatch = Partial<{ avatar: BotAvatarValue | null; name: string; description: string; harness: string; model: string | null; personality: string; instructions: string; computerMode: ComputerMode; codeAccess: boolean; requiredConnections: RequiredConnection[] }>;
-export type Conversation = { id: string; botId: string; title: string; updatedAt: string; pinned?: boolean; favorite?: boolean };
+export type Conversation = { id: string; botId: string; title: string; updatedAt: string; pinned?: boolean; favorite?: boolean; kind?: "chat" | "discussion" | "inbound" };
 export type Workspace = { id: string; name: string; parentId?: string | null };
-export type ProposalKind = "config" | "create_bot" | "create_routine" | "create_workflow" | "create_instruction" | "create_vm";
-export type Proposal = { id: string; botId: string | null; kind?: ProposalKind; diff: { field: string; from: unknown; to: unknown }[] };
+export type ProposalKind = "config" | "create_bot" | "create_routine" | "create_workflow" | "create_instruction" | "create_vm" | "open_discussion" | "discussion_brief";
+export type Proposal = { id: string; botId: string | null; kind?: ProposalKind; diff: { field: string; from: unknown; to: unknown }[]; patch?: Record<string, unknown> };
 export type DecisionResult = { status: "approved" | "rejected" | "stale" };
 export type Hook = { id: string; kind: "add_context" | "redact" | "stop" | "background"; pattern: string; value: string; enabled?: boolean; position?: number };
 export type HookDryRun = { text: string; stopped: boolean; stopMessage?: string | null; addedContext: string[]; backgroundTasks: number; skippedInvalid: number };
 export type Attachment = { id: string; name: string; size: number };
 export type Reaction = { emoji: string; count: number; mine: boolean };
 export const REACTION_EMOJIS = ["👍", "👎", "❤️", "🎉", "👀", "✅"] as const;
-export type Receipt = { kind: "memory" | "instruction" | "proposal" | "computer"; id: string; text: string; created?: boolean };
-export type MessageMeta = { used?: { memories?: string[]; instructions?: string[] }; receipts?: Receipt[]; decision?: { action: string; choice?: string; confidence?: number } } | null;
+export type Receipt = { kind: "memory" | "instruction" | "proposal" | "computer" | "agenda" | "discussion"; id: string; text: string; created?: boolean };
+export type MessageMeta = {
+  used?: { memories?: string[]; instructions?: string[] }; receipts?: Receipt[]; decision?: { action: string; choice?: string; confidence?: number };
+  /** Written by outside people through a channel plugin (WhatsApp, Telegram...). */ inbound?: { plugin: string; label: string; chat: string; chatName: string };
+  /** A group discussion this chat started reported back. */ discussion?: { id: string; title: string; status: string };
+} | null;
 export type Message = { attachments?: Attachment[]; botId?: string | null; parentMessageId?: string | null; id: string; seq: number; role: "user" | "assistant" | "system"; content: string; status: "complete" | "failed" | "running" | "interrupted" | "cancelled"; reactions?: Reaction[]; meta?: MessageMeta; createdAt?: string; replyCount?: number };
 export type UsedKnowledge = { memories: { id: string; content: string }[]; instructions: { id: string; title: string }[] };
 export type ConnectionState = "active" | "revoked" | string;

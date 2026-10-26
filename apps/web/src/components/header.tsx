@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Blocks, CalendarClock, Gauge, MessagesSquare, MonitorSmartphone, Plug } from "lucide-react";
+import { Blocks, CalendarClock, CalendarDays, Gauge, MessagesSquare, MonitorSmartphone, Plug, UsersRound } from "lucide-react";
 
 import { useAttentionSummary } from "@/features/attention/summary";
 import { isRailTab } from "@/features/studio/studio-tabs";
@@ -7,11 +7,13 @@ import { isRailTab } from "@/features/studio/studio-tabs";
 import { ModeToggle } from "./mode-toggle";
 import UserMenu from "./user-menu";
 
-export const APP_PREFIXES = ["/chat", "/studio", "/dashboard"];
+export const APP_PREFIXES = ["/chat", "/discussions", "/agenda", "/studio", "/dashboard"];
 export const inApp = (pathname: string) => APP_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
 const links = [
   { to: "/chat/{-$chatId}", label: "Chat", icon: MessagesSquare },
+  { to: "/discussions", label: "Discussions", icon: UsersRound },
+  { to: "/agenda", label: "Agenda", icon: CalendarDays },
   { to: "/studio", label: "Studio", icon: Blocks },
   { to: "/studio/$tab", params: { tab: "routines" }, label: "Routines", icon: CalendarClock },
   { to: "/studio/$tab", params: { tab: "plugins" }, label: "Plugins", icon: Plug },

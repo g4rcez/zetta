@@ -71,7 +71,7 @@ describe("identity schema definitions (metadata, not PostgreSQL enforcement)", (
       const imports = [...source.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1] ?? "");
       expect(imports.length).toBeGreaterThan(0);
       for (const imported of imports) {
-        expect(["drizzle-orm", "drizzle-orm/pg-core", "./auth", "./identity", "./connections", "./runs", "./dispatch", "./chat", "./features"]).toContain(imported);
+        expect(["drizzle-orm", "drizzle-orm/pg-core", "./auth", "./identity", "./connections", "./runs", "./dispatch", "./chat", "./features", "./agenda", "./discussions", "./inbound"]).toContain(imported);
       }
       expect(source).not.toMatch(/import\s*\(|require\s*\(|process\.env|Bun\.env|\.listen\s*\(/);
     }

@@ -38,6 +38,8 @@ export type JsonSchema = { type: "object"; properties?: Record<string, unknown>;
 export type PluginTool = {
   name: string; // ^[a-zA-Z0-9_.-]{1,64}$
   description: string;
+  /** "read" tools only fetch; anything else (the default) may change or send something. Bots answering outside people may only read. */
+  effect?: "read" | "write";
   inputSchema: JsonSchema;
   handler(ctx: PluginContext, args: Record<string, unknown>): Promise<string | Record<string, unknown> | unknown[]>;
 };
@@ -52,6 +54,20 @@ export type CredentialGrant = { id: string; title: string; origins: string[]; fi
 export type PluginCredentials = {
   grants(ctx: PluginContext): Promise<CredentialGrant[]>;
   reveal(ctx: PluginContext, itemId: string, field: CredentialField): Promise<string>;
+};
+/** One message from outside people, as a channel plugin saw it. `key` is unique per install (re-polls never deliver twice). */
+export type InboundEvent = { key: string; chat: string; chatName: string; from: string; text: string; at: number; media?: boolean; group?: boolean };
+export type InboundFilter = { direct: boolean; groups: boolean; chats: string[] };
+/**
+ * Channel plugins (WhatsApp, Telegram...): new outside messages start a turn for the bot the user picked (see modules/inbound).
+ * `poll` must not call ctx.setConfig (the poller cannot re-seal secrets); its cursor is opaque JSON the plugin owns (null = first poll:
+ * no backfill, just remember where "now" is). `reply` names the tool and argument a bot uses to answer one chat.
+ */
+export type PluginInbound = {
+  label: string;
+  minIntervalSeconds?: number;
+  poll(ctx: PluginContext, cursor: unknown, o: { filter: InboundFilter; maxEvents: number }): Promise<{ events: InboundEvent[]; cursor: unknown; warning?: string }>;
+  reply: { tool: string; chatArg: string; normalize(chat: string): string };
 };
 export type PluginMcpTarget ={ transport: "http"; url: string; secretField?: string } | { transport: "stdio"; command: string; args: string[] };
 
@@ -83,6 +99,8 @@ export type PluginDef = {
   status?(ctx: PluginContext): Promise<PluginStatus>;
   /** Password managers only: the user's grants and server-side reveal (never exposed as a tool). */
   credentials?: PluginCredentials;
+  /** Channel plugins only: lets a bot answer new outside messages (see PluginInbound). */
+  inbound?: PluginInbound;
 };
 
 export const DEFAULT_SAFE = "The plugin could not complete that.";
@@ -100,6 +118,7 @@ export function registerPlugin(def: PluginDef): PluginDef {
   if (!ID.test(def.id)) throw new Error(`invalid plugin id: ${def.id}`);
   if (def.kind === "mcp" && !def.mcp) throw new Error(`mcp plugin ${def.id} needs "mcp"`);
   if (def.kind === "native" && !def.tools) throw new Error(`native plugin ${def.id} needs "tools"`);
+  if (def.inbound && !def.tools?.some((t) => t.name === def.inbound!.reply.tool)) throw new Error(`inbound plugin ${def.id} needs its reply tool`);
   for (const t of def.tools ?? []) if (!TOOL.test(t.name)) throw new Error(`invalid tool name: ${t.name}`);
   for (const f of def.fields) if (!/^[a-zA-Z0-9_]{1,40}$/.test(f.key)) throw new Error(`invalid field key: ${f.key}`);
   const prev = registry.get(def.id);
@@ -114,7 +133,7 @@ export const unregisterPlugin = (id: string) => registry.delete(id);
 
 /** Browser-safe description of a plugin (no handlers, no secrets). */
 export const pluginMeta = (d: PluginDef) => ({
-  id: d.id, name: d.name, description: d.description, icon: d.icon, category: d.category, auth: d.auth, kind: d.kind, transport: d.mcp?.transport ?? null, fields: d.fields, docsUrl: d.docsUrl ?? null, verified: d.verified !== false, notes: d.notes ?? null, credentials: Boolean(d.credentials),
+  id: d.id, name: d.name, description: d.description, icon: d.icon, category: d.category, auth: d.auth, kind: d.kind, transport: d.mcp?.transport ?? null, fields: d.fields, docsUrl: d.docsUrl ?? null, verified: d.verified !== false, notes: d.notes ?? null, credentials: Boolean(d.credentials), inbound: d.inbound ? { label: d.inbound.label } : null,
   tools: (d.tools ?? []).map((t) => ({ name: t.name, description: t.description })),
 });
 export type PluginMeta = ReturnType<typeof pluginMeta>;

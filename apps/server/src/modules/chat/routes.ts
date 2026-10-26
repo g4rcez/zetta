@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
-import { AttachmentError, ModelError, NotReadyError, OnboardingError, TurnBusyError, type ChatEvent, type ChatService } from "./service";
+import { AttachmentError, DiscussionConversationError, ModelError, NotReadyError, OnboardingError, TurnBusyError, type ChatEvent, type ChatService } from "./service";
 import { decisionConfigSchema } from "./routing";
 import { FileAccessError, type FileStore } from "./files";
 import { createUIMessageStreamResponse } from "ai";
@@ -107,6 +107,7 @@ export function createChatRoutes({ access, chat, files }: ChatServices, trustedO
     if (error instanceof AccessError) return fail(error.code === "SIGN_IN_REQUIRED" ? 401 : error.code === "NOT_FOUND" ? 404 : error.code === "IDENTITY_UNAVAILABLE" ? 503 : 403, error.code, error.message);
     if (error instanceof NotReadyError) return fail(409, "BOT_NOT_READY", "This bot is not ready yet. Its owner has to finish setting it up first.");
     if (error instanceof TurnBusyError) return fail(409, "TURN_BUSY", "This chat is still answering. Wait for it to finish or cancel it.");
+    if (error instanceof DiscussionConversationError) return fail(409, "DISCUSSION_CONVERSATION", "This is a group discussion between bots. Post in it from the Discussions page.");
     if (error instanceof OnboardingError) return fail(409, error.code, error.code === "FIXTURE_NOT_EVIDENCE" ? "Choose a real harness for this bot first; the offline fixture cannot confirm readiness." : "Chat with the bot first, then say whether you are satisfied.");
     if (error instanceof ModelError) return fail(400, "MODEL_NOT_ALLOWED", "That model isn't available for this harness. Pick one from the list or use the harness default.");
     if (error instanceof AttachmentError) return fail(400, "ATTACHMENT_INVALID", "Only text files up to 256 KB can be attached.");
@@ -142,7 +143,7 @@ export function createChatRoutes({ access, chat, files }: ChatServices, trustedO
     .patch("/workspaces/:id", guarded(async ({ actor, body, params }) => ({ workspace: await chat.renameWorkspace(actor, parse(uuid, params.id), parse(z.strictObject({ name: z.string().trim().min(1).max(80) }), body).name) })))
     .delete("/workspaces/:id", guarded(async ({ actor, params }) => chat.deleteWorkspace(actor, parse(uuid, params.id))))
     .delete("/bots/:id", guarded(async ({ actor, params }) => ({ bot: await chat.archiveBot(actor, parse(uuid, params.id)) })))
-    .get("/conversations", guarded(async ({ actor, query }) => ({ conversations: await chat.listConversations(actor, query.botId ? parse(uuid, query.botId) : undefined) })))
+    .get("/conversations", guarded(async ({ actor, query }) => ({ conversations: await chat.listConversations(actor, query.botId ? parse(uuid, query.botId) : undefined, query.kind ? parse(z.enum(["chat", "discussion", "inbound"]), query.kind) : undefined) })))
     .post("/conversations", guarded(async ({ actor, body }) => ({ conversation: await chat.createConversation(actor, parse(startChat, body).botId) }), 201))
     .patch("/conversations/:id", guarded(async ({ actor, body, params }) => ({ conversation: await chat.updateConversation(actor, parse(uuid, params.id), parse(conversationPatch, body)) })))
     .get("/conversations/:id/messages", guarded(async ({ actor, params, query }) => ({ messages: await chat.listMessages(actor, parse(uuid, params.id), { beforeSeq: query.before ? parse(z.coerce.number().int().positive(), query.before) : undefined, limit: query.limit ? parse(z.coerce.number().int().min(1).max(500), query.limit) : undefined }) })))

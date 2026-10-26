@@ -9,6 +9,9 @@ import { createConnectionRoutes, type ConnectionServices } from "./modules/conne
 import { createIntegrationRoutes, type IntegrationServices } from "./modules/integrations/routes";
 import { createDecisionRoutes, type DecisionServices } from "./modules/decisions/routes";
 import { createFeatureRoutes, type FeatureServices } from "./modules/features/routes";
+import { createAgendaRoutes, type AgendaServices } from "./modules/agenda/routes";
+import { createDiscussionRoutes, type DiscussionServices } from "./modules/discussions/routes";
+import { createInboundRoutes, type InboundServices } from "./modules/inbound/routes";
 import { createIdentityRoutes, type IdentityServices } from "./modules/identity/routes";
 
 export interface AppAuth extends BetterAuthInstance {
@@ -24,13 +27,16 @@ export type CreateAppOptions = {
   computer?: ComputerServices;
   connections?: ConnectionServices;
   integrations?: IntegrationServices;
+  agenda?: AgendaServices;
+  discussions?: DiscussionServices;
+  inbound?: InboundServices;
   webOrigin: string;
   desktopOrigins: readonly string[];
   /** Optional; without it evlog writes plain console logs. */
   drain?: EvlogElysiaOptions["drain"];
 };
 
-export function createApp({ auth, identity, chat, features, decisions, computer, connections, integrations, webOrigin, desktopOrigins, drain }: CreateAppOptions) {
+export function createApp({ auth, identity, chat, features, decisions, computer, connections, integrations, agenda, discussions, inbound, webOrigin, desktopOrigins, drain }: CreateAppOptions) {
   // Telemetry must never receive private auth/driver exceptions. Authorization
   // uses the original auth service independently and still fails closed.
   const identifyUser = createAuthMiddleware({ api: { async getSession(input) {
@@ -72,5 +78,8 @@ export function createApp({ auth, identity, chat, features, decisions, computer,
     .use(computer ? createComputerRoutes(computer, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(connections ? createConnectionRoutes(connections, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(integrations ? createIntegrationRoutes(integrations, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(agenda ? createAgendaRoutes(agenda, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(discussions ? createDiscussionRoutes(discussions, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(inbound ? createInboundRoutes(inbound, [webOrigin, ...desktopOrigins]) : new Elysia())
     .get("/", () => "OK");
 }

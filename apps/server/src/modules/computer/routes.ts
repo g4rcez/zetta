@@ -62,6 +62,8 @@ export function createComputerRoutes({ access, computer, desktop, vms }: Compute
     .post("/vms/:id/stop", g(async (c) => { await needVms().stop(c.userId, v(c)); return { ok: true }; }))
     .delete("/vms/:id", g(async (c) => { await needVms().remove(c.userId, v(c)); return { ok: true }; }))
     .post("/vms/:id/action", g(async (c) => ({ vm: await needVms().act(c.userId, v(c), "user", vmAction.parse(c.body)) })))
+    .post("/vms/:id/paste", g(async (c) => { await needVms().paste(c.userId, v(c), z.strictObject({ text: z.string().min(1).max(4000) }).parse(c.body).text); return { ok: true }; }))
+    .post("/vms/:id/keyboard", g(async (c) => ({ keyboard: await needVms().keyboard(c.userId, v(c), z.strictObject({ layout: z.string().max(20) }).parse(c.body).layout) })))
     .post("/vms/:id/vnc-ticket", g(async (c) => ({ ticket: needVms().vncTicket(c.userId, v(c)) })))
     // The browser's VNC client (noVNC). Browsers send no custom headers on a WebSocket: the one-time ticket from vnc-ticket (an
     // authenticated, origin-checked POST) is the credential, and the Origin is checked again here against cross-site sockets.

@@ -10,6 +10,8 @@ import { z } from "zod";
  *   ```zetta:browser     {"action": "open", "url": "https://..."} | click_text | type | key | read
  *   ```zetta:handoff     {"reason": "I need you to sign in"}                 -> attention item; the human takes over
  *   ```zetta:credential  {"ref": "1password:<item>", "field": "password"}    -> Zetta types a shared login into the focused input (value never shown to the bot)
+ *   ```zetta:agenda      {"action": "add", "kind": "task", "title": "...", "start": "<ISO>"} | list | update | complete | remove -> the user's Agenda
+ *   ```zetta:discussion  {"action": "open", "title", "goal", "context", "members": [{"bot": "Dev"}], "firstMessage"} | post | update_context | resolve -> group of bots (modules/discussions)
  *   ```zetta:ui          JSON-patch lines building a view from @zetta/render's catalog -> not a tool: it stays in the reply and the web chat draws it
  */
 export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks in your reply (the block name follows the opening backticks):
@@ -22,6 +24,9 @@ export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks i
 \`\`\`zetta:config
 {"botId":"<id of one of the user's bots>","patch":{"personality":"...","instructions":"..."}}
 \`\`\`   (only a proposal: the user approves the exact change)
+\`\`\`zetta:agenda
+{"action":"add","kind":"task","title":"Call Ana about the contract","start":"2026-10-27T09:00:00-03:00"}
+\`\`\`   (the user's Agenda, a calendar they see in Zetta. Add what the conversation commits them to: kind task (something to do), reminder (a nudge at a time), event (a meeting or appointment, give "end"), note (context for a day). Fields: title, start, end, allDay, remindAt (defaults to start for tasks and reminders; null for none), description, location, timezone (IANA), syncToGoogle. Dates are ISO 8601 with the user's UTC offset. Other actions: list{from?,to?} (default next 7 days; returns ids), update{id,...fields}, complete{id}, remove{id}. Add only what the user asked for or clearly agreed to; tell them what you added.)
 ${uiPrompt()}
 Only use a tool when it is needed.`;
 
@@ -53,6 +58,12 @@ export function toolPreamble(mode: ComputerMode = "off", code = false): string {
 const bounded = (n: number) => z.string().trim().min(1).max(n);
 /** Which of the user's computers a desktop action targets; omitted = their default one. */
 const vm = z.string().uuid().optional();
+const isoDate = z.string().datetime({ offset: true });
+const agendaFields = {
+  kind: z.enum(["event", "task", "reminder", "note"]).optional(), title: bounded(200).optional(), start: isoDate.optional(), end: isoDate.nullable().optional(),
+  allDay: z.boolean().optional(), remindAt: isoDate.nullable().optional(), description: z.string().max(2000).optional(), location: z.string().max(200).optional(),
+  timezone: z.string().min(1).max(64).optional(), syncToGoogle: z.boolean().optional(),
+};
 export const toolSchemas = {
   remember: z.strictObject({
     target: z.enum(["user", "memory"]).default("memory"), action: z.enum(["add", "patch", "remove"]).default("add"), content: z.string().trim().min(1).max(600).optional(), match: z.string().trim().min(1).max(600).optional(),
@@ -88,13 +99,26 @@ export const toolSchemas = {
   create_bot: z.strictObject({ name: bounded(80), description: z.string().max(2048).optional(), harness: z.enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "fixture"]).optional(), model: z.string().max(128).nullable().optional(), personality: z.string().max(4096).optional(), instructions: z.string().max(16384).optional(), visibility: z.enum(["private", "team"]).optional() }),
   create_routine: z.strictObject({ botId: z.string().uuid(), title: bounded(120), prompt: bounded(8000), timezone: bounded(64), dailyAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), everyMinutes: z.number().int().min(5).max(10080).optional() }),
   create_workflow: z.strictObject({ name: bounded(120), graph: z.unknown() }),
+  discussion: z.discriminatedUnion("action", [
+    z.strictObject({ action: z.literal("open"), title: bounded(120), goal: bounded(1000), context: z.string().max(8000).default(""), members: z.array(z.strictObject({ bot: bounded(80), role: z.string().trim().max(200).optional() })).min(1).max(5), firstMessage: bounded(4000) }),
+    z.strictObject({ action: z.literal("post"), discussionId: z.string().uuid(), text: bounded(4000) }),
+    z.strictObject({ action: z.literal("update_context"), discussionId: z.string().uuid().optional(), text: z.string().max(8000) }),
+    z.strictObject({ action: z.literal("resolve"), discussionId: z.string().uuid().optional(), summary: bounded(2000) }),
+  ]),
+  agenda: z.discriminatedUnion("action", [
+    z.strictObject({ action: z.literal("add"), ...agendaFields, kind: agendaFields.kind.default("task"), title: bounded(200), start: isoDate }),
+    z.strictObject({ action: z.literal("list"), from: isoDate.optional(), to: isoDate.optional() }),
+    z.strictObject({ action: z.literal("update"), id: z.string().uuid(), ...agendaFields }),
+    z.strictObject({ action: z.literal("complete"), id: z.string().uuid() }),
+    z.strictObject({ action: z.literal("remove"), id: z.string().uuid() }),
+  ]),
 } as const;
 export type ToolCall = { [K in keyof typeof toolSchemas]: { kind: K; args: z.infer<(typeof toolSchemas)[K]> } }[keyof typeof toolSchemas];
 
 /** Extracts valid tool calls (max 8) and returns the reply with the blocks removed. Invalid blocks are dropped silently. */
 export function parseTools(reply: string): { calls: ToolCall[]; text: string } {
   const calls: ToolCall[] = [];
-  const text = reply.replace(/```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential)\s*\n([\s\S]*?)```/g, (_, kind: keyof typeof toolSchemas, body: string) => {
+  const text = reply.replace(/```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|discussion)\s*\n([\s\S]*?)```/g, (_, kind: keyof typeof toolSchemas, body: string) => {
     if (calls.length < 8) {
       try { const parsed = toolSchemas[kind].safeParse(JSON.parse(body)); if (parsed.success) calls.push({ kind, args: parsed.data } as ToolCall); } catch { /* malformed JSON is ignored */ }
     }

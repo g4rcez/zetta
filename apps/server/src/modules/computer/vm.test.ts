@@ -37,8 +37,10 @@ function fakeDocker() {
     if (cmd === "rm") { containers.delete(name); return { code: 0, stdout: "" }; }
     if (cmd === "volume") { volumes.delete(name); return { code: 0, stdout: "" }; }
     if (cmd === "port") return { code: 0, stdout: "127.0.0.1:41234\n" };
+    if (cmd === "exec") return { code: 0, stdout: "" };
     if (cmd === "ps") return { code: 0, stdout: [...containers.keys()].join("\n") };
-    if (cmd === "inspect") return containers.has(name) ? { code: 0, stdout: `${images.get(name)}\n` } : { code: 1, stdout: "" };
+    if (cmd === "restart") { if (!containers.has(name)) return { code: 1, stdout: "" }; containers.set(name, "running"); return { code: 0, stdout: "" }; }
+    if (cmd === "inspect") return containers.has(name) ? { code: 0, stdout: `${images.get(name)} ${containers.get(name) === "running"}\n` } : { code: 1, stdout: "" };
     if (cmd === "image") return { code: 0, stdout: `${image.current}\n` };
     return { code: 1, stdout: "" };
   };
@@ -164,6 +166,27 @@ describe("vm service (fake docker + fake spacesd)", () => {
     expect(viewer).toMatchObject({ userId: "u", port: 41234 }); expect(viewer.password).toMatch(/^[A-Za-z0-9]{8}$/);
     expect(() => vm.vncViewer(t2, id)).toThrow(ComputerError); // one use
     viewer.release(); viewer.release();
+    await vm.closeAll();
+  });
+  test("a VM left running by a previous server process is restarted, so it picks up the new token and VNC password", async () => {
+    const { vm, store, d, tokenRoot } = await setup();
+    const { id } = await vm.start("u");
+    const fresh = createVmService({ store, docker, exec: d.exec, connect: fakeMcp().connect, tokenRoot });
+    await fresh.start("u", id);
+    expect(d.log.filter((x) => x[0] === "restart")).toHaveLength(1);
+    expect(d.log.filter((x) => x[0] === "run")).toHaveLength(1);
+    await vm.closeAll(); await fresh.closeAll();
+  });
+  test("paste types into the VM with xdotool; keyboard layouts are an allowlist applied with setxkbmap", async () => {
+    const { vm, d } = await setup();
+    const { id } = await vm.start("u");
+    await vm.paste("u", id, "echo 'hi; rm -rf /'");
+    expect(d.log.at(-1)).toEqual(["exec", `zetta-vm-${id}`, "xdotool", "type", "--clearmodifiers", "--delay", "6", "--", "echo 'hi; rm -rf /'"]);
+    expect(await vm.keyboard("u", id, "us:intl")).toBe("us:intl");
+    expect(d.log.at(-1)).toEqual(["exec", `zetta-vm-${id}`, "setxkbmap", "-layout", "us", "-variant", "intl"]);
+    expect((await vm.list("u"))[0]!.keyboard).toBe("us:intl");
+    expect(await code(vm.keyboard("u", id, "-rules evil"))).toBe("INVALID");
+    expect(await code(vm.paste("eve", id, "x"))).toBe("NOT_FOUND");
     await vm.closeAll();
   });
   test("sweep stops leftover VM containers and marks rows stopped", async () => {

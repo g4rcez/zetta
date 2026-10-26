@@ -21,7 +21,7 @@ Platform notes: process trees are killed with a process group on POSIX and `task
 docker build -t zetta-desktop:latest docker/desktop
 ```
 
-Each VM is one container: Debian, Xvfb, Openbox, Chromium, x11vnc and [cua-spacesd](https://github.com/trycua/cua/tree/main/libs/cua-spacesd).
+Each VM is one container: Debian, TigerVNC's X server, XFCE (panel, menu, terminal, file manager), Chromium and [cua-spacesd](https://github.com/trycua/cua/tree/main/libs/cua-spacesd).
 
 - **Persistence.** The `zetta-vm-<id>` container and the volume of the same name, mounted at `/home/agent`, persist. Chromium sign-ins survive the 15-minute idle stop. Deleting a VM in Studio > Computer destroys both.
 - **Control channel.**
@@ -29,10 +29,14 @@ Each VM is one container: Debian, Xvfb, Openbox, Chromium, x11vnc and [cua-space
   - Each start uses a fresh bearer token, written to a 0644 file inside a 0700 directory under `ZETTA_VM_TOKEN_ROOT` (default `.zetta-vm/`) and mounted read-only.
   - The browser never sees the token.
 - **Screen (VNC).**
-  - x11vnc serves the same X display on port 5900, also published on `127.0.0.1` only, with a fresh 8-character password per start (the `vncpass` file next to the token).
+  - TigerVNC serves the X display on port 5900, also published on `127.0.0.1` only, with a fresh 8-character password per start (the `vncpass` file next to the token).
   - The web app (noVNC) asks for a one-time, 30-second ticket (`POST /api/computer/vms/:id/vnc-ticket`) and opens the WebSocket `/api/computer/vms/:id/vnc?ticket=…`; the Origin must be a trusted one.
-  - The server answers x11vnc's password challenge itself and offers the browser "no authentication", so the password never reaches it. People and bots share one screen, mouse and keyboard.
-  - A connected viewer keeps its VM from the idle stop.
+  - The server answers the VNC password challenge itself and offers the browser "no authentication", so the password never reaches it. People and bots share one screen, mouse and keyboard.
+  - A connected viewer keeps its VM from the idle stop. The console (a dialog from Studio > Computer or a bot's chat card, or its own window at `/computer/<id>`) has Take over / Hand back, "Paste text on the computer" and a keyboard layout picker.
+  - Paste types the text into the focused window with `xdotool` (`POST /api/computer/vms/:id/paste`); the layout is set with `setxkbmap` from an allowlist (`POST /api/computer/vms/:id/keyboard`). Both run through the container CLI's `exec`, never a shell.
+- **Installing software.** There is no root in a VM (no capabilities, no-new-privileges). Install per user under the home volume, which survives stops and image updates. For example, Google Chrome:
+  `wget https://dl.google.com/linux/direct/google-chrome-stable_current_arm64.deb` (or `_amd64`), then `dpkg-deb -x google-chrome-*.deb ~/.local/opt/google-chrome` and `~/.local/opt/google-chrome/opt/google/chrome/google-chrome --no-sandbox`.
+- **Memory.** Plan about 1 GB per running VM on top of other containers. Podman's default 2 GB machine fits one VM at most: raise it with `podman machine set --memory 6144` (machine stopped).
 - **Who gets which VM.**
   - Every user has a default VM, created on first use.
   - A bot can propose an extra one (`zetta:create_vm`), and it exists only after the user approves it.

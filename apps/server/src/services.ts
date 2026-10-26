@@ -15,6 +15,11 @@ import { createDesktopService } from "./modules/computer/desktop";
 import { createComputerService, dockerBrowserConfig } from "./modules/computer/service";
 import { createDbVmStore, createVmService, dockerVmConfig } from "./modules/computer/vm";
 import { createFeaturesService } from "./modules/features/service";
+import { createAgenda } from "./modules/agenda/service";
+import { createAgendaScheduler } from "./modules/agenda/scheduler";
+import { createDiscussionStore } from "./modules/discussions/store";
+import { createDiscussionWorker } from "./modules/discussions/worker";
+import { createInbound } from "./modules/inbound/service";
 import { createEnrollmentService } from "./modules/identity/enrollment";
 import { createIdentityAccess, createMembershipLookup } from "./modules/identity/access";
 import { createFirstAccountSetup, createSetupState } from "./modules/identity/first-account";
@@ -22,7 +27,8 @@ import { createInvitationSignupPreflight } from "./modules/identity/signup-prefl
 
 export const db = createDb(ENV);
 export const auth = createAuth(ENV, db, desktopOrigins, { invitationSignupVerifier: createInvitationSignupPreflight(db), firstAccount: createFirstAccountSetup(db) });
-export const identity = { access: createIdentityAccess(auth, createMembershipLookup(db)), enrollment: createEnrollmentService(db), setupOpen: createSetupState(db) };
+const membershipLookup = createMembershipLookup(db);
+export const identity = { access: createIdentityAccess(auth, membershipLookup), enrollment: createEnrollmentService(db), setupOpen: createSetupState(db) };
 
 import { createFileStore } from "./modules/chat/files";
 
@@ -41,8 +47,15 @@ const computer = createComputerService({ docker: dockerBrowserConfig(), db, root
 // Connections need ZETTA_CONNECTION_KEY (base64 of 32 random bytes: `openssl rand -base64 32`). Without it they stay disabled, never half-working.
 let connectionStore: Awaited<ReturnType<typeof createConnectionStore>> | undefined;
 if (process.env.ZETTA_CONNECTION_KEY) {
-  try { connectionStore = await createConnectionStore(db, { configuration: { key: process.env.ZETTA_CONNECTION_KEY, keyId: process.env.ZETTA_CONNECTION_KEY_ID ?? "v1" }, allowedProviders: PROVIDERS, initializeEmpty: true }); }
-  catch { console.warn("Connections disabled: ZETTA_CONNECTION_KEY does not match the stored key check."); }
+  // A busy or still-starting database (or another server opening the store at the same moment) must not disable secrets until the next restart.
+  for (let attempt = 1; !connectionStore && attempt <= 5; attempt++) {
+    try { connectionStore = await createConnectionStore(db, { configuration: { key: process.env.ZETTA_CONNECTION_KEY, keyId: process.env.ZETTA_CONNECTION_KEY_ID ?? "v1" }, allowedProviders: PROVIDERS, initializeEmpty: true }); }
+    catch (e) {
+      const code = e instanceof Error ? e.message : "unknown";
+      if (attempt === 5) console.warn(`Connections disabled (${code}): ZETTA_CONNECTION_KEY does not match the stored key check, or the database is unavailable.`);
+      else await Bun.sleep(attempt * 1000);
+    }
+  }
 }
 const connections = createConnectionsService(db, connectionStore);
 export const connectionServices = { access: identity.access, connections };
@@ -51,8 +64,15 @@ const mcp = createMcp(db, connections, { allowPrivate: process.env.ZETTA_ALLOW_P
 const jev = createJevDecider((a) => connections.jevSecret(a));
 const sources = createSources(db, computer, { connections: { list: (a) => connections.list(a) as never, secretFor: (a, id) => connections.secretFor(a, id) as never } });
 const features = createFeaturesService(db, undefined, decisions, computer, sources as never);
-export const chatServices = { access: identity.access, chat: createChatService(db, undefined, files, computer, decisions, connections, { routine: features.routines.create as never, workflow: features.workflows.save as never }, mcp, jev, desktop, vms), files };
+const agenda = createAgenda(db);
+const discussions = createDiscussionStore(db);
+export const chatServices = { access: identity.access, chat: createChatService(db, undefined, files, computer, decisions, connections, { routine: features.routines.create as never, workflow: features.workflows.save as never }, mcp, jev, desktop, vms, agenda, { discussions }), files };
+const discussionWorker = createDiscussionWorker(db, discussions, chatServices.chat, membershipLookup);
+discussions.onEnqueue = discussionWorker.kick;
+export const discussionServices = { access: identity.access, store: discussions, worker: discussionWorker };
+export const inboundServices = { access: identity.access, inbound: createInbound(db, mcp.plugins, chatServices.chat, membershipLookup) };
 export const featureServices = { access: identity.access, features };
 export const decisionServices = { access: identity.access, decisions };
 export const computerServices = { access: identity.access, computer, desktop, vms };
 export const integrationServices = { access: identity.access, mcp, sources };
+export const agendaServices = { access: identity.access, agenda, scheduler: createAgendaScheduler(db, mcp.plugins, membershipLookup) };

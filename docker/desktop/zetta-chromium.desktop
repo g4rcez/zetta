@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Chromium (kept open)
+Exec=/usr/local/bin/zetta-chromium
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

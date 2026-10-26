@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { BookmarkPlus, MessageSquareText, MoreHorizontal, Paperclip, SmilePlus } from "lucide-react";
 
@@ -100,8 +101,9 @@ export function MessageRow({ row, author, continued, inThread = false, onReact, 
         {row.status === "failed" && <p role="alert" className="text-xs font-medium text-destructive">This reply failed.</p>}
         {row.status === "interrupted" && <p role="alert" className="text-xs font-medium text-destructive">Interrupted: the server restarted while answering.</p>}
         {row.status === "cancelled" && <p className="text-xs italic text-muted-foreground">Stopped.</p>}
-        {computers.map((vm) => <VmCard key={vm.id} vm={vm} working={Boolean(row.streaming)} />)}
-        {receipts.length > 0 && <ul className="flex flex-wrap gap-1 text-xs" aria-label="What the bot saved">{receipts.map((r) => <li key={`${r.kind}-${r.id}`} className="rounded bg-muted px-1.5 py-0.5" title={r.text}>{r.kind === "memory" ? "💾 remembered" : "📘 saved instruction"}{r.created === false ? " (already saved)" : ""}</li>)}</ul>}
+        {computers.map((vm) => <VmCard key={vm.id} vm={vm} botName={author.bot?.name} working={Boolean(row.streaming)} />)}
+        {row.meta?.discussion && <Link to="/discussions" search={{ id: row.meta.discussion.id }} className="w-fit text-xs text-primary hover:underline">Open the discussion “{row.meta.discussion.title}”</Link>}
+        {receipts.length > 0 && <ul className="flex flex-wrap gap-1 text-xs" aria-label="What the bot saved">{receipts.map((r) => <li key={`${r.kind}-${r.id}`} className="rounded bg-muted px-1.5 py-0.5" title={r.text}>{r.kind === "agenda" ? <Link to="/agenda" search={{ item: r.id }} className="hover:underline">📅 {r.created === false ? "updated" : "added"} “{r.text}”</Link> : r.kind === "discussion" ? <Link to="/discussions" search={{ id: r.id }} className="hover:underline">👥 “{r.text}”</Link> : <>{r.kind === "memory" ? "💾 remembered" : "📘 saved instruction"}{r.created === false ? " (already saved)" : ""}</>}</li>)}</ul>}
         {row.role === "assistant" && saved && <UsedNotes row={row} />}
         {row.reactions?.some((r) => r.count > 0) && (
           <div role="group" aria-label="Reactions" className="flex flex-wrap items-center gap-1">

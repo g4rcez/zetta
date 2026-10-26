@@ -6,3 +6,5 @@ export * from "./dispatch";
 export * from "./chat";
 export * from "./features";
 export * from "./agenda";
+export * from "./discussions";
+export * from "./inbound";

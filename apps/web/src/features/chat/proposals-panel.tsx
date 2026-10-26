@@ -6,8 +6,8 @@ import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@zetta/ui/
 
 import { chatClient, errorMessage, type Bot, type Proposal, type ProposalKind } from "./chat-client";
 
-const KIND_LABEL: Record<ProposalKind, string> = { config: "Change settings", create_bot: "Create bot", create_routine: "Create routine", create_workflow: "Create workflow", create_instruction: "Save instruction", create_vm: "New computer" };
-const FIELD_LABEL: Record<string, string> = { name: "Name", title: "Title", description: "Description", instructions: "Instructions", personality: "Personality", prompt: "What it should do", harness: "Engine", model: "Model", dailyAt: "Daily at", everyMinutes: "Every (minutes)", timezone: "Timezone", graph: "Steps", steps: "Steps", body: "Steps", verification: "How to check" };
+const KIND_LABEL: Record<ProposalKind, string> = { config: "Change settings", create_bot: "Create bot", create_routine: "Create routine", create_workflow: "Create workflow", create_instruction: "Save instruction", create_vm: "New computer", open_discussion: "Open a group discussion", discussion_brief: "Let a code bot act on outside content" };
+const FIELD_LABEL: Record<string, string> = { discussion: "Discussion", goal: "Goal", members: "Bots", context: "Shared context", request: "What it was asked", bot: "Bot", name: "Name", title: "Title", description: "Description", instructions: "Instructions", personality: "Personality", prompt: "What it should do", harness: "Engine", model: "Model", dailyAt: "Daily at", everyMinutes: "Every (minutes)", timezone: "Timezone", graph: "Steps", steps: "Steps", body: "Steps", verification: "How to check" };
 export function showValue(v: unknown, max = 240): string {
   if (v === null || v === undefined || v === "") return "(empty)";
   const text = typeof v === "string" ? v : JSON.stringify(v);
@@ -15,7 +15,7 @@ export function showValue(v: unknown, max = 240): string {
 }
 /** One-line plain summary for create_* proposals. */
 export function summarize(p: Proposal): string {
-  const name = p.diff.find((d) => d.field === "name" || d.field === "title")?.to;
+  const name = p.diff.find((d) => d.field === "name" || d.field === "title" || d.field === "discussion")?.to;
   return `${KIND_LABEL[p.kind ?? "config"]}${name ? `: ${showValue(name, 80)}` : ""}`;
 }
 const STALE = "This proposal is out of date because the bot changed after it was made. Nothing was applied; ask the bot for a new proposal.";
@@ -51,7 +51,7 @@ export function ProposalsPanel({ proposals, bots, onResolved, onBotsChanged, not
           </ItemContent>
           <ItemActions>
             <Button size="sm" variant="outline" disabled={busy === p.id} onClick={() => void decide(p, false)}>Reject</Button>
-            <Button size="sm" disabled={busy === p.id} onClick={() => void decide(p, true)}>{creating ? "Approve and create" : "Approve"}</Button>
+            <Button size="sm" disabled={busy === p.id} onClick={() => void decide(p, true)}>{p.kind === "discussion_brief" ? "Approve this brief" : p.kind === "open_discussion" ? "Approve and open" : creating ? "Approve and create" : "Approve"}</Button>
           </ItemActions>
         </Item>);
     })}</>

@@ -177,10 +177,10 @@ export async function accessToken(ctx: PluginContext, force = false): Promise<st
 }
 
 /** Authenticated call to a Google API. Retries once with a forced refresh on 401. Errors are mapped to safe messages (no upstream text). */
-export async function gfetch(ctx: PluginContext, url: string, init: { method?: string; json?: unknown } = {}): Promise<Response> {
+export async function gfetch(ctx: PluginContext, url: string, init: { method?: string; json?: unknown; headers?: Record<string, string> } = {}): Promise<Response> {
   const go = async (force: boolean) => settings().fetch(url, {
     method: init.method ?? "GET", signal: AbortSignal.timeout(HTTP_MS), redirect: "error",
-    headers: { authorization: `Bearer ${await accessToken(ctx, force)}`, ...(init.json !== undefined ? { "content-type": "application/json" } : {}) },
+    headers: { ...init.headers, authorization: `Bearer ${await accessToken(ctx, force)}`, ...(init.json !== undefined ? { "content-type": "application/json" } : {}) },
     body: init.json !== undefined ? JSON.stringify(init.json) : undefined,
   });
   let res: Response;
@@ -190,6 +190,8 @@ export async function gfetch(ctx: PluginContext, url: string, init: { method?: s
   if (res.status === 401) throw new PluginError("NEEDS_AUTH", "Google access was revoked or expired. Reconnect Google in Studio > Plugins.");
   if (res.status === 403) throw new PluginError("FORBIDDEN", "Google denied that (permission or API not enabled for this project).");
   if (res.status === 404) throw new PluginError("NOT_FOUND", "Google could not find that item.");
+  if (res.status === 410) throw new PluginError("GONE", "Google no longer has that item or sync position.");
+  if (res.status === 412) throw new PluginError("PRECONDITION_FAILED", "That item changed on Google in the meantime.");
   if (res.status === 429) throw new PluginError("RATE_LIMITED", "Google is rate limiting requests. Try again later.");
   throw new PluginError("GOOGLE_ERROR", "Google could not complete that.");
 }

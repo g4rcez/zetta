@@ -65,6 +65,8 @@ export const conversation = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     ownerUserId: text("owner_user_id").notNull().references(() => user.id, restrict),
     botId: uuid("bot_id").notNull().references(() => bot.id, restrict),
+    // chat: a person with a bot. discussion: a group of bots (transcript of modules/discussions). inbound: outside people via a plugin channel.
+    kind: text("kind", { enum: ["chat", "discussion", "inbound"] }).default("chat").notNull(),
     title: text("title").default("New chat").notNull(),
     pinned: boolean("pinned").default(false).notNull(),
     favorite: boolean("favorite").default(false).notNull(),

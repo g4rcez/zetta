@@ -5,7 +5,7 @@ import { call } from "../chat/chat-client";
 
 import { computerError } from "./computer";
 import { ConfirmButton } from "../shared/ui";
-import { VmViewer, vmError } from "./vm-viewer";
+import { VmDialog, vmError } from "./vm-viewer";
 
 type DSession = { profile: string; control: "agent" | "human"; epoch: number; space: string };
 
@@ -66,13 +66,13 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
             {vm.purpose && <span className="truncate text-xs text-muted-foreground">· {vm.purpose}</span>}
             <span className="ml-auto flex gap-1">
               {vm.status === "running"
-                ? <><Button size="sm" variant="outline" onClick={() => setOpen(open === vm.id ? undefined : vm.id)}>{open === vm.id ? "Hide" : "Open"}</Button>
+                ? <><Button size="sm" variant="outline" onClick={() => setOpen(vm.id)}>Open</Button>
                     <Button size="sm" variant="outline" disabled={busy?.id === vm.id} onClick={() => void run(vm.id, "Stopping", () => call(`/api/computer/vms/${vm.id}/stop`, "POST").then(() => setOpen(undefined)))}>Stop</Button></>
                 : <Button size="sm" disabled={busy?.id === vm.id} onClick={() => void run(vm.id, "Starting", async () => { const r = await call<{ vm: Vm }>(vm.id === "default" ? "/api/computer/vms/default/start" : `/api/computer/vms/${vm.id}/start`, "POST"); setOpen(r.vm.id); })}>{busy?.id === vm.id ? (busy.doing === "Starting" ? "Starting… (the first start can take a minute)" : `${busy.doing}…`) : "Start"}</Button>}
               {vm.id !== "default" && <ConfirmButton label="Delete" question={`Delete ${vm.name}? Its sign-ins, downloads and files are destroyed.`} confirmLabel="Delete" onConfirm={() => run(vm.id, "Deleting", () => call(`/api/computer/vms/${vm.id}`, "DELETE").then(() => setOpen(undefined)))} />}
             </span>
           </div>
-          {open === vm.id && vm.status === "running" && <VmViewer vmId={vm.id} onStopped={() => void load()} />}
+          {open === vm.id && <VmDialog vmId={vm.id} onClose={() => { setOpen(undefined); void load(); }} />}
         </li>))}</ul>
     </section>
   );

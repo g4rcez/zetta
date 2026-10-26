@@ -9,14 +9,16 @@ import { and, asc, eq, ne } from "@zetta/db/query";
 import { computerVm } from "@zetta/db/schema/features";
 import { assertPublicUrl, assertWebScheme, ComputerError, type Actor } from "./service";
 import type { McpCall } from "./desktop";
+import type { CredentialField } from "../integrations/plugins/registry";
 import { vncPassword } from "./vnc";
+import { pickInput, type AxElement } from "../integrations/plugins/credentials";
 
 /**
- * Persistent Linux desktops ("VMs") for computer use. Each row in computer_vm is one container from docker/desktop (Debian, Xvfb,
- * Openbox, Chromium) running cua-spacesd; the server drives it over spacesd's Streamable-HTTP MCP on a loopback-published port with a
+ * Persistent Linux desktops ("VMs") for computer use. Each row in computer_vm is one container from docker/desktop (Debian, TigerVNC,
+ * XFCE, Chromium) running cua-spacesd; the server drives it over spacesd's Streamable-HTTP MCP on a loopback-published port with a
  * bearer token minted for that start. Home is the named volume `zetta-vm-<id>`, so sign-ins survive idle stops; delete destroys it.
  * Every user has one default VM (created on first use); extra VMs exist only after the user approves a bot's create_vm proposal.
- * People see and control the VM through VNC (x11vnc on 5900, also loopback-published, with a per-start password): the browser gets a
+ * People see and control the VM through VNC (TigerVNC on 5900, also loopback-published, with a per-start password): the browser gets a
  * one-time ticket and the server bridges its WebSocket to x11vnc (see vnc.ts), so neither the port nor the password reach the client.
  * Control/takeover is the same as for browser sessions: agent actions are refused while a person holds control, and an epoch
  * invalidates stale agent turns.
@@ -39,7 +41,10 @@ export type VmDocker = { bin: string; image: string; memory: string; cpus: strin
 export type VmExec = (args: string[]) => Promise<{ code: number; stdout: string }>;
 export type VmConnect = (port: number, token: string) => Promise<{ call: McpCall; close: () => Promise<void> }>;
 
-type VSession = { id: string; userId: string; port: number; vnc: { port: number; password: string }; viewers: number; client: Awaited<ReturnType<VmConnect>>; control: "agent" | "human"; epoch: number; lastUsed: number; queue: Promise<unknown> };
+type VSession = { id: string; userId: string; port: number; vnc: { port: number; password: string }; viewers: number; client: Awaited<ReturnType<VmConnect>>; control: "agent" | "human"; epoch: number; lastUsed: number; queue: Promise<unknown>; keyboard: KeyboardLayout };
+/** Keyboard layouts a person can pick for their VM (setxkbmap layout[:variant]). */
+export const KEYBOARD_LAYOUTS = ["us", "us:intl", "br", "gb", "pt", "es", "latam", "de", "fr", "it"] as const;
+export type KeyboardLayout = (typeof KEYBOARD_LAYOUTS)[number];
 const SAFE_APP = /^[A-Za-z0-9._ -]{1,60}$/;
 const SAFE_NAME = /^[\p{L}\p{N} ._-]{1,60}$/u;
 const container = (id: string) => `zetta-vm-${id}`;
@@ -74,8 +79,8 @@ export const connectSpacesd: VmConnect = async (port, token) => {
   await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers } }));
   return {
     call: async (tool, args) => {
-      const r = (await c.callTool({ name: tool, arguments: args }, undefined, { timeout: 60_000 })) as { isError?: boolean; content?: { type: string; text?: string; data?: string }[] };
-      return { text: (r.content ?? []).filter((x) => x.type === "text").map((x) => x.text ?? "").join("\n"), imageBase64: r.content?.find((x) => x.type === "image")?.data, isError: Boolean(r.isError) };
+      const r = (await c.callTool({ name: tool, arguments: args }, undefined, { timeout: 60_000 })) as { isError?: boolean; content?: { type: string; text?: string; data?: string }[]; structuredContent?: unknown };
+      return { text: (r.content ?? []).filter((x) => x.type === "text").map((x) => x.text ?? "").join("\n"), imageBase64: r.content?.find((x) => x.type === "image")?.data, isError: Boolean(r.isError), structured: r.structuredContent };
     },
     close: () => c.close().catch(() => {}),
   };
@@ -106,7 +111,7 @@ export function createVmService({ store, docker, exec = createCliExec(docker.bin
   const owned = async (userId: string, id: string) => { const row = await store.get(userId, id); if (!row) throw new ComputerError("NOT_FOUND"); return row; };
   /** A live session is only ever returned to its owner: another user's VM id is NOT_FOUND. */
   const live = (userId: string, id: string) => { const s = sessions.get(id); if (!s || s.userId !== userId) throw new ComputerError("NOT_FOUND"); s.lastUsed = Date.now(); return s; };
-  const view = (row: VmRow) => { const s = sessions.get(row.id); return { id: row.id, name: row.name, kind: row.kind, purpose: row.purpose, createdByBotId: row.createdByBotId, status: s ? "running" as const : row.status === "running" ? "stopped" as const : row.status, control: s?.control ?? "agent", epoch: s?.epoch ?? 0 }; };
+  const view = (row: VmRow) => { const s = sessions.get(row.id); return { id: row.id, name: row.name, kind: row.kind, purpose: row.purpose, createdByBotId: row.createdByBotId, status: s ? "running" as const : row.status === "running" ? "stopped" as const : row.status, control: s?.control ?? "agent", epoch: s?.epoch ?? 0, keyboard: s?.keyboard ?? "us" }; };
   const portOf = async (id: string, inner: number) => { const r = await exec(["port", container(id), `${inner}/tcp`]); const m = /:(\d+)\s*$/m.exec(r.stdout.trim().split("\n")[0] ?? ""); if (r.code !== 0 || !m) throw new ComputerError("UNAVAILABLE"); return Number(m[1]); };
 
   /** Starts the user's VM (the default one when no id is given). One start at a time per user, so caps cannot be raced. */
@@ -123,15 +128,20 @@ export function createVmService({ store, docker, exec = createCliExec(docker.bin
     const password = vncPassword(), vncFile = join(dir, "vncpass"); await writeFile(vncFile, `${password}\n`, { mode: 0o644 });
     try {
       // A container built from an older image is recreated (all state lives on the home volume), so image updates reach existing VMs.
-      const [had, want] = await Promise.all([exec(["inspect", "--format", "{{.Image}}", container(row.id)]), exec(["image", "inspect", "--format", "{{.Id}}", docker.image])]);
-      if (had.code === 0 && want.code === 0 && had.stdout.trim() !== want.stdout.trim()) await exec(["rm", "-f", container(row.id)]);
-      const started = had.code === 0 && had.stdout.trim() === want.stdout.trim() ? await exec(["start", container(row.id)]) : { code: 1 };
+      const [had, want] = await Promise.all([exec(["inspect", "--format", "{{.Image}} {{.State.Running}}", container(row.id)]), exec(["image", "inspect", "--format", "{{.Id}}", docker.image])]);
+      const [image, running] = had.stdout.trim().split(/\s+/);
+      const current = had.code === 0 && want.code === 0 && image === want.stdout.trim();
+      if (had.code === 0 && want.code === 0 && !current) await exec(["rm", "-f", container(row.id)]);
+      // Still running with no session here (the server restarted or hot-reloaded): restart it so it reads this start's token and VNC password.
+      const started = current ? await exec([running === "true" ? "restart" : "start", ...(running === "true" ? ["-t", "5"] : []), container(row.id)]) : { code: 1 };
       if (started.code !== 0 && (await exec(vmDockerArgs(docker, { id: row.id, tokenFile, vncFile }))).code !== 0) throw new ComputerError("UNAVAILABLE");
       const [port, vncPort] = await Promise.all([portOf(row.id, 3211), portOf(row.id, 5900)]);
       const client = await connect(port, token);
       // "running" means usable: wait (bounded) for Chromium's window, so a bot's first keystroke has a target.
-      for (let i = 0; i < 60; i++) { const w = await client.call("list_windows", {}).catch(() => undefined); if (w && !w.isError && /window_id=\d+/.test(w.text)) break; await Bun.sleep(500); }
-      sessions.set(row.id, { id: row.id, userId, port, vnc: { port: vncPort, password }, viewers: 0, client, control: "agent", epoch: 0, lastUsed: Date.now(), queue: Promise.resolve() });
+      for (let i = 0; i < 60; i++) { const w = await client.call("list_windows", {}).catch(() => undefined); if (w && !w.isError && /window_id=\d+ pid=\d+ "[^"]*Chromium/i.test(w.text)) break; await Bun.sleep(500); }
+      // Right after boot no window is active, and foreground input is refused until one is (see `focused`).
+      const win = await chromium(client.call).catch(() => undefined); if (win) await client.call("bring_to_front", win).catch(() => undefined);
+      sessions.set(row.id, { id: row.id, userId, port, vnc: { port: vncPort, password }, viewers: 0, keyboard: "us", client, control: "agent", epoch: 0, lastUsed: Date.now(), queue: Promise.resolve() });
       await store.setStatus(row.id, "running");
       return view({ ...row, status: "running" });
     } catch (e) {
@@ -147,7 +157,7 @@ export function createVmService({ store, docker, exec = createCliExec(docker.bin
       if (opts.signal?.aborted) throw new ComputerError("CANCELLED");
       if (by === "agent" && s.control === "human") throw new ComputerError("HUMAN_IN_CONTROL");
       if (by === "agent" && opts.epoch !== undefined && opts.epoch !== s.epoch) throw new ComputerError("STALE_CONTROL");
-      const call = s.client.call;
+      const call = focused(s.client.call);
       let r;
       if (action.type === "click") r = await call("click", { x: Math.round(action.x), y: Math.round(action.y), ...SCREEN });
       else if (action.type === "type") r = await call("type_text", { text: action.text.slice(0, 2000), ...FG });
@@ -169,6 +179,68 @@ export function createVmService({ store, docker, exec = createCliExec(docker.bin
     return run;
   }
 
+  /** Chromium's window in this VM (the one bots drive), as list_windows reports it. */
+  async function chromium(call: McpCall) {
+    const windows = await call("list_windows", {});
+    const found = [...windows.text.matchAll(/window_id=(\d+) pid=(\d+) "([^"]*)"/g)];
+    const top = found.find((m) => /chromium/i.test(m[3]!));
+    return windows.isError || !top ? undefined : { window_id: Number(top[1]), pid: Number(top[2]) };
+  }
+  /**
+   * Foreground input needs an active window. Openbox has none right after boot, or after the focused window closed, and cua-driver then
+   * refuses with `foreground_unavailable` without sending anything: activate Chromium and retry that one call once.
+   */
+  const focused = (call: McpCall): McpCall => async (tool, args) => {
+    const r = await call(tool, args);
+    if (!r.isError || !/foreground_unavailable/.test(r.text)) return r;
+    const win = await chromium(call).catch(() => undefined);
+    if (!win) return r;
+    await call("bring_to_front", win).catch(() => undefined);
+    return call(tool, args);
+  };
+  /**
+   * Types one credential into the sign-in input of the VM's Chromium as ONE queued step, so no other action can slip in between the checks
+   * and the typing. Checked against cua-spacesd 0.8.0: its accessibility tree carries roles, labels and frames but neither field values
+   * nor focus, so the server picks the input itself (by role/label, see pickInput) and reads the real address from the omnibox through
+   * the VM's own clipboard (restored afterwards). `reveal(url)` checks the grant and the origin and returns the value; it is typed and
+   * never read back.
+   */
+  function fillCredential(userId: string, id: string, field: CredentialField, reveal: (url: string) => Promise<string>, opts: { signal?: AbortSignal; epoch?: number } = {}): Promise<{ label: string }> {
+    let s: VSession; try { s = live(userId, id); } catch (e) { return Promise.reject(e); }
+    const run = s.queue.then(async () => {
+      if (opts.signal?.aborted) throw new ComputerError("CANCELLED");
+      if (s.control === "human") throw new ComputerError("HUMAN_IN_CONTROL");
+      if (opts.epoch !== undefined && opts.epoch !== s.epoch) throw new ComputerError("STALE_CONTROL");
+      const call = focused(s.client.call), win = await chromium(call);
+      if (!win) throw new ComputerError("NO_ADDRESS");
+      const state = await call("get_window_state", { ...win, include_screenshot: false, max_elements: 400, tree_format: "elements" });
+      const st = (state.structured ?? {}) as { elements?: AxElement[]; window_bounds?: { x?: number; y?: number } };
+      if (state.isError || !Array.isArray(st.elements)) throw new ComputerError("UNAVAILABLE");
+      if (st.elements.some((e) => e.role === "button" && /^not secure$/i.test(e.label ?? ""))) throw new ComputerError("INSECURE");
+      const input = pickInput(field, st.elements);
+      if (!input?.frame) throw new ComputerError("NO_INPUT");
+      const text = (r: Awaited<ReturnType<McpCall>>) => { const t = (r.structured as { text?: unknown } | undefined)?.text; return typeof t === "string" ? t : undefined; };
+      const before = text(await call("clipboard_read", { include_text: true }));
+      let url: string | undefined;
+      try {
+        if (!(await call("hotkey", { keys: ["ctrl", "l"], ...FG })).isError && !(await call("hotkey", { keys: ["ctrl", "c"], ...FG })).isError) url = text(await call("clipboard_read", { include_text: true }))?.trim();
+      } finally {
+        await call("press_key", { key: "Escape", ...FG }).catch(() => undefined);
+        await call("clipboard_write", { text: before ?? "" }).catch(() => undefined);
+      }
+      if (!url || !/^https?:\/\/\S+$/i.test(url)) throw new ComputerError("NO_ADDRESS");
+      const value = await reveal(url);
+      const ox = st.window_bounds?.x ?? 0, oy = st.window_bounds?.y ?? 0, f = input.frame;
+      let r = await call("click", { x: Math.round(ox + f.x + f.w / 2), y: Math.round(oy + f.y + f.h / 2), ...SCREEN });
+      if (!r.isError) r = await call("type_text", { text: value.slice(0, 2000), ...FG });
+      if (r.isError) throw new ComputerError("UNAVAILABLE");
+      s.lastUsed = Date.now();
+      return { label: input.label ?? field };
+    });
+    s.queue = run.catch(() => undefined);
+    return run;
+  }
+
   async function stop(userId: string, id: string) {
     const s = sessions.get(id);
     if (!s || s.userId !== userId) { await owned(userId, id); return; }
@@ -180,7 +252,7 @@ export function createVmService({ store, docker, exec = createCliExec(docker.bin
   }
 
   return {
-    start, act, stop,
+    start, act, stop, fillCredential,
     async list(userId: string) { return (await store.list(userId)).map(view); },
     /** Only an approved create_vm proposal calls this; the cap counts every VM the user has (the default included). */
     async create(userId: string, v: { name: string; purpose?: string | null; botId?: string | null }) {
@@ -219,6 +291,22 @@ export function createVmService({ store, docker, exec = createCliExec(docker.bin
       return { id: s.id, control: s.control, epoch: s.epoch };
     },
     epochOf: (userId: string, id: string) => live(userId, id).epoch,
+    /** A person's "paste": the text is typed into the focused window as keystrokes, so terminals and pages both take it. */
+    async paste(userId: string, id: string, text: string) {
+      live(userId, id);
+      const r = await exec(["exec", container(id), "xdotool", "type", "--clearmodifiers", "--delay", "6", "--", text.slice(0, 4000)]);
+      if (r.code !== 0) throw new ComputerError("UNAVAILABLE");
+    },
+    /** The VM's X keyboard layout, so keys typed through VNC produce the characters printed on the person's keyboard. */
+    async keyboard(userId: string, id: string, layout: string) {
+      const s = live(userId, id);
+      if (!(KEYBOARD_LAYOUTS as readonly string[]).includes(layout)) throw new ComputerError("INVALID");
+      const [name, variant] = layout.split(":");
+      const r = await exec(["exec", container(id), "setxkbmap", "-layout", name!, ...(variant ? ["-variant", variant] : [])]);
+      if (r.code !== 0) throw new ComputerError("UNAVAILABLE");
+      s.keyboard = layout as KeyboardLayout;
+      return s.keyboard;
+    },
     /** A one-time, 30-second ticket for opening the VNC WebSocket (browsers cannot set headers on one). Only for a running VM. */
     vncTicket(userId: string, id: string) {
       live(userId, id);

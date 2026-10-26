@@ -3,6 +3,8 @@ import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
 import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../app";
+import { createDiscussionStore } from "./discussions/store";
+import { createInbound } from "./inbound/service";
 import { cleanupTestUsers } from "../test-support/db-cleanup";
 import { createChatService } from "./chat/service";
 import { createFeaturesService } from "./features/service";
@@ -33,7 +35,11 @@ suite("cross-user isolation matrix", () => {
   const features = createFeaturesService(db);
   const mcp = createMcp(db, undefined, { allowPrivate: true });
   const sources = createSources(db, undefined, { allowPrivate: true, fetcher: async () => "<rss/>" });
-  const app = createApp({ auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never, chat: { access: realAccess, chat: createChatService(db) }, features: { access: realAccess, features }, integrations: { access: realAccess, mcp, sources }, webOrigin: "http://web.test", desktopOrigins: [], drain: () => {} });
+  const discussions = createDiscussionStore(db);
+  const chat = createChatService(db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, { discussions });
+  const inbound = createInbound(db, mcp.plugins, chat, async () => ({ isAdmin: false }));
+  const app = createApp({ auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never, chat: { access: realAccess, chat }, features: { access: realAccess, features }, integrations: { access: realAccess, mcp, sources },
+    discussions: { access: realAccess, store: discussions, worker: { kick: () => {}, tick: async () => {}, drain: async () => {} } }, inbound: { access: realAccess, inbound }, webOrigin: "http://web.test", desktopOrigins: [], drain: () => {} });
   const call = async (as: string, method: string, path: string, body?: unknown) => {
     const r = await app.handle(new Request(`http://localhost${path}`, { method, headers: { "x-test-user": as, origin: "http://web.test", "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined }));
     return { status: r.status, text: await r.clone().text(), json: (await r.json().catch(() => ({}))) as any };
@@ -59,6 +65,10 @@ suite("cross-user isolation matrix", () => {
     owned.src = (await call(A, "POST", "/api/sources", { kind: "rss", url: "https://iso.example.test/feed", label: "iso" })).json.source.id;
     await db.$client.query("insert into config_proposal (owner_user_id, kind, bot_id, base_version, patch, diff) values ($1,'config',$2,1,'{\"personality\":\"x\"}','[]')", [A, bot]);
     owned.prop = (await db.$client.query("select id from config_proposal where owner_user_id=$1", [A])).rows[0].id;
+    // A group discussion with a second, ready private bot (the queue is not run here).
+    const peer = (await call(A, "POST", "/api/bots", { name: "IsoPeer", visibility: "private" })).json.bot.id as string; owned.peer = peer;
+    await db.$client.query("update bot set onboarded = true where id = $1", [peer]);
+    owned.disc = (await call(A, "POST", "/api/discussions", { title: `disc ${SECRET}`, goal: SECRET, members: [{ bot: peer }], firstMessage: `@IsoPeer ${SECRET}` })).json.discussion.id;
   });
   afterAll(async () => {
     await db.$client.query("delete from mcp_server where owner_user_id = any($1)", [ids]).catch(() => undefined);
@@ -74,7 +84,7 @@ suite("cross-user isolation matrix", () => {
     test(`${who}: cannot read, change or use A's resources`, async () => {
       const u = as(), o = owned as Record<string, string>;
       // lists never contain A's data (C, a removed member, is denied outright)
-      for (const path of ["/api/memories", "/api/instructions", "/api/routines", "/api/workflows", "/api/attention", "/api/proposals", "/api/mcp/servers", "/api/sources", "/api/conversations", "/api/activity", "/api/workspaces"]) {
+      for (const path of ["/api/memories", "/api/instructions", "/api/routines", "/api/workflows", "/api/attention", "/api/proposals", "/api/mcp/servers", "/api/sources", "/api/conversations", "/api/activity", "/api/workspaces", "/api/discussions", "/api/inbound/routes"]) {
         const r = await call(u, "GET", path); who === "B" ? empty(r) : denied(r);
         if (who === "B" && path !== "/api/attention" ) expect(r.text).not.toContain(o.bot);
       }
@@ -96,6 +106,12 @@ suite("cross-user isolation matrix", () => {
         ["POST", `/api/attention/${o.attn}/action`, { action: "resolve" }], ["POST", `/api/proposals/${o.prop}/decision`, { approve: true }],
         ["GET", `/api/mcp/servers/${o.mcp}/tools`], ["DELETE", `/api/mcp/servers/${o.mcp}`], ["PUT", `/api/bots/${o.bot}/integrations/${o.mcp}`], ["DELETE", `/api/sources/${o.src}`],
         ["POST", "/api/snapshots/preview", { conversationId: o.conv }], ["GET", `/api/bots/${o.bot}/connections`],
+        ["GET", `/api/discussions/${o.disc}`], ["PATCH", `/api/discussions/${o.disc}`, { context: "x" }], ["POST", `/api/discussions/${o.disc}/messages`, { content: "hi" }],
+        ["POST", `/api/discussions/${o.disc}/pause`], ["POST", `/api/discussions/${o.disc}/resume`], ["POST", `/api/discussions/${o.disc}/cancel`], ["POST", `/api/discussions/${o.disc}/resolve`, { summary: "x" }],
+        ["PUT", `/api/discussions/${o.disc}/members/${o.peer}`, { requireApproval: false }], ["POST", "/api/discussions", { title: "x", members: [{ bot: o.peer }], firstMessage: "hi" }],
+        ["GET", `/api/bots/${o.peer}/peers`], ["PUT", `/api/bots/${o.peer}/peers`, { peerBotIds: [] }], ["PUT", `/api/bots/${o.bot}/peers`, { peerBotIds: [o.peer] }],
+        ["GET", `/api/bots/${o.bot}/inbound`], ["PUT", `/api/bots/${o.bot}/inbound/whatsapp`, { enabled: false, filter: { direct: true, groups: false, chats: [] } }], ["DELETE", `/api/bots/${o.bot}/inbound/whatsapp`],
+        ["GET", `/api/conversations/${o.conv}/messages?kind=discussion`],
       ] as [string, string, unknown?][]) {
         const r = await call(u, method, path, body);
         if (method === "GET" && /\/(delegations|runs)$/.test(path) && who === "B") { expect(r.status).toBe(200); expect((r.json.delegations ?? r.json.runs)).toHaveLength(0); continue; } // list of nothing, not A's data

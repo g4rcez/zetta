@@ -12,7 +12,7 @@ import { and, eq } from "@zetta/db/query";
 import { browserProfile } from "@zetta/db/schema/features";
 
 export class ComputerError extends Error {
-  constructor(readonly code: "NOT_FOUND" | "LIMIT" | "BLOCKED_URL" | "HUMAN_IN_CONTROL" | "UNAVAILABLE" | "INVALID" | "REVOKED" | "CANCELLED" | "STALE_CONTROL") { super(code); }
+  constructor(readonly code: "NOT_FOUND" | "LIMIT" | "BLOCKED_URL" | "HUMAN_IN_CONTROL" | "UNAVAILABLE" | "INVALID" | "REVOKED" | "CANCELLED" | "STALE_CONTROL" | "NO_ADDRESS" | "NO_INPUT" | "INSECURE") { super(code); }
 }
 export type Actor = "user" | "agent";
 export type Action =

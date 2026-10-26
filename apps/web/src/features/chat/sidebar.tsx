@@ -186,10 +186,11 @@ export function ChatSidebar({ bots, spaces, chats, botId, chatId, onBot, onChat,
             {spaces.length > 0 && <Select title="Inside workspace" hiddenLabel container="w-24" required={false} name="parent" options={[{ value: "", label: "top" }, ...spaces.map((w) => ({ value: w.id, label: w.name }))]} />}
             <Button type="submit" size="sm" variant="outline">Create</Button>
           </form>)}
-        <Link to="/studio/$tab" params={{ tab: "attention" }} className="flex h-8 items-center gap-2 rounded-md px-2.5 text-sm transition-colors hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring">
-          <Bell aria-hidden="true" className="size-4 text-muted-foreground" /><span className="flex-1">Needs your attention</span>
-          <span className={cn("rounded-full px-2 text-xs", attention && attention.unread > 0 ? "bg-destructive font-medium text-white" : "bg-muted text-muted-foreground")} aria-label={attention ? `${attention.unread} unread, ${attention.open} open` : "Attention items"}>{attention ? attention.unread : "…"}</span>
-        </Link>
+        {attention && attention.unread > 0 && (
+          <Link to="/studio/$tab" params={{ tab: "attention" }} className="flex h-8 items-center gap-2 rounded-md px-2.5 text-sm transition-colors hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring">
+            <Bell aria-hidden="true" className="size-4 text-muted-foreground" /><span className="flex-1">Needs your attention</span>
+            <span className="rounded-full bg-destructive px-2 text-xs font-medium text-white" aria-label={`${attention.unread} unread, ${attention.open} open`}>{attention.unread}</span>
+          </Link>)}
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-2 pb-3">
         <nav aria-label="Bots">

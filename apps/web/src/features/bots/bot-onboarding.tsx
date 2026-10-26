@@ -7,6 +7,8 @@ import { Button, Input, Select, Textarea } from "@/components/ui";
 import "../code/register";
 import "../computer/register";
 import "../plugins/register";
+import "../discussions/register";
+import "../inbound/register";
 import { BotAccounts } from "../chat/bot-accounts";
 import { BotAvatarPicker } from "../chat/bot-avatar-picker";
 import { BotDecision } from "../chat/bot-decision";

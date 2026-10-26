@@ -44,7 +44,7 @@ describe("createApp", () => {
     // Keep the import graph closed: production environment/services/Axiom and
     // bootstrap calls belong only in index.ts, never in the testable factory.
     const source = await Bun.file(new URL("./app.ts", import.meta.url)).text();
-    const allowedImports = ["@elysiajs/cors", "elysia", "evlog/better-auth", "evlog/elysia", "./modules/identity/routes", "./modules/chat/routes", "./modules/features/routes", "./modules/decisions/routes", "./modules/computer/routes", "./modules/connections/routes", "./modules/integrations/routes"];
+    const allowedImports = ["@elysiajs/cors", "elysia", "evlog/better-auth", "evlog/elysia", "./modules/identity/routes", "./modules/chat/routes", "./modules/features/routes", "./modules/decisions/routes", "./modules/computer/routes", "./modules/connections/routes", "./modules/integrations/routes", "./modules/agenda/routes", "./modules/discussions/routes", "./modules/inbound/routes"];
     const imports = [...source.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1] ?? "");
     expect(imports.length).toBeGreaterThan(0);
     for (const imported of imports) expect(allowedImports).toContain(imported);

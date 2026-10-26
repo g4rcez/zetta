@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { desktopFieldFits, desktopPage, fieldFits, originAllowed, originPattern } from "./credentials";
+import { fieldFits, originAllowed, originPattern, pickInput, type AxElement } from "./credentials";
 
 const input = (o: Partial<{ type: string; autocomplete: string; name: string; inputmode: string }>) => ({ tag: "input", type: "text", autocomplete: "", name: "", inputmode: "", ...o });
 
@@ -39,16 +39,23 @@ describe("focused input checks", () => {
     expect(fieldFits("totp", input({ inputmode: "numeric" }))).toBe(true);
     expect(fieldFits("totp", input({ name: "q" }))).toBe(false);
   });
-  test("desktop: the address bar gives the page, focus marks the input; unknown means refuse", () => {
-    const tree = `- [0] frame "Sign in - Chromium"\n- [3] entry "Address and search bar" value="github.com/login"\n- [9] password text "Password" focused`;
-    expect(desktopPage(tree)).toBe("https://github.com/login");
-    expect(desktopPage(tree.replace("github.com/login", "https://github.com/x"))).toBe("https://github.com/x");
-    expect(desktopPage(`${tree}\n- [4] push button "Not secure"`)).toBeUndefined();
-    expect(desktopPage(`- [0] frame "Chromium"`)).toBeUndefined();
-    expect(desktopFieldFits("password", tree)).toBe(true);
-    expect(desktopFieldFits("username", tree)).toBe(false);
-    expect(desktopFieldFits("username", `- [8] entry "Username or email address" focused`)).toBe(true);
-    expect(desktopFieldFits("password", `- [8] entry "Comment" focused`)).toBe(false);
-    expect(desktopFieldFits("password", `- [9] password text "Password"`)).toBe(false); // no focus marker: refuse
+  test("desktop: inputs are picked by role and label from the real tree (GitHub sign-in, captured from a VM)", () => {
+    // Trimmed from get_window_state (tree_format elements) on cua-spacesd 0.8.0 / Chromium, github.com/login.
+    const github: AxElement[] = [
+      { role: "entry", label: "Address and search bar", enabled: true, frame: { x: 162, y: 51, w: 894, h: 24 } },
+      { role: "entry", label: "Username or email address", enabled: true, in_web_content: true, frame: { x: 467, y: 274, w: 353, h: 40 } },
+      { role: "password text", label: "Password", enabled: true, in_web_content: true, frame: { x: 467, y: 355, w: 353, h: 40 } },
+      { role: "link", label: "Forgot password?", enabled: true, in_web_content: true, frame: { x: 707, y: 330, w: 113, h: 21 } },
+    ];
+    expect(pickInput("password", github)?.label).toBe("Password");
+    expect(pickInput("username", github)?.label).toBe("Username or email address");
+    expect(pickInput("totp", github)).toBeUndefined();
+    // the browser's own address bar is never a target, nor are search boxes, hidden or disabled inputs
+    expect(pickInput("username", [github[0]!, { role: "entry", label: "Search", in_web_content: true, frame: { x: 1, y: 1, w: 9, h: 9 } }])).toBeUndefined();
+    expect(pickInput("password", [{ ...github[2]!, enabled: false }])).toBeUndefined();
+    expect(pickInput("password", [{ ...github[2]!, frame: { x: 0, y: 0, w: 0, h: 0 } }])).toBeUndefined();
+    // unlabelled username: the text field right before the password
+    expect(pickInput("username", [{ ...github[1]!, label: "" }, github[2]!])?.frame?.y).toBe(274);
+    expect(pickInput("totp", [{ role: "entry", label: "Authentication code", in_web_content: true, enabled: true, frame: { x: 1, y: 1, w: 9, h: 9 } }])?.label).toBe("Authentication code");
   });
 });

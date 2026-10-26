@@ -29,27 +29,24 @@ export function originAllowed(pageUrl: string, patterns: readonly string[]): boo
   return patterns.some((p) => p.startsWith("*.") ? host === p.slice(2) || host.endsWith(p.slice(1)) : host === p);
 }
 
+/** One row of cua-driver's `get_window_state` (tree_format "elements"): role, label and a window-relative frame; no value, no focus state. */
+export type AxElement = { role?: string; label?: string; enabled?: boolean; in_web_content?: boolean; frame?: { x: number; y: number; w: number; h: number } };
+const TOTP_LABEL = /one[- ]time|otp|totp|2fa|two[- ]factor|verification|authenticat|security code|\bcode\b/i;
 /**
- * Desktop VMs are only readable through Chromium's accessibility tree (cua-driver rows such as `- [12] entry "Address and search bar" value="github.com/login"`).
- * The address bar hides "https://" and marks plain-http pages "Not secure", so a bare address counts as https unless that mark is shown.
- * Anything unrecognised gives undefined, and the fill is refused instead of guessed.
+ * Desktop VMs: the server, not the bot, picks the input a credential goes into, from the page's own accessibility tree (checked against
+ * Chromium on cua-spacesd 0.8.0, e.g. GitHub: `entry "Username or email address"`, `password text "Password"`). A password only ever goes
+ * into a password field; a username into a text field labelled like one (or the text field right before the password); a code into a
+ * field labelled like one. Undefined means no fitting input: nothing is typed.
  */
-export function desktopPage(tree: string): string | undefined {
-  const line = tree.split("\n").find((l) => /address and search bar/i.test(l));
-  if (!line) return undefined;
-  const after = line.slice(line.search(/address and search bar/i) + "address and search bar".length);
-  const m = /(https?:\/\/[^\s"'<>]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/:?#][^\s"'<>]*)?)/i.exec(after);
-  if (!m || /not secure/i.test(tree)) return undefined;
-  return /^https?:\/\//i.test(m[1]!) ? m[1] : `https://${m[1]}`;
-}
-/** Desktop field check: the tree must mark which element is focused, and that row must look like the right kind of input. */
-export function desktopFieldFits(field: CredentialField, tree: string): boolean {
-  const row = tree.split("\n").find((l) => /\bfocused\b/i.test(l) && !/address and search bar/i.test(l));
-  if (!row || !/\b(entry|text|textbox|input|edit|password)\b/i.test(row)) return false;
-  const password = /password/i.test(row);
-  if (field === "password") return password;
-  if (password) return false;
-  return field === "username" ? /user|email|login|account|identifier/i.test(row) : /one-time|otp|totp|2fa|code|token/i.test(row);
+export function pickInput(field: CredentialField, elements: readonly AxElement[]): AxElement | undefined {
+  const inputs = elements.filter((e) => e.in_web_content && e.enabled !== false && e.frame && e.frame.w > 0 && e.frame.h > 0 && (e.role === "entry" || e.role === "password text"));
+  if (field === "password") return inputs.find((e) => e.role === "password text");
+  const entries = inputs.filter((e) => e.role === "entry");
+  if (field === "totp") return entries.find((e) => TOTP_LABEL.test(e.label ?? ""));
+  const named = entries.find((e) => /user|e-?mail|login|account|identifier|phone/i.test(e.label ?? "") && !/search/i.test(e.label ?? ""));
+  if (named) return named;
+  const pw = inputs.findIndex((e) => e.role === "password text"), prev = pw > 0 ? inputs[pw - 1] : undefined;
+  return prev?.role === "entry" && !/search|code/i.test(prev.label ?? "") ? prev : undefined;
 }
 
 /** Field kinds an input element may receive: a password only goes into a password input, never into a comment box on the right site. */

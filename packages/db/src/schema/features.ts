@@ -96,7 +96,7 @@ export const attachment = pgTable("attachment", {
 
 /** Bot-proposed configuration changes. Nothing is applied until the owner approves the exact diff. */
 export const configProposal = pgTable("config_proposal", {
-  id: uuid("id").primaryKey().defaultRandom(), ownerUserId: owner(), kind: text("kind", { enum: ["config", "create_bot", "create_routine", "create_workflow", "create_instruction", "create_vm"] }).default("config").notNull(), botId: uuid("bot_id").references(() => bot.id, restrict),
+  id: uuid("id").primaryKey().defaultRandom(), ownerUserId: owner(), kind: text("kind", { enum: ["config", "create_bot", "create_routine", "create_workflow", "create_instruction", "create_vm", "open_discussion", "discussion_brief"] }).default("config").notNull(), botId: uuid("bot_id").references(() => bot.id, restrict),
   proposedByBotId: uuid("proposed_by_bot_id").references(() => bot.id, restrict), baseVersion: integer("base_version").notNull(), baseHash: text("base_hash").notNull().default(""),
   patch: jsonb("patch").notNull(), diff: jsonb("diff").notNull(), status: text("status", { enum: ["pending", "approved", "rejected", "stale"] }).default("pending").notNull(),
   createdAt: created(), decidedAt: timestamp("decided_at", { withTimezone: true }),

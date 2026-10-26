@@ -51,6 +51,18 @@ export function createIdentityAccess(auth: SessionSource, lookup: MembershipLook
   return { status, sessionActor, requireActive };
 }
 
+/**
+ * Server-side work done on a user's behalf outside a request (schedulers such as Agenda sync). The membership is re-checked on every call,
+ * so a removed member's background work stops. Never derive `userId` from request input: only from rows the user already owns.
+ */
+export async function issueBackgroundActor(lookup: MembershipLookup, userId: string): Promise<ActiveActor | null> {
+  const member = await lookup(userId).catch(() => null);
+  if (!member) return null;
+  const actor = Object.freeze({ userId, isAdmin: member.isAdmin });
+  issuedActors.add(actor);
+  return actor;
+}
+
 /** Scope database reads by actor.userId first; these checks also reject substituted nested references.
  * Resolve a fresh actor per request/dispatch. Never retain one as a session cache.
  */

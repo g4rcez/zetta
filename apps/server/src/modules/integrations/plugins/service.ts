@@ -3,15 +3,15 @@ import { audit } from "../../features/audit";
 import { AccessError, type ActiveActor } from "../../identity/access";
 import type { ConnectionsService } from "../../connections/service";
 import { originAllowed } from "./credentials";
-import { getPlugin, listPlugins, PluginError, pluginMeta, type CredentialField, type CredentialGrant, type PluginContext, type PluginDef, type PluginStatus } from "./registry";
+import { getPlugin, listPlugins, PluginError, pluginMeta, type CredentialField, type CredentialGrant, type InboundFilter, type PluginContext, type PluginDef, type PluginStatus } from "./registry";
 
 /** Native plugins are stored as a user-owned server row with this url scheme; it is never reachable as an MCP session. */
 export const NATIVE_URL_PREFIX = "zetta-plugin://";
 const CALL_MS = 60_000, MAX_TEXT = 8000, PROVIDER = "plugin";
-const CREDENTIAL_PROMPT = `Signing in: you never see or type passwords. Get the logins the user shared with <plugin>.list_credentials, click the input on the sign-in page (browser: click_text; desktop: click), then let Zetta type the value for you:
+const CREDENTIAL_PROMPT = `Signing in: you never see or type passwords. Get the logins the user shared with <plugin>.list_credentials, open the sign-in page, then let Zetta type the value for you (browser: click the input first with click_text; desktop: Zetta finds the input itself):
 \`\`\`zetta:credential
 {"ref":"<ref from list_credentials>","field":"username|password|totp","target":"browser|desktop"}
-\`\`\`   (Zetta only types it on the login's own https sites and into a matching input; you get "filled" back, never the value. Then press Return or click the sign-in button yourself.)`;
+\`\`\`   (Zetta only types it on the login's own https sites and into a matching input; you get "filled" back, never the value. Fill one field per block, username first. Then press Return or click the sign-in button yourself.)`;
 
 type ServerRow = { id: string; name: string; url: string | null; connectionId: string | null };
 /** The slice of the MCP service the plugin layer needs. */
@@ -90,6 +90,8 @@ export function createPlugins(db: Database, connections: ConnectionsService | un
   return {
     /** Everything installable (browser-safe: no handlers). */
     catalog: () => listPlugins().map(pluginMeta),
+    /** Internal (server modules such as Agenda sync): the user's own context for an installed native plugin. Never exposed through routes. */
+    async contextFor(a: ActiveActor, id: string): Promise<PluginContext> { const { d, s } = await installed(a, id); return ctxFor(a, d, s); },
     /** The user's installed plugins. Probing is separate (`test`). */
     async list(a: ActiveActor) {
       const out: { id: string; serverId: string; hasSecret: boolean }[] = [];
@@ -172,6 +174,17 @@ export function createPlugins(db: Database, connections: ConnectionsService | un
       const tools = (d.tools ?? []).map((t) => ({ name: t.name, description: t.description.slice(0, 300) }));
       try { return { status: d.status ? await withDeadline(d.status(await ctxFor(a, d, s))) : { state: "connected" }, tools }; }
       catch (e) { return { status: { state: "error", detail: e instanceof PluginError ? e.safe : "The plugin could not be checked." }, tools }; }
+    },
+    /**
+     * Internal (modules/inbound): one poll of a channel plugin for this user. Its context cannot re-seal the config, so a poll every
+     * minute never churns the stored secret or races a tool call that updates it.
+     */
+    async pollInbound(a: ActiveActor, id: string, cursor: unknown, o: { filter: InboundFilter; maxEvents: number }) {
+      const { d, s } = await installed(a, id);
+      if (!d.inbound) throw new PluginError("NO_INBOUND", "This plugin cannot deliver incoming messages.");
+      const ctx = await ctxFor(a, d, s);
+      const frozen: PluginContext = { userId: ctx.userId, config: ctx.config, setConfig: () => Promise.reject(new PluginError("READ_ONLY", "Polling cannot change plugin settings.")) };
+      return withDeadline(d.inbound.poll(frozen, cursor, o));
     },
     /** Plugin ids the user has bound to this bot. */
     async bindings(a: ActiveActor, botId: string) {

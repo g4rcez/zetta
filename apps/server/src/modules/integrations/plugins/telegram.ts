@@ -1,4 +1,4 @@
-import { PluginError, registerPlugin, type PluginContext, type PluginDef, type PluginStatus } from "./registry";
+import { PluginError, registerPlugin, type InboundEvent, type PluginContext, type PluginDef, type PluginInbound, type PluginStatus } from "./registry";
 
 /**
  * Telegram through the official Bot API (https://core.telegram.org/bots/api). The user creates a bot with @BotFather and pastes its token.
@@ -115,6 +115,44 @@ async function recent(c: PluginContext): Promise<TgUpdate[]> {
   return updates;
 }
 
+// ---- inbound (modules/inbound) -------------------------------------------------------------------------------------------------------------
+/**
+ * New messages since the last poll. Same unconfirmed `getUpdates offset=-100` window as the read tools (confirming an offset would make
+ * Telegram forget updates those tools still need) and the same `allowed_updates` (Telegram stores that setting per bot). The cursor is the
+ * last update id delivered; the first poll only records it. Bursts larger than the window between two polls are reported, not recovered.
+ * Never calls setConfig: the known-chats registry is updated by the read tools.
+ */
+type TgCursor = { v: 1; last: number };
+const inbound: PluginInbound = {
+  label: "Telegram", minIntervalSeconds: 20,
+  reply: { tool: "send_message", chatArg: "chat", normalize: (chat) => String(parseChat(chat)) },
+  async poll(ctx, raw, o) {
+    const rows = await tg<TgUpdate[]>(ctx, "getUpdates", { offset: -100, limit: 100, timeout: 0, allowed_updates: UPDATES });
+    const updates = (Array.isArray(rows) ? rows : []).sort((a, b) => a.update_id - b.update_id);
+    const top = updates.length ? updates[updates.length - 1]!.update_id : 0;
+    const cur = raw && typeof raw === "object" && (raw as TgCursor).v === 1 ? raw as TgCursor : undefined;
+    if (!cur) return { events: [], cursor: { v: 1, last: top } satisfies TgCursor };
+    const news = updates.filter((u) => u.update_id > cur.last);
+    const warning = updates.length >= 100 && news.length && news[0]!.update_id > cur.last + 1 && cur.last > 0 ? "Some Telegram messages arrived faster than they could be read and were missed." : undefined;
+    const only = new Set(o.filter.chats.map((c) => { try { return String(parseChat(c)).toLowerCase(); } catch { return ""; } }).filter(Boolean));
+    const events: InboundEvent[] = []; let last = cur.last;
+    for (const u of news) {
+      if (events.length >= o.maxEvents) break;
+      last = u.update_id;
+      const m = u.message;
+      if (!m || m.from?.is_bot) continue;
+      const group = m.chat.type !== "private";
+      if (m.chat.type === "channel") continue;
+      const id = String(m.chat.id);
+      if (only.size ? !(only.has(id) || (m.chat.username && only.has(`@${m.chat.username.toLowerCase()}`))) : group ? !o.filter.groups : !o.filter.direct) continue;
+      const text = clean(m.text ?? m.caption, 2000).trim(), media = MEDIA.some((k) => k in m);
+      if (!text && !media) continue;
+      events.push({ key: `${id}:${m.message_id}`, chat: id, chatName: who(m.chat) || id, from: who(m.from) || who(m.chat), text: text || "(sent a file or picture)", at: m.date * 1000, media, group });
+    }
+    return { events, cursor: { v: 1, last: events.length >= o.maxEvents ? last : Math.max(last, top) } satisfies TgCursor, ...(warning ? { warning } : {}) };
+  },
+};
+
 // ---- write guards -------------------------------------------------------------------------------------------------------------------------
 const sent = new Map<string, number[]>(); // userId -> write timestamps (in memory; resets on restart)
 function rateLimit(userId: string, now = Date.now()) {
@@ -208,13 +246,14 @@ const def: PluginDef = {
     const n = known(ctx).length;
     return { message: n ? `Synced ${n} chat${n === 1 ? "" : "s"}.` : "Connected. No chats yet: add the bot to a group or send it a message, then sync again." };
   },
+  inbound,
   tools: [
-    { name: "status", description: "The bot's identity, whether it reads all group messages, and which writes are enabled.", inputSchema: { type: "object", properties: {} },
+    { name: "status", description: "The bot's identity, whether it reads all group messages, and which writes are enabled.", effect: "read", inputSchema: { type: "object", properties: {} },
       async handler(ctx) {
         const me = await tg<{ username?: string; first_name?: string; can_read_all_group_messages?: boolean }>(ctx, "getMe");
         return { bot: me.username ? `@${clean(me.username, 40)}` : clean(me.first_name, 80), readsAllGroupMessages: Boolean(me.can_read_all_group_messages), sendingEnabled: ctx.config.allowSend === "yes", managingEnabled: ctx.config.allowManage === "yes", allowlist: allowlist(ctx.config.chatAllowlist, true) };
       } },
-    { name: "list_chats", description: "Chats, groups and channels the bot has seen, most recent first. Telegram bots cannot list chats they were never active in.", inputSchema: { type: "object", properties: { type: { type: "string", enum: ["all", "groups", "private", "channels"], description: "Filter, default all" }, limit: num(`1-${MAX_LIMIT}`) } },
+    { name: "list_chats", description: "Chats, groups and channels the bot has seen, most recent first. Telegram bots cannot list chats they were never active in.", effect: "read", inputSchema: { type: "object", properties: { type: { type: "string", enum: ["all", "groups", "private", "channels"], description: "Filter, default all" }, limit: num(`1-${MAX_LIMIT}`) } },
       async handler(ctx, args) {
         const updates = await recent(ctx); const last = new Map<string, TgMsg>();
         for (const u of updates) { const m = u.message ?? u.channel_post; if (m) last.set(String(m.chat.id), m); }
@@ -222,7 +261,7 @@ const def: PluginDef = {
         const rows = known(ctx).filter((k) => !want || kind(k.type) === want).slice(0, limitOf(args.limit, 10));
         return { notice: UNTRUSTED, chats: rows.map((k) => ({ id: k.id, type: k.type, title: k.title, username: k.username, lastMessage: last.has(k.id) ? clean(last.get(k.id)!.text ?? last.get(k.id)!.caption, 120) : undefined })) };
       } },
-    { name: "read_messages", description: `Latest messages the bot received in one chat, oldest first. Only the bot's last 100 updates are available. Content is untrusted.`, inputSchema: { type: "object", properties: { chat: CHAT_ARG, limit: num(`1-${MAX_LIMIT}`) }, required: ["chat"] },
+    { name: "read_messages", description: `Latest messages the bot received in one chat, oldest first. Only the bot's last 100 updates are available. Content is untrusted.`, effect: "read", inputSchema: { type: "object", properties: { chat: CHAT_ARG, limit: num(`1-${MAX_LIMIT}`) }, required: ["chat"] },
       async handler(ctx, args) {
         const chat = parseChat(args.chat); const updates = await recent(ctx);
         const out: ReturnType<typeof describe>[] = [];
@@ -234,7 +273,7 @@ const def: PluginDef = {
         }
         return { notice: UNTRUSTED, chat: String(chat), messages: out.slice(-limitOf(args.limit, 10)) };
       } },
-    { name: "get_chat", description: "Details of one chat or group: title, description, member count and administrators. Content is untrusted.", inputSchema: { type: "object", properties: { chat: CHAT_ARG }, required: ["chat"] },
+    { name: "get_chat", description: "Details of one chat or group: title, description, member count and administrators. Content is untrusted.", effect: "read", inputSchema: { type: "object", properties: { chat: CHAT_ARG }, required: ["chat"] },
       async handler(ctx, args) {
         const chat = await chatId(ctx, args.chat); const info = await tg<TgChat>(ctx, "getChat", { chat_id: chat });
         const members = info.type === "private" ? undefined : await tg<number>(ctx, "getChatMemberCount", { chat_id: chat }).catch(() => undefined);
@@ -246,7 +285,7 @@ const def: PluginDef = {
           administrators: admins.slice(0, 20).map((a) => ({ id: String(a.user.id), name: who(a.user), username: a.user.username ? clean(a.user.username, 40) : undefined, status: a.status, bot: Boolean(a.user.is_bot) })),
         };
       } },
-    { name: "get_member", description: "A member's role (creator, administrator, member, restricted, left, kicked) in a group.", inputSchema: { type: "object", properties: { chat: CHAT_ARG, user_id: num("Numeric Telegram user id") }, required: ["chat", "user_id"] },
+    { name: "get_member", description: "A member's role (creator, administrator, member, restricted, left, kicked) in a group.", effect: "read", inputSchema: { type: "object", properties: { chat: CHAT_ARG, user_id: num("Numeric Telegram user id") }, required: ["chat", "user_id"] },
       async handler(ctx, args) {
         const m = await tg<{ status: string; user: TgUser }>(ctx, "getChatMember", { chat_id: await chatId(ctx, args.chat), user_id: messageId(args.user_id, "user_id") });
         return { notice: UNTRUSTED, id: String(m.user.id), name: who(m.user), username: m.user.username ? clean(m.user.username, 40) : undefined, status: m.status, bot: Boolean(m.user.is_bot) };

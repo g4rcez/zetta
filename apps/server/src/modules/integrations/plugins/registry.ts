@@ -15,7 +15,9 @@
  *     persist refreshed state (OAuth tokens, session ids); it re-seals and revokes the previous secret.
  *   - A bot may call a plugin only when the calling user bound it to that bot (`bot_integration`); ownership is re-checked per call.
  *
- * Handlers must throw `PluginError(code, safeMessage)`; anything else is reported to the bot as "failed" with no detail.
+ * Handlers must throw `PluginError(code, safe, fix)`: `safe` says what went wrong and `fix` what the USER can do about it. Both are shown to the
+ * user (as a callout in the chat) and to the bot, so write them for a person and never include secrets. Common codes (AUTH, NEEDS_AUTH, TIMEOUT,
+ * RATE_LIMITED, ...) get a default `fix` from chat/explain.ts when you leave it out. Anything that is not a PluginError is reported as unexpected.
  * Tool results are strings (objects are JSON-stringified) and are truncated to 8000 characters.
  */
 export type PluginFieldKind = "text" | "password" | "url" | "textarea";
@@ -70,7 +72,12 @@ export type PluginDef = {
   status?(ctx: PluginContext): Promise<PluginStatus>;
 };
 
-export class PluginError extends Error { constructor(readonly code: string, readonly safe: string = "The plugin could not complete that.") { super(code); } }
+export const DEFAULT_SAFE = "The plugin could not complete that.";
+/**
+ * `safe` says what went wrong and `fix` says what the USER can do about it (both shown to the user and the bot; no secrets).
+ * Write them for a person: "Telegram could not find that chat." / "Ask them to open the bot and press Start."
+ */
+export class PluginError extends Error { constructor(readonly code: string, readonly safe: string = DEFAULT_SAFE, readonly fix?: string) { super(code); } }
 
 const registry = new Map<string, PluginDef>();
 const ID = /^[a-z0-9_-]{1,32}$/, TOOL = /^[a-zA-Z0-9_.-]{1,64}$/;

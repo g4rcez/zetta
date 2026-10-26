@@ -21,6 +21,7 @@
     "@tanstack/react-router": "^1.170.44",
     "@varlock/vite-integration": "1.5.1",
     "@xyflow/react": "^12.12.0",
+    "@zetta/harness": "workspace:*",
     "@zetta/render": "workspace:*",
     "@zetta/ui": "workspace:*",
     "ai": "^7.0.153",

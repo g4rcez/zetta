@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
-import { AttachmentError, NotReadyError, OnboardingError, TurnBusyError, type ChatEvent, type ChatService } from "./service";
+import { AttachmentError, ModelError, NotReadyError, OnboardingError, TurnBusyError, type ChatEvent, type ChatService } from "./service";
 import { decisionConfigSchema } from "./routing";
 import { FileAccessError, type FileStore } from "./files";
 import { createUIMessageStreamResponse } from "ai";
@@ -105,6 +105,7 @@ export function createChatRoutes({ access, chat, files }: ChatServices, trustedO
     if (error instanceof NotReadyError) return fail(409, "BOT_NOT_READY", "This bot is not ready yet. Its owner has to finish setting it up first.");
     if (error instanceof TurnBusyError) return fail(409, "TURN_BUSY", "This chat is still answering. Wait for it to finish or cancel it.");
     if (error instanceof OnboardingError) return fail(409, error.code, error.code === "FIXTURE_NOT_EVIDENCE" ? "Choose a real harness for this bot first; the offline fixture cannot confirm readiness." : "Chat with the bot first, then say whether you are satisfied.");
+    if (error instanceof ModelError) return fail(400, "MODEL_NOT_ALLOWED", "That model isn't available for this harness. Pick one from the list or use the harness default.");
     if (error instanceof AttachmentError) return fail(400, "ATTACHMENT_INVALID", "Only text files up to 256 KB can be attached.");
     if (error instanceof FileAccessError) return fail(error.code === "NOT_FOUND" ? 404 : 400, error.code, "That file is not available.");
     if (error instanceof z.ZodError) return fail(400, "INVALID_REQUEST", "Check the details and try again.");

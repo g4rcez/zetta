@@ -24,13 +24,24 @@ suite("chat against compose postgres", () => {
   });
   afterAll(async () => { await cleanupTestUsers(db, ids); });
   test("a new bot keeps the personality, instructions, harness and model it was created with", async () => {
-    const input = { name: "Coder", description: "Writes code", visibility: "private", harness: "fixture", model: "haiku", personality: "A pragmatic senior engineer.", instructions: "Keep diffs small." };
+    const input = { name: "Coder", description: "Writes code", visibility: "private", harness: "claude-code", model: "haiku", personality: "A pragmatic senior engineer.", instructions: "Keep diffs small." };
     const res = await call(ids[0]!, "POST", "/api/bots", input);
     expect(res.status).toBe(201);
     const { bot } = await res.json() as { bot: { id: string; personality: string; instructions: string; model: string; visibility: string } };
     expect(bot).toMatchObject({ personality: input.personality, instructions: input.instructions, model: "haiku", visibility: "private" });
     const list = await (await call(ids[0]!, "GET", "/api/bots")).json() as { bots: { id: string; personality: string }[] };
     expect(list.bots.find((b) => b.id === bot.id)?.personality).toBe(input.personality);
+  });
+  test("a bot's model must be one its harness allows, on create and on update", async () => {
+    expect((await call(ids[0]!, "POST", "/api/bots", { name: "Odd", harness: "codex", model: "haiku" })).status).toBe(400);
+    expect((await call(ids[0]!, "POST", "/api/bots", { name: "Offline", harness: "fixture", model: "haiku" })).status).toBe(400);
+    const { bot } = await (await call(ids[0]!, "POST", "/api/bots", { name: "Quick", harness: "claude-code", model: "haiku" })).json() as { bot: { id: string } };
+    const harnessOnly = await call(ids[0]!, "PATCH", `/api/bots/${bot.id}`, { expectedVersion: 1, patch: { harness: "codex" } });
+    expect(harnessOnly.status).toBe(400);
+    expect((await harnessOnly.json() as { error: { code: string } }).error.code).toBe("MODEL_NOT_ALLOWED");
+    expect((await call(ids[0]!, "PATCH", `/api/bots/${bot.id}`, { expectedVersion: 1, patch: { model: "gpt-5" } })).status).toBe(400);
+    expect((await call(ids[0]!, "PATCH", `/api/bots/${bot.id}`, { expectedVersion: 1, patch: { harness: "codex", model: "gpt-5" } })).status).toBe(200);
+    expect((await call(ids[0]!, "PATCH", `/api/bots/${bot.id}`, { expectedVersion: 2, patch: { model: null } })).status).toBe(200);
   });
   test("team specialists are visible but only editable by the owner", async () => {
     const created = await (await call(ids[0]!, "POST", "/api/bots", { name: "Reviewer" })).json() as { bot: { id: string; version: number } };

@@ -67,7 +67,7 @@ export function createRoutines(db: Database, run: RunTurn, runWorkflow: (userId:
       { conversationId: convId, ownerUserId: r.ownerUserId, seq: Number(m) + 2, role: "assistant", content: output, status: status === "failed" ? "failed" : "complete", botVersion: b!.version, botId: b!.id },
     ]);
     await finish(status, output, reason, convId);
-    if (status === "failed") await raiseAttention(db, r.ownerUserId, { botId: b!.id, title: `Routine "${r.title}" failed`, detail: output, nextAction: "Check the bot, then run the routine again.", resultLink: `/chat?c=${convId}`, source: "routine", sourceKey: `routine:${r.id}:failed`, remaining: "This occurrence" });
+    if (status === "failed") await raiseAttention(db, r.ownerUserId, { botId: b!.id, title: `Routine "${r.title}" failed`, detail: output, nextAction: "Check the bot, then run the routine again.", resultLink: `/chat/${convId}`, source: "routine", sourceKey: `routine:${r.id}:failed`, remaining: "This occurrence" });
     return;
   }
 

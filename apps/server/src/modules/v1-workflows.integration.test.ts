@@ -107,7 +107,7 @@ suite("v1 user journeys", () => {
     const failed = (await call("POST", `/api/routines/${routine.id}/run`, { requestKey: "blocked-attempt-01" })).json.run;
     expect(failed.status).toBe("failed");
     const card = (await call("GET", "/api/attention")).json.items.find((i: { title: string }) => i.title.includes('"Daily intake" failed'));
-    expect(card).toMatchObject({ status: "open", resultLink: expect.stringContaining("/chat?c=") });
+    expect(card).toMatchObject({ status: "open", resultLink: expect.stringContaining("/chat/") });
     const summary = (await call("GET", "/api/attention/summary")).json.summary;
     expect(summary.open).toBe((await call("GET", "/api/attention")).json.items.filter((i: { status: string }) => i.status === "open").length); // sidebar badge == kanban column
     const activity = (await call("GET", "/api/activity")).json.events;

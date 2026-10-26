@@ -67,7 +67,7 @@ function History({ routineId }: { routineId: string }) {
         <li key={r.id} className="min-w-0 rounded-md border bg-card p-3">
           <p><strong>{RUN_STATUS[r.status]}</strong>{r.reasonCode ? ` (${human(r.reasonCode)})` : ""} · {r.trigger === "manual" ? "started by you" : "scheduled"} · {when(r.startedAt)}</p>
           {r.output && <details><summary className="cursor-pointer text-xs">Output</summary><pre className="max-w-full whitespace-pre-wrap break-words text-xs">{r.output.slice(0, 2000)}</pre></details>}
-          {r.conversationId && <a className="text-xs underline" href={`/chat?c=${r.conversationId}`}>Open the chat</a>}
+          {r.conversationId && <a className="text-xs underline" href={`/chat/${r.conversationId}`}>Open the chat</a>}
         </li>))}</ul>
       {next && <Button size="sm" variant="outline" onClick={() => void load(next)}>Load older</Button>}
     </section>

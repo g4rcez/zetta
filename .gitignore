@@ -60,5 +60,6 @@ temp
 # local runtime data
 .zetta-files/
 .zetta-browser/
+.zetta-vm/
 .zetta-homes-test-*/
 .zetta-browser-test-*/

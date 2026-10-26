@@ -10,7 +10,7 @@ export const APP_PREFIXES = ["/chat", "/studio", "/dashboard"];
 export const inApp = (pathname: string) => APP_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
 const links = [
-  { to: "/chat", label: "Chat", icon: MessagesSquare },
+  { to: "/chat/{-$chatId}", label: "Chat", icon: MessagesSquare },
   { to: "/studio", label: "Studio", icon: Blocks },
   { to: "/dashboard", label: "Dashboard", icon: Gauge },
 ] as const;

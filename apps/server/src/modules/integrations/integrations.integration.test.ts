@@ -84,7 +84,7 @@ suite("MCP integrations and sources against compose postgres", () => {
     const say = (t: string) => call(A, "POST", `/api/conversations/${conv}/messages`, { content: t });
     // unbound -> the tool is refused and the bot is told
     scripted.push('```zetta:mcp\n{"server":"files","tool":"echo","args":{"text":"hi"}}\n```', "gave up");
-    expect((await say("use files")).json.assistant.content).toContain("could not be used");
+    expect((await say("use files")).json.assistant.content).toContain("didn't work");
     expect((await call(A, "PUT", `/api/bots/${bot}/integrations/${srv}`)).status).toBe(200);
     prompts.length = 0;
     scripted.push('```zetta:mcp\n{"server":"files","tool":"echo","args":{"text":"hi"}}\n```', "The tool said echo:hi");
@@ -95,10 +95,26 @@ suite("MCP integrations and sources against compose postgres", () => {
     // B chatting with A's (team) bot has no binding of their own -> cannot use A's server
     const cb = (await call(B, "POST", "/api/conversations", { botId: bot })).json.conversation.id;
     scripted.push('```zetta:mcp\n{"server":"files","tool":"echo","args":{"text":"x"}}\n```', "nope");
-    expect((await call(B, "POST", `/api/conversations/${cb}/messages`, { content: "try" })).json.assistant.content).toContain("could not be used");
+    expect((await call(B, "POST", `/api/conversations/${cb}/messages`, { content: "try" })).json.assistant.content).toContain("didn't work");
     // deleting the server removes bindings
     expect((await call(A, "DELETE", `/api/mcp/servers/${srv}`)).status).toBe(200);
     expect((await call(A, "GET", `/api/bots/${bot}/integrations`)).json.servers).toHaveLength(0);
+  });
+
+  test("a failing plugin call tells the bot and the user why, and an identical retry is not run again", async () => {
+    const bot = (await call(A, "POST", "/api/bots", { name: "Mailer" })).json.bot.id as string;
+    await db.$client.query("update bot set onboarded = true where id = $1", [bot]);
+    expect((await call(A, "POST", "/api/plugins", { id: "google", config: {}, botIds: [bot] })).status).toBe(201); // installed but never connected
+    const conv = (await call(A, "POST", "/api/conversations", { botId: bot })).json.conversation.id;
+    const block = '```zetta:plugin\n{"plugin":"google","tool":"gmail_search","args":{"query":"from:x"}}\n```';
+    scripted.push(block, block, "Google is not connected.");
+    prompts.length = 0;
+    const r = await call(A, "POST", `/api/conversations/${conv}/messages`, { content: "check my mail" });
+    expect(r.json.assistant.content).toContain("Google (Gmail, Calendar, Drive): gmail search didn't work");
+    expect(r.json.assistant.content).toContain("What you can do:"); expect(r.json.assistant.content).toContain("Then ask Mailer to try again");
+    expect(prompts.some((p) => /failed \((NEEDS_AUTH|NOT_CONFIGURED)\): .*To fix it the user can: /.test(p))).toBe(true);
+    expect(prompts.some((p) => p.includes("already failed in this turn"))).toBe(true);
+    expect((r.json.assistant.content.match(/didn't work/g) ?? []).length).toBe(1); // the repeat was refused, not run
   });
 
   test("a hung server times out and its session is still closed", async () => {

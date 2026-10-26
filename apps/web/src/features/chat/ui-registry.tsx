@@ -33,11 +33,11 @@ const { registry } = defineRegistry(catalog, {
     Text: ({ props }) => <p className={cn("whitespace-pre-wrap break-words text-sm", TEXT[props.tone ?? "default"])}>{props.text}</p>,
     Badge: ({ props }) => <Badge variant="outline" className={cn(TEXT[props.tone ?? "default"], BOX[props.tone ?? "default"])}>{props.label}</Badge>,
     Metric: ({ props }) => {
-      const Trend = props.trend ? TREND[props.trend] : undefined;
+      const trend = props.trend ?? undefined, Trend = trend && TREND[trend];
       return (
         <div className="flex min-w-28 flex-col gap-0.5">
           <span className="text-xs text-muted-foreground">{props.label}</span>
-          <span className="flex items-center gap-1 text-2xl font-semibold tabular-nums">{props.value}{Trend && <Trend aria-label={props.trend} className={cn("size-5", props.trend === "up" && TEXT.success, props.trend === "down" && TEXT.danger, props.trend === "flat" && TEXT.muted)} />}</span>
+          <span className="flex items-center gap-1 text-2xl font-semibold tabular-nums">{props.value}{Trend && <Trend aria-label={trend} className={cn("size-5", trend === "up" && TEXT.success, trend === "down" && TEXT.danger, trend === "flat" && TEXT.muted)} />}</span>
           {props.hint && <span className="text-xs text-muted-foreground">{props.hint}</span>}
         </div>);
     },

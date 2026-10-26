@@ -1,3 +1,4 @@
+import { HARNESSES } from "@zetta/harness/models";
 import type { Bot } from "./chat-client";
 
 export type PersonalityPreset = { id: string; label: string; description: string; personality: string; instructions: string };
@@ -24,53 +25,9 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     instructions: "Greet briefly, confirm what the person needs, and either answer or point to the right specialist bot. Summarize what was done at the end in one or two lines." },
 ];
 
-export const HARNESSES = ["fixture", "claude-code", "codex", "pi", "omp", "opencode", "cursor"] as const;
+export { HARNESSES, isAllowedModel, modelOptions } from "@zetta/harness/models";
 export const harnessOptions = HARNESSES.map((h) => ({ value: h, label: h === "fixture" ? "fixture (offline test)" : h === "claude-code" ? h : `${h} (not verified yet)` }));
 
-type ModelOption = { value: string; label: string };
-/** Models each harness may run, passed to its CLI as `--model`. Empty value = the harness's own default. */
-export const HARNESS_MODELS: Record<(typeof HARNESSES)[number], ModelOption[]> = {
-  fixture: [],
-  "claude-code": [
-    { value: "claude-opus-5-5", label: "Opus 5.5 · most capable" },
-    { value: "claude-sonnet-5-5", label: "Sonnet 5.5 · balanced" },
-    { value: "claude-haiku-5-5", label: "Haiku 5.5 · fast and cheap" },
-    { value: "claude-fable-5-1", label: "Fable 5.1" },
-  ],
-  codex: [
-    { value: "gpt-5-codex", label: "GPT-5 Codex" },
-    { value: "gpt-5", label: "GPT-5" },
-    { value: "gpt-5-mini", label: "GPT-5 mini" },
-  ],
-  pi: [
-    { value: "anthropic/claude-sonnet-5-5", label: "Anthropic · Sonnet 5.5" },
-    { value: "anthropic/claude-haiku-5-5", label: "Anthropic · Haiku 5.5" },
-    { value: "openai/gpt-5", label: "OpenAI · GPT-5" },
-  ],
-  omp: [
-    { value: "anthropic/claude-sonnet-5-5", label: "Anthropic · Sonnet 5.5" },
-    { value: "anthropic/claude-haiku-5-5", label: "Anthropic · Haiku 5.5" },
-    { value: "openai/gpt-5", label: "OpenAI · GPT-5" },
-  ],
-  opencode: [
-    { value: "anthropic/claude-sonnet-5-5", label: "Anthropic · Sonnet 5.5" },
-    { value: "anthropic/claude-opus-5-5", label: "Anthropic · Opus 5.5" },
-    { value: "openai/gpt-5", label: "OpenAI · GPT-5" },
-  ],
-  cursor: [
-    { value: "auto", label: "Auto" },
-    { value: "sonnet-4.5", label: "Claude Sonnet 4.5" },
-    { value: "gpt-5", label: "GPT-5" },
-  ],
-};
-
-/** Select options for a harness's models; a saved model outside the list is kept so editing never silently drops it. */
-export const modelOptions = (harness: string, current?: string | null): ModelOption[] => {
-  const list = HARNESS_MODELS[harness as keyof typeof HARNESS_MODELS] ?? [];
-  const extra = current && !list.some((m) => m.value === current) ? [{ value: current, label: current }] : [];
-  return [{ value: "", label: "Harness default" }, ...list, ...extra];
-};
-export const isAllowedModel = (harness: string, model: string) => !model || (HARNESS_MODELS[harness as keyof typeof HARNESS_MODELS] ?? []).some((m) => m.value === model);
 
 /** Fields copied when duplicating a bot. Only what the owner can see is available (non-owners get blank personality/instructions). */
 export function duplicateOf(b: Bot) {

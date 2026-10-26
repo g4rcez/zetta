@@ -38,6 +38,7 @@
         "@sinclair/typebox": "^0.34.52",
         "@zetta/auth": "workspace:*",
         "@zetta/db": "workspace:*",
+        "@zetta/harness": "workspace:*",
         "@zetta/render": "workspace:*",
         "ai": "^7.0.153",
         "better-auth": "catalog:",
@@ -69,6 +70,7 @@
         "@tanstack/react-router": "^1.170.44",
         "@varlock/vite-integration": "1.5.1",
         "@xyflow/react": "^12.12.0",
+        "@zetta/harness": "workspace:*",
         "@zetta/render": "workspace:*",
         "@zetta/ui": "workspace:*",
         "ai": "^7.0.153",
@@ -128,6 +130,15 @@
         "drizzle-kit": "1.0.0-rc.4",
         "typescript": "catalog:",
         "varlock": "catalog:",
+      },
+    },
+    "packages/harness": {
+      "name": "@zetta/harness",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@zetta/config": "workspace:*",
+        "typescript": "catalog:",
       },
     },
     "packages/infra": {
@@ -1064,6 +1075,8 @@
     "@zetta/config": ["@zetta/config@workspace:packages/config"],
 
     "@zetta/db": ["@zetta/db@workspace:packages/db"],
+
+    "@zetta/harness": ["@zetta/harness@workspace:packages/harness"],
 
     "@zetta/infra": ["@zetta/infra@workspace:packages/infra"],
 

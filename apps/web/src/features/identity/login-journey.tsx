@@ -25,7 +25,7 @@ export function LoginJourney() {
     setIdentity(status);
     if (status.state === "active") {
       setToken("");
-      await navigate({ to: "/chat", replace: true });
+      await navigate({ to: "/chat/{-$chatId}", replace: true });
     }
     return status;
   }, [navigate]);
@@ -44,7 +44,7 @@ export function LoginJourney() {
             setShowSignUp(true);
           }
         }
-        if (status.state === "active") await navigate({ to: "/chat", replace: true });
+        if (status.state === "active") await navigate({ to: "/chat/{-$chatId}", replace: true });
       })
       .catch((failure: unknown) => {
         if (alive) setError(getIdentityError(failure));

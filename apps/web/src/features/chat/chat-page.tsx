@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ComputerActivity } from "../computer/computer-activity";
 import "../code/register";
 import "../computer/register";
@@ -33,17 +33,19 @@ const wide = (query: string) => (notify: () => void) => { const m = window.match
 const useMedia = (query: string) => useSyncExternalStore(wide(query), () => window.matchMedia(query).matches, () => true);
 const asRow = (m: Message): Row => ({ ...m, createdAt: m.createdAt ?? new Date(0).toISOString() });
 
+const NEW_CHAT = "new";
+type ChatSearchState = { thread?: string | undefined; bot?: string | undefined };
+
 export function ChatPage() {
-  const search = useSearch({ from: "/_auth/chat" });
-  const navigate = useNavigate({ from: "/chat" });
+  // The URL owns which chat is open: /chat/<conversationId>, /chat/new?bot=<botId> (empty draft) or a bare /chat (resolved below). Nothing else decides it.
+  const search = useSearch({ from: "/_auth/chat/{-$chatId}" });
+  const params = useParams({ from: "/_auth/chat/{-$chatId}" });
+  const navigate = useNavigate();
   const { data: session } = authClient.useSession();
   const [bots, setBots] = useState<Bot[]>([]);
-  const [botId, setBotId] = useState<string>();
   const [chats, setChats] = useState<Conversation[]>([]);
   const [chatsLoaded, setChatsLoaded] = useState(false);
-  const [chatId, setChatId] = useState<string>();
   const [saved, setSaved] = useState<Message[]>([]);
-  const composer = useDraft(draftKey(botId, chatId));
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [spaces, setSpaces] = useState<Workspace[]>([]);
@@ -53,36 +55,36 @@ export function ChatPage() {
   const [navOpen, setNavOpen] = useState(false); // phones: the bot list replaces the channel while open
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sent, setSent] = useState(0); // bumps on every send so the list jumps to the newest message
-  const pendingChat = useRef<string | null>(search.c ?? null);
   const desktop = useMedia("(min-width: 1024px)");
   const fail = (e: unknown) => setError(errorMessage(e));
   const threadId = search.thread;
-  const setThread = (id?: string) => void navigate({ search: (s) => ({ ...s, thread: id }), replace: true });
+  const urlChat = params.chatId;
+  const chatId = urlChat && urlChat !== NEW_CHAT ? urlChat : undefined;
+  const openChatRow = chatId ? chats.find((c) => c.id === chatId) : undefined;
+  const defaultBot = bots.find((b) => b.id === search.bot) ?? bots.find((b) => b.kind === "chief") ?? bots[0];
+  // A conversation decides its bot; a draft (or a bare /chat) takes the bot from ?bot=, falling back to the chief.
+  const botId = chatId ? openChatRow?.botId : defaultBot?.id;
+  const composer = useDraft(draftKey(botId, chatId));
+
+  const toChat = (id: string, replace = false) => void navigate({ to: "/chat/{-$chatId}", params: { chatId: id }, search: {}, replace });
+  const toDraft = (bot: string, replace = false) => void navigate({ to: "/chat/{-$chatId}", params: { chatId: NEW_CHAT }, search: { bot }, replace });
+  // Picking a bot opens its latest conversation, or an empty draft when it has none.
+  const toBot = (bot: string, replace = false) => { const latest = chats.find((c) => c.botId === bot); if (latest) toChat(latest.id, replace); else toDraft(bot, replace); };
+  const setThread = (id?: string) => void navigate({ to: ".", search: (s: ChatSearchState) => ({ ...s, thread: id }), replace: true });
 
   const loadProposals = useCallback(() => chatClient.proposals().then(setProposals).catch(() => {}), []);
   useEffect(() => { void loadProposals(); }, [loadProposals]);
   useEffect(() => { chatClient.workspaces().then(setSpaces).catch(fail); }, []);
-  useEffect(() => {
-    chatClient.bots().then((list) => { setBots(list); setBotId((prev) => prev ?? (list.find((b) => b.id === search.bot) ?? list.find((b) => b.kind === "chief") ?? list[0])?.id); }).catch(fail);
-  }, []);
-  // Every conversation, for the sidebar's per-bot groups. A link like /chat?c=<conversationId> opens that conversation (and its bot).
+  useEffect(() => { chatClient.bots().then(setBots).catch(fail); }, []);
+  // Every conversation, for the sidebar's per-bot groups.
   const loadChats = useCallback(() => chatClient.conversations().then((all) => { setChats(all); return all; }), []);
+  useEffect(() => { loadChats().then(() => setChatsLoaded(true)).catch(fail); }, [loadChats]);
+  // A bare /chat has no state of its own: it becomes the default bot's latest conversation. A chat that no longer exists falls back the same way.
   useEffect(() => {
-    loadChats().then((all) => {
-      const found = all.find((c) => c.id === pendingChat.current);
-      if (found) setBotId(found.botId); else pendingChat.current = null;
-      setChatsLoaded(true);
-    }).catch(fail);
-  }, [loadChats]);
-  // Picking a bot opens its latest conversation, unless a specific one (or a new one, "new") was asked for.
-  useEffect(() => {
-    if (!botId || !chatsLoaded) return;
-    const wanted = pendingChat.current; pendingChat.current = null;
-    if (wanted === "new") { setChatId(undefined); return; }
-    const mine = chats.filter((c) => c.botId === botId);
-    setChatId(wanted && mine.some((c) => c.id === wanted) ? wanted : mine[0]?.id);
+    if (!chatsLoaded || !bots.length) return;
+    if (!urlChat || (chatId && !openChatRow)) { if (defaultBot) toBot(defaultBot.id, true); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [botId, chatsLoaded]);
+  }, [chatsLoaded, bots, urlChat, chatId, openChatRow, defaultBot?.id]);
   const reload = useCallback(async (id: string) => { try { const list = await chatClient.messages(id); setSaved(list); } catch (e) { fail(e); } }, []);
   useEffect(() => {
     if (!chatId) { setSaved([]); setLoadingMessages(false); return; }
@@ -118,7 +120,7 @@ export function ChatPage() {
     setError(undefined);
     try {
       let id = chatId;
-      if (!id) { composer.adopt(); const created = await chatClient.startConversation(botId); id = created.id; setChats((c) => [created, ...c]); setChatId(id); }
+      if (!id) { composer.adopt(); const created = await chatClient.startConversation(botId); id = created.id; setChats((c) => [created, ...c]); toChat(id, true); }
       composer.clear(); setSent((n) => n + 1);
       void main.send(text, { conversationId: id, attachmentIds, fileRefs });
       return true;
@@ -141,11 +143,7 @@ export function ChatPage() {
     onReply: (row) => setThread(row.id),
     onSaveInstruction: (row) => void chatClient.saveInstruction(`From chat: ${row.content.slice(0, 40)}`, row.content).then(() => setNotice("Saved to your instruction library."), fail),
   };
-  function openChat(id: string) {
-    const c = chats.find((x) => x.id === id);
-    if (c && c.botId !== botId) { pendingChat.current = id; setBotId(c.botId); } else setChatId(id);
-    setThread(undefined); setNavOpen(false);
-  }
+  function openChat(id: string) { toChat(id); setNavOpen(false); }
   const ChannelIcon = current?.visibility === "private" ? Lock : Hash;
   const chatTitle = chats.find((c) => c.id === chatId)?.title;
 
@@ -156,8 +154,8 @@ export function ChatPage() {
   return (
     <div className={cn("grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] md:grid-cols-[20rem_minmax(0,1fr)]", threadPane && desktop && "lg:grid-cols-[20rem_minmax(0,1fr)_26rem]")}>
       <div className={`${navOpen ? "flex" : "hidden"} min-h-0 md:flex`}>
-        <ChatSidebar bots={bots} spaces={spaces} chats={chats} botId={botId} chatId={chatId} onBot={(id) => { setBotId(id); setThread(undefined); setNavOpen(false); }}
-          onChat={openChat} onNewChat={(id) => { if (id === botId) { setChatId(undefined); setSaved([]); } else { pendingChat.current = "new"; setBotId(id); } setThread(undefined); setNavOpen(false); }}
+        <ChatSidebar bots={bots} spaces={spaces} chats={chats} botId={botId} chatId={chatId} onBot={(id) => { toBot(id); setNavOpen(false); }}
+          onChat={openChat} onNewChat={(id) => { toDraft(id); setNavOpen(false); }}
           onNewBot={() => void navigate({ to: "/bots/new" })} onAddSpace={(name, parentId) => void chatClient.createWorkspace(name, parentId).then((w) => setSpaces((s) => [...s, w]), fail)} />
       </div>
       <section className={`${navOpen ? "hidden md:flex" : "flex"} min-h-0 min-w-0 flex-col bg-background`} aria-label={current ? `Channel ${current.name}` : "Chat"}>

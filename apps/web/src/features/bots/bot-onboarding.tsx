@@ -98,7 +98,7 @@ export function BotOnboarding() {
   }
   const go = (to: number) => { setError(undefined); setStep(to); };
   const replaceBot = (b: Bot) => { setBot((prev) => ({ ...prev, ...b, canEdit: true })); };
-  const finish = () => void navigate({ to: "/chat", search: bot ? { bot: bot.id } : {} });
+  const finish = () => void navigate({ to: "/chat/{-$chatId}", search: bot ? { bot: bot.id } : {} });
   const reachable = (i: number) => (bot ? i > CREATE_AT : i <= step || (i <= CREATE_AT && draft.name.trim().length > 0));
   const progress = Math.round(((step + 1) / STEPS.length) * 100);
 
@@ -106,7 +106,7 @@ export function BotOnboarding() {
     <div className="h-full overflow-y-auto">
       <div className="grid min-h-full w-full md:grid-cols-[15rem_minmax(0,1fr)] md:gap-12 md:px-8 xl:gap-16 xl:px-12">
         <aside className="px-4 pt-4 md:sticky md:top-0 md:self-start md:px-0 md:pt-8">
-          <Link to="/chat" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><ArrowLeft className="size-4" aria-hidden="true" />{bot ? "Back to chat" : "Cancel"}</Link>
+          <Link to="/chat/{-$chatId}" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><ArrowLeft className="size-4" aria-hidden="true" />{bot ? "Back to chat" : "Cancel"}</Link>
           <div className="mt-6 flex items-baseline justify-between gap-2">
             <h1 className="text-sm font-semibold">New bot</h1>
             <span className="text-xs tabular-nums text-muted-foreground">{step + 1} of {STEPS.length}</span>

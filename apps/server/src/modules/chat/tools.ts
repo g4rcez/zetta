@@ -1,3 +1,4 @@
+import { uiPrompt } from "@zetta/render/prompt";
 import { z } from "zod";
 
 /**
@@ -8,6 +9,7 @@ import { z } from "zod";
  *   ```zetta:create_bot / create_routine / create_workflow / create_vm  -> proposals shown as a creation summary; nothing exists until the user approves
  *   ```zetta:browser     {"action": "open", "url": "https://..."} | click_text | type | key | read
  *   ```zetta:handoff     {"reason": "I need you to sign in"}                 -> attention item; the human takes over
+ *   ```zetta:ui          JSON-patch lines building a view from @zetta/render's catalog -> not a tool: it stays in the reply and the web chat draws it
  */
 export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks in your reply (the block name follows the opening backticks):
 \`\`\`zetta:remember
@@ -19,6 +21,7 @@ export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks i
 \`\`\`zetta:config
 {"botId":"<id of one of the user's bots>","patch":{"personality":"...","instructions":"..."}}
 \`\`\`   (only a proposal: the user approves the exact change)
+${uiPrompt()}
 Only use a tool when it is needed.`;
 
 export type ComputerMode = "off" | "browser" | "desktop";
@@ -96,4 +99,19 @@ export function parseTools(reply: string): { calls: ToolCall[]; text: string } {
     return "";
   }).trim();
   return { calls, text };
+}
+
+/**
+ * A trusted ```zetta:whatsapp block built by the server (never by the model) from a WhatsApp read tool's own output, so the chat can
+ * draw it like WhatsApp. The plugin already sanitised the text; we only keep the fields the view needs. Anything unexpected returns "".
+ */
+export function whatsappView(plugin: string, tool: string, out: string): string {
+  if (plugin !== "whatsapp" || (tool !== "list_chats" && tool !== "read_messages")) return "";
+  try {
+    const d = JSON.parse(out) as { chat?: unknown; chats?: { id?: unknown; name?: unknown; lastMessage?: unknown; lastFromMe?: unknown }[]; messages?: { at?: unknown; from?: unknown; text?: unknown; media?: unknown }[] };
+    const body = tool === "list_chats"
+      ? { kind: "chats", chats: (d.chats ?? []).slice(0, 20).map((c) => ({ id: String(c.id ?? ""), name: String(c.name ?? ""), last: String(c.lastMessage ?? ""), fromMe: Boolean(c.lastFromMe) })) }
+      : { kind: "messages", chat: String(d.chat ?? ""), messages: (d.messages ?? []).slice(0, 20).map((m) => ({ at: Number(m.at) || 0, from: String(m.from ?? ""), text: String(m.text ?? ""), media: Boolean(m.media) })) };
+    return `\`\`\`zetta:whatsapp\n${JSON.stringify(body).replace(/`/g, "'")}\n\`\`\``;
+  } catch { return ""; }
 }

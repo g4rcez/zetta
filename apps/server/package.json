@@ -18,6 +18,7 @@
     "@sinclair/typebox": "^0.34.52",
     "@zetta/auth": "workspace:*",
     "@zetta/db": "workspace:*",
+    "@zetta/harness": "workspace:*",
     "@zetta/render": "workspace:*",
     "ai": "^7.0.153",
     "better-auth": "catalog:",

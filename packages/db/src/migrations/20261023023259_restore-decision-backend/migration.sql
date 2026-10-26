@@ -1,0 +1,1 @@
+ALTER TABLE "decision_config" ADD COLUMN "backend" text DEFAULT 'laya' NOT NULL;

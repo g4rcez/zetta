@@ -1,1 +1,35 @@
 @import "@zetta/ui/globals.css";
+@import "@g4rcez/components/index.css";
+
+/* Native selects: consistent chevron and no platform chrome. */
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.25rem !important;
+}
+input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
+
+/* @g4rcez/components theme bridge: the library reads --var-* tokens; point them at the app palette and keep corners tight. */
+:root, html.dark {
+  --var-radius-base: 0.5rem;
+  --var-spacing-base: 0.95rem;
+  --var-fontsize: 0.9375rem;
+  --var-color-background: var(--background);
+  --var-color-foreground: var(--foreground);
+  --var-color-border: var(--border);
+  --var-color-ring: var(--ring);
+  --var-color-muted: var(--muted);
+  --var-color-muted-foreground: var(--muted-foreground);
+  --var-color-primary: var(--primary);
+  --var-color-primary-foreground: var(--primary-foreground);
+  --var-color-primary-hover: color-mix(in oklch, var(--primary), black 12%);
+  --var-color-danger: var(--destructive);
+  --var-card-background: var(--card);
+  --var-card-border: var(--border);
+  --var-card-muted: var(--muted);
+  --var-dropdown-surface-background: var(--popover);
+  --var-menu-surface-background: var(--popover);
+  --var-modal-overlay-background: oklch(0 0 0 / 60%);
+}

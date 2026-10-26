@@ -1,0 +1,76 @@
+import { cors } from "@elysiajs/cors";
+import { Elysia } from "elysia";
+import { createAuthMiddleware, type BetterAuthInstance } from "evlog/better-auth";
+import { evlog, type EvlogElysiaOptions } from "evlog/elysia";
+
+import { createChatRoutes, type ChatServices } from "./modules/chat/routes";
+import { createComputerRoutes, type ComputerServices } from "./modules/computer/routes";
+import { createConnectionRoutes, type ConnectionServices } from "./modules/connections/routes";
+import { createIntegrationRoutes, type IntegrationServices } from "./modules/integrations/routes";
+import { createDecisionRoutes, type DecisionServices } from "./modules/decisions/routes";
+import { createFeatureRoutes, type FeatureServices } from "./modules/features/routes";
+import { createIdentityRoutes, type IdentityServices } from "./modules/identity/routes";
+
+export interface AppAuth extends BetterAuthInstance {
+  handler: (request: Request) => Response | Promise<Response>;
+}
+
+export type CreateAppOptions = {
+  auth: AppAuth;
+  identity?: IdentityServices;
+  chat?: ChatServices;
+  features?: FeatureServices;
+  decisions?: DecisionServices;
+  computer?: ComputerServices;
+  connections?: ConnectionServices;
+  integrations?: IntegrationServices;
+  webOrigin: string;
+  desktopOrigins: readonly string[];
+  /** Optional; without it evlog writes plain console logs. */
+  drain?: EvlogElysiaOptions["drain"];
+};
+
+export function createApp({ auth, identity, chat, features, decisions, computer, connections, integrations, webOrigin, desktopOrigins, drain }: CreateAppOptions) {
+  // Telemetry must never receive private auth/driver exceptions. Authorization
+  // uses the original auth service independently and still fails closed.
+  const identifyUser = createAuthMiddleware({ api: { async getSession(input) {
+    try { return await auth.api.getSession(input); }
+    catch { return null; }
+  } } }, {
+    exclude: ["/api/auth/**"],
+    maskEmail: true,
+  });
+
+  return new Elysia()
+    .mapResponse({ as: "global" }, ({ response, set }) => {
+      if (response instanceof Response) set.status = response.status;
+    })
+    .use(evlog(drain ? { drain } : {}))
+    .derive(async ({ request, log }) => {
+      await identifyUser(log, request.headers, new URL(request.url).pathname);
+      return {};
+    })
+    .use(
+      cors({
+        origin: [webOrigin, ...desktopOrigins],
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization"],
+        credentials: true,
+      }),
+    )
+    .all("/api/auth/*", async (context) => {
+      const { request, status } = context;
+      if (["POST", "GET"].includes(request.method)) {
+        return auth.handler(request);
+      }
+      return status(405);
+    })
+    .use(identity ? createIdentityRoutes(identity, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(chat ? createChatRoutes(chat, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(features ? createFeatureRoutes(features, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(decisions ? createDecisionRoutes(decisions, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(computer ? createComputerRoutes(computer, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(connections ? createConnectionRoutes(connections, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(integrations ? createIntegrationRoutes(integrations, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .get("/", () => "OK");
+}

@@ -1,0 +1,21 @@
+# RFC-008d3d1: Prepare actual Linux journal store integration
+
+Status: ordinary actual Linux proof accepted after [coordinator audit](../docs/reviews/journal-store-linux-008d3d1-review.md),2026-10-22. All eight cases, separate readback and exact cleanup passed. Crash/fault/systemd/native gates remain open. The preparation notes below are historical.
+
+Own scripts/fixtures/journal-store-proof.ts, runtime/journal-store.integration.test.ts, this task and unique evidence/bundles/policy/proposal. No product lock/layout/files/owner/store changes. Begin with ordinary composed store integration before introducing cut-specific observers or crash children.
+
+Prepare a fixed UUID dedicated-VM ext4 suite with reviewed bundle/policy outside journal/, which contains only an exclusively provisioned admission lock and generated UUID receipts. Use the installed pinned Bun/flock tuple, no network/Docker/service/provider/DB. The real store must validate Linux profile and acquire real cross-process locks. No fake capability/lock seam.
+
+Required cases: empty factory/inventory; new intent and same-attempt exact replay versus changed request; busy owner inventory snapshot; actual owner transition commit/readback/reopen; retained pending operation then explicit recovery unknown/cancel without effects; explicit close/settlement. Last, provision a synthetic idle staging file in another owned receipt without repairing it: new admission must fail while an already-owned valid receipt still progresses and retains its lock until explicit close. Keep all created namespace for root evidence/whole-suite cleanup. State logical admission-clock controls precisely; do not imply a fabricated clock is actual elapsed expiry.
+
+No crash/power-loss/injected-fsync or full C0–C8 claim from this first fixture. Those remain separately prepared008d3d children; trusted cut observer wiring, if required, must be reviewed before product changes. Actual baseline composition should precede that extension.
+
+Closed target/OS/UID/runtime/argv guards precede I/O. Deliver finite scenario/process deadlines, bounded safe JSON output, exact source/bundle/policy hashes, no effect path, and an outer same-session helper/descendant settlement plan using the previously accepted008d2 pattern. Root owns outer fixed launcher, VM provisioning/execution and exact cleanup; no VM/DB/provider/install/Git operation in this source child. Focused guarded tests/strict/LSP and source freeze precede execution.
+
+## Frozen preparation handoff
+
+Prepared fixed suite UUID894d5c47-5c0e-418d-923f-3dd2260b943e, root `/var/lib/zetta-store-proof-894d5c47-5c0e-418d-923f-3dd2260b943e/journal`. Source calls actual frozen store APIs and needs no unowned API change. Eight ordered bounded case rows and fixed no-extra-argv invocation are defined in evidence proposal.md. Input policy image digest is explicitly synthetic no-Docker identity, not installed-image evidence.
+
+Source/bundle guard rejects local execution before target filesystem/helper access. Focused guard test1pass/4assertions, strict exit0, source/test LSP clean; bundle build succeeds. provision.ts is an executable fixed one-shot recipe, strict-checked but unexecuted; root must review provisioning and its own adapted outer process-group launcher before any transfer/execution.40second fixture watchdog,12second named-case watchdogs,8192byte stdout bound; recommended45second timeout/50second outer plus5second settlement grace. Exact runtime/input hashes are in source-sha256.txt.
+
+Preparation contained no VM calls. Subsequent root-authorized actual run job7F8A95EB-767B-43ED-8C19-94FE595A0C58 passed all8 rows/exit0/empty stderr/no timeout or truncation. Exact readback, copied hashes, independent empty owned process group and final absent disposable suite are recorded in actual-report.md and raw actual-*.json receipts. Preparation parser failure and final-directory privilege correction were retained and reviewed before continuation; proof was never retried. No new mount, daemon effect, crash cut, DB/provider/install/environment/Git or product change. C0–C8 and parent008 remain incomplete. Evidence `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008d3d1/`.

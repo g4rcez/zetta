@@ -1,0 +1,5 @@
+Invocation: isolated empty Docker config; docker --host <fixed-local-colima-socket> container ls --all --filter label=zetta.rfc002.probe --format {{.ID}}
+Read-only query exit=0
+Remaining probe containers=0
+Remaining generated roots=0
+No resources deleted by this query.

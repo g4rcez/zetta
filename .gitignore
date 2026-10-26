@@ -56,3 +56,9 @@ coverage
 .cache
 tmp
 temp
+
+# local runtime data
+.zetta-files/
+.zetta-browser/
+.zetta-homes-test-*/
+.zetta-browser-test-*/

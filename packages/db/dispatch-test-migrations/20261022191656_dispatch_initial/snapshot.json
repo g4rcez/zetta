@@ -1,0 +1,1107 @@
+{
+  "version": "8",
+  "dialect": "postgres",
+  "id": "b17e5327-0064-4a0a-933e-7836b99f14fd",
+  "prevIds": [
+    "00000000-0000-0000-0000-000000000000"
+  ],
+  "ddl": [
+    {
+      "isRlsEnabled": false,
+      "name": "dispatch_capacity",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "dispatch_claims",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "dispatch_grants",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_capacity"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "launcher_installation_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_capacity"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "policy_version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_capacity"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "global_limit",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_capacity"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "actor_limit",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_capacity"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_capacity"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "attempt_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "run_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "claim_operation_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "launcher_installation_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "policy_version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "launch_spec_version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "launch_spec_canonical",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "launch_spec_digest",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "launch_identity_digest",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "image_digest",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "deadline_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "receipt_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "prepare_intent_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "resource_state",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "pending_operation_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "pending_operation_kind",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cleanup_kind",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cleanup_confirmed_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cancel_reason",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cancel_requested_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "released_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "attempt_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "run_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "action_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "kind",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "sequence",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "canonical_action",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "action_digest",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "connection_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "credential_version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "state",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "delivery_outcome",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "issued_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cancelled_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "launcher_installation_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "owner_user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": "\"released_at\" is null",
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "dispatch_claims_occupied_owner_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "launcher_installation_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "attempt_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": "\"released_at\" is null",
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "dispatch_claims_occupied_attempt_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "attempt_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "dispatch_grants_attempt_id_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "attempt_id",
+        "run_id",
+        "owner_user_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "run_attempts",
+      "columnsTo": [
+        "id",
+        "run_id",
+        "owner_user_id"
+      ],
+      "onUpdate": "RESTRICT",
+      "onDelete": "RESTRICT",
+      "name": "dispatch_claims_attempt_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "launcher_installation_id",
+        "policy_version"
+      ],
+      "schemaTo": "public",
+      "tableTo": "dispatch_capacity",
+      "columnsTo": [
+        "launcher_installation_id",
+        "policy_version"
+      ],
+      "onUpdate": "RESTRICT",
+      "onDelete": "RESTRICT",
+      "name": "dispatch_claims_policy_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "attempt_id",
+        "run_id",
+        "owner_user_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "dispatch_claims",
+      "columnsTo": [
+        "attempt_id",
+        "run_id",
+        "owner_user_id"
+      ],
+      "onUpdate": "RESTRICT",
+      "onDelete": "RESTRICT",
+      "name": "dispatch_grants_claim_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "dispatch_capacity_pkey",
+      "schema": "public",
+      "table": "dispatch_capacity",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "attempt_id"
+      ],
+      "nameExplicit": false,
+      "name": "dispatch_claims_pkey",
+      "schema": "public",
+      "table": "dispatch_claims",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "dispatch_grants_pkey",
+      "schema": "public",
+      "table": "dispatch_grants",
+      "entityType": "pks"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "launcher_installation_id",
+        "policy_version"
+      ],
+      "nullsNotDistinct": false,
+      "name": "dispatch_capacity_installation_policy_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "dispatch_capacity"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "claim_operation_id"
+      ],
+      "nullsNotDistinct": false,
+      "name": "dispatch_claims_operation_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "attempt_id",
+        "run_id",
+        "owner_user_id"
+      ],
+      "nullsNotDistinct": false,
+      "name": "dispatch_claims_attempt_run_owner_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "launcher_installation_id",
+        "receipt_id"
+      ],
+      "nullsNotDistinct": false,
+      "name": "dispatch_claims_installation_receipt_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "attempt_id",
+        "action_id"
+      ],
+      "nullsNotDistinct": false,
+      "name": "dispatch_grants_attempt_action_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "attempt_id",
+        "kind",
+        "sequence"
+      ],
+      "nullsNotDistinct": false,
+      "name": "dispatch_grants_attempt_sequence_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "value": "\"id\" = 1",
+      "name": "dispatch_capacity_singleton_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_capacity"
+    },
+    {
+      "value": "\"global_limit\" = 2 and \"actor_limit\" = 1",
+      "name": "dispatch_capacity_limits_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_capacity"
+    },
+    {
+      "value": "\"launcher_installation_id\" collate \"C\" ~ '^[a-zA-Z0-9_-]{1,128}$' and \"policy_version\" collate \"C\" ~ '^[a-zA-Z0-9_-]{1,128}$'",
+      "name": "dispatch_capacity_identifiers_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_capacity"
+    },
+    {
+      "value": "(\"created_at\" is null or (isfinite(\"created_at\") and extract(epoch from \"created_at\") * 1000 between -8640000000000000 and 8640000000000000))",
+      "name": "dispatch_capacity_time_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_capacity"
+    },
+    {
+      "value": "\"owner_user_id\" collate \"C\" ~ '^[a-zA-Z0-9_-]{1,128}$' and \"launcher_installation_id\" collate \"C\" ~ '^[a-zA-Z0-9_-]{1,128}$' and \"policy_version\" collate \"C\" ~ '^[a-zA-Z0-9_-]{1,128}$'",
+      "name": "dispatch_claims_identifiers_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "value": "\"generation\" between 1 and 2147483647 and \"revision\" between 1 and 2147483647",
+      "name": "dispatch_claims_counters_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "value": "\"launch_spec_version\" = 1 and octet_length(\"launch_spec_canonical\") between 1 and 16384 and \"launch_spec_canonical\" is json array\n    and \"launch_spec_digest\" collate \"C\" ~ '^[a-f0-9]{64}$' and \"launch_identity_digest\" collate \"C\" ~ '^[a-f0-9]{64}$' and \"image_digest\" collate \"C\" ~ '^sha256:[a-f0-9]{64}$'",
+      "name": "dispatch_claims_payload_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "value": "\"deadline_at\" > \"created_at\" and \"deadline_at\" <= \"created_at\" + interval '60 seconds'",
+      "name": "dispatch_claims_deadline_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "value": "\"resource_state\" in ('not_submitted','prepare_pending','prepared','active','stopping','unknown','cleaned')\n    and ((\"resource_state\" = 'not_submitted' and \"prepare_intent_at\" is null and \"receipt_id\" is null and \"pending_operation_id\" is null)\n      or (\"resource_state\" <> 'not_submitted' and \"prepare_intent_at\" is not null))\n    and (\"receipt_id\" is null or \"prepare_intent_at\" is not null)\n    and (\"resource_state\" not in ('prepared','active','stopping','cleaned') or \"receipt_id\" is not null)\n    and (\"resource_state\" <> 'prepare_pending' or (\"pending_operation_kind\" is not null and \"pending_operation_kind\" = 'prepare' and \"receipt_id\" is null))",
+      "name": "dispatch_claims_state_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "value": "((\"pending_operation_id\" is null and \"pending_operation_kind\" is null)\n    or (\"pending_operation_id\" is not null and \"pending_operation_kind\" is not null and \"pending_operation_kind\" in ('prepare','activate','input','stop','remove')))\n    and (\"pending_operation_kind\" is null or \"pending_operation_kind\" = 'prepare' or \"receipt_id\" is not null)",
+      "name": "dispatch_claims_pending_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "value": "((\"cleanup_kind\" is null and \"cleanup_confirmed_at\" is null)\n    or (\"cleanup_kind\" is not null and \"cleanup_confirmed_at\" is not null and \"pending_operation_id\" is null\n      and ((\"cleanup_kind\" = 'not_submitted' and \"resource_state\" = 'not_submitted' and \"prepare_intent_at\" is null and \"receipt_id\" is null)\n        or (\"cleanup_kind\" = 'removed' and \"resource_state\" = 'cleaned' and \"receipt_id\" is not null and \"prepare_intent_at\" is not null))))\n    and (\"resource_state\" <> 'cleaned' or (\"cleanup_kind\" is not null and \"cleanup_kind\" = 'removed'))",
+      "name": "dispatch_claims_cleanup_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "value": "\"released_at\" is null or (\"cleanup_kind\" is not null and \"cleanup_confirmed_at\" is not null\n    and \"pending_operation_id\" is null and \"released_at\" >= \"cleanup_confirmed_at\")",
+      "name": "dispatch_claims_release_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "value": "(\"cancel_reason\" is null and \"cancel_requested_at\" is null)\n    or (\"cancel_reason\" is not null and \"cancel_requested_at\" is not null and \"cancel_reason\" in ('owner','deadline','revocation','shutdown','recovery')\n      and (\"cancel_reason\" <> 'deadline' or \"cancel_requested_at\" >= \"deadline_at\"))",
+      "name": "dispatch_claims_cancel_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "value": "(\"created_at\" is null or (isfinite(\"created_at\") and extract(epoch from \"created_at\") * 1000 between -8640000000000000 and 8640000000000000)) and (\"updated_at\" is null or (isfinite(\"updated_at\") and extract(epoch from \"updated_at\") * 1000 between -8640000000000000 and 8640000000000000)) and (\"deadline_at\" is null or (isfinite(\"deadline_at\") and extract(epoch from \"deadline_at\") * 1000 between -8640000000000000 and 8640000000000000)) and (\"prepare_intent_at\" is null or (isfinite(\"prepare_intent_at\") and extract(epoch from \"prepare_intent_at\") * 1000 between -8640000000000000 and 8640000000000000)) and (\"cleanup_confirmed_at\" is null or (isfinite(\"cleanup_confirmed_at\") and extract(epoch from \"cleanup_confirmed_at\") * 1000 between -8640000000000000 and 8640000000000000)) and (\"cancel_requested_at\" is null or (isfinite(\"cancel_requested_at\") and extract(epoch from \"cancel_requested_at\") * 1000 between -8640000000000000 and 8640000000000000)) and (\"released_at\" is null or (isfinite(\"released_at\") and extract(epoch from \"released_at\") * 1000 between -8640000000000000 and 8640000000000000))\n    and \"updated_at\" >= \"created_at\"\n    and (\"prepare_intent_at\" is null or (\"prepare_intent_at\" >= \"created_at\" and \"prepare_intent_at\" <= \"updated_at\")) and (\"cleanup_confirmed_at\" is null or (\"cleanup_confirmed_at\" >= \"created_at\" and \"cleanup_confirmed_at\" <= \"updated_at\")) and (\"cancel_requested_at\" is null or (\"cancel_requested_at\" >= \"created_at\" and \"cancel_requested_at\" <= \"updated_at\")) and (\"released_at\" is null or (\"released_at\" >= \"created_at\" and \"released_at\" <= \"updated_at\"))",
+      "name": "dispatch_claims_time_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_claims"
+    },
+    {
+      "value": "\"owner_user_id\" collate \"C\" ~ '^[a-zA-Z0-9_-]{1,128}$'",
+      "name": "dispatch_grants_owner_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "value": "\"revision\" between 1 and 2147483647",
+      "name": "dispatch_grants_revision_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "value": "(\"kind\" = 'activate' and \"sequence\" = 1) or (\"kind\" = 'input' and \"sequence\" between 1 and 65537)",
+      "name": "dispatch_grants_action_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "value": "octet_length(\"canonical_action\") between 1 and 16384 and \"canonical_action\" is json array and \"action_digest\" collate \"C\" ~ '^[a-f0-9]{64}$'",
+      "name": "dispatch_grants_payload_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "value": "\"connection_id\" is null and \"credential_version\" is null",
+      "name": "dispatch_grants_credentials_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "value": "\"expires_at\" > \"created_at\" and \"expires_at\" <= \"created_at\" + interval '30 seconds'",
+      "name": "dispatch_grants_expiry_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "value": "\n    (\"state\" = 'pending' and \"issued_at\" is null and \"cancelled_at\" is null and \"delivery_outcome\" = 'not_attempted')\n    or (\"state\" = 'issued' and \"issued_at\" is not null and \"delivery_outcome\" in ('not_attempted','acknowledged'))\n    or (\"state\" = 'uncertain' and \"delivery_outcome\" in ('unknown','acknowledged'))\n    or (\"state\" = 'cancelled' and \"cancelled_at\" is not null and \"issued_at\" is null and \"delivery_outcome\" = 'not_attempted')\n    or (\"state\" = 'expired' and \"issued_at\" is null and \"cancelled_at\" is null and \"delivery_outcome\" = 'not_attempted' and \"updated_at\" >= \"expires_at\")",
+      "name": "dispatch_grants_state_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_grants"
+    },
+    {
+      "value": "(\"created_at\" is null or (isfinite(\"created_at\") and extract(epoch from \"created_at\") * 1000 between -8640000000000000 and 8640000000000000)) and (\"updated_at\" is null or (isfinite(\"updated_at\") and extract(epoch from \"updated_at\") * 1000 between -8640000000000000 and 8640000000000000)) and (\"expires_at\" is null or (isfinite(\"expires_at\") and extract(epoch from \"expires_at\") * 1000 between -8640000000000000 and 8640000000000000)) and (\"issued_at\" is null or (isfinite(\"issued_at\") and extract(epoch from \"issued_at\") * 1000 between -8640000000000000 and 8640000000000000)) and (\"cancelled_at\" is null or (isfinite(\"cancelled_at\") and extract(epoch from \"cancelled_at\") * 1000 between -8640000000000000 and 8640000000000000))\n    and \"updated_at\" >= \"created_at\" and (\"issued_at\" is null or (\"issued_at\" >= \"created_at\" and \"issued_at\" <= \"updated_at\")) and (\"cancelled_at\" is null or (\"cancelled_at\" >= \"created_at\" and \"cancelled_at\" <= \"updated_at\"))\n    and (\"issued_at\" is null or (\"issued_at\" < \"expires_at\" and (\"cancelled_at\" is null or \"cancelled_at\" >= \"issued_at\")))",
+      "name": "dispatch_grants_time_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "dispatch_grants"
+    }
+  ],
+  "renames": []
+}

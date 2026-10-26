@@ -1,0 +1,35 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  # Zetta must run the same way on Linux, macOS and Windows, with or without Docker: unit tests run everywhere,
+  # database-backed suites run where a Postgres service is available (Linux).
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    services:
+      postgres:
+        image: ${{ matrix.os == 'ubuntu-latest' && 'postgres:18' || '' }}
+        env: { POSTGRES_PASSWORD: password, POSTGRES_DB: zetta_test }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Migrate test database
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: packages/db
+        run: bunx drizzle-kit migrate
+        env: { DATABASE_URL: "postgresql://postgres:password@127.0.0.1:5432/zetta_test" }
+      - name: Server tests (database-backed on Linux)
+        working-directory: apps/server
+        run: bun test
+        env:
+          ZETTA_CHAT_TEST_DATABASE_URL: ${{ matrix.os == 'ubuntu-latest' && 'postgresql://postgres:password@127.0.0.1:5432/zetta_test' || '' }}
+          ZETTA_TEST_DATABASE_URL: ${{ matrix.os == 'ubuntu-latest' && 'postgresql://postgres:password@127.0.0.1:5432/zetta_test' || '' }}
+      - name: Web build
+        working-directory: apps/web
+        run: bun run build

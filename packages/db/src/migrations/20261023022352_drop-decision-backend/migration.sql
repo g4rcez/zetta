@@ -1,0 +1,1 @@
+ALTER TABLE "decision_config" DROP COLUMN "backend";

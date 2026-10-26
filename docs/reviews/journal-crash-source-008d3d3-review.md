@@ -1,0 +1,9 @@
+# Coordinator Linux crash fixture source review
+
+Verdict: CLEAR for corrected source preparation, 2026-10-22. Root read all five sources and fixed provisioning recipe, independently passed4 protocol/guard tests with59 assertions and scoped strict TypeScript. Worker diagnostics and rebuilt unsupported-host bundle guards were clean. No guest fixture exists yet.
+
+The corrected closed17-case matrix includes distinct successful file-sync-before-close and after-close cuts for insertion/replacement. Actual syscall observers pause writers; constructor callback mutation is tested without replacing profile/locks. Parent guards exact live PID/start, promptly SIGKILLs, reaps and settles streams before a distinct recovery process. C0-C7 contain no effect messages; C8 contains exactly one explicitly synthetic message after real pending commit reply. Recovery has no submission branch.
+
+Initial surviving bytes and final recovery snapshots are separate closed fields. Blocked/inert cases retain exact hashes; pending recovery verifies canonical quarantine/unknown/cancel persistence and changed record hash. /proc scan and stat reads are bounded. Future readback must compare finalEntries to current files, retain initialEntries as cut-survival evidence and independently inspect all process identities.
+
+Writer36ec2d8ef052fe142f7d1c033e96822347a8a21898cd6aa732b6437d350a0e29, recovery13c17ca61637edec15d71fd5fc3a2a4541374b2e2684eb1e1e629d1824b37f46 and proofef917d9ab26f217f9c1276590947589342e28a02818121139eb8aa8050387b56 are frozen. An adapted exclusive-marker outer supervisor with exact52-row oracle, pinned input checks,190s bound/settlement and empty-group verification remains required before VM provisioning/execution. No actual crash/capture, power-loss, fault matrix or parent008 success is claimed.

@@ -1,0 +1,48 @@
+import { Elysia } from "elysia";
+import { z } from "zod";
+import { AccessError, type createIdentityAccess } from "../identity/access";
+import { McpError, type Mcp } from "./mcp";
+import { SourceError, type Sources } from "./sources";
+
+export type IntegrationServices = { access: ReturnType<typeof createIdentityAccess>; mcp: Mcp; sources: Sources };
+const uuid = z.string().uuid();
+const out = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
+const fail = (status: number, code: string, message: string) => out({ error: { code, message } }, status);
+
+export function createIntegrationRoutes({ access, mcp, sources }: IntegrationServices, trustedOrigins: readonly string[]) {
+  type Ctx = { actor: Awaited<ReturnType<typeof access.requireActive>>; body: unknown; params: Record<string, string> };
+  function mapError(e: unknown) {
+    if (e instanceof AccessError) return fail(e.code === "SIGN_IN_REQUIRED" ? 401 : e.code === "NOT_FOUND" ? 404 : e.code === "IDENTITY_UNAVAILABLE" ? 503 : 403, e.code, e.message);
+    if (e instanceof McpError) return fail(e.code === "NOT_BOUND" ? 404 : e.code === "TIMEOUT" ? 504 : e.code === "FAILED" ? 502 : 400, e.code,
+      e.code === "STDIO_NOT_ALLOWED" ? "Local commands must be allowed by the administrator (ZETTA_MCP_ALLOWLIST)." : e.code === "BLOCKED_URL" ? "That address is not allowed." : e.code === "NOT_BOUND" ? "That server is not connected to this bot." : e.code === "TIMEOUT" ? "The server took too long." : e.code === "FAILED" ? "The server could not be reached." : "Check the details and try again.");
+    if (e instanceof SourceError) return fail(e.code === "BLOCKED" ? 400 : 502, e.code, e.code === "BLOCKED" ? "That address is not allowed." : "The source could not be read.");
+    if (e instanceof z.ZodError) return fail(400, "INVALID_REQUEST", "Check the details and try again.");
+    return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
+  }
+  const g = (work: (c: Ctx) => Promise<unknown>, status = 200) => async ({ request, body, params }: { request: Request; body: unknown; params: Record<string, string> }) => {
+    try {
+      if (request.method !== "GET") { const o = request.headers.get("origin"); if (!o || !trustedOrigins.includes(o)) return fail(403, "UNTRUSTED_ORIGIN", "Open Zetta from its trusted application and try again."); }
+      return out(await work({ actor: await access.requireActive(request.headers), body, params }), status);
+    } catch (e) { return mapError(e); }
+  };
+  return new Elysia({ prefix: "/api", normalize: false })
+    .get("/mcp/servers", g(async (c) => ({ servers: await mcp.listServers(c.actor) })))
+    .post("/mcp/servers", g(async (c) => ({ server: await mcp.addServer(c.actor, z.strictObject({ name: z.string().regex(/^[a-z0-9_-]{1,32}$/), transport: z.enum(["http", "stdio"]), url: z.string().url().max(2000).optional(), command: z.string().max(300).optional(), args: z.array(z.string().max(300)).max(16).optional(), connectionId: uuid.optional() }).parse(c.body)) }), 201))
+    .delete("/mcp/servers/:id", g(async (c) => ({ server: await mcp.removeServer(c.actor, uuid.parse(c.params.id)) })))
+    .get("/mcp/servers/:id/tools", g(async (c) => ({ tools: await mcp.tools(c.actor, uuid.parse(c.params.id)) })))
+    .get("/bots/:id/integrations", g(async (c) => ({ servers: await mcp.bound(c.actor, uuid.parse(c.params.id)) })))
+    .put("/bots/:id/integrations/:serverId", g(async (c) => ({ binding: await mcp.bind(c.actor, uuid.parse(c.params.id), uuid.parse(c.params.serverId)) })))
+    .delete("/bots/:id/integrations/:serverId", g(async (c) => ({ binding: await mcp.unbind(c.actor, uuid.parse(c.params.id), uuid.parse(c.params.serverId)) })))
+    .get("/sources", g(async (c) => ({ sources: await sources.list(c.actor) })))
+    .post("/sources", g(async (c) => {
+      const label = z.string().trim().min(1).max(100);
+      const v = z.discriminatedUnion("kind", [
+        z.strictObject({ kind: z.enum(["rss", "web"]), url: z.string().url().max(2000), label }),
+        z.strictObject({ kind: z.literal("email"), label, connectionId: z.string().min(1).max(100), host: z.string().max(253), port: z.number().int().min(1).max(65535).optional(), user: z.string().min(1).max(254), mailbox: z.string().max(100).optional(), limit: z.number().int().min(1).max(25).optional() }),
+        z.strictObject({ kind: z.literal("x"), label, connectionId: z.string().min(1).max(100), mode: z.enum(["user", "search"]), value: z.string().min(1).max(400) }),
+      ]).parse(c.body);
+      return { source: v.kind === "email" ? await sources.addEmail(c.actor, v) : v.kind === "x" ? await sources.addX(c.actor, v) : await sources.add(c.actor, v) };
+    }, 201))
+    .delete("/sources/:id", g(async (c) => ({ source: await sources.remove(c.actor, uuid.parse(c.params.id)) })))
+    .post("/sources/briefing", g(async (c) => sources.briefing(c.actor, z.strictObject({ sourceIds: z.array(uuid).max(10).optional() }).parse(c.body ?? {}).sourceIds)));
+}

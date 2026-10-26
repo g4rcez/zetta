@@ -41,9 +41,6 @@ services:
       - path: apps/server/.env
         required: false
     environment:
-      AXIOM_API_KEY: ${AXIOM_API_KEY:?Set AXIOM_API_KEY}
-      AXIOM_DATASET: ${AXIOM_DATASET:?Set AXIOM_DATASET}
-      AXIOM_EDGE_URL: ${AXIOM_EDGE_URL:?Set AXIOM_EDGE_URL}
       CORS_ORIGIN: http://localhost:3001
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/zetta
     healthcheck:

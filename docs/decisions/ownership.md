@@ -1,0 +1,56 @@
+# Installation ownership and access
+
+Status: approved product/access policy. The user approved the proposed defaults after the foundation scout review. Exact schema, auth/API mechanics, migrations, dependencies and environment checks retain their separate approval gates. This decision completes the policy portion of RFC-001, not its implementation.
+
+## Membership and enrollment
+
+One installation has one human membership set, not organizations or nested teams. Each local user has at most one active membership. Enrollment is closed: admin-approved, expiring, single-use invitations bound to the intended account. Authentication without active membership grants no domain access. Workspaces and inner groups are each user's visual sidebar organization, not membership or access boundaries.
+
+Exactly one installation admin exists after bootstrap. Bootstrap is explicit, atomic, one-time and operator-controlled; first public signup never wins admin status. Recovery/replacement requires installation-operator control and an explicit audited procedure, invalidates affected sessions, and preserves exactly one admin. No second standing admin, automatic succession, or private-content bypass. Exact bootstrap/recovery mechanics remain an implementation approval gate.
+
+## Access matrix
+
+A owns the listed resource; B is another active member. Admin follows B's content permissions unless independently the owner. Unlisted authority is denied. All resource and nested-reference access is checked server-side.
+
+| Resource | A | B | Admin management limit |
+| --- | --- | --- | --- |
+| Team-visible specialist | Edit definition/visibility, view and use | Share-safe view and use with B's connections and readiness; no edit/delete | No owner-edit bypass |
+| Private bot or personal chief | Owner view/edit/use; one private chief per user | No discovery/view/use/edit | No private-content override |
+| Visual workspaces/groups | Own sidebar organization only | Own organization; independent bot visibility still applies | Placement grants nothing |
+| Connections and credentials | Manage/use own; safe metadata, no raw-secret export | Deny | No impersonation or secret access |
+| Chats/messages/files/server references | Authorized private scope; publish own safe conversation snapshot | Deny original resources | No implicit private access |
+| Routines/workflows and results | Own edit/activate/cancel/view; immutable run versions | Deny A's resources; may create own with accessible bots | No silent transfer or execution as A |
+| Memory/instructions | Scoped read/write/use with provenance | Deny A's private scope even through shared bots | No automatic team promotion |
+| Active conversation snapshot | Publish/view/withdraw own | Read-only while active member and publication active | Safety withdrawal only; no private-chat publication or content edits |
+| Attention | Own view/acknowledge and separately authorized repair/approval | Deny A's queue and links | No execution/approval through card movement |
+| Browser/computer profiles and sessions | Own use/control; explicit same-user profile sharing | Deny profile/screen/input/clipboard/state | No host-desktop or cross-user fallback |
+| Onboarding evidence | A + bot + tested configuration/bindings; explicit satisfaction | Must establish B's own evidence | Cannot assert another user's satisfaction |
+
+Shared bot definition visibility does not expose account bindings, native runtime state, private knowledge, or private instructions. Bot ownership is not a mutable configuration field. Ownership transfer and configurable editor lists are not included in this minimum policy.
+
+## Execution and configuration identity
+
+Interactive work uses the initiating user's authorized connections. Delegation, hooks, retries, decisions and manual workflows preserve that actor. Schedules and scheduled workflows derive identity from the stored routine owner. Server-derived fields include actor/owner, membership, authorized resource scope, pinned configuration version, readiness bindings, and publication cutoff. Do not trust client/model assertions of those fields.
+
+A chief has orchestration duties, not additional authority. Any bot may assist a user-directed edit only if that user can edit the target. Autonomous self-proposals remain scoped to the proposing bot. Bot-proposed changes require an exact version-bound diff/creation summary and explicit authorized approval. Forms and chat share validation. Readiness requires technical prerequisites plus a real setup conversation and explicit positive satisfaction for that user's tested setup; it is rechecked after meaningful changes and access revocation.
+
+## Removal and recovery
+
+Removing membership invalidates sessions and denies domain reads and new dispatch/delegation/retry work. Disable owned schedules/workflows; cancel active work best-effort and close runtime/input access. Recheck access before external actions, without claiming revocation can undo completed effects. Suspend a departing owner's bots from team use, rather than transferring them. Retain private resources inaccessible pending approved retention/deletion rules. Re-enrollment does not automatically resume schedules or readiness. Removing the sole admin requires explicit replacement/recovery, not ordinary zero-admin operation.
+
+## Snapshot lifecycle
+
+Publication freezes the entire conversation with safe representations at a server-selected cutoff. Unsafe/unrepresentable content blocks publication. No live capabilities, account access, underlying memory access, or later messages are shared. Readers cannot mutate, react, invoke bots, or operate original resources.
+
+All current active installation members, including later joiners, can view an active publication. The author may withdraw; the admin may safety-withdraw without editing content. Membership removal immediately denies that user's reads and withdraws that author's publications. Old URLs do not bypass withdrawal. Keep minimal revocation/audit evidence; retention/purge duration remains a later explicit decision. Copied/downloaded content cannot be recalled. Immutable content does not mean irrevocable access.
+
+## Reviewed cases and remaining gates
+
+- A and B use the same visible bot: independent connections, private chat, knowledge, results and onboarding.
+- A moves a bot between two visual groups: no changed authority, no extra chief, no shared cards/profile.
+- B substitutes A's resource IDs or an admin requests private content: deny without metadata leakage.
+- Routine/delegation preserves its originating actor; configuration cannot change it.
+- A publishes: B sees only the frozen safe content; original resources and later messages remain private.
+- A is removed or publication withdrawn: deny old links and new execution; retain history under the pending retention policy.
+
+Evidence: source review in RFC-001 foundation scout; owner approval in the implementation conversation. No runtime isolation, database constraint, schema, or auth modification is proved by this policy review. See [RFC-001](../../tasks/001-approve-domain-and-ownership-contracts.md), [implementation plan](../../tasks/plan.md), and [intent](../intent/zetta-v1.md).

@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,15 +10,37 @@ import {
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
 import { Skeleton } from "@zetta/ui/components/skeleton";
+import { UserRound } from "lucide-react";
+import { useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { authClient } from "@/lib/auth-client";
+import { AuthenticationRequestError } from "@/lib/auth-transport";
 
-export default function UserMenu() {
+export default function UserMenu({ compact = false }: { compact?: boolean }) {
   const navigate = useNavigate();
   const { data: session, isPending } = authClient.useSession();
+  const [signingOut, setSigningOut] = useState(false);
+  const signOutPending = useRef(false);
+
+  async function signOut() {
+    if (signOutPending.current) return;
+    signOutPending.current = true;
+    setSigningOut(true);
+    try {
+      const result = await authClient.signOut();
+      if (result.error) throw new AuthenticationRequestError("unavailable");
+      await navigate({ to: "/" });
+    } catch { // no-excuse-ok: catch -- report only a fixed message at the user action boundary.
+      toast.error("Could not confirm sign out. Check your connection, then try again.");
+    } finally {
+      signOutPending.current = false;
+      setSigningOut(false);
+    }
+  }
 
   if (isPending) {
-    return <Skeleton className="h-9 w-24" />;
+    return <Skeleton className="size-8 sm:w-24" />;
   }
 
   if (!session) {
@@ -31,29 +53,24 @@ export default function UserMenu() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" />}>
-        {session.user.name}
+      <DropdownMenuTrigger
+        aria-label={`Account menu for ${session.user.name}`}
+        render={compact ? <Button variant="ghost" size="icon" className="size-10 rounded-full bg-secondary text-sm font-semibold" /> : <Button variant="outline" size="icon" className="sm:w-auto sm:max-w-40 sm:px-2.5" />}
+      >
+        {compact ? <span aria-hidden="true">{session.user.name.slice(0, 1).toUpperCase()}</span> : <><UserRound aria-hidden="true" className="sm:hidden" />
+        <span className="hidden min-w-0 truncate sm:block">{session.user.name}</span></>}
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="bg-card">
+      <DropdownMenuContent align={compact ? "start" : "end"} side={compact ? "right" : "bottom"} className="w-64 max-w-[calc(100vw-1rem)] bg-card">
         <DropdownMenuGroup>
-          <DropdownMenuLabel>My Account</DropdownMenuLabel>
+          <DropdownMenuLabel className="break-words">{session.user.name}</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem>{session.user.email}</DropdownMenuItem>
+          <DropdownMenuItem className="break-all">{session.user.email}</DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
-            onClick={() => {
-              authClient.signOut({
-                fetchOptions: {
-                  onSuccess: () => {
-                    navigate({
-                      to: "/",
-                    });
-                  },
-                },
-              });
-            }}
+            disabled={signingOut}
+            onClick={() => void signOut()}
           >
-            Sign Out
+            {signingOut ? "Signing out…" : "Sign Out"}
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

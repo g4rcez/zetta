@@ -1,0 +1,15 @@
+# RFC-005f1: Review identity lock normalization and reproduction
+
+Status: amended per-account design accepted after independent CLEAR review and coordinator source inspection,2026-10-22. Bounded005f2 reproduction-source preparation is separately assigned; production source and actual proof not performed. Parent005/020 integration status remains coordinator-owned.
+
+Owned artifacts: [independent review](../docs/reviews/identity-lock-order-005f1-review.md), this task and unique identity-005f1 evidence. Existing product sources, tests, migrations and shared decision text were read only.
+
+The review confirms two source-derived wait cycles: enrollment's admin-first membership order against future sorted cross-owner020 access, and current007 connection-create FK KEY SHARE against005 replacement's auth-user FOR UPDATE. Sorted accounts NO KEY UPDATE→sorted memberships UPDATE addresses those explicit edges but may miss an overlapping session insert at replacement's DELETE snapshot. Installed Better Auth source and the actual004 stored-session invalidation promise were inspected directly.
+
+Revised resolution: retain admin lifecycle's sorted auth FOR UPDATE and session deletion; normalize enrollment to installation→all sorted auth FOR UPDATE→all sorted members FOR UPDATE. Include issueInvitation's optional intendedUserId in the auth set because invitation/audit FKs reference it. Add auth FOR KEY SHARE before membership in007's local member helper. Future020 locks its entire sorted actor/owner auth set before its entire sorted member set, with no account mutation/lock upgrade afterward.009's membership-only FK order remains a valid subsequence. No global session-table fence or session epoch/auth hook is selected. Membership activation epoch remains a separate gate.
+
+Next bounded assignment: at most two new opt-in proof source/test files, reusing exact existing disposable target/client ownership, actual createConnectionStore/createAdminLifecycleService, controlled query-result pauses and pg_blocking_pids. Run only after exact target authorization and source review. Capture current actual service cycle before a fix. Label future020 direct-SQL and session-FK controls synthetic. A later fix is bounded to identity/enrollment.ts, identity/enrollment.test.ts, connections/store.ts, connections/store.test.ts and the integration proof file (five paths). Admin lifecycle remains unchanged; its existing tests and auth regression coverage are rerun separately.
+
+Acceptance evidence and executable scenario plan: [proof proposal](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/identity-005f1/proof-proposal.md), [audit receipt](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/identity-005f1/report.md).
+
+No production code/test changes, schema/migration, database, VM/Docker, dependency/provider/credential, environment or Git work occurred. No operational success or cleanup is claimed.

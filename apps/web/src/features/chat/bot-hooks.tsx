@@ -1,0 +1,66 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { Button } from "@/components/ui";
+
+import { chatClient, errorMessage, type Bot, type Hook, type HookDryRun } from "./chat-client";
+import { field } from "../shared/ui";
+
+const KIND: Record<Hook["kind"], string> = { add_context: "Add context", redact: "Hide text", stop: "Stop message", background: "Background task" };
+const sorted = (l: Hook[]) => [...l].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+export function BotHooks({ bot }: { bot: Bot }) {
+  const [hooks, setHooks] = useState<Hook[]>([]);
+  const [error, setError] = useState<string>();
+  const [test, setTest] = useState("");
+  const [result, setResult] = useState<HookDryRun>();
+  const load = () => chatClient.hooks(bot.id).then((l) => setHooks(sorted(l)), () => setHooks([]));
+  useEffect(() => { void load(); }, [bot.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const guard = async (work: () => Promise<unknown>) => { setError(undefined); try { await work(); } catch (e) { setError(errorMessage(e)); } };
+
+  const toggle = (h: Hook) => guard(async () => { const next = await chatClient.updateHook(h.id, { enabled: !(h.enabled ?? true) }); setHooks((l) => l.map((x) => (x.id === h.id ? { ...x, ...next } : x))); });
+  const move = (i: number, dir: -1 | 1) => guard(async () => {
+    const order = [...hooks]; const j = i + dir;
+    if (j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j]!, order[i]!];
+    await Promise.all(order.map((h, k) => ((h.position ?? 0) === k ? undefined : chatClient.updateHook(h.id, { position: k }))));
+    setHooks(order.map((h, k) => ({ ...h, position: k })));
+  });
+  const add = (e: FormEvent<HTMLFormElement>) => { e.preventDefault(); const form = e.currentTarget, f = new FormData(form); return guard(async () => { await chatClient.addHook(bot.id, { kind: f.get("kind") as Hook["kind"], pattern: String(f.get("pattern") ?? ""), value: String(f.get("value") ?? "") }); form.reset(); await load(); }); };
+  const dry = (e: FormEvent) => { e.preventDefault(); return guard(async () => setResult(await chatClient.dryRunHooks(bot.id, test))); };
+
+  return (
+    <section aria-label="Hooks" className="space-y-2 rounded-lg border bg-card p-4">
+      <h3 className="font-medium">Hooks</h3>
+      <p className="text-xs text-muted-foreground">Hooks run on your message before the bot sees it, from top to bottom.</p>
+      {hooks.length === 0 && <p className="text-xs text-muted-foreground">No hooks yet.</p>}
+      <ol className="space-y-1">{hooks.map((h, i) => (
+        <li key={h.id} className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border bg-card p-2">
+          <span className="w-5 text-xs text-muted-foreground" aria-label={`Position ${i + 1}`}>{i + 1}.</span>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={h.enabled ?? true} onChange={() => void toggle(h)} /><span className="sr-only">Enabled: </span>{KIND[h.kind]}</label>
+          <span className="min-w-0 flex-1 break-words text-xs text-muted-foreground">{h.pattern || h.value.slice(0, 40)}</span>
+          <Button type="button" size="xs" variant="outline" disabled={i === 0} onClick={() => void move(i, -1)} aria-label={`Move ${KIND[h.kind]} hook up`}>↑</Button>
+          <Button type="button" size="xs" variant="outline" disabled={i === hooks.length - 1} onClick={() => void move(i, 1)} aria-label={`Move ${KIND[h.kind]} hook down`}>↓</Button>
+          <Button type="button" size="xs" variant="outline" onClick={() => void guard(async () => { await chatClient.deleteHook(h.id); setHooks((l) => l.filter((x) => x.id !== h.id)); })}>Remove</Button>
+        </li>))}</ol>
+      <form className="flex flex-wrap gap-1" onSubmit={(e) => void add(e)}>
+        <select name="kind" aria-label="Hook type" className={`${field} w-40`}>{(Object.keys(KIND) as Hook["kind"][]).map((k) => <option key={k} value={k}>{KIND[k]}</option>)}</select>
+        <input name="pattern" aria-label="Hook pattern" placeholder="Match (hide / stop)" className={`${field} w-40`} />
+        <input name="value" aria-label="Hook value" placeholder="Text / replacement / task" className={`${field} w-48`} />
+        <Button type="submit" size="sm" variant="outline">Add hook</Button>
+      </form>
+      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+      <form className="space-y-1" onSubmit={(e) => void dry(e)}>
+        <label className="block text-xs">Try a message against these hooks (nothing is sent to the bot)
+          <textarea value={test} onChange={(e) => setTest(e.target.value)} rows={2} className={`${field} mt-0.5`} /></label>
+        <Button type="submit" size="sm" variant="outline" disabled={!test.trim()}>Test hooks</Button>
+      </form>
+      {result && (
+        <div role="status" className="space-y-0.5 rounded-md border bg-card p-3 text-xs">
+          <p>{result.stopped ? <>This message would be stopped: <strong>{result.stopMessage || "(no message)"}</strong></> : "This message would go through."}</p>
+          <p className="break-words">Text the bot would see: {result.text || "(empty)"}</p>
+          <p>Extra context added: {result.addedContext.length}{result.addedContext.length ? ` (${result.addedContext.join(" | ").slice(0, 200)})` : ""}</p>
+          <p>Background tasks started: {result.backgroundTasks}</p>
+          {result.skippedInvalid > 0 && <p>Skipped {result.skippedInvalid} hook(s) with an invalid pattern.</p>}
+        </div>)}
+    </section>
+  );
+}

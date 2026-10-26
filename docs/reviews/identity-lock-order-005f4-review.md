@@ -1,0 +1,13 @@
+# Coordinator actual positive identity lock proof
+
+Verdict: CLEAR for the accepted005f correction,2026-10-22. Root read all five new proof files, independently passed11 guard/oracle tests/28 assertions and strict TypeScript, added only the fixed identity-lock-positive launcher mode and verified shell syntax before executing. Worker five-source LSP diagnostics were clean; automatic shell LSP timed out after patch and is unavailable.
+
+Root actual session71934 exited0. All six observed schedules passed: actual connection-first/replacement-first, synthetic session-insert-first/replacement-first session FK fence, and synthetic future020 sorted-account/member control in both directions against actual enrollment's active-member denial. Each wait was observed through pg_blocking_pids/query category and completed real-query stages. No opposing wait,40P01,55P03,57014, timeout or warning was accepted/emitted.
+
+Both real connection/admin operations committed once in either order, with exact resource counters/admin pointer/audit, unchanged membership and unrelated sessions. A session inserted before replacement was drained and deleted; a later insertion waited behind the unchanged FOR UPDATE fence and survived after replacement committed. Old affected sessions were removed. Enrollment denial left the invitation unconsumed/unrevoked and all member/audit/resource/session state unchanged. The future020 transaction and manual sessions are explicitly synthetic controls, not a delivered bot service or real authentication claim.
+
+The proof verified original bounded settings, idle/xact-null reserved backends, zero forbidden new I/O and client closure before fixed PASS output. Exact dedicated container/network teardown and absence checks passed. Committed fixtures remained until whole tmpfs disposal. Historical005f2 deadlock source stayed frozen and was not rerun as a positive oracle. Existing post-fix connection-store19 and auth7 regressions passed separately in005f3 review.
+
+Executed entry SHA71b2188aae6b45ef8048a3ec645fcfedc4c3e6c5fbe7ada0033a7bdd3518dc3a; cases8112fea7ad4d655c880a3fdbc852919b78df01c058b913045ae1f461c911a43a; sessiona682d303d85b38b5e62eca388e7db44dc3c6c41b2b3686e0400e94684bf9759f; enrollmentd6700c09143154a7c20c68464a49b0af9a1a3902149966a2b13aaebbae832f87. Launcher SHAd86e1b04c96d73755c2bdcfb3e65c8b2f6bc47f5ad7e59e6a9cf2e4d70b4e75f. Product hashes remain those in005f3 review.
+
+005g2 identity activation schema preparation may now proceed; verified new migration lineage must precede new-column lifecycle reads/actual runs. Membership revision, runtime role confinement, real removal/cancellation, public bot producer and complete v1 remain separate gates.

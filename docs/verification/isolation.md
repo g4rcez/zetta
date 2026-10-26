@@ -1,0 +1,15 @@
+# Cross-user isolation verification (RFC-066)
+
+Automated evidence: `apps/server/src/modules/isolation-matrix.integration.test.ts` (runs against Postgres). User A owns one of every resource type (bot, chat, message, attachment, memory, instruction, hook, routine, workflow, attention card, proposal, MCP server, source). Active member B and removed member C try 50+ read/change/use operations by id and through lists; every attempt returns 401/403/404 or an empty list and never contains A's private marker. A's data is verified unchanged afterwards.
+
+Also covered by feature tests: chat streams/resume/cancel (404 for others), connections (A's key is never injected for B; shared bots hold references only), MCP servers (per-user binding), browser sessions (per-user key), snapshots (only deliberately shared artifact, revocable, removed members denied), activity trail (owner-only, canary secret never present).
+
+## Docker runtime (RFC-002/008 boundary)
+
+Set `ZETTA_HARNESS_RUNTIME=docker` (image `zetta-harness`, build with `docker build -t zetta-harness:latest docker/harness`) and `ZETTA_BROWSER_RUNTIME=docker` (image `zetta-browser`, `docker/browser`) to run **every harness turn and every browser session in its own throwaway container**. Also set `ZETTA_HARNESS_HOME_ROOT` to a directory the Docker daemon can mount (with Colima/Podman-VM that means under `$HOME`): each (user, harness) gets its own home directory mounted at `/home/agent`, so logins persist per user and are invisible to others. The server itself keeps running on the host (it must not be given the Docker socket inside a container).
+
+Container hardening (see `dockerArgs` / `browserDockerArgs`): non-root uid 10001, read-only root filesystem, `--cap-drop=ALL`, `no-new-privileges`, tmpfs `/tmp` and `/work`, memory/cpu/pid limits, no host mounts except the user's own home/profile, only explicitly passed environment variables (provider key of the requesting user; never server secrets), browser DevTools port published on host loopback only.
+
+Real-docker evidence (`ZETTA_DOCKER_TEST=1`): `harness-docker.test.ts` proves uid 10001, read-only fs, no host paths, no DATABASE_URL/BETTER_AUTH/connection-key variables, another user's home invisible and writes persisting per user, no outbound network with `--network none`, an unauthenticated Claude Code run classified without spending quota, a missing CLI reported `not_installed`, and a timed-out run leaving no container. `computer-docker.test.ts` proves one container per user+profile, page reading, `file://` and private-address navigations blocked, and containers removed on close.
+
+**Not proven:** egress allow-listing beyond what Docker networks give (default `bridge` allows internet egress so harnesses can reach their APIs; use `ZETTA_HARNESS_NETWORK` for a restricted network); a live cross-user run with real accounts inside containers (Claude Code needs credentials supplied to the container: a per-user login in the mounted home, or the user's own Anthropic API key connection); DNS-rebinding on browser/MCP address checks; host mode (the default, without these variables) has no OS isolation.

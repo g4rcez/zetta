@@ -1,135 +1,115 @@
 import { useForm } from "@tanstack/react-form";
-import { useNavigate } from "@tanstack/react-router";
-import { Button } from "@zetta/ui/components/button";
-import { Input } from "@zetta/ui/components/input";
-import { Label } from "@zetta/ui/components/label";
-import { toast } from "sonner";
+import { Button } from "@/components/ui";
+import { useEffect, useRef, useState } from "react";
 import z from "zod";
 
+import { AuthField } from "@/features/identity/auth-field";
 import { authClient } from "@/lib/auth-client";
 
-import Loader from "./loader";
-
-export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () => void }) {
-  const navigate = useNavigate({
-    from: "/",
-  });
-  const { isPending } = authClient.useSession();
-
+export default function SignInForm({
+  onSwitchToSignUp,
+  onAuthenticated,
+}: {
+  onSwitchToSignUp: () => void;
+  onAuthenticated: () => Promise<void>;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
   const form = useForm({
-    defaultValues: {
-      email: "",
-      password: "",
-    },
-    onSubmit: async ({ value }) => {
-      await authClient.signIn.email(
-        {
-          email: value.email,
-          password: value.password,
-        },
-        {
-          onSuccess: () => {
-            navigate({
-              to: "/dashboard",
-            });
-            toast.success("Sign in successful");
-          },
-          onError: (error) => {
-            toast.error(error.error.message || error.error.statusText);
-          },
-        },
-      );
-    },
+    defaultValues: { email: "", password: "" },
     validators: {
       onSubmit: z.object({
-        email: z.email("Invalid email address"),
-        password: z.string().min(8, "Password must be at least 8 characters"),
+        email: z.email("Enter a valid email address"),
+        password: z.string().min(1, "Enter your password"),
       }),
     },
+    onSubmit: async ({ value }) => {
+      setError(null);
+      try {
+        const result = await authClient.signIn.email(value);
+        if (result.error) {
+          setError("Could not sign in. Check your email and password and try again.");
+          return;
+        }
+        await onAuthenticated();
+      } catch {
+        setError("Could not connect to sign in. Check your connection and try again.");
+      }
+    },
   });
-
-  if (isPending) {
-    return <Loader />;
-  }
-
   return (
-    <div className="mx-auto w-full mt-10 max-w-md p-6">
-      <h1 className="mb-6 text-center text-3xl font-bold">Welcome Back</h1>
-
+    <section className="mx-auto mt-16 w-full max-w-md space-y-6 rounded-xl border bg-card p-8 shadow-sm">
+      <h1 ref={heading} tabIndex={-1} className="text-center text-3xl font-semibold tracking-tight outline-none">
+        Welcome back
+      </h1>
       <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          form.handleSubmit();
-        }}
         className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void form.handleSubmit();
+        }}
       >
-        <div>
-          <form.Field name="email">
-            {(field) => (
-              <div className="space-y-2">
-                <Label htmlFor={field.name}>Email</Label>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  type="email"
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                />
-                {field.state.meta.errors.map((error) => (
-                  <p key={error?.message} className="text-red-500">
-                    {error?.message}
-                  </p>
-                ))}
-              </div>
-            )}
-          </form.Field>
-        </div>
-
-        <div>
-          <form.Field name="password">
-            {(field) => (
-              <div className="space-y-2">
-                <Label htmlFor={field.name}>Password</Label>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  type="password"
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                />
-                {field.state.meta.errors.map((error) => (
-                  <p key={error?.message} className="text-red-500">
-                    {error?.message}
-                  </p>
-                ))}
-              </div>
-            )}
-          </form.Field>
-        </div>
-
-        <form.Subscribe
-          selector={(state) => ({ canSubmit: state.canSubmit, isSubmitting: state.isSubmitting })}
-        >
-          {({ canSubmit, isSubmitting }) => (
-            <Button type="submit" className="w-full" disabled={!canSubmit || isSubmitting}>
-              {isSubmitting ? "Submitting..." : "Sign In"}
-            </Button>
+        <form.Subscribe selector={(state) => state.isSubmitting}>
+          {(pending) => (
+            <fieldset disabled={pending} className="space-y-4" aria-busy={pending}>
+              <form.Field name="email">
+                {(field) => (
+                  <AuthField
+                    id="signin-email"
+                    name={field.name}
+                    label="Email"
+                    type="email"
+                    autoComplete="username"
+                    required
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    errors={field.state.meta.errors.map((issue) => issue?.message)}
+                  />
+                )}
+              </form.Field>
+              <form.Field name="password">
+                {(field) => (
+                  <AuthField
+                    id="signin-password"
+                    name={field.name}
+                    label="Password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    errors={field.state.meta.errors.map((issue) => issue?.message)}
+                  />
+                )}
+              </form.Field>
+              {error && (
+                <p role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              )}
+              <Button type="submit" className="w-full" disabled={pending}>
+                {pending ? "Signing in…" : "Sign in"}
+              </Button>
+              <p role="status" className="sr-only">
+                {pending ? "Signing in and checking membership." : ""}
+              </p>
+              <Button
+                type="button"
+                variant="link"
+                className="h-auto w-full whitespace-normal"
+                onClick={onSwitchToSignUp}
+              >
+                Have an invitation? Create an account
+              </Button>
+            </fieldset>
           )}
         </form.Subscribe>
       </form>
-
-      <div className="mt-4 text-center">
-        <Button
-          variant="link"
-          onClick={onSwitchToSignUp}
-          className="text-indigo-600 hover:text-indigo-800"
-        >
-          Need an account? Sign Up
-        </Button>
-      </div>
-    </div>
+    </section>
   );
 }

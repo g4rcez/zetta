@@ -1,32 +1,53 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { Blocks, Gauge, MessagesSquare } from "lucide-react";
+
+import { useAttentionSummary } from "@/features/attention/summary";
 
 import { ModeToggle } from "./mode-toggle";
 import UserMenu from "./user-menu";
 
-export default function Header() {
-  const links = [
-    { to: "/", label: "Home" },
-    { to: "/dashboard", label: "Dashboard" },
-  ] as const;
+export const APP_PREFIXES = ["/chat", "/studio", "/dashboard"];
+export const inApp = (pathname: string) => APP_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
+const links = [
+  { to: "/chat", label: "Chat", icon: MessagesSquare },
+  { to: "/studio", label: "Studio", icon: Blocks },
+  { to: "/dashboard", label: "Dashboard", icon: Gauge },
+] as const;
+
+const Brand = () => (
+  <Link to="/" aria-label="Zetta home" className="grid size-9 place-items-center rounded-md bg-primary text-base font-bold text-primary-foreground shadow-sm">Z</Link>
+);
+
+/** Signed-in application shell: a slim icon rail on the left (bottom bar on phones). */
+export function AppRail() {
+  const attention = useAttentionSummary();
   return (
-    <div>
-      <div className="flex flex-row items-center justify-between px-2 py-1">
-        <nav className="flex gap-4 text-lg">
-          {links.map(({ to, label }) => {
-            return (
-              <Link key={to} to={to}>
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="flex items-center gap-2">
-          <ModeToggle />
-          <UserMenu />
-        </div>
-      </div>
-      <hr />
-    </div>
+    <header className="z-10 flex shrink-0 items-center gap-1 border-b bg-sidebar p-2 md:w-16 md:flex-col md:border-r md:border-b-0 md:py-3">
+      <Brand />
+      <nav aria-label="Main" className="ml-2 flex flex-1 items-center gap-1 md:ml-0 md:mt-3 md:flex-col">
+        {links.map(({ to, label, icon: Icon }) => (
+          <Link key={to} to={to} aria-label={label} title={label} activeProps={{ "aria-current": "page", className: "bg-sidebar-accent text-sidebar-accent-foreground" }}
+            className="relative grid size-10 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-ring">
+            <Icon className="size-5" aria-hidden="true" />
+            <span className="sr-only">{label}</span>
+            {to === "/studio" && attention && attention.unread > 0 ? (
+              <span className="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white" aria-label={`${attention.unread} unread attention items`}>{attention.unread}</span>
+            ) : null}
+          </Link>
+        ))}
+      </nav>
+      <div className="flex items-center gap-1 md:flex-col"><ModeToggle compact /><UserMenu compact /></div>
+    </header>
+  );
+}
+
+/** Public pages (home, sign in): a minimal top bar. */
+export default function Header() {
+  return (
+    <header className="flex items-center justify-between border-b px-4 py-2">
+      <div className="flex items-center gap-3"><Brand /><span className="text-base font-semibold tracking-tight">Zetta</span></div>
+      <div className="flex items-center gap-2"><ModeToggle /><UserMenu /></div>
+    </header>
   );
 }

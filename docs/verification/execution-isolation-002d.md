@@ -1,0 +1,22 @@
+# RFC-002d verification
+
+Worker run on 2026-10-22. [Task contract](../../tasks/002d-verify-isolation-stress-and-reconciliation.md). Evidence directory: [isolation-002d](../../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G001-preserve-all-existing-tracked-untrac/a1/isolation-002d/).
+
+| Scenario | Invocation | Binary observable | Artifact |
+| --- | --- | --- | --- |
+| Existing seven cases, CPU quota throttling and PID exhaustion | `bun --no-env-file ./scripts/execution-isolation-probe.ts` with approved local Docker access | All original cases plus cpu-pressure/pid-pressure passed; B health checks succeed | `runtime.json` |
+| Launcher SIGKILL/SIGINT/SIGTERM after acknowledged CREATE/start | Same full invocation | A still Running after launcher exit; exact journal/name/label/ID reconciliation succeeds; B healthy | `runtime.json` reconcile-sigkill/sigint/sigterm |
+| Pending creator quarantine and eventual receipt recovery | Same full invocation | PendingCreate blocks before I/O; released creator actually creates/starts A, killed owner then reconciled; B healthy | `runtime.json` reconcile-delayed |
+| Pure pending-operation and unowned-root denial, existing capture/policy/lifecycle regressions | `bun --no-env-file test scripts/execution-isolation-probe.test.ts scripts/execution-isolation-recovery.test.ts` | 16 pass,0 fail,93 assertions | `tests.txt` |
+| Strict diagnostics on all five source/test files | Exact tsc invocation in artifact | exit0, no diagnostics | `types.txt` |
+| Working-source identity | `shasum -a 256` on five files | SHA256 per current source | `source-sha256.txt` |
+| Owned cleanup | Full runtime plus fixed label inventory/root count | cleanup:true; zero labelled containers and generated roots | `runtime.json`, `cleanup.txt` |
+| Failed first PID-pressure attempt | Initial full invocation | exit1/cleanup:false, first eight cases passed; no recovery claims | `first-runtime.json` |
+
+CPU pressure runs for2.5seconds deliberately to exercise quota enforcement; it does not use a delay as a readiness substitute. PID children have finite3second lifetimes. Each recovery owner has a12second parent deadline and15second self deadline. Docker calls retain3second capture bounds, original total probe ceiling120seconds, fixed64KiB combined private output and exact UUID ownership. Only fixed success/failure categories reach stdout. Journal files are private0600, atomic rename + file/directory fsync; input mounts remain actor leaves only.
+
+Recovery source/test imports are inert. Journal parsing rejects non-repository/non-generated roots and symlinked/non-file journals. Pending CREATE is denied before any journal read. Unsettled creation retains the journal and reports cleanup:false even after best-effort removal. The late-create case covers a controllably held submission that later provides a receipt; it cannot establish that an unacknowledged request will never arrive at the daemon. A production launcher still needs a durable uncertainty protocol and its own acceptance.
+
+LSP unavailable: the edit hook reported Biome not installed and a prior user refusal to install it. Installed TypeScript supplies strict diagnostics. The optional no-excuse audit failed before analysis because its caller-project TypeScript resolution did not find a root dependency; no dependency was installed, and that audit is not claimed passing. Its exact result is in `audit.txt`.
+
+The final source change after runtime verification only corrected the old ceiling comment; executable behavior is unchanged. No arbitrary host secret, account, provider, identity DB, image pull or unrelated container was accessed. Egress, six native harnesses, connection secrets and full browser/desktop/takeover remain separate required evidence.

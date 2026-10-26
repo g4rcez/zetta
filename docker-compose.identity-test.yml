@@ -1,0 +1,39 @@
+name: zetta-identity-tests
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: zetta_identity_test
+      POSTGRES_USER: zetta_identity_runner
+      POSTGRES_PASSWORD: ${ZETTA_IDENTITY_TEST_PASSWORD:?Supply a throwaway identity test password}
+      PGDATA: /var/lib/postgresql/18/docker
+    command:
+      - postgres
+      - -c
+      - zetta.identity_test_marker=zetta-identity-tests-v1
+      - -c
+      - max_connections=12
+      - -c
+      - shared_buffers=32MB
+    ports:
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql:size=268435456,mode=0755
+    networks:
+      - identity-test
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "zetta_identity_runner", "-d", "zetta_identity_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
+    mem_limit: 384m
+    cpus: 1.0
+    pids_limit: 100
+    restart: "no"
+    stop_grace_period: 5s
+
+networks:
+  identity-test:
+    driver: bridge

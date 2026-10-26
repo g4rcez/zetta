@@ -1,161 +1,153 @@
-# zetta
+# Zetta
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines React, TanStack Router, Elysia, and more.
+Zetta is a web app for managing autonomous bots. Give your personal chief an outcome, let it coordinate specialists, and return to results or work that needs your attention.
 
-## Features
+The product is for people who want useful work done, not another technical system to administer. Configuration must be understandable without knowing what a harness, MCP server, or hook is. Advanced controls remain available.
 
-- **TypeScript** - For type safety and improved developer experience
-- **TanStack Router** - File-based routing with full type safety
-- **TailwindCSS** - Utility-first CSS for rapid UI development
-- **Shared UI package** - shadcn/ui primitives live in `packages/ui`
-- **Elysia** - Type-safe, high-performance framework
-- **Bun** - Runtime environment
-- **Drizzle** - TypeScript-first ORM
-- **PostgreSQL** - Database engine
-- **Authentication** - Better-Auth
-- **Electrobun** - Lightweight desktop shell for web frontends
-- **Oxlint** - Oxlint + Oxfmt (linting & formatting)
-- **Vite+** - Unified Vite toolchain, workspace task runner, linting, and formatting
+**Status:** product definition and RFC backlog. The capabilities below describe the intended v1, not features already implemented.
 
-## Getting Started
+- [Wiki: user journeys, architecture, and product assumptions](docs/wiki/README.md)
+- [Confirmed product intent](docs/intent/zetta-v1.md)
+- [Implementation plan](tasks/plan.md)
+- [Ordered RFC backlog](TASKS.md)
+- [Small-model task execution rules](tasks/README.md)
+- [Repository stack and development setup](TECH.md)
 
-First, install the dependencies:
+## The experience
 
-```bash
-bun install
-```
+1. **Configure a bot** through guided forms or a conversation with any bot—not only the chief. Explain its job and connect the accounts it needs. Use the same validation and authorization for both paths.
+2. **Try it in conversation.** A detected CLI or a saved form is not enough. The selected harness/account/model must produce a real response. The bot asks whether you are satisfied. Onboarding completes only after an explicit positive response; otherwise, continue adjusting and testing.
+3. **Give it work.** Talk directly to a specialist or ask your personal chief to orchestrate other bots. Work runs on the server, independently of an open browser tab.
+4. **Manage attention.** Sidebar and activity views use the same attention states. A dedicated task kanban shows pending work that needs you, who owns it, what completed, what is blocked, and the next action.
+5. **Recover without losing context.** Follow a connection/setup fix, return to the original task, and inspect retained results. A new attempt must not silently repeat uncertain external actions.
+6. **Improve and repeat.** Correct a result, retain the useful instruction or memory, and make the stable task a routine. Show what will repeat, when, using which bot and accounts, and where results will appear.
 
-## Database Setup
+## What bots do
 
-This project uses PostgreSQL with Drizzle ORM.
+Initial use cases include:
 
-1. Make sure you have a PostgreSQL database set up.
-2. Update your `apps/server/.env` file with your PostgreSQL connection details.
+- Daily briefings coordinated by the chief.
+- Newsletters assembled from email newsletters, blogs, Reddit and X timelines.
+- Financial research.
+- Code review.
+- Security research on explicitly authorized sources and targets.
 
-3. Apply the schema to your database:
+Bots are autonomous once given the task and access. They do not ask for approval on every ordinary action. They still surface missing information, expired logins, blocked tools, uncertain outcomes, and proposed configuration changes. Autonomy does not mean inventing success or working around access restrictions.
 
-```bash
-bun run db:push
-```
+## Users, chiefs and workspaces
 
-Then, run the development server:
+- Each user has a local Zetta login and **one personal chief**. The chief manages orchestration; it is not a shared team chief.
+- **Authentication and authorization are enforced by the Zetta server**, not just used for auditing or UI hiding. External provider logins do not replace Zetta authorization.
+- Bots are team-visible by default and may be private. Shared bot definitions do not share users' conversations, credentials, files or memories.
+- Interactive work uses the requesting user's connections. Routines use their owner's connections. Delegation and visual workflows preserve that execution identity.
+- **Workspaces are visual teams of bots**, with inner groups for sidebar organization. Moving a bot into a workspace does not grant access, transfer ownership, share accounts, or create another chief. Human membership/access is a separate concern.
+- There is one installation admin. Administrative duties do not imply unrestricted access to private conversations or credentials.
 
-```bash
-bun run dev
-```
+## V1 capabilities
 
-Open [http://localhost:3001](http://localhost:3001) in your browser to see the web application.
-The API is running at [http://localhost:3000](http://localhost:3000).
+### Bot configuration and onboarding
 
-## UI Customization
+Bots have names, personalities, instructions, skills, model/harness selection, hooks and integration bindings. Support these six installed server-side harnesses:
 
-React web apps in this stack share shadcn/ui primitives through `packages/ui`.
+- Pi
+- Codex
+- OMP
+- Claude Code
+- OpenCode
+- Cursor
 
-- Change design tokens and global styles in `packages/ui/src/styles/globals.css`
-- Update shared primitives in `packages/ui/src/components/*`
-- Adjust shadcn aliases or style config in `packages/ui/components.json` and `apps/web/components.json`
+Discover available harnesses and supported models, then guide the user through their account connection. Show actual capabilities and setup failures; do not pretend every harness supports every feature.
 
-### Add more shared components
+The setup flow is **configure → verified conversation → satisfaction question → explicit confirmation → ready**. A negative answer returns to refinement. Silence, a model's self-assessment, or a reaction does not complete onboarding. Confirmation is bound to the configuring user and the tested bot configuration; it cannot grant teammates access to that user's account. Revoked credentials or incompatible configuration changes invalidate execution readiness.
 
-Run this from the project root to add more primitives to the shared UI package:
+### Chat and collaboration
 
-```bash
-npx shadcn@latest add accordion dialog popover sheet table -c packages/ui
-```
+- Multiple private conversations with each bot.
+- Markdown composition and safe message rendering.
+- Bot mentions, file attachments as context, and authorized server-file references.
+- Message threads and reactions.
+- Durable bot/tool responses and multi-turn context across reconnects and restarts.
+- Publish an entire conversation as an **immutable, read-only team snapshot**.
 
-Import shared components like this:
+A snapshot shares conversation content at a fixed cutoff—not account access, bot configuration, underlying memory, or live server-file capabilities. Later private messages are not added. The viewer cannot reply, react, invoke bots or operate the original resources. Unsafe content must be handled explicitly before publication, never silently leaked.
 
-```tsx
-import { Button } from "@zetta/ui/components/button";
-```
+### Attention and task kanban
 
-### Add app-specific blocks
+Use a common model across sidebar, activity and the dedicated kanban: working/queued work, needs input, blocked, and new results. Keep attention separate from execution status: a failed run can require attention, while reading a result does not change whether the run succeeded.
 
-If you want to add app-specific blocks instead of shared primitives, run the shadcn CLI from `apps/web`.
+The kanban focuses on pending items requiring user attention, with a resolved view for follow-up. Cards link to their originating chat, run, routine or workflow step. They identify the responsible bot, partial completion, safe next action and durable result. Resolving an item must reflect the actual underlying action; dragging a card cannot fabricate run success or approve a configuration change.
 
-## Environment Configuration
+Start with in-app discoverability. External push/email/mobile notifications are not part of this scope.
 
-Each app owns its environment schema in `.env.schema`. Varlock generates `src/env.ts` during installation; run `bun run env:generate` after changing a schema. Commit schemas, and keep secrets in ignored env files or your deployment platform.
+### Schedules, routines and visual workflows
 
-Import the generated `ENV` accessor in application code. Shared database and auth packages receive configuration or initialized clients from the application. See [Varlock's monorepo guide](https://varlock.dev/guides/monorepos/).
+**Visual workflows are included in v1.** Create a workflow from conditions and bot tasks, inspired by [n8n](https://n8n.io/). The RFCs define a bounded first graph model and editor; full n8n feature parity is not the goal.
 
-Bun's automatic env loading is disabled in `bunfig.toml`; the framework integration or server bootstrap loads Varlock. Node deployments must include Varlock and its dependencies alongside the app schema.
+Routines run tasks or published workflows on a schedule. The calendar should reuse the calendar from `@g4rcez/components` once its supported API/dependency is verified. Before activation, explain the task, bot, schedule/timezone, next occurrence, context policy, account bindings and result destination. Test runs perform real work and must be labeled accordingly.
 
-Run standalone Node/Bun tools that use Varlock from the owning app directory so they load that app's schema and env files. `env:generate` only generates TypeScript files; it does not initialize environment values in a subsequent command.
+Successful chat work should connect naturally to reusable instructions and routines. Users can configure through forms or chat, with the same server-side validation, preview and version/conflict rules.
 
-## Deployment
+### Browser and computer use
 
-### Alchemy
+**Both are essential to v1**, not optional future scope.
 
-- Target: Axiom observability
-- Configure provider accounts: `cd packages/infra && bunx alchemy profile edit`
-- Dev: bun run dev
-- Deploy: bun run deploy:infra
-- Destroy: bun run destroy
+- Browser automation through [agent-browser](https://agent-browser.dev/) or an approved equivalent integration path.
+- Computer use through an evidenced harness capability or [CUA](https://github.com/trycua/cua); verify the actual backend before implementation.
+- Persistent browser profiles, configurable per bot: dedicated or explicitly shared among that user's bots. Never share profiles across users or infer sharing from workspace placement.
+- Isolated user-owned computer sessions, bounded actions and cleanup, with clear unsupported/setup states.
+- Secure user takeover for login, MFA or other human steps, followed by explicit hand-back. Secrets must not enter chat, screenshots retained as results, memory or published snapshots.
 
-`alchemy profile edit` stores the selected Axiom, Cloudflare, Neon, PlanetScale, and/or Prisma provider profiles under `~/.alchemy`; no provider-specific setup command is required by this scaffold.
+The exact runtime/provider is a technical gate. The product requirement is settled. The server host's unrestricted desktop is not the default execution environment.
 
-Deploys are staged and default to a personal `dev_<username>` stage. For production, run the deploy with an explicit stage from `packages/infra`:
+### Decisions and hooks
 
-```bash
-cd packages/infra && bunx alchemy deploy --stage production
-```
+Integrate **Jev and Laya** for decisions. Verify the products, protocols and data handling; do not replace them with a home-grown decision model.
 
-Alchemy creates a stage-specific Axiom dataset and a least-privilege ingest token. `dev` injects the credentials into the observed apps without writing the token to an env file.
-For a deployed Docker image, pass `AXIOM_API_KEY`, `AXIOM_DATASET`, and `AXIOM_EDGE_URL` through the target platform's secret manager. Local observed development runs through Alchemy with the credentials injected in memory.
+Hooks behave like [Express middleware](https://expressjs.com/en/5x/guide/using-middleware/): they can add context, transform/redact messages, skip a model call, or enqueue owned background work. Order, errors, deadlines and outcomes must remain visible. Hooks cannot change the initiating user's authority.
 
-### Docker Compose
+### Persistent memory, instructions and self-learning
 
-- Target: web + server
-- Config: `docker-compose.yml` (app Dockerfiles live in `apps/*/Dockerfile`)
-- Build images: bun run docker:build
-- Start: bun run docker:up
-- Logs: bun run docker:logs
-- Stop: bun run docker:down
+Use a **Hermes-style persistent memory mechanism**, with its exact reuse/integration approach established by the relevant RFC.
 
-Environment variables are read from each app's `.env` file (baked into web builds for public variables) and overridden in `docker-compose.yml` for container networking.
+- **Memory:** durable facts, preferences, decisions, corrections and context.
+- **Instructions:** reusable procedures with triggers, steps, constraints and verification.
+- **Configuration:** the bot's behavior and setup. Bot-proposed changes require a visible diff and explicit authorized approval before application.
 
-For more details, see the guide on [Deploying with Docker Compose](https://www.better-t-stack.dev/docs/guides/docker).
+The loop is visible: find the knowledge behind an incorrect result, correct or forget it, and verify that a later task uses the correction. Historical messages and published snapshots remain historical. Private knowledge is not automatically promoted to shared scope. Self-learning does not mean model training.
 
-## Git Hooks and Formatting
+## Connected apps and plugins
 
-- Run checks: `bun run check`
+Connect each app to the **user's Zetta account**, not globally to the server. A shared bot declares what integration it needs; each user binds their own account. Credentials stay out of bot definitions and model context.
 
-## Project Structure
+The integration vision includes:
 
-```
-zetta/
-├── apps/
-│   ├── web/         # Frontend application (React + TanStack Router)
-│   └── server/      # Backend API (Elysia)
-├── packages/
-│   ├── ui/          # Shared shadcn/ui components and styles
-│   ├── auth/        # Authentication configuration & logic
-│   └── db/          # Database schema & queries
-```
+- Google Workspace: Gmail, Calendar and Drive
+- GitHub, X/Twitter and Reddit
+- Slack and Discord
+- Sentry, Cloudflare and Linear
+- Home Assistant and Pi-hole
+- Bitwarden and 1Password
 
-## Available Scripts
+Use supported MCP servers or installed CLI integrations, with a focused adapter per integration where needed. Verify compatibility, purpose, permissions and OAuth scopes. Listing an app here does not claim that a connector exists or make every bespoke connector a v1 release requirement. The marketplace remains later work; connected-app configuration is in v1.
 
-- `bun run dev`: Start all applications in development mode
-- `bun run build`: Build all applications
-- `bun run dev:web`: Start only the web application
-- `bun run check-types`: Check TypeScript types across all apps
-- `bun run db:push`: Push schema changes to database
-- `bun run db:generate`: Generate database client/types
-- `bun run db:migrate`: Run database migrations
-- `bun run db:studio`: Open database studio UI
-- `bun run check`: Run Vite+ format/lint checks and workspace TypeScript checks
-- `bun run lint`: Run Vite+ lint checks
-- `bun run format`: Run Vite+ formatting
-- `bun run staged`: Run Vite+ checks against staged files
-- `bun run dev:desktop`: Start the Electrobun desktop app with HMR
-- `bun run build:desktop`: Build the stable Electrobun desktop app
-- `bun run build:desktop:canary`: Build the canary Electrobun desktop app
-- `bun run docker:build`: Build the Docker Compose images
-- `bun run docker:up`: Build and start the Docker Compose stack
-- `bun run docker:logs`: Tail logs from the Docker Compose stack
-- `bun run docker:down`: Stop the Docker Compose stack
+## Boundaries
 
-## Better Auth Schema Generation
+- Local authentication, ownership enforcement and runtime isolation are required now.
+- Configurable per-bot action permissions are later work; privacy is not deferred.
+- A visual workflow editor is in v1; a visual team-map canvas and app marketplace are not.
+- No automatic retry of external actions whose outcome is unknown, and no promise of universal harness resume.
+- No separate artifact-management product: durable result links are sufficient initially.
+- No model training, billing platform, public SaaS tenancy or new native desktop client in this release.
 
-After changing auth plugins or schema options, run `bun run auth:generate` from the project root. The script runs the Better Auth CLI through `varlock run` from the owning app directory, loading the auth instance from `src/services.ts`. Review the schema changes, then use your ORM's migration workflow to apply them.
+## Interface references
+
+Use existing shared UI primitives and Tailwind styles. The [shadcn chat components](https://ui.shadcn.com/docs/changelog/2026-06-chat-components) and supplied screenshots guide the chat-first layout, routine calendar, connection readiness and bot grouping. Borrow clear interactions, not only visual styling.
+
+- [Grok Bot](https://x.ai/bot) — persistent bots, task handoffs, skills and routines.
+- [MausBot](https://mausbot.com/) — familiar bot management and provider setup.
+- [OpenClaw](https://openclaw.ai/) — persistent context and action in connected tools.
+- [agentes.chat](https://agentes.chat/) — conversational agent collaboration.
+- [Codync](https://github.com/leepokai/Codync) — harness-backed bots and attention to completed/blocked work.
+- [n8n](https://n8n.io/) — visual workflows and inspectable execution.
+
+These are product references, not promises of identical behavior. Zetta keeps its own private-chat, per-user chief, account ownership and snapshot model.

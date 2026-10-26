@@ -1,44 +1,40 @@
-import { cors } from "@elysiajs/cors";
-import { Elysia } from "elysia";
 import { initLogger } from "evlog";
-import { createAxiomDrain } from "evlog/axiom";
-import { createAuthMiddleware, type BetterAuthInstance } from "evlog/better-auth";
-import { evlog } from "evlog/elysia";
 
+import { createApp } from "./app";
+import { sweepHarnessContainers } from "./modules/chat/harness";
 import { desktopOrigins, ENV } from "./env.server";
-import { auth } from "./services";
+import { auth, chatServices, computerServices, connectionServices, integrationServices, decisionServices, featureServices, identity } from "./services";
 
 initLogger({
   env: { service: "zetta-server" },
 });
 
-const identifyUser = createAuthMiddleware(auth as BetterAuthInstance, {
-  exclude: ["/api/auth/**"],
-  maskEmail: true,
+createApp({
+  auth,
+  identity,
+  chat: chatServices,
+  features: featureServices,
+  decisions: decisionServices,
+  computer: computerServices,
+  connections: connectionServices,
+  integrations: integrationServices,
+  webOrigin: ENV.CORS_ORIGIN,
+  desktopOrigins,
+}).listen(Number(process.env.PORT ?? 3000), () => {
+  console.log(`Server is running on http://localhost:${process.env.PORT ?? 3000}`);
 });
 
-new Elysia()
-  .use(evlog({ drain: createAxiomDrain() }))
-  .derive(async ({ request, log }) => {
-    await identifyUser(log, request.headers, new URL(request.url).pathname);
-    return {};
-  })
-  .use(
-    cors({
-      origin: [ENV.CORS_ORIGIN, ...desktopOrigins],
-      methods: ["GET", "POST", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
-      credentials: true,
-    }),
-  )
-  .all("/api/auth/*", async (context) => {
-    const { request, status } = context;
-    if (["POST", "GET"].includes(request.method)) {
-      return auth.handler(request);
-    }
-    return status(405);
-  })
-  .get("/", () => "OK")
-  .listen(3000, () => {
-    console.log("Server is running on http://localhost:3000");
-  });
+// Simple in-process scheduler: one tick per 30s; each due routine is claimed atomically before it runs.
+setInterval(() => { void featureServices.features.runDue().catch(() => {}); }, 30_000);
+
+// Laya runs inside the server process; warm it in the background (set ZETTA_LAYA_PRELOAD=0 to load on first use).
+if (process.env.ZETTA_LAYA_PRELOAD !== "0") void decisionServices.decisions.warm();
+
+// Generations that were running when the previous process died are marked interrupted (never silently "complete").
+void chatServices.chat.recoverInterrupted().catch(() => {});
+void featureServices.features.recover().catch(() => {});
+
+// Containers and Spaces left by a previous process are removed at boot (this server assumes it is the only instance).
+void sweepHarnessContainers().catch(() => {});
+void computerServices.computer.sweep().catch(() => {});
+void computerServices.desktop?.sweep().catch(() => {});

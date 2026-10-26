@@ -1,6 +1,7 @@
 import { createAuthClient } from "better-auth/react";
 
 import { ENV } from "../env";
+import { createAuthenticationFetch } from "./auth-transport";
 
 function getServerUrl(url: string) {
   const processEnv = typeof process === "undefined" ? undefined : process.env;
@@ -15,4 +16,5 @@ function getServerUrl(url: string) {
 
 export const authClient = createAuthClient({
   baseURL: new URL("/api/auth", getServerUrl(ENV.VITE_SERVER_URL)).toString(),
+  fetchOptions: { customFetchImpl: createAuthenticationFetch(), retry: 0 },
 });

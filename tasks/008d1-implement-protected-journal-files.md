@@ -1,0 +1,21 @@
+# RFC-008d1: Bounded journal codec and protected file commits
+
+Status: accepted storage primitive after coordinator and independent CLEAR/APPROVE; no operational supervisor claim. [Decision](../docs/decisions/launch-journal-persistence.md), [independent review](../docs/reviews/journal-files-008d1-review.md).
+
+Own only new runtime/journal-codec.ts, journal-files.ts and their focused tests, this task and unique evidence. The codec split makes the disk-format boundary explicit;008d2 owns permanent-inode Linux descriptor locks and008d3 owns store/serialization/inventory, avoiding a compressed monolith. Do not edit008c, add lock/store/transport/systemd/Docker/native code or mutate environment/packages.
+
+Implement exact16KiB canonical UTF8 JSON-plus-newline codec using accepted parseLaunchJournal with trusted policy/receipt. Fatal UTF8, no BOM, exact re-encoding rejects duplicate keys/extra whitespace/unknown shape. Legal maximum record must fit. Stored/historical validation never grants fresh admission. Fixed private errors only.
+
+File primitives run only under a caller-owned exclusive receipt/installation lock supplied by the future trusted store; they confer no actor/effect/lock authority. Document this precondition on their internal API. Verify absolute trusted root/real nonwritable ancestors, owner/mode/type/inode/device and final O_NOFOLLOW/O_DIRECTORY/O_NONBLOCK flags; no user-selected filenames/paths, symlink/hardlink/FIFO adoption or silent permission repair. Work with bounded verified descriptors and recheck names/metadata as the ADR requires.
+
+Implement fixed record.next O_EXCL, exact partial-write loop, file fsync/observed close, same-directory rename, directory fsync, verified bounded readback and original-record comparison. No in-place truncation, temp promotion, cleanup/repair or automatic retry after uncertain mutation. A post-mutation failure returns fixed journal_durability_unknown with enough safe internal stage information for the next store to poison/retain ownership. Do not return an effect callback or executable commit token. Existing staging is recovery-required.
+
+Actual filesystem tests use a uniquely created private directory under protected workspace ancestors and remove only that exact owned fixture. A generic /tmp ancestor is writable by others and must not be accepted as production root. Narrow trusted syscall fault seams may verify partial/zero writes, write/sync/close/rename/dir-sync/readback failure, including success-underneath followed by rejection. They test semantics rather than pretend a fake syscall was a real disk failure. Use actual files for positive read/write/roundtrip and symlink/hardlink/FIFO/corrupt-byte cases where installed platform supports them. Pure codec negatives and unrelated-file preservation are mandatory.
+
+No Linux/ext4/lock readiness claim follows from a Mac filesystem test. The outer future openJournalStore must fail closed without the pinned Linux profile/lock capability. This low-level module is not application composition. Process-crash cuts, queue/poison lifetimes, cross-process exclusion and actual Linux directory durability remain008d2/008d3. Tests may not skip missing gates into PASS. Red first, focused Bun checks, strict/LSP, frozen handoff and exact resources/cleanup evidence; no DB/container/provider/Git/install operations.
+
+Coordinator independently repeated31 tests/147 assertions and the documented strict command, exit0; source hashes match the worker manifest. Independent review passed the same checks and confirmed exact fixture cleanup with CLEAR/APPROVE. The next lock/store children retain all unfulfilled Linux and crash gates.
+
+## Implementation handoff
+
+Implemented and frozen for independent review. Added journal-codec.ts/journal-files.ts and their two focused tests only. Final31tests/147assertions and strict no-emit check pass; all four LSP checks report no diagnostics. Actual file tests ran on macOS with exact private fixture cleanup. Linux/ext4/descriptor locks, cross-process crash tests and operational composition remain outstanding. The API requires externally held locks; successful commit returns no executable authority. Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008d1/`.

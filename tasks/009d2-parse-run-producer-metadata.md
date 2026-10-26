@@ -1,0 +1,13 @@
+# RFC-009d2: Parse retained run producer metadata
+
+Status: source accepted after [coordinator review](../docs/reviews/run-producer-parser-009d2-review.md), 2026-10-22. Accepted009d1 defines nullable immutable storage; accepted010c3 defines authority limits. No producer stamping, service authority or DB execution in this child.
+
+Own runtime/run-rows.ts, run-rows.test.ts and dispatch-claim-rows.test.ts, plus task/evidence. Extend the actual closed row parser to require all three stored columns, accepting exactly all-null legacy or complete fixture/1/positive int32 activation revision. No undefined-to-trusted/default normalization. Retain exact immutable metadata in private parsed run data while safe DTO/result output remains unchanged. Canonical request bytes/version must remain byte-compatible; provenance is server metadata outside request input.
+
+Legacy rows remain readable history, never eligible execution evidence merely because parsing succeeded. No current membership comparison, issuance flag, backend actor, claim permission or trusted producer setter is added. Missing/partial/unknown/invalid tuple values fail storage_unavailable without data leakage. Update the two actual raw-row test fixtures explicitly, and cover current/historical reads, frozen metadata, DTO exclusion and existing no-admission cancellation projection.
+
+Meaningful failing-first tests, relevant focused regression suite, strict/LSP and source freeze precede root review. No schema, run store, proof-client, migration, claim service, VM/DB/provider/install/Git change. Real stamping/replay/reenrollment proof waits for005g lifecycle and verified feature lineage.
+
+Frozen result: actual `runSchema` requires nullable fixture kind, version1 and positive int32 activation revision, then rejects all partial tuples. Parsed metadata remains private/frozen; no setter, authority or eligibility boolean was introduced. Both raw-row fixtures explicitly contain legacy nulls. Controls cover all six partial tuples, missing/undefined/invalid metadata, exact canonical bytes, safe DTO/result exclusion, current and historical results, legacy/stamped no-admission projections and unchanged claim-history parsing.
+
+Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-009d2/`. Baseline 14 pass / 168 assertions; failing-first 2 pass / 16 fail; final focused 18 pass / 255 assertions, relevant regression 56 pass / 526 assertions, strict exit0 and three clean TypeScript diagnostics. Two test literal widening errors were corrected before the final strict run. Source hashes and untouched schema/store/contract/claim-parser hashes are recorded there. Actual database/provenance stamping remains unexecuted.

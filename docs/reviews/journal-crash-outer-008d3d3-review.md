@@ -1,0 +1,7 @@
+# Crash proof outer source review
+
+Coordinator independently read the full adapted supervisor, pure52-row oracle, negative tests, accepted-base diff, provisioning recipe and report. Frozen launcher71d28da9450d16ff1579931e738f64d0d790e24c6ae272d03669b5f04ccb753c, supervisor07a1e8015e7b17f4f2034167557532b22dbde630facf4de88bd2cc36ee811e68, oraclea89ba599be3df1293d222ad80a1dca82a01c30556b5598116874ee83b5d92d61.
+
+Source accepted for one bounded synthetic invocation on the approved offline VM, after fresh isolation/runtime/path preflight and exclusive provisioning. Worker evidence records4tests58assertions, strict checks and clean diagnostics; these do not establish guest execution. The wrapper preserves immediate drains/reaping, exclusive persistent receipts, exact live PID/start guarded signaling, no post-reap signaling, bounded output/proc inspection and fail-closed settlement. The oracle binds17orderedcase triples and completion to the independently observed proof process and timeout parent. Initial/final journal snapshots have separate temporal meanings.
+
+Actual invocation, separate final byte/hash/production-codec readback, independent empty group/session verification and exact known-file cleanup remain required. Any ambiguous or failed attempt retains the tree and evidence rather than retrying or repairing it. No host restart, power loss, real provider effect or parent008 completion claim follows from this source review.

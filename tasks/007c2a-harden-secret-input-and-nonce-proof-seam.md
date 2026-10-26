@@ -1,0 +1,37 @@
+# RFC-007c2a: Harden secret input and add trusted nonce proof seam
+
+Status: done for bounded correction; coordinator accepts independent CLEAR/APPROVE review, 2026-10-22. Coordinator and reviewer independently66tests159assertions, strict diagnostics and native allocation proof pass. Parent [RFC-007](007-store-user-owned-connection-references.md) and actual database proof remain incomplete.
+
+Authority: coordinator assigned narrow remediation of M1 in [independent 007c2 review](../docs/verification/reviews/connection-007c2-review.md), plus a constructor-only nonce-source seam for future RFC-007c3. Changed only `store-contract.ts`, `store-contract.test.ts`, `store.ts`, `store-keys.ts`, `store.test.ts`, this record and unique evidence. No schema, crypto primitive, identity, environment, routes, launcher or proof-client changes.
+
+## Result and consumer contract
+
+Strict create/replace object validation now finishes before any secret buffer is allocated. Only accepted shapes reach `copySecret`, which makes one owned copy, rechecks its byte length and performs fatal UTF-8 validation on that copy. Failed copy validation wipes the owned buffer; sibling-field/extra-field failures allocate none. Caller buffers remain untouched. Successful parsing remains synchronous, preserving NUL/BOM/whitespace and isolating shared-buffer input before asynchronous work. This is best-effort residency reduction, not a JavaScript secure-erasure guarantee.
+
+Future RFC-007c3 constructor signature:
+
+```ts
+createConnectionStore(
+  db: Pick<Database, "transaction">,
+  options: unknown,
+  nonceSource?: (size: number) => Uint8Array,
+)
+```
+
+The optional trusted third argument flows through `createStoreKeys(configuration, nonceSource)` to existing `createConnectionCrypto(configuration, nonceSource)`. Omitting it preserves the primitive's `randomBytes` default; no environment or serialized request/options field was added. Tests reject `nonceSource` in JSON shapes. No plaintext resolver or public key access exists. The injected source is a trusted proof/construction dependency, never caller/model input; RFC-007c3 should use it only for explicitly synthetic disposable collision scenarios.
+
+## Evidence
+
+Directory: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/connection-007c2a/` (abbreviated `<evidence>` below).
+
+| Scenario / exact invocation | Binary observable | Artifact |
+| --- | --- | --- |
+| Before fix: `bun --no-env-file run <evidence>/allocation-probe.ts` | Denied invalid label; copyAllocated=true, copyRemainsNonzero=true, callerUnchanged=true. Exit0. Independent current reproduction, not assumed from review | `allocation-red.json` |
+| New regression before fix: `bun --no-env-file test apps/server/src/modules/connections/store-contract.test.ts` | Exit1, invalid sibling allocation expectation fails | `red-tests.log` |
+| Same native allocation invocation after fix | denied=true, copyAllocated=false, copyRemainsNonzero=false, callerUnchanged=true. Exit0; no raw synthetic bytes printed | `allocation-green.json` |
+| `bun --no-env-file test apps/server/src/modules/connections/store.test.ts apps/server/src/modules/connections/store-contract.test.ts apps/server/src/modules/connections/crypto.test.ts` | 66 pass, 0 fail, 159 assertions. Allocation guard covers create/replace invalid siblings/extras; corrupted owned copy proves UTF-8 validation targets the copy and wipes it; shared input proves exactly one private copy. Nonce tests observe injected 12-byte values for key-check and seal, random omitted default and JSON-field exclusion | `tests.log` |
+| `bunx --no-install tsc --ignoreConfig --noEmit --strict --noUncheckedIndexedAccess --exactOptionalPropertyTypes --verbatimModuleSyntax --moduleResolution bundler --module esnext --target esnext --skipLibCheck --types bun apps/server/src/modules/connections/store.ts apps/server/src/modules/connections/store-contract.ts apps/server/src/modules/connections/store-keys.ts apps/server/src/modules/connections/store.test.ts apps/server/src/modules/connections/store-contract.test.ts` | Exit0, no diagnostics | `types.log` |
+| `mcp__lsp__diagnostics` on connections directory, severity error | Eight files, zero diagnostics | `lsp.json` |
+| `shasum -a 256` on five changed source/test files | Final source identities recorded | `source-sha256.txt` |
+
+No successful DB transaction or nonce-ledger collision has been claimed or exercised. No DB/container/server/provider/account/model/browser, install or Git mutation occurred. RFC-007c3 owns actual bootstrap, collision/retry/capacity, races and unknown-COMMIT proof using the separately prepared disposable database client. The metadata service's existing ownership/error/replay contracts remain in [007c2](007c2-implement-connection-store.md).

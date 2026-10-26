@@ -1,0 +1,769 @@
+{
+  "version": "8",
+  "dialect": "postgres",
+  "id": "b3549b08-4918-43f4-8f9d-f4a267cc3005",
+  "prevIds": [
+    "04b24949-37e1-46d9-a97a-449f8282d363"
+  ],
+  "ddl": [
+    {
+      "isRlsEnabled": false,
+      "name": "run_attempts",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "runs",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "run_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "effect_state",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "finished_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "stop_confirmed_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "result_version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "result_text",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "result_error_code",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "result_last_sequence",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cancellation_reason",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "request_key",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "origin_kind",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "bot_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "conversation_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "configuration_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "configuration_version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "input_version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "input_snapshot",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "producer_kind",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "producer_version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "actor_activation_revision",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "current_generation",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cancel_requested_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "type": "timestamp(3) with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "finished_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "owner_user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "runs_owner_id_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "run_id",
+        "owner_user_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "runs",
+      "columnsTo": [
+        "id",
+        "owner_user_id"
+      ],
+      "onUpdate": "RESTRICT",
+      "onDelete": "RESTRICT",
+      "name": "run_attempts_owner_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "owner_user_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "membership",
+      "columnsTo": [
+        "user_id"
+      ],
+      "onUpdate": "RESTRICT",
+      "onDelete": "RESTRICT",
+      "name": "runs_owner_user_id_membership_user_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "run_attempts_pkey",
+      "schema": "public",
+      "table": "run_attempts",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "runs_pkey",
+      "schema": "public",
+      "table": "runs",
+      "entityType": "pks"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "run_id",
+        "generation"
+      ],
+      "nullsNotDistinct": false,
+      "name": "run_attempts_run_generation_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "id",
+        "run_id",
+        "owner_user_id"
+      ],
+      "nullsNotDistinct": false,
+      "name": "run_attempts_id_run_owner_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "owner_user_id",
+        "request_key"
+      ],
+      "nullsNotDistinct": false,
+      "name": "runs_owner_request_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "id",
+        "owner_user_id"
+      ],
+      "nullsNotDistinct": false,
+      "name": "runs_id_owner_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "value": "\"generation\" between 1 and 2147483647",
+      "name": "run_attempts_generation_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "value": "\"status\" in ('queued','running','succeeded','failed','cancelled','interrupted')",
+      "name": "run_attempts_status_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "value": "\"effect_state\" in ('no_effect','known','uncertain')",
+      "name": "run_attempts_effect_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "value": "(\"lease_id\" is null and \"lease_expires_at\" is null and \"claimed_at\" is null)\n    or (\"lease_id\" is not null and \"lease_expires_at\" is not null and \"claimed_at\" is not null and \"lease_expires_at\" > \"claimed_at\")",
+      "name": "run_attempts_lease_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "value": "\n    (\"status\" = 'queued' and \"effect_state\" = 'no_effect' and \"lease_id\" is null and \"started_at\" is null\n      and \"finished_at\" is null and \"stop_confirmed_at\" is null and \"result_version\" is null and \"cancellation_reason\" is null)\n    or (\"status\" = 'running' and \"effect_state\" in ('no_effect','uncertain') and \"lease_id\" is not null\n      and \"finished_at\" is null and \"result_version\" is null)\n    or (\"status\" in ('succeeded','failed','cancelled','interrupted') and \"finished_at\" is not null)",
+      "name": "run_attempts_lifecycle_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "value": "(\"result_version\" is null and \"result_text\" is null and \"result_error_code\" is null and \"result_last_sequence\" is null)\n    or (\"result_version\" is not null and \"result_version\" = 1 and \"result_text\" is not null and octet_length(\"result_text\") <= 65536\n      and \"result_last_sequence\" is not null and \"result_last_sequence\" between 0 and 1000)",
+      "name": "run_attempts_result_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "value": "\"result_error_code\" is null or \"result_error_code\" in\n    ('invalid_input','unsupported','malformed_output','out_of_order','output_limit','tool_denied','tool_failed','outcome_uncertain','deadline','adapter_failed')",
+      "name": "run_attempts_error_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "value": "\"cancellation_reason\" is null or (\"cancellation_reason\" = 'owner_requested' and \"status\" in ('running','cancelled'))",
+      "name": "run_attempts_cancellation_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "value": "(\"claimed_at\" is null or \"claimed_at\" >= \"created_at\")\n    and (\"started_at\" is null or (\"claimed_at\" is not null and \"started_at\" >= \"claimed_at\"))\n    and (\"finished_at\" is null or (\"finished_at\" >= \"created_at\"\n      and (\"claimed_at\" is null or \"finished_at\" >= \"claimed_at\")\n      and (\"started_at\" is null or \"finished_at\" >= \"started_at\")))\n    and (\"stop_confirmed_at\" is null or (\"stop_confirmed_at\" >= \"created_at\"\n      and (\"claimed_at\" is null or \"stop_confirmed_at\" >= \"claimed_at\")\n      and (\"started_at\" is null or \"stop_confirmed_at\" >= \"started_at\")))",
+      "name": "run_attempts_time_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "run_attempts"
+    },
+    {
+      "value": "\"owner_user_id\" collate \"C\" ~ '^[a-zA-Z0-9_-]{1,128}$'\n    and \"bot_id\" collate \"C\" ~ '^[a-zA-Z0-9_-]{1,128}$' and \"conversation_id\" collate \"C\" ~ '^[a-zA-Z0-9_-]{1,128}$'\n    and \"configuration_id\" collate \"C\" ~ '^[a-zA-Z0-9_-]{1,128}$'",
+      "name": "runs_identifiers_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "value": "\"origin_kind\" in ('interactive','setup')",
+      "name": "runs_origin_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "value": "\"configuration_version\" between 1 and 2147483647 and \"revision\" between 1 and 2147483647 and \"current_generation\" between 1 and 2147483647",
+      "name": "runs_counters_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "value": "\"input_version\" = 1 and octet_length(\"input_snapshot\") between 1 and 98304 and \"input_snapshot\" is json array",
+      "name": "runs_input_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "value": "(\"producer_kind\" is null and \"producer_version\" is null and \"actor_activation_revision\" is null)\n    or (\"producer_kind\" is not null and \"producer_version\" is not null and \"actor_activation_revision\" is not null\n      and \"producer_kind\" = 'fixture' and \"producer_version\" = 1 and \"actor_activation_revision\" between 1 and 2147483647)",
+      "name": "runs_producer_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "value": "\"status\" in ('queued','running','succeeded','failed','cancelled','interrupted')",
+      "name": "runs_status_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "value": "\n    (\"status\" = 'queued' and \"started_at\" is null and \"finished_at\" is null and \"cancel_requested_at\" is null)\n    or (\"status\" = 'running' and \"finished_at\" is null)\n    or (\"status\" in ('succeeded','failed','cancelled','interrupted') and \"finished_at\" is not null)",
+      "name": "runs_lifecycle_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "runs"
+    },
+    {
+      "value": "(\"started_at\" is null or \"started_at\" >= \"created_at\")\n    and (\"cancel_requested_at\" is null or \"cancel_requested_at\" >= \"created_at\")\n    and (\"finished_at\" is null or (\"finished_at\" >= \"created_at\"\n      and (\"started_at\" is null or \"finished_at\" >= \"started_at\")\n      and (\"cancel_requested_at\" is null or \"finished_at\" >= \"cancel_requested_at\")))",
+      "name": "runs_time_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "runs"
+    }
+  ],
+  "renames": []
+}

@@ -1,6 +1,4 @@
-import { Button } from "@/components/ui";
-import { Input } from "@/components/ui";
-import { Label } from "@zetta/ui/components/label";
+import { Button, Input } from "@/components/ui";
 import { useEffect, useRef } from "react";
 
 export function EnrollmentForm({
@@ -41,8 +39,8 @@ export function EnrollmentForm({
         }}
       >
         <div className="space-y-2">
-          <Label htmlFor="enrollment-token">Invitation token</Label>
           <Input
+            title="Invitation token"
             id="enrollment-token"
             type="password"
             autoComplete="off"

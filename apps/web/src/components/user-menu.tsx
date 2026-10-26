@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { AuthenticationRequestError } from "@/lib/auth-transport";
 
-export default function UserMenu({ compact = false }: { compact?: boolean }) {
+export default function UserMenu({ compact = false, inline = false }: { compact?: boolean; inline?: boolean }) {
   const navigate = useNavigate();
   const { data: session, isPending } = authClient.useSession();
   const [signingOut, setSigningOut] = useState(false);
@@ -40,13 +40,13 @@ export default function UserMenu({ compact = false }: { compact?: boolean }) {
   }
 
   if (isPending) {
-    return <Skeleton className="size-8 sm:w-24" />;
+    return <Skeleton className={inline ? "h-8 w-20" : "size-8 sm:w-24"} />;
   }
 
   if (!session) {
     return (
       <Link to="/login">
-        <Button variant="outline">Sign In</Button>
+        {inline ? <span className="inline-flex h-8 items-center rounded-md px-3 text-sm font-medium hover:bg-accent">Sign In</span> : <Button variant="outline">Sign In</Button>}
       </Link>
     );
   }
@@ -55,9 +55,10 @@ export default function UserMenu({ compact = false }: { compact?: boolean }) {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={`Account menu for ${session.user.name}`}
-        render={compact ? <Button variant="ghost" size="icon" className="size-10 rounded-full bg-secondary text-sm font-semibold" /> : <Button variant="outline" size="icon" className="sm:w-auto sm:max-w-40 sm:px-2.5" />}
+        render={inline ? <button type="button" className="flex h-8 max-w-48 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring" /> : compact ? <Button variant="ghost" size="icon" className="size-10 rounded-full bg-secondary text-sm font-semibold" /> : <Button variant="outline" size="icon" className="sm:w-auto sm:max-w-40 sm:px-2.5" />}
       >
-        {compact ? <span aria-hidden="true">{session.user.name.slice(0, 1).toUpperCase()}</span> : <><UserRound aria-hidden="true" className="sm:hidden" />
+        {inline ? <><span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold">{session.user.name.slice(0, 1).toUpperCase()}</span>
+        <span className="hidden min-w-0 truncate sm:block">{session.user.name}</span></> : compact ? <span aria-hidden="true">{session.user.name.slice(0, 1).toUpperCase()}</span> : <><UserRound aria-hidden="true" className="sm:hidden" />
         <span className="hidden min-w-0 truncate sm:block">{session.user.name}</span></>}
       </DropdownMenuTrigger>
       <DropdownMenuContent align={compact ? "start" : "end"} side={compact ? "right" : "bottom"} className="w-64 max-w-[calc(100vw-1rem)] bg-card">

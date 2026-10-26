@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 
 import { call, chatClient, errorMessage, PROVIDERS, type Connection, type ConnectionList, type Provider } from "../chat/chat-client";
-import { ConfirmButton, Empty, field, Field } from "../shared/ui";
+import { Badge, ConfirmButton, Empty, list, listItem, Panel } from "../shared/ui";
 
 type Harness = { harness: string; label: string; installed: boolean; version?: string | null; status: "ready" | "not_installed" | "needs_login" | "unverified"; perUserLogin: boolean; guidance?: string };
 
-const PROVIDER_NAME: Record<Provider, string> = { anthropic: "Anthropic", openai: "OpenAI", google: "Google", openrouter: "OpenRouter" };
+const PROVIDER_NAME: Record<Provider, string> = { anthropic: "Anthropic", openai: "OpenAI", google: "Google", openrouter: "OpenRouter", github: "GitHub" };
 const HARNESS_STATUS: Record<Harness["status"], { label: string; tone: string }> = {
   ready: { label: "Ready", tone: "border-green-600/60" },
   not_installed: { label: "Not installed", tone: "border-destructive/60" },
@@ -29,20 +29,18 @@ function Harnesses({ onError }: { onError: (m: string) => void }) {
   const [rows, setRows] = useState<Harness[]>();
   useEffect(() => { call<{ harnesses: Harness[] }>("/api/harnesses").then((r) => setRows(r.harnesses), (e) => onError(errorMessage(e))); }, [onError]);
   return (
-    <section aria-label="Bot engines" className="space-y-3 rounded-lg border bg-card p-5">
-      <h2 className="font-medium">Bot engines</h2>
-      <p className="text-xs text-muted-foreground">The tools that run your bots. Each bot picks one in its settings.</p>
+    <Panel title="Bot engines" label="Bot engines" description="The tools that run your bots. Each bot picks one in its settings.">
       {!rows && <p role="status" className="text-sm">Checking…</p>}
       <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{rows?.map((h) => {
         const s = HARNESS_STATUS[h.status];
         return (
           <li key={h.harness} className={`min-w-0 rounded-lg border bg-card p-4 text-sm ${s.tone}`}>
-            <p className="font-medium">{h.label}</p>
-            <p>{s.label}{h.version ? <span className="text-muted-foreground"> · version {h.version}</span> : null}</p>
+            <div className="flex items-center justify-between gap-2"><p className="font-medium">{h.label}</p><Badge tone={h.status === "ready" ? "success" : h.status === "unverified" ? "neutral" : h.status === "needs_login" ? "warning" : "danger"}>{s.label}</Badge></div>
+            {h.version && <p className="text-xs text-muted-foreground">Version {h.version}</p>}
             <p className="mt-1 break-words text-xs text-muted-foreground">{harnessGuidance(h)}</p>
           </li>);
       })}</ul>
-    </section>
+    </Panel>
   );
 }
 
@@ -66,26 +64,24 @@ function Connections({ onError }: { onError: (m: string) => void }) {
     await load();
   }
   return (
-    <section aria-label="Connected accounts" className="space-y-3 rounded-lg border bg-card p-5">
-      <h2 className="font-medium">Connected accounts</h2>
-      <p className="text-xs text-muted-foreground">Keys for AI providers that your bots may use. Only you can use yours, and a saved key is never shown again.</p>
+    <Panel title="Connected accounts" label="Connected accounts" description="Keys for AI providers that your bots may use. Only you can use yours, and a saved key is never shown again.">
       {data && !data.configured && <p role="alert" className="rounded-lg border border-yellow-600/60 p-2 text-sm">Accounts are turned off on this server. The administrator must set ZETTA_CONNECTION_KEY before keys can be saved.</p>}
       {data?.configured && (
-        <form onSubmit={(e) => void create(e)} autoComplete="off" className="grid gap-2 rounded-lg border bg-card p-4 sm:grid-cols-3" aria-label="Add an account">
-          <Field label="Provider"><select name="provider" className={field}>{(data.providers?.length ? data.providers : [...PROVIDERS]).map((p) => <option key={p} value={p}>{PROVIDER_NAME[p] ?? p}</option>)}</select></Field>
-          <Field label="Name for this account"><input name="label" required maxLength={100} placeholder="e.g. Work key" className={field} /></Field>
-          <Field label="Secret key"><input name="secret" type="password" required minLength={8} maxLength={8000} autoComplete="new-password" spellCheck={false} className={field} /></Field>
+        <form onSubmit={(e) => void create(e)} autoComplete="off" className="grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-3" aria-label="Add an account">
+          <Select title="Provider" required={false} name="provider" options={(data.providers?.length ? data.providers : [...PROVIDERS]).map((p) => ({ value: p, label: PROVIDER_NAME[p] ?? p }))} />
+          <Input title="Name for this account" name="label" required maxLength={100} placeholder="e.g. Work key" />
+          <Input title="Secret key" name="secret" type="password" required minLength={8} maxLength={8000} autoComplete="new-password" spellCheck={false} />
           <div className="sm:col-span-3"><Button type="submit" size="sm" disabled={busy}>{busy ? "Saving…" : "Save account"}</Button></div>
         </form>)}
       <p role="status" className="text-sm empty:hidden">{status}</p>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {data?.configured && data.connections.length === 0 && <Empty>No accounts yet.</Empty>}
-      <ul className="space-y-1">{data?.connections.map((c) => (
-        <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card p-3 text-sm">
+      <ul className={list}>{data?.connections.map((c) => (
+        <li key={c.id} className={`${listItem} flex flex-wrap items-center justify-between gap-2`}>
           <span className="min-w-0 break-words"><strong>{c.label}</strong> · {PROVIDER_NAME[c.provider] ?? c.provider} · {CONNECTION_STATE(c.state)}</span>
           {c.state === "active" && <ConfirmButton size="xs" label="Revoke" question="Revoke this account? Bots using it will stop working." confirmLabel="Revoke" onConfirm={() => revoke(c)} />}
         </li>))}</ul>
-    </section>
+    </Panel>
   );
 }
 

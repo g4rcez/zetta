@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui";
 
 import { call, errorMessage, type Bot } from "../chat/chat-client";
-import { Empty, when } from "../shared/ui";
+import { Empty, list, listItem, when } from "../shared/ui";
 
 type Event = { id: string; kind: string; outcome: string; botId: string | null; subjectId: string | null; detail: string | null; createdAt: string };
 
@@ -21,13 +21,15 @@ export function Activity({ bots, onError }: { bots: Bot[]; onError: (m: string) 
   }, [onError]);
   useEffect(() => { void load(); }, [load]);
   return (
-    <section aria-label="Activity" className="space-y-3 rounded-lg border bg-card p-5">
+    <section aria-label="Activity" className="space-y-4">
       <p className="text-sm text-muted-foreground">A private record of what your bots did. It never includes what you wrote or what they answered.</p>
       {events?.length === 0 && <Empty>Nothing has happened yet.</Empty>}
-      <ul className="space-y-1">{events?.map((e) => (
-        <li key={e.id} className="min-w-0 rounded-md border bg-card p-3 text-sm">
-          <p className={e.outcome === "ok" ? "" : "text-destructive"}>{describeEvent(e)}{e.botId ? ` · ${bots.find((b) => b.id === e.botId)?.name ?? "a bot"}` : ""}</p>
-          <p className="text-xs text-muted-foreground">{when(e.createdAt)}{e.detail ? ` · ${e.detail}` : ""}</p>
+      <ul className={list}>{events?.map((e) => (
+        <li key={e.id} className={`${listItem} flex items-start gap-3`}>
+          <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${e.outcome === "ok" ? "bg-emerald-500" : "bg-destructive"}`} />
+          <div className="min-w-0 flex-1"><p className={`break-words ${e.outcome === "ok" ? "" : "text-destructive"}`}>{describeEvent(e)}{e.botId ? ` · ${bots.find((b) => b.id === e.botId)?.name ?? "a bot"}` : ""}</p>
+            {e.detail && <p className="break-words text-xs text-muted-foreground">{e.detail}</p>}</div>
+          <time dateTime={e.createdAt} className="shrink-0 text-xs tabular-nums text-muted-foreground">{when(e.createdAt)}</time>
         </li>))}</ul>
       {next && <Button size="sm" variant="outline" disabled={busy} onClick={() => void load(next)}>Load older</Button>}
     </section>

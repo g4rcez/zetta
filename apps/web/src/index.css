@@ -1,5 +1,6 @@
 @import "@zetta/ui/globals.css";
 @import "@g4rcez/components/index.css";
+@source "../node_modules/streamdown/dist/*.js";
 
 /* Native selects: consistent chevron and no platform chrome. */
 select {
@@ -33,3 +34,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   --var-menu-surface-background: var(--popover);
   --var-modal-overlay-background: oklch(0 0 0 / 60%);
 }
+
+/* Chat (features/chat): all rules are prefixed .chat- */
+.chat-code { position: relative; margin: 0.5rem 0; border-radius: 0.5rem; background: color-mix(in oklch, var(--foreground) 8%, transparent); }
+.chat-code pre { max-width: 100%; overflow-x: auto; padding: 0.75rem 2.75rem 0.75rem 0.75rem; font-size: 0.8125rem; line-height: 1.5; tab-size: 2; }
+.chat-code pre:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: 0.5rem; }
+.chat-code-copy { position: absolute !important; background: var(--card) !important; height: 1.75rem !important; width: 1.75rem !important; min-height: 0 !important; padding: 0 !important; top: 0.25rem; right: 0.25rem; opacity: 0.85; }
+.chat-code:hover .chat-code-copy, .chat-code-copy:focus-visible { opacity: 1; }
+.chat-inline-code { border-radius: 0.25rem; padding: 0.05rem 0.3rem; font-size: 0.875em; background: color-mix(in oklch, currentColor 14%, transparent); }
+.chat-code-copy svg { width: 0.875rem; height: 0.875rem; }

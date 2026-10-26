@@ -1,11 +1,11 @@
 import "@xyflow/react/dist/style.css";
 import { addEdge, Background, Controls, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, type Connection, type Edge, type NodeProps } from "@xyflow/react";
 import { useCallback, useMemo, useState } from "react";
-import { Button } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 
 import { ApiError, call, errorMessage, type Bot } from "../chat/chat-client";
 import { useTheme } from "../../components/theme-provider";
-import { field, Field } from "../shared/ui";
+
 import { flowToGraph, freshId, graphToFlow, handlesOf, KIND_LABEL, localProblems, newNode, type FlowNode, type NodeData, type NodeKind, type ServerGraph } from "./workflow-graph";
 
 const STATE_STYLE: Record<string, string> = { done: "border-green-600", failed: "border-destructive", skipped: "opacity-50" };
@@ -82,7 +82,7 @@ function Editor({ bots, initial, workflow, onSaved, onError }: { bots: Bot[]; in
   return (
     <div className="space-y-2" aria-label="Workflow canvas editor">
       <div className="flex flex-wrap items-end gap-2">
-        <Field label="Name" className="w-56"><input value={name} onChange={(e) => setName(e.target.value)} className={field} maxLength={120} /></Field>
+        <Input title="Name" container="w-56" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
         {(Object.keys(KIND_LABEL) as NodeKind[]).map((k) => <Button key={k} size="sm" variant="outline" type="button" onClick={() => add(k)}>+ {KIND_LABEL[k]}</Button>)}
       </div>
       <div className="h-[420px] rounded border" role="application" aria-label="Flow canvas. Drag from an output dot to an input dot to connect steps.">
@@ -94,13 +94,13 @@ function Editor({ bots, initial, workflow, onSaved, onError }: { bots: Bot[]; in
         <fieldset className="grid gap-2 rounded-lg border bg-card p-4 sm:grid-cols-2" aria-label={`Edit ${KIND_LABEL[selected.data.kind]}`}>
           <legend className="px-1 text-sm">{KIND_LABEL[selected.data.kind]} ({selected.id})</legend>
           {selected.data.kind === "prompt" && <>
-            <Field label="Bot"><select value={selected.data.botId} onChange={(e) => patch(selected.id, { botId: e.target.value })} className={field}>{bots.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
-            <Field label="Instruction ({{prev}} = previous output, {{input}} = run input)"><input value={selected.data.template} onChange={(e) => patch(selected.id, { template: e.target.value })} className={field} /></Field></>}
-          {selected.data.kind === "browse" && <Field label="Web address" className="sm:col-span-2"><input value={selected.data.url} onChange={(e) => patch(selected.id, { url: e.target.value })} className={field} /></Field>}
-          {selected.data.kind === "condition" && <Field label="Continue when the previous answer contains" className="sm:col-span-2"><input value={selected.data.contains} onChange={(e) => patch(selected.id, { contains: e.target.value })} className={field} /></Field>}
+            <Select title="Bot" required={false} value={selected.data.botId} onChange={(e) => patch(selected.id, { botId: e.target.value })} options={bots.map((b) => ({ value: b.id, label: b.name }))} />
+            <Input title="Instruction ({{prev}} = previous output, {{input}} = run input)" value={selected.data.template} onChange={(e) => patch(selected.id, { template: e.target.value })} /></>}
+          {selected.data.kind === "browse" && <Input title="Web address" container="sm:col-span-2" value={selected.data.url} onChange={(e) => patch(selected.id, { url: e.target.value })} />}
+          {selected.data.kind === "condition" && <Input title="Continue when the previous answer contains" container="sm:col-span-2" value={selected.data.contains} onChange={(e) => patch(selected.id, { contains: e.target.value })} />}
           {selected.data.kind === "decision" && <>
-            <Field label="Question"><input value={selected.data.question} onChange={(e) => patch(selected.id, { question: e.target.value })} className={field} /></Field>
-            <Field label="Choices (comma separated; each gets its own output)"><input value={(selected.data.choices ?? []).join(", ")} onChange={(e) => { const choices = e.target.value.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 12); patch(selected.id, { choices }); setEdges((es) => es.filter((x) => x.source !== selected.id || choices.includes((x.sourceHandle ?? "").replace("choice:", "")))); }} className={field} /></Field></>}
+            <Input title="Question" value={selected.data.question} onChange={(e) => patch(selected.id, { question: e.target.value })} />
+            <Input title="Choices (comma separated; each gets its own output)" value={(selected.data.choices ?? []).join(", ")} onChange={(e) => { const choices = e.target.value.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 12); patch(selected.id, { choices }); setEdges((es) => es.filter((x) => x.source !== selected.id || choices.includes((x.sourceHandle ?? "").replace("choice:", "")))); }} /></>}
           <div className="flex gap-2 sm:col-span-2">
             <Button size="sm" variant="outline" type="button" onClick={() => setStart(selected.id)} disabled={start === selected.id}>Make this the start</Button>
             <Button size="sm" variant="destructive" type="button" onClick={remove}>Delete step</Button>

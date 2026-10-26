@@ -1,18 +1,26 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
-import { AttachmentError, NotReadyError, OnboardingError, TurnBusyError, type ChatService } from "./service";
+import { AttachmentError, NotReadyError, OnboardingError, TurnBusyError, type ChatEvent, type ChatService } from "./service";
 import { decisionConfigSchema } from "./routing";
 import { FileAccessError, type FileStore } from "./files";
+import { createUIMessageStreamResponse } from "ai";
+import { toUIMessageStream } from "./ui-stream";
 
 export type ChatServices = { access: ReturnType<typeof createIdentityAccess>; chat: ChatService; files?: FileStore };
 
 const uuid = z.string().uuid();
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const botAvatar = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("preset"), preset: z.string().regex(/^[a-z0-9-]{1,32}$/), colors: z.array(hexColor).min(1).max(4) }),
+  z.strictObject({ kind: z.literal("image"), src: z.string().max(300_000).regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/) }),
+]);
 const botInput = z.strictObject({
+  avatar: botAvatar.nullable().optional(),
   name: z.string().trim().min(1).max(80), description: z.string().max(2048).optional(), visibility: z.enum(["private", "team"]).optional(),
   harness: z.enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "fixture"]).optional(), model: z.string().max(128).nullable().optional(),
-  personality: z.string().max(4096).optional(), instructions: z.string().max(16384).optional(),
-  requiredConnections: z.array(z.strictObject({ key: z.string().regex(/^[a-z0-9_-]{1,32}$/), provider: z.enum(["anthropic", "openai", "google", "openrouter"]) })).max(8).optional(),
+  personality: z.string().max(4096).optional(), instructions: z.string().max(16384).optional(), computerMode: z.enum(["off", "browser", "desktop"]).optional(), codeAccess: z.boolean().optional(),
+  requiredConnections: z.array(z.strictObject({ key: z.string().regex(/^[a-z0-9_-]{1,32}$/), provider: z.enum(["anthropic", "openai", "google", "openrouter", "github"]) })).max(8).optional(),
 });
 const botPatch = z.strictObject({ expectedVersion: z.number().int().positive(), patch: botInput.partial() });
 const onboarding = z.strictObject({ conversationId: uuid, questionId: uuid, expectedVersion: z.number().int().positive(), satisfied: z.boolean() });
@@ -70,6 +78,28 @@ export function createChatRoutes({ access, chat, files }: ChatServices, trustedO
       return sse(turn.follow(), () => {});
     } catch (error) { return mapError(error); }
   }
+  /** AI SDK UI message stream of a turn, always from its first event; a failed turn ends with an `error` chunk. */
+  function uiStream(turn: { rec: { error?: unknown }; follow: () => AsyncGenerator<{ event: ChatEvent }> }) {
+    const events = async function* () { for await (const { event } of turn.follow()) yield event; if (turn.rec.error) throw turn.rec.error; };
+    return createUIMessageStreamResponse({ stream: toUIMessageStream(events()), headers: { "cache-control": "no-store", "x-accel-buffering": "no" } });
+  }
+  async function chatReply({ request, body, params }: { request: Request; body: unknown; params: Record<string, string> }) {
+    try {
+      const origin = request.headers.get("origin");
+      if (!origin || !trustedOrigins.includes(origin)) return fail(403, "UNTRUSTED_ORIGIN", "Open Zetta from its trusted application and try again.");
+      const actor = await access.requireActive(request.headers);
+      const turn = await chat.startTurn(actor, parse(uuid, params.id), parse(send, body));
+      return uiStream({ rec: turn.rec, follow: () => turn.follow(0) });
+    } catch (error) { return mapError(error); }
+  }
+  async function resumeChat({ request, params }: { request: Request; params: Record<string, string> }) {
+    try {
+      const actor = await access.requireActive(request.headers);
+      const turn = await chat.resumeTurn(actor, parse(uuid, params.id), 0);
+      if (!turn || turn.rec.done) return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+      return uiStream(turn);
+    } catch (error) { return mapError(error); }
+  }
   function mapError(error: unknown) {
     if (error instanceof AccessError) return fail(error.code === "SIGN_IN_REQUIRED" ? 401 : error.code === "NOT_FOUND" ? 404 : error.code === "IDENTITY_UNAVAILABLE" ? 503 : 403, error.code, error.message);
     if (error instanceof NotReadyError) return fail(409, "BOT_NOT_READY", "This bot is not ready yet. Its owner has to finish setting it up first.");
@@ -84,6 +114,8 @@ export function createChatRoutes({ access, chat, files }: ChatServices, trustedO
   return new Elysia({ prefix: "/api", normalize: false })
     .post("/conversations/:id/stream", streamReply)
     .get("/conversations/:id/stream", resumeReply)
+    .post("/conversations/:id/chat", chatReply)
+    .get("/conversations/:id/chat/stream", resumeChat)
     .post("/conversations/:id/cancel", guarded(async ({ actor, params }) => ({ cancelled: await chat.cancelTurn(actor, parse(uuid, params.id)) })))
     .post("/attachments", guarded(async ({ actor, body }) => ({ attachment: await chat.addAttachment(actor, parse(upload, body)) }), 201))
     .get("/files", guarded(async ({ actor, query }) => ({ entries: await (files ?? noFiles).list(actor.userId, parse(filePath, query.path ?? "shared")) })))

@@ -1,184 +1,231 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowUp, Eye, Menu, FolderOpen, Paperclip, Share2, SlidersHorizontal, Sparkles, Square, X } from "lucide-react";
-import { Button } from "@/components/ui";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { ComputerActivity } from "../computer/computer-activity";
+import "../code/register";
+import "../computer/register";
+import "../plugins/register";
+import { ChevronDown, Hash, Lock, Menu, Monitor, Share2, SlidersHorizontal, X } from "lucide-react";
+import { Skeleton } from "@g4rcez/components";
 
+import { Button } from "@zetta/ui/components/button";
+import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
+import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
+import { authClient } from "@/lib/auth-client";
 
 import { refreshAttention } from "../attention/summary";
-import { BotSettings } from "./bot-settings";
-import { cancelTurn, chatClient, errorMessage, listFiles, streamTurn, uploadAttachment, type Attachment, type Bot, type Conversation, type Message, type Proposal, type Workspace } from "./chat-client";
-import { Markdown } from "./markdown";
-import { MessageItem } from "./message-item";
+import { BotSettingsDrawer } from "./bot-settings";
+import { chatClient, errorMessage, type Bot, type Conversation, type Message, type Proposal, type Workspace } from "./chat-client";
+import type { Row } from "./chat-rows";
+import { Composer } from "./composer";
+import { MessageList, type RowActions } from "./message-list";
+import type { Author } from "./message-row";
 import { ProposalsPanel } from "./proposals-panel";
 import { PublishDialog } from "./publish-dialog";
 import { toggleReaction } from "./reactions";
 import { ChatSidebar } from "./sidebar";
+import { ThreadPanel } from "./thread-panel";
+import { draftKey, useDraft } from "./use-draft";
+import { useZettaChat } from "./use-zetta-chat";
 
-type Live = { botId: string; botName?: string | undefined; text: string };
+const SUGGESTIONS = ["What can you help me with?", "Summarize what you remember about me.", "Plan my week."];
+const wide = (query: string) => (notify: () => void) => { const m = window.matchMedia(query); m.addEventListener("change", notify); return () => m.removeEventListener("change", notify); };
+const useMedia = (query: string) => useSyncExternalStore(wide(query), () => window.matchMedia(query).matches, () => true);
+const asRow = (m: Message): Row => ({ ...m, createdAt: m.createdAt ?? new Date(0).toISOString() });
 
 export function ChatPage() {
+  const search = useSearch({ from: "/_auth/chat" });
+  const navigate = useNavigate({ from: "/chat" });
+  const { data: session } = authClient.useSession();
   const [bots, setBots] = useState<Bot[]>([]);
   const [botId, setBotId] = useState<string>();
   const [chats, setChats] = useState<Conversation[]>([]);
+  const [chatsLoaded, setChatsLoaded] = useState(false);
   const [chatId, setChatId] = useState<string>();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [draft, setDraft] = useState("");
-  const [previewing, setPreviewing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [streaming, setStreaming] = useState<Live>();
-  const [summary, setSummary] = useState<string>();
+  const [saved, setSaved] = useState<Message[]>([]);
+  const composer = useDraft(draftKey(botId, chatId));
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [spaces, setSpaces] = useState<Workspace[]>([]);
-  const [replyTo, setReplyTo] = useState<Message>();
   const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [attached, setAttached] = useState<Attachment[]>([]);
-  const [fileRefs, setFileRefs] = useState<string[]>([]);
-  const [picker, setPicker] = useState<{ path: string; entries: { name: string; kind: "file" | "dir" }[] }>();
   const [publishing, setPublishing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [navOpen, setNavOpen] = useState(false); // phones: the bot/chat list replaces the conversation while open
-  const end = useRef<HTMLDivElement>(null);
-  const pendingChat = useRef<string | null>(typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("c"));
+  const [navOpen, setNavOpen] = useState(false); // phones: the bot list replaces the channel while open
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sent, setSent] = useState(0); // bumps on every send so the list jumps to the newest message
+  const pendingChat = useRef<string | null>(search.c ?? null);
+  const desktop = useMedia("(min-width: 1024px)");
   const fail = (e: unknown) => setError(errorMessage(e));
+  const threadId = search.thread;
+  const setThread = (id?: string) => void navigate({ search: (s) => ({ ...s, thread: id }), replace: true });
 
   const loadProposals = useCallback(() => chatClient.proposals().then(setProposals).catch(() => {}), []);
   useEffect(() => { void loadProposals(); }, [loadProposals]);
   useEffect(() => { chatClient.workspaces().then(setSpaces).catch(fail); }, []);
   useEffect(() => {
-    chatClient.bots().then((list) => { setBots(list); setBotId((prev) => prev ?? (list.find((b) => b.kind === "chief") ?? list[0])?.id); }).catch(fail);
+    chatClient.bots().then((list) => { setBots(list); setBotId((prev) => prev ?? (list.find((b) => b.id === search.bot) ?? list.find((b) => b.kind === "chief") ?? list[0])?.id); }).catch(fail);
   }, []);
-  // A link like /chat?c=<conversationId> opens that conversation (and its bot).
+  // Every conversation, for the sidebar's per-bot groups. A link like /chat?c=<conversationId> opens that conversation (and its bot).
+  const loadChats = useCallback(() => chatClient.conversations().then((all) => { setChats(all); return all; }), []);
   useEffect(() => {
-    const wanted = pendingChat.current;
-    if (!wanted) return;
-    chatClient.conversations().then((all) => { const found = all.find((c) => c.id === wanted); if (found) setBotId(found.botId); else pendingChat.current = null; }).catch(() => { pendingChat.current = null; });
-  }, []);
-  const loadChats = useCallback((id: string) => chatClient.conversations(id).then((list) => {
-    setChats(list);
-    const wanted = pendingChat.current;
-    if (wanted && list.some((c) => c.id === wanted)) { pendingChat.current = null; setChatId(wanted); } else setChatId(list[0]?.id);
-  }).catch(fail), []);
-  useEffect(() => { if (botId) void loadChats(botId); }, [botId, loadChats]);
-  useEffect(() => { if (chatId) chatClient.messages(chatId).then(setMessages).catch(fail); else setMessages([]); setSummary(undefined); }, [chatId]);
-  useEffect(() => { end.current?.scrollIntoView?.({ block: "end" }); }, [messages, streaming]);
+    loadChats().then((all) => {
+      const found = all.find((c) => c.id === pendingChat.current);
+      if (found) setBotId(found.botId); else pendingChat.current = null;
+      setChatsLoaded(true);
+    }).catch(fail);
+  }, [loadChats]);
+  // Picking a bot opens its latest conversation, unless a specific one (or a new one, "new") was asked for.
+  useEffect(() => {
+    if (!botId || !chatsLoaded) return;
+    const wanted = pendingChat.current; pendingChat.current = null;
+    if (wanted === "new") { setChatId(undefined); return; }
+    const mine = chats.filter((c) => c.botId === botId);
+    setChatId(wanted && mine.some((c) => c.id === wanted) ? wanted : mine[0]?.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [botId, chatsLoaded]);
+  const reload = useCallback(async (id: string) => { try { const list = await chatClient.messages(id); setSaved(list); } catch (e) { fail(e); } }, []);
+  useEffect(() => {
+    if (!chatId) { setSaved([]); setLoadingMessages(false); return; }
+    let live = true;
+    setLoadingMessages(true);
+    chatClient.messages(chatId).then((list) => { if (live) setSaved(list); }).catch((e) => { if (live) fail(e); }).finally(() => { if (live) setLoadingMessages(false); });
+    return () => { live = false; };
+  }, [chatId]);
+
+  const settle = useCallback(async (id: string) => { await reload(id); void loadChats().catch(() => {}); void refreshAttention(); }, [reload, loadChats]);
+  const main = useZettaChat({ conversationId: chatId, onSettled: settle, onProposal: () => void loadProposals() });
 
   const current = bots.find((b) => b.id === botId);
   const replaceBot = (bot: Bot) => setBots((list) => list.map((b) => (b.id === bot.id ? { ...b, ...bot, canEdit: b.canEdit } : b)));
   const refreshBots = () => chatClient.bots().then(setBots).catch(() => {});
+  const me: Author = { name: session?.user.name ?? "You", image: session?.user.image };
+  const authorOf = useCallback((row: Row): Author => {
+    if (row.role === "user") return me;
+    const bot = bots.find((b) => b.id === (row.botId ?? botId));
+    return { name: bot?.name ?? row.botName ?? "Bot", bot };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bots, botId, me.name, me.image]);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const content = draft.trim();
-    if (!content || !botId || busy) return;
-    setBusy(true); setError(undefined); setSummary(undefined);
+  const rows = useMemo(() => {
+    const top = saved.filter((m) => !m.parentMessageId).map(asRow);
+    return [...top, ...main.rows.filter((r) => !r.parentMessageId && !top.some((x) => x.id === r.id))];
+  }, [saved, main.rows]);
+  const thread = threadId ? rows.find((r) => r.id === threadId) ?? saved.map(asRow).find((r) => r.id === threadId) : undefined;
+  const replies = useMemo(() => (threadId ? saved.filter((m) => m.parentMessageId === threadId).map(asRow) : []), [saved, threadId]);
+
+  async function send({ text, attachmentIds, fileRefs }: { text: string; attachmentIds: string[]; fileRefs: string[] }) {
+    if (!botId) return false;
+    setError(undefined);
     try {
       let id = chatId;
-      if (!id) { const created = await chatClient.startConversation(botId); id = created.id; setChats((c) => [created, ...c]); setChatId(id); }
-      const live = new Map<string, string>(); // streaming bubbles keyed by bot id
-      await streamTurn(id, { clientRequestId: crypto.randomUUID(), content, ...(replyTo ? { parentMessageId: replyTo.id } : {}), ...(attached.length ? { attachmentIds: attached.map((x) => x.id) } : {}), ...(fileRefs.length ? { fileRefs } : {}) }, (ev) => {
-        if (ev.type === "user") setMessages((m) => [...m, { ...ev.message, attachments: attached }]);
-        if (ev.type === "start" && ev.botId) setStreaming({ botId: ev.botId, botName: ev.botName, text: "" });
-        if (ev.type === "delta") { live.set(ev.botId, (live.get(ev.botId) ?? "") + ev.text); setStreaming((s) => ({ botName: s?.botId === ev.botId ? s.botName : undefined, botId: ev.botId, text: live.get(ev.botId)! })); }
-        if (ev.type === "message") { live.delete(ev.message.botId ?? ""); setStreaming(undefined); setMessages((m) => [...m, ev.message]); }
-        if (ev.type === "summary") setSummary(ev.text);
-        if (ev.type === "proposal") void loadProposals();
-        if (ev.type === "error") setError("The reply was interrupted.");
-      });
-      setDraft(""); setPreviewing(false); setReplyTo(undefined); setAttached([]); setFileRefs([]);
-      void refreshAttention();
-    } catch (e) { fail(e); } finally { setBusy(false); setStreaming(undefined); }
+      if (!id) { composer.adopt(); const created = await chatClient.startConversation(botId); id = created.id; setChats((c) => [created, ...c]); setChatId(id); }
+      composer.clear(); setSent((n) => n + 1);
+      void main.send(text, { conversationId: id, attachmentIds, fileRefs });
+      return true;
+    } catch (e) { fail(e); return false; }
   }
-  async function addBot(name: string) {
-    try { const bot = await chatClient.createBot({ name }); setBots((b) => [...b, bot]); setBotId(bot.id); } catch (e) { fail(e); }
-  }
-  const hasReply = messages.some((m) => m.role === "assistant" && m.status === "complete");
+  const hasReply = saved.some((m) => m.role === "assistant" && m.status === "complete");
   async function answer(satisfied: boolean) {
     if (!current || !chatId) return;
-    try { const q = await chatClient.askOnboarding(current.id, chatId); replaceBot(await chatClient.answerOnboarding(current.id, { conversationId: chatId, questionId: q.questionId, expectedVersion: current.version, satisfied })); void chatClient.messages(chatId).then(setMessages).catch(() => {}); setNotice(satisfied ? "Great, this bot is ready for work." : "Okay. Adjust the settings, then chat again to retest."); } catch (e) { fail(e); }
+    try { const q = await chatClient.askOnboarding(current.id, chatId); replaceBot(await chatClient.answerOnboarding(current.id, { conversationId: chatId, questionId: q.questionId, expectedVersion: current.version, satisfied })); void reload(chatId); setNotice(satisfied ? "Great, this bot is ready for work." : "Okay. Adjust the settings, then chat again to retest."); } catch (e) { fail(e); }
   }
-  const setReactions = (id: string, reactions: Message["reactions"]) => setMessages((l) => l.map((m) => (m.id === id ? { ...m, reactions } : m)));
-  async function toggleReact(m: Message, emoji: string) {
+  const setReactions = (id: string, reactions: Message["reactions"]) => setSaved((l) => l.map((m) => (m.id === id ? { ...m, reactions } : m)));
+  async function toggleReact(m: Row, emoji: string) {
     const before = m.reactions ?? [], wasMine = before.some((r) => r.emoji === emoji && r.mine);
     setReactions(m.id, toggleReaction(before, emoji));
     try { await (wasMine ? chatClient.unreact(m.id, emoji) : chatClient.react(m.id, emoji)); }
     catch (e) { setReactions(m.id, before); fail(e); }
   }
+  const actions: RowActions = {
+    onReact: (row, emoji) => void toggleReact(row, emoji),
+    onReply: (row) => setThread(row.id),
+    onSaveInstruction: (row) => void chatClient.saveInstruction(`From chat: ${row.content.slice(0, 40)}`, row.content).then(() => setNotice("Saved to your instruction library."), fail),
+  };
+  function openChat(id: string) {
+    const c = chats.find((x) => x.id === id);
+    if (c && c.botId !== botId) { pendingChat.current = id; setBotId(c.botId); } else setChatId(id);
+    setThread(undefined); setNavOpen(false);
+  }
+  const ChannelIcon = current?.visibility === "private" ? Lock : Hash;
+  const chatTitle = chats.find((c) => c.id === chatId)?.title;
 
-  const attachBtn = "grid size-9 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-within:outline-2 focus-within:outline-ring";
+  const threadPane = thread && chatId ? (
+    <ThreadPanel key={thread.id} conversationId={chatId} parent={thread} replies={replies} bots={bots} bot={current} authorOf={authorOf} actions={actions}
+      onClose={() => setThread(undefined)} onSettled={settle} onProposal={() => void loadProposals()} onError={fail} />) : null;
+
   return (
-    <div className="grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] md:grid-cols-[20rem_minmax(0,1fr)]">
+    <div className={cn("grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] md:grid-cols-[20rem_minmax(0,1fr)]", threadPane && desktop && "lg:grid-cols-[20rem_minmax(0,1fr)_26rem]")}>
       <div className={`${navOpen ? "flex" : "hidden"} min-h-0 md:flex`}>
-        <ChatSidebar bots={bots} spaces={spaces} chats={chats} botId={botId} chatId={chatId} onBot={(id) => { setBotId(id); setNavOpen(false); }} onChat={(id) => { setChatId(id); setNavOpen(false); }} onNewChat={() => { setChatId(undefined); setMessages([]); setNavOpen(false); }}
-          onAddBot={(n) => void addBot(n)} onAddSpace={(name, parentId) => void chatClient.createWorkspace(name, parentId).then((w) => setSpaces((s) => [...s, w]), fail)} />
+        <ChatSidebar bots={bots} spaces={spaces} chats={chats} botId={botId} chatId={chatId} onBot={(id) => { setBotId(id); setThread(undefined); setNavOpen(false); }}
+          onChat={openChat} onNewChat={(id) => { if (id === botId) { setChatId(undefined); setSaved([]); } else { pendingChat.current = "new"; setBotId(id); } setThread(undefined); setNavOpen(false); }}
+          onNewBot={() => void navigate({ to: "/bots/new" })} onAddSpace={(name, parentId) => void chatClient.createWorkspace(name, parentId).then((w) => setSpaces((s) => [...s, w]), fail)} />
       </div>
-      <section className={`${navOpen ? "hidden md:flex" : "flex"} min-h-0 min-w-0 flex-col`} aria-label={current ? `Chat with ${current.name}` : "Chat"}>
-        <header className="flex items-center gap-3 border-b px-4 py-2.5">
-          <Button size="icon" variant="ghost" className="md:hidden" aria-label="Bots and chats" onClick={() => setNavOpen(true)}><Menu /></Button>
-          {current && <BotAvatar id={current.id} size={36} />}
-          <div className="min-w-0 flex-1"><h2 className="truncate text-base font-semibold leading-tight">{current?.name ?? "Chat"}</h2>
-            <p className="truncate text-xs text-muted-foreground">{current ? (current.description || (current.kind === "chief" ? "Your chief of staff" : "Specialist")) : "Loading bots…"}</p></div>
-          {current && <button type="button" onClick={() => setSettingsOpen((o) => !o)} aria-expanded={settingsOpen} aria-label="Bot settings" className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-sm transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
-            <Sparkles aria-hidden="true" className="size-4 text-primary" /><span className="hidden max-w-56 truncate sm:inline">{current.harness === "fixture" ? "Offline test" : `${current.harness}${current.model ? ` · ${current.model}` : ""}`}</span><SlidersHorizontal aria-hidden="true" className="size-4 text-muted-foreground" /></button>}
-          {chatId && messages.length > 0 && <Button size="icon" variant="ghost" aria-label="Publish snapshot to team" title="Publish snapshot to team" onClick={() => setPublishing(true)}><Share2 /></Button>}
-        </header>
-        <div className="relative flex min-h-0 flex-1">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <div className="flex-1 overflow-y-auto" role="log" aria-live="polite">
-              <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6">
-                {messages.length === 0 && !streaming && (
-                  <div className="grid place-items-center gap-3 py-20 text-center">
-                    {current && <BotAvatar id={current.id} size={72} />}
-                    <p className="text-lg font-medium">{current ? `Say hello to ${current.name}.` : "Loading bots…"}</p>
-                    {current && current.canEdit && !current.onboarded && <p className="max-w-sm text-sm text-muted-foreground">{current.name} isn't ready yet: send a test message to start setup.</p>}
-                  </div>)}
-                {messages.map((m) => (
-                  <MessageItem key={m.id} message={m} bots={bots} botId={botId} onReply={setReplyTo} onToggleReaction={(msg, e) => void toggleReact(msg, e)}
-                    onSaveInstruction={(msg) => void chatClient.saveInstruction(`From chat: ${msg.content.slice(0, 40)}`, msg.content).then(() => setNotice("Saved to your instruction library."), fail)} />))}
-                {streaming && (
-                  <div role="status" aria-label="Bot is replying" className="min-w-0 max-w-[min(42rem,85%)] break-words rounded-xl rounded-bl-sm bg-card px-4 py-2.5 text-[15px] ring-1 ring-border">
-                    {streaming.botId !== botId && <p className="mb-1 text-xs font-medium text-muted-foreground">{streaming.botName ?? bots.find((b) => b.id === streaming.botId)?.name ?? "Bot"} answers</p>}
-                    {streaming.text ? <Markdown source={streaming.text} /> : <p className="flex items-center gap-1 text-muted-foreground">Thinking<span className="inline-flex gap-0.5" aria-hidden="true">{[0, 1, 2].map((i) => <i key={i} className="size-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: `${i * 120}ms` }} />)}</span></p>}
-                  </div>)}
-                {summary && !streaming && <p className="max-w-prose text-xs text-muted-foreground" aria-label="Delegation summary">{summary}</p>}
-                <div ref={end} />
-              </div>
-            </div>
-            <div className="mx-auto w-full max-w-3xl space-y-2 px-4">
-              <ProposalsPanel proposals={proposals} bots={bots} notify={setNotice} onResolved={(id) => setProposals((l) => l.filter((x) => x.id !== id))} onBotsChanged={() => void refreshBots()} />
-              {current && current.canEdit && !current.onboarded && hasReply && (
-                <div role="group" aria-label="Onboarding" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/10 p-3">
-                  <p>Are you satisfied with how {current.name} answers?</p>
-                  <div className="flex gap-2"><Button size="sm" onClick={() => void answer(true)}>Yes, I'm satisfied</Button><Button size="sm" variant="outline" onClick={() => void answer(false)}>Not yet</Button></div>
-                </div>)}
-              <p role="status" className="rounded-md bg-muted px-3 py-2 text-sm empty:hidden">{notice}</p>
-              {replyTo && <p className="text-xs text-muted-foreground">Replying in thread to “{replyTo.content.slice(0, 40)}” <button type="button" className="underline" onClick={() => setReplyTo(undefined)}>cancel</button></p>}
-              {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-              {(attached.length > 0 || fileRefs.length > 0) && <p className="text-xs">{[...attached.map((a) => `📎 ${a.name}`), ...fileRefs.map((f) => `📁 ${f}`)].join(" · ")} <button type="button" className="underline" onClick={() => { setAttached([]); setFileRefs([]); }}>clear</button></p>}
-              {picker && <div role="dialog" aria-label="Server files" className="rounded-lg border bg-card p-3 text-sm"><p className="font-medium">{picker.path}</p><ul>{picker.entries.map((en) => <li key={en.name}><button type="button" className="hover:underline" onClick={() => { const p = `${picker.path}/${en.name}`; if (en.kind === "dir") void listFiles(p).then((entries) => setPicker({ path: p, entries }), fail); else { setFileRefs((r) => [...r, p]); setPicker(undefined); } }}>{en.kind === "dir" ? "📂" : "📄"} {en.name}</button></li>)}{picker.entries.length === 0 && <li className="text-muted-foreground">Empty. Put files under the server's files folder.</li>}</ul><button type="button" className="mt-1 underline" onClick={() => setPicker(undefined)}>Close</button></div>}
-              {previewing && <div aria-label="Message preview" className="max-h-40 min-w-0 overflow-y-auto break-words rounded-lg border bg-muted p-3 text-sm">{draft.trim() ? <Markdown source={draft} /> : <p className="text-muted-foreground">Nothing to preview yet.</p>}</div>}
-            </div>
-            <form onSubmit={submit} className="mx-auto w-full max-w-3xl px-4 pt-1 pb-4">
-              <div className="flex items-end gap-1 rounded-xl border bg-card p-2 shadow-sm focus-within:border-ring/60">
-                <label className={attachBtn} title="Attach text file"><Paperclip aria-hidden="true" className="size-5" /><span className="sr-only">Attach text file</span><input type="file" accept=".txt,.md,.json,.csv,.log,.ts,.js,.py,text/*" className="sr-only" onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (!f) return; try { const att = await uploadAttachment(f.name, await f.text(), chatId); setAttached((a) => [...a, att]); } catch (x) { fail(x); } }} /></label>
-                <button type="button" className={attachBtn} title="Server files" onClick={() => void listFiles("shared").then((entries) => setPicker({ path: "shared", entries }), fail)}><FolderOpen aria-hidden="true" className="size-5" /><span className="sr-only">Server files</span></button>
-                <button type="button" className={`${attachBtn} ${previewing ? "bg-muted text-foreground" : ""}`} title={previewing ? "Hide preview" : "Preview"} aria-pressed={previewing} onClick={() => setPreviewing((p) => !p)}><Eye aria-hidden="true" className="size-5" /><span className="sr-only">{previewing ? "Hide preview" : "Preview"}</span></button>
-                <textarea aria-label="Message" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={current ? `Message ${current.name}` : "Message your bot"} rows={1}
-                  className="field-sizing-content max-h-[40dvh] min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] outline-none placeholder:text-muted-foreground"
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void submit(e); } }} />
-                {busy && chatId ? <Button type="button" size="icon-lg" variant="outline" aria-label="Stop" onClick={() => void cancelTurn(chatId).catch(fail)}><Square className="fill-current" /></Button> : null}
-                <Button type="submit" size="icon-lg" aria-label={busy ? "Sending…" : "Send"} disabled={busy || !draft.trim() || !botId}><ArrowUp /></Button>
-              </div>
-              <p className="mt-1.5 text-center text-xs text-muted-foreground">Type @BotName to bring another ready bot into the chat. Enter sends, Shift+Enter adds a line.</p>
-            </form>
+      <section className={`${navOpen ? "hidden md:flex" : "flex"} min-h-0 min-w-0 flex-col bg-background`} aria-label={current ? `Channel ${current.name}` : "Chat"}>
+        <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
+          <Button size="icon-sm" variant="ghost" className="md:hidden" aria-label="Bots" onClick={() => setNavOpen(true)}><Menu /></Button>
+          <button type="button" onClick={() => setSettingsOpen((o) => !o)} aria-expanded={settingsOpen} aria-label={current ? `${current.name} settings` : "Bot settings"} disabled={!current}
+            className="flex max-w-[60%] shrink-0 items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
+            {current ? <BotAvatar bot={current} size={24} square /> : <ChannelIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
+            <h2 className="truncate text-sm font-semibold leading-tight">{current?.name ?? "Chat"}</h2>
+            {current && <ChannelIcon aria-label={current.visibility === "private" ? "Private" : "Team"} className="size-3.5 shrink-0 text-muted-foreground" />}
+            <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+          </button>
+          {current && (
+            <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="shrink-0 rounded border px-1.5 py-0.5 font-medium uppercase tracking-wide">{current.kind === "chief" ? "Chief" : "Specialist"}</span>
+              <button type="button" onClick={() => setSettingsOpen(true)} title="Bot configuration"
+                className="hidden shrink-0 items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring sm:inline-flex">
+                <SlidersHorizontal aria-hidden="true" className="size-3.5" />
+                <span className="font-mono">{current.harness === "fixture" ? "offline test" : `${current.harness}${current.model ? ` · ${current.model}` : ""}`}</span>
+              </button>
+              {current.computerMode && current.computerMode !== "off" && (
+                <span className="hidden shrink-0 items-center gap-1 rounded bg-muted px-1.5 py-0.5 md:inline-flex" title={`Computer use: ${current.computerMode}`}><Monitor aria-hidden="true" className="size-3.5" />{current.computerMode}</span>)}
+              <span className={cn("hidden min-w-0 truncate border-l pl-2", threadPane ? "2xl:block" : "lg:block")} title={current.description}>{current.description || (current.kind === "chief" ? "Your chief of staff" : "Specialist")}</span>
+            </div>)}
+          <div className="ml-auto flex min-w-0 items-center gap-1">
+            {chatTitle && <span className="hidden min-w-0 max-w-48 truncate px-2 text-xs text-muted-foreground xl:inline" title={chatTitle}>{chatTitle}</span>}
+            {chatId && saved.length > 0 && <Button size="icon-sm" variant="ghost" aria-label="Publish snapshot to team" title="Publish snapshot to team" onClick={() => setPublishing(true)}><Share2 /></Button>}
           </div>
-          {settingsOpen && current && (
-            <aside aria-label="Bot settings panel" className="absolute inset-y-0 right-0 z-20 w-full max-w-md overflow-y-auto border-l bg-background p-4 shadow-xl md:static md:w-[26rem] md:max-w-none md:shadow-none">
-              <div className="mb-3 flex items-center justify-between"><h2 className="text-base font-semibold">{current.canEdit ? "Bot settings" : `Accounts for ${current.name}`}</h2><Button size="icon-sm" variant="ghost" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X /></Button></div>
-              <BotSettings bot={current} bots={bots} spaces={spaces} onBotChange={replaceBot} notify={setNotice} />
-            </aside>)}
+        </header>
+        <MessageList key={chatId ?? `new:${botId}`} followToken={sent} rows={rows} authorOf={authorOf} fallbackBotId={botId} busy={main.busy || loadingMessages} label="Conversation" actions={actions}
+          intro={<>
+            {loadingMessages && saved.length === 0 && (
+              <div className="space-y-5 px-4 py-4" role="status" aria-label="Loading messages">
+                {["66%", "45%", "75%"].map((w, i) => <div key={i} className="flex gap-2"><Skeleton className="size-9 rounded-lg" /><div className="flex-1 space-y-2"><Skeleton className="h-3 w-24 rounded" /><Skeleton className="h-4 rounded" style={{ display: "block", inlineSize: w }} /></div></div>)}
+              </div>)}
+            {!loadingMessages && rows.length === 0 && current && (
+              <div className="mt-auto space-y-3 px-4 pt-10 pb-4">
+                <BotAvatar bot={current} size={64} square />
+                <h3 className="text-2xl font-bold"><ChannelIcon aria-hidden="true" className="mr-1 inline size-5 align-baseline text-muted-foreground" />{current.name}</h3>
+                <p className="max-w-prose text-muted-foreground">This is the very beginning of your conversation with <strong className="text-foreground">{current.name}</strong>. {current.description}</p>
+                {current.canEdit && !current.onboarded && <p className="max-w-prose text-sm text-muted-foreground">{current.name} isn't ready yet: send a test message to start setup.</p>}
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Suggested prompts">
+                  {SUGGESTIONS.map((q) => <Button key={q} size="sm" variant="outline" className="rounded-full" onClick={() => void send({ text: q, attachmentIds: [], fileRefs: [] })}>{q}</Button>)}
+                </div>
+              </div>)}
+          </>}
+          footer={main.summary && !main.busy ? <p className="px-4 pt-1 pl-15 text-xs text-muted-foreground" aria-label="Delegation summary">{main.summary}</p> : null} />
+        <div className="shrink-0 space-y-2 px-4 pb-4">
+          <ProposalsPanel proposals={proposals} bots={bots} notify={setNotice} onResolved={(id) => setProposals((l) => l.filter((x) => x.id !== id))} onBotsChanged={() => void refreshBots()} />
+          {current && current.canEdit && !current.onboarded && hasReply && (
+            <div role="group" aria-label="Onboarding" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm">
+              <p>Are you satisfied with how {current.name} answers?</p>
+              <div className="flex gap-2"><Button size="sm" onClick={() => void answer(true)}>Yes, I'm satisfied</Button><Button size="sm" variant="outline" onClick={() => void answer(false)}>Not yet</Button></div>
+            </div>)}
+          {notice && <div role="status" className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm"><p className="flex-1">{notice}</p><Button size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={() => setNotice(undefined)}><X /></Button></div>}
+          {(error || main.error) && <div role="alert" className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p className="min-w-0 flex-1 break-words">{error ?? errorMessage(main.error)}</p>
+            <Button type="button" size="icon-xs" variant="ghost" aria-label="Dismiss error" onClick={() => { setError(undefined); main.clearError(); }}><X /></Button></div>}
+          {botId && <ComputerActivity botId={botId} botName={current?.name} />}
+          <Composer value={composer.value} onChange={composer.set} placeholder={current ? `Message ${current.visibility === "private" ? "" : "#"}${current.name}` : "Message your bot"} bots={bots}
+            busy={main.busy} disabled={!botId} conversationId={chatId} onSubmit={send} onStop={() => void main.stop()} onError={fail} />
         </div>
       </section>
+      {threadPane && desktop && <aside className="hidden min-h-0 border-l lg:flex lg:flex-col">{threadPane}</aside>}
+      {!desktop && <Sheet open={!!threadPane} onOpenChange={(open) => { if (!open) setThread(undefined); }}>
+        <SheetContent side="right" showCloseButton={false} className="w-full p-0 sm:max-w-md"><SheetTitle className="sr-only">Thread</SheetTitle>{threadPane}</SheetContent>
+      </Sheet>}
+      {current && <BotSettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} bot={current} bots={bots} spaces={spaces} onBotChange={replaceBot} notify={setNotice} />}
       {publishing && chatId && <PublishDialog conversationId={chatId} onClose={() => setPublishing(false)} onPublished={() => { setPublishing(false); setNotice("Published a read-only copy for your team. Later messages are not included."); }} />}
     </div>
   );

@@ -23,8 +23,8 @@ export function RoutineCalendar({ refreshKey }: { refreshKey: number }) {
   const byDay = useMemo(() => groupByDay(items), [items]);
   const todays = selected ? byDay.get(dayKey(selected)) ?? [] : [];
   return (
-    <section aria-label="Routine calendar" className="space-y-3 rounded-lg border bg-card p-4">
-      <h2 className="text-sm font-medium">Calendar</h2>
+    <section aria-label="Routine calendar" className="space-y-4 rounded-xl border bg-card p-5">
+      <h3 className="text-base font-semibold tracking-tight">Calendar</h3>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <div className="grid gap-4 md:grid-cols-[auto_1fr]">
         <Calendar
@@ -35,7 +35,7 @@ export function RoutineCalendar({ refreshKey }: { refreshKey: number }) {
           RenderOnDay={({ date }: { date: Date }) => { const n = byDay.get(dayKey(date))?.length ?? 0; return n ? <span aria-label={`${n} routine events`} className="block text-[10px] leading-none">● {n}</span> : null; }}
         />
         <div aria-live="polite">
-          <h3 className="mb-1 text-sm font-medium">{selected ? selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }) : "Pick a day"}</h3>
+          <h4 className="mb-2 text-sm font-medium">{selected ? selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }) : "Pick a day"}</h4>
           {todays.length === 0 && <p className="text-sm text-muted-foreground">Nothing scheduled or run on this day.</p>}
           <ul className="space-y-1 text-sm">
             {todays.map((i, k) => (

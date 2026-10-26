@@ -6,8 +6,30 @@ import { call, errorMessage } from "../chat/chat-client";
 export const field = "w-full min-w-0 rounded-md border border-input bg-muted/40 px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring/40";
 export const card = "rounded-lg border bg-card p-4 text-sm";
 
-export const Empty = ({ children }: { children: ReactNode }) => <p className="text-sm text-muted-foreground">{children}</p>;
-export const Field = ({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) => <label className={`block min-w-0 text-sm ${className}`}><span className="mb-1 block font-medium">{label}</span>{children}</label>;
+export const Empty = ({ children }: { children: ReactNode }) => <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">{children}</p>;
+
+/** Rows share one outer border and hairline dividers instead of a card per row. */
+export const list = "divide-y overflow-hidden rounded-lg border bg-card empty:hidden";
+export const listItem = "min-w-0 px-4 py-3 text-sm";
+
+const TONE = { neutral: "bg-muted text-muted-foreground", success: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400", warning: "bg-amber-500/15 text-amber-700 dark:text-amber-400", danger: "bg-destructive/15 text-destructive", info: "bg-primary/15 text-primary" } as const;
+export const Badge = ({ tone = "neutral", children }: { tone?: keyof typeof TONE; children: ReactNode }) => <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${TONE[tone]}`}>{children}</span>;
+
+/** A titled surface: header with optional count/description/action, then content. */
+export function Panel({ title, count, description, action, label, children }: { title: string; count?: number | undefined; description?: ReactNode; action?: ReactNode; label?: string; children: ReactNode }) {
+  return (
+    <section aria-label={label ?? title} className="min-w-0 space-y-4 rounded-xl border bg-card p-5">
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold tracking-tight">{title}{count !== undefined && <span className="ml-2 text-sm font-normal tabular-nums text-muted-foreground">{count}</span>}</h3>
+          {description && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{description}</p>}
+        </div>
+        {action}
+      </header>
+      {children}
+    </section>
+  );
+}
 export const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : "-");
 
 /** Loads `{[key]: T[]}` from a GET endpoint. */

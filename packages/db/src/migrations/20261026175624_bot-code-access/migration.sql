@@ -1,0 +1,1 @@
+ALTER TABLE "bot" ADD COLUMN "code_access" boolean DEFAULT true NOT NULL;

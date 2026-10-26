@@ -23,6 +23,15 @@ suite("chat against compose postgres", () => {
     await db.insert(membership).values(ids.map((userId) => ({ userId, status: "active" as const, joinedAt: now, updatedAt: now })));
   });
   afterAll(async () => { await cleanupTestUsers(db, ids); });
+  test("a new bot keeps the personality, instructions, harness and model it was created with", async () => {
+    const input = { name: "Coder", description: "Writes code", visibility: "private", harness: "fixture", model: "haiku", personality: "A pragmatic senior engineer.", instructions: "Keep diffs small." };
+    const res = await call(ids[0]!, "POST", "/api/bots", input);
+    expect(res.status).toBe(201);
+    const { bot } = await res.json() as { bot: { id: string; personality: string; instructions: string; model: string; visibility: string } };
+    expect(bot).toMatchObject({ personality: input.personality, instructions: input.instructions, model: "haiku", visibility: "private" });
+    const list = await (await call(ids[0]!, "GET", "/api/bots")).json() as { bots: { id: string; personality: string }[] };
+    expect(list.bots.find((b) => b.id === bot.id)?.personality).toBe(input.personality);
+  });
   test("team specialists are visible but only editable by the owner", async () => {
     const created = await (await call(ids[0]!, "POST", "/api/bots", { name: "Reviewer" })).json() as { bot: { id: string; version: number } };
     const list = await (await call(ids[1]!, "GET", "/api/bots")).json() as { bots: { id: string; canEdit: boolean }[] };
@@ -109,5 +118,27 @@ suite("chat against compose postgres", () => {
     expect(bots.find((x) => x.id === b.id)!.workspaceId).toBeNull(); // moved up, still there
     const spaces = (await (await call(ids[0]!, "GET", "/api/workspaces")).json() as { workspaces: { id: string; parentId: string | null }[] }).workspaces;
     expect(spaces.find((x) => x.id === inner.id)!.parentId).toBeNull(); expect(spaces.some((x) => x.id === w.id)).toBe(false);
+  });
+  test("the AI SDK chat endpoint streams one assistant UI message and resumes only an active turn", async () => {
+    const { bot: b } = await (await call(ids[0]!, "POST", "/api/bots", { name: "UI streamer", harness: "pi" })).json() as { bot: { id: string } };
+    const conv = (await (await call(ids[0]!, "POST", "/api/conversations", { botId: b.id })).json() as { conversation: { id: string } }).conversation;
+    expect((await call(ids[1]!, "POST", `/api/conversations/${conv.id}/chat`, { content: "hi" })).status).toBe(404);
+    const res = await call(ids[0]!, "POST", `/api/conversations/${conv.id}/chat`, { content: "hello ui" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    expect(res.headers.get("x-vercel-ai-ui-message-stream")).toBe("v1");
+    const lines = (await res.text()).split("\n").filter((l) => l.startsWith("data: ")).map((l) => l.slice(6));
+    expect(lines.at(-1)).toBe("[DONE]");
+    const chunks = lines.slice(0, -1).map((l) => JSON.parse(l) as { type: string; id?: string; delta?: string; data?: any });
+    expect(chunks.map((c) => c.type)).toEqual(["start", "data-user-saved", "data-speaker", "text-start", "text-delta", "text-end", "data-saved", "finish"]);
+    const speaker = chunks.find((c) => c.type === "data-speaker")!;
+    expect(speaker.data).toMatchObject({ messageId: speaker.id, botId: b.id, botName: "UI streamer" });
+    expect(chunks.find((c) => c.type === "data-user-saved")!.data.message).toMatchObject({ role: "user", content: "hello ui" });
+    const saved = chunks.find((c) => c.type === "data-saved")!.data;
+    expect(saved).toMatchObject({ botName: "UI streamer", message: { id: speaker.id, role: "assistant", status: "complete" } });
+    expect(typeof saved.message.createdAt).toBe("string"); expect(saved.message.seq).toBeNumber();
+    expect(chunks.filter((c) => c.type === "text-delta").map((c) => c.delta).join("")).toBe(saved.message.content);
+    expect((await call(ids[0]!, "GET", `/api/conversations/${conv.id}/chat/stream`)).status).toBe(204); // turn finished
+    expect((await call(ids[1]!, "GET", `/api/conversations/${conv.id}/chat/stream`)).status).toBe(404);
   });
 });

@@ -1,13 +1,15 @@
 import { ENV } from "../../env";
 
-export type Bot = { id: string; kind: "chief" | "specialist"; name: string; description: string; visibility: "private" | "team"; canEdit: boolean; version: number; workspaceId?: string | null; onboarded: boolean; harness: string; model: string | null; personality: string; instructions: string; requiredConnections?: RequiredConnection[] };
-export type Provider = "anthropic" | "openai" | "google" | "openrouter";
-export const PROVIDERS: readonly Provider[] = ["anthropic", "openai", "google", "openrouter"];
+export type BotAvatarValue = { kind: "preset"; preset: string; colors: string[] } | { kind: "image"; src: string };
+export type Bot = { avatar?: BotAvatarValue | null; id: string; kind: "chief" | "specialist"; name: string; description: string; visibility: "private" | "team"; canEdit: boolean; version: number; workspaceId?: string | null; onboarded: boolean; harness: string; model: string | null; personality: string; instructions: string; computerMode?: ComputerMode; codeAccess?: boolean; requiredConnections?: RequiredConnection[] };
+export type ComputerMode = "off" | "browser" | "desktop";
+export type Provider = "anthropic" | "openai" | "google" | "openrouter" | "github";
+export const PROVIDERS: readonly Provider[] = ["anthropic", "openai", "google", "openrouter", "github"];
 export type RequiredConnection = { key: string; provider: Provider };
-export type BotPatch = Partial<{ name: string; description: string; harness: string; model: string | null; personality: string; instructions: string; requiredConnections: RequiredConnection[] }>;
+export type BotPatch = Partial<{ avatar: BotAvatarValue | null; name: string; description: string; harness: string; model: string | null; personality: string; instructions: string; computerMode: ComputerMode; codeAccess: boolean; requiredConnections: RequiredConnection[] }>;
 export type Conversation = { id: string; botId: string; title: string; updatedAt: string };
 export type Workspace = { id: string; name: string; parentId?: string | null };
-export type ProposalKind = "config" | "create_bot" | "create_routine" | "create_workflow" | "create_instruction";
+export type ProposalKind = "config" | "create_bot" | "create_routine" | "create_workflow" | "create_instruction" | "create_vm";
 export type Proposal = { id: string; botId: string | null; kind?: ProposalKind; diff: { field: string; from: unknown; to: unknown }[] };
 export type DecisionResult = { status: "approved" | "rejected" | "stale" };
 export type Hook = { id: string; kind: "add_context" | "redact" | "stop" | "background"; pattern: string; value: string; enabled?: boolean; position?: number };
@@ -15,10 +17,9 @@ export type HookDryRun = { text: string; stopped: boolean; stopMessage?: string 
 export type Attachment = { id: string; name: string; size: number };
 export type Reaction = { emoji: string; count: number; mine: boolean };
 export const REACTION_EMOJIS = ["👍", "👎", "❤️", "🎉", "👀", "✅"] as const;
-export type Receipt = { kind: "memory" | "instruction" | "proposal"; id: string; text: string; created?: boolean };
+export type Receipt = { kind: "memory" | "instruction" | "proposal" | "computer"; id: string; text: string; created?: boolean };
 export type MessageMeta = { used?: { memories?: string[]; instructions?: string[] }; receipts?: Receipt[]; decision?: { action: string; choice?: string; confidence?: number } } | null;
-export type ChatEvent = { type: "user"; message: Message } | { type: "start"; messageId?: string; botId?: string; botName?: string } | { type: "delta"; botId: string; text: string } | { type: "message"; message: Message; botName: string } | { type: "proposal"; proposalId: string } | { type: "summary"; text: string } | { type: "done" } | { type: "error" };
-export type Message = { attachments?: Attachment[]; botId?: string | null; parentMessageId?: string | null; id: string; seq: number; role: "user" | "assistant" | "system"; content: string; status: "complete" | "failed" | "running" | "interrupted" | "cancelled"; reactions?: Reaction[]; meta?: MessageMeta };
+export type Message = { attachments?: Attachment[]; botId?: string | null; parentMessageId?: string | null; id: string; seq: number; role: "user" | "assistant" | "system"; content: string; status: "complete" | "failed" | "running" | "interrupted" | "cancelled"; reactions?: Reaction[]; meta?: MessageMeta; createdAt?: string; replyCount?: number };
 export type UsedKnowledge = { memories: { id: string; content: string }[]; instructions: { id: string; title: string }[] };
 export type ConnectionState = "active" | "revoked" | string;
 export type Connection = { id: string; provider: Provider; label: string; state: ConnectionState; revision: number };
@@ -56,7 +57,7 @@ export async function call<T>(path: string, method = "GET", body?: object): Prom
 
 export const chatClient = {
   bots: () => call<{ bots: Bot[] }>("/api/bots").then((r) => r.bots),
-  createBot: (input: { name: string; description?: string; visibility?: "private" | "team" }) => call<{ bot: Bot }>("/api/bots", "POST", input).then((r) => r.bot),
+  createBot: (input: { avatar?: BotAvatarValue | null; name: string; description?: string; visibility?: "private" | "team"; harness?: string; model?: string | null; personality?: string; instructions?: string }) => call<{ bot: Bot }>("/api/bots", "POST", input).then((r) => r.bot),
   updateBot: (id: string, expectedVersion: number, patch: BotPatch) => call<{ bot: Bot }>(`/api/bots/${id}`, "PATCH", { expectedVersion, patch }).then((r) => r.bot),
   askOnboarding: (id: string, conversationId: string) => call<{ questionId: string }>(`/api/bots/${id}/onboarding/question`, "POST", { conversationId }),
   answerOnboarding: (id: string, input: { conversationId: string; questionId: string; expectedVersion: number; satisfied: boolean }) => call<{ bot: Bot }>(`/api/bots/${id}/onboarding`, "POST", input).then((r) => r.bot),
@@ -88,41 +89,6 @@ export const chatClient = {
   attentionSummary: () => call<{ summary: AttentionSummary }>("/api/attention/summary").then((r) => r.summary),
 };
 
-async function readFrames(response: Response, onEvent: (e: ChatEvent) => void, cursor: { last: number }) {
-  if (!response.body) throw new Error("no stream");
-  const reader = response.body.getReader(), decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    for (let i = buffer.indexOf("\n\n"); i >= 0; i = buffer.indexOf("\n\n")) {
-      const frame = buffer.slice(0, i); buffer = buffer.slice(i + 2);
-      const id = /^id: (\d+)/m.exec(frame)?.[1]; const data = frame.split("\n").find((l) => l.startsWith("data: "));
-      if (id) cursor.last = Number(id);
-      if (data) onEvent(JSON.parse(data.slice(6)) as ChatEvent);
-    }
-  }
-}
-
-/** Streams one turn over SSE. If the connection drops, the server keeps generating; we reattach by cursor (3 tries), so nothing is duplicated or lost. */
-export async function streamTurn(conversationId: string, body: { content: string; clientRequestId: string; parentMessageId?: string; attachmentIds?: string[]; fileRefs?: string[] }, onEvent: (e: ChatEvent) => void, signal?: AbortSignal) {
-  const cursor = { last: 0 };
-  let finished = false;
-  const track = (e: ChatEvent) => { if (e.type === "done") finished = true; onEvent(e); };
-  const first = await fetch(new URL(`/api/conversations/${conversationId}/stream`, ENV.VITE_SERVER_URL), { method: "POST", credentials: "include", cache: "no-store", signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!first.ok) throw await toApiError(first);
-  try { await readFrames(first, track, cursor); } catch { /* fall through to resume */ }
-  for (let attempt = 0; !finished && attempt < 3 && !signal?.aborted; attempt++) {
-    await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
-    try {
-      const again = await fetch(new URL(`/api/conversations/${conversationId}/stream?after=${cursor.last}`, ENV.VITE_SERVER_URL), { credentials: "include", cache: "no-store", signal });
-      if (!again.ok || again.headers.get("content-type")?.includes("application/json")) break;
-      await readFrames(again, track, cursor);
-    } catch { /* retry */ }
-  }
-  return { finished };
-}
 export const cancelTurn = (conversationId: string) => call(`/api/conversations/${conversationId}/cancel`, "POST");
 export const uploadAttachment = (name: string, text: string, conversationId?: string) => call<{ attachment: Attachment }>("/api/attachments", "POST", { name, mimeType: "text/plain", text, ...(conversationId ? { conversationId } : {}) }).then((r) => r.attachment);
 export const listFiles = (path: string) => call<{ entries: { name: string; kind: "file" | "dir" }[] }>(`/api/files?path=${encodeURIComponent(path)}`).then((r) => r.entries);

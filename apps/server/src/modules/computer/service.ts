@@ -1,3 +1,4 @@
+import { containerUser } from "../container-user";
 import { createSerializer } from "./serial";
 import { lookup } from "node:dns/promises";
 import { mkdir } from "node:fs/promises";
@@ -62,7 +63,7 @@ export function dockerBrowserConfig(env: NodeJS.ProcessEnv = process.env): Docke
 }
 export function browserDockerArgs(d: DockerBrowser, o: { name: string; profileDir: string }) {
   return ["run", "-d", "--rm", "--name", o.name, "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only", "--pids-limit", String(d.pids), "--memory", d.memory, "--cpus", d.cpus, "--shm-size", "512m",
-    "--tmpfs", "/tmp:rw,size=256m,uid=10001", "--tmpfs", "/home/agent:rw,size=64m,uid=10001", "-p", "127.0.0.1::9222", "-v", `${o.profileDir}:/profile:rw`, d.image];
+    "--user", containerUser().user, "--tmpfs", `/tmp:rw,size=256m,uid=${containerUser().uid}`, "--tmpfs", `/home/agent:rw,size=64m,uid=${containerUser().uid}`, "-p", "127.0.0.1::9222", "-v", `${o.profileDir}:/profile:rw`, d.image];
 }
 export type ComputerOptions = { docker?: DockerBrowser; db?: Pick<Database, "select" | "insert" | "update">; root: string; allowPrivate?: boolean; maxPerUser?: number; maxTotal?: number; idleMs?: number; executablePath?: string };
 
@@ -98,7 +99,7 @@ export function createComputerService({ docker, db, root, allowPrivate = false, 
     let container: string | undefined; let browserHandle: Session["browserHandle"];
     try {
       if (docker) {
-        await chmod(dir, 0o777).catch(() => {});
+        await chmod(dir, 0o700).catch(() => {});
         container = `zetta-browser-${crypto.randomUUID()}`;
         const run = Bun.spawn([docker.bin, ...browserDockerArgs(docker, { name: container, profileDir: dir })], { stdout: "pipe", stderr: "pipe", env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" } });
         if ((await run.exited) !== 0) throw new Error("docker run failed");

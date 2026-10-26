@@ -2,6 +2,9 @@ import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { ConnectionsUnavailableError, PROVIDERS, type ConnectionsService } from "./service";
+
+/** `plugin` connections hold sealed plugin config managed by the Plugins tab; they are neither listed nor user-creatable here. */
+const USER_PROVIDERS = PROVIDERS.filter((p) => p !== "plugin");
 import { ConnectionStoreError } from "./store-contract";
 
 export type ConnectionServices = { access: ReturnType<typeof createIdentityAccess>; connections: ConnectionsService };
@@ -27,8 +30,8 @@ export function createConnectionRoutes({ access, connections }: ConnectionServic
     } catch (e) { return mapError(e); }
   };
   return new Elysia({ prefix: "/api", normalize: false })
-    .get("/connections", g(async (c) => ({ configured: connections.configured(), providers: PROVIDERS, connections: connections.configured() ? await connections.list(c.actor) : [] })))
-    .post("/connections", g(async (c) => ({ connection: await connections.create(c.actor, z.strictObject({ provider: z.enum(PROVIDERS as [string, ...string[]]), label: z.string().trim().min(1).max(100), secret: z.string().min(8).max(8000) }).parse(c.body)) }), 201))
+    .get("/connections", g(async (c) => ({ configured: connections.configured(), providers: USER_PROVIDERS, connections: connections.configured() ? (await connections.list(c.actor)).filter((x) => x.provider !== "plugin") : [] })))
+    .post("/connections", g(async (c) => ({ connection: await connections.create(c.actor, z.strictObject({ provider: z.enum(USER_PROVIDERS as [string, ...string[]]), label: z.string().trim().min(1).max(100), secret: z.string().min(8).max(8000) }).parse(c.body)) }), 201))
     .post("/connections/:id/revoke", g(async (c) => ({ connection: await connections.revoke(c.actor, uuid.parse(c.params.id), z.strictObject({ expectedRevision: z.number().int().positive() }).parse(c.body).expectedRevision) })))
     .get("/bots/:id/connections", g(async (c) => ({ requirements: await connections.status(c.actor, uuid.parse(c.params.id)) })))
     .put("/bots/:id/connections/:key", g(async (c) => ({ binding: await connections.bind(c.actor, uuid.parse(c.params.id), key.parse(c.params.key), z.strictObject({ connectionId: uuid }).parse(c.body).connectionId) })))

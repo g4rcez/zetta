@@ -1,0 +1,1 @@
+ALTER TABLE "bot" ADD COLUMN "computer_mode" text DEFAULT 'off' NOT NULL;

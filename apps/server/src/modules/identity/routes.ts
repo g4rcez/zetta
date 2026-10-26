@@ -6,6 +6,8 @@ import type { createEnrollmentService } from "./enrollment";
 export type IdentityServices = {
   access: ReturnType<typeof createIdentityAccess>;
   enrollment: ReturnType<typeof createEnrollmentService>;
+  /** True until the first (root/admin) account exists. */
+  setupOpen?: () => Promise<boolean>;
 };
 
 const errorResponse = (status: number, code: string, message: string) => Response.json({ error: { code, message } }, { status, headers: { "cache-control": "no-store" } });
@@ -16,7 +18,7 @@ const issueInput = z.strictObject({ intendedEmail: boundedString.regex(/^[^\s@]+
 const acceptInput = z.strictObject({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
 const revokeInput = z.strictObject({ invitationId: boundedString });
 
-export function createIdentityRoutes({ access, enrollment }: IdentityServices, trustedOrigins: readonly string[]) {
+export function createIdentityRoutes({ access, enrollment, setupOpen }: IdentityServices, trustedOrigins: readonly string[]) {
   return new Elysia({ prefix: "/api/identity", normalize: false })
     .onError(({ error }) => {
       // Parser errors can be produced before the handler. Never expose or log body diagnostics.
@@ -26,6 +28,10 @@ export function createIdentityRoutes({ access, enrollment }: IdentityServices, t
     .get("/status", async ({ request }) => {
       try { return Response.json(await access.status(request.headers), { headers: { "cache-control": "no-store" } }); }
       catch { return errorResponse(503, "IDENTITY_UNAVAILABLE", "Unable to check access. Please retry."); }
+    })
+    .get("/setup", async () => {
+      try { return Response.json({ required: setupOpen ? await setupOpen() : false }, { headers: { "cache-control": "no-store" } }); }
+      catch { return errorResponse(503, "IDENTITY_UNAVAILABLE", "Unable to check setup. Please retry."); }
     })
     .post("/invitations/:operation?", async ({ request, body, params }) => {
       const origin = request.headers.get("origin");

@@ -13,9 +13,9 @@ export class ConnectionRequiredError extends Error { constructor(readonly keys: 
 export class ConnectionsUnavailableError extends Error { constructor() { super("CONNECTIONS_UNAVAILABLE"); } }
 
 /** Provider -> the environment variable its native CLI reads. Only the bound, active key of the requesting user is injected, per run. */
-export const PROVIDER_ENV: Record<string, string> = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", google: "GEMINI_API_KEY", openrouter: "OPENROUTER_API_KEY" };
+export const PROVIDER_ENV: Record<string, string> = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", google: "GEMINI_API_KEY", openrouter: "OPENROUTER_API_KEY", github: "GITHUB_TOKEN" };
 // jev, email and x have no CLI env var: their secrets are only used server-side (decision adapter, mailbox and X source readers).
-export const PROVIDERS = [...Object.keys(PROVIDER_ENV), "jev", "email", "x"];
+export const PROVIDERS = [...Object.keys(PROVIDER_ENV), "jev", "email", "x", "plugin"];
 
 export function createConnectionsService(db: Database, store?: Store) {
   const need = () => { if (!store) throw new ConnectionsUnavailableError(); return store; };

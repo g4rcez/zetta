@@ -5,7 +5,7 @@ import { z } from "zod";
  *   ```zetta:remember   {"target": "user"|"memory", "action": "add"|"patch"|"remove", "content": "...", "match": "..."} or {"target", "operations": [...]}
  *   ```zetta:instruction {"title": "...", "body": "..."}
  *   ```zetta:config      {"botId": "<id>", "patch": {"personality": "..."}}   -> becomes a proposal the user must approve
- *   ```zetta:create_bot / create_routine / create_workflow  -> proposals shown as a creation summary; nothing exists until the user approves
+ *   ```zetta:create_bot / create_routine / create_workflow / create_vm  -> proposals shown as a creation summary; nothing exists until the user approves
  *   ```zetta:browser     {"action": "open", "url": "https://..."} | click_text | type | key | read
  *   ```zetta:handoff     {"reason": "I need you to sign in"}                 -> attention item; the human takes over
  */
@@ -19,15 +19,36 @@ export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks i
 \`\`\`zetta:config
 {"botId":"<id of one of the user's bots>","patch":{"personality":"...","instructions":"..."}}
 \`\`\`   (only a proposal: the user approves the exact change)
-\`\`\`zetta:browser
-{"action":"open","url":"https://example.com"}
-\`\`\`   (actions: open{url}, click_text{text}, type{text}, key{key}, read; you will receive the page text)
-\`\`\`zetta:handoff
-{"reason":"why a person must take over the browser"}
-\`\`\`
 Only use a tool when it is needed.`;
 
+export type ComputerMode = "off" | "browser" | "desktop";
+const BROWSER_TOOLS = `
+Computer use is enabled for you. It runs in the current user's own isolated session, never anyone else's.
+\`\`\`zetta:browser
+{"action":"open","url":"https://example.com"}
+\`\`\`   (actions: open{url}, click_text{text}, type{text}, key{key}, read. Every action returns the new url and the page text, so you do not need a separate read after it. Only public web addresses open. At most 12 computer actions per turn: plan them, and read the result before the next step. Never type passwords.)
+\`\`\`zetta:handoff
+{"reason":"why a person must take over (sign-in, CAPTCHA, payment, anything sensitive)"}
+\`\`\`   (the user gets a Take over button in the chat; stop and wait after a handoff)`;
+const DESKTOP_TOOLS = `
+\`\`\`zetta:desktop
+{"action":"navigate","url":"https://example.com"}
+\`\`\`   (the user's own persistent Linux computer with Chromium open; sites the user signed in to stay signed in. actions: navigate{url}, click{x,y}, type{text}, key{key, e.g. "Return" or "ctrl+l"}, scroll{direction: up|down|left|right}, launch{app}, read -> text description of the screen. Use read before clicking by coordinates. Add "vm":"<id>" to use one of the user's other computers instead of the default. The user can watch and click along from the chat. Shares the 12 action budget. If a site needs a sign-in, use zetta:handoff.)
+\`\`\`zetta:create_vm
+{"name":"Banking","purpose":"why a separate computer is needed"}
+\`\`\`   (only a proposal: asks the user for another computer, e.g. to keep a second account signed in. Use the default computer unless a separate one is really needed.)`;
+const CODE_TOOLS = `
+Code access is enabled for you. Your shell and file tools run in a persistent workspace folder that belongs to the current user (your current directory): it survives between turns and holds their cloned repositories. Use git directly, no zetta block is needed: run ls first, \`git clone <url>\` if the repository is not there yet, then read, edit, run tests, create branches, commit and push. Git and file edits are already approved, so do not ask the user for permission to run them. Work on a branch unless asked to change the default branch, and never force-push or rewrite history unless the user asks for it. Private repositories and pushes need a GitHub token the user bound to this bot (it is in GITHUB_TOKEN when present); if clone or push fails with an authentication error, say so instead of retrying. Never print, commit or store tokens. Finish by reporting the branch, the commits and what you ran.`;
+/** Tool instructions for one bot: browser and desktop are only described when the owner granted that computer-use mode, code only with code access. */
+export function toolPreamble(mode: ComputerMode = "off", code = false): string {
+  const extra = [mode !== "off" ? BROWSER_TOOLS + (mode === "desktop" ? DESKTOP_TOOLS : "") : "", code ? CODE_TOOLS : ""].filter(Boolean).map((x) => x.trimStart()).join("\n");
+  if (!extra) return TOOL_PREAMBLE;
+  return TOOL_PREAMBLE.replace(/Only use a tool when it is needed\.$/, () => `${extra}\nOnly use a tool when it is needed.`);
+}
+
 const bounded = (n: number) => z.string().trim().min(1).max(n);
+/** Which of the user's computers a desktop action targets; omitted = their default one. */
+const vm = z.string().uuid().optional();
 export const toolSchemas = {
   remember: z.strictObject({
     target: z.enum(["user", "memory"]).default("memory"), action: z.enum(["add", "patch", "remove"]).default("add"), content: z.string().trim().min(1).max(600).optional(), match: z.string().trim().min(1).max(600).optional(),
@@ -51,10 +72,13 @@ export const toolSchemas = {
   ]),
   handoff: z.strictObject({ reason: bounded(300) }),
   desktop: z.discriminatedUnion("action", [
-    z.strictObject({ action: z.literal("launch"), app: z.string().regex(/^[A-Za-z0-9._ -]{1,60}$/) }), z.strictObject({ action: z.literal("click"), x: z.number().min(0).max(8000), y: z.number().min(0).max(8000) }),
-    z.strictObject({ action: z.literal("type"), text: bounded(2000) }), z.strictObject({ action: z.literal("key"), key: bounded(40) }),
-    z.strictObject({ action: z.literal("scroll"), direction: z.enum(["up", "down", "left", "right"]) }), z.strictObject({ action: z.literal("read") }),
+    z.strictObject({ action: z.literal("launch"), app: z.string().regex(/^[A-Za-z0-9._ -]{1,60}$/), vm }), z.strictObject({ action: z.literal("click"), x: z.number().min(0).max(8000), y: z.number().min(0).max(8000), vm }),
+    z.strictObject({ action: z.literal("type"), text: bounded(2000), vm }), z.strictObject({ action: z.literal("key"), key: bounded(40), vm }),
+    z.strictObject({ action: z.literal("scroll"), direction: z.enum(["up", "down", "left", "right"]), vm }), z.strictObject({ action: z.literal("read"), vm }),
+    z.strictObject({ action: z.literal("navigate"), url: z.string().url().max(2000), vm }),
   ]),
+  create_vm: z.strictObject({ name: z.string().trim().regex(/^[\p{L}\p{N} ._-]{1,60}$/u), purpose: bounded(300) }),
+  plugin: z.strictObject({ plugin: z.string().regex(/^[a-z0-9_-]{1,32}$/), tool: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/), args: z.record(z.string(), z.unknown()).default({}) }),
   mcp: z.strictObject({ server: z.string().regex(/^[a-z0-9_-]{1,32}$/), tool: bounded(100), args: z.record(z.string(), z.unknown()).default({}) }),
   create_bot: z.strictObject({ name: bounded(80), description: z.string().max(2048).optional(), harness: z.enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "fixture"]).optional(), model: z.string().max(128).nullable().optional(), personality: z.string().max(4096).optional(), instructions: z.string().max(16384).optional(), visibility: z.enum(["private", "team"]).optional() }),
   create_routine: z.strictObject({ botId: z.string().uuid(), title: bounded(120), prompt: bounded(8000), timezone: bounded(64), dailyAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), everyMinutes: z.number().int().min(5).max(10080).optional() }),
@@ -65,7 +89,7 @@ export type ToolCall = { [K in keyof typeof toolSchemas]: { kind: K; args: z.inf
 /** Extracts valid tool calls (max 8) and returns the reply with the blocks removed. Invalid blocks are dropped silently. */
 export function parseTools(reply: string): { calls: ToolCall[]; text: string } {
   const calls: ToolCall[] = [];
-  const text = reply.replace(/```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|mcp|desktop)\s*\n([\s\S]*?)```/g, (_, kind: keyof typeof toolSchemas, body: string) => {
+  const text = reply.replace(/```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop)\s*\n([\s\S]*?)```/g, (_, kind: keyof typeof toolSchemas, body: string) => {
     if (calls.length < 8) {
       try { const parsed = toolSchemas[kind].safeParse(JSON.parse(body)); if (parsed.success) calls.push({ kind, args: parsed.data } as ToolCall); } catch { /* malformed JSON is ignored */ }
     }

@@ -1,18 +1,45 @@
 import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
+import { containerUser } from "../container-user";
 import { join } from "node:path";
 
 export type NativeHarness = "pi" | "codex" | "omp" | "claude-code" | "opencode" | "cursor";
 
-/** Non-interactive invocation per installed CLI. The prompt is always one argv element (no shell). */
-export const harnessCommands: Record<NativeHarness, (prompt: string, model: string | null) => string[]> = {
-  "claude-code": (p, m) => ["claude", "-p", ...(m ? ["--model", m] : []), p],
-  codex: (p, m) => ["codex", "exec", "--skip-git-repo-check", ...(m ? ["--model", m] : []), p],
+/**
+ * Code access for a run. "git" = host run: only what the CLI can enforce (git and file tools); "full" = the run is inside a hardened
+ * container, which is the boundary, so the CLI may run any command. Without it, non-interactive CLIs auto-deny every command that
+ * would need approval (git clone included), which is why bots could not touch code.
+ */
+export type CodeMode = "git" | "full";
+const CLAUDE_FILE_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
+// History rewrites are never pre-approved; a person has to ask for them explicitly.
+const CLAUDE_DENIED = ["Bash(git push --force:*)", "Bash(git push -f:*)", "Bash(git config --global:*)", "Bash(git config --system:*)"];
+
+/** Non-interactive invocation per installed CLI. The prompt is always one argv element (no shell) and always last. */
+export const harnessCommands: Record<NativeHarness, (prompt: string, model: string | null, code?: CodeMode) => string[]> = {
+  // `--flag=value` keeps the variadic tool lists from swallowing the prompt.
+  "claude-code": (p, m, c) => ["claude", "-p", ...(m ? ["--model", m] : []), ...(c ? ["--permission-mode", "acceptEdits", `--allowedTools=${[...CLAUDE_FILE_TOOLS, c === "full" ? "Bash" : "Bash(git:*)"].join(",")}`, `--disallowedTools=${CLAUDE_DENIED.join(",")}`] : []), p],
+  codex: (p, m, c) => ["codex", "exec", "--skip-git-repo-check", ...(c === "full" ? ["--dangerously-bypass-approvals-and-sandbox"] : c ? ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true"] : []), ...(m ? ["--model", m] : []), p],
   pi: (p, m) => ["pi", "-p", ...(m ? ["--model", m] : []), p],
   omp: (p, m) => ["omp", "-p", ...(m ? ["--model", m] : []), p],
-  opencode: (p, m) => ["opencode", "run", ...(m ? ["--model", m] : []), p],
-  cursor: (p, m) => ["cursor-agent", "-p", ...(m ? ["--model", m] : []), p],
+  opencode: (p, m, c) => ["opencode", "run", ...(c ? ["--auto"] : []), ...(m ? ["--model", m] : []), p],
+  cursor: (p, m, c) => ["cursor-agent", "-p", ...(c ? ["--force"] : []), ...(m ? ["--model", m] : []), p],
 };
+
+/** Where code workspaces live. One folder per user, shared by that user's bots, so cloned repositories survive between turns. */
+export function codeWorkspace(userId: string, root = process.env.ZETTA_CODE_ROOT || join(homedir(), ".zetta", "code")) {
+  return join(root, userId.replace(/[^A-Za-z0-9_-]/g, "_"));
+}
+/**
+ * Git identity and credentials for a code run, as environment variables (values never reach argv). A GitHub token the user bound to
+ * the bot is offered to github.com only, through a credential helper that reads it from the environment; it is never written to disk.
+ */
+export function gitEnv(author: string, extra: Record<string, string> = {}): Record<string, string> {
+  const name = author.replace(/[\r\n<>]/g, " ").trim().slice(0, 80) || "Zetta bot", email = "bot@zetta.invalid";
+  const env: Record<string, string> = { GIT_AUTHOR_NAME: name, GIT_COMMITTER_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_EMAIL: email, GIT_TERMINAL_PROMPT: "0" };
+  if (extra.GITHUB_TOKEN) Object.assign(env, { GH_TOKEN: extra.GITHUB_TOKEN, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "credential.https://github.com.helper", GIT_CONFIG_VALUE_0: '!f() { test "$1" = get && echo username=x-access-token && echo "password=$GITHUB_TOKEN"; }; f' });
+  return env;
+}
 
 /** Only what CLIs need to find their own login (keychain on macOS needs USER/LOGNAME); no app secrets or DB URLs. */
 const passed = ["PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "SHELL", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME",
@@ -49,12 +76,12 @@ export function dockerConfig(env: NodeJS.ProcessEnv = process.env): DockerConfig
 /**
  * Pure builder for the container command. Hardening: no extra capabilities, no privilege escalation, read-only root filesystem,
  * tmpfs for /tmp and the working directory, non-root user, memory/cpu/pid limits, no host mounts except this user's own harness
- * home (login state), and only the explicitly passed environment variables (never inherited from the server).
+ * home (login state) and, for code runs, this user's own code workspace as the working directory, and only the explicitly passed environment variables (never inherited from the server).
  */
-export function dockerArgs(cfg: DockerConfig, o: { name: string; argv: string[]; home?: string; env: Record<string, string> }) {
+export function dockerArgs(cfg: DockerConfig, o: { name: string; argv: string[]; home?: string; workspace?: string | undefined; env: Record<string, string> }) {
   const args = ["run", "--rm", "--name", o.name, "--network", cfg.network, "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit", String(cfg.pids), "--memory", cfg.memory, "--cpus", cfg.cpus,
-    "--user", "10001:10001", "--entrypoint", "", "--tmpfs", "/tmp:rw,size=64m", "--tmpfs", "/work:rw,size=64m,uid=10001", "-w", "/work", "-e", "HOME=/home/agent", "-e", "LANG=C.UTF-8"];
-  if (o.home) args.push("-v", `${o.home}:/home/agent:rw`); else args.push("--tmpfs", "/home/agent:rw,size=64m,uid=10001");
+    "--user", containerUser().user, "--entrypoint", "", "--tmpfs", "/tmp:rw,size=64m", ...(o.workspace ? ["-v", `${o.workspace}:/work:rw`] : ["--tmpfs", `/work:rw,size=64m,uid=${containerUser().uid}`]), "-w", "/work", "-e", "HOME=/home/agent", "-e", "LANG=C.UTF-8"];
+  if (o.home) args.push("-v", `${o.home}:/home/agent:rw`); else args.push("--tmpfs", `/home/agent:rw,size=64m,uid=${containerUser().uid}`);
   // Values never appear in argv (visible to every local user via `ps`): `-e KEY` makes docker read them from its own environment.
   for (const k of Object.keys(o.env)) if (/^[A-Z][A-Z0-9_]*$/.test(k)) args.push("-e", k);
   return [...args, cfg.image, ...o.argv];
@@ -78,7 +105,7 @@ export function harnessMessage(harness: string, code: HarnessErrorCode) {
 const QUOTA_PATTERN = /usage limit|rate limit|quota|usage_limit_reached|credits/i;
 const AUTH_PATTERN = /not logged in|please (run )?\/?login|log in|sign in|unauthori[sz]ed|authentication|api key|credential|401/i;
 
-export type CliInput = { harness: NativeHarness; prompt: string; model: string | null; userId?: string; extraEnv?: Record<string, string>; signal?: AbortSignal; timeoutMs?: number; resolve?: (name: string) => string | null };
+export type CliInput = { harness: NativeHarness; prompt: string; model: string | null; userId?: string; /** Run in the user's persistent code workspace with git and file permissions pre-approved. `author` signs commits. */ code?: { author: string }; extraEnv?: Record<string, string>; signal?: AbortSignal; timeoutMs?: number; resolve?: (name: string) => string | null };
 export type RunCli = (input: CliInput) => Promise<string>;
 export type StreamCli = (input: CliInput) => AsyncGenerator<string, void>;
 const OUTPUT_CAP = 65_000;
@@ -110,11 +137,15 @@ export function killGroup(pid: number, platform: string = process.platform) {
   try { process.kill(-pid, "SIGKILL"); } catch { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } }
 }
 
-/** Streams the harness's stdout as it arrives. Runs in a throwaway empty cwd with a minimal environment, in its own process group
+/** Streams the harness's stdout as it arrives. Runs in a throwaway empty cwd (or, with `code`, the user's persistent workspace) with a minimal environment, in its own process group
  * (the whole tree is killed on timeout, cancel, overflow or generator close), bounded by a deadline, output cap and concurrency limits. */
-export const streamCli: StreamCli = async function* ({ harness, prompt, model, userId, extraEnv, signal, timeoutMs = 120_000, resolve = Bun.which }) {
-  const argv = harnessCommands[harness](prompt, model);
+export const streamCli: StreamCli = async function* ({ harness, prompt, model, userId, extraEnv: baseEnv, signal, timeoutMs, resolve = Bun.which, code }) {
   const docker = dockerConfig();
+  const workspace = code && userId ? codeWorkspace(userId) : undefined;
+  const argv = harnessCommands[harness](prompt, model, workspace ? (docker ? "full" : "git") : undefined);
+  const extraEnv = workspace ? { ...baseEnv, ...gitEnv(code!.author, baseEnv) } : baseEnv;
+  // Cloning and building take longer than a chat answer.
+  if (timeoutMs === undefined) timeoutMs = workspace ? Number(process.env.ZETTA_CODE_TIMEOUT_MS ?? 600_000) : 120_000;
   const exe = docker ? docker.bin : resolve(argv[0]!);
   if (!exe) throw new HarnessError("not_installed");
   const release = await defaultLimiter.acquire(userId ?? "anonymous", signal);
@@ -125,10 +156,11 @@ export const streamCli: StreamCli = async function* ({ harness, prompt, model, u
   let child: ReturnType<typeof Bun.spawn> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    if (home) { await mkdir(home, { recursive: true, mode: docker ? 0o777 : 0o700 }); if (docker) await chmod(home, 0o777).catch(() => {}); }
-    cwd = await mkdtemp(join(tmpdir(), "zetta-run-"));
+    if (home) { await mkdir(home, { recursive: true, mode: 0o700 }); await chmod(home, 0o700).catch(() => {}); }
+    if (workspace) { await mkdir(workspace, { recursive: true, mode: 0o700 }); await chmod(workspace, 0o700).catch(() => {}); cwd = workspace; }
+    else cwd = await mkdtemp(join(tmpdir(), "zetta-run-"));
     child = docker
-      ? Bun.spawn([exe, ...dockerArgs(docker, { name: containerName!, argv, home, env: extraEnv ?? {} })], { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...(process.env.DOCKER_HOST ? { DOCKER_HOST: process.env.DOCKER_HOST } : {}), ...Object.fromEntries(Object.entries(extraEnv ?? {}).filter(([k]) => /^[A-Z][A-Z0-9_]*$/.test(k))) }, detached: true } as never)
+      ? Bun.spawn([exe, ...dockerArgs(docker, { name: containerName!, argv, home, workspace, env: extraEnv ?? {} })], { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...(process.env.DOCKER_HOST ? { DOCKER_HOST: process.env.DOCKER_HOST } : {}), ...Object.fromEntries(Object.entries(extraEnv ?? {}).filter(([k]) => /^[A-Z][A-Z0-9_]*$/.test(k))) }, detached: true } as never)
       : Bun.spawn([exe, ...argv.slice(1)], { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", env: passEnv(home, extraEnv), detached: true } as never);
     const proc = child;
     let timedOut = false, cancelled = false, onStop!: (e: HarnessError) => void;
@@ -160,7 +192,8 @@ export const streamCli: StreamCli = async function* ({ harness, prompt, model, u
   } finally {
     if (timer) clearTimeout(timer);
     if (child) kill(child.pid);
-    if (cwd) await rm(cwd, { recursive: true, force: true });
+    // A code workspace is the user's persistent checkout; only throwaway directories are removed.
+    if (cwd && cwd !== workspace) await rm(cwd, { recursive: true, force: true });
     release();
   }
 };
@@ -181,7 +214,7 @@ export async function inspectHarness(harness: NativeHarness, resolve: (n: string
   if (docker) {
     let v = { installed: false, version: null as string | null };
     try {
-      const p = Bun.spawn([docker.bin, "run", "--rm", "--network", "none", "--user", "10001:10001", docker.image, exe, "--version"], { stdin: "ignore", stdout: "pipe", stderr: "ignore", env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" } });
+      const p = Bun.spawn([docker.bin, "run", "--rm", "--network", "none", "--user", containerUser().user, docker.image, exe, "--version"], { stdin: "ignore", stdout: "pipe", stderr: "ignore", env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" } });
       const t = setTimeout(() => { try { p.kill(); } catch { /* gone */ } }, 20_000);
       const out = await new Response(p.stdout as ReadableStream).text(); const code = await p.exited; clearTimeout(t);
       if (code === 0 && out.trim()) v = { installed: true, version: out.trim().split("\n")[0]!.slice(0, 60) };

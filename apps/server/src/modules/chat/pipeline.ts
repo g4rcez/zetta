@@ -1,14 +1,14 @@
 import type { Database } from "@zetta/db";
-import { and, asc, eq } from "@zetta/db/query";
+import { and, asc, eq, ne } from "@zetta/db/query";
 import { bot as botTable, type bot } from "@zetta/db/schema/chat";
-import { hook as hooks } from "@zetta/db/schema/features";
+import { computerVm, hook as hooks } from "@zetta/db/schema/features";
 import { raiseAttention } from "../features/attention";
 import { createKnowledge, renderMemory, type MemorySnapshot } from "../features/knowledge";
 import { applyRedaction, matches, safeRegex } from "../features/safety";
 import { buildHistory } from "./context";
 import { fixtureResponder } from "./fixture";
 import { HarnessError, runCli, streamCli, type NativeHarness, type RunCli, type StreamCli } from "./harness";
-import { TOOL_PREAMBLE } from "./tools";
+import { toolPreamble } from "./tools";
 
 type Bot = typeof bot.$inferSelect;
 type Hook = typeof hooks.$inferSelect;
@@ -22,8 +22,14 @@ export type Turn = {
   extraEnv?: Record<string, string> | undefined;
   /** Frozen memory for this conversation; without one (routines, workflows) the live stores are read. */
   memorySnapshot?: MemorySnapshot | undefined;
+  /** Plugins this user bound to the bot (see integrations/plugins): tool list + call format. Built by the chat service. */
+  pluginTools?: string | undefined;
 };
 export type TurnResult = { text: string; stopped: boolean };
+
+/** `ZETTA_CODE_ACCESS=off` is the operator's kill switch; otherwise the bot owner's `codeAccess` setting decides. Fixture bots never run code. */
+const codeEnabled = (b: Bot, userId?: string) => Boolean(userId) && b.codeAccess && b.harness !== "fixture" && process.env.ZETTA_CODE_ACCESS !== "off";
+const codeFor = (b: Bot, userId?: string) => codeEnabled(b, userId) ? { code: { author: b.name } } : {};
 
 /** Pure hook evaluation (also used by the dry-run endpoint): ordered, redaction first, stop evaluated on the redacted text. */
 export async function evaluateHooks(active: readonly Hook[], prompt: string, history: readonly { role: string; content: string }[]) {
@@ -50,9 +56,9 @@ export function createTurnRunner(db: Database, cli: RunCli = runCli, stream: Str
   const knowledge = createKnowledge(db);
   async function call(b: Bot, prompt: string, history: Turn["history"], userId?: string, extraEnv?: Record<string, string>, signal?: AbortSignal) {
     if (b.harness === "fixture") return fixtureResponder({ bot: b, history, prompt });
-    return cli({ harness: b.harness as NativeHarness, prompt, model: b.model, userId, ...(extraEnv ? { extraEnv } : {}), ...(signal ? { signal } : {}) });
+    return cli({ harness: b.harness as NativeHarness, prompt, model: b.model, userId, ...codeFor(b, userId), ...(extraEnv ? { extraEnv } : {}), ...(signal ? { signal } : {}) });
   }
-  async function prepare({ userId, bot: b, history, prompt, parentMessageId, onUsed, memorySnapshot }: Turn): Promise<{ stop: TurnResult } | { text: string; background: string[] }> {
+  async function prepare({ userId, bot: b, history, prompt, parentMessageId, onUsed, memorySnapshot, pluginTools }: Turn): Promise<{ stop: TurnResult } | { text: string; background: string[] }> {
     const active = await db.select().from(hooks).where(and(eq(hooks.botId, b.id), eq(hooks.ownerUserId, b.ownerUserId))).orderBy(asc(hooks.position));
     const scoped = buildHistory(history as never, { parentMessageId });
     const ev = await evaluateHooks(active, prompt, scoped.messages);
@@ -61,9 +67,10 @@ export function createTurnRunner(db: Database, cli: RunCli = runCli, stream: Str
     const { instructions } = await knowledge.retrieve(userId, b.id, ev.text);
     const snap = memorySnapshot ?? await knowledge.snapshot(userId, b.id);
     onUsed?.({ memories: [...snap.user, ...snap.memory].map((m) => ({ id: m.id })), instructions: instructions.map((i) => ({ id: i.id })) });
-    const toolText = b.harness === "fixture" ? "" : `${TOOL_PREAMBLE}\nThe user's bots: ${(await db.select({ id: botTable.id, name: botTable.name }).from(botTable).where(and(eq(botTable.ownerUserId, userId), eq(botTable.archived, false)))).map((x) => `${x.name} (${x.id})`).join(", ")}`;
+    const toolText = b.harness === "fixture" ? "" : `${toolPreamble(b.computerMode, codeEnabled(b, userId))}\nThe user's bots: ${(await db.select({ id: botTable.id, name: botTable.name }).from(botTable).where(and(eq(botTable.ownerUserId, userId), eq(botTable.archived, false)))).map((x) => `${x.name} (${x.id})`).join(", ")}`
+      + (b.computerMode === "desktop" ? `\nThe user's computers (desktop "vm" ids): ${(await db.select({ id: computerVm.id, name: computerVm.name, kind: computerVm.kind }).from(computerVm).where(and(eq(computerVm.ownerUserId, userId), ne(computerVm.status, "deleted"))).orderBy(asc(computerVm.createdAt))).map((v) => `${v.name}${v.kind === "default" ? " [default]" : ""} (${v.id})`).join(", ") || "only the default one, created on first use"}` : "");
     const parts = [
-      toolText,
+      toolText, b.harness !== "fixture" && pluginTools,
       b.personality && `Personality: ${b.personality}`, b.instructions && `Instructions: ${b.instructions}`,
       // Stored notes are data written by the user or by bots: they must never be followed as instructions.
       b.harness === "fixture" && !snap.user.length && !snap.memory.length ? "" : renderMemory(snap),
@@ -94,7 +101,7 @@ export function createTurnRunner(db: Database, cli: RunCli = runCli, stream: Str
     const p = await prepare(turn);
     if ("stop" in p) { yield p.stop.text; return; }
     if (turn.bot.harness === "fixture") { const text = await fixtureResponder({ bot: turn.bot, history: turn.history, prompt: p.text }); for (const w of text.split(/(?<= )/)) { if (turn.signal?.aborted) throw new HarnessError("cancelled"); yield w; await Bun.sleep(1); } }
-    else yield* stream({ harness: turn.bot.harness as NativeHarness, prompt: p.text, model: turn.bot.model, userId: turn.userId, ...(turn.extraEnv ? { extraEnv: turn.extraEnv } : {}), ...(turn.signal ? { signal: turn.signal } : {}) });
+    else yield* stream({ harness: turn.bot.harness as NativeHarness, prompt: p.text, model: turn.bot.model, userId: turn.userId, ...codeFor(turn.bot, turn.userId), ...(turn.extraEnv ? { extraEnv: turn.extraEnv } : {}), ...(turn.signal ? { signal: turn.signal } : {}) });
     startBackground(turn.userId, turn.bot, p.background);
   }
   return Object.assign(run, { stream: streamTurn });

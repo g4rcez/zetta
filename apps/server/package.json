@@ -18,6 +18,8 @@
     "@sinclair/typebox": "^0.34.52",
     "@zetta/auth": "workspace:*",
     "@zetta/db": "workspace:*",
+    "@zetta/render": "workspace:*",
+    "ai": "^7.0.153",
     "better-auth": "catalog:",
     "elysia": "^1.4.30",
     "evlog": "^2.30.1",

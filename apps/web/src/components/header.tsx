@@ -15,8 +15,8 @@ const links = [
   { to: "/dashboard", label: "Dashboard", icon: Gauge },
 ] as const;
 
-const Brand = () => (
-  <Link to="/" aria-label="Zetta home" className="grid size-9 place-items-center rounded-md bg-primary text-base font-bold text-primary-foreground shadow-sm">Z</Link>
+const Brand = ({ small = false }: { small?: boolean }) => (
+  <Link to="/" aria-label="Zetta home" className={`grid place-items-center rounded-md bg-primary font-bold text-primary-foreground shadow-sm ${small ? "size-7 text-sm" : "size-9 text-base"}`}>Z</Link>
 );
 
 /** Signed-in application shell: a slim icon rail on the left (bottom bar on phones). */
@@ -45,9 +45,9 @@ export function AppRail() {
 /** Public pages (home, sign in): a minimal top bar. */
 export default function Header() {
   return (
-    <header className="flex items-center justify-between border-b px-4 py-2">
-      <div className="flex items-center gap-3"><Brand /><span className="text-base font-semibold tracking-tight">Zetta</span></div>
-      <div className="flex items-center gap-2"><ModeToggle /><UserMenu /></div>
+    <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
+      <div className="flex items-center gap-2"><Brand small /><span className="text-sm font-semibold tracking-tight">Zetta</span></div>
+      <div className="flex items-center gap-1"><ModeToggle inline /><UserMenu inline /></div>
     </header>
   );
 }

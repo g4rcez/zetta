@@ -14,6 +14,7 @@ export function LoginJourney() {
   const { refetch: refreshSession } = authClient.useSession();
   const [identity, setIdentity] = useState<IdentityStatus | null>(null);
   const [showSignUp, setShowSignUp] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
   const [token, setToken] = useState("");
   const [pending, setPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +37,13 @@ export function LoginJourney() {
       .then(async (status) => {
         if (!alive) return;
         setIdentity(status);
+        if (status.state === "anonymous") {
+          const setup = await identityClient.setup().catch(() => ({ required: false }));
+          if (alive && setup.required) {
+            setSetupRequired(true);
+            setShowSignUp(true);
+          }
+        }
         if (status.state === "active") await navigate({ to: "/chat", replace: true });
       })
       .catch((failure: unknown) => {
@@ -157,7 +165,7 @@ export function LoginJourney() {
         </p>
       )}
       {showSignUp ? (
-        <SignUpForm onAuthenticated={authenticated} onSwitchToSignIn={() => setShowSignUp(false)} />
+        <SignUpForm setup={setupRequired} onAuthenticated={authenticated} onSwitchToSignIn={() => setShowSignUp(false)} />
       ) : (
         <SignInForm onAuthenticated={authenticated} onSwitchToSignUp={() => setShowSignUp(true)} />
       )}

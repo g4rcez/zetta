@@ -38,3 +38,4 @@ void featureServices.features.recover().catch(() => {});
 void sweepHarnessContainers().catch(() => {});
 void computerServices.computer.sweep().catch(() => {});
 void computerServices.desktop?.sweep().catch(() => {});
+void computerServices.vms?.sweep().catch(() => {});

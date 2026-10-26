@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui";
+import { Button, Input, Textarea } from "@/components/ui";
 
 import { call } from "../chat/chat-client";
-import { field } from "../shared/ui";
+import { Badge } from "../shared/ui";
+
 
 export function Decisions({ onError }: { onError: (m: string) => void }) {
   const [status, setStatus] = useState<string>("checking");
@@ -24,15 +25,15 @@ export function Decisions({ onError }: { onError: (m: string) => void }) {
     } catch { onError("The decision model is not ready yet. It loads in the background; try again shortly."); } finally { setBusy(false); }
   }
   return (
-    <section aria-label="Decisions" className="space-y-3">
-      <p className="text-sm">Built-in decision model (Laya): <strong>{status === "ready" ? "ready" : status === "loading" ? "loading…" : status}</strong>. It runs on this server, is free, and picks between options with calibrated probabilities. Workflows and bot routing can use it.</p>
-      <form onSubmit={(e) => void decide(e)} className="space-y-2 rounded-lg border bg-card p-4">
-        <label className="block">Situation<textarea name="subject" required rows={3} className={field} placeholder="Paste a ticket, email or note" /></label>
-        <label className="block">Question<input name="question" required className={field} placeholder="Which team should handle this?" /></label>
-        <label className="block">Options (comma separated)<input name="options" required className={field} placeholder="billing, support, sales" /></label>
+    <section aria-label="Decisions" className="grid items-start gap-4 xl:grid-cols-2">
+      <p className="flex flex-wrap items-center xl:col-span-2 gap-x-2 gap-y-1 text-sm text-pretty text-muted-foreground">Built-in decision model (Laya) <Badge tone={status === "ready" ? "success" : status === "loading" ? "warning" : "neutral"}>{status === "ready" ? "Ready" : status === "loading" ? "Loading…" : status}</Badge> Runs on this server for free and picks between options with calibrated probabilities. Workflows and bot routing can use it.</p>
+      <form onSubmit={(e) => void decide(e)} className="space-y-3 rounded-xl border bg-card p-5">
+        <Textarea title="Situation" name="subject" required rows={3} placeholder="Paste a ticket, email or note" />
+        <Input title="Question" name="question" required placeholder="Which team should handle this?" />
+        <Input title="Options (comma separated)" name="options" required placeholder="billing, support, sales" />
         <Button type="submit" size="sm" disabled={busy || status !== "ready"}>{busy ? "Deciding…" : "Decide"}</Button>
       </form>
-      {result && <div role="status" className="rounded-lg border bg-card p-4 text-sm"><p className="font-medium">Decision: {result.choice}</p><ul>{Object.entries(result.probabilities).sort((a, b) => b[1] - a[1]).map(([k, v]) => <li key={k}>{k}: {(v * 100).toFixed(1)}%</li>)}</ul></div>}
+      {result && <div role="status" className="space-y-3 rounded-xl border bg-card p-5 text-sm"><p className="text-base font-semibold">Decision: {result.choice}</p><ul className="space-y-2">{Object.entries(result.probabilities).sort((a, b) => b[1] - a[1]).map(([k, v]) => <li key={k}><div className="flex justify-between gap-3"><span className="break-words">{k}</span><span className="tabular-nums text-muted-foreground">{(v * 100).toFixed(1)}%</span></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${k === result.choice ? "bg-primary" : "bg-muted-foreground/40"}`} style={{ width: `${v * 100}%` }} /></div></li>)}</ul></div>}
     </section>
   );
 }

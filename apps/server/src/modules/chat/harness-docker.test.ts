@@ -1,3 +1,4 @@
+import { containerUser } from "../container-user";
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -13,7 +14,7 @@ describe("docker runtime configuration", () => {
   test("container command is hardened: read-only root, no capabilities, non-root, limits, no host mounts except the user's home", () => {
     const a = dockerArgs(cfg, { name: "n1", argv: harnessCommands["claude-code"]("hi", null), home: "/data/homes/u1/claude-code", env: { ANTHROPIC_API_KEY: "k", "bad-name": "x" } });
     const joined = a.join(" ");
-    for (const flag of ["--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit 256", "--memory 1g", "--cpus 1", "--user 10001:10001", "--rm"]) expect(joined).toContain(flag);
+    for (const flag of ["--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit 256", "--memory 1g", "--cpus 1", `--user ${containerUser().user}`, "--rm"]) expect(joined).toContain(flag);
     expect(a.filter((x) => x === "-v")).toHaveLength(1);
     expect(a[a.indexOf("-v") + 1]).toBe("/data/homes/u1/claude-code:/home/agent:rw");
     expect(joined).not.toContain("bad-name"); expect(joined).toContain("-e ANTHROPIC_API_KEY"); expect(joined).not.toContain("=k"); // the value is never in argv (ps), only the name
@@ -35,7 +36,7 @@ real("container isolation (real docker)", () => {
     return { out: out.trim(), err: err.trim(), code };
   };
   test("runs as a non-root user with a read-only root filesystem and no host visibility", async () => {
-    expect((await run("zt-id", ["id", "-u"])).out).toBe("10001");
+    expect((await run("zt-id", ["id", "-u"])).out).toBe(containerUser().uid);
     expect((await run("zt-ro", ["sh", "-c", "touch /etc/x 2>&1; echo $?"])).out).toContain("Read-only");
     expect((await run("zt-host", ["sh", "-c", "ls /Users /Volumes /host 2>&1 | head -1"])).out).toContain("No such file");
     expect((await run("zt-env", ["sh", "-c", "env | grep -c -E 'DATABASE_URL|BETTER_AUTH|ZETTA_CONNECTION_KEY' || true"], { env: {} })).out).toBe("0");

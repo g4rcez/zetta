@@ -1,0 +1,24 @@
+{
+  "name": "@zetta/render",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./catalog": "./src/catalog.ts",
+    "./reply": "./src/reply.ts",
+    "./prompt": "./src/prompt.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@json-render/core": "0.21.3",
+    "@json-render/react": "0.21.3",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "@zetta/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

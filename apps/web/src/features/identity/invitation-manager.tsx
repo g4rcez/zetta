@@ -1,7 +1,5 @@
 import { useForm } from "@tanstack/react-form";
-import { Button } from "@/components/ui";
-import { Input } from "@/components/ui";
-import { Label } from "@zetta/ui/components/label";
+import { Button, Input } from "@/components/ui";
 import { useEffect, useRef, useState } from "react";
 import z from "zod";
 
@@ -170,8 +168,8 @@ export function InvitationManager() {
                 This token is shown once. Share it privately. Hiding it or leaving this screen
                 removes it from this view.
               </p>
-              <Label htmlFor="issued-token">Invitation token</Label>
               <Input
+                title="Invitation token"
                 id="issued-token"
                 autoComplete="off"
                 spellCheck={false}

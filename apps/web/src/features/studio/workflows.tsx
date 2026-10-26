@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui";
+import { Button, Input, Select, Textarea } from "@/components/ui";
 
 import { ApiError, call, errorMessage, type Bot } from "../chat/chat-client";
-import { Empty, field, Field, useList, when } from "../shared/ui";
+import { Empty, useList, when } from "../shared/ui";
 import { graphToSteps, stepsToGraph, type Step } from "./workflow-steps";
 import { WorkflowCanvas } from "./workflow-canvas";
 import type { ServerGraph } from "./workflow-graph";
@@ -54,7 +54,7 @@ function RunPanel({ flow }: { flow: Flow }) {
   }
   return (
     <div className="mt-2 space-y-2 rounded-md border bg-card p-3">
-      <form onSubmit={(e) => void run(e)} className="space-y-1"><Field label={`Input for ${flow.name} (optional)`}><textarea value={input} onChange={(e) => setInput(e.target.value)} rows={2} className={field} /></Field><Button type="submit" size="sm" disabled={busy}>{busy ? "Running…" : "Run"}</Button></form>
+      <form onSubmit={(e) => void run(e)} className="space-y-1"><Textarea title={`Input for ${flow.name} (optional)`} value={input} onChange={(e) => setInput(e.target.value)} rows={2} /><Button type="submit" size="sm" disabled={busy}>{busy ? "Running…" : "Run"}</Button></form>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {result && (
         <div role="status" className="space-y-1 text-sm">
@@ -102,15 +102,15 @@ function Editor({ bots, initial, onSaved, onCancel }: { bots: Bot[]; initial?: {
   }
   return (
     <form onSubmit={(e) => void save(e)} className="space-y-2 rounded-lg border bg-card p-4" aria-label={initial ? `Edit ${initial.name}` : "New workflow"}>
-      <Field label="Workflow name"><input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} className={field} /></Field>
+      <Input title="Workflow name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} />
       <ol aria-label="Flow" className="flex flex-wrap items-center gap-1 text-xs">{steps.map((s, i) => <li key={i} className="flex items-center gap-1"><span className="rounded-lg border px-2 py-0.5">{i + 1}. {describe(s)}</span><span aria-hidden>→</span></li>)}<li className="rounded-lg border px-2 py-0.5">done</li></ol>
       {steps.map((s, i) => (
         <fieldset key={i} className="grid min-w-0 gap-2 rounded-md border bg-card p-3 sm:grid-cols-[10rem_1fr]"><legend className="px-1 text-xs">Step {i + 1}</legend>
-          <select aria-label={`Step ${i + 1} type`} value={s.kind} onChange={(e) => setSteps(steps.map((x, k) => (k === i ? blankStep(e.target.value as Step["kind"], bots[0]?.id ?? "") : x)))} className={field}>{STEP_TYPES.map((t) => <option key={t.kind} value={t.kind}>{t.label}</option>)}</select>
-          {s.kind === "prompt" && <div className="grid gap-2 sm:grid-cols-[10rem_1fr]"><select aria-label={`Step ${i + 1} bot`} value={s.botId} onChange={(e) => patch(i, { botId: e.target.value })} className={field}>{bots.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select><input aria-label={`Step ${i + 1} prompt`} value={s.template} onChange={(e) => patch(i, { template: e.target.value })} className={field} /></div>}
-          {s.kind === "browse" && <input aria-label={`Step ${i + 1} address`} value={s.url} onChange={(e) => patch(i, { url: e.target.value })} className={field} />}
-          {s.kind === "decision" && <div className="grid gap-2 sm:grid-cols-3"><input aria-label={`Step ${i + 1} question`} placeholder="Question" value={s.question} onChange={(e) => patch(i, { question: e.target.value })} className={field} /><input aria-label={`Step ${i + 1} options`} placeholder="Options, comma separated" value={s.options} onChange={(e) => patch(i, { options: e.target.value })} className={field} /><input aria-label={`Step ${i + 1} continue when`} placeholder="Continue when it picks" value={s.continueOn} onChange={(e) => patch(i, { continueOn: e.target.value })} className={field} /></div>}
-          {s.kind === "condition" && <div className="space-y-1"><input aria-label={`Step ${i + 1} text to look for`} placeholder="Text to look for" value={s.contains} onChange={(e) => patch(i, { contains: e.target.value })} className={field} /><p className="text-xs text-muted-foreground">If the previous answer contains this text, continue. Otherwise, stop.</p></div>}
+          <Select title={`Step ${i + 1} type`} hiddenLabel required={false} value={s.kind} onChange={(e) => setSteps(steps.map((x, k) => (k === i ? blankStep(e.target.value as Step["kind"], bots[0]?.id ?? "") : x)))} options={STEP_TYPES.map((t) => ({ value: t.kind, label: t.label }))} />
+          {s.kind === "prompt" && <div className="grid gap-2 sm:grid-cols-[10rem_1fr]"><Select title={`Step ${i + 1} bot`} hiddenLabel required={false} value={s.botId} onChange={(e) => patch(i, { botId: e.target.value })} options={bots.map((b) => ({ value: b.id, label: b.name }))} /><Input title={`Step ${i + 1} prompt`} hiddenLabel value={s.template} onChange={(e) => patch(i, { template: e.target.value })} /></div>}
+          {s.kind === "browse" && <Input title={`Step ${i + 1} address`} hiddenLabel value={s.url} onChange={(e) => patch(i, { url: e.target.value })} />}
+          {s.kind === "decision" && <div className="grid gap-2 sm:grid-cols-3"><Input title={`Step ${i + 1} question`} hiddenLabel placeholder="Question" value={s.question} onChange={(e) => patch(i, { question: e.target.value })} /><Input title={`Step ${i + 1} options`} hiddenLabel placeholder="Options, comma separated" value={s.options} onChange={(e) => patch(i, { options: e.target.value })} /><Input title={`Step ${i + 1} continue when`} hiddenLabel placeholder="Continue when it picks" value={s.continueOn} onChange={(e) => patch(i, { continueOn: e.target.value })} /></div>}
+          {s.kind === "condition" && <div className="space-y-1"><Input title={`Step ${i + 1} text to look for`} hiddenLabel placeholder="Text to look for" value={s.contains} onChange={(e) => patch(i, { contains: e.target.value })} /><p className="text-xs text-muted-foreground">If the previous answer contains this text, continue. Otherwise, stop.</p></div>}
           <div className="flex flex-wrap gap-1 sm:col-span-2">
             <Button type="button" size="xs" variant="outline" disabled={i === 0} onClick={() => move(i, -1)} aria-label={`Move step ${i + 1} up`}>↑</Button>
             <Button type="button" size="xs" variant="outline" disabled={i === steps.length - 1} onClick={() => move(i, 1)} aria-label={`Move step ${i + 1} down`}>↓</Button>

@@ -109,3 +109,42 @@ Docker update (2026-10-23): with `ZETTA_BROWSER_RUNTIME=docker` each user+profil
 Desktop (whole-screen) computer use is **available** when `ZETTA_DESKTOP_RUNTIME=cua` and the `cua` CLI (>= 0.6) is installed. `apps/server/src/modules/computer/desktop.ts` talks to `cua mcp` (stdio MCP) and, per (user, profile), creates its **own local Linux container Space** (`create_space on=local kind=container`, name `zetta-<hash>`). Every action targets only `local:zetta-<hash>`: the host Mac or any `relay:`/`direct:` computer is never addressed, and a pre-existing Space is adopted only if it is exactly a local container with the expected name. Actions: click, type, key, scroll, launch (plain app names only), screenshot (PNG), and a text read (the Space's accessibility tree) for bots; control/takeover with epoch and compare-and-swap as for browser sessions; limits (1 desktop per user, 3 total), idle reaper, Space deleted on close. Bots use it with the `zetta:desktop` tool (needs onboarding, counts against the per-turn action budget). Studio > Computer shows the live screen with click/type/take-over/hand-back.
 
 Evidence: unit tests with a fake Cua (`desktop.test.ts`), a real-Cua test (`ZETTA_DESKTOP_TEST=1`: two users get two container Spaces, real PNG screenshot, accessibility text, Space deleted), and a browser walkthrough of the Studio panel. Limits: the Space image has no browser pre-installed guarantee (use `launch`), Cua's local runtime must be present on the server host, and audio/clipboard/teleport features of Cua are not used.
+
+## Amendment 2026-10-26: persistent per-user VMs (cua-spacesd)
+
+`ZETTA_DESKTOP_RUNTIME=docker` replaces the Cua Spaces CLI path for desktop use. The changes:
+
+- `apps/server/src/modules/computer/vm.ts`
+- `docker/desktop`
+- the `computer_vm` table
+- a `create_vm` proposal kind
+
+**The image.** Each VM is a container from our own image: `debian:trixie-slim`, Xvfb, Openbox, Chromium, and AT-SPI with `ACCESSIBILITY_ENABLED=1`. It runs the pinned glibc **cua-spacesd 0.8.0** release, sha256-checked. The static release build ships without the driver registry: `/mcp` returns 501.
+
+**Control.**
+- The broker is the server. It talks MCP over Streamable HTTP to spacesd on a loopback-published port.
+- The bearer token is minted per start and never leaves the server.
+- No Cua relay, cloud or host computer is involved.
+
+**cua-driver on Xvfb, as verified against 0.8.0:**
+- Background input is refused, because it needs uinput, which a virtual X server cannot add. All input is therefore `delivery_mode: "foreground"`, confined to that VM's private display.
+- Coordinate clicks and scrolls use `scope: "desktop"`.
+- Bot text reads walk Chromium's AT-SPI tree with `get_window_state`.
+- The driver's `browser_*` tools need an existing-profile consent grant, so they are not used. Navigation is address bar, then type, then Enter, after the usual public-address check.
+
+**Persistence and state.**
+- `/home/agent` is the named volume `zetta-vm-<id>`, so sign-ins persist across idle stops.
+- On boot, the image clears Chromium's singleton lock and the stale X lock left by the previous run.
+- Each VM has one exclusive control lease, as before: human takeover, an epoch, and compare-and-swap.
+
+**Licences.** spacesd is FSL-1.1-MIT; cua-driver is MIT. The licence and third-party notices are copied into `/usr/share/doc/cua-spacesd` in the image.
+
+**Still open:**
+- host-level egress filtering (see runtime-modes)
+- a WebSocket media stream: the live view currently polls screenshots
+- gVisor has not been exercised
+
+**Evidence:**
+- `vm.test.ts`: fake CLI and fake spacesd.
+- `tools.integration.test.ts`: the `create_vm` proposal against Postgres.
+- `vm-docker.test.ts` (`ZETTA_VM_TEST=1`, run with podman 6.1 on arm64): two users get two VMs, real PNG, navigate to example.com, AT-SPI read contains the page, a home file survives stop and start, and delete removes the volume.

@@ -1,5 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 
+import { CodeBlock } from "./chat-copy";
+
 /** Safe Markdown subset rendered as React elements (no HTML injection): fenced code, headings, bullet and numbered lists, bold, italic, inline code, links. */
 export type Block =
   | { type: "code"; text: string }
@@ -41,7 +43,7 @@ function inline(text: string): ReactNode[] {
   while ((m = re.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
     const t = m[0];
-    if (t.startsWith("`")) out.push(<code key={i++} className="rounded bg-black/10 px-1">{t.slice(1, -1)}</code>);
+    if (t.startsWith("`")) out.push(<code key={i++} className="chat-inline-code">{t.slice(1, -1)}</code>);
     else if (t.startsWith("**")) out.push(<strong key={i++}>{t.slice(2, -2)}</strong>);
     else if (t.startsWith("*")) out.push(<em key={i++}>{t.slice(1, -1)}</em>);
     else out.push(<a key={i++} href={m[2]} target="_blank" rel="noopener noreferrer nofollow" className="underline">{t.slice(1, t.indexOf("]"))}</a>);
@@ -53,7 +55,7 @@ function inline(text: string): ReactNode[] {
 
 export function Markdown({ source }: { source: string }) {
   const blocks = parseBlocks(source).map((b, k) => {
-    if (b.type === "code") return <pre key={k} className="max-w-full overflow-x-auto rounded bg-black/10 p-2 text-xs"><code>{b.text}</code></pre>;
+    if (b.type === "code") return <CodeBlock key={k} text={b.text} />;
     if (b.type === "heading") return <p key={k} className="font-semibold">{inline(b.text)}</p>;
     if (b.type === "ul") return <ul key={k} className="list-disc pl-5">{b.items.map((t, n) => <li key={n}>{inline(t)}</li>)}</ul>;
     if (b.type === "ol") return <ol key={k} start={b.start} className="list-decimal pl-5">{b.items.map((t, n) => <li key={n}>{inline(t)}</li>)}</ol>;

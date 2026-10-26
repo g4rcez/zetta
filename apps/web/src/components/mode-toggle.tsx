@@ -9,14 +9,16 @@ import { Moon, Sun } from "lucide-react";
 
 import { useTheme } from "@/components/theme-provider";
 
-export function ModeToggle({ compact = false }: { compact?: boolean }) {
+export function ModeToggle({ compact = false, inline = false }: { compact?: boolean; inline?: boolean }) {
   const { setTheme } = useTheme();
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant={compact ? "ghost" : "outline"} size="icon" className={compact ? "size-10 rounded-md text-muted-foreground" : ""} />}>
-        <Sun className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-        <Moon className="absolute h-[1.2rem] w-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+      <DropdownMenuTrigger render={inline
+        ? <button type="button" className="relative grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring" />
+        : <Button variant={compact ? "ghost" : "outline"} size="icon" className={compact ? "size-10 rounded-md text-muted-foreground" : ""} />}>
+        <Sun className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
+        <Moon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
         <span className="sr-only">Toggle theme</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align={compact ? "start" : "end"} side={compact ? "right" : "bottom"}>

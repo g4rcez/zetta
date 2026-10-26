@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui";
+import { Button, Checkbox, Input, Select, Textarea } from "@/components/ui";
 
 import { ApiError, chatClient, errorMessage, type Bot, type DecisionConfig, type DecisionOption, type Route } from "./chat-client";
-import { field } from "../shared/ui";
+
 
 const ACTIONS: Record<DecisionOption["action"], string> = { respond: "Answer normally", ask_user: "Ask me a question", delegate: "Hand to another bot", stop: "Stop and reply" };
 const blank: DecisionConfig = { enabled: false, question: "What does this message need?", minConfidencePct: 60, options: [{ label: "Normal request", description: "A regular question or task", action: "respond" }, { label: "Off limits", description: "Something this bot should not handle", action: "stop", reply: "I can't help with that." }] };
@@ -40,20 +40,20 @@ export function BotDecision({ bot, bots }: { bot: Bot; bots: Bot[] }) {
     <section aria-label="Decision routing" className="space-y-2 rounded-lg border bg-card p-4">
       <h3 className="font-medium">Decision routing</h3>
       <p className="text-xs text-muted-foreground">Before answering, the built-in decision model (Laya) can sort each message into one of your options and act on it.</p>
-      <label className="flex items-center gap-2"><input type="checkbox" checked={cfg.enabled} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} />Use routing for this bot</label>
-      <label className="block">Decision engine<select value={cfg.backend ?? "laya"} onChange={(e) => setCfg({ ...cfg, backend: e.target.value as "laya" | "jev" })} className="ml-2 rounded-md border bg-muted/40 px-1"><option value="laya">Laya (built in, free, private)</option><option value="jev">Jev (Typesafe, hosted) - not verified yet</option></select></label>
+      <Checkbox checked={cfg.enabled} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })}>Use routing for this bot</Checkbox>
+      <Select title="Decision engine" container="ml-2 rounded-md border bg-muted/40 px-1" required={false} value={cfg.backend ?? "laya"} onChange={(e) => setCfg({ ...cfg, backend: e.target.value as "laya" | "jev" })} options={[{ value: "laya", label: "Laya (built in, free, private)" }, { value: "jev", label: "Jev (Typesafe, hosted) - not verified yet" }]} />
       {cfg.backend === "jev" && <p className="text-xs text-muted-foreground">Jev sends the message text to Typesafe and needs your own Jev key under Studio &gt; Accounts. It has not been verified against the real service.</p>}
-      <label className="block">Question to decide<input value={cfg.question} maxLength={300} onChange={(e) => setCfg({ ...cfg, question: e.target.value })} className={field} /></label>
-      <label className="block">Only act when at least this sure (%)<input type="number" min={0} max={100} value={cfg.minConfidencePct} onChange={(e) => setCfg({ ...cfg, minConfidencePct: Math.min(100, Math.max(0, Math.round(Number(e.target.value) || 0))) })} className={`${field} w-24`} /></label>
+      <Input title="Question to decide" value={cfg.question} maxLength={300} onChange={(e) => setCfg({ ...cfg, question: e.target.value })} />
+      <Input title="Only act when at least this sure (%)" container="w-24" type="number" min={0} max={100} value={cfg.minConfidencePct} onChange={(e) => setCfg({ ...cfg, minConfidencePct: Math.min(100, Math.max(0, Math.round(Number(e.target.value) || 0))) })} />
       <ol className="space-y-2">{cfg.options.map((o, i) => (
         <li key={i} className="space-y-1 rounded-md border bg-card p-3">
           <div className="grid gap-1 sm:grid-cols-2">
-            <label className="block text-xs">Option {i + 1} name<input value={o.label} maxLength={60} onChange={(e) => setOpt(i, { label: e.target.value })} className={field} /></label>
-            <label className="block text-xs">Then<select value={o.action} onChange={(e) => setOpt(i, { action: e.target.value as DecisionOption["action"] })} className={field}>{(Object.keys(ACTIONS) as DecisionOption["action"][]).map((a) => <option key={a} value={a}>{ACTIONS[a]}</option>)}</select></label>
+            <Input title={`Option ${i + 1} name`} value={o.label} maxLength={60} onChange={(e) => setOpt(i, { label: e.target.value })} />
+            <Select title="Then" required={false} value={o.action} onChange={(e) => setOpt(i, { action: e.target.value as DecisionOption["action"] })} options={(Object.keys(ACTIONS) as DecisionOption["action"][]).map((a) => ({ value: a, label: ACTIONS[a] }))} />
           </div>
-          <label className="block text-xs">When the message is like this<input value={o.description} maxLength={200} onChange={(e) => setOpt(i, { description: e.target.value })} className={field} /></label>
-          {o.action === "delegate" && <label className="block text-xs">Hand over to<select value={o.targetBotId ?? ""} onChange={(e) => setOpt(i, { targetBotId: e.target.value || undefined })} className={field}><option value="">Choose a bot…</option>{others.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>}
-          {(o.action === "ask_user" || o.action === "stop") && <label className="block text-xs">Reply<input value={o.reply ?? ""} maxLength={1000} onChange={(e) => setOpt(i, { reply: e.target.value })} className={field} /></label>}
+          <Input title="When the message is like this" value={o.description} maxLength={200} onChange={(e) => setOpt(i, { description: e.target.value })} />
+          {o.action === "delegate" && <Select title="Hand over to" required={false} value={o.targetBotId ?? ""} onChange={(e) => setOpt(i, { targetBotId: e.target.value || undefined })} placeholder="Choose a bot…" options={others.map((b) => ({ value: b.id, label: b.name }))} />}
+          {(o.action === "ask_user" || o.action === "stop") && <Input title="Reply" value={o.reply ?? ""} maxLength={1000} onChange={(e) => setOpt(i, { reply: e.target.value })} />}
           <Button type="button" size="xs" variant="outline" disabled={cfg.options.length <= 2} onClick={() => setCfg({ ...cfg, options: cfg.options.filter((_, k) => k !== i) })}>Remove option {i + 1}</Button>
         </li>))}</ol>
       {problem && <p className="text-xs text-destructive">{problem}</p>}
@@ -62,7 +62,7 @@ export function BotDecision({ bot, bots }: { bot: Bot; bots: Bot[] }) {
         <Button type="button" size="sm" disabled={!!problem} onClick={() => void save()}>Save routing</Button>
       </div>
       <div className="space-y-1 rounded-md border bg-card p-3">
-        <label className="block text-xs">Preview: type a message to see what routing would do (saved settings are used)<textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} className={`${field} mt-0.5`} /></label>
+        <Textarea title="Preview: type a message to see what routing would do (saved settings are used)" container="mt-0.5" value={text} onChange={(e) => setText(e.target.value)} rows={2} />
         <Button type="button" size="sm" variant="outline" disabled={!text.trim()} onClick={() => void preview()}>Preview routing</Button>
         {route && <p role="status" className="text-xs">{describeRoute(route, bots)}</p>}
       </div>

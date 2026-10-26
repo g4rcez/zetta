@@ -3,8 +3,9 @@ import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { ComputerError, type ComputerService } from "./service";
 import type { DesktopService } from "./desktop";
+import type { VmService } from "./vm";
 
-export type ComputerServices = { access: ReturnType<typeof createIdentityAccess>; computer: ComputerService; desktop?: DesktopService };
+export type ComputerServices = { access: ReturnType<typeof createIdentityAccess>; computer: ComputerService; desktop?: DesktopService; vms?: VmService };
 const profile = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 const action = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("open"), url: z.string().url().max(2000) }),
@@ -18,10 +19,14 @@ const desktopAction = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("key"), key: z.string().min(1).max(40) }), z.strictObject({ type: z.literal("scroll"), direction: z.enum(["up", "down", "left", "right"]), amount: z.number().int().min(1).max(20).optional() }),
   z.strictObject({ type: z.literal("launch"), app: z.string().min(1).max(60) }),
 ]);
+const vmAction = z.discriminatedUnion("type", [
+  ...desktopAction.options, z.strictObject({ type: z.literal("navigate"), url: z.string().url().max(2000) }),
+]);
+const vmId = z.string().uuid();
 const out = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 const fail = (status: number, code: string, message: string) => out({ error: { code, message } }, status);
 
-export function createComputerRoutes({ access, computer, desktop }: ComputerServices, trustedOrigins: readonly string[]) {
+export function createComputerRoutes({ access, computer, desktop, vms }: ComputerServices, trustedOrigins: readonly string[]) {
   type Ctx = { userId: string; body: unknown; params: Record<string, string> };
   const g = (work: (c: Ctx) => Promise<unknown>, status = 200) => async ({ request, body, params }: { request: Request; body: unknown; params: Record<string, string> }) => {
     try {
@@ -31,13 +36,15 @@ export function createComputerRoutes({ access, computer, desktop }: ComputerServ
     } catch (e) {
       if (e instanceof AccessError) return fail(e.code === "SIGN_IN_REQUIRED" ? 401 : e.code === "IDENTITY_UNAVAILABLE" ? 503 : 403, e.code, e.message);
       if (e instanceof ComputerError) return fail(e.code === "NOT_FOUND" ? 404 : e.code === "REVOKED" ? 410 : e.code === "LIMIT" || e.code === "HUMAN_IN_CONTROL" || e.code === "STALE_CONTROL" ? 409 : e.code === "UNAVAILABLE" ? 503 : 400, e.code,
-        e.code === "BLOCKED_URL" ? "That address is not allowed." : e.code === "LIMIT" ? "Close another browser session first." : e.code === "HUMAN_IN_CONTROL" ? "A person has taken over this session." : e.code === "UNAVAILABLE" ? "The browser is not available right now." : "Check the details and try again.");
+        e.code === "BLOCKED_URL" ? "That address is not allowed." : e.code === "LIMIT" ? "Close another browser session or stop a desktop first." : e.code === "HUMAN_IN_CONTROL" ? "A person has taken over this session." : e.code === "UNAVAILABLE" ? "The browser is not available right now." : "Check the details and try again.");
       if (e instanceof z.ZodError) return fail(400, "INVALID_REQUEST", "Check the details and try again.");
       return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
     }
   };
   const need = () => { if (!desktop) throw new ComputerError("UNAVAILABLE"); return desktop; };
   const p = (c: Ctx) => profile.parse(c.params.profile);
+  const needVms = () => { if (!vms) throw new ComputerError("UNAVAILABLE"); return vms; };
+  const v = (c: Ctx) => vmId.parse(c.params.id);
   return new Elysia({ prefix: "/api/computer", normalize: false })
     .get("/sessions", g(async (c) => ({ sessions: computer.list(c.userId) })))
     .post("/sessions", g(async (c) => ({ session: await computer.start(c.userId, profile.parse((c.body as { profile?: string } | null)?.profile ?? "default")) }), 201))
@@ -45,7 +52,16 @@ export function createComputerRoutes({ access, computer, desktop }: ComputerServ
     .get("/sessions/:profile/screenshot", g(async (c) => ({ png: await computer.screenshot(c.userId, p(c)) })))
     .get("/sessions/:profile/text", g(async (c) => ({ text: await computer.text(c.userId, p(c)) })))
     .post("/sessions/:profile/takeover", g(async (c) => { const v = z.strictObject({ human: z.boolean(), expected: z.enum(["agent", "human"]).optional() }).parse(c.body); return { session: computer.takeover(c.userId, p(c), v.human, v.expected) }; }))
-    .get("/capabilities", g(async () => ({ ...computer.capabilities(), desktop: Boolean(desktop), desktopBackend: desktop ? "cua-spaces" : null, note: desktop ? "Desktop control runs in a per-user Linux container Space (Cua). Browser sessions are separate." : computer.capabilities().note })))
+    .get("/capabilities", g(async () => ({ ...computer.capabilities(), desktop: Boolean(desktop || vms), desktopBackend: vms ? "vm" : desktop ? "cua-spaces" : null, note: vms ? "Each user has a persistent Linux desktop (Debian + Chromium); bots can ask for more. Browser sessions are separate." : desktop ? "Desktop control runs in a per-user Linux container Space (Cua). Browser sessions are separate." : computer.capabilities().note })))
+    .get("/vms", g(async (c) => ({ vms: await needVms().list(c.userId) })))
+    .post("/vms/default/start", g(async (c) => ({ vm: await needVms().start(c.userId) })))
+    .post("/vms/:id/start", g(async (c) => ({ vm: await needVms().start(c.userId, v(c)) })))
+    .post("/vms/:id/stop", g(async (c) => { await needVms().stop(c.userId, v(c)); return { ok: true }; }))
+    .delete("/vms/:id", g(async (c) => { await needVms().remove(c.userId, v(c)); return { ok: true }; }))
+    .post("/vms/:id/action", g(async (c) => ({ vm: await needVms().act(c.userId, v(c), "user", vmAction.parse(c.body)) })))
+    .get("/vms/:id/screenshot", g(async (c) => ({ png: await needVms().screenshot(c.userId, v(c)) })))
+    .get("/vms/:id/text", g(async (c) => ({ text: await needVms().read(c.userId, v(c)) })))
+    .post("/vms/:id/takeover", g(async (c) => { const b = z.strictObject({ human: z.boolean(), expected: z.enum(["agent", "human"]).optional() }).parse(c.body); return { vm: needVms().takeover(c.userId, v(c), b.human, b.expected) }; }))
     .get("/desktop/sessions", g(async (c) => ({ sessions: need().list(c.userId) })))
     .post("/desktop/sessions", g(async (c) => ({ session: await need().start(c.userId, profile.parse((c.body as { profile?: string } | null)?.profile ?? "default")) }), 201))
     .post("/desktop/sessions/:profile/action", g(async (c) => ({ session: await need().act(c.userId, p(c), "user", desktopAction.parse(c.body)) })))

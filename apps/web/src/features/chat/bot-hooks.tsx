@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui";
+import { Button, Checkbox, Input, Select, Textarea } from "@/components/ui";
 
 import { chatClient, errorMessage, type Bot, type Hook, type HookDryRun } from "./chat-client";
-import { field } from "../shared/ui";
+
 
 const KIND: Record<Hook["kind"], string> = { add_context: "Add context", redact: "Hide text", stop: "Stop message", background: "Background task" };
 const sorted = (l: Hook[]) => [...l].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -35,22 +35,21 @@ export function BotHooks({ bot }: { bot: Bot }) {
       <ol className="space-y-1">{hooks.map((h, i) => (
         <li key={h.id} className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border bg-card p-2">
           <span className="w-5 text-xs text-muted-foreground" aria-label={`Position ${i + 1}`}>{i + 1}.</span>
-          <label className="flex items-center gap-1"><input type="checkbox" checked={h.enabled ?? true} onChange={() => void toggle(h)} /><span className="sr-only">Enabled: </span>{KIND[h.kind]}</label>
+          <Checkbox checked={h.enabled ?? true} onChange={() => void toggle(h)}>{KIND[h.kind]}</Checkbox>
           <span className="min-w-0 flex-1 break-words text-xs text-muted-foreground">{h.pattern || h.value.slice(0, 40)}</span>
           <Button type="button" size="xs" variant="outline" disabled={i === 0} onClick={() => void move(i, -1)} aria-label={`Move ${KIND[h.kind]} hook up`}>↑</Button>
           <Button type="button" size="xs" variant="outline" disabled={i === hooks.length - 1} onClick={() => void move(i, 1)} aria-label={`Move ${KIND[h.kind]} hook down`}>↓</Button>
           <Button type="button" size="xs" variant="outline" onClick={() => void guard(async () => { await chatClient.deleteHook(h.id); setHooks((l) => l.filter((x) => x.id !== h.id)); })}>Remove</Button>
         </li>))}</ol>
       <form className="flex flex-wrap gap-1" onSubmit={(e) => void add(e)}>
-        <select name="kind" aria-label="Hook type" className={`${field} w-40`}>{(Object.keys(KIND) as Hook["kind"][]).map((k) => <option key={k} value={k}>{KIND[k]}</option>)}</select>
-        <input name="pattern" aria-label="Hook pattern" placeholder="Match (hide / stop)" className={`${field} w-40`} />
-        <input name="value" aria-label="Hook value" placeholder="Text / replacement / task" className={`${field} w-48`} />
+        <Select title="Hook type" hiddenLabel container="w-40" required={false} name="kind" options={(Object.keys(KIND) as Hook["kind"][]).map((k) => ({ value: k, label: KIND[k] }))} />
+        <Input title="Hook pattern" hiddenLabel container="w-40" name="pattern" placeholder="Match (hide / stop)" />
+        <Input title="Hook value" hiddenLabel container="w-48" name="value" placeholder="Text / replacement / task" />
         <Button type="submit" size="sm" variant="outline">Add hook</Button>
       </form>
       {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
       <form className="space-y-1" onSubmit={(e) => void dry(e)}>
-        <label className="block text-xs">Try a message against these hooks (nothing is sent to the bot)
-          <textarea value={test} onChange={(e) => setTest(e.target.value)} rows={2} className={`${field} mt-0.5`} /></label>
+        <Textarea title="Try a message against these hooks (nothing is sent to the bot)" container="mt-0.5" value={test} onChange={(e) => setTest(e.target.value)} rows={2} />
         <Button type="submit" size="sm" variant="outline" disabled={!test.trim()}>Test hooks</Button>
       </form>
       {result && (

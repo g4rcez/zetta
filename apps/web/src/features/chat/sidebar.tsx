@@ -1,11 +1,15 @@
 import { Link } from "@tanstack/react-router";
-import { Plus, Search } from "lucide-react";
-import { useState } from "react";
-import { Button } from "@/components/ui";
+import { Bell, Bot as BotIcon, ChevronDown, FolderPlus, Plus, Search } from "lucide-react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 
-import { BotAvatar } from "@/components/bot-avatar";
+import { Button } from "@zetta/ui/components/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@zetta/ui/components/collapsible";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@zetta/ui/components/dropdown-menu";
+import { cn } from "@zetta/ui/lib/utils";
+import { Input, Select } from "@/components/ui";
+import { BotAvatar, avatarColor, layoutOf, shade } from "@/components/bot-avatar";
 import { useAttentionSummary } from "../attention/summary";
-import { field } from "../shared/ui";
+
 import type { Bot, Conversation, Workspace } from "./chat-client";
 
 function depthOf(spaces: Workspace[], id: string | null) {
@@ -15,9 +19,9 @@ function depthOf(spaces: Workspace[], id: string | null) {
 }
 
 type Props = {
-  bots: Bot[]; spaces: Workspace[]; chats: Conversation[]; botId?: string; chatId?: string;
-  onBot: (id: string) => void; onChat: (id: string) => void; onNewChat: () => void;
-  onAddBot: (name: string) => void; onAddSpace: (name: string, parentId?: string) => void;
+  bots: Bot[]; spaces: Workspace[]; chats: Conversation[]; botId?: string | undefined; chatId?: string | undefined;
+  onBot: (id: string) => void; onChat: (id: string) => void; onNewChat: (botId: string) => void;
+  onNewBot: () => void; onAddSpace: (name: string, parentId?: string) => void;
 };
 
 const subtitle = (b: Bot) => b.description || (b.kind === "chief" ? "Your chief of staff" : b.harness === "fixture" ? "Offline test bot" : `${b.harness}${b.model ? ` · ${b.model}` : ""}`);
@@ -26,24 +30,85 @@ const subtitle = (b: Bot) => b.description || (b.kind === "chief" ? "Your chief 
 function BotRow({ b, current, onBot }: { b: Bot; current: boolean; onBot: (id: string) => void }) {
   const blocked = !b.canEdit && !b.onboarded;
   const setup = b.canEdit && !b.onboarded;
+  const layout = layoutOf(b.avatar) ?? "default";
+  const c = avatarColor(b.avatar);
+  const status = blocked ? "Not ready · owner is setting it up" : setup ? "Not ready yet · finish setup" : subtitle(b);
+  const base = `flex w-full text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring ${blocked ? "cursor-not-allowed opacity-50" : ""}`;
+  const idle = current ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60";
+  const tag = (extra = "") => (b.kind === "chief" ? <span className="sr-only"> (your chief)</span> : b.visibility === "private" ? <span className={`sr-only ${extra}`}> (private)</span> : null);
+  const name = <span className="flex items-center gap-2"><span className="truncate font-medium">{b.name}</span>{tag()}</span>;
+  const sub = <span className="block truncate text-xs text-muted-foreground">{status}</span>;
+  const dot = setup && <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-amber-400" />;
+  const stack = <span className="min-w-0 flex-1">{name}{sub}</span>;
+  // Each preset shape gets its own row layout, tinted with the color the owner picked.
+  const variants: Record<string, { cls: string; style?: CSSProperties; size: number; square?: boolean; body: ReactNode }> = {
+    default: { cls: `items-center gap-3 rounded-lg px-2.5 py-2 ${idle}`, size: 40, body: stack },
+    // Arrow: mail-client row with the harness on the right.
+    mail: { cls: `items-center gap-3 rounded-lg px-2.5 py-2 ${idle}`, size: 40, body: <span className="min-w-0 flex-1"><span className="flex items-baseline justify-between gap-2">{name}<span className="shrink-0 text-[11px] text-muted-foreground">{b.harness}</span></span>{sub}</span> },
+    compact: { cls: `items-center gap-2 rounded-md px-2 py-1 ${idle}`, size: 26, body: <span className="flex min-w-0 flex-1 items-baseline gap-2">{name}<span className="truncate text-xs text-muted-foreground">{status}</span></span> },
+    bubble: { cls: `flex-row-reverse items-center gap-3 rounded-full py-1.5 pr-1.5 pl-4 text-right ${idle}`, style: { backgroundColor: current || !c ? undefined : `${c}26` }, size: 38,
+      body: <span className="min-w-0 flex-1"><span className="block truncate font-medium">{b.name}{tag()}</span>{sub}</span> },
+    card: { cls: `items-center gap-3 rounded-xl border px-2.5 py-2 ${idle}`, style: { borderColor: c && `${c}88`, backgroundColor: current || !c ? undefined : `${c}22` }, size: 44, square: true, body: stack },
+    terminal: { cls: `items-center gap-2.5 rounded-r-md border-l-4 px-2.5 py-1.5 font-mono ${idle}`, style: { borderLeftColor: c }, size: 34,
+      body: <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium">{"> "}{b.name}{tag()}</span><span className="block truncate text-[11px] text-muted-foreground">{status}</span></span> },
+    poster: { cls: `items-center gap-3 rounded-lg px-2.5 py-3 ${idle}`, style: { boxShadow: `inset 0 -3px 0 ${c ?? "transparent"}` }, size: 52,
+      body: <span className="min-w-0 flex-1"><span className="block truncate text-base font-semibold leading-tight">{b.name}{tag()}</span><span className="line-clamp-2 text-xs text-muted-foreground">{status}</span><span className="mt-1 inline-block rounded bg-muted px-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">{b.harness}</span></span> },
+    banner: { cls: `items-center gap-3 rounded-lg px-2.5 py-2 text-white ${blocked ? "" : "hover:brightness-110"}`, style: { backgroundImage: `linear-gradient(110deg, ${shade(c ?? "#4338ca", -0.45)}, ${c ?? "#4338ca"})`, outline: current ? `2px solid ${shade(c ?? "#fff", 0.5)}` : undefined }, size: 40,
+      body: <span className="min-w-0 flex-1"><span className="block truncate font-semibold">{b.name}{tag()}</span><span className="block truncate text-xs text-white/75">{status}</span></span> },
+    // Hexagon: centered tile with the avatar on top.
+    tile: { cls: `flex-col items-center gap-1 rounded-xl px-2.5 py-3 text-center ${idle}`, style: { backgroundColor: current || !c ? undefined : `${c}14` }, size: 56,
+      body: <span className="w-full min-w-0"><span className="block truncate font-medium">{b.name}{tag()}</span>{sub}</span> },
+    // Diamond: dashed outline, name only until hovered.
+    outline: { cls: `items-center gap-3 rounded-lg border border-dashed px-2.5 py-2 ${idle}`, style: { borderColor: c }, size: 32,
+      body: <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold uppercase tracking-widest">{b.name}{tag()}</span><span className="block truncate text-[11px] text-muted-foreground">{status}</span></span> },
+    // Star: glowing avatar and a tinted halo around the row.
+    spotlight: { cls: `items-center gap-3 rounded-2xl px-3 py-2.5 ${idle}`, style: { boxShadow: c ? `0 0 0 1px ${c}55, 0 4px 18px -6px ${c}99` : undefined }, size: 42,
+      body: <span className="min-w-0 flex-1"><span className="block truncate font-bold">{b.name}{tag()}</span><span className="line-clamp-2 text-xs text-muted-foreground">{status}</span></span> },
+    // Orbit: avatar inside a colored ring, single tight line.
+    ring: { cls: `items-center gap-3 rounded-full py-1 pr-3 pl-1 ${idle}`, size: 34, body: <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{b.name}{tag()}</span><span className="block truncate text-[11px] text-muted-foreground">{status}</span></span>, style: { boxShadow: c ? `inset 0 0 0 2px ${c}` : undefined } },
+    // Mouse: soft rounded cushion with an italic serif name.
+    cozy: { cls: `items-center gap-3 rounded-3xl px-3.5 py-2.5 ${idle}`, style: { backgroundColor: current || !c ? undefined : `${c}1f` }, size: 40, body: <span className="min-w-0 flex-1"><span className="block truncate font-serif text-base italic">{b.name}{tag()}</span>{sub}</span> },
+    // Robot: boxed console readout with a status tag.
+    console: { cls: `items-center gap-2.5 rounded-sm border px-2.5 py-1.5 font-mono ${idle}`, style: { borderColor: c }, size: 32, square: true,
+      body: <span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2 text-[12px] font-medium uppercase"><span className="truncate">{b.name}{tag()}</span><span className="shrink-0 text-[10px]" style={{ color: c }}>{b.onboarded ? "● ready" : "○ setup"}</span></span><span className="block truncate text-[11px] text-muted-foreground">{status}</span></span> },
+    // Cat: tilted sticker with a hard offset shadow.
+    sticker: { cls: `items-center gap-3 rounded-lg border-2 px-2.5 py-2 -rotate-1 ${idle}`, style: { borderColor: c, boxShadow: c ? `3px 3px 0 ${c}` : undefined }, size: 40, body: <span className="min-w-0 flex-1"><span className="block truncate font-extrabold">{b.name}{tag()}</span>{sub}</span> },
+    // Owl: large avatar with a vertical accent ribbon on the right.
+    ribbon: { cls: `items-center gap-3 rounded-md border-r-8 px-2.5 py-2.5 ${idle}`, style: { borderRightColor: c }, size: 48, square: true, body: <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold uppercase tracking-wide">{b.name}{tag()}</span><span className="line-clamp-2 text-xs text-muted-foreground">{status}</span></span> },
+    // Spark: frosted glass fading out to the right, with a glow behind the avatar.
+    glass: { cls: `items-center gap-3 rounded-xl px-2.5 py-2 ${idle}`, style: { backgroundImage: c && !current ? `linear-gradient(90deg, ${c}33, transparent)` : undefined, boxShadow: c ? `inset 1px 1px 0 ${c}44` : undefined }, size: 40,
+      body: <span className="min-w-0 flex-1"><span className="block truncate font-semibold" style={{ color: c }}>{b.name}{tag()}</span>{sub}</span> },
+  };
+  const v = variants[layout] ?? variants.default!;
   return (
     <button type="button" aria-current={current} aria-disabled={blocked || undefined} title={blocked ? "Its owner has to finish setting this bot up before you can chat with it." : undefined}
       aria-description={blocked ? "Not ready yet: its owner has to finish setting it up." : undefined}
-      onClick={() => { if (!blocked) onBot(b.id); }}
-      className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring ${current ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60"} ${blocked ? "cursor-not-allowed opacity-50" : ""}`}>
-      <BotAvatar id={b.id} size={40} />
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2"><span className="truncate font-medium">{b.name}</span>{b.kind === "chief" && <span className="sr-only"> (your chief)</span>}{b.visibility === "private" && b.kind !== "chief" && <span className="sr-only"> (private)</span>}</span>
-        <span className="block truncate text-xs text-muted-foreground">{blocked ? "Not ready · owner is setting it up" : setup ? "Not ready yet · finish setup" : subtitle(b)}</span>
-      </span>
-      {setup && <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-amber-400" />}
+      onClick={() => { if (!blocked) onBot(b.id); }} className={`${base} ${v.cls}`} style={v.style}>
+      <BotAvatar bot={b} size={v.size} square={v.square} />
+      {v.body}
+      {dot}
     </button>
   );
 }
 
-export function ChatSidebar({ bots, spaces, chats, botId, chatId, onBot, onChat, onNewChat, onAddBot, onAddSpace }: Props) {
+/** Slack-style collapsible section header: chevron, title, optional hover action. */
+function Section({ title, icon, children, action, indent = 0 }: { title: string; icon?: ReactNode; children: ReactNode; action?: ReactNode; indent?: number }) {
+  return (
+    <Collapsible defaultOpen className="group/section">
+      <div className="flex items-center pr-1" style={{ paddingLeft: `${indent * 0.75}rem` }}>
+        <CollapsibleTrigger className="flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring">
+          <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 transition-transform group-not-data-open/section:-rotate-90" />{icon}<span className="truncate">{title}</span>
+        </CollapsibleTrigger>
+        {action}
+      </div>
+      <CollapsibleContent><ul className="mt-1 space-y-0.5">{children}</ul></CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+/** Bots (chief, then one collapsible section per workspace) and the current bot's conversations, under a Slack-style header. */
+export function ChatSidebar({ bots, spaces, chats, botId, chatId, onBot, onChat, onNewChat, onNewBot, onAddSpace }: Props) {
   const [query, setQuery] = useState("");
-  const [newName, setNewName] = useState("");
   const [adding, setAdding] = useState(false);
   const attention = useAttentionSummary();
   const q = query.trim().toLowerCase();
@@ -52,54 +117,68 @@ export function ChatSidebar({ bots, spaces, chats, botId, chatId, onBot, onChat,
   const chief = visibleBots.find((b) => b.kind === "chief");
   const rest = visibleBots.filter((b) => b !== chief);
   const visibleChats = chats.filter((c) => !q || c.title.toLowerCase().includes(q));
-  const heading = "px-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+  // Conversations grouped under their bot, in sidebar order; the open bot always shows (to start its first chat).
+  const chatGroups = [chief, ...rest].filter((b): b is Bot => !!b).map((bot) => ({ bot, list: visibleChats.filter((c) => c.botId === bot.id) })).filter(({ bot, list }) => list.length > 0 || (!q && bot.id === botId));
+  const groups = [...spaces.map((w) => ({ id: w.id as string | null, name: w.name })), { id: null, name: "Ungrouped" }];
+  const row = (b: Bot) => <li key={b.id}><BotRow b={b} current={b.id === botId} onBot={onBot} /></li>;
   return (
-    <aside className="flex h-full min-h-0 w-full min-w-0 flex-col bg-sidebar md:border-r" aria-label="Bots and chats">
-      <div className="space-y-3 p-3 pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="px-1 text-lg font-semibold tracking-tight">Chats</h1>
-          <Button size="icon-sm" variant="ghost" aria-label="Add a bot or workspace" aria-expanded={adding} onClick={() => setAdding((a) => !a)}><Plus /></Button>
-        </div>
-        <label className="relative block"><span className="sr-only">Search bots and chats</span><Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" className={`${field} h-10 pl-9`} /></label>
+    <aside className="flex h-full min-h-0 w-full min-w-0 flex-col bg-sidebar text-sidebar-foreground md:border-r md:border-sidebar-border" aria-label="Bots and chats">
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border px-3">
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<button type="button" className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 py-1 text-left text-lg font-bold hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring" />}>
+            <span className="truncate">Chats</span><ChevronDown aria-hidden="true" className="size-4 shrink-0 opacity-70" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuItem onClick={() => { setAdding(false); onNewBot(); }}><BotIcon />New bot</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setAdding(true)}><FolderPlus />New workspace</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button size="icon-sm" variant="ghost" title="New bot" aria-label="New bot" onClick={() => { setAdding(false); onNewBot(); }}><BotIcon /></Button>
+        <Button size="icon-sm" variant="ghost" title="New workspace" aria-label="New workspace" aria-expanded={adding} onClick={() => setAdding((a) => !a)}><FolderPlus /></Button>
+      </div>
+      <div className="shrink-0 space-y-2 p-2">
+        <Input title="Search bots and chats" hiddenLabel type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Jump to…" left={<Search aria-hidden="true" className="size-4 text-muted-foreground" />} />
         {adding && (
-          <div className="space-y-2 rounded-lg border bg-card p-3">
-            <form onSubmit={(e) => { e.preventDefault(); if (!newName.trim()) return; onAddBot(newName.trim()); setNewName(""); setAdding(false); }} className="flex gap-2">
-              <input aria-label="New bot name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New specialist" className={field} /><Button type="submit" size="sm">Add</Button>
-            </form>
-            <form onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const name = String(f.get("space") ?? "").trim(); if (!name) return; onAddSpace(name, String(f.get("parent") ?? "") || undefined); e.currentTarget.reset(); }} className="flex gap-2">
-              <input name="space" aria-label="New workspace" placeholder="New workspace" className={field} />
-              {spaces.length > 0 && <select name="parent" aria-label="Inside workspace" className={`${field} w-24`}><option value="">top</option>{spaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>}
-              <Button type="submit" size="sm" variant="outline">Group</Button>
-            </form>
-          </div>)}
-      </div>
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-2 pb-3">
-        <nav aria-label="Bots" className="space-y-1"><h2 className={heading}>Bots</h2>
-          {chief && <ul className="space-y-0.5"><li><BotRow b={chief} current={chief.id === botId} onBot={onBot} /></li></ul>}
-          {[...spaces.map((w) => ({ id: w.id as string | null, name: w.name })), { id: null, name: spaces.length ? "Ungrouped" : "" }].map((group) => {
-            const members = rest.filter((b) => (b.workspaceId ?? null) === group.id);
-            if (!members.length) return null;
-            return (
-              <div key={group.id ?? "none"} role="group" aria-label={group.name || "Bots"}>
-                {group.name && <h3 className="mt-2 mb-1 text-xs text-muted-foreground" style={{ paddingLeft: `${0.625 + depthOf(spaces, group.id) * 0.75}rem` }}>{group.name}</h3>}
-                <ul className="space-y-0.5">{members.map((b) => <li key={b.id}><BotRow b={b} current={b.id === botId} onBot={onBot} /></li>)}</ul>
-              </div>);
-          })}
-          {q && visibleBots.length === 0 && <p className="px-2.5 text-xs text-muted-foreground">No bots match.</p>}
-        </nav>
-        <nav aria-label="Chats" className="space-y-1">
-          <div className="flex items-center justify-between pr-1"><h2 className={heading}>Conversations</h2><Button size="xs" variant="ghost" onClick={onNewChat}>New chat</Button></div>
-          <ul className="space-y-0.5">{visibleChats.map((c) => (
-            <li key={c.id}><button type="button" aria-current={c.id === chatId} onClick={() => onChat(c.id)} className={`w-full truncate rounded-md px-2.5 py-1.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring ${c.id === chatId ? "bg-sidebar-accent font-medium" : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"}`}>{c.title}</button></li>))}</ul>
-          {q && visibleChats.length === 0 && <p className="px-2.5 text-xs text-muted-foreground">No chats match.</p>}
-        </nav>
-      </div>
-      <div className="border-t p-2">
-        <Link to="/studio" className="flex items-center justify-between rounded-md px-2.5 py-2 transition-colors hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring">
-          <span>Needs your attention</span>
-          <span className={`rounded-full px-2 text-xs ${attention && attention.unread > 0 ? "bg-destructive font-medium text-white" : "bg-muted text-muted-foreground"}`} aria-label={attention ? `${attention.unread} unread, ${attention.open} open` : "Attention items"}>{attention ? attention.unread : "…"}</span>
+          <form onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const name = String(f.get("space") ?? "").trim(); if (!name) return; onAddSpace(name, String(f.get("parent") ?? "") || undefined); e.currentTarget.reset(); }} className="flex gap-2 rounded-lg border bg-card p-2">
+            <Input title="New workspace" hiddenLabel name="space" placeholder="New workspace" autoFocus />
+            {spaces.length > 0 && <Select title="Inside workspace" hiddenLabel container="w-24" required={false} name="parent" options={[{ value: "", label: "top" }, ...spaces.map((w) => ({ value: w.id, label: w.name }))]} />}
+            <Button type="submit" size="sm" variant="outline">Create</Button>
+          </form>)}
+        <Link to="/studio/$tab" params={{ tab: "routines" }} className="flex h-8 items-center gap-2 rounded-md px-2.5 text-sm transition-colors hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring">
+          <Bell aria-hidden="true" className="size-4 text-muted-foreground" /><span className="flex-1">Needs your attention</span>
+          <span className={cn("rounded-full px-2 text-xs", attention && attention.unread > 0 ? "bg-destructive font-medium text-white" : "bg-muted text-muted-foreground")} aria-label={attention ? `${attention.unread} unread, ${attention.open} open` : "Attention items"}>{attention ? attention.unread : "…"}</span>
         </Link>
+      </div>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-2 pb-3">
+        <nav aria-label="Bots">
+          <Section title="Bots">
+            {chief && row(chief)}
+            {groups.map((group) => {
+              const members = rest.filter((b) => (b.workspaceId ?? null) === group.id);
+              if (!members.length) return null;
+              return (
+                <li key={group.id ?? "none"} role="group" aria-label={group.name}>
+                  {(spaces.length > 0) && <h3 className="mt-2 mb-1 text-xs text-muted-foreground" style={{ paddingLeft: `${0.625 + depthOf(spaces, group.id) * 0.75}rem` }}>{group.name}</h3>}
+                  <ul className="space-y-0.5">{members.map(row)}</ul>
+                </li>);
+            })}
+            {q && visibleBots.length === 0 && <li className="px-2.5 text-xs text-muted-foreground">No bots match.</li>}
+          </Section>
+        </nav>
+        <nav aria-label="Conversations" className="space-y-2">
+          {chatGroups.map(({ bot, list }) => (
+            <Section key={bot.id} title={bot.name} icon={<BotAvatar bot={bot} size={16} />}
+              action={<Button size="icon-xs" variant="ghost" aria-label={`New chat with ${bot.name}`} title="New chat" className={cn(bot.id !== botId && "opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100")} onClick={() => onNewChat(bot.id)}><Plus /></Button>}>
+              {list.map((c) => (
+                <li key={c.id}>
+                  <button type="button" aria-current={c.id === chatId} onClick={() => onChat(c.id)} className={cn("flex w-full items-center gap-2 rounded-md py-1.5 pr-2.5 pl-7 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring", c.id === chatId ? "bg-sidebar-accent font-medium" : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground")}>
+                    <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                  </button>
+                </li>))}
+              {list.length === 0 && <li className="py-1 pl-7 text-xs text-muted-foreground">No conversations yet.</li>}
+            </Section>))}
+          {q && chatGroups.length === 0 && <p className="px-2.5 text-xs text-muted-foreground">No chats match.</p>}
+        </nav>
       </div>
     </aside>
   );

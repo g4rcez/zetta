@@ -36,7 +36,13 @@ export const bot = pgTable(
     model: text("model"),
     personality: text("personality").default("").notNull(),
     instructions: text("instructions").default("").notNull(),
+    // Picture: a frontend-built SVG preset with its colors, or an uploaded image (data URL). Null = generated default.
+    avatar: jsonb("avatar").$type<{ kind: "preset"; preset: string; colors: string[] } | { kind: "image"; src: string }>(),
     onboarded: boolean("onboarded").default(false).notNull(),
+    // Computer use the owner granted this bot: off (default), browser only, or browser + desktop.
+    computerMode: text("computer_mode", { enum: ["off", "browser", "desktop"] }).default("off").notNull(),
+    // Code access the owner granted this bot: a persistent per-user workspace where it can run git, edit files and push. On by default.
+    codeAccess: boolean("code_access").default(true).notNull(),
     // Connections this bot needs before it is ready ([{ key, provider }]); bound per user in bot_connection.
     requiredConnections: jsonb("required_connections").$type<{ key: string; provider: string }[]>().default([]).notNull(),
     archived: boolean("archived").default(false).notNull(),

@@ -3,7 +3,7 @@ import type { Database } from "@zetta/db";
 import * as schema from "@zetta/db/schema/auth";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError, isAPIError } from "better-auth/api";
-import { createInvitationSignupGate, createInvitationSignupPolicy, type InvitationSignupVerifier } from "./invitation-policy";
+import { createFirstAccountClaim, createInvitationSignupGate, createInvitationSignupPolicy, type FirstAccountSetup, type InvitationSignupVerifier } from "./invitation-policy";
 
 export type AuthConfig = {
   BETTER_AUTH_URL: string;
@@ -14,6 +14,8 @@ export type AuthConfig = {
 /** Trusted server composition only; never derived from client flags or input. */
 export type AuthFactoryOptions = {
   invitationSignupVerifier: InvitationSignupVerifier;
+  /** Allows the very first (admin) account to sign up without an invitation. */
+  firstAccount?: FirstAccountSetup;
 };
 
 /** Pure configuration assembly: Better Auth 1.7.7 eagerly initializes its context.
@@ -51,11 +53,12 @@ export function createAuthOptions(
           throw new APIError("INTERNAL_SERVER_ERROR", { code: "AUTHENTICATION_UNAVAILABLE", message: "Authentication unavailable" });
         },
       },
-      hooks: { before: createInvitationSignupGate(options?.invitationSignupVerifier) },
+      hooks: { before: createInvitationSignupGate(options?.invitationSignupVerifier, options?.firstAccount) },
       databaseHooks: {
         user: {
           create: {
-            before: createInvitationSignupPolicy(options?.invitationSignupVerifier),
+            before: createInvitationSignupPolicy(options?.invitationSignupVerifier, options?.firstAccount),
+            ...(options?.firstAccount ? { after: createFirstAccountClaim(options.firstAccount) } : {}),
           },
         },
       },

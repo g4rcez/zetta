@@ -1,9 +1,9 @@
 import { RoutineCalendar } from "./routine-calendar";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui";
+import { Button, Input, Radiobox, Select, Textarea } from "@/components/ui";
 
 import { ApiError, call, errorMessage, type Bot } from "../chat/chat-client";
-import { ConfirmButton, Empty, field, Field, useList, when } from "../shared/ui";
+import { Badge, ConfirmButton, Empty, list, listItem, useList, when } from "../shared/ui";
 import { refreshAttention } from "../attention/summary";
 import { buildSchedule, describeSchedule, type ScheduleMode } from "./routine-schedule";
 
@@ -85,13 +85,13 @@ function EditForm({ routine, bots, onSaved, onCancel }: { routine: Routine; bots
   }
   return (
     <form onSubmit={(e) => void save(e)} className="mt-2 grid gap-2 rounded-lg border bg-card p-4 sm:grid-cols-2" aria-label={`Edit ${routine.title}`}>
-      <Field label="Bot"><select name="botId" defaultValue={routine.botId} className={field}>{bots.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
-      <Field label="Title"><input name="title" defaultValue={routine.title} required maxLength={120} className={field} /></Field>
-      <Field label="What should it do?" className="sm:col-span-2"><textarea name="prompt" defaultValue={routine.prompt} required rows={2} className={field} /></Field>
-      {routine.dailyAt && <Field label="Time of day"><input name="dailyAt" type="time" defaultValue={routine.dailyAt} required className={field} /></Field>}
-      {!routine.dailyAt && routine.everyMinutes && <Field label="Every how many minutes"><input name="everyMinutes" type="number" min={5} max={10080} defaultValue={routine.everyMinutes} required className={field} /></Field>}
-      <Field label="Timezone"><input name="timezone" defaultValue={routine.timezone} required className={field} /></Field>
-      <Field label="Chats"><select name="conversationMode" defaultValue={routine.conversationMode ?? "new"} className={field}><option value="new">Start a new chat each run</option><option value="continue">Continue the same chat</option></select></Field>
+      <Select title="Bot" required={false} name="botId" defaultValue={routine.botId} options={bots.map((b) => ({ value: b.id, label: b.name }))} />
+      <Input title="Title" name="title" defaultValue={routine.title} required maxLength={120} />
+      <Textarea title="What should it do?" container="sm:col-span-2" name="prompt" defaultValue={routine.prompt} required rows={2} />
+      {routine.dailyAt && <Input title="Time of day" name="dailyAt" type="time" defaultValue={routine.dailyAt} required />}
+      {!routine.dailyAt && routine.everyMinutes && <Input title="Every how many minutes" name="everyMinutes" type="number" min={5} max={10080} defaultValue={routine.everyMinutes} required />}
+      <Input title="Timezone" name="timezone" defaultValue={routine.timezone} required />
+      <Select title="Chats" required={false} name="conversationMode" defaultValue={routine.conversationMode ?? "new"} options={[{ value: "new", label: "Start a new chat each run" }, { value: "continue", label: "Continue the same chat" }]} />
       {routine.kind === "once" && <p className="text-xs text-muted-foreground sm:col-span-2">The date of a one-time routine cannot be changed. Create a new routine for another date.</p>}
       {error && <p role="alert" className="text-destructive sm:col-span-2">{error}</p>}
       <div className="flex gap-2 sm:col-span-2"><Button type="submit" size="sm">Save changes</Button><Button type="button" size="sm" variant="outline" onClick={onCancel}>Cancel</Button></div>
@@ -107,6 +107,7 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
   const [status, setStatus] = useState<string>();
   const [formError, setFormError] = useState<string>();
   const [card, setCard] = useState<string>();
+  const [creating, setCreating] = useState(false);
   const [open, setOpen] = useState<{ id: string; what: "edit" | "history" }>();
   const schedule = (f: FormData) => buildSchedule({ mode, timezone: String(f.get("timezone") ?? "") || localTz(), dailyAt: String(f.get("dailyAt") ?? ""), everyMinutes: String(f.get("everyMinutes") ?? ""), onceLocal: String(f.get("onceLocal") ?? "") });
 
@@ -123,7 +124,7 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
     const workflowId = String(f.get("workflowId") ?? "");
     try {
       const r = await call<{ routine: Routine }>("/api/routines", "POST", { botId: f.get("botId"), title: f.get("title"), prompt: f.get("prompt"), conversationMode: f.get("conversationMode"), ...s.value, ...(workflowId ? { workflowId } : {}) });
-      form.reset(); setNextRuns(undefined); setCard(r.routine.id); setStatus("Routine created, but it is paused. Review it below, then activate it."); void reload();
+      form.reset(); setNextRuns(undefined); setCreating(false); setCard(r.routine.id); setStatus("Routine created, but it is paused. Review it below, then activate it."); void reload();
     } catch (x) { setFormError(errorMessage(x)); }
   }
   const act = async (work: () => Promise<unknown>, done?: string) => { try { await work(); if (done) setStatus(done); void reload(); void refreshAttention(); } catch (e) { onError(errorMessage(e)); } };
@@ -131,30 +132,33 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
 
   return (
     <section aria-label="Routines" className="space-y-3">
-      <RoutineCalendar refreshKey={rows?.length ?? 0} />
-      <form onSubmit={(e) => void create(e)} className="grid gap-2 rounded-lg border bg-card p-4 sm:grid-cols-2" aria-label="New routine">
-        <Field label="Bot"><select name="botId" required className={field}>{bots.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
-        <Field label="Title"><input name="title" required maxLength={120} className={field} /></Field>
-        <Field label="What should it do?" className="sm:col-span-2"><textarea name="prompt" required rows={2} className={field} /></Field>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold tracking-tight">Your routines{rows && <span className="ml-2 text-sm font-normal tabular-nums text-muted-foreground">{rows.length}</span>}</h3>
+        <Button size="sm" variant={creating ? "outline" : "default"} aria-expanded={creating} aria-controls="new-routine" onClick={() => setCreating(!creating)}>{creating ? "Close" : "New routine"}</Button>
+      </div>
+      {creating && <form id="new-routine" onSubmit={(e) => void create(e)} className="grid gap-3 rounded-xl border bg-card p-5 sm:grid-cols-2" aria-label="New routine">
+        <Select title="Bot" name="botId" required options={bots.map((b) => ({ value: b.id, label: b.name }))} />
+        <Input title="Title" name="title" required maxLength={120} />
+        <Textarea title="What should it do?" container="sm:col-span-2" name="prompt" required rows={2} />
         <fieldset className="sm:col-span-2"><legend className="text-sm">When</legend>
-          <div className="flex flex-wrap gap-3 text-sm">{([["daily", "Every day"], ["interval", "Every few minutes"], ["once", "Once"]] as const).map(([v, l]) => <label key={v} className="flex items-center gap-1"><input type="radio" name="mode" checked={mode === v} onChange={() => { setMode(v); setNextRuns(undefined); }} />{l}</label>)}</div>
+          <div className="flex flex-wrap gap-3 text-sm">{([["daily", "Every day"], ["interval", "Every few minutes"], ["once", "Once"]] as const).map(([v, l]) => <Radiobox key={v} name="mode" checked={mode === v} onChange={() => { setMode(v); setNextRuns(undefined); }}>{l}</Radiobox>)}</div>
         </fieldset>
-        {mode === "daily" && <Field label="Time of day"><input name="dailyAt" type="time" required className={field} /></Field>}
-        {mode === "interval" && <Field label="Every how many minutes (5 or more)"><input name="everyMinutes" type="number" min={5} max={10080} defaultValue={60} required className={field} /></Field>}
-        {mode === "once" && <Field label="Date and time"><input name="onceLocal" type="datetime-local" required className={field} /></Field>}
-        <Field label="Timezone"><input name="timezone" defaultValue={localTz()} className={field} /></Field>
-        <Field label="Chats"><select name="conversationMode" defaultValue="new" className={field}><option value="new">Start a new chat each run</option><option value="continue">Continue the same chat</option></select></Field>
-        <Field label="Run a workflow instead (optional)"><select name="workflowId" className={field}><option value="">No, just ask the bot</option>{flows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
+        {mode === "daily" && <Input title="Time of day" name="dailyAt" type="time" required />}
+        {mode === "interval" && <Input title="Every how many minutes (5 or more)" name="everyMinutes" type="number" min={5} max={10080} defaultValue={60} required />}
+        {mode === "once" && <Input title="Date and time" name="onceLocal" type="datetime-local" required />}
+        <Input title="Timezone" name="timezone" defaultValue={localTz()} />
+        <Select title="Chats" required={false} name="conversationMode" defaultValue="new" options={[{ value: "new", label: "Start a new chat each run" }, { value: "continue", label: "Continue the same chat" }]} />
+        <Select title="Run a workflow instead (optional)" required={false} name="workflowId" options={[{ value: "", label: "No, just ask the bot" }, ...(flows ?? []).map((w) => ({ value: w.id, label: w.name }))]} />
         {nextRuns && <div className="sm:col-span-2" role="status"><p className="text-xs font-medium">Next runs</p><NextRuns runs={nextRuns} /></div>}
         {formError && <p role="alert" className="text-destructive sm:col-span-2">{formError}</p>}
         <div className="flex flex-wrap gap-2 sm:col-span-2"><Button type="button" size="sm" variant="outline" onClick={(e) => void preview(e.currentTarget.form!)}>Preview schedule</Button><Button type="submit" size="sm">Create routine (paused)</Button></div>
-      </form>
-      <p role="status" className="text-sm empty:hidden">{status}</p>
-      {rows?.length === 0 && <Empty>No routines yet. Create one above, then activate it once the bot is ready.</Empty>}
-      <ul className="space-y-2">{rows?.map((r) => (
-        <li key={r.id} className="min-w-0 rounded-lg border bg-card p-4 text-sm">
-          <p className="font-medium">{r.title} <span className="font-normal text-muted-foreground">· {botName(r.botId)} · {describeSchedule(r)}{r.dailyAt ? "" : ` (${r.timezone})`}</span></p>
-          <p className="text-muted-foreground">{r.paused ? "Paused" : `Active. Next run ${r.nextRunAt ? new Date(r.nextRunAt).toLocaleString() : "-"}`}</p>
+      </form>}
+      <p role="status" className="rounded-md bg-muted px-3 py-2 text-sm empty:hidden">{status}</p>
+      {rows?.length === 0 && <Empty>No routines yet. Choose New routine, then activate it once the bot is ready.</Empty>}
+      <ul className={list}>{rows?.map((r) => (
+        <li key={r.id} className={`${listItem} py-4`}>
+          <div className="flex flex-wrap items-center gap-2"><p className="min-w-0 break-words font-medium">{r.title}</p>{r.paused ? <Badge>Paused</Badge> : <Badge tone="success">Active</Badge>}</div>
+          <p className="mt-0.5 text-muted-foreground">{botName(r.botId)} · {describeSchedule(r)}{r.dailyAt ? "" : ` (${r.timezone})`}{!r.paused && <> · Next run <span className="tabular-nums">{r.nextRunAt ? new Date(r.nextRunAt).toLocaleString() : "-"}</span></>}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {r.paused ? <Button size="sm" variant="outline" onClick={() => setCard(card === r.id ? undefined : r.id)} aria-expanded={card === r.id}>Activate…</Button> : <Button size="sm" variant="outline" onClick={() => void act(() => call(`/api/routines/${r.id}/paused`, "POST", { paused: true }), "Paused.")}>Pause</Button>}
             <Button size="sm" variant="outline" onClick={() => void act(() => call(`/api/routines/${r.id}/run`, "POST", { requestKey: crypto.randomUUID() }), "Started a run. Check the history for the result.")}>Run now</Button>
@@ -166,6 +170,7 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
           {open?.id === r.id && open.what === "edit" && <EditForm routine={r} bots={bots} onCancel={() => { setOpen(undefined); void reload(); }} onSaved={() => { setOpen(undefined); setStatus("Changes saved."); void reload(); }} />}
           {open?.id === r.id && open.what === "history" && <History routineId={r.id} />}
         </li>))}</ul>
+      <RoutineCalendar refreshKey={rows?.length ?? 0} />
     </section>
   );
 }

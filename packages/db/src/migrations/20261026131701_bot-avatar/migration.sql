@@ -1,0 +1,1 @@
+ALTER TABLE "bot" ADD COLUMN "avatar" jsonb;

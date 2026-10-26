@@ -2,7 +2,7 @@ import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { HarnessError, createLimiter, harnessCommands, harnessHome, harnessMessage, runCli, streamCli } from "./harness";
+import { HarnessError, codeWorkspace, createLimiter, dockerArgs, gitEnv, harnessCommands, harnessHome, harnessMessage, runCli, streamCli } from "./harness";
 
 async function script(body: string) {
   const dir = await mkdtemp(join(tmpdir(), "zetta-fake-"));
@@ -79,6 +79,47 @@ describe("cli harness", () => {
     const parts: string[] = [];
     for await (const c of streamCli({ harness: "pi", prompt: "x", model: null, resolve: () => fake })) parts.push(c);
     expect(parts.join("")).toContain("one"); expect(parts.join("")).toContain("two");
+  });
+});
+
+describe("code access", () => {
+  test("code flags pre-approve git and file tools and keep the prompt last", () => {
+    const host = harnessCommands["claude-code"]("do it", null, "git");
+    expect(host.at(-1)).toBe("do it"); expect(host).toContain("acceptEdits");
+    expect(host.find((a) => a.startsWith("--allowedTools="))).toBe("--allowedTools=Read,Edit,Write,Glob,Grep,Bash(git:*)");
+    expect(host.find((a) => a.startsWith("--disallowedTools="))).toContain("Bash(git push --force:*)");
+    expect(harnessCommands["claude-code"]("x", null, "full").find((a) => a.startsWith("--allowedTools="))).toContain(",Bash");
+    expect(harnessCommands["claude-code"]("x", null)).toEqual(["claude", "-p", "x"]);
+    expect(harnessCommands.codex("x", null, "git")).toContain("sandbox_workspace_write.network_access=true");
+    expect(harnessCommands.codex("x", null, "full")).toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(harnessCommands.opencode("x", null, "git")).toContain("--auto");
+    expect(harnessCommands.codex("x", null)).toEqual(["codex", "exec", "--skip-git-repo-check", "x"]);
+  });
+  test("workspaces are per user and cannot escape the root", () => {
+    expect(codeWorkspace("u1", "/data/code")).toBe("/data/code/u1");
+    expect(codeWorkspace("../evil", "/data/code")).toBe("/data/code/___evil");
+  });
+  test("git env carries identity, and the token only through a github.com credential helper", () => {
+    const plain = gitEnv("Dev <bot>");
+    expect(plain.GIT_AUTHOR_NAME).toBe("Dev  bot"); expect(plain.GIT_CONFIG_COUNT).toBeUndefined();
+    const withToken = gitEnv("Dev", { GITHUB_TOKEN: "ghp_secret" });
+    expect(withToken.GIT_CONFIG_KEY_0).toBe("credential.https://github.com.helper");
+    expect(Object.entries(withToken).filter(([k]) => k !== "GH_TOKEN").some(([, v]) => v.includes("ghp_secret"))).toBe(false);
+  });
+  test("the docker command mounts the user's workspace instead of a tmpfs", () => {
+    const cfg = { image: "i", network: "bridge", memory: "1g", cpus: "1", pids: 64, bin: "docker" };
+    const code = dockerArgs(cfg, { name: "n", argv: ["claude"], workspace: "/data/code/u1", env: {} }), plain = dockerArgs(cfg, { name: "n", argv: ["claude"], env: {} });
+    expect(code).toContain("/data/code/u1:/work:rw"); expect(code.some((a) => a.startsWith("/work:rw"))).toBe(false);
+    expect(plain.some((a) => a.startsWith("/work:rw,size="))).toBe(true);
+  });
+  test("a code run executes in the user's persistent workspace and keeps it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zetta-code-")); process.env.ZETTA_CODE_ROOT = root;
+    const fake = await script('echo "cwd=$(pwd -P) author=$GIT_AUTHOR_NAME arg=$*"; touch kept');
+    const out = await runCli({ harness: "claude-code", prompt: "hi", model: null, userId: "alice", code: { author: "dev" }, resolve: () => fake });
+    delete process.env.ZETTA_CODE_ROOT;
+    const dir = (await import("node:fs/promises")).realpath(join(root, "alice"));
+    expect(out).toContain(`cwd=${await dir}`); expect(out).toContain("author=dev"); expect(out).toContain("--permission-mode acceptEdits");
+    expect(await Bun.file(join(root, "alice", "kept")).exists()).toBe(true);
   });
 });
 

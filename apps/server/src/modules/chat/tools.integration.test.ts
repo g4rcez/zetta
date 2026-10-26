@@ -9,12 +9,18 @@ import { parseTools } from "./tools";
 import { createChatService } from "./service";
 import { createFeaturesService } from "../features/service";
 import { ComputerError } from "../computer/service";
+import { createDbVmStore, createVmService } from "../computer/vm";
 
 describe("parseTools", () => {
   test("extracts valid blocks, strips them, and drops malformed or unknown ones", () => {
     const r = parseTools('Hello\n```zetta:remember\n{"content":"likes tea"}\n```\nbye ```zetta:remember\nnot json\n```\n```zetta:config\n{"botId":"x","patch":{}}\n```');
     expect(r.calls).toEqual([{ kind: "remember", args: { target: "memory", ops: [{ op: "add", content: "likes tea" }] } }]);
     expect(r.text).not.toContain("zetta:");
+  });
+  test("desktop actions may name a computer (uuid only) and navigate; create_vm needs a plain name and a purpose", () => {
+    const vm = "11111111-1111-4111-8111-111111111111";
+    const r = parseTools(`\`\`\`zetta:desktop\n{"action":"navigate","url":"https://example.com","vm":"${vm}"}\n\`\`\`\n\`\`\`zetta:desktop\n{"action":"read","vm":"../other"}\n\`\`\`\n\`\`\`zetta:create_vm\n{"name":"Banking","purpose":"second account"}\n\`\`\`\n\`\`\`zetta:create_vm\n{"name":"a/b","purpose":"x"}\n\`\`\``);
+    expect(r.calls).toEqual([{ kind: "desktop", args: { action: "navigate", url: "https://example.com", vm } }, { kind: "create_vm", args: { name: "Banking", purpose: "second account" } }]);
   });
 });
 
@@ -32,7 +38,12 @@ suite("bot tools against compose postgres", () => {
   const calls: string[] = []; let human = false;
   const fakeComputer = { epochOf: () => 0, start: async () => ({}), text: async () => "PAGE TEXT", act: async (_u: string, _p: string, by: string, a: { type: string }) => { if (human && by === "agent") throw new ComputerError("HUMAN_IN_CONTROL"); calls.push(a.type); return {}; } };
   const features = createFeaturesService(db, fakeRun as never);
-  const app = createApp({ auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never, chat: { access, chat: createChatService(db, fakeRun as never, undefined, fakeComputer as never, undefined, undefined, { routine: features.routines.create as never, workflow: features.workflows.save as never }) }, features: { access, features }, webOrigin: "http://web.test", desktopOrigins: [], drain: () => {} });
+  // VMs backed by the real table, with a fake container CLI and spacesd: proposals and ownership are what is under test here.
+  const vmStore = createDbVmStore(db);
+  const vms = createVmService({ store: vmStore, docker: { bin: "docker", image: "x", memory: "1g", cpus: "1", pids: 64, shm: "64m" }, tokenRoot: `${process.env.TMPDIR ?? "/tmp"}/zetta-vm-it`, maxPerUser: 2,
+    exec: async (args) => ({ code: args[0] === "start" ? 1 : 0, stdout: args[0] === "port" ? "127.0.0.1:1\n" : "" }),
+    connect: async () => ({ call: async (tool) => ({ text: tool === "list_windows" ? 'window_id=1 pid=2 "Chromium"' : "SCREEN TEXT", isError: false }), close: async () => {} }) });
+  const app = createApp({ auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never, chat: { access, chat: createChatService(db, fakeRun as never, undefined, fakeComputer as never, undefined, undefined, { routine: features.routines.create as never, workflow: features.workflows.save as never }, undefined, undefined, undefined, vms) }, features: { access, features }, webOrigin: "http://web.test", desktopOrigins: [], drain: () => {} });
   const call = async (as: string, method: string, path: string, body?: unknown) => {
     const r = await app.handle(new Request(`http://localhost${path}`, { method, headers: { "x-test-user": as, origin: "http://web.test", "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined }));
     return { status: r.status, json: (await r.json().catch(() => ({}))) as any };
@@ -102,6 +113,24 @@ suite("bot tools against compose postgres", () => {
     await say("need login");
     const items = (await call(A, "GET", "/api/attention")).json.items as { title: string; nextAction: string }[];
     expect(items.some((i) => i.title.includes("take over the browser") && i.nextAction.includes("hand it back"))).toBe(true);
+  });
+
+  test("a bot's create_vm is only a proposal: another user cannot approve it, approval creates the computer once, the cap still applies", async () => {
+    const { bot, say } = await setup(A, "Operator");
+    script = ['```zetta:create_vm\n{"name":"Banking","purpose":"keep the second bank account signed in"}\n```'];
+    await say("I need a separate computer for my other bank");
+    expect(await vmStore.list(A)).toHaveLength(0);
+    const p = (await call(A, "GET", "/api/proposals")).json.proposals.find((x: { kind: string }) => x.kind === "create_vm");
+    expect(p).toBeTruthy();
+    expect((await call(B, "POST", `/api/proposals/${p.id}/decision`, { approve: true })).status).toBe(404);
+    expect((await call(A, "POST", `/api/proposals/${p.id}/decision`, { approve: true })).json.status).toBe("approved");
+    const rows = await vmStore.list(A);
+    expect(rows.map((r) => [r.kind, r.name, r.createdByBotId]).sort()).toEqual([["default", "Default", null], ["extra", "Banking", bot.id]]);
+    script = ['```zetta:create_vm\n{"name":"Third","purpose":"one more"}\n```'];
+    await say("and another one");
+    const p2 = (await call(A, "GET", "/api/proposals")).json.proposals.find((x: { kind: string }) => x.kind === "create_vm");
+    expect((await call(A, "POST", `/api/proposals/${p2.id}/decision`, { approve: true })).json.status).toBe("stale"); // over maxPerUser=2
+    expect(await vmStore.list(A)).toHaveLength(2);
   });
 
   test("bot-proposed creations (bot, routine, workflow) are only summaries until approved, exactly once, and unready bots cannot browse", async () => {

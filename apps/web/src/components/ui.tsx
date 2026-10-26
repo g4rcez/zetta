@@ -1,4 +1,4 @@
-import { Button as LibButton, Input as LibInput, Modal as LibModal, Textarea as LibTextarea } from "@g4rcez/components";
+import { Button as LibButton, Checkbox as LibCheckbox, Input as LibInput, Modal as LibModal, Radiobox as LibRadiobox, Select as LibSelect, Textarea as LibTextarea } from "@g4rcez/components";
 import type { ComponentProps } from "react";
 
 /**
@@ -16,3 +16,6 @@ export function Button({ variant = "default", size = "default", className = "", 
 export const Input = LibInput;
 export const Textarea = LibTextarea;
 export const Modal = LibModal;
+export const Select = LibSelect;
+export const Checkbox = LibCheckbox;
+export const Radiobox = LibRadiobox;

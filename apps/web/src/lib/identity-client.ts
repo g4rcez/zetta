@@ -24,7 +24,7 @@ export type SignUpInput = {
   name: string;
   email: string;
   password: string;
-  invitationToken: string;
+  invitationToken?: string;
 };
 export type IdentityFetch = (input: URL, init: RequestInit) => Promise<Response>;
 
@@ -125,6 +125,7 @@ export function createIdentityClient(
   }
   return {
     status: () => request("/api/identity/status", identityStatusSchema),
+    setup: () => request("/api/identity/setup", z.object({ required: z.boolean() }).strict()),
     issue: (input: InvitationInput) =>
       request("/api/identity/invitations", invitationSchema, input),
     accept: (token: string) =>
@@ -156,6 +157,7 @@ function configuredClient() {
 
 export const identityClient = {
   status: () => configuredClient().status(),
+  setup: () => configuredClient().setup(),
   issue: (input: InvitationInput) => configuredClient().issue(input),
   accept: (token: string) => configuredClient().accept(token),
   revoke: (invitationId: string) => configuredClient().revoke(invitationId),

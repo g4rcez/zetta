@@ -11,6 +11,11 @@ import { assertPublicUrl, ComputerError } from "../computer/service";
 import type { ConnectionsService } from "../connections/service";
 import { audit } from "../features/audit";
 import { AccessError, type ActiveActor } from "../identity/access";
+import { catalogStdio } from "./plugins/catalog";
+import { configureWhatsapp } from "./plugins/whatsapp"; // importing registers the plugin
+import "./plugins/google"; // importing registers the plugin
+import "./plugins/telegram"; // importing registers the plugin
+import { createPlugins, NATIVE_URL_PREFIX, type McpCore } from "./plugins/service";
 
 export class McpError extends Error { constructor(readonly code: "STDIO_NOT_ALLOWED" | "BLOCKED_URL" | "NOT_BOUND" | "TIMEOUT" | "FAILED" | "INVALID") { super(code); } }
 type Server = typeof mcpServer.$inferSelect;
@@ -36,12 +41,14 @@ const defaultConnect: McpConnect = async (s, authorization) => {
  * (ZETTA_MCP_ALLOWLIST); HTTP servers must be public addresses. Secrets come from the sealed connection store at call time.
  */
 export function createMcp(db: Database, connections?: ConnectionsService, opts: McpOptions = {}) {
-  const allow = opts.stdioAllowlist ?? parseAllowlist();
+  // Catalog entries are the only built-in local commands; the administrator may add more with ZETTA_MCP_ALLOWLIST.
+  const allow = opts.stdioAllowlist ?? [...catalogStdio(), ...parseAllowlist()];
   const connect = opts.connect ?? defaultConnect;
   const owned = async (a: ActiveActor, id: string) => { const [s] = await db.select().from(mcpServer).where(and(eq(mcpServer.id, id), eq(mcpServer.ownerUserId, a.userId))); if (!s) throw new AccessError("NOT_FOUND"); return s; };
 
   /** Opens one connected session (credentials resolved now). The caller must close it. */
   async function openSession(a: ActiveActor, s: Server) {
+    if (s.url?.startsWith(NATIVE_URL_PREFIX)) throw new McpError("INVALID"); // in-process plugins have no MCP session
     let auth: string | undefined;
     if (s.connectionId) {
       const secret = connections ? await connections.secretFor(a, s.connectionId).catch(() => undefined) : undefined;
@@ -68,6 +75,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     } catch (e) { throw e instanceof McpError ? e : new McpError("FAILED"); } finally { if (timer) clearTimeout(timer); }
   }
   async function withClient<T>(a: ActiveActor, s: Server, work: (c: Client) => Promise<T>): Promise<T> {
+    if (s.url?.startsWith(NATIVE_URL_PREFIX)) throw new McpError("INVALID");
     let auth: string | undefined;
     if (s.connectionId) {
       // Fails closed: a revoked/missing connection means the call does not happen, and no other credential is tried.
@@ -89,7 +97,10 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     return content.map((c) => (c.type === "text" ? c.text ?? "" : `[${c.type}]`)).join("\n").slice(0, MAX_TEXT);
   };
 
-  return {
+  let core!: McpCore;
+  configureWhatsapp({ allowPrivate: opts.allowPrivate }); // same private-address policy as MCP servers
+  const plugins = createPlugins(db, connections, () => core);
+  const api = {
     async addServer(a: ActiveActor, v: { name: string; transport: "http" | "stdio"; url?: string; command?: string; args?: string[]; connectionId?: string }) {
       if (v.transport === "http") {
         if (!v.url) throw new McpError("INVALID");
@@ -117,6 +128,14 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       const rows = await db.select({ s: mcpServer }).from(botIntegration).innerJoin(mcpServer, eq(mcpServer.id, botIntegration.serverId)).where(and(eq(botIntegration.botId, botId), eq(botIntegration.ownerUserId, a.userId)));
       return rows.map((r) => ({ id: r.s.id, name: r.s.name }));
     },
+    /** Internal (plugins): registers an in-process plugin as the user's server row so ownership and bot bindings apply unchanged. */
+    async addNative(a: ActiveActor, id: string, connectionId?: string) {
+      const [row] = await db.insert(mcpServer).values({ ownerUserId: a.userId, name: id, transport: "http", url: `${NATIVE_URL_PREFIX}${id}`, args: [], connectionId: connectionId ?? null }).returning();
+      return { id: row!.id, name: row!.name, transport: row!.transport };
+    },
+    /** Internal (plugins): the user's own server row by name. */
+    async serverByName(a: ActiveActor, name: string) { const [s] = await db.select().from(mcpServer).where(and(eq(mcpServer.name, name), eq(mcpServer.ownerUserId, a.userId))); return s; },
+    async setConnection(a: ActiveActor, id: string, connectionId: string | null) { await owned(a, id); await db.update(mcpServer).set({ connectionId }).where(and(eq(mcpServer.id, id), eq(mcpServer.ownerUserId, a.userId))); },
     /** Tool catalogue of one of the user's servers (opens and closes a session). */
     async tools(a: ActiveActor, serverId: string) {
       const s = await owned(a, serverId);
@@ -157,5 +176,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       } catch (e) { await audit(db, a.userId, { kind: "tool_call", botId, outcome: e instanceof McpError && e.code === "TIMEOUT" ? "timeout" : "failed", detail: "mcp" }); throw e; }
     },
   };
+  core = api as unknown as McpCore;
+  return Object.assign(api, { plugins });
 }
 export type Mcp = ReturnType<typeof createMcp>;

@@ -155,6 +155,6 @@ test("installed Better Auth 1.7.7 is eager; createAuth delegates exact config wi
   expect(source).toContain("return betterAuth(createAuthOptions(env, database, desktopOrigins, options));");
   expect(source).toContain('import * as schema from "@zetta/db/schema/auth"');
   expect(source).toContain('provider: "pg",\n      transaction: true,\n      schema,');
-  expect(source).toContain("before: createInvitationSignupPolicy(options?.invitationSignupVerifier)");
+  expect(source).toContain("before: createInvitationSignupPolicy(options?.invitationSignupVerifier, options?.firstAccount)");
   expect(source).not.toContain("/schema/identity");
 });

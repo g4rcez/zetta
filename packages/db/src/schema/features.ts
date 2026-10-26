@@ -96,7 +96,7 @@ export const attachment = pgTable("attachment", {
 
 /** Bot-proposed configuration changes. Nothing is applied until the owner approves the exact diff. */
 export const configProposal = pgTable("config_proposal", {
-  id: uuid("id").primaryKey().defaultRandom(), ownerUserId: owner(), kind: text("kind", { enum: ["config", "create_bot", "create_routine", "create_workflow", "create_instruction"] }).default("config").notNull(), botId: uuid("bot_id").references(() => bot.id, restrict),
+  id: uuid("id").primaryKey().defaultRandom(), ownerUserId: owner(), kind: text("kind", { enum: ["config", "create_bot", "create_routine", "create_workflow", "create_instruction", "create_vm"] }).default("config").notNull(), botId: uuid("bot_id").references(() => bot.id, restrict),
   proposedByBotId: uuid("proposed_by_bot_id").references(() => bot.id, restrict), baseVersion: integer("base_version").notNull(), baseHash: text("base_hash").notNull().default(""),
   patch: jsonb("patch").notNull(), diff: jsonb("diff").notNull(), status: text("status", { enum: ["pending", "approved", "rejected", "stale"] }).default("pending").notNull(),
   createdAt: created(), decidedAt: timestamp("decided_at", { withTimezone: true }),
@@ -128,6 +128,13 @@ export const browserProfile = pgTable("browser_profile", {
   id: uuid("id").primaryKey().defaultRandom(), ownerUserId: owner(), name: text("name").notNull(), mode: text("mode", { enum: ["dedicated", "shared"] }).default("shared").notNull(),
   botId: uuid("bot_id").references(() => bot.id, restrict), revokedAt: timestamp("revoked_at", { withTimezone: true }), resetAt: timestamp("reset_at", { withTimezone: true }), createdAt: created(),
 }, (t) => [unique("browser_profile_unique").on(t.ownerUserId, t.name)]);
+
+/** Persistent Linux desktops ("VMs"): one default per user, plus extras a bot proposed and the user approved. Home lives on volume `zetta-vm-<id>`. */
+export const computerVm = pgTable("computer_vm", {
+  id: uuid("id").primaryKey().defaultRandom(), ownerUserId: owner(), name: text("name").notNull(), kind: text("kind", { enum: ["default", "extra"] }).notNull(),
+  createdByBotId: uuid("created_by_bot_id").references(() => bot.id, restrict), purpose: text("purpose"), status: text("status", { enum: ["stopped", "running", "failed", "deleted"] }).default("stopped").notNull(),
+  createdAt: created(), lastStartedAt: timestamp("last_started_at", { withTimezone: true }), deletedAt: timestamp("deleted_at", { withTimezone: true }),
+}, (t) => [index("computer_vm_owner_idx").on(t.ownerUserId, t.status), uniqueIndex("computer_vm_default_unique").on(t.ownerUserId).where(sql`${t.kind} = 'default' and ${t.status} <> 'deleted'`)]);
 
 /** Privacy-safe activity trail: closed reason codes, ids and counts only. No prompts, outputs, URLs, secrets or provider errors. */
 export const auditEvent = pgTable("audit_event", {

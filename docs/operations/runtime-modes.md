@@ -12,3 +12,31 @@ Zetta runs the same product on all three operating systems and with or without D
 | Best for | A single person or a trusted team on one machine | Teams that do not fully trust each other's bots |
 
 Platform notes: process trees are killed with a process group on POSIX and `taskkill /T` on Windows; Windows additionally passes `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` and `SystemRoot`. Harness CLIs must exist on the server's `PATH` (Windows `.cmd` shims work through `Bun.which`). The Linux-only journal-store fixtures are skipped elsewhere. Desktop control through Cua Spaces is optional and follows Cua's own platform support. CI (`.github/workflows/ci.yml`) runs the unit suites on all three systems and the database-backed suites on Linux.
+
+## Desktop computers ("VMs")
+
+`ZETTA_DESKTOP_RUNTIME=docker` gives every user a persistent Linux computer, and bots can ask for more. Build the image once:
+
+```
+docker build -t zetta-desktop:latest docker/desktop
+```
+
+Each VM is one container: Debian, Xvfb, Openbox, Chromium and [cua-spacesd](https://github.com/trycua/cua/tree/main/libs/cua-spacesd).
+
+- **Persistence.** The `zetta-vm-<id>` container and the volume of the same name, mounted at `/home/agent`, persist. Chromium sign-ins survive the 15-minute idle stop. Deleting a VM in Studio > Computer destroys both.
+- **Control channel.**
+  - The server drives the desktop through spacesd's MCP endpoint, published on `127.0.0.1` only.
+  - Each start uses a fresh bearer token, written to a 0644 file inside a 0700 directory under `ZETTA_VM_TOKEN_ROOT` (default `.zetta-vm/`) and mounted read-only.
+  - The browser never sees the token: the web app gets screenshots and sends clicks through `/api/computer/vms/:id/*`.
+- **Who gets which VM.**
+  - Every user has a default VM, created on first use.
+  - A bot can propose an extra one (`zetta:create_vm`), and it exists only after the user approves it.
+  - When a bot starts using a computer, the chat shows a live card. The user can watch it and click or type along, or take over (bots pause) and hand back.
+- **Limits.** Defaults: 4 VMs per user, 2 running per user, 6 running in total, 2 GB and 2 CPUs each. Override them with `ZETTA_VM_MAX_PER_USER`, `ZETTA_VM_MAX_RUNNING_PER_USER`, `ZETTA_VM_MAX_RUNNING`, `ZETTA_VM_MEMORY`, `ZETTA_VM_CPUS` and `ZETTA_VM_IMAGE`.
+- **Isolation.**
+  - Containers drop every capability.
+  - `ZETTA_VM_RUNTIME=runsc` runs them under gVisor.
+  - Chromium runs with `--no-sandbox` because the container is the boundary.
+  - Navigation the bot asks for is checked against the public-address policy, but pages can still reach any address. To block private ranges and cloud metadata, attach VMs to a dedicated network (`ZETTA_VM_NETWORK`) and add host firewall rules for it.
+- **Podman.** Set `ZETTA_DOCKER_BIN` to the podman binary and `ZETTA_VM_IMAGE=localhost/zetta-desktop:latest`.
+- **Tests.** The real-container suite is `ZETTA_VM_TEST=1 bun test src/modules/computer/vm-docker.test.ts`.

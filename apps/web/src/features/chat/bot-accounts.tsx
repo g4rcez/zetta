@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 
 import { chatClient, errorMessage, PROVIDERS, type Bot, type ConnectionList, type Provider, type RequiredConnection, type Requirement } from "./chat-client";
-import { field } from "../shared/ui";
+
 
 export const KEY_PATTERN = /^[a-z0-9_-]{1,32}$/;
-const PROVIDER_NAME: Record<Provider, string> = { anthropic: "Anthropic", openai: "OpenAI", google: "Google", openrouter: "OpenRouter" };
+const PROVIDER_NAME: Record<Provider, string> = { anthropic: "Anthropic", openai: "OpenAI", google: "Google", openrouter: "OpenRouter", github: "GitHub" };
 const STATUS: Record<Requirement["status"], string> = { ready: "Connected", missing: "Not connected yet. Choose an account below.", unusable: "The chosen account cannot be used (it may have been revoked). Choose another." };
 
 /** Required accounts: owners edit the list; every user (owner or not) binds their own account to each requirement. */
@@ -41,12 +41,7 @@ export function BotAccounts({ bot, onBotChange }: { bot: Bot; onBotChange: (b: B
         return (
           <li key={r.key} className="min-w-0 space-y-1 rounded-md border bg-card p-3">
             <p><code>{r.key}</code> · {PROVIDER_NAME[r.provider]} · <span className={r.status === "ready" ? "" : "text-destructive"}>{STATUS[r.status]}</span></p>
-            <label className="block text-xs">Use my account
-              <select className={`${field} mt-0.5`} value="" onChange={(e) => void bind(r.key, e.target.value)} disabled={options.length === 0}>
-                <option value="">{options.length ? "Choose an account…" : `No active ${PROVIDER_NAME[r.provider]} accounts. Add one in Studio, Accounts.`}</option>
-                {options.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-              </select>
-            </label>
+            <Select title="Use my account" container="mt-0.5" required={false} value="" onChange={(e) => void bind(r.key, e.target.value)} disabled={options.length === 0} placeholder={options.length ? "Choose an account…" : `No active ${PROVIDER_NAME[r.provider]} accounts. Add one in Studio, Accounts.`} options={options.map((c) => ({ value: c.id, label: c.label }))} />
           </li>);
       })}</ul>
       {bot.canEdit && (
@@ -54,8 +49,8 @@ export function BotAccounts({ bot, onBotChange }: { bot: Bot; onBotChange: (b: B
           <p className="text-xs text-muted-foreground">Edit the list of accounts this bot needs. The key is a short name (lowercase letters, numbers, - or _).</p>
           {draft.map((r, i) => (
             <div key={i} className="flex flex-wrap items-center gap-1">
-              <input aria-label={`Account ${i + 1} key`} aria-invalid={!KEY_PATTERN.test(r.key)} value={r.key} onChange={(e) => setDraft(draft.map((x, k) => (k === i ? { ...x, key: e.target.value } : x)))} className={`${field} w-32`} />
-              <select aria-label={`Account ${i + 1} provider`} value={r.provider} onChange={(e) => setDraft(draft.map((x, k) => (k === i ? { ...x, provider: e.target.value as Provider } : x)))} className={`${field} w-36`}>{PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_NAME[p]}</option>)}</select>
+              <Input title={`Account ${i + 1} key`} hiddenLabel container="w-32" aria-invalid={!KEY_PATTERN.test(r.key)} value={r.key} onChange={(e) => setDraft(draft.map((x, k) => (k === i ? { ...x, key: e.target.value } : x)))} />
+              <Select title={`Account ${i + 1} provider`} hiddenLabel container="w-36" required={false} value={r.provider} onChange={(e) => setDraft(draft.map((x, k) => (k === i ? { ...x, provider: e.target.value as Provider } : x)))} options={PROVIDERS.map((p) => ({ value: p, label: PROVIDER_NAME[p] }))} />
               <Button type="button" size="sm" variant="outline" onClick={() => setDraft(draft.filter((_, k) => k !== i))}>Remove<span className="sr-only"> account {i + 1}</span></Button>
             </div>))}
           <div className="flex flex-wrap gap-2">

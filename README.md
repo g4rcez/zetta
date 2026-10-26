@@ -4,8 +4,9 @@ Zetta is a web app for managing autonomous bots. Give your personal chief an out
 
 The product is for people who want useful work done, not another technical system to administer. Configuration must be understandable without knowing what a harness, MCP server, or hook is. Advanced controls remain available.
 
-**Status:** product definition and RFC backlog. The capabilities below describe the intended v1, not features already implemented.
+**Status:** v1 is largely implemented but not released. As of 2026-10-23, 73 of 82 RFCs are Done, 8 are in Review (implemented with a stated limit) and 1 is Blocked on external access. The release verdict is NO-GO against RFC-068's own rule: only Claude Code is verified live among the six harnesses, and the independent code review has not been done. A self-hosted Docker-mode install with Claude Code is a GO, and host mode is allowed for trusted teams. The capabilities below describe the v1 scope; see the release readiness report for what is verified.
 
+- [Release readiness: gate matrix, capability status and operating limits](docs/release/release-readiness.md)
 - [Wiki: user journeys, architecture, and product assumptions](docs/wiki/README.md)
 - [Confirmed product intent](docs/intent/zetta-v1.md)
 - [Implementation plan](tasks/plan.md)

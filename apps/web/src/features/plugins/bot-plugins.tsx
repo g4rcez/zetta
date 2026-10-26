@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 
 import { errorMessage } from "../chat/chat-client";
 import { Empty } from "../shared/ui";
-import { GoogleLogo } from "./google-connect";
 import { PluginIcon } from "./plugin-icon";
 import { pluginsApi, type InstalledPlugin, type PluginMeta } from "./plugins-api";
 import { ToggleCard } from "./toggle-card";
@@ -40,7 +39,7 @@ export function BotPluginsSection({ botId, disabled = false }: { botId: string; 
         {rows.map(({ meta }) => (
           <li key={meta!.id}>
             <ToggleCard
-              leading={meta!.id === "google" ? <GoogleLogo className="size-6" /> : <PluginIcon name={meta!.icon} className="size-5" />}
+              leading={<PluginIcon id={meta!.id} name={meta!.icon} className="size-6" />}
               title={meta!.name} description={meta!.description} label={`${meta!.name} can be used by this bot`}
               checked={bound.has(meta!.id)} disabled={disabled || busy === meta!.id} onChange={(on) => void toggle(meta!.id, on)} />
           </li>

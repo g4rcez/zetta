@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Button, Input } from "@/components/ui";
 
+import { ENV } from "../../env";
 import { ApiError, call, errorMessage } from "../chat/chat-client";
 
 export type VmControl = { id: string; control: "agent" | "human"; epoch: number };
+type Rfb = InstanceType<typeof import("@novnc/novnc").default>;
 
 /** Friendly wording for VM errors; NOT_FOUND on a screenshot just means the computer is stopped. */
 export function vmError(e: unknown): string {
@@ -16,52 +18,72 @@ export function vmError(e: unknown): string {
 }
 
 /**
- * Live view of one of the user's computers, shared with the bots: the screen refreshes every couple of seconds, and your clicks and
- * typing go to the same machine the bot is using. Take over pauses the bots (for sign-ins); Hand back lets them continue.
+ * Live VNC view of one of the user's computers, shared with the bots: the real screen, mouse and keyboard (click into it to type).
+ * The server hands out a one-time ticket and bridges the WebSocket to the VM's VNC server; the VNC password never reaches the browser.
+ * Take over pauses the bots (for sign-ins); Hand back lets them continue.
  */
 export function VmViewer({ vmId, compact = false, onStopped }: { vmId: string; compact?: boolean; onStopped?: () => void }) {
   const base = `/api/computer/vms/${vmId}`;
-  const [png, setPng] = useState<string>();
+  const screen = useRef<HTMLDivElement>(null);
+  const rfb = useRef<Rfb>(undefined);
+  const [state, setState] = useState<"connecting" | "connected" | "disconnected" | "stopped">("connecting");
+  const [attempt, setAttempt] = useState(0);
   const [control, setControl] = useState<VmControl["control"]>("agent");
   const [error, setError] = useState<string>();
-  const [stopped, setStopped] = useState(false);
-  const busy = useRef(false);
-  const refresh = useCallback(async () => {
-    if (busy.current) return; busy.current = true;
-    try { setPng((await call<{ png: string }>(`${base}/screenshot`)).png); setError(undefined); setStopped(false); }
-    catch (e) { if (e instanceof ApiError && e.code === "NOT_FOUND") { setStopped(true); onStopped?.(); } else setError(vmError(e)); }
-    finally { busy.current = false; }
-  }, [base, onStopped]);
-  useEffect(() => {
-    void refresh();
-    const t = setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 2000);
-    return () => clearInterval(t);
-  }, [refresh]);
-  useEffect(() => { call<{ vms: (VmControl & { status: string })[] }>("/api/computer/vms").then((r) => { const v = r.vms.find((x) => x.id === vmId); if (v) setControl(v.control); }, () => {}); }, [vmId]);
-  const act = (body: object) => call<{ vm: VmControl }>(`${base}/action`, "POST", body).then(() => refresh(), (e) => setError(vmError(e)));
-  const toggle = () => call<{ vm: VmControl }>(`${base}/takeover`, "POST", { human: control !== "human", expected: control }).then((r) => setControl(r.vm.control), (e) => setError(vmError(e)));
-  const start = () => call(`${base}/start`, "POST").then(() => { setStopped(false); return refresh(); }, (e) => setError(vmError(e)));
+  const stopped = useRef(onStopped); stopped.current = onStopped;
 
-  if (stopped) return (
+  useEffect(() => {
+    let cancelled = false;
+    setState("connecting");
+    (async () => {
+      try {
+        const [{ default: RFB }, { ticket }] = await Promise.all([import("@novnc/novnc"), call<{ ticket: string }>(`${base}/vnc-ticket`, "POST")]);
+        if (cancelled || !screen.current) return;
+        const url = new URL(`${base}/vnc`, ENV.VITE_SERVER_URL);
+        url.protocol = url.protocol === "https:" ? "wss:" : "ws:"; url.searchParams.set("ticket", ticket);
+        const r = new RFB(screen.current, url.toString(), { shared: true });
+        r.scaleViewport = true; r.resizeSession = false; r.focusOnClick = true; r.background = "transparent";
+        r.addEventListener("connect", () => { setState("connected"); setError(undefined); });
+        r.addEventListener("disconnect", () => { if (rfb.current === r) { rfb.current = undefined; setState("disconnected"); } });
+        r.addEventListener("securityfailure", () => setError("The computer refused the connection."));
+        rfb.current = r;
+      } catch (e) {
+        if (cancelled) return;
+        if (e instanceof ApiError && e.code === "NOT_FOUND") { setState("stopped"); stopped.current?.(); } else { setState("disconnected"); setError(vmError(e)); }
+      }
+    })();
+    return () => { cancelled = true; const r = rfb.current; rfb.current = undefined; r?.disconnect(); };
+  }, [base, attempt]);
+  useEffect(() => { call<{ vms: (VmControl & { status: string })[] }>("/api/computer/vms").then((r) => { const v = r.vms.find((x) => x.id === vmId); if (v) setControl(v.control); }, () => {}); }, [vmId]);
+  const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
+  const toggle = () => call<{ vm: VmControl }>(`${base}/takeover`, "POST", { human: control !== "human", expected: control }).then((r) => setControl(r.vm.control), (e) => setError(vmError(e)));
+  const start = () => call(`${base}/start`, "POST").then(reconnect, (e) => setError(vmError(e)));
+  const paste = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault(); const text = String(new FormData(e.currentTarget).get("text")); e.currentTarget.reset();
+    // Puts the text on the computer's clipboard; press Ctrl+V inside it to paste.
+    if (text && rfb.current) { rfb.current.clipboardPasteFrom(text); rfb.current.focus(); }
+  };
+
+  if (state === "stopped") return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
       This computer is stopped. <Button size="sm" variant="outline" onClick={() => void start()}>Start it</Button>
     </div>);
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span role="status" className="mr-auto text-muted-foreground">{control === "human" ? "You are in control: bots are paused." : "Live. Your clicks and typing go to the same computer the bot is using."}</span>
+        <span role="status" className="mr-auto text-muted-foreground">
+          {state === "connecting" ? "Connecting to the screen…" : state === "disconnected" ? "Disconnected from the screen." : control === "human" ? "You are in control: bots are paused." : "Live. Click into the screen to use the mouse and keyboard; bots share it."}
+        </span>
+        {state === "disconnected" && <Button size="sm" variant="outline" onClick={reconnect}>Reconnect</Button>}
         <Button size="sm" variant="outline" onClick={() => void toggle()}>{control === "human" ? "Hand back to bots" : "Take over"}</Button>
-        {!compact && <Button size="sm" variant="outline" onClick={() => void refresh()}>Refresh</Button>}
       </div>
-      {png
-        ? <img alt="Computer screen" src={`data:image/png;base64,${png}`} className={`${compact ? "max-w-[720px]" : "max-w-[1280px]"} h-auto w-full cursor-crosshair rounded-lg border shadow-xs`}
-            onClick={(e) => { const img = e.currentTarget, r = img.getBoundingClientRect(); void act({ type: "click", x: Math.round(((e.clientX - r.left) / r.width) * img.naturalWidth), y: Math.round(((e.clientY - r.top) / r.height) * img.naturalHeight) }); }} />
-        : <p role="status" className="text-xs text-muted-foreground">Loading the screen…</p>}
-      <form className="flex flex-wrap items-end gap-2 [&>div:first-child]:flex-1" onSubmit={(e: FormEvent<HTMLFormElement>) => { e.preventDefault(); const text = String(new FormData(e.currentTarget).get("text")); e.currentTarget.reset(); if (text) void act({ type: "type", text }); }}>
-        <Input title="Type into the computer" hiddenLabel name="text" placeholder="Type into the focused window" /><Button size="sm" type="submit">Type</Button>
-        <Button size="sm" type="button" variant="outline" onClick={() => void act({ type: "key", key: "Return" })}>Enter</Button>
-        <Button size="sm" type="button" variant="outline" onClick={() => void act({ type: "scroll", direction: "down" })}>Scroll</Button>
-      </form>
+      <div ref={screen} aria-label="Computer screen" className={`${compact ? "max-w-[720px]" : "max-w-[1280px]"} aspect-[16/10] w-full overflow-hidden rounded-lg border bg-black shadow-xs`} />
+      {!compact && (
+        <form className="flex flex-wrap items-end gap-2 [&>div:first-child]:flex-1" onSubmit={paste}>
+          <Input title="Send text to the computer's clipboard" hiddenLabel name="text" placeholder="Text to paste into the computer (then Ctrl+V)" />
+          <Button size="sm" type="submit" disabled={state !== "connected"}>Send to clipboard</Button>
+        </form>
+      )}
       <p role="alert" className="text-xs text-destructive empty:hidden">{error}</p>
     </div>
   );

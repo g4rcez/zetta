@@ -2,8 +2,8 @@ import { CheckCheck, Image as ImageIcon, MessageCircle } from "lucide-react";
 
 import { cn } from "@zetta/ui/lib/utils";
 
-type ChatsView = { kind: "chats"; chats: { id: string; name: string; last: string; fromMe: boolean }[] };
-type MessagesView = { kind: "messages"; chat: string; messages: { at: number; from: string; text: string; media: boolean }[] };
+type ChatsView = { kind: "chats"; hour12?: boolean; chats: { id: string; name: string; last: string; fromMe: boolean }[] };
+type MessagesView = { kind: "messages"; hour12?: boolean; name?: string; chat: string; messages: { at: number; from: string; text: string; media: boolean }[] };
 export type WhatsappData = ChatsView | MessagesView;
 
 /** Validates the server-built block; anything else is shown as plain code by the caller. */
@@ -17,7 +17,7 @@ export function parseWhatsapp(raw: string): WhatsappData | undefined {
 }
 
 const initials = (n: string) => (n.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("") || "?").toUpperCase();
-const time = (s: number) => (s ? new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
+const time = (s: number, hour12: boolean) => (s ? new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12 }) : "");
 const day = (s: number) => new Date(s * 1000).toLocaleDateString([], { weekday: "long", day: "numeric", month: "short" });
 const who = (id: string) => id.replace(/@.*$/, "");
 
@@ -25,7 +25,7 @@ const who = (id: string) => id.replace(/@.*$/, "");
 export function WhatsappView({ data }: { data: WhatsappData }) {
   return (
     <figure aria-label="WhatsApp" className="w-full max-w-md overflow-hidden rounded-xl border bg-card text-sm shadow-sm">
-      <figcaption className="flex items-center gap-2 bg-[#008069] px-3 py-2 font-medium text-white"><MessageCircle aria-hidden className="size-4" />{data.kind === "chats" ? "WhatsApp" : who(data.chat)}</figcaption>
+      <figcaption className="flex items-center gap-2 bg-[#008069] px-3 py-2 font-medium text-white"><MessageCircle aria-hidden className="size-4" />{data.kind === "chats" ? "WhatsApp" : data.name || who(data.chat)}</figcaption>
       {data.kind === "chats" ? (
         data.chats.length === 0 ? <p className="p-3 text-muted-foreground">No chats.</p> : (
           <ul className="divide-y">{data.chats.map((c) => (
@@ -44,8 +44,8 @@ export function WhatsappView({ data }: { data: WhatsappData }) {
                 {newDay && <span className="mx-auto my-1 rounded-md bg-background/80 px-2 py-0.5 text-[11px] text-muted-foreground shadow-sm">{day(m.at)}</span>}
                 <div className={cn("max-w-[80%] rounded-lg px-2.5 py-1.5 shadow-sm", mine ? "self-end bg-[#d9fdd3] text-black dark:bg-[#005c4b] dark:text-white" : "self-start bg-white text-black dark:bg-[#202c33] dark:text-white")}>
                   {m.media && <p className="flex items-center gap-1 text-xs opacity-70"><ImageIcon aria-hidden className="size-3.5" />Media</p>}
-                  {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
-                  <p className="mt-0.5 flex items-center justify-end gap-1 text-[10px] opacity-60">{time(m.at)}{mine && <CheckCheck aria-hidden className="size-3 text-sky-500" />}</p>
+                  {m.text ? <p className="whitespace-pre-wrap break-words">{m.text}</p> : !m.media && <p className="text-xs italic opacity-70">Message without text</p>}
+                  <p className="mt-0.5 flex items-center justify-end gap-1 text-[10px] opacity-60">{time(m.at, Boolean(data.hour12))}{mine && <CheckCheck aria-hidden className="size-3 text-sky-500" />}</p>
                 </div>
               </li>);
           })}

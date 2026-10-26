@@ -12,10 +12,10 @@ import { Knowledge } from "./knowledge";
 import { Plugins } from "./plugins";
 import { Routines } from "./routines";
 import { Snapshots } from "./snapshots";
-import { isStudioTab, studioTabs } from "./studio-tabs";
+import { isRailTab, isStudioTab, studioTabs } from "./studio-tabs";
 import { Workflows } from "./workflows";
 
-const tabs = studioTabs.map((t) => t.label);
+const tabs = studioTabs.filter((t) => !isRailTab(t.slug)).map((t) => t.label);
 type Tab = (typeof studioTabs)[number]["label"];
 const ICON: Record<Tab, LucideIcon> = { Routines: CalendarClock, Attention: Inbox, Knowledge: BookOpen, Workflows: GitBranch, Decisions: Route, Accounts: KeyRound, Computer: MonitorSmartphone, Plugins: Plug, "Team snapshots": Users, Activity: ActivityIcon };
 const BLURB: Record<Tab, string> = { Plugins: "Connect tools and MCP servers, then choose which bots may use them.", Routines: "Schedule bots to work for you.", Attention: "Things that need a human decision.", Knowledge: "What your bots remember, reusable instructions and sources.", Workflows: "Chain steps across bots and sources.", Decisions: "How messages are routed.", Accounts: "Engines and provider keys.", Computer: "Browser and desktop sessions.", "Team snapshots": "Read-only copies shared with your team.", Activity: "A privacy-safe trail of what happened." };
@@ -43,7 +43,7 @@ export function StudioPage() {
           <h1 className="sr-only md:hidden">Studio</h1>
           <div role="tablist" aria-label="Studio" aria-orientation="vertical" className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:flex-col md:overflow-visible md:px-0 md:pb-0">
             {tabs.map((t, i) => { const Icon = ICON[t]; const active = t === tab; return (
-              <button key={t} ref={(el) => { tabRefs.current[i] = el; }} role="tab" id={`tab-${i}`} aria-selected={active} aria-controls="studio-panel" tabIndex={active ? 0 : -1} onKeyDown={(e) => onKey(e, i)} onClick={() => select(t)}
+              <button key={t} ref={(el) => { tabRefs.current[i] = el; }} role="tab" id={`tab-${i}`} aria-selected={active} aria-controls="studio-panel" tabIndex={active || (i === 0 && !tabs.includes(tab)) ? 0 : -1} onKeyDown={(e) => onKey(e, i)} onClick={() => select(t)}
                 className={`relative flex shrink-0 touch-manipulation items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${active ? "bg-accent font-medium text-accent-foreground md:before:absolute md:before:inset-y-2 md:before:-left-px md:before:w-0.5 md:before:rounded-full md:before:bg-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon aria-hidden="true" className={`size-4 ${active ? "text-primary" : ""}`} />{t}</button>); })}
           </div>
         </nav>
@@ -53,7 +53,7 @@ export function StudioPage() {
             <div className="min-w-0"><h2 className="text-2xl font-semibold tracking-tight text-balance">{tab}</h2><p className="text-sm text-pretty text-muted-foreground">{BLURB[tab]}</p></div>
           </header>
           {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
-          <div id="studio-panel" role="tabpanel" aria-labelledby={`tab-${tabs.indexOf(tab)}`} className="min-w-0">
+          <div id="studio-panel" role="tabpanel" aria-labelledby={tabs.includes(tab) ? `tab-${tabs.indexOf(tab)}` : undefined} aria-label={tabs.includes(tab) ? undefined : tab} className="min-w-0">
             {tab === "Routines" && <Routines bots={bots} onError={setError} />}
             {tab === "Attention" && <Attention bots={bots} onError={setError} />}
             {tab === "Knowledge" && <Knowledge onError={setError} />}

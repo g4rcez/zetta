@@ -1,38 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { CATALOG, catalogStdio } from "./catalog";
 import { getPlugin, PluginError, registerPlugin, type PluginDef } from "./registry";
-import { createPlugins, NATIVE_URL_PREFIX, type McpCore } from "./service";
-
-type Actor = { userId: string };
-const actor = (userId: string) => ({ userId }) as never;
-
-/** In-memory stand-ins for the MCP service (rows + bindings) and the sealed connection store, enforcing per-user isolation like the real ones. */
-function world() {
-  let n = 0;
-  const servers: { id: string; owner: string; name: string; url: string | null; connectionId: string | null }[] = [];
-  const bindings: { botId: string; owner: string; serverId: string }[] = [];
-  const secrets = new Map<string, { owner: string; secret: string; revoked: boolean; revision: number }>();
-  const connections = {
-    configured: () => true,
-    create: async (a: Actor, v: { secret: string }) => { const id = `c${++n}`; secrets.set(id, { owner: a.userId, secret: v.secret, revoked: false, revision: 1 }); return { id }; },
-    list: async (a: Actor) => [...secrets].filter(([, s]) => s.owner === a.userId).map(([id, s]) => ({ id, revision: s.revision })),
-    revoke: async (a: Actor, id: string) => { const s = secrets.get(id); if (!s || s.owner !== a.userId) throw new Error("nf"); s.revoked = true; },
-    secretFor: async (a: Actor, id: string) => { const s = secrets.get(id); if (!s || s.owner !== a.userId || s.revoked) throw new Error("nf"); return Buffer.from(s.secret); },
-  };
-  const own = (a: Actor, id: string) => { const s = servers.find((x) => x.id === id && x.owner === a.userId); if (!s) throw new Error("NOT_FOUND"); return s; };
-  const mcp: McpCore = {
-    addServer: async (a, v) => { const s = { id: `s${++n}`, owner: a.userId, name: v.name, url: v.url ?? null, connectionId: v.connectionId ?? null }; servers.push(s); return s; },
-    addNative: async (a, id, connectionId) => { const s = { id: `s${++n}`, owner: a.userId, name: id, url: `${NATIVE_URL_PREFIX}${id}`, connectionId: connectionId ?? null }; servers.push(s); return s; },
-    serverByName: async (a, name) => servers.find((x) => x.owner === a.userId && x.name === name),
-    setConnection: async (a, id, c) => { own(a, id).connectionId = c; },
-    removeServer: async (a, id) => { own(a, id); servers.splice(servers.findIndex((x) => x.id === id), 1); },
-    bind: async (a, botId, serverId) => { own(a, serverId); bindings.push({ botId, owner: a.userId, serverId }); },
-    unbind: async (a, botId, serverId) => { const i = bindings.findIndex((b) => b.botId === botId && b.owner === a.userId && b.serverId === serverId); if (i >= 0) bindings.splice(i, 1); },
-    bound: async (a, botId) => bindings.filter((b) => b.botId === botId && b.owner === a.userId).map((b) => ({ id: b.serverId, name: servers.find((s) => s.id === b.serverId)!.name })),
-    tools: async () => [{ name: "ping", description: "pong" }],
-  };
-  return { plugins: createPlugins({} as never, connections as never, () => mcp), secrets, servers };
-}
+import { actor, world } from "./test-world";
 
 /** Worked example: a native plugin with an api-key field, one tool, a status check and install validation. Copy this shape. */
 const seen: string[] = [];
@@ -88,6 +57,19 @@ describe("plugin service", () => {
     expect(prompt).toContain("zetta:plugin"); expect(prompt).toContain("echo"); expect(prompt).not.toContain("secret-ab");
     await plugins.setBinding(a, "bot1", "fake-notes", false);
     expect(await plugins.promptFor(a, "bot1")).toBe("");
+  });
+
+  test("configure replaces settings in the sealed config; blank keeps the stored value; other users are untouched", async () => {
+    const { plugins } = world(); const a = actor("u1"), b = actor("u2");
+    await plugins.install(a, "fake-notes", { apiKey: "alice-old-AA" }); await plugins.setBinding(a, "bot1", "fake-notes", true);
+    await plugins.install(b, "fake-notes", { apiKey: "bob-key-BB" }); await plugins.setBinding(b, "bot2", "fake-notes", true);
+    await plugins.callTool(a, "bot1", "fake-notes", "echo", { text: "keep-me" });
+    await expect(plugins.configure(a, "fake-notes", { nope: "x" })).rejects.toMatchObject({ code: "INVALID_FIELD" });
+    expect(await plugins.configure(a, "fake-notes", { apiKey: "" })).toEqual({ id: "fake-notes", changed: false });
+    expect(await plugins.configure(a, "fake-notes", { apiKey: "alice-new-CC", workspace: "w1" })).toEqual({ id: "fake-notes", changed: true });
+    expect(JSON.parse(await plugins.callTool(a, "bot1", "fake-notes", "echo", { text: "x" })).key).toBe("…CC");
+    expect(JSON.parse(await plugins.callTool(b, "bot2", "fake-notes", "echo", { text: "x" })).key).toBe("…BB");
+    await expect(plugins.configure(b, "linear", { token: "x" })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   test("users never see or use each other's plugins, bindings or secrets", async () => {

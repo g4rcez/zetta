@@ -21,13 +21,18 @@ Platform notes: process trees are killed with a process group on POSIX and `task
 docker build -t zetta-desktop:latest docker/desktop
 ```
 
-Each VM is one container: Debian, Xvfb, Openbox, Chromium and [cua-spacesd](https://github.com/trycua/cua/tree/main/libs/cua-spacesd).
+Each VM is one container: Debian, Xvfb, Openbox, Chromium, x11vnc and [cua-spacesd](https://github.com/trycua/cua/tree/main/libs/cua-spacesd).
 
 - **Persistence.** The `zetta-vm-<id>` container and the volume of the same name, mounted at `/home/agent`, persist. Chromium sign-ins survive the 15-minute idle stop. Deleting a VM in Studio > Computer destroys both.
 - **Control channel.**
   - The server drives the desktop through spacesd's MCP endpoint, published on `127.0.0.1` only.
   - Each start uses a fresh bearer token, written to a 0644 file inside a 0700 directory under `ZETTA_VM_TOKEN_ROOT` (default `.zetta-vm/`) and mounted read-only.
-  - The browser never sees the token: the web app gets screenshots and sends clicks through `/api/computer/vms/:id/*`.
+  - The browser never sees the token.
+- **Screen (VNC).**
+  - x11vnc serves the same X display on port 5900, also published on `127.0.0.1` only, with a fresh 8-character password per start (the `vncpass` file next to the token).
+  - The web app (noVNC) asks for a one-time, 30-second ticket (`POST /api/computer/vms/:id/vnc-ticket`) and opens the WebSocket `/api/computer/vms/:id/vnc?ticket=…`; the Origin must be a trusted one.
+  - The server answers x11vnc's password challenge itself and offers the browser "no authentication", so the password never reaches it. People and bots share one screen, mouse and keyboard.
+  - A connected viewer keeps its VM from the idle stop.
 - **Who gets which VM.**
   - Every user has a default VM, created on first use.
   - A bot can propose an extra one (`zetta:create_vm`), and it exists only after the user approves it.

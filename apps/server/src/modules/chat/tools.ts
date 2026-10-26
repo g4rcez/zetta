@@ -9,6 +9,7 @@ import { z } from "zod";
  *   ```zetta:create_bot / create_routine / create_workflow / create_vm  -> proposals shown as a creation summary; nothing exists until the user approves
  *   ```zetta:browser     {"action": "open", "url": "https://..."} | click_text | type | key | read
  *   ```zetta:handoff     {"reason": "I need you to sign in"}                 -> attention item; the human takes over
+ *   ```zetta:credential  {"ref": "1password:<item>", "field": "password"}    -> Zetta types a shared login into the focused input (value never shown to the bot)
  *   ```zetta:ui          JSON-patch lines building a view from @zetta/render's catalog -> not a tool: it stays in the reply and the web chat draws it
  */
 export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks in your reply (the block name follows the opening backticks):
@@ -29,14 +30,14 @@ const BROWSER_TOOLS = `
 Computer use is enabled for you. It runs in the current user's own isolated session, never anyone else's.
 \`\`\`zetta:browser
 {"action":"open","url":"https://example.com"}
-\`\`\`   (actions: open{url}, click_text{text}, type{text}, key{key}, read. Every action returns the new url and the page text, so you do not need a separate read after it. Only public web addresses open. At most 12 computer actions per turn: plan them, and read the result before the next step. Never type passwords.)
+\`\`\`   (actions: open{url}, click_text{text}, type{text}, key{key}, read. Every action returns the new url and the page text, so you do not need a separate read after it. Only public web addresses open. At most 12 computer actions per turn: plan them, and read the result before the next step. Never type passwords or codes yourself: when the user shared a login with you through a password manager, use zetta:credential; otherwise hand off.)
 \`\`\`zetta:handoff
 {"reason":"why a person must take over (sign-in, CAPTCHA, payment, anything sensitive)"}
 \`\`\`   (the user gets a Take over button in the chat; stop and wait after a handoff)`;
 const DESKTOP_TOOLS = `
 \`\`\`zetta:desktop
 {"action":"navigate","url":"https://example.com"}
-\`\`\`   (the user's own persistent Linux computer with Chromium open; sites the user signed in to stay signed in. actions: navigate{url}, click{x,y}, type{text}, key{key, e.g. "Return" or "ctrl+l"}, scroll{direction: up|down|left|right}, launch{app}, read -> text description of the screen. Use read before clicking by coordinates. Add "vm":"<id>" to use one of the user's other computers instead of the default. The user can watch and click along from the chat. Shares the 12 action budget. If a site needs a sign-in, use zetta:handoff.)
+\`\`\`   (the user's own persistent Linux computer with Chromium open; sites the user signed in to stay signed in. actions: navigate{url}, click{x,y}, type{text}, key{key, e.g. "Return" or "ctrl+l"}, scroll{direction: up|down|left|right}, launch{app}, read -> text description of the screen. Use read before clicking by coordinates. Add "vm":"<id>" to use one of the user's other computers instead of the default. The user can watch and click along from the chat. Shares the 12 action budget. If a site needs a sign-in, use zetta:credential with "target":"desktop" when the user shared a login for it, otherwise zetta:handoff.)
 \`\`\`zetta:create_vm
 {"name":"Banking","purpose":"why a separate computer is needed"}
 \`\`\`   (only a proposal: asks the user for another computer, e.g. to keep a second account signed in. Use the default computer unless a separate one is really needed.)`;
@@ -81,6 +82,7 @@ export const toolSchemas = {
     z.strictObject({ action: z.literal("navigate"), url: z.string().url().max(2000), vm }),
   ]),
   create_vm: z.strictObject({ name: z.string().trim().regex(/^[\p{L}\p{N} ._-]{1,60}$/u), purpose: bounded(300) }),
+  credential: z.strictObject({ ref: z.string().regex(/^[a-z0-9_-]{1,32}:[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/), field: z.enum(["username", "password", "totp"]), target: z.enum(["browser", "desktop"]).default("browser"), vm }),
   plugin: z.strictObject({ plugin: z.string().regex(/^[a-z0-9_-]{1,32}$/), tool: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/), args: z.record(z.string(), z.unknown()).default({}) }),
   mcp: z.strictObject({ server: z.string().regex(/^[a-z0-9_-]{1,32}$/), tool: bounded(100), args: z.record(z.string(), z.unknown()).default({}) }),
   create_bot: z.strictObject({ name: bounded(80), description: z.string().max(2048).optional(), harness: z.enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "fixture"]).optional(), model: z.string().max(128).nullable().optional(), personality: z.string().max(4096).optional(), instructions: z.string().max(16384).optional(), visibility: z.enum(["private", "team"]).optional() }),
@@ -92,7 +94,7 @@ export type ToolCall = { [K in keyof typeof toolSchemas]: { kind: K; args: z.inf
 /** Extracts valid tool calls (max 8) and returns the reply with the blocks removed. Invalid blocks are dropped silently. */
 export function parseTools(reply: string): { calls: ToolCall[]; text: string } {
   const calls: ToolCall[] = [];
-  const text = reply.replace(/```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop)\s*\n([\s\S]*?)```/g, (_, kind: keyof typeof toolSchemas, body: string) => {
+  const text = reply.replace(/```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential)\s*\n([\s\S]*?)```/g, (_, kind: keyof typeof toolSchemas, body: string) => {
     if (calls.length < 8) {
       try { const parsed = toolSchemas[kind].safeParse(JSON.parse(body)); if (parsed.success) calls.push({ kind, args: parsed.data } as ToolCall); } catch { /* malformed JSON is ignored */ }
     }
@@ -101,17 +103,35 @@ export function parseTools(reply: string): { calls: ToolCall[]; text: string } {
   return { calls, text };
 }
 
+export type WhatsappBody = { kind: "chats"; hour12: boolean; chats: { id: string; name: string; last: string; fromMe: boolean }[] }
+  | { kind: "messages"; hour12: boolean; name: string; chat: string; messages: { at: number; from: string; text: string; media: boolean }[] };
+
 /**
- * A trusted ```zetta:whatsapp block built by the server (never by the model) from a WhatsApp read tool's own output, so the chat can
- * draw it like WhatsApp. The plugin already sanitised the text; we only keep the fields the view needs. Anything unexpected returns "".
+ * Data for a trusted ```zetta:whatsapp block built by the server (never by the model) from a WhatsApp read tool's own output, so the chat
+ * can draw it like WhatsApp. The plugin already sanitised the text; we only keep the fields the view needs. Anything unexpected is undefined.
  */
-export function whatsappView(plugin: string, tool: string, out: string): string {
-  if (plugin !== "whatsapp" || (tool !== "list_chats" && tool !== "read_messages")) return "";
+export function whatsappView(plugin: string, tool: string, out: string): WhatsappBody | undefined {
+  if (plugin !== "whatsapp" || (tool !== "list_chats" && tool !== "read_messages")) return undefined;
   try {
-    const d = JSON.parse(out) as { chat?: unknown; chats?: { id?: unknown; name?: unknown; lastMessage?: unknown; lastFromMe?: unknown }[]; messages?: { at?: unknown; from?: unknown; text?: unknown; media?: unknown }[] };
-    const body = tool === "list_chats"
-      ? { kind: "chats", chats: (d.chats ?? []).slice(0, 20).map((c) => ({ id: String(c.id ?? ""), name: String(c.name ?? ""), last: String(c.lastMessage ?? ""), fromMe: Boolean(c.lastFromMe) })) }
-      : { kind: "messages", chat: String(d.chat ?? ""), messages: (d.messages ?? []).slice(0, 20).map((m) => ({ at: Number(m.at) || 0, from: String(m.from ?? ""), text: String(m.text ?? ""), media: Boolean(m.media) })) };
-    return `\`\`\`zetta:whatsapp\n${JSON.stringify(body).replace(/`/g, "'")}\n\`\`\``;
-  } catch { return ""; }
+    const d = JSON.parse(out) as { timeFormat?: unknown; name?: unknown; chat?: unknown; chats?: { id?: unknown; name?: unknown; lastMessage?: unknown; lastFromMe?: unknown }[]; messages?: { at?: unknown; from?: unknown; text?: unknown; media?: unknown }[] };
+    const hour12 = d.timeFormat === "12h";
+    return tool === "list_chats"
+      ? { kind: "chats", hour12, chats: (d.chats ?? []).slice(0, 20).map((c) => ({ id: String(c.id ?? ""), name: String(c.name ?? ""), last: String(c.lastMessage ?? ""), fromMe: Boolean(c.lastFromMe) })) }
+      : { kind: "messages", hour12, name: String(d.name ?? ""), chat: String(d.chat ?? ""), messages: (d.messages ?? []).slice(0, 20).map((m) => ({ at: Number(m.at) || 0, from: String(m.from ?? ""), text: String(m.text ?? ""), media: Boolean(m.media) })) };
+  } catch { return undefined; }
+}
+
+/** One card per conversation: repeated reads of the same chat (the bot often calls read_messages several times) are merged, de-duplicated and time-ordered. */
+export function whatsappBlocks(views: WhatsappBody[]): string[] {
+  const merged = new Map<string, WhatsappBody>();
+  for (const v of views) {
+    const key = v.kind === "chats" ? "chats" : `chat:${v.chat}`, prev = merged.get(key);
+    if (!prev) { merged.set(key, structuredClone(v)); continue; }
+    if (prev.kind === "messages" && v.kind === "messages") {
+      const seen = new Set(prev.messages.map((m) => `${m.at}|${m.from}|${m.text}|${m.media}`));
+      for (const m of v.messages) if (!seen.has(`${m.at}|${m.from}|${m.text}|${m.media}`)) prev.messages.push(m);
+      prev.messages.sort((a, b) => a.at - b.at); prev.name ||= v.name;
+    } else if (prev.kind === "chats" && v.kind === "chats") merged.set(key, structuredClone(v)); // newest list wins
+  }
+  return [...merged.values()].map((b) => `\`\`\`zetta:whatsapp\n${JSON.stringify(b).replace(/`/g, "'")}\n\`\`\``);
 }

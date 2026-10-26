@@ -66,6 +66,8 @@ export const conversation = pgTable(
     ownerUserId: text("owner_user_id").notNull().references(() => user.id, restrict),
     botId: uuid("bot_id").notNull().references(() => bot.id, restrict),
     title: text("title").default("New chat").notNull(),
+    pinned: boolean("pinned").default(false).notNull(),
+    favorite: boolean("favorite").default(false).notNull(),
     /** Frozen memory prompt block per bot, captured at the first turn so the prefix stays stable for the whole conversation. */
     memorySnapshot: jsonb("memory_snapshot").$type<Record<string, { user: { id: string; content: string }[]; memory: { id: string; content: string }[] }>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

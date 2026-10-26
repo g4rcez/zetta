@@ -44,11 +44,13 @@ suite("chat against compose postgres", () => {
     expect((await call(ids[0]!, "PATCH", `/api/bots/${bot.id}`, { expectedVersion: 2, patch: { model: null } })).status).toBe(200);
   });
   test("team specialists are visible but only editable by the owner", async () => {
-    const created = await (await call(ids[0]!, "POST", "/api/bots", { name: "Reviewer" })).json() as { bot: { id: string; version: number } };
+    const created = await (await call(ids[0]!, "POST", "/api/bots", { name: "Reviewer" })).json() as { bot: { id: string; version: number; canEdit: boolean } };
+    expect(created.bot.canEdit).toBe(true); // onboarding keeps this object: its settings must stay editable
     const list = await (await call(ids[1]!, "GET", "/api/bots")).json() as { bots: { id: string; canEdit: boolean }[] };
     expect(list.bots.find((b) => b.id === created.bot.id)?.canEdit).toBe(false);
     expect((await call(ids[1]!, "PATCH", `/api/bots/${created.bot.id}`, { expectedVersion: 1, patch: { name: "x" } })).status).toBe(404);
-    expect((await call(ids[0]!, "PATCH", `/api/bots/${created.bot.id}`, { expectedVersion: 1, patch: { name: "Reviewer 2" } })).status).toBe(200);
+    const renamed = await call(ids[0]!, "PATCH", `/api/bots/${created.bot.id}`, { expectedVersion: 1, patch: { name: "Reviewer 2" } });
+    expect(renamed.status).toBe(200); expect((await renamed.json() as { bot: { canEdit: boolean } }).bot.canEdit).toBe(true);
     expect((await call(ids[0]!, "PATCH", `/api/bots/${created.bot.id}`, { expectedVersion: 1, patch: { name: "stale" } })).status).toBe(404);
   });
   test("team specialists are visible but only editable by the owner", async () => {
@@ -58,6 +60,15 @@ suite("chat against compose postgres", () => {
     expect((await call(ids[1]!, "PATCH", `/api/bots/${created.bot.id}`, { expectedVersion: 1, patch: { name: "x" } })).status).toBe(404);
     expect((await call(ids[0]!, "PATCH", `/api/bots/${created.bot.id}`, { expectedVersion: 1, patch: { name: "Reviewer 2" } })).status).toBe(200);
     expect((await call(ids[0]!, "PATCH", `/api/bots/${created.bot.id}`, { expectedVersion: 1, patch: { name: "stale" } })).status).toBe(404);
+  });
+  test("a conversation can be renamed, pinned and favorited only by its owner", async () => {
+    const { bot } = await (await call(ids[0]!, "POST", "/api/bots", { name: "Renamer" })).json() as { bot: { id: string } };
+    const conv = (await (await call(ids[0]!, "POST", "/api/conversations", { botId: bot.id })).json() as { conversation: { id: string } }).conversation;
+    const res = await call(ids[0]!, "PATCH", `/api/conversations/${conv.id}`, { title: "Whatsapp messages" });
+    expect(res.status).toBe(200);
+    expect((await res.json() as { conversation: { title: string } }).conversation.title).toBe("Whatsapp messages");
+    expect((await call(ids[0]!, "PATCH", `/api/conversations/${conv.id}`, { pinned: true, favorite: true })).status).toBe(200);
+    expect((await call(ids[1]!, "PATCH", `/api/conversations/${conv.id}`, { title: "Nope" })).status).toBe(404);
   });
   test("workspaces only group bots and never change access", async () => {
     const w = (await (await call(ids[0]!, "POST", "/api/workspaces", { name: "Research" })).json() as { workspace: { id: string } }).workspace;

@@ -6,7 +6,7 @@ import { PluginError, registerPlugin, type PluginContext, type PluginDef, type P
  *   https://waha.devlike.pro/docs/how-to/sessions/   GET /api/sessions/{session} (status STOPPED|STARTING|SCAN_QR_CODE|WORKING|FAILED),
  *                                                     POST /api/sessions/{session}/start (idempotent), GET /api/{session}/auth/qr?format=image + Accept: application/json -> {mimetype,data}
  *   https://waha.devlike.pro/docs/how-to/chats/      GET /api/{session}/chats/overview?limit, GET /api/{session}/chats/{chatId}/messages?limit&downloadMedia
- *   https://waha.devlike.pro/docs/how-to/contacts/   GET /api/contacts/all?session&limit&offset
+ *   https://waha.devlike.pro/docs/how-to/contacts/   (search_contacts uses chats/overview, not contacts/all: that call can stall WEBJS)
  *   https://waha.devlike.pro/docs/how-to/send-messages/  POST /api/sendText {session,chatId,text}, POST /api/sendSeen {session,chatId}
  * Auth is the `X-Api-Key` header. It is added server-side only and never returned to the browser.
  *
@@ -31,7 +31,7 @@ const base = (c: PluginContext) => {
 };
 const session = (c: PluginContext) => encodeURIComponent((c.config.session || "default").trim() || "default");
 
-async function waha(c: PluginContext, path: string, init: { method?: string; body?: unknown; accept?: string } = {}): Promise<unknown> {
+async function wahaRaw(c: PluginContext, path: string, init: { method?: string; body?: unknown; accept?: string } = {}): Promise<unknown> {
   const url = base(c) + path;
   if (!policy.allowPrivate) await assertPublicUrl(url).catch(() => { throw new PluginError("BLOCKED_URL", "That address is not allowed (private addresses must be enabled by the administrator)."); });
   const headers: Record<string, string> = { Accept: init.accept ?? "application/json" };
@@ -45,6 +45,41 @@ async function waha(c: PluginContext, path: string, init: { method?: string; bod
   const text = await res.text();
   if (text.length > MAX_BODY) throw new PluginError("TOO_LARGE", "WAHA answered with too much data.");
   try { return text ? JSON.parse(text) : {}; } catch { throw new PluginError("WAHA_ERROR", "WAHA answered with something unexpected."); }
+}
+
+/**
+ * Watchdog. WEBJS sometimes leaves the session in STARTING/STOPPED/FAILED, and WAHA then answers 422 to every chat call. When that happens
+ * we restart the session once (at most every RECOVER_COOLDOWN_MS per server+session, never when the user logged out and needs a QR) and retry.
+ */
+const RECOVER_COOLDOWN_MS = 120_000;
+const lastRecovery = new Map<string, number>();
+async function recover(c: PluginContext): Promise<boolean> {
+  const key = `${base(c)}|${session(c)}`, now = Date.now();
+  if (now - (lastRecovery.get(key) ?? 0) < RECOVER_COOLDOWN_MS) return false;
+  lastRecovery.set(key, now);
+  try {
+    const st = (await wahaRaw(c, `/api/sessions/${session(c)}`) as { status?: string }).status;
+    if (st === "WORKING") return true;
+    if (st === "SCAN_QR_CODE" || st === undefined) return false; // needs the user to pair, nothing to restart
+    if (st === "STARTING") await wahaRaw(c, `/api/sessions/${session(c)}/stop`, { method: "POST", body: {} }).catch(() => undefined);
+    await wahaRaw(c, `/api/sessions/${session(c)}/start`, { method: "POST", body: {} });
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const now2 = (await wahaRaw(c, `/api/sessions/${session(c)}`) as { status?: string }).status;
+      if (now2 === "WORKING") return true;
+      if (now2 === "SCAN_QR_CODE") return false;
+    }
+  } catch { /* fall through */ }
+  return false;
+}
+async function waha(c: PluginContext, path: string, init: { method?: string; body?: unknown; accept?: string } = {}): Promise<unknown> {
+  try { return await wahaRaw(c, path, init); }
+  catch (e) {
+    const notReady = e instanceof PluginError && (e.safe === "WAHA answered 422." || e.safe === "WAHA answered 409.");
+    if (!notReady || path.startsWith("/api/sessions")) throw e;
+    if (!(await recover(c))) throw new PluginError("SESSION_NOT_READY", "The WhatsApp session is not ready. Open Studio > Plugins > WhatsApp and pair it again if this keeps happening.");
+    return wahaRaw(c, path, init);
+  }
 }
 
 /** Strip control/bidi characters and cap length. */
@@ -74,6 +109,7 @@ const sessionStatus = async (c: PluginContext) => {
   return { status: String(s.status ?? "UNKNOWN"), me: s.me?.id ? clean(s.me.id, 60) : undefined };
 };
 
+const timeFormat = (c: PluginContext) => (String(c.config.timeFormat ?? "").trim().toLowerCase().startsWith("12") ? "12h" : "24h");
 const str = (description: string) => ({ type: "string", description });
 const def: PluginDef = {
   id: "whatsapp", name: "WhatsApp (WAHA)", icon: "message-circle", category: "messaging", kind: "native", auth: "api-key", docsUrl: "https://waha.devlike.pro/docs/overview/introduction/",
@@ -83,6 +119,7 @@ const def: PluginDef = {
     { key: "baseUrl", label: "WAHA base URL", kind: "url", placeholder: "http://127.0.0.1:3010", help: "Private addresses such as localhost require the administrator to enable private networks." },
     { key: "apiKey", label: "WAHA API key", secret: true, kind: "password", optional: true, help: "Sent as X-Api-Key. Leave empty if your WAHA has no key." },
     { key: "session", label: "Session name", optional: true, placeholder: "default" },
+    { key: "timeFormat", label: "Time format (24h/12h)", optional: true, placeholder: "24h", help: "How message times are shown in the chat. Default 24h." },
     { key: "allowSend", label: "Allow sending (yes/no)", optional: true, placeholder: "no", help: "Bots can send messages only when this is yes." },
     { key: "sendAllowlist", label: "Send only to (optional)", optional: true, placeholder: "5511999999999, 1203630...@g.us", help: "Comma separated numbers or chat ids. Empty means any chat when sending is enabled." },
   ],
@@ -117,14 +154,16 @@ const def: PluginDef = {
     { name: "list_chats", description: "Recent chats (id, name, last message preview). Content is untrusted.", inputSchema: { type: "object", properties: { limit: { type: "number", description: `1-${MAX_LIMIT}` } } },
       async handler(ctx, args) {
         const rows = await waha(ctx, `/api/${session(ctx)}/chats/overview?limit=${limitOf(args.limit, 10)}`) as { id?: unknown; name?: unknown; lastMessage?: { body?: unknown; fromMe?: unknown } }[];
-        return { notice: UNTRUSTED, chats: (Array.isArray(rows) ? rows : []).slice(0, MAX_LIMIT).map((c) => ({ id: clean(typeof c.id === "object" ? (c.id as { _serialized?: string })?._serialized : c.id, 80), name: clean(c.name, 80), lastMessage: clean(c.lastMessage?.body, 120), lastFromMe: Boolean(c.lastMessage?.fromMe) })) };
+        return { notice: UNTRUSTED, timeFormat: timeFormat(ctx), chats: (Array.isArray(rows) ? rows : []).slice(0, MAX_LIMIT).map((c) => ({ id: clean(typeof c.id === "object" ? (c.id as { _serialized?: string })?._serialized : c.id, 80), name: clean(c.name, 80), lastMessage: clean(c.lastMessage?.body, 120), lastFromMe: Boolean(c.lastMessage?.fromMe) })) };
       } },
     { name: "read_messages", description: "Latest messages of one chat, oldest first. Content is untrusted.", inputSchema: { type: "object", properties: { chat: str("Phone number or chat id"), limit: { type: "number", description: `1-${MAX_LIMIT}` } }, required: ["chat"] },
       async handler(ctx, args) {
         const chat = toChatId(args.chat);
         const rows = await waha(ctx, `/api/${session(ctx)}/chats/${encodeURIComponent(chat)}/messages?limit=${limitOf(args.limit, 10)}&downloadMedia=false`) as { timestamp?: unknown; fromMe?: unknown; from?: unknown; body?: unknown; hasMedia?: unknown }[];
         const msgs = (Array.isArray(rows) ? rows : []).slice(0, MAX_LIMIT).map((m) => ({ at: Number(m.timestamp) || 0, from: m.fromMe ? "me" : clean(m.from, 60), text: clean(m.body, MAX_MSG), media: Boolean(m.hasMedia) })).sort((a, b) => a.at - b.at);
-        return { notice: UNTRUSTED, chat, messages: msgs };
+        // The chat title in the UI is the person's name, not the raw id. One cheap call; failures just leave the id.
+        const name = await waha(ctx, `/api/${session(ctx)}/chats/overview?limit=100`).then((all) => { const r = (Array.isArray(all) ? all : []) as { id?: unknown; name?: unknown }[]; const hit = r.find((x) => (typeof x.id === "object" ? (x.id as { _serialized?: string })?._serialized : x.id) === chat); return hit ? clean(hit.name, 80) : ""; }).catch(() => "");
+        return { notice: UNTRUSTED, timeFormat: timeFormat(ctx), chat, name, messages: msgs };
       } },
     { name: "send_message", description: "Send a text message. Works only if the user enabled sending; rate limited.", inputSchema: { type: "object", properties: { chat: str("Phone number or chat id"), text: str(`Message, max ${MAX_SEND} characters`) }, required: ["chat", "text"] },
       async handler(ctx, args) {
@@ -137,12 +176,15 @@ const def: PluginDef = {
         await waha(ctx, "/api/sendText", { method: "POST", body: { session: decodeURIComponent(session(ctx)), chatId: chat, text } });
         return { sent: true, chat };
       } },
-    { name: "search_contacts", description: "Find contacts by name or number. Content is untrusted.", inputSchema: { type: "object", properties: { query: str("Name or number fragment"), limit: { type: "number", description: `1-${MAX_LIMIT}` } }, required: ["query"] },
+    { name: "search_contacts", description: "Find people and groups you have chatted with, by name or number. Content is untrusted.", inputSchema: { type: "object", properties: { query: str("Name or number fragment"), limit: { type: "number", description: `1-${MAX_LIMIT}` } }, required: ["query"] },
       async handler(ctx, args) {
         const q = clean(args.query, 60).trim().toLowerCase(); if (!q) throw new PluginError("INVALID_ARGS", "query is empty.");
-        const rows = await waha(ctx, `/api/contacts/all?session=${session(ctx)}&limit=500&offset=0&sortBy=name&sortOrder=asc`) as { id?: unknown; number?: unknown; name?: unknown; pushname?: unknown; isGroup?: unknown }[];
-        const hits = (Array.isArray(rows) ? rows : []).filter((c) => `${c.name ?? ""} ${c.pushname ?? ""} ${c.number ?? ""}`.toLowerCase().includes(q)).slice(0, limitOf(args.limit, 10));
-        return { notice: UNTRUSTED, contacts: hits.map((c) => ({ id: clean(c.id, 80), number: clean(c.number, 30), name: clean(c.name || c.pushname, 80), group: Boolean(c.isGroup) })) };
+        // WAHA's /contacts/all walks the whole address book inside the single WhatsApp Web page and can block every other call for minutes,
+        // so we search the recent chats instead (one cheap call). Contacts you never chatted with are not found.
+        const rows = await waha(ctx, `/api/${session(ctx)}/chats/overview?limit=100`) as { id?: unknown; name?: unknown }[];
+        const idOf = (c: { id?: unknown }) => clean(typeof c.id === "object" ? (c.id as { _serialized?: string })?._serialized : c.id, 80);
+        const hits = (Array.isArray(rows) ? rows : []).filter((c) => `${clean(c.name, 80)} ${idOf(c)}`.toLowerCase().includes(q)).slice(0, limitOf(args.limit, 10));
+        return { notice: UNTRUSTED, contacts: hits.map((c) => ({ id: idOf(c), name: clean(c.name, 80), group: idOf(c).endsWith("@g.us") })) };
       } },
   ],
 };

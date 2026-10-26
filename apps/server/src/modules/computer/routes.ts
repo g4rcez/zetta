@@ -4,6 +4,7 @@ import { AccessError, type createIdentityAccess } from "../identity/access";
 import { ComputerError, type ComputerService } from "./service";
 import type { DesktopService } from "./desktop";
 import type { VmService } from "./vm";
+import { openVncBridge, type VncBridge } from "./vnc";
 
 export type ComputerServices = { access: ReturnType<typeof createIdentityAccess>; computer: ComputerService; desktop?: DesktopService; vms?: VmService };
 const profile = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
@@ -45,6 +46,8 @@ export function createComputerRoutes({ access, computer, desktop, vms }: Compute
   const p = (c: Ctx) => profile.parse(c.params.profile);
   const needVms = () => { if (!vms) throw new ComputerError("UNAVAILABLE"); return vms; };
   const v = (c: Ctx) => vmId.parse(c.params.id);
+  /** Live VNC viewers, by socket: the bridge to the VM opens asynchronously, and bytes the browser sends meanwhile wait in `early`. */
+  const viewers = new Map<object, { bridge?: VncBridge; early: Uint8Array[]; release?: () => void; closed?: boolean }>();
   return new Elysia({ prefix: "/api/computer", normalize: false })
     .get("/sessions", g(async (c) => ({ sessions: computer.list(c.userId) })))
     .post("/sessions", g(async (c) => ({ session: await computer.start(c.userId, profile.parse((c.body as { profile?: string } | null)?.profile ?? "default")) }), 201))
@@ -59,6 +62,35 @@ export function createComputerRoutes({ access, computer, desktop, vms }: Compute
     .post("/vms/:id/stop", g(async (c) => { await needVms().stop(c.userId, v(c)); return { ok: true }; }))
     .delete("/vms/:id", g(async (c) => { await needVms().remove(c.userId, v(c)); return { ok: true }; }))
     .post("/vms/:id/action", g(async (c) => ({ vm: await needVms().act(c.userId, v(c), "user", vmAction.parse(c.body)) })))
+    .post("/vms/:id/vnc-ticket", g(async (c) => ({ ticket: needVms().vncTicket(c.userId, v(c)) })))
+    // The browser's VNC client (noVNC). Browsers send no custom headers on a WebSocket: the one-time ticket from vnc-ticket (an
+    // authenticated, origin-checked POST) is the credential, and the Origin is checked again here against cross-site sockets.
+    .ws("/vms/:id/vnc", {
+      async open(ws) {
+        const state: { bridge?: VncBridge; early: Uint8Array[]; release?: () => void; closed?: boolean } = { early: [] };
+        viewers.set(ws.raw, state);
+        try {
+          const origin = ws.data.headers.origin;
+          if (!origin || !trustedOrigins.includes(origin)) throw new ComputerError("NOT_FOUND");
+          const viewer = needVms().vncViewer(String((ws.data.query as Record<string, unknown>).ticket ?? ""), vmId.parse(ws.data.params.id));
+          state.release = viewer.release;
+          const bridge = await openVncBridge({ port: viewer.port, password: viewer.password, viewer: { send: (b) => { ws.raw.send(b); }, close: (code, reason) => ws.raw.close(code, reason) } });
+          if (state.closed) { bridge.close(); return; }
+          state.bridge = bridge;
+          for (const b of state.early.splice(0)) bridge.fromViewer(b);
+        } catch { state.release?.(); ws.raw.close(4404, "This computer is not running."); }
+      },
+      message(ws, message) {
+        const state = viewers.get(ws.raw);
+        if (!state || !(message instanceof Uint8Array)) return;
+        if (state.bridge) state.bridge.fromViewer(message); else state.early.push(message);
+      },
+      close(ws) {
+        const state = viewers.get(ws.raw); viewers.delete(ws.raw);
+        if (!state) return;
+        state.closed = true; state.bridge?.close(); state.release?.();
+      },
+    })
     .get("/vms/:id/screenshot", g(async (c) => ({ png: await needVms().screenshot(c.userId, v(c)) })))
     .get("/vms/:id/text", g(async (c) => ({ text: await needVms().read(c.userId, v(c)) })))
     .post("/vms/:id/takeover", g(async (c) => { const b = z.strictObject({ human: z.boolean(), expected: z.enum(["agent", "human"]).optional() }).parse(c.body); return { vm: needVms().takeover(c.userId, v(c), b.human, b.expected) }; }))

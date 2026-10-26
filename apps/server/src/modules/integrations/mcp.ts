@@ -15,6 +15,8 @@ import { catalogStdio } from "./plugins/catalog";
 import { configureWhatsapp } from "./plugins/whatsapp"; // importing registers the plugin
 import "./plugins/google"; // importing registers the plugin
 import "./plugins/telegram"; // importing registers the plugin
+import "./plugins/reddit"; // importing registers the plugin
+import { configureVault } from "./plugins/vault"; // importing registers 1Password and Bitwarden
 import { createPlugins, NATIVE_URL_PREFIX, type McpCore } from "./plugins/service";
 
 export class McpError extends Error { constructor(readonly code: "STDIO_NOT_ALLOWED" | "BLOCKED_URL" | "NOT_BOUND" | "TIMEOUT" | "FAILED" | "INVALID") { super(code); } }
@@ -99,6 +101,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
 
   let core!: McpCore;
   configureWhatsapp({ allowPrivate: opts.allowPrivate }); // same private-address policy as MCP servers
+  configureVault({ allowPrivate: Boolean(opts.allowPrivate) }); // 1Password Connect servers follow it too
   const plugins = createPlugins(db, connections, () => core);
   const api = {
     async addServer(a: ActiveActor, v: { name: string; transport: "http" | "stdio"; url?: string; command?: string; args?: string[]; connectionId?: string }) {

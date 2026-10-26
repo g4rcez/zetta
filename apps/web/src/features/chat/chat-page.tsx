@@ -155,7 +155,7 @@ export function ChatPage() {
     <div className={cn("grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] md:grid-cols-[20rem_minmax(0,1fr)]", threadPane && desktop && "lg:grid-cols-[20rem_minmax(0,1fr)_26rem]")}>
       <div className={`${navOpen ? "flex" : "hidden"} min-h-0 md:flex`}>
         <ChatSidebar bots={bots} spaces={spaces} chats={chats} botId={botId} chatId={chatId} onBot={(id) => { toBot(id); setNavOpen(false); }}
-          onChat={openChat} onNewChat={(id) => { toDraft(id); setNavOpen(false); }}
+          onChat={openChat} onUpdateChat={(id, patch) => { const before = chats; setChats((all) => all.map((c) => (c.id === id ? { ...c, ...patch } : c))); chatClient.updateConversation(id, patch).then((row) => setChats((all) => all.map((c) => (c.id === id ? { ...c, ...row } : c))), (e) => { setChats(before); fail(e); }); }} onNewChat={(id) => { toDraft(id); setNavOpen(false); }}
           onNewBot={() => void navigate({ to: "/bots/new" })} onAddSpace={(name, parentId) => void chatClient.createWorkspace(name, parentId).then((w) => setSpaces((s) => [...s, w]), fail)} />
       </div>
       <section className={`${navOpen ? "hidden md:flex" : "flex"} min-h-0 min-w-0 flex-col bg-background`} aria-label={current ? `Channel ${current.name}` : "Chat"}>

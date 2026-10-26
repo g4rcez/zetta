@@ -44,6 +44,7 @@ export function createIntegrationRoutes({ access, mcp, sources }: IntegrationSer
       return { plugin: await mcp.plugins.install(c.actor, v.id, v.config, v.botIds) };
     }, 201))
     .delete("/plugins/:id", g(async (c) => ({ plugin: await mcp.plugins.uninstall(c.actor, pluginId.parse(c.params.id)) })))
+    .put("/plugins/:id/config", g(async (c) => ({ plugin: await mcp.plugins.configure(c.actor, pluginId.parse(c.params.id), z.strictObject({ config: z.record(z.string().max(40), z.string().max(4000)) }).parse(c.body).config) })))
     .post("/plugins/:id/test", g(async (c) => mcp.plugins.test(c.actor, pluginId.parse(c.params.id))))
     .post("/plugins/:id/connect", g(async (c) => mcp.plugins.connect(c.actor, pluginId.parse(c.params.id), z.strictObject({ options: z.record(z.string().max(40), z.unknown()).optional() }).parse(c.body ?? {}).options)))
     .post("/plugins/:id/disconnect", g(async (c) => mcp.plugins.disconnect(c.actor, pluginId.parse(c.params.id))))

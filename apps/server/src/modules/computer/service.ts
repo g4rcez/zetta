@@ -5,7 +5,7 @@ import { mkdir } from "node:fs/promises";
 import { BlockList, isIP } from "node:net";
 import { join } from "node:path";
 import { chmod, rm } from "node:fs/promises";
-import { connectCdp, type PageLike } from "./cdp";
+import { connectCdp, FOCUSED_JS, type FocusedInput, type PageLike } from "./cdp";
 import { chromium, type BrowserContext } from "playwright-core";
 import type { Database } from "@zetta/db";
 import { and, eq } from "@zetta/db/query";
@@ -127,7 +127,7 @@ export function createComputerService({ docker, db, root, allowPrivate = false, 
       });
       const pw = ctx.pages()[0] ?? await ctx.newPage();
       page = { goto: async (u) => { await pw.goto(u, { waitUntil: "domcontentloaded", timeout: 20_000 }); }, click: (x, y) => pw.mouse.click(x, y), type: (t) => pw.keyboard.type(t), press: (k) => pw.keyboard.press(k), wheel: (dy) => pw.mouse.wheel(0, dy),
-        clickText: (t) => pw.getByText(t, { exact: false }).first().click({ timeout: 5_000 }), text: async () => pw.innerText("body").catch(() => ""), hasPassword: async () => (await pw.locator("input[type=password]").count().catch(() => 0)) > 0,
+        clickText: (t) => pw.getByText(t, { exact: false }).first().click({ timeout: 5_000 }), text: async () => pw.innerText("body").catch(() => ""), hasPassword: async () => (await pw.locator("input[type=password]").count().catch(() => 0)) > 0, focused: async () => (await pw.evaluate(FOCUSED_JS).catch(() => null)) as FocusedInput | null,
         screenshot: () => pw.screenshot({ type: "png" }), url: () => pw.url() };
     }
     const session: Session = { container, browserHandle, id: profile, userId, profile, ...(context ? { context } : {}), page, control: "agent", epoch: 0, lastUsed: Date.now(), queue: Promise.resolve() };
@@ -175,6 +175,8 @@ export function createComputerService({ docker, db, root, allowPrivate = false, 
     list: (userId: string) => [...sessions.values()].filter((s) => s.userId === userId).map(info),
     act,
     async screenshot(userId: string, profile: string) { const s = get(userId, profile); return (await s.page.screenshot()).toString("base64"); },
+    /** Where the session is and which input has focus (no values): what a credential fill is checked against. */
+    async focus(userId: string, profile: string) { const s = get(userId, profile); return { url: s.page.url(), focused: await s.page.focused().catch(() => null) }; },
     /** Visible page text, bounded, for feeding a bot. */
     async text(userId: string, profile: string) { const s = get(userId, profile); return (await s.page.text().catch(() => "")).slice(0, 20_000); },
     /** Open a URL and return its text in one step (used by workflows and /browse in chat). */

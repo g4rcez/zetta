@@ -9,12 +9,15 @@ import { and, asc, eq, ne } from "@zetta/db/query";
 import { computerVm } from "@zetta/db/schema/features";
 import { assertPublicUrl, assertWebScheme, ComputerError, type Actor } from "./service";
 import type { McpCall } from "./desktop";
+import { vncPassword } from "./vnc";
 
 /**
  * Persistent Linux desktops ("VMs") for computer use. Each row in computer_vm is one container from docker/desktop (Debian, Xvfb,
  * Openbox, Chromium) running cua-spacesd; the server drives it over spacesd's Streamable-HTTP MCP on a loopback-published port with a
  * bearer token minted for that start. Home is the named volume `zetta-vm-<id>`, so sign-ins survive idle stops; delete destroys it.
  * Every user has one default VM (created on first use); extra VMs exist only after the user approves a bot's create_vm proposal.
+ * People see and control the VM through VNC (x11vnc on 5900, also loopback-published, with a per-start password): the browser gets a
+ * one-time ticket and the server bridges its WebSocket to x11vnc (see vnc.ts), so neither the port nor the password reach the client.
  * Control/takeover is the same as for browser sessions: agent actions are refused while a person holds control, and an epoch
  * invalidates stale agent turns.
  */
@@ -36,7 +39,7 @@ export type VmDocker = { bin: string; image: string; memory: string; cpus: strin
 export type VmExec = (args: string[]) => Promise<{ code: number; stdout: string }>;
 export type VmConnect = (port: number, token: string) => Promise<{ call: McpCall; close: () => Promise<void> }>;
 
-type VSession = { id: string; userId: string; port: number; client: Awaited<ReturnType<VmConnect>>; control: "agent" | "human"; epoch: number; lastUsed: number; queue: Promise<unknown> };
+type VSession = { id: string; userId: string; port: number; vnc: { port: number; password: string }; viewers: number; client: Awaited<ReturnType<VmConnect>>; control: "agent" | "human"; epoch: number; lastUsed: number; queue: Promise<unknown> };
 const SAFE_APP = /^[A-Za-z0-9._ -]{1,60}$/;
 const SAFE_NAME = /^[\p{L}\p{N} ._-]{1,60}$/u;
 const container = (id: string) => `zetta-vm-${id}`;
@@ -46,10 +49,10 @@ export function dockerVmConfig(env: NodeJS.ProcessEnv = process.env): VmDocker |
   if (env.ZETTA_DESKTOP_RUNTIME !== "docker") return undefined;
   return { bin: env.ZETTA_DOCKER_BIN ?? "docker", image: env.ZETTA_VM_IMAGE ?? "zetta-desktop:latest", memory: env.ZETTA_VM_MEMORY ?? "2g", cpus: env.ZETTA_VM_CPUS ?? "2", pids: Number(env.ZETTA_VM_PIDS ?? 1024), shm: env.ZETTA_VM_SHM ?? "1g", runtime: env.ZETTA_VM_RUNTIME || undefined, network: env.ZETTA_VM_NETWORK || undefined };
 }
-export function vmDockerArgs(d: VmDocker, o: { id: string; tokenFile: string }) {
+export function vmDockerArgs(d: VmDocker, o: { id: string; tokenFile: string; vncFile: string }) {
   return ["run", "-d", "--name", container(o.id), "--label", "zetta.vm=1", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit", String(d.pids), "--memory", d.memory, "--cpus", d.cpus, "--shm-size", d.shm,
     ...(d.runtime ? ["--runtime", d.runtime] : []), ...(d.network ? ["--network", d.network] : []),
-    "-v", `${container(o.id)}:/home/agent`, "-v", `${o.tokenFile}:/run/zetta/token:ro`, "-p", "127.0.0.1::3211", d.image];
+    "-v", `${container(o.id)}:/home/agent`, "-v", `${o.tokenFile}:/run/zetta/token:ro`, "-v", `${o.vncFile}:/run/zetta/vncpass:ro`, "-p", "127.0.0.1::3211", "-p", "127.0.0.1::5900", d.image];
 }
 
 export function createCliExec(bin: string): VmExec {
@@ -97,13 +100,14 @@ export function createDbVmStore(db: Database): VmStore {
 export type VmOptions = { store: VmStore; docker: VmDocker; exec?: VmExec; connect?: VmConnect; tokenRoot: string; maxPerUser?: number; maxRunningPerUser?: number; maxRunning?: number; idleMs?: number; allowPrivate?: boolean };
 export function createVmService({ store, docker, exec = createCliExec(docker.bin), connect = connectSpacesd, tokenRoot, maxPerUser = 4, maxRunningPerUser = 2, maxRunning = 6, idleMs = 15 * 60_000, allowPrivate = false }: VmOptions) {
   const sessions = new Map<string, VSession>();
+  const tickets = new Map<string, { userId: string; id: string; expires: number }>();
   const serial = createSerializer();
-  const reaper = setInterval(() => { for (const s of sessions.values()) if (Date.now() - s.lastUsed > idleMs) void stop(s.userId, s.id); }, 60_000); reaper.unref?.();
+  const reaper = setInterval(() => { for (const s of sessions.values()) if (s.viewers === 0 && Date.now() - s.lastUsed > idleMs) void stop(s.userId, s.id); }, 60_000); reaper.unref?.();
   const owned = async (userId: string, id: string) => { const row = await store.get(userId, id); if (!row) throw new ComputerError("NOT_FOUND"); return row; };
   /** A live session is only ever returned to its owner: another user's VM id is NOT_FOUND. */
   const live = (userId: string, id: string) => { const s = sessions.get(id); if (!s || s.userId !== userId) throw new ComputerError("NOT_FOUND"); s.lastUsed = Date.now(); return s; };
   const view = (row: VmRow) => { const s = sessions.get(row.id); return { id: row.id, name: row.name, kind: row.kind, purpose: row.purpose, createdByBotId: row.createdByBotId, status: s ? "running" as const : row.status === "running" ? "stopped" as const : row.status, control: s?.control ?? "agent", epoch: s?.epoch ?? 0 }; };
-  const portOf = async (id: string) => { const r = await exec(["port", container(id), "3211/tcp"]); const m = /:(\d+)\s*$/m.exec(r.stdout.trim().split("\n")[0] ?? ""); if (r.code !== 0 || !m) throw new ComputerError("UNAVAILABLE"); return Number(m[1]); };
+  const portOf = async (id: string, inner: number) => { const r = await exec(["port", container(id), `${inner}/tcp`]); const m = /:(\d+)\s*$/m.exec(r.stdout.trim().split("\n")[0] ?? ""); if (r.code !== 0 || !m) throw new ComputerError("UNAVAILABLE"); return Number(m[1]); };
 
   /** Starts the user's VM (the default one when no id is given). One start at a time per user, so caps cannot be raced. */
   const start = (userId: string, vmId?: string) => serial(userId, async () => {
@@ -116,17 +120,18 @@ export function createVmService({ store, docker, exec = createCliExec(docker.bin
     const token = randomBytes(32).toString("base64url");
     const dir = join(tokenRoot, row.id); await mkdir(dir, { recursive: true, mode: 0o700 }); await chmod(dir, 0o700);
     const tokenFile = join(dir, "token"); await writeFile(tokenFile, token, { mode: 0o644 });
+    const password = vncPassword(), vncFile = join(dir, "vncpass"); await writeFile(vncFile, `${password}\n`, { mode: 0o644 });
     try {
       // A container built from an older image is recreated (all state lives on the home volume), so image updates reach existing VMs.
       const [had, want] = await Promise.all([exec(["inspect", "--format", "{{.Image}}", container(row.id)]), exec(["image", "inspect", "--format", "{{.Id}}", docker.image])]);
       if (had.code === 0 && want.code === 0 && had.stdout.trim() !== want.stdout.trim()) await exec(["rm", "-f", container(row.id)]);
       const started = had.code === 0 && had.stdout.trim() === want.stdout.trim() ? await exec(["start", container(row.id)]) : { code: 1 };
-      if (started.code !== 0 && (await exec(vmDockerArgs(docker, { id: row.id, tokenFile }))).code !== 0) throw new ComputerError("UNAVAILABLE");
-      const port = await portOf(row.id);
+      if (started.code !== 0 && (await exec(vmDockerArgs(docker, { id: row.id, tokenFile, vncFile }))).code !== 0) throw new ComputerError("UNAVAILABLE");
+      const [port, vncPort] = await Promise.all([portOf(row.id, 3211), portOf(row.id, 5900)]);
       const client = await connect(port, token);
       // "running" means usable: wait (bounded) for Chromium's window, so a bot's first keystroke has a target.
       for (let i = 0; i < 60; i++) { const w = await client.call("list_windows", {}).catch(() => undefined); if (w && !w.isError && /window_id=\d+/.test(w.text)) break; await Bun.sleep(500); }
-      sessions.set(row.id, { id: row.id, userId, port, client, control: "agent", epoch: 0, lastUsed: Date.now(), queue: Promise.resolve() });
+      sessions.set(row.id, { id: row.id, userId, port, vnc: { port: vncPort, password }, viewers: 0, client, control: "agent", epoch: 0, lastUsed: Date.now(), queue: Promise.resolve() });
       await store.setStatus(row.id, "running");
       return view({ ...row, status: "running" });
     } catch (e) {
@@ -214,6 +219,22 @@ export function createVmService({ store, docker, exec = createCliExec(docker.bin
       return { id: s.id, control: s.control, epoch: s.epoch };
     },
     epochOf: (userId: string, id: string) => live(userId, id).epoch,
+    /** A one-time, 30-second ticket for opening the VNC WebSocket (browsers cannot set headers on one). Only for a running VM. */
+    vncTicket(userId: string, id: string) {
+      live(userId, id);
+      for (const [k, t] of tickets) if (t.expires < Date.now()) tickets.delete(k);
+      const ticket = randomBytes(24).toString("base64url");
+      tickets.set(ticket, { userId, id, expires: Date.now() + 30_000 });
+      return ticket;
+    },
+    /** Redeems a ticket for that VM: where its VNC server listens, plus release() for when the viewer leaves. Idle stop waits for viewers. */
+    vncViewer(ticket: string, id: string) {
+      const t = tickets.get(ticket); tickets.delete(ticket);
+      if (!t || t.id !== id || t.expires < Date.now()) throw new ComputerError("NOT_FOUND");
+      const s = live(t.userId, id); s.viewers++;
+      let released = false;
+      return { userId: t.userId, port: s.vnc.port, password: s.vnc.password, release: () => { if (!released) { released = true; s.viewers--; s.lastUsed = Date.now(); } } };
+    },
     /** Boot: no session survives a restart, so stop every zetta VM container (volumes are kept) and mark rows stopped. */
     async sweep() {
       const r = await exec(["ps", "-a", "--filter", "label=zetta.vm=1", "--format", "{{.Names}}"]).catch(() => ({ code: 1, stdout: "" }));

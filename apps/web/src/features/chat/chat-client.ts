@@ -7,7 +7,7 @@ export type Provider = "anthropic" | "openai" | "google" | "openrouter" | "githu
 export const PROVIDERS: readonly Provider[] = ["anthropic", "openai", "google", "openrouter", "github"];
 export type RequiredConnection = { key: string; provider: Provider };
 export type BotPatch = Partial<{ avatar: BotAvatarValue | null; name: string; description: string; harness: string; model: string | null; personality: string; instructions: string; computerMode: ComputerMode; codeAccess: boolean; requiredConnections: RequiredConnection[] }>;
-export type Conversation = { id: string; botId: string; title: string; updatedAt: string };
+export type Conversation = { id: string; botId: string; title: string; updatedAt: string; pinned?: boolean; favorite?: boolean };
 export type Workspace = { id: string; name: string; parentId?: string | null };
 export type ProposalKind = "config" | "create_bot" | "create_routine" | "create_workflow" | "create_instruction" | "create_vm";
 export type Proposal = { id: string; botId: string | null; kind?: ProposalKind; diff: { field: string; from: unknown; to: unknown }[] };
@@ -46,9 +46,11 @@ export async function toApiError(response: Response): Promise<ApiError> {
 export const errorMessage = (e: unknown, fallback = "Something went wrong. Please retry.") => (e instanceof Error && e.message ? e.message : fallback);
 export const errorCode = (e: unknown) => (e instanceof ApiError ? e.code : undefined);
 
+/** A read that never answers must surface as an error instead of an endless spinner (writes can legitimately run long). */
+const REQUEST_TIMEOUT_MS = 30_000;
 export async function call<T>(path: string, method = "GET", body?: object): Promise<T> {
   const response = await fetch(new URL(path, ENV.VITE_SERVER_URL), {
-    method, credentials: "include", cache: "no-store",
+    method, credentials: "include", cache: "no-store", ...(method === "GET" ? { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } : {}),
     headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) throw await toApiError(response);
@@ -63,6 +65,7 @@ export const chatClient = {
   answerOnboarding: (id: string, input: { conversationId: string; questionId: string; expectedVersion: number; satisfied: boolean }) => call<{ bot: Bot }>(`/api/bots/${id}/onboarding`, "POST", input).then((r) => r.bot),
   conversations: (botId?: string) => call<{ conversations: Conversation[] }>(`/api/conversations${botId ? `?botId=${botId}` : ""}`).then((r) => r.conversations),
   startConversation: (botId: string) => call<{ conversation: Conversation }>("/api/conversations", "POST", { botId }).then((r) => r.conversation),
+  updateConversation: (id: string, patch: { title?: string; pinned?: boolean; favorite?: boolean }) => call<{ conversation: Conversation }>(`/api/conversations/${id}`, "PATCH", patch).then((r) => r.conversation),
   messages: (id: string) => call<{ messages: Message[] }>(`/api/conversations/${id}/messages`).then((r) => r.messages),
   workspaces: () => call<{ workspaces: Workspace[] }>("/api/workspaces").then((r) => r.workspaces),
   createWorkspace: (name: string, parentId?: string) => call<{ workspace: Workspace }>("/api/workspaces", "POST", { name, ...(parentId ? { parentId } : {}) }).then((r) => r.workspace),

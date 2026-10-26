@@ -2,11 +2,16 @@ import type { Database } from "@zetta/db";
 import { audit } from "../../features/audit";
 import { AccessError, type ActiveActor } from "../../identity/access";
 import type { ConnectionsService } from "../../connections/service";
-import { getPlugin, listPlugins, PluginError, pluginMeta, type PluginContext, type PluginDef, type PluginStatus } from "./registry";
+import { originAllowed } from "./credentials";
+import { getPlugin, listPlugins, PluginError, pluginMeta, type CredentialField, type CredentialGrant, type PluginContext, type PluginDef, type PluginStatus } from "./registry";
 
 /** Native plugins are stored as a user-owned server row with this url scheme; it is never reachable as an MCP session. */
 export const NATIVE_URL_PREFIX = "zetta-plugin://";
-const CALL_MS = 20_000, MAX_TEXT = 8000, PROVIDER = "plugin";
+const CALL_MS = 60_000, MAX_TEXT = 8000, PROVIDER = "plugin";
+const CREDENTIAL_PROMPT = `Signing in: you never see or type passwords. Get the logins the user shared with <plugin>.list_credentials, click the input on the sign-in page (browser: click_text; desktop: click), then let Zetta type the value for you:
+\`\`\`zetta:credential
+{"ref":"<ref from list_credentials>","field":"username|password|totp","target":"browser|desktop"}
+\`\`\`   (Zetta only types it on the login's own https sites and into a matching input; you get "filled" back, never the value. Then press Return or click the sign-in button yourself.)`;
 
 type ServerRow = { id: string; name: string; url: string | null; connectionId: string | null };
 /** The slice of the MCP service the plugin layer needs. */
@@ -66,6 +71,20 @@ export function createPlugins(db: Database, connections: ConnectionsService | un
     let timer: ReturnType<typeof setTimeout> | undefined;
     try { return await Promise.race([work, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new PluginError("TIMEOUT", "The plugin took too long.")), CALL_MS); })]); } finally { if (timer) clearTimeout(timer); }
   };
+  /** Validates field values against the plugin's schema. Blank fields fall back to `current` (so an edit can leave a secret untouched). */
+  function fieldValues(d: PluginDef, config: Record<string, string>, current: Readonly<Record<string, string>> = {}) {
+    const allowed = new Set(d.fields.map((f) => f.key));
+    for (const k of Object.keys(config)) if (!allowed.has(k)) throw new PluginError("INVALID_FIELD", "Unknown setting.");
+    const clean: Record<string, string> = {};
+    for (const f of d.fields) {
+      const v = (config[f.key] ?? "").trim() || current[f.key] || "";
+      if (!v && !f.optional) throw new PluginError("MISSING_FIELD", `${f.label} is required.`);
+      if (v && f.kind === "url") { try { if (!/^https?:$/.test(new URL(v).protocol)) throw 0; } catch { throw new PluginError("INVALID_FIELD", `${f.label} must be an http(s) address.`); } }
+      if (v.length > 4000) throw new PluginError("INVALID_FIELD", `${f.label} is too long.`);
+      if (v) clean[f.key] = v;
+    }
+    return clean;
+  }
   const render = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v) ?? "").slice(0, MAX_TEXT);
 
   return {
@@ -80,16 +99,7 @@ export function createPlugins(db: Database, connections: ConnectionsService | un
     async install(a: ActiveActor, id: string, config: Record<string, string>, botIds: string[] = []) {
       const d = def(id);
       if (await mcp().serverByName(a, id)) throw new PluginError("ALREADY_INSTALLED", "That plugin is already installed.");
-      const allowed = new Set(d.fields.map((f) => f.key));
-      for (const k of Object.keys(config)) if (!allowed.has(k)) throw new PluginError("INVALID_FIELD", "Unknown setting.");
-      const clean: Record<string, string> = {};
-      for (const f of d.fields) {
-        const v = (config[f.key] ?? "").trim();
-        if (!v && !f.optional) throw new PluginError("MISSING_FIELD", `${f.label} is required.`);
-        if (v && f.kind === "url") { try { if (!/^https?:$/.test(new URL(v).protocol)) throw 0; } catch { throw new PluginError("INVALID_FIELD", `${f.label} must be an http(s) address.`); } }
-        if (v.length > 4000) throw new PluginError("INVALID_FIELD", `${f.label} is too long.`);
-        if (v) clean[f.key] = v;
-      }
+      const clean = fieldValues(d, config);
       const sealed = seal(d, clean);
       const conn = sealed ? await need().create(a, { provider: PROVIDER, label: `plugin:${d.id}`, secret: sealed }) : undefined;
       let serverId: string | undefined;
@@ -116,6 +126,22 @@ export function createPlugins(db: Database, connections: ConnectionsService | un
       if (s.connectionId) await revokeQuietly(a, s.connectionId);
       toolNames.delete(s.id);
       return { id };
+    },
+    /**
+     * Replaces the user's own settings (API keys, OAuth client) of an installed plugin. Blank fields keep their stored value.
+     * Changing an OAuth plugin's settings disconnects it first: tokens issued to the old client are useless with the new one.
+     */
+    async configure(a: ActiveActor, id: string, config: Record<string, string>) {
+      const { d, s } = await installed(a, id);
+      if (!d.fields.length) throw new PluginError("NOT_SUPPORTED", "This plugin has no settings.");
+      const ctx = await ctxFor(a, d, s); const next = fieldValues(d, config, ctx.config);
+      if (d.fields.every((f) => (next[f.key] ?? "") === (ctx.config[f.key] ?? ""))) return { id, changed: false };
+      if (d.auth === "oauth" && d.disconnect) await withDeadline(d.disconnect(ctx)).catch(() => {});
+      const keys = new Set(d.fields.map((f) => f.key));
+      const state = d.auth === "oauth" ? {} : Object.fromEntries(Object.entries(ctx.config).filter(([k]) => !keys.has(k)));
+      await ctx.setConfig({ ...state, ...next });
+      await audit(db, a.userId, { kind: "connection", outcome: "ok", subjectId: s.id, detail: "plugin-configured" });
+      return { id, changed: true };
     },
     /** Starts the plugin's own connect flow (e.g. OAuth). */
     async connect(a: ActiveActor, id: string, options?: Record<string, unknown>) {
@@ -172,18 +198,48 @@ export function createPlugins(db: Database, connections: ConnectionsService | un
         await outcome("ok"); return out;
       } catch (e) { await outcome(e instanceof PluginError && e.code === "TIMEOUT" ? "timeout" : "failed"); throw e instanceof PluginError ? e : new PluginError("FAILED"); }
     },
+    /** Every credential the user granted through password managers bound to this bot (metadata only). Unreadable plugins are skipped. */
+    async credentialGrants(a: ActiveActor, botId: string) {
+      const bound = new Set((await mcp().bound(a, botId)).map((b) => b.name)); const out: { plugin: string; grant: CredentialGrant }[] = [];
+      for (const d of listPlugins()) {
+        if (!d.credentials || d.kind !== "native" || !bound.has(d.id)) continue;
+        try { const { s } = await installed(a, d.id); for (const grant of await d.credentials.grants(await ctxFor(a, d, s))) out.push({ plugin: d.id, grant }); } catch { /* reported when the bot tries to use it */ }
+      }
+      return out;
+    },
+    /**
+     * Reveals one granted value for the chat service to type into the bot's own page. Refuses unless the plugin is bound to the bot, the user
+     * granted that item and field, and `pageUrl` is an https page on one of the grant's origins. The value is never logged or audited.
+     */
+    async credential(a: ActiveActor, botId: string, id: string, itemId: string, field: CredentialField, pageUrl: string): Promise<{ value: string; title: string }> {
+      const deny = async (code: string, safe: string, fix?: string): Promise<never> => { await audit(db, a.userId, { kind: "tool_call", botId, outcome: "denied", detail: `credential:${code.toLowerCase()}` }); throw new PluginError(code, safe, fix); };
+      const d = getPlugin(id);
+      if (!d?.credentials || d.kind !== "native" || !(await mcp().bound(a, botId)).some((b) => b.name === id)) return deny("NOT_BOUND", "That password manager is not connected to this bot.", `Open Studio > Plugins > ${d?.name ?? id} > Bots and allow this bot.`);
+      const { s } = await installed(a, id); const ctx = await ctxFor(a, d, s);
+      const grant = (await withDeadline(d.credentials.grants(ctx))).find((g) => g.id === itemId);
+      if (!grant) return deny("NOT_GRANTED", "That login is not shared with bots.", `Open Studio > Plugins > ${d.name} and allow the login under Shared logins.`);
+      if (!grant.fields.includes(field)) return deny("FIELD_NOT_GRANTED", `Bots may not fill the ${field} of "${grant.title}".`, `Open Studio > Plugins > ${d.name} and tick ${field} for that login.`);
+      if (!originAllowed(pageUrl, grant.origins)) return deny("ORIGIN_MISMATCH", `"${grant.title}" is only filled on ${grant.origins.join(", ")} over https, and the open page is somewhere else.`, `If this site is right, add it to the login's sites in Studio > Plugins > ${d.name}.`);
+      try {
+        const value = await withDeadline(d.credentials.reveal(ctx, itemId, field));
+        await audit(db, a.userId, { kind: "tool_call", botId, outcome: "ok", detail: `credential:${field}` });
+        return { value, title: grant.title };
+      } catch (e) { await audit(db, a.userId, { kind: "tool_call", botId, outcome: "failed", detail: `credential:${field}` }); throw e instanceof PluginError ? e : new PluginError("FAILED"); }
+    },
     /** Prompt section describing the plugins THIS user bound to the bot (empty when none). Contains no secrets. */
     async promptFor(a: ActiveActor, botId: string): Promise<string> {
-      const bound = await mcp().bound(a, botId); const lines: string[] = []; let native = false, remote = false;
+      const bound = await mcp().bound(a, botId); const lines: string[] = []; let native = false, remote = false, vault = false;
       for (const d of listPlugins()) {
         const b = bound.find((x) => x.name === d.id); if (!b) continue;
+        if (d.credentials) vault = true;
         if (d.kind === "native") { native = true; lines.push(`- ${d.id} (${d.name}): ${d.description}\n${(d.tools ?? []).map((t) => `    ${t.name}: ${t.description} args ${JSON.stringify(t.inputSchema.properties ?? {})}${t.inputSchema.required?.length ? ` required ${JSON.stringify(t.inputSchema.required)}` : ""}`).join("\n")}`); }
         else { remote = true; const names = toolNames.get(b.id); lines.push(`- ${d.id} (${d.name}): ${d.description}${names?.length ? ` Tools: ${names.slice(0, 40).join(", ")}.` : ""}`); }
       }
       if (!lines.length) return "";
       return [`Plugins connected to you by this user (the user's own accounts; use only when needed):`, ...lines,
         native ? "Call a plugin tool with a fenced block:\n```zetta:plugin\n{\"plugin\":\"<id>\",\"tool\":\"<tool>\",\"args\":{}}\n```" : "",
-        remote ? "Call an MCP server tool with:\n```zetta:mcp\n{\"server\":\"<id>\",\"tool\":\"<tool>\",\"args\":{}}\n```" : ""].filter(Boolean).join("\n");
+        remote ? "Call an MCP server tool with:\n```zetta:mcp\n{\"server\":\"<id>\",\"tool\":\"<tool>\",\"args\":{}}\n```" : "",
+        vault ? CREDENTIAL_PROMPT : ""].filter(Boolean).join("\n");
     },
   };
 }

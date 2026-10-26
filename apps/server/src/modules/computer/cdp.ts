@@ -12,11 +12,19 @@ export interface PageLike {
   clickText(text: string): Promise<void>;
   text(): Promise<string>;
   hasPassword(): Promise<boolean>;
+  /** The element that has keyboard focus (through open shadow roots), described without its value. */
+  focused(): Promise<FocusedInput | null>;
   screenshot(): Promise<Buffer>;
   url(): string;
 }
 
-type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
+export type FocusedInput = { tag: string; type: string; autocomplete: string; name: string; inputmode: string };
+/** Page script for `focused()`: never reads the element's value. */
+export const FOCUSED_JS = `(() => { let e = document.activeElement; while (e && e.shadowRoot && e.shadowRoot.activeElement) e = e.shadowRoot.activeElement; if (!e || e === document.body) return null;
+  const a = (k) => String(e.getAttribute(k) || '').toLowerCase().slice(0, 80);
+  return { tag: e.tagName.toLowerCase(), type: e.tagName === 'INPUT' ? String(e.type || 'text').toLowerCase() : '', autocomplete: a('autocomplete'), name: [a('name'), a('id'), a('aria-label'), a('placeholder')].join(' ').trim(), inputmode: a('inputmode') }; })()`;
+
+type Pending ={ resolve: (v: unknown) => void; reject: (e: Error) => void };
 const KEYS: Record<string, { code: string; vk: number; text?: string }> = {
   Enter: { code: "Enter", vk: 13, text: "\r" }, Tab: { code: "Tab", vk: 9 }, Escape: { code: "Escape", vk: 27 }, Backspace: { code: "Backspace", vk: 8 },
   ArrowDown: { code: "ArrowDown", vk: 40 }, ArrowUp: { code: "ArrowUp", vk: 38 }, ArrowLeft: { code: "ArrowLeft", vk: 37 }, ArrowRight: { code: "ArrowRight", vk: 39 },
@@ -98,6 +106,7 @@ export async function connectCdp(o: CdpOptions): Promise<{ page: PageLike; close
     },
     async text() { return (await evalJs<string>("document.body ? document.body.innerText : ''")) ?? ""; },
     async hasPassword() { return (await evalJs<number>("document.querySelectorAll('input[type=password]').length")) > 0; },
+    async focused() { return (await evalJs<FocusedInput | null>(FOCUSED_JS)) ?? null; },
     async screenshot() { return Buffer.from((await s<{ data: string }>("Page.captureScreenshot", { format: "png" })).data, "base64"); },
     url: () => currentUrl,
   };

@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Input, Textarea } from "@/components/ui";
 import { errorMessage, type Bot } from "../chat/chat-client";
-import { GoogleConnect, GoogleLogo } from "../plugins/google-connect";
+import { GoogleConnect } from "../plugins/google-connect";
 import { PluginIcon } from "../plugins/plugin-icon";
+import { RedditConnect } from "../plugins/reddit-connect";
 import { TelegramConnect, TelegramInstall } from "../plugins/telegram";
+import { VaultGrants } from "../plugins/vault-grants";
 import { ToggleCard } from "../plugins/toggle-card";
 import { WhatsappPairing } from "../plugins/whatsapp-pairing";
 import { CATEGORY_LABEL, pluginsApi, usePlugins, type PluginMeta, type PluginTest } from "../plugins/plugins-api";
@@ -59,6 +61,30 @@ function InstallDialog({ meta, bots, onClose, onDone }: { meta: PluginMeta; bots
   );
 }
 
+/** Edits the user's own settings of an installed plugin. Stored values are never sent back, so a blank field keeps what is saved. */
+function SettingsDialog({ meta, onClose, onDone }: { meta: PluginMeta; onClose: () => void; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [local, setLocal] = useState<string>();
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); const f = new FormData(e.currentTarget); const config: Record<string, string> = {};
+    for (const field of meta.fields) config[field.key] = String(f.get(field.key) ?? "").trim();
+    setBusy(true); setLocal(undefined);
+    try { await pluginsApi.configure(meta.id, config); onDone(); onClose(); } catch (x) { setLocal(errorMessage(x)); } finally { setBusy(false); }
+  }
+  return (
+    <Modal title={`${meta.name} settings`} onClose={onClose}>
+      <form onSubmit={(e) => void submit(e)} className="space-y-3" aria-label={`${meta.name} settings`}>
+        <p className="text-xs text-muted-foreground">Saved values are stored encrypted for your account and never shown again. Leave a field blank to keep it.{meta.auth === "oauth" ? " Changing these disconnects the account; connect again afterwards." : ""}</p>
+        {meta.fields.map((f) => f.kind === "textarea"
+          ? <Textarea key={f.key} title={f.label} name={f.key} placeholder={f.placeholder} info={f.help} />
+          : <Input key={f.key} title={f.label} name={f.key} placeholder={f.placeholder} info={f.help} type={f.secret || f.kind === "password" ? "password" : f.kind === "url" ? "url" : "text"} autoComplete="off" />)}
+        {local && <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{local}</p>}
+        <div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" onClick={onClose}>Cancel</Button><Button type="submit" size="sm" loading={busy} disabled={busy}>Save</Button></div>
+      </form>
+    </Modal>
+  );
+}
+
 function BotsDialog({ meta, bots, onClose, onError }: { meta: PluginMeta; bots: Bot[]; onClose: () => void; onError: (m: string) => void }) {
   const [bound, setBound] = useState<Record<string, boolean>>();
   useEffect(() => {
@@ -94,6 +120,7 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
   const [category, setCategory] = useState("all");
   const [installing, setInstalling] = useState<PluginMeta>();
   const [botsFor, setBotsFor] = useState<PluginMeta>();
+  const [settingsFor, setSettingsFor] = useState<PluginMeta>();
   const [toolsFor, setToolsFor] = useState<string>();
   const [pairing, setPairing] = useState(false);
   const byId = useMemo(() => new Map((catalog ?? []).map((c) => [c.id, c])), [catalog]);
@@ -119,18 +146,21 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
           <ul className="space-y-2">{installed.map((i) => { const m = byId.get(i.id); if (!m) return null; const p = probes[i.id]; return (
             <li key={i.id} className="rounded-lg border bg-card p-4">
               <div className="flex flex-wrap items-center gap-3">
-                {i.id === "google" ? <GoogleLogo className="size-6 shrink-0" /> : <PluginIcon name={m.icon} className="size-5 shrink-0" />}
+                <PluginIcon id={i.id} name={m.icon} className="size-6 shrink-0" />
                 <div className="min-w-0 flex-1"><p className="font-medium">{m.name} <StatusBadge probe={p} /></p><p className="truncate text-xs text-muted-foreground">{m.description}</p>
                   {p && p !== "loading" && p.status.detail && <p className={`text-xs ${p.status.state === "connected" ? "text-primary" : "text-destructive"}`}>{p.status.detail}</p>}</div>
                 <div className="flex flex-wrap gap-1">
                   <Button size="sm" variant="outline" onClick={() => { void probe(i.id); setToolsFor(i.id); }}>Test connection</Button>
                   {i.id === "whatsapp" && <Button size="sm" variant="outline" onClick={() => setPairing(true)}>Pair</Button>}
+                  {m.fields.length > 0 && <Button size="sm" variant="outline" onClick={() => setSettingsFor(m)}>Settings</Button>}
                   <Button size="sm" variant="outline" onClick={() => setBotsFor(m)}>Bots</Button>
                   <ConfirmButton label="Remove" question={`Remove ${m.name}?`} confirmLabel="Remove" onConfirm={() => remove(i.id)} />
                 </div>
               </div>
               {i.id === "telegram" && <TelegramConnect probe={p === "loading" ? undefined : p} onChanged={() => void probe(i.id)} onError={onError} />}
               {i.id === "google" && <GoogleConnect probe={p === "loading" ? undefined : p} onChanged={() => void probe(i.id)} onError={onError} />}
+              {i.id === "reddit" && <RedditConnect probe={p === "loading" ? undefined : p} onChanged={() => void probe(i.id)} onError={onError} />}
+              {m.credentials && <VaultGrants pluginId={i.id} name={m.name} probe={p === "loading" ? undefined : p} onChanged={() => void probe(i.id)} onError={onError} />}
               {toolsFor === i.id && p && p !== "loading" && p.tools.length > 0 && (
                 <details open className="mt-3 text-xs"><summary className="cursor-pointer font-medium">{p.tools.length} tools</summary>
                   <ul className="mt-1 max-h-48 space-y-0.5 overflow-auto">{p.tools.map((t) => <li key={t.name}><code>{t.name}</code> <span className="text-muted-foreground">{t.description}</span></li>)}</ul></details>
@@ -150,7 +180,7 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
         {catalog === undefined ? <Empty>Loading...</Empty> : shown.length === 0 ? <Empty>No plugins match.</Empty> : (
           <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{shown.map((m) => (
             <li key={m.id} className="flex flex-col gap-2 rounded-lg border bg-card p-4">
-              <div className="flex items-center gap-2"><PluginIcon name={m.icon} /><span className="font-medium">{m.name}</span>
+              <div className="flex items-center gap-2"><PluginIcon id={m.id} name={m.icon} className="size-6" /><span className="font-medium">{m.name}</span>
                 <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{CATEGORY_LABEL[m.category] ?? m.category}</span></div>
               <p className="flex-1 text-xs text-muted-foreground">{m.description}</p>
               {!m.verified && <p className="text-xs text-amber-700 dark:text-amber-300">Not fully verified</p>}
@@ -166,6 +196,7 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
         ? <TelegramInstall meta={installing} bots={bots} onClose={() => setInstalling(undefined)} onDone={() => void reload()} />
         : <InstallDialog meta={installing} bots={bots} onClose={() => setInstalling(undefined)} onDone={() => void reload()} />)}
       {pairing && <WhatsappPairing onClose={() => setPairing(false)} onPaired={() => void probe("whatsapp")} />}
+      {settingsFor && <SettingsDialog meta={settingsFor} onClose={() => setSettingsFor(undefined)} onDone={() => void probe(settingsFor.id)} />}
       {botsFor && <BotsDialog meta={botsFor} bots={bots} onClose={() => setBotsFor(undefined)} onError={onError} />}
     </div>
   );

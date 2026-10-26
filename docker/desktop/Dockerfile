@@ -2,6 +2,8 @@
 # Build: docker build -t zetta-desktop:latest docker/desktop
 # Started by apps/server/src/modules/computer/vm.ts with: no capabilities, memory/cpu/pid limits, port 3211 published on
 # 127.0.0.1 only, /home/agent on a named volume (zetta-vm-<id>) and the per-start bearer token mounted read-only.
+# x11vnc serves the same display on 5900 (also published on 127.0.0.1 only) with a per-start password; the server bridges people's
+# browsers to it, so a person sees and controls exactly what the bots see.
 # Smallest desktop that runs Chromium: Xvfb + Openbox (no full DE), D-Bus + AT-SPI for cua-driver's accessibility reads.
 FROM debian:trixie-slim
 
@@ -15,7 +17,7 @@ ARG SPACESD_SHA256_ARM64=09c8df972551088ac2b08b52ff3d86345e35a13f250681173af798d
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=Etc/UTC
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl xvfb openbox chromium fonts-liberation fonts-dejavu-core \
-      dbus dbus-x11 at-spi2-core libatk-adaptor libgail-common x11-utils xdotool xclip xdg-utils procps \
+      dbus dbus-x11 at-spi2-core libatk-adaptor libgail-common x11-utils xdotool xclip xdg-utils procps x11vnc \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --uid 10001 --create-home --home-dir /home/agent --shell /bin/bash agent
 
@@ -37,5 +39,5 @@ RUN chmod 0755 /usr/local/bin/zetta-desktop /etc/xdg/openbox/autostart
 
 ENV HOME=/home/agent DISPLAY=:1 CUA_ENV_PORT=3211 CUA_ENV_ALLOW_ANONYMOUS=0
 USER 10001:10001
-EXPOSE 3211
+EXPOSE 3211 5900
 ENTRYPOINT ["/usr/local/bin/zetta-desktop"]

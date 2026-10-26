@@ -1,9 +1,11 @@
 #!/bin/sh
-# Xvfb -> session D-Bus (+ AT-SPI) -> Openbox (autostarts Chromium) -> cua-spacesd in the foreground.
+# Xvfb -> session D-Bus (+ AT-SPI) -> Openbox (autostarts Chromium) -> x11vnc -> cua-spacesd in the foreground.
 # The bearer token is read from a file the server mounts read-only; spacesd refuses to start without one.
 set -eu
 TOKEN_FILE="${ZETTA_TOKEN_FILE:-/run/zetta/token}"
+VNC_FILE="${ZETTA_VNC_FILE:-/run/zetta/vncpass}"
 [ -r "$TOKEN_FILE" ] || { echo "no token at $TOKEN_FILE; refusing to start" >&2; exit 1; }
+[ -r "$VNC_FILE" ] || { echo "no VNC password at $VNC_FILE; refusing to start" >&2; exit 1; }
 
 # A stopped VM is restarted with `docker start`, which keeps /tmp: clear the previous boot's X server lock and sockets.
 rm -rf /tmp/.X*-lock /tmp/.X11-unix /tmp/runtime-agent
@@ -18,6 +20,9 @@ export DBUS_SESSION_BUS_ADDRESS
 /usr/libexec/at-spi-bus-launcher --launch-immediately >/tmp/atspi.log 2>&1 &
 
 openbox-session >/tmp/openbox.log 2>&1 &
+
+# VNC on the same display, shared with the bots' input; restarted if it dies. Never without the password.
+( while :; do x11vnc -display "$DISPLAY" -rfbport 5900 -passwdfile "$VNC_FILE" -forever -shared -noipv6 -noxdamage -xkb -quiet -o /tmp/x11vnc.log; sleep 1; done ) &
 
 export CUA_ENV_TOKEN_FILE="$TOKEN_FILE"
 exec cua-spacesd

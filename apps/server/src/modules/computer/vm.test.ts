@@ -151,6 +151,21 @@ describe("vm service (fake docker + fake spacesd)", () => {
     expect(m.calls.find((c) => c.tool === "get_window_state")!.args).toMatchObject({ pid: 7, window_id: 42, include_screenshot: false });
     await vm.closeAll();
   });
+  test("VNC: a password file per start, one-time tickets bound to owner and VM, and viewers keep the VM from idling out", async () => {
+    const { vm, d, tokenRoot } = await setup({ idleMs: 0 });
+    const { id } = await vm.start("u");
+    expect(await readFile(join(tokenRoot, id, "vncpass"), "utf8")).toMatch(/^[A-Za-z0-9]{8}\n$/);
+    expect(d.log.find((x) => x[0] === "run")).toContain("127.0.0.1::5900");
+    expect(() => vm.vncTicket("eve", id)).toThrow(ComputerError);
+    const t = vm.vncTicket("u", id);
+    expect(() => vm.vncViewer(t, crypto.randomUUID())).toThrow(ComputerError); // wrong VM burns the ticket
+    const t2 = vm.vncTicket("u", id);
+    const viewer = vm.vncViewer(t2, id);
+    expect(viewer).toMatchObject({ userId: "u", port: 41234 }); expect(viewer.password).toMatch(/^[A-Za-z0-9]{8}$/);
+    expect(() => vm.vncViewer(t2, id)).toThrow(ComputerError); // one use
+    viewer.release(); viewer.release();
+    await vm.closeAll();
+  });
   test("sweep stops leftover VM containers and marks rows stopped", async () => {
     const { vm, store, d } = await setup();
     const { id } = await vm.start("u");
@@ -160,7 +175,7 @@ describe("vm service (fake docker + fake spacesd)", () => {
     await vm.closeAll(); await fresh.closeAll();
   });
   test("docker args: optional runtime and network", () => {
-    const args = vmDockerArgs({ ...docker, runtime: "runsc", network: "zetta-vm" }, { id: "x", tokenFile: "/t/token" });
-    expect(args.join(" ")).toContain("--runtime runsc"); expect(args.join(" ")).toContain("--network zetta-vm"); expect(args).toContain("/t/token:/run/zetta/token:ro");
+    const args = vmDockerArgs({ ...docker, runtime: "runsc", network: "zetta-vm" }, { id: "x", tokenFile: "/t/token", vncFile: "/t/vncpass" });
+    expect(args.join(" ")).toContain("--runtime runsc"); expect(args.join(" ")).toContain("--network zetta-vm"); expect(args).toContain("/t/token:/run/zetta/token:ro"); expect(args).toContain("/t/vncpass:/run/zetta/vncpass:ro"); expect(args).toContain("127.0.0.1::5900");
   });
 });

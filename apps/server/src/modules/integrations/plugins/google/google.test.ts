@@ -31,8 +31,9 @@ const fake = Bun.serve({ port: 0, async fetch(req) {
 const base = `http://localhost:${fake.port}`;
 afterAll(() => { fake.stop(true); configureGoogleForTests({}); });
 
+const KEYS = { clientId: "cid", clientSecret: "csecret" };
 function mkCtx(userId = "u1", start: Record<string, string> = {}) {
-  let config: Record<string, string> = { ...start };
+  let config: Record<string, string> = { ...KEYS, ...start };
   const ctx: PluginContext = { userId, get config() { return config; }, async setConfig(n) { config = { ...n }; } };
   return { ctx, get: () => config };
 }
@@ -41,7 +42,7 @@ const tool = (n: string) => plugin.tools!.find((t) => t.name === n)!;
 let now = 1_000_000;
 beforeEach(() => {
   calls = []; tokenCount = 0; tokenMode = "ok"; expiresIn = 3600; now = 1_000_000;
-  process.env.GOOGLE_OAUTH_CLIENT_ID = "cid"; process.env.GOOGLE_OAUTH_CLIENT_SECRET = "csecret"; process.env.GOOGLE_OAUTH_REDIRECT_BASE = "https://zetta.test";
+  process.env.GOOGLE_OAUTH_REDIRECT_BASE = "https://zetta.test";
   configureGoogleForTests({ authUrl: `${base}/auth`, tokenUrl: `${base}/token`, revokeUrl: `${base}/revoke`, userinfoUrl: `${base}/userinfo`, gmailBase: `${base}/gmail`, calendarBase: `${base}/cal`, driveBase: `${base}/drive`, now: () => now });
 });
 
@@ -54,9 +55,9 @@ async function connect(c: ReturnType<typeof mkCtx>, scopes: string[], granted: s
 
 describe("google oauth", () => {
   test("not configured gives setup instructions", async () => {
-    delete process.env.GOOGLE_OAUTH_CLIENT_ID;
-    await expect(plugin.connect!(mkCtx().ctx, { scopes: ["gmail.readonly"] })).rejects.toMatchObject({ code: "NOT_CONFIGURED" });
-    expect((await plugin.status!(mkCtx().ctx)).state).toBe("error");
+    const none = () => mkCtx("u1", { clientId: "", clientSecret: "" }).ctx;
+    await expect(plugin.connect!(none(), { scopes: ["gmail.readonly"] })).rejects.toMatchObject({ code: "NOT_CONFIGURED" });
+    expect((await plugin.status!(none())).state).toBe("error");
   });
   test("authorize URL carries PKCE, state, offline access and incremental scopes; nothing leaks into config view", async () => {
     const c = mkCtx(); const u = await connect(c, ["gmail.readonly"], READ);
@@ -102,9 +103,9 @@ describe("google oauth", () => {
     await expect(tool("gmail_search").handler(c.ctx, { query: "x" })).rejects.toMatchObject({ code: "NEEDS_AUTH" });
     expect(c.get().refreshToken).toBeUndefined(); expect((await plugin.status!(c.ctx)).state).toBe("needs-auth");
   });
-  test("disconnect revokes at Google and wipes the config", async () => {
+  test("disconnect revokes at Google and wipes the tokens but keeps the OAuth client", async () => {
     const c = mkCtx("u1", { refreshToken: "ref-1" }); await plugin.disconnect!(c.ctx);
-    expect(calls.some((x) => x.path === "/revoke" && x.body === "token=ref-1")).toBe(true); expect(c.get()).toEqual({});
+    expect(calls.some((x) => x.path === "/revoke" && x.body === "token=ref-1")).toBe(true); expect(c.get()).toEqual(KEYS);
   });
 });
 

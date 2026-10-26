@@ -20,7 +20,7 @@ Status: accepted for v1 (implementation: `apps/server/src/modules/integrations`,
 | RSS/Atom (blogs, Reddit `.rss`, many newsletters' public feeds) | `source` kind `rss`, SSRF-guarded fetch, no redirects, bounded | Implemented, fake-feed tests |
 | Email newsletters (private inbox) | Needs the user's mailbox access (IMAP/OAuth or an MCP mail server) | **BLOCKED-EXTERNAL**: needs a user-approved mailbox and OAuth scopes; use a mail MCP server bound by the user, or forward newsletters to a public RSS bridge |
 | X timelines | X's API is paid and login-walled; the browser path needs a signed-in profile and human takeover for login | **BLOCKED-EXTERNAL** for unattended runs; interactive takeover works |
-| Reddit | Public `.rss` feeds work today via RSS source; authenticated access not provided | Partial (public only) |
+| Reddit | Public `.rss` feeds via RSS source; authenticated access through the native `reddit` plugin (the user's own Reddit app, OAuth2, read tools by default; NSFW and account actions opt-in; see `docs/operations/reddit.md`) | Implemented, fake-API tests; not exercised live (needs a Reddit-approved app) |
 | Chrome DevTools (browser debugging/automation) | MCP stdio server `chrome-devtools-mcp` bound by the user | **Verified live**: real server and real headless Chrome driven through Zetta's MCP layer (list tools, `new_page`, `take_snapshot`) in `chrome-devtools.integration.test.ts` (`ZETTA_MCP_CHROME_TEST=1`; allowlist the `npx` path) |
 | Repository research | MCP server for the host (e.g. GitHub MCP) bound by the user | Supported by design; no server is bundled; not exercised live |
 

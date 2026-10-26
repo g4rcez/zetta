@@ -20,7 +20,7 @@ createApp({
   integrations: integrationServices,
   webOrigin: ENV.CORS_ORIGIN,
   desktopOrigins,
-}).listen(Number(process.env.PORT ?? 3000), () => {
+}).listen({ port: Number(process.env.PORT ?? 3000), idleTimeout: 120 }, () => { // Bun's default (10s) cuts a chat stream while a tool such as WhatsApp is still working
   console.log(`Server is running on http://localhost:${process.env.PORT ?? 3000}`);
 });
 

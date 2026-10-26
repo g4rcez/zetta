@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pnpm zetta: start postgres, apply migrations, then run backend + frontend for local testing.
+# bun run zetta (everything runs through Vite+ `vp`): start postgres, apply migrations, then run backend + frontend for local testing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -18,14 +18,14 @@ done
 $CONTAINER exec zetta-postgres pg_isready -U postgres >/dev/null || { echo "postgres did not become ready" >&2; exit 1; }
 
 echo "▶ Applying migrations"
-(cd packages/db && bun x varlock run -- bun x drizzle-kit migrate)
+(cd packages/db && vp exec varlock run -- vp exec drizzle-kit migrate)
 
 echo "▶ Starting server (http://localhost:3000) and web (see vite output)"
 pids=()
 cleanup() { trap - INT TERM EXIT; kill "${pids[@]}" 2>/dev/null || true; wait 2>/dev/null || true; }
 trap cleanup INT TERM EXIT
 
-(cd apps/server && exec bun x varlock run -- bun run --hot src/index.ts) & pids+=($!)
-(cd apps/web && exec bun x varlock run -- bun x vp dev) & pids+=($!)
+vp run --filter server dev & pids+=($!)
+vp run --filter web dev & pids+=($!)
 
 wait -n

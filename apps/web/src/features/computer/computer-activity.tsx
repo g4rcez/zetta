@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
 
 import { call, errorMessage } from "../chat/chat-client";
@@ -20,15 +20,20 @@ export function ComputerActivity({ botId, botName = "The bot", pollMs = 3000 }: 
   // With the VM backend, desktop use shows as a live card on the bot's message instead (chat/vm-card.tsx): only Cua desktop sessions are polled here.
   const [cuaDesktop, setCuaDesktop] = useState(false);
   useEffect(() => { call<{ desktopBackend?: string | null }>("/api/computer/capabilities").then((c) => setCuaDesktop(c.desktopBackend === "cua-spaces"), () => {}); }, []);
+  const polling = useRef(false); // never stack polls behind a slow one: they would hold browser connections the chat needs
   const find = useCallback(async () => {
-    const [b, d] = await Promise.all([
-      call<{ sessions: Session[] }>("/api/computer/sessions").catch(() => ({ sessions: [] as Session[] })),
-      cuaDesktop ? call<{ sessions: Session[] }>("/api/computer/desktop/sessions").catch(() => ({ sessions: [] as Session[] })) : { sessions: [] as Session[] },
-    ]);
-    const br = b.sessions.find((s) => s.profile === `b-${botId}`); const de = d.sessions.find((s) => s.profile === `d-${botId}`);
-    // Prefer whichever one a person is controlling, then the browser.
-    const hit = (de?.control === "human" ? { kind: "desktop" as const, session: de } : br ? { kind: "browser" as const, session: br } : de ? { kind: "desktop" as const, session: de } : undefined);
-    setFound(hit);
+    if (polling.current) return;
+    polling.current = true;
+    try {
+      const [b, d] = await Promise.all([
+        call<{ sessions: Session[] }>("/api/computer/sessions").catch(() => ({ sessions: [] as Session[] })),
+        cuaDesktop ? call<{ sessions: Session[] }>("/api/computer/desktop/sessions").catch(() => ({ sessions: [] as Session[] })) : { sessions: [] as Session[] },
+      ]);
+      const br = b.sessions.find((s) => s.profile === `b-${botId}`); const de = d.sessions.find((s) => s.profile === `d-${botId}`);
+      // Prefer whichever one a person is controlling, then the browser.
+      const hit = (de?.control === "human" ? { kind: "desktop" as const, session: de } : br ? { kind: "browser" as const, session: br } : de ? { kind: "desktop" as const, session: de } : undefined);
+      setFound(hit);
+    } finally { polling.current = false; }
   }, [botId, cuaDesktop]);
   useEffect(() => { setFound(undefined); setLive(false); void find(); const t = setInterval(() => void find(), pollMs); return () => clearInterval(t); }, [find, pollMs]);
   const kind = found?.kind; const profile = found?.session.profile;

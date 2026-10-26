@@ -3,6 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCliExec, createVmService, dockerVmConfig, type VmRow, type VmStore } from "./vm";
+import { openVncBridge } from "./vnc";
 
 /**
  * Real containers from docker/desktop (build it first: `docker build -t zetta-desktop:latest docker/desktop`).
@@ -35,6 +36,16 @@ describe.skipIf(!enabled)("vm service (real containers)", () => {
       for (let i = 0; i < 20 && !/Example Domain/.test(text); i++) { await Bun.sleep(500); text = await vms.read("alice", a.id); }
       expect(text).toContain("Example Domain");
       expect(await vms.read("bob", b.id)).not.toContain("Example Domain");
+
+      // VNC: the server authenticates to x11vnc; a browser-side handshake then gets ServerInit with the 1280x800 screen
+      const viewer = vms.vncViewer(vms.vncTicket("alice", a.id), a.id);
+      const sent: Buffer[] = [];
+      const bridge = await openVncBridge({ port: viewer.port, password: viewer.password, viewer: { send: (x) => { sent.push(Buffer.from(x)); }, close: () => {} } });
+      bridge.fromViewer(Buffer.from("RFB 003.008\n")); bridge.fromViewer(Uint8Array.of(1)); bridge.fromViewer(Uint8Array.of(1));
+      for (let i = 0; i < 50 && Buffer.concat(sent).length < 12 + 2 + 4 + 24; i++) await Bun.sleep(100);
+      const init = Buffer.concat(sent).subarray(18);
+      expect([init.readUInt16BE(0), init.readUInt16BE(2)]).toEqual([1280, 800]);
+      bridge.close(); viewer.release();
 
       // persistence: a file in home survives a stop/start of the same VM
       expect((await exec(["exec", `zetta-vm-${a.id}`, "sh", "-c", "echo kept > /home/agent/marker"])).code).toBe(0);

@@ -95,7 +95,7 @@ The recommendation above (agent-browser + Cua Driver on a private Linux desktop)
 | --- | --- | --- |
 | Isolated web browsing | Playwright Chromium (`playwright-core`, persistent context per user+profile, `apps/server/src/modules/computer`) | Implemented, real-Chromium tests, browser walkthrough |
 | Per-user profiles | `browser_profile` table + one on-disk profile dir per (user, profile); dedicated per bot (`b-<botId>`) or explicitly shared (`default`/named); reset deletes state; revoke refuses future starts | Implemented |
-| Safe takeover / hand-back | Control flag with epoch + compare-and-swap; agent actions refused while a human holds control; stale agent turns are rejected after any takeover; login pages (password inputs) raise a hand-off card; bots never type passwords | Implemented (screenshot/click UI) |
+| Safe takeover / hand-back | Control flag with epoch + compare-and-swap; agent actions refused while a human holds control; stale agent turns are rejected after any takeover; login pages (password inputs) raise a hand-off card unless the user shared a login for that site from a password manager; bots never see or type passwords themselves (the server types shared ones, see [credential-vaults.md](credential-vaults.md)) | Implemented (screenshot/click UI) |
 | Concurrency | Actions on one profile are serialized; per-turn bot action cap (12); idle reaper | Implemented |
 | Network policy | Public http(s) only, per-request route check, DNS-resolved private-range block | Implemented; DNS rebinding not closed |
 | **Desktop (whole-screen) computer use** | none | **Not available.** `GET /api/computer/capabilities` reports `desktop:false` and the UI says so. A Linux desktop broker (Xvnc + Cua Driver) remains the recommended future backend and is BLOCKED-EXTERNAL (needs a provisioned Linux host/container runtime) |
@@ -148,3 +148,7 @@ Evidence: unit tests with a fake Cua (`desktop.test.ts`), a real-Cua test (`ZETT
 - `vm.test.ts`: fake CLI and fake spacesd.
 - `tools.integration.test.ts`: the `create_vm` proposal against Postgres.
 - `vm-docker.test.ts` (`ZETTA_VM_TEST=1`, run with podman 6.1 on arm64): two users get two VMs, real PNG, navigate to example.com, AT-SPI read contains the page, a home file survives stop and start, and delete removes the volume.
+
+### Amendment 2026-10-26 (later): VNC for people
+
+People now see and control VMs over VNC instead of polled screenshots and per-click API calls. x11vnc runs on the existing Xvfb display, so bots (cua-driver, XTEST) and people share one screen. The server bridges noVNC's WebSocket to x11vnc. It authenticates with the per-start VNC password itself and gives the browser a no-auth RFB session after a one-time ticket, so the VNC port and password stay on the server. VNC authentication is weak (DES, 8-character password); it is acceptable only because the port is loopback-published and every connection comes through the authenticated bridge. Bots keep using spacesd's MCP.

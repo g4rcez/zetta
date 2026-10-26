@@ -2,7 +2,7 @@ import type { Database } from "@zetta/db";
 import { and, asc, eq, inArray, isNull, or, sql } from "@zetta/db/query";
 import { bot, botRevision, conversation, message, workspace } from "@zetta/db/schema/chat";
 import { attachment, configProposal, delegation, reaction } from "@zetta/db/schema/features";
-import { parseTools, whatsappView, type ToolCall } from "./tools";
+import { parseTools, whatsappBlocks, whatsappView, type ToolCall, type WhatsappBody } from "./tools";
 import type { ComputerService } from "../computer/service";
 import { FileAccessError, type FileStore } from "./files";
 import { dockerConfig, HarnessError, harnessMessage } from "./harness";
@@ -17,7 +17,8 @@ import { harnessReadiness } from "./harnesses";
 import { audit, outcomeOf } from "../features/audit";
 import type { DecisionService } from "../decisions/service";
 import type { Mcp } from "../integrations/mcp";
-import { getPlugin } from "../integrations/plugins/registry";
+import { getPlugin, PluginError } from "../integrations/plugins/registry";
+import { desktopFieldFits, desktopPage, fieldFits, originAllowed } from "../integrations/plugins/credentials";
 import { explain, problemBlock, problemForBot } from "./explain";
 import type { DesktopService } from "../computer/desktop";
 import type { VmService } from "../computer/vm";
@@ -63,7 +64,7 @@ export function createChatService(db: Database, run: ReturnType<typeof createTur
   const withTimeout = <T,>(work: Promise<T>, ms = 45_000): Promise<T> => { let t: ReturnType<typeof setTimeout>; return Promise.race([work, new Promise<never>((_, rej) => { t = setTimeout(() => rej(Object.assign(new Error("timeout"), { code: "TIMEOUT" })), ms); })]).finally(() => clearTimeout(t)); };
   /** Executes a bot's tool calls for the requesting user. Returns lines describing what happened and whether a person must take over. */
   async function runTools(actor: ActiveActor, who: typeof bot.$inferSelect, calls: ToolCall[], proposals: string[], receipts: Receipt[], budget: { browser: number; failed?: Set<string> }, mcpScope?: { callTool: (botId: string, server: string, tool: string, args: Record<string, unknown>) => Promise<string> }, signal?: AbortSignal, onComputer?: (vm: { id: string; name: string }) => void) {
-    const notes: string[] = []; let handoff = false; const browserResults: string[] = []; const views: string[] = [];
+    const notes: string[] = []; let handoff = false; const browserResults: string[] = []; const views: WhatsappBody[] = [];
     /** A failed tool: the user gets an explained callout, the bot gets the same explanation (see explain.ts). */
     const fail = (what: string, e: unknown) => { const p = explain(what, e); browserResults.push(problemForBot(p)); notes.push(problemBlock(p, who.name)); };
     /** Someone else holds the computer: the turn pauses (existing hand-off note explains it), the bot is told why. */
@@ -169,6 +170,39 @@ export function createChatService(db: Database, run: ReturnType<typeof createTur
         if (budget.failed?.has(key)) { browserResults.push(`${c.args.plugin}.${c.args.tool}: this exact call already failed in this turn; do not repeat it. Change the arguments or tell the user what is needed.`); continue; }
         try { const out = await mcp.plugins.callTool(actor, who.id, c.args.plugin, c.args.tool, c.args.args); const view = whatsappView(c.args.plugin, c.args.tool, out); if (view) views.push(view); browserResults.push(`${c.args.plugin}.${c.args.tool}:\n${out}`); notes.push(`🔌 Used ${c.args.plugin}.${c.args.tool}`); }
         catch (e) { (budget.failed ??= new Set()).add(key); fail(`${getPlugin(c.args.plugin)?.name ?? c.args.plugin}: ${c.args.tool.replace(/_/g, " ")}`, e); }
+      } else if (c.kind === "credential") {
+        // The value is revealed and typed server side; the bot only ever learns that the input was filled.
+        const a = c.args, desk = a.target === "desktop", sep = a.ref.indexOf(":"), plugin = a.ref.slice(0, sep), itemId = a.ref.slice(sep + 1);
+        const what = `${getPlugin(plugin)?.name ?? plugin}: fill ${a.field}`;
+        if (!mcp) { browserResults.push("integrations unavailable"); continue; }
+        if (!who.onboarded) { browserResults.push("sign-in is available after onboarding"); notes.push("🔑 Signing in is available after this bot finishes onboarding."); continue; }
+        if (who.computerMode === "off" || (desk && who.computerMode !== "desktop")) { browserResults.push(`${desk ? "desktop" : "browser"} use is not enabled for this bot`); notes.push(`🖥 ${desk ? "Desktop" : "Browser"} use is off for this bot. Enable it in the bot's settings.`); continue; }
+        if (desk ? !vms : !computer) { browserResults.push(`${desk ? "desktop" : "browser"} unavailable`); continue; }
+        if (budget.browser <= 0) { browserResults.push("action limit for this turn reached"); continue; }
+        budget.browser--;
+        try {
+          let title: string;
+          if (desk) {
+            const vm = await vms!.start(actor.userId, a.vm);
+            if (!receipts.some((r) => r.kind === "computer" && r.id === vm.id)) { receipts.push({ kind: "computer", id: vm.id, text: vm.name }); onComputer?.({ id: vm.id, name: vm.name }); }
+            const epoch = vms!.epochOf(actor.userId, vm.id), tree = await vms!.read(actor.userId, vm.id), page = desktopPage(tree);
+            if (!page) throw new PluginError("PAGE_UNKNOWN", "Zetta could not tell which https site the computer is showing, so it typed nothing.", "Make sure Chromium shows the sign-in page, or press Take over and sign in yourself.");
+            if (!desktopFieldFits(a.field, tree)) throw new PluginError("WRONG_INPUT", `The focused input does not look like a ${a.field} box, so nothing was typed.`, `Ask the bot to click the ${a.field} input first, or sign in yourself with Take over.`);
+            const r = await mcp.plugins.credential(actor, who.id, plugin, itemId, a.field, page); title = r.title;
+            await withTimeout(vms!.act(actor.userId, vm.id, "agent", { type: "type", text: r.value }, { signal, epoch }));
+          } else {
+            const profile = `b-${who.id}`; await computer!.start(actor.userId, profile);
+            const epoch = computer!.epochOf(actor.userId, profile), at = await computer!.focus(actor.userId, profile);
+            if (!fieldFits(a.field, at.focused)) throw new PluginError("WRONG_INPUT", `The focused input does not look like a ${a.field} box, so nothing was typed.`, `Ask the bot to click the ${a.field} input first, or sign in yourself with Take over.`);
+            const r = await mcp.plugins.credential(actor, who.id, plugin, itemId, a.field, at.url); title = r.title;
+            await withTimeout(computer!.act(actor.userId, profile, "agent", { type: "type", text: r.value }, { signal, epoch }));
+          }
+          browserResults.push(`credential: filled the ${a.field} for "${title}" (the value is never shown to you). Continue: fill the next field or submit the form.`);
+          notes.push(`🔑 Filled the ${a.field} for ${title}`);
+        } catch (e) {
+          const code = (e as { code?: string }).code;
+          if (code === "HUMAN_IN_CONTROL" || code === "STALE_CONTROL") held(what, e, "🙋 You are controlling the computer; the bot waits until you hand it back."); else fail(what, e);
+        }
       } else if (c.kind === "handoff") {
         handoff = true;
         await raiseAttention(db, actor.userId, { botId: who.id, title: `${who.name} needs you to take over the browser`, detail: c.args.reason, nextAction: "Press Take over in the chat (or open Studio > Computer), finish the step, then hand it back.", resultLink: "/chat", source: "bot", sourceKey: `handoff:${who.id}` });
@@ -188,7 +222,10 @@ export function createChatService(db: Database, run: ReturnType<typeof createTur
             const res = await withTimeout(computer.act(actor.userId, profile, "agent", a.action === "open" ? { type: "open", url: a.url } : a.action === "click_text" ? { type: "click_text", text: a.text } : a.action === "type" ? { type: "type", text: a.text } : { type: "key", key: a.key }, { signal, epoch }));
             // The bot always sees where it is and what the page says after an action (text snapshot: bots run through text-only harnesses).
             browserResults.push(`${a.action} ok. url: ${(res as { url?: string }).url ?? ""}\n${(await computer.text(actor.userId, profile)).slice(0, 3000)}`); notes.push(`🖥 ${a.action}${a.action === "open" ? ` ${a.url}` : ""}`);
-            if ((res as { loginRequired?: boolean }).loginRequired) { handoff = true; await raiseAttention(db, actor.userId, { botId: who.id, title: `${who.name} reached a sign-in page`, detail: "A page asked for a password. Zetta never types passwords for a bot.", nextAction: "Open Studio > Computer, take over, sign in yourself, then hand it back.", resultLink: "/studio", source: "bot", sourceKey: `login:${who.id}` }); notes.push("🔐 A sign-in page needs you: take over the browser to log in, then hand it back."); }
+            // A sign-in page: with a login the user shared for this site the bot signs in itself (zetta:credential); otherwise a person must.
+            const shared = (res as { loginRequired?: boolean }).loginRequired && mcp ? (await mcp.plugins.credentialGrants(actor, who.id).catch(() => [])).filter((g) => originAllowed((res as { url?: string }).url ?? "", g.grant.origins)) : [];
+            if (shared.length) browserResults.push(`sign-in page: the user shared ${shared.map((g) => `"${g.grant.title}" (ref ${g.plugin}:${g.grant.id}, fields ${g.grant.fields.join("/")})`).join(", ")} for this site. Click an input, then fill it with zetta:credential.`);
+            else if ((res as { loginRequired?: boolean }).loginRequired) { handoff = true; await raiseAttention(db, actor.userId, { botId: who.id, title: `${who.name} reached a sign-in page`, detail: "A page asked for a password. Zetta never types passwords for a bot.", nextAction: "Open Studio > Computer, take over, sign in yourself, then hand it back.", resultLink: "/studio", source: "bot", sourceKey: `login:${who.id}` }); notes.push("🔐 A sign-in page needs you: take over the browser to log in, then hand it back."); }
           }
         } catch (e) {
           const code = (e as { code?: string }).code, what = `Browser: ${c.args.action}`;
@@ -209,8 +246,8 @@ export function createChatService(db: Database, run: ReturnType<typeof createTur
    * write persistent state are ignored: injected text cannot teach, reconfigure or create anything.
    */
   async function finishReply(actor: ActiveActor, who: typeof bot.$inferSelect, reply: string, hist: (typeof message.$inferSelect)[], proposals: string[], receipts: Receipt[], ctx: Ctx) {
-    let current = reply; const allNotes: string[] = []; const allViews: string[] = []; const budget: { browser: number; failed?: Set<string> } = { browser: 12 };
-    const done = (text: string) => ({ text: [text.replace(/```zetta:whatsapp[\s\S]*?```/g, "").trim(), ...allViews].filter(Boolean).join("\n\n") });
+    let current = reply; const allNotes: string[] = []; const allViews: WhatsappBody[] = []; const budget: { browser: number; failed?: Set<string> } = { browser: 12 };
+    const done = (text: string) => ({ text: [text.replace(/```zetta:whatsapp[\s\S]*?```/g, "").trim(), ...whatsappBlocks(allViews)].filter(Boolean).join("\n\n") });
     const mcpScope = mcp?.openScope(actor);
     let untrusted = ctx.untrusted;
     try {
@@ -400,6 +437,14 @@ export function createChatService(db: Database, run: ReturnType<typeof createTur
     async listConversations(actor: ActiveActor, botId?: string) {
       return db.select().from(conversation).where(and(eq(conversation.ownerUserId, actor.userId), botId ? eq(conversation.botId, botId) : undefined))
         .orderBy(sql`${conversation.updatedAt} desc`);
+    },
+    /** Owner-only sidebar organization: rename, pin (floats to the top) and favorite. Never touches updatedAt, so ordering by recency is unchanged. */
+    async updateConversation(actor: ActiveActor, id: string, patch: { title?: string; pinned?: boolean; favorite?: boolean }) {
+      const set = { ...(patch.title !== undefined ? { title: patch.title.trim() } : {}), ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}), ...(patch.favorite !== undefined ? { favorite: patch.favorite } : {}) };
+      if (!Object.keys(set).length) return loadConversation(actor, id);
+      const [row] = await db.update(conversation).set(set).where(and(eq(conversation.id, id), eq(conversation.ownerUserId, actor.userId))).returning();
+      if (!row) throw new AccessError("NOT_FOUND");
+      return row;
     },
     async createConversation(actor: ActiveActor, botId: string) {
       await loadVisibleBot(actor, botId);

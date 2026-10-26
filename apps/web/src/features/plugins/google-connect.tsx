@@ -42,7 +42,7 @@ const SCOPES: { id: string; label: string; group: string }[] = [
   { id: "drive.readonly", group: "Drive", label: "Read all files" },
   { id: "drive.file", group: "Drive", label: "Only files created or opened with Zetta" },
 ];
-const REASON: Record<string, string> = { ACCESS_DENIED: "Google access was declined.", INVALID_STATE: "That sign-in link expired. Try again.", STATE_EXPIRED: "That sign-in took too long. Try again.", EXCHANGE_FAILED: "Google rejected the sign-in. Try again.", NO_REFRESH_TOKEN: "Google did not grant offline access. Remove Zetta from your Google account permissions and try again.", NOT_CONFIGURED: "Google is not configured on this server." };
+const REASON: Record<string, string> = { ACCESS_DENIED: "Google access was declined.", INVALID_STATE: "That sign-in link expired. Try again.", STATE_EXPIRED: "That sign-in took too long. Try again.", EXCHANGE_FAILED: "Google rejected the sign-in. Try again.", NO_REFRESH_TOKEN: "Google did not grant offline access. Remove Zetta from your Google account permissions and try again.", NOT_CONFIGURED: "Add your Google OAuth client ID and secret in Settings first." };
 
 /** Studio > Plugins > Google: choose permissions, connect through Google's consent screen, see the account, disconnect. Tokens never reach the browser. */
 export function GoogleConnect({ probe, onChanged, onError }: { probe?: PluginTest; onChanged: () => void; onError: (m: string) => void }) {

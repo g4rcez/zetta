@@ -23,7 +23,7 @@
 export type PluginFieldKind = "text" | "password" | "url" | "textarea";
 /** One entry of the config schema. The install dialog in the web app is generated from these. */
 export type PluginField = { key: string; label: string; secret?: boolean; optional?: boolean; kind?: PluginFieldKind; placeholder?: string; help?: string };
-export type PluginCategory = "monitoring" | "analytics" | "cloud" | "dev" | "productivity" | "docs" | "browser" | "messaging" | "google" | "other";
+export type PluginCategory = "monitoring" | "analytics" | "cloud" | "dev" | "productivity" | "docs" | "browser" | "messaging" | "social" | "google" | "security" | "other";
 /** none: nothing to configure. api-key: the user pastes `fields`. oauth: `connect()` returns an authorize URL (the plugin owns the flow). */
 export type PluginAuth = "none" | "api-key" | "oauth";
 
@@ -42,7 +42,18 @@ export type PluginTool = {
   handler(ctx: PluginContext, args: Record<string, unknown>): Promise<string | Record<string, unknown> | unknown[]>;
 };
 export type PluginStatus = { state: "connected" | "needs-auth" | "error"; detail?: string; /** Browser-safe extras (e.g. the connected account). Never secrets. */ info?: Record<string, unknown> };
-export type PluginMcpTarget = { transport: "http"; url: string; secretField?: string } | { transport: "stdio"; command: string; args: string[] };
+export type CredentialField = "username" | "password" | "totp";
+/** A vault item the USER allowed bots to fill, only on pages whose host matches `origins` (see credentials.ts). No values. */
+export type CredentialGrant = { id: string; title: string; origins: string[]; fields: CredentialField[] };
+/**
+ * Password-manager plugins. A revealed value never reaches a bot: the chat service types it into the bot's own browser or desktop after
+ * checking the grant, the field and the page's origin, and the bot only learns that the field was filled.
+ */
+export type PluginCredentials = {
+  grants(ctx: PluginContext): Promise<CredentialGrant[]>;
+  reveal(ctx: PluginContext, itemId: string, field: CredentialField): Promise<string>;
+};
+export type PluginMcpTarget ={ transport: "http"; url: string; secretField?: string } | { transport: "stdio"; command: string; args: string[] };
 
 export type PluginDef = {
   id: string; // ^[a-z0-9_-]{1,32}$, unique
@@ -63,13 +74,15 @@ export type PluginDef = {
   /** Validate / provision after the config is saved. Throw PluginError to abort (the install is rolled back). */
   install?(ctx: PluginContext): Promise<void>;
   /** Start or continue an OAuth/pairing flow. Return a URL for the user to open, or nothing. */
-  connect?(ctx: PluginContext, options?: Record<string, unknown>): Promise<{ authorizeUrl?: string; qrDataUrl?: string; message?: string } | void>;
+  connect?(ctx: PluginContext, options?: Record<string, unknown>): Promise<{ authorizeUrl?: string; qrDataUrl?: string; message?: string; /** Browser-safe extras for the plugin's own Studio panel. Never secrets. */ data?: Record<string, unknown> } | void>;
   /** Revoke remote access / delete remote state. Runs before the local secret is removed. */
   /** OAuth redirect target (GET /api/plugins/<id>/callback). Runs as the signed-in user; throw PluginError to report a failure. */
   callback?(ctx: PluginContext, params: URLSearchParams): Promise<void>;
   disconnect?(ctx: PluginContext): Promise<void>;
   /** Health of a native plugin (kind "mcp" is probed by listing its tools instead). */
   status?(ctx: PluginContext): Promise<PluginStatus>;
+  /** Password managers only: the user's grants and server-side reveal (never exposed as a tool). */
+  credentials?: PluginCredentials;
 };
 
 export const DEFAULT_SAFE = "The plugin could not complete that.";
@@ -101,7 +114,7 @@ export const unregisterPlugin = (id: string) => registry.delete(id);
 
 /** Browser-safe description of a plugin (no handlers, no secrets). */
 export const pluginMeta = (d: PluginDef) => ({
-  id: d.id, name: d.name, description: d.description, icon: d.icon, category: d.category, auth: d.auth, kind: d.kind, transport: d.mcp?.transport ?? null, fields: d.fields, docsUrl: d.docsUrl ?? null, verified: d.verified !== false, notes: d.notes ?? null,
+  id: d.id, name: d.name, description: d.description, icon: d.icon, category: d.category, auth: d.auth, kind: d.kind, transport: d.mcp?.transport ?? null, fields: d.fields, docsUrl: d.docsUrl ?? null, verified: d.verified !== false, notes: d.notes ?? null, credentials: Boolean(d.credentials),
   tools: (d.tools ?? []).map((t) => ({ name: t.name, description: t.description })),
 });
 export type PluginMeta = ReturnType<typeof pluginMeta>;

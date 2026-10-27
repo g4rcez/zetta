@@ -2,12 +2,24 @@ import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { HarnessError, codeWorkspace, createLimiter, dockerArgs, gitEnv, harnessCommands, harnessHome, harnessMessage, runCli, streamCli } from "./harness";
+import {
+  HarnessError,
+  codeWorkspace,
+  createLimiter,
+  dockerArgs,
+  gitEnv,
+  harnessCommands,
+  harnessHome,
+  harnessMessage,
+  runCli,
+  streamCli,
+} from "./harness";
 
 async function script(body: string) {
   const dir = await mkdtemp(join(tmpdir(), "zetta-fake-"));
   const path = join(dir, "fake");
-  await writeFile(path, `#!/bin/sh\n${body}\n`); await chmod(path, 0o755);
+  await writeFile(path, `#!/bin/sh\n${body}\n`);
+  await chmod(path, 0o755);
   return path;
 }
 describe("cli harness", () => {
@@ -19,81 +31,177 @@ describe("cli harness", () => {
     }
   });
   test("returns stdout, runs in an empty cwd with a minimal env", async () => {
-    const fake = await script("echo \"cwd=$(ls | wc -l | tr -d \" \") secret=${ZETTA_SECRET:-none} arg=$2\"");
+    const fake = await script(
+      'echo "cwd=$(ls | wc -l | tr -d " ") secret=${ZETTA_SECRET:-none} arg=$2"',
+    );
     process.env.ZETTA_SECRET = "leak";
-    const out = await runCli({ harness: "claude-code", prompt: "hi", model: null, resolve: () => fake });
+    const out = await runCli({
+      harness: "claude-code",
+      prompt: "hi",
+      model: null,
+      resolve: () => fake,
+    });
     expect(out).toBe("cwd=0 secret=none arg=hi");
   });
   test("maps missing binary, failure and timeout to typed errors", async () => {
-    const code = (p: Promise<unknown>) => p.then(() => "ok", (e) => (e as HarnessError).code);
+    const code = (p: Promise<unknown>) =>
+      p.then(
+        () => "ok",
+        (e) => (e as HarnessError).code,
+      );
     const failing = await script("exit 3");
-    expect(await code(runCli({ harness: "pi", prompt: "x", model: null, resolve: () => null }))).toBe("not_installed");
-    expect(await code(runCli({ harness: "pi", prompt: "x", model: null, resolve: () => failing }))).toBe("failed");
+    expect(
+      await code(runCli({ harness: "pi", prompt: "x", model: null, resolve: () => null })),
+    ).toBe("not_installed");
+    expect(
+      await code(runCli({ harness: "pi", prompt: "x", model: null, resolve: () => failing })),
+    ).toBe("failed");
     const slow = await script("sleep 5");
-    expect(await code(runCli({ harness: "pi", prompt: "x", model: null, timeoutMs: 200, resolve: () => slow }))).toBe("timeout");
+    expect(
+      await code(
+        runCli({ harness: "pi", prompt: "x", model: null, timeoutMs: 200, resolve: () => slow }),
+      ),
+    ).toBe("timeout");
   });
   test("timeout kills the whole process tree, not only the child", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zetta-tree-"));
     const marker = join(dir, "alive");
     const fake = await script(`(sleep 1; echo x > ${marker}) &\nsleep 30`);
-    const code = await runCli({ harness: "pi", prompt: "x", model: null, timeoutMs: 200, resolve: () => fake }).then(() => "ok", (e) => (e as HarnessError).code);
+    const code = await runCli({
+      harness: "pi",
+      prompt: "x",
+      model: null,
+      timeoutMs: 200,
+      resolve: () => fake,
+    }).then(
+      () => "ok",
+      (e) => (e as HarnessError).code,
+    );
     expect(code).toBe("timeout");
     await Bun.sleep(1500);
     expect(await Bun.file(marker).exists()).toBe(false); // the grandchild was killed too
   });
   test("an abort signal cancels the run", async () => {
-    const slow = await script("sleep 30"); const ac = new AbortController();
+    const slow = await script("sleep 30");
+    const ac = new AbortController();
     setTimeout(() => ac.abort(), 100);
-    const code = await runCli({ harness: "pi", prompt: "x", model: null, signal: ac.signal, resolve: () => slow }).then(() => "ok", (e) => (e as HarnessError).code);
+    const code = await runCli({
+      harness: "pi",
+      prompt: "x",
+      model: null,
+      signal: ac.signal,
+      resolve: () => slow,
+    }).then(
+      () => "ok",
+      (e) => (e as HarnessError).code,
+    );
     expect(code).toBe("cancelled");
   });
   test("auth failures are classified without leaking stderr; other failures stay generic", async () => {
     const authFake = await script('echo "Error: Not logged in. Please run /login" >&2; exit 1');
     const other = await script('echo "boom /secret/path" >&2; exit 1');
-    const run = (p: string) => runCli({ harness: "claude-code", prompt: "x", model: null, resolve: () => p }).then(() => "ok", (e: HarnessError) => e);
-    const a = await run(authFake) as HarnessError, o = await run(other) as HarnessError;
-    expect(a.code).toBe("auth_required"); expect(o.code).toBe("failed");
-    expect(harnessMessage("claude-code", a.code)).not.toContain("login"); expect(harnessMessage("pi", "not_installed")).toContain("not installed");
+    const run = (p: string) =>
+      runCli({ harness: "claude-code", prompt: "x", model: null, resolve: () => p }).then(
+        () => "ok",
+        (e: HarnessError) => e,
+      );
+    const a = (await run(authFake)) as HarnessError,
+      o = (await run(other)) as HarnessError;
+    expect(a.code).toBe("auth_required");
+    expect(o.code).toBe("failed");
+    expect(harnessMessage("claude-code", a.code)).not.toContain("login");
+    expect(harnessMessage("pi", "not_installed")).toContain("not installed");
   });
   test("limiter caps per-user and global concurrency and reports busy", async () => {
     const lim = createLimiter({ global: 2, perUser: 1, waitMs: 150 });
     const r1 = await lim.acquire("a");
-    expect(await lim.acquire("a").then(() => "ok", (e) => e.code)).toBe("busy"); // per-user
+    expect(
+      await lim.acquire("a").then(
+        () => "ok",
+        (e) => e.code,
+      ),
+    ).toBe("busy"); // per-user
     const r2 = await lim.acquire("b");
-    expect(await lim.acquire("c").then(() => "ok", (e) => e.code)).toBe("busy"); // global
-    r1(); r2();
-    const r3 = await lim.acquire("a"); r3();
+    expect(
+      await lim.acquire("c").then(
+        () => "ok",
+        (e) => e.code,
+      ),
+    ).toBe("busy"); // global
+    r1();
+    r2();
+    const r3 = await lim.acquire("a");
+    r3();
   });
   test("per-user HOME isolates native logins when configured", async () => {
     expect(harnessHome("u1", "codex", "/data/homes")).toBe("/data/homes/u1/codex");
     expect(harnessHome("../evil", "codex", "/data/homes")).toBe("/data/homes/___evil/codex");
     expect(harnessHome("u1", "codex", undefined)).toBeUndefined();
-    const root = await mkdtemp(join(tmpdir(), "zetta-homes-")); process.env.ZETTA_HARNESS_HOME_ROOT = root;
+    const root = await mkdtemp(join(tmpdir(), "zetta-homes-"));
+    process.env.ZETTA_HARNESS_HOME_ROOT = root;
     const fake = await script('echo "home=$HOME"');
-    const out = (u: string) => runCli({ harness: "pi", prompt: "x", model: null, userId: u, resolve: () => fake });
-    expect(await out("alice")).toBe(`home=${root}/alice/pi`); expect(await out("bob")).toBe(`home=${root}/bob/pi`);
+    const out = (u: string) =>
+      runCli({ harness: "pi", prompt: "x", model: null, userId: u, resolve: () => fake });
+    expect(await out("alice")).toBe(`home=${root}/alice/pi`);
+    expect(await out("bob")).toBe(`home=${root}/bob/pi`);
     delete process.env.ZETTA_HARNESS_HOME_ROOT;
   });
   test("streams chunks as they arrive", async () => {
     const fake = await script("echo one; sleep 0.2; echo two");
     const parts: string[] = [];
-    for await (const c of streamCli({ harness: "pi", prompt: "x", model: null, resolve: () => fake })) parts.push(c);
-    expect(parts.join("")).toContain("one"); expect(parts.join("")).toContain("two");
+    for await (const c of streamCli({
+      harness: "pi",
+      prompt: "x",
+      model: null,
+      resolve: () => fake,
+    }))
+      parts.push(c);
+    expect(parts.join("")).toContain("one");
+    expect(parts.join("")).toContain("two");
   });
 });
 
 describe("code access", () => {
   test("code flags pre-approve git and file tools and keep the prompt last", () => {
     const host = harnessCommands["claude-code"]("do it", null, "git");
-    expect(host.at(-1)).toBe("do it"); expect(host).toContain("acceptEdits");
-    expect(host.find((a) => a.startsWith("--allowedTools="))).toBe("--allowedTools=Read,Edit,Write,Glob,Grep,Bash(git:*)");
-    expect(host.find((a) => a.startsWith("--disallowedTools="))).toContain("Bash(git push --force:*)");
-    expect(harnessCommands["claude-code"]("x", null, "full").find((a) => a.startsWith("--allowedTools="))).toContain(",Bash");
+    expect(host.at(-1)).toBe("do it");
+    expect(host).toContain("acceptEdits");
+    expect(host.find((a) => a.startsWith("--allowedTools="))).toBe(
+      "--allowedTools=Read,Edit,Write,Glob,Grep,Bash(git:*)",
+    );
+    expect(host.find((a) => a.startsWith("--disallowedTools="))).toContain(
+      "Bash(git push --force:*)",
+    );
+    expect(
+      harnessCommands["claude-code"]("x", null, "full").find((a) =>
+        a.startsWith("--allowedTools="),
+      ),
+    ).toContain(",Bash");
     expect(harnessCommands["claude-code"]("x", null)).toEqual(["claude", "-p", "x"]);
-    expect(harnessCommands.codex("x", null, "git")).toContain("sandbox_workspace_write.network_access=true");
-    expect(harnessCommands.codex("x", null, "full")).toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(harnessCommands.codex("x", null, "git")).toContain(
+      "sandbox_workspace_write.network_access=true",
+    );
+    expect(harnessCommands.codex("x", null, "full")).toContain(
+      "--dangerously-bypass-approvals-and-sandbox",
+    );
     expect(harnessCommands.opencode("x", null, "git")).toContain("--auto");
-    expect(harnessCommands.codex("x", null)).toEqual(["codex", "exec", "--skip-git-repo-check", "x"]);
+    expect(harnessCommands.hermes("x", null)).toEqual([
+      "hermes",
+      "--ignore-rules",
+      "-t",
+      "web",
+      "-z",
+      "x",
+    ]);
+    expect(harnessCommands.hermes("x", null, "git")).toContain("web,file");
+    expect(harnessCommands.hermes("x", null, "git").join()).not.toContain("terminal");
+    expect(harnessCommands.hermes("x", null, "full")).toContain("web,file,terminal,code_execution");
+    expect(harnessCommands.codex("x", null)).toEqual([
+      "codex",
+      "exec",
+      "--skip-git-repo-check",
+      "x",
+    ]);
   });
   test("workspaces are per user and cannot escape the root", () => {
     expect(codeWorkspace("u1", "/data/code")).toBe("/data/code/u1");
@@ -101,24 +209,46 @@ describe("code access", () => {
   });
   test("git env carries identity, and the token only through a github.com credential helper", () => {
     const plain = gitEnv("Dev <bot>");
-    expect(plain.GIT_AUTHOR_NAME).toBe("Dev  bot"); expect(plain.GIT_CONFIG_COUNT).toBeUndefined();
+    expect(plain.GIT_AUTHOR_NAME).toBe("Dev  bot");
+    expect(plain.GIT_CONFIG_COUNT).toBeUndefined();
     const withToken = gitEnv("Dev", { GITHUB_TOKEN: "ghp_secret" });
     expect(withToken.GIT_CONFIG_KEY_0).toBe("credential.https://github.com.helper");
-    expect(Object.entries(withToken).filter(([k]) => k !== "GH_TOKEN").some(([, v]) => v.includes("ghp_secret"))).toBe(false);
+    expect(
+      Object.entries(withToken)
+        .filter(([k]) => k !== "GH_TOKEN")
+        .some(([, v]) => v.includes("ghp_secret")),
+    ).toBe(false);
   });
   test("the docker command mounts the user's workspace instead of a tmpfs", () => {
     const cfg = { image: "i", network: "bridge", memory: "1g", cpus: "1", pids: 64, bin: "docker" };
-    const code = dockerArgs(cfg, { name: "n", argv: ["claude"], workspace: "/data/code/u1", env: {} }), plain = dockerArgs(cfg, { name: "n", argv: ["claude"], env: {} });
-    expect(code).toContain("/data/code/u1:/work:rw"); expect(code.some((a) => a.startsWith("/work:rw"))).toBe(false);
+    const code = dockerArgs(cfg, {
+        name: "n",
+        argv: ["claude"],
+        workspace: "/data/code/u1",
+        env: {},
+      }),
+      plain = dockerArgs(cfg, { name: "n", argv: ["claude"], env: {} });
+    expect(code).toContain("/data/code/u1:/work:rw");
+    expect(code.some((a) => a.startsWith("/work:rw"))).toBe(false);
     expect(plain.some((a) => a.startsWith("/work:rw,size="))).toBe(true);
   });
   test("a code run executes in the user's persistent workspace and keeps it", async () => {
-    const root = await mkdtemp(join(tmpdir(), "zetta-code-")); process.env.ZETTA_CODE_ROOT = root;
+    const root = await mkdtemp(join(tmpdir(), "zetta-code-"));
+    process.env.ZETTA_CODE_ROOT = root;
     const fake = await script('echo "cwd=$(pwd -P) author=$GIT_AUTHOR_NAME arg=$*"; touch kept');
-    const out = await runCli({ harness: "claude-code", prompt: "hi", model: null, userId: "alice", code: { author: "dev" }, resolve: () => fake });
+    const out = await runCli({
+      harness: "claude-code",
+      prompt: "hi",
+      model: null,
+      userId: "alice",
+      code: { author: "dev" },
+      resolve: () => fake,
+    });
     delete process.env.ZETTA_CODE_ROOT;
     const dir = (await import("node:fs/promises")).realpath(join(root, "alice"));
-    expect(out).toContain(`cwd=${await dir}`); expect(out).toContain("author=dev"); expect(out).toContain("--permission-mode acceptEdits");
+    expect(out).toContain(`cwd=${await dir}`);
+    expect(out).toContain("author=dev");
+    expect(out).toContain("--permission-mode acceptEdits");
     expect(await Bun.file(join(root, "alice", "kept")).exists()).toBe(true);
   });
 });

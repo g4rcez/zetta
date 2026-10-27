@@ -13,6 +13,7 @@ import { createAgendaRoutes, type AgendaServices } from "./modules/agenda/routes
 import { createDiscussionRoutes, type DiscussionServices } from "./modules/discussions/routes";
 import { createInboundRoutes, type InboundServices } from "./modules/inbound/routes";
 import { createIdentityRoutes, type IdentityServices } from "./modules/identity/routes";
+import { createBotClaudeRoutes, type BotClaudeServices } from "./modules/bot-claude/routes";
 import { createBotDatabaseRoutes, type BotDatabaseServices } from "./modules/bot-database/routes";
 
 export interface AppAuth extends BetterAuthInstance {
@@ -32,24 +33,55 @@ export type CreateAppOptions = {
   discussions?: DiscussionServices;
   inbound?: InboundServices;
   botDatabase?: BotDatabaseServices;
+  botClaude?: BotClaudeServices;
   webOrigin: string;
   desktopOrigins: readonly string[];
   /** Optional; without it evlog writes plain console logs. */
   drain?: EvlogElysiaOptions["drain"];
 };
 
-export function createApp({ auth, identity, chat, features, decisions, computer, connections, integrations, agenda, discussions, inbound, botDatabase, webOrigin, desktopOrigins, drain }: CreateAppOptions) {
+export function createApp({
+  auth,
+  identity,
+  chat,
+  features,
+  decisions,
+  computer,
+  connections,
+  integrations,
+  agenda,
+  discussions,
+  inbound,
+  botDatabase,
+  botClaude,
+  webOrigin,
+  desktopOrigins,
+  drain,
+}: CreateAppOptions) {
   // Telemetry must never receive private auth/driver exceptions. Authorization
   // uses the original auth service independently and still fails closed.
-  const identifyUser = createAuthMiddleware({ api: { async getSession(input) {
-    try { return await auth.api.getSession(input); }
-    catch { return null; }
-  } } }, {
-    exclude: ["/api/auth/**"],
-    maskEmail: true,
-  });
+  const identifyUser = createAuthMiddleware(
+    {
+      api: {
+        async getSession(input) {
+          try {
+            return await auth.api.getSession(input);
+          } catch {
+            return null;
+          }
+        },
+      },
+    },
+    {
+      exclude: ["/api/auth/**"],
+      maskEmail: true,
+    },
+  );
 
-  return new Elysia()
+  // systemRouter: false keeps routing in Elysia's own fetch handler. With Bun's native route table (`Bun.serve({ routes })`), Bun
+  // 1.3.14 segfaults in routeListGetCached while serving a request under `bun --hot` (crash report decoded 2026-10-26), taking
+  // the API and every live VNC session down with it.
+  return new Elysia({ systemRouter: false })
     .mapResponse({ as: "global" }, ({ response, set }) => {
       if (response instanceof Response) set.status = response.status;
     })
@@ -78,11 +110,30 @@ export function createApp({ auth, identity, chat, features, decisions, computer,
     .use(features ? createFeatureRoutes(features, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(decisions ? createDecisionRoutes(decisions, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(computer ? createComputerRoutes(computer, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(connections ? createConnectionRoutes(connections, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(integrations ? createIntegrationRoutes(integrations, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(
+      connections
+        ? createConnectionRoutes(connections, [webOrigin, ...desktopOrigins])
+        : new Elysia(),
+    )
+    .use(
+      integrations
+        ? createIntegrationRoutes(integrations, [webOrigin, ...desktopOrigins])
+        : new Elysia(),
+    )
     .use(agenda ? createAgendaRoutes(agenda, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(discussions ? createDiscussionRoutes(discussions, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(
+      discussions
+        ? createDiscussionRoutes(discussions, [webOrigin, ...desktopOrigins])
+        : new Elysia(),
+    )
     .use(inbound ? createInboundRoutes(inbound, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(botDatabase ? createBotDatabaseRoutes(botDatabase, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(
+      botDatabase
+        ? createBotDatabaseRoutes(botDatabase, [webOrigin, ...desktopOrigins])
+        : new Elysia(),
+    )
+    .use(
+      botClaude ? createBotClaudeRoutes(botClaude, [webOrigin, ...desktopOrigins]) : new Elysia(),
+    )
     .get("/", () => "OK");
 }

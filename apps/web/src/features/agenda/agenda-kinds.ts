@@ -2,13 +2,23 @@ import { CalendarCheck2, CalendarDays, BellRing, StickyNote, type LucideIcon } f
 
 import type { AgendaKind } from "./agenda-api";
 
-export const KIND_LABEL: Record<AgendaKind, string> = { event: "Event", task: "Task", reminder: "Reminder", note: "Note" };
-export const KIND_ICON: Record<AgendaKind, LucideIcon> = { event: CalendarDays, task: CalendarCheck2, reminder: BellRing, note: StickyNote };
-export const KIND_THEME = { event: "primary", task: "success", reminder: "warn", note: "muted" } as const satisfies Record<AgendaKind, string>;
-/** Event pill colours per kind (Tailwind classes on the library's pill). */
-export const KIND_CLASS: Record<AgendaKind, string> = {
-  event: "border-l-2 border-l-primary",
-  task: "border-l-2 border-l-emerald-500",
-  reminder: "border-l-2 border-l-amber-500",
-  note: "border-l-2 border-l-muted-foreground",
+export const KIND_LABEL: Record<AgendaKind, string> = {
+  event: "Event",
+  task: "Task",
+  reminder: "Reminder",
+  note: "Note",
 };
+export const KIND_ICON: Record<AgendaKind, LucideIcon> = {
+  event: CalendarDays,
+  task: CalendarCheck2,
+  reminder: BellRing,
+  note: StickyNote,
+};
+export const KIND_THEME = {
+  event: "primary",
+  task: "success",
+  reminder: "warn",
+  note: "muted",
+} as const satisfies Record<AgendaKind, string>;
+/** PageCalendar pills are library Buttons: a className switches them to the `raw` theme, so pass the Button theme class matching the filter chip. */
+export const pillTheme = (theme: string) => `__button--theme-${theme}`;

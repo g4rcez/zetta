@@ -9,3 +9,4 @@ export * from "./agenda";
 export * from "./discussions";
 export * from "./inbound";
 export * from "./bot-database";
+export * from "./bot-claude";

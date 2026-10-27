@@ -50,9 +50,18 @@ const CODE_TOOLS = `
 Code access is enabled for you. Your shell and file tools run in a persistent workspace folder that belongs to the current user (your current directory): it survives between turns and holds their cloned repositories. Use git directly, no zetta block is needed: run ls first, \`git clone <url>\` if the repository is not there yet, then read, edit, run tests, create branches, commit and push. Git and file edits are already approved, so do not ask the user for permission to run them. Work on a branch unless asked to change the default branch, and never force-push or rewrite history unless the user asks for it. Private repositories and pushes need a GitHub token the user bound to this bot (it is in GITHUB_TOKEN when present); if clone or push fails with an authentication error, say so instead of retrying. Never print, commit or store tokens. Finish by reporting the branch, the commits and what you ran.`;
 /** Tool instructions for one bot: browser and desktop are only described when the owner granted that computer-use mode, code only with code access. */
 export function toolPreamble(mode: ComputerMode = "off", code = false): string {
-  const extra = [mode !== "off" ? BROWSER_TOOLS + (mode === "desktop" ? DESKTOP_TOOLS : "") : "", code ? CODE_TOOLS : ""].filter(Boolean).map((x) => x.trimStart()).join("\n");
+  const extra = [
+    mode !== "off" ? BROWSER_TOOLS + (mode === "desktop" ? DESKTOP_TOOLS : "") : "",
+    code ? CODE_TOOLS : "",
+  ]
+    .filter(Boolean)
+    .map((x) => x.trimStart())
+    .join("\n");
   if (!extra) return TOOL_PREAMBLE;
-  return TOOL_PREAMBLE.replace(/Only use a tool when it is needed\.$/, () => `${extra}\nOnly use a tool when it is needed.`);
+  return TOOL_PREAMBLE.replace(
+    /Only use a tool when it is needed\.$/,
+    () => `${extra}\nOnly use a tool when it is needed.`,
+  );
 }
 
 const bounded = (n: number) => z.string().trim().min(1).max(n);
@@ -60,102 +69,301 @@ const bounded = (n: number) => z.string().trim().min(1).max(n);
 const vm = z.string().uuid().optional();
 const isoDate = z.string().datetime({ offset: true });
 const agendaFields = {
-  kind: z.enum(["event", "task", "reminder", "note"]).optional(), title: bounded(200).optional(), start: isoDate.optional(), end: isoDate.nullable().optional(),
-  allDay: z.boolean().optional(), remindAt: isoDate.nullable().optional(), description: z.string().max(2000).optional(), location: z.string().max(200).optional(),
-  timezone: z.string().min(1).max(64).optional(), syncToGoogle: z.boolean().optional(),
+  kind: z.enum(["event", "task", "reminder", "note"]).optional(),
+  title: bounded(200).optional(),
+  start: isoDate.optional(),
+  end: isoDate.nullable().optional(),
+  allDay: z.boolean().optional(),
+  remindAt: isoDate.nullable().optional(),
+  description: z.string().max(2000).optional(),
+  location: z.string().max(200).optional(),
+  timezone: z.string().min(1).max(64).optional(),
+  syncToGoogle: z.boolean().optional(),
 };
 export const toolSchemas = {
-  remember: z.strictObject({
-    target: z.enum(["user", "memory"]).default("memory"), action: z.enum(["add", "patch", "remove"]).default("add"), content: z.string().trim().min(1).max(600).optional(), match: z.string().trim().min(1).max(600).optional(),
-    operations: z.array(z.strictObject({ action: z.enum(["add", "patch", "remove"]), content: z.string().trim().min(1).max(600).optional(), match: z.string().trim().min(1).max(600).optional() })).min(1).max(16).optional(),
-  }).transform((v, ctx) => {
-    const raw = v.operations ?? [{ action: v.action, content: v.content, match: v.match }];
-    const ops: ({ op: "add"; content: string } | { op: "patch"; match: string; content: string } | { op: "remove"; match: string })[] = [];
-    for (const r of raw) {
-      if (r.action === "add" && r.content) ops.push({ op: "add", content: r.content });
-      else if (r.action === "patch" && r.match && r.content) ops.push({ op: "patch", match: r.match, content: r.content });
-      else if (r.action === "remove" && r.match) ops.push({ op: "remove", match: r.match });
-      else { ctx.addIssue({ code: "custom", message: "operation is missing fields" }); return z.NEVER; }
-    }
-    return { target: v.target, ops };
+  remember: z
+    .strictObject({
+      target: z.enum(["user", "memory"]).default("memory"),
+      action: z.enum(["add", "patch", "remove"]).default("add"),
+      content: z.string().trim().min(1).max(600).optional(),
+      match: z.string().trim().min(1).max(600).optional(),
+      operations: z
+        .array(
+          z.strictObject({
+            action: z.enum(["add", "patch", "remove"]),
+            content: z.string().trim().min(1).max(600).optional(),
+            match: z.string().trim().min(1).max(600).optional(),
+          }),
+        )
+        .min(1)
+        .max(16)
+        .optional(),
+    })
+    .transform((v, ctx) => {
+      const raw = v.operations ?? [{ action: v.action, content: v.content, match: v.match }];
+      const ops: (
+        | { op: "add"; content: string }
+        | { op: "patch"; match: string; content: string }
+        | { op: "remove"; match: string }
+      )[] = [];
+      for (const r of raw) {
+        if (r.action === "add" && r.content) ops.push({ op: "add", content: r.content });
+        else if (r.action === "patch" && r.match && r.content)
+          ops.push({ op: "patch", match: r.match, content: r.content });
+        else if (r.action === "remove" && r.match) ops.push({ op: "remove", match: r.match });
+        else {
+          ctx.addIssue({ code: "custom", message: "operation is missing fields" });
+          return z.NEVER;
+        }
+      }
+      return { target: v.target, ops };
+    }),
+  instruction: z.strictObject({
+    title: bounded(120),
+    body: bounded(8000),
+    trigger: z.string().max(300).optional(),
+    verification: z.string().max(500).optional(),
   }),
-  instruction: z.strictObject({ title: bounded(120), body: bounded(8000), trigger: z.string().max(300).optional(), verification: z.string().max(500).optional() }),
-  config: z.strictObject({ botId: z.string().uuid(), patch: z.strictObject({ personality: z.string().max(4096).optional(), instructions: z.string().max(16384).optional(), description: z.string().max(2048).optional(), name: bounded(80).optional(), harness: z.enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "fixture"]).optional(), model: z.string().max(128).nullable().optional() }).refine((p) => Object.keys(p).length > 0) }),
+  config: z.strictObject({
+    botId: z.string().uuid(),
+    patch: z
+      .strictObject({
+        personality: z.string().max(4096).optional(),
+        instructions: z.string().max(16384).optional(),
+        description: z.string().max(2048).optional(),
+        name: bounded(80).optional(),
+        harness: z
+          .enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "hermes", "fixture"])
+          .optional(),
+        model: z.string().max(128).nullable().optional(),
+      })
+      .refine((p) => Object.keys(p).length > 0),
+  }),
   browser: z.discriminatedUnion("action", [
-    z.strictObject({ action: z.literal("open"), url: z.string().url().max(2000) }), z.strictObject({ action: z.literal("click_text"), text: bounded(200) }),
-    z.strictObject({ action: z.literal("type"), text: bounded(2000) }), z.strictObject({ action: z.literal("key"), key: bounded(30) }), z.strictObject({ action: z.literal("read") }),
+    z.strictObject({ action: z.literal("open"), url: z.string().url().max(2000) }),
+    z.strictObject({ action: z.literal("click_text"), text: bounded(200) }),
+    z.strictObject({ action: z.literal("type"), text: bounded(2000) }),
+    z.strictObject({ action: z.literal("key"), key: bounded(30) }),
+    z.strictObject({ action: z.literal("read") }),
   ]),
   handoff: z.strictObject({ reason: bounded(300) }),
   desktop: z.discriminatedUnion("action", [
-    z.strictObject({ action: z.literal("launch"), app: z.string().regex(/^[A-Za-z0-9._ -]{1,60}$/), vm }), z.strictObject({ action: z.literal("click"), x: z.number().min(0).max(8000), y: z.number().min(0).max(8000), vm }),
-    z.strictObject({ action: z.literal("type"), text: bounded(2000), vm }), z.strictObject({ action: z.literal("key"), key: bounded(40), vm }),
-    z.strictObject({ action: z.literal("scroll"), direction: z.enum(["up", "down", "left", "right"]), vm }), z.strictObject({ action: z.literal("read"), vm }),
+    z.strictObject({
+      action: z.literal("launch"),
+      app: z.string().regex(/^[A-Za-z0-9._ -]{1,60}$/),
+      vm,
+    }),
+    z.strictObject({
+      action: z.literal("click"),
+      x: z.number().min(0).max(8000),
+      y: z.number().min(0).max(8000),
+      vm,
+    }),
+    z.strictObject({ action: z.literal("type"), text: bounded(2000), vm }),
+    z.strictObject({ action: z.literal("key"), key: bounded(40), vm }),
+    z.strictObject({
+      action: z.literal("scroll"),
+      direction: z.enum(["up", "down", "left", "right"]),
+      vm,
+    }),
+    z.strictObject({ action: z.literal("read"), vm }),
     z.strictObject({ action: z.literal("navigate"), url: z.string().url().max(2000), vm }),
   ]),
-  create_vm: z.strictObject({ name: z.string().trim().regex(/^[\p{L}\p{N} ._-]{1,60}$/u), purpose: bounded(300) }),
-  credential: z.strictObject({ ref: z.string().regex(/^[a-z0-9_-]{1,32}:[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/), field: z.enum(["username", "password", "totp"]), target: z.enum(["browser", "desktop"]).default("browser"), vm }),
-  plugin: z.strictObject({ plugin: z.string().regex(/^[a-z0-9_-]{1,32}$/), tool: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/), args: z.record(z.string(), z.unknown()).default({}) }),
-  mcp: z.strictObject({ server: z.string().regex(/^[a-z0-9_-]{1,32}$/), tool: bounded(100), args: z.record(z.string(), z.unknown()).default({}) }),
-  create_bot: z.strictObject({ name: bounded(80), description: z.string().max(2048).optional(), harness: z.enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "fixture"]).optional(), model: z.string().max(128).nullable().optional(), personality: z.string().max(4096).optional(), instructions: z.string().max(16384).optional(), visibility: z.enum(["private", "team"]).optional() }),
-  create_routine: z.strictObject({ botId: z.string().uuid(), title: bounded(120), prompt: bounded(8000), timezone: bounded(64), dailyAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), everyMinutes: z.number().int().min(5).max(10080).optional() }),
+  create_vm: z.strictObject({
+    name: z
+      .string()
+      .trim()
+      .regex(/^[\p{L}\p{N} ._-]{1,60}$/u),
+    purpose: bounded(300),
+  }),
+  credential: z.strictObject({
+    ref: z.string().regex(/^[a-z0-9_-]{1,32}:[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/),
+    field: z.enum(["username", "password", "totp"]),
+    target: z.enum(["browser", "desktop"]).default("browser"),
+    vm,
+  }),
+  plugin: z.strictObject({
+    plugin: z.string().regex(/^[a-z0-9_-]{1,32}$/),
+    tool: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/),
+    args: z.record(z.string(), z.unknown()).default({}),
+  }),
+  mcp: z.strictObject({
+    server: z.string().regex(/^[a-z0-9_-]{1,32}$/),
+    tool: bounded(100),
+    args: z.record(z.string(), z.unknown()).default({}),
+  }),
+  create_bot: z.strictObject({
+    name: bounded(80),
+    description: z.string().max(2048).optional(),
+    harness: z
+      .enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "hermes", "fixture"])
+      .optional(),
+    model: z.string().max(128).nullable().optional(),
+    personality: z.string().max(4096).optional(),
+    instructions: z.string().max(16384).optional(),
+    visibility: z.enum(["private", "team"]).optional(),
+  }),
+  create_routine: z.strictObject({
+    botId: z.string().uuid(),
+    title: bounded(120),
+    prompt: bounded(8000),
+    timezone: bounded(64),
+    dailyAt: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+      .optional(),
+    everyMinutes: z.number().int().min(5).max(10080).optional(),
+  }),
   create_workflow: z.strictObject({ name: bounded(120), graph: z.unknown() }),
   discussion: z.discriminatedUnion("action", [
-    z.strictObject({ action: z.literal("open"), title: bounded(120), goal: bounded(1000), context: z.string().max(8000).default(""), members: z.array(z.strictObject({ bot: bounded(80), role: z.string().trim().max(200).optional() })).min(1).max(5), firstMessage: bounded(4000) }),
-    z.strictObject({ action: z.literal("post"), discussionId: z.string().uuid(), text: bounded(4000) }),
-    z.strictObject({ action: z.literal("update_context"), discussionId: z.string().uuid().optional(), text: z.string().max(8000) }),
-    z.strictObject({ action: z.literal("resolve"), discussionId: z.string().uuid().optional(), summary: bounded(2000) }),
+    z.strictObject({
+      action: z.literal("open"),
+      title: bounded(120),
+      goal: bounded(1000),
+      context: z.string().max(8000).default(""),
+      members: z
+        .array(z.strictObject({ bot: bounded(80), role: z.string().trim().max(200).optional() }))
+        .min(1)
+        .max(5),
+      firstMessage: bounded(4000),
+    }),
+    z.strictObject({
+      action: z.literal("post"),
+      discussionId: z.string().uuid(),
+      text: bounded(4000),
+    }),
+    z.strictObject({
+      action: z.literal("update_context"),
+      discussionId: z.string().uuid().optional(),
+      text: z.string().max(8000),
+    }),
+    z.strictObject({
+      action: z.literal("resolve"),
+      discussionId: z.string().uuid().optional(),
+      summary: bounded(2000),
+    }),
   ]),
   agenda: z.discriminatedUnion("action", [
-    z.strictObject({ action: z.literal("add"), ...agendaFields, kind: agendaFields.kind.default("task"), title: bounded(200), start: isoDate }),
+    z.strictObject({
+      action: z.literal("add"),
+      ...agendaFields,
+      kind: agendaFields.kind.default("task"),
+      title: bounded(200),
+      start: isoDate,
+    }),
     z.strictObject({ action: z.literal("list"), from: isoDate.optional(), to: isoDate.optional() }),
     z.strictObject({ action: z.literal("update"), id: z.string().uuid(), ...agendaFields }),
     z.strictObject({ action: z.literal("complete"), id: z.string().uuid() }),
     z.strictObject({ action: z.literal("remove"), id: z.string().uuid() }),
   ]),
 } as const;
-export type ToolCall = { [K in keyof typeof toolSchemas]: { kind: K; args: z.infer<(typeof toolSchemas)[K]> } }[keyof typeof toolSchemas];
+export type ToolCall = {
+  [K in keyof typeof toolSchemas]: { kind: K; args: z.infer<(typeof toolSchemas)[K]> };
+}[keyof typeof toolSchemas];
 
 /** Extracts valid tool calls (max 8) and returns the reply with the blocks removed. Invalid blocks are dropped silently. */
 export function parseTools(reply: string): { calls: ToolCall[]; text: string } {
   const calls: ToolCall[] = [];
-  const text = reply.replace(/```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|discussion)\s*\n([\s\S]*?)```/g, (_, kind: keyof typeof toolSchemas, body: string) => {
-    if (calls.length < 8) {
-      try { const parsed = toolSchemas[kind].safeParse(JSON.parse(body)); if (parsed.success) calls.push({ kind, args: parsed.data } as ToolCall); } catch { /* malformed JSON is ignored */ }
-    }
-    return "";
-  }).trim();
+  const text = reply
+    .replace(
+      /```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|discussion)\s*\n([\s\S]*?)```/g,
+      (_, kind: keyof typeof toolSchemas, body: string) => {
+        if (calls.length < 8) {
+          try {
+            const parsed = toolSchemas[kind].safeParse(JSON.parse(body));
+            if (parsed.success) calls.push({ kind, args: parsed.data } as ToolCall);
+          } catch {
+            /* malformed JSON is ignored */
+          }
+        }
+        return "";
+      },
+    )
+    .trim();
   return { calls, text };
 }
 
-export type WhatsappBody = { kind: "chats"; hour12: boolean; chats: { id: string; name: string; last: string; fromMe: boolean }[] }
-  | { kind: "messages"; hour12: boolean; name: string; chat: string; messages: { at: number; from: string; text: string; media: boolean }[] };
+export type WhatsappBody =
+  | {
+      kind: "chats";
+      hour12: boolean;
+      chats: { id: string; name: string; last: string; fromMe: boolean }[];
+    }
+  | {
+      kind: "messages";
+      hour12: boolean;
+      name: string;
+      chat: string;
+      messages: { at: number; from: string; text: string; media: boolean }[];
+    };
 
 /**
  * Data for a trusted ```zetta:whatsapp block built by the server (never by the model) from a WhatsApp read tool's own output, so the chat
  * can draw it like WhatsApp. The plugin already sanitised the text; we only keep the fields the view needs. Anything unexpected is undefined.
  */
 export function whatsappView(plugin: string, tool: string, out: string): WhatsappBody | undefined {
-  if (plugin !== "whatsapp" || (tool !== "list_chats" && tool !== "read_messages")) return undefined;
+  if (plugin !== "whatsapp" || (tool !== "list_chats" && tool !== "read_messages"))
+    return undefined;
   try {
-    const d = JSON.parse(out) as { timeFormat?: unknown; name?: unknown; chat?: unknown; chats?: { id?: unknown; name?: unknown; lastMessage?: unknown; lastFromMe?: unknown }[]; messages?: { at?: unknown; from?: unknown; text?: unknown; media?: unknown }[] };
+    const d = JSON.parse(out) as {
+      timeFormat?: unknown;
+      name?: unknown;
+      chat?: unknown;
+      chats?: { id?: unknown; name?: unknown; lastMessage?: unknown; lastFromMe?: unknown }[];
+      messages?: { at?: unknown; from?: unknown; text?: unknown; media?: unknown }[];
+    };
     const hour12 = d.timeFormat === "12h";
     return tool === "list_chats"
-      ? { kind: "chats", hour12, chats: (d.chats ?? []).slice(0, 20).map((c) => ({ id: String(c.id ?? ""), name: String(c.name ?? ""), last: String(c.lastMessage ?? ""), fromMe: Boolean(c.lastFromMe) })) }
-      : { kind: "messages", hour12, name: String(d.name ?? ""), chat: String(d.chat ?? ""), messages: (d.messages ?? []).slice(0, 20).map((m) => ({ at: Number(m.at) || 0, from: String(m.from ?? ""), text: String(m.text ?? ""), media: Boolean(m.media) })) };
-  } catch { return undefined; }
+      ? {
+          kind: "chats",
+          hour12,
+          chats: (d.chats ?? [])
+            .slice(0, 20)
+            .map((c) => ({
+              id: String(c.id ?? ""),
+              name: String(c.name ?? ""),
+              last: String(c.lastMessage ?? ""),
+              fromMe: Boolean(c.lastFromMe),
+            })),
+        }
+      : {
+          kind: "messages",
+          hour12,
+          name: String(d.name ?? ""),
+          chat: String(d.chat ?? ""),
+          messages: (d.messages ?? [])
+            .slice(0, 20)
+            .map((m) => ({
+              at: Number(m.at) || 0,
+              from: String(m.from ?? ""),
+              text: String(m.text ?? ""),
+              media: Boolean(m.media),
+            })),
+        };
+  } catch {
+    return undefined;
+  }
 }
 
 /** One card per conversation: repeated reads of the same chat (the bot often calls read_messages several times) are merged, de-duplicated and time-ordered. */
 export function whatsappBlocks(views: WhatsappBody[]): string[] {
   const merged = new Map<string, WhatsappBody>();
   for (const v of views) {
-    const key = v.kind === "chats" ? "chats" : `chat:${v.chat}`, prev = merged.get(key);
-    if (!prev) { merged.set(key, structuredClone(v)); continue; }
+    const key = v.kind === "chats" ? "chats" : `chat:${v.chat}`,
+      prev = merged.get(key);
+    if (!prev) {
+      merged.set(key, structuredClone(v));
+      continue;
+    }
     if (prev.kind === "messages" && v.kind === "messages") {
       const seen = new Set(prev.messages.map((m) => `${m.at}|${m.from}|${m.text}|${m.media}`));
-      for (const m of v.messages) if (!seen.has(`${m.at}|${m.from}|${m.text}|${m.media}`)) prev.messages.push(m);
-      prev.messages.sort((a, b) => a.at - b.at); prev.name ||= v.name;
+      for (const m of v.messages)
+        if (!seen.has(`${m.at}|${m.from}|${m.text}|${m.media}`)) prev.messages.push(m);
+      prev.messages.sort((a, b) => a.at - b.at);
+      prev.name ||= v.name;
     } else if (prev.kind === "chats" && v.kind === "chats") merged.set(key, structuredClone(v)); // newest list wins
   }
-  return [...merged.values()].map((b) => `\`\`\`zetta:whatsapp\n${JSON.stringify(b).replace(/`/g, "'")}\n\`\`\``);
+  return [...merged.values()].map(
+    (b) => `\`\`\`zetta:whatsapp\n${JSON.stringify(b).replace(/`/g, "'")}\n\`\`\``,
+  );
 }

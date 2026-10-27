@@ -1,5 +1,14 @@
 /** Harnesses Zetta can run a bot on, and the models each one may be asked for. Shared by the web app (select options) and the server (validation). */
-export const HARNESSES = ["fixture", "claude-code", "codex", "pi", "omp", "opencode", "cursor"] as const;
+export const HARNESSES = [
+  "fixture",
+  "claude-code",
+  "codex",
+  "pi",
+  "omp",
+  "opencode",
+  "cursor",
+  "hermes",
+] as const;
 export type Harness = (typeof HARNESSES)[number];
 
 type ModelOption = { value: string; label: string };
@@ -40,13 +49,18 @@ export const HARNESS_MODELS: Record<Harness, ModelOption[]> = {
     { value: "sonnet-4.5", label: "Claude Sonnet 4.5" },
     { value: "gpt-5", label: "GPT-5" },
   ],
+  // Hermes picks its model and provider from its own config; naming one here would have to match the provider it is signed in to.
+  hermes: [],
 };
 
 /** Select options for a harness's models; a saved model outside the list is kept so editing never silently drops it. */
 export const modelOptions = (harness: string, current?: string | null): ModelOption[] => {
   const list = HARNESS_MODELS[harness as keyof typeof HARNESS_MODELS] ?? [];
-  const extra = current && !list.some((m) => m.value === current) ? [{ value: current, label: current }] : [];
+  const extra =
+    current && !list.some((m) => m.value === current) ? [{ value: current, label: current }] : [];
   return [{ value: "", label: "Harness default" }, ...list, ...extra];
 };
 /** Empty or null means "harness default" and is always allowed; the offline fixture takes no model at all. */
-export const isAllowedModel = (harness: string, model: string | null | undefined) => !model || (HARNESS_MODELS[harness as keyof typeof HARNESS_MODELS] ?? []).some((m) => m.value === model);
+export const isAllowedModel = (harness: string, model: string | null | undefined) =>
+  !model ||
+  (HARNESS_MODELS[harness as keyof typeof HARNESS_MODELS] ?? []).some((m) => m.value === model);

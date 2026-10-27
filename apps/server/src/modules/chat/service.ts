@@ -85,6 +85,7 @@ export { TurnBusyError };
 export type BotInput = {
   avatar?: (typeof bot.$inferInsert)["avatar"];
   computerMode?: "off" | "browser" | "desktop";
+  computerActionLimit?: number;
   codeAccess?: boolean;
   requiredConnections?: { key: string; provider: string }[];
   name: string;
@@ -236,7 +237,71 @@ export function createChatService(
     "model",
     "personality",
     "instructions",
+    "computerActionLimit",
   ] as const;
+  /** Biggest Computer action limit a bot can be given; doubling stops here. */
+  const MAX_COMPUTER_ACTIONS = 400;
+  /**
+   * A bot hit its per-turn Computer action limit: ask the owner to double it. Approving applies the config proposal, so the new value is
+   * the bot's default from then on. One pending proposal per bot at a time.
+   */
+  async function proposeActionLimit(
+    actor: ActiveActor,
+    who: typeof bot.$inferSelect,
+    proposals: string[],
+    receipts: Receipt[],
+    notes: string[],
+  ) {
+    const from = who.computerActionLimit;
+    const to = Math.min(from * 2, MAX_COMPUTER_ACTIONS);
+    if (to <= from) {
+      notes.push(`🖥 Computer action limit reached (${from} per turn, the maximum).`);
+      return;
+    }
+    const [pending] = await db
+      .select({ id: configProposal.id })
+      .from(configProposal)
+      .where(
+        and(
+          eq(configProposal.ownerUserId, actor.userId),
+          eq(configProposal.botId, who.id),
+          eq(configProposal.status, "pending"),
+          sql`jsonb_exists(${configProposal.patch}, 'computerActionLimit')`,
+        ),
+      );
+    if (pending) {
+      notes.push(
+        `🖥 Computer action limit reached (${from} per turn). Approve the pending proposal to raise it.`,
+      );
+      return;
+    }
+    const [row] = await db
+      .insert(configProposal)
+      .values({
+        ownerUserId: actor.userId,
+        botId: who.id,
+        proposedByBotId: who.id,
+        baseVersion: who.version,
+        baseHash: configHash(snapshotConfig(who)),
+        patch: { computerActionLimit: to },
+        diff: [{ field: "computerActionLimit", from, to }],
+      })
+      .returning();
+    await raiseAttention(db, actor.userId, {
+      botId: who.id,
+      title: `${who.name} reached its Computer action limit`,
+      detail: `Raise it from ${from} to ${to} actions per turn`,
+      nextAction: "Open Chat and approve or reject the proposal.",
+      resultLink: "/chat",
+      source: "bot",
+      sourceKey: `proposal:${row!.id}`,
+    });
+    receipts.push({ kind: "proposal", id: row!.id, text: `Computer actions per turn: ${to}` });
+    proposals.push(row!.id);
+    notes.push(
+      `🖥 ${who.name} used all ${from} Computer actions for this turn. Approve below to double the limit to ${to} (it becomes the new default), then reply "continue".`,
+    );
+  }
   /** A hung page or desktop must not hold a chat turn forever: each computer action gets a bounded time. */
   const withTimeout = <T>(work: Promise<T>, ms = 45_000): Promise<T> => {
     let t: ReturnType<typeof setTimeout>;
@@ -254,7 +319,7 @@ export function createChatService(
     calls: ToolCall[],
     proposals: string[],
     receipts: Receipt[],
-    budget: { browser: number; failed?: Set<string> },
+    budget: { browser: number; failed?: Set<string>; limitAsked?: boolean },
     mcpScope?: {
       callTool: (
         botId: string,
@@ -271,6 +336,20 @@ export function createChatService(
     const notes: string[] = [];
     let handoff = false;
     const browserResults: string[] = [];
+    const LIMIT_RESULT =
+      "action limit for this turn reached; the user was asked to raise it. Stop here, sum up what is done and what is left, and say you will continue when they reply 'continue'";
+    /** Takes one Computer action from this turn's budget. When it runs out, the owner is asked (once per turn) to double the limit. */
+    const spendAction = async () => {
+      if (budget.browser > 0) {
+        budget.browser--;
+        return true;
+      }
+      if (!budget.limitAsked) {
+        budget.limitAsked = true;
+        await proposeActionLimit(actor, who, proposals, receipts, notes);
+      }
+      return false;
+    };
     const views: WhatsappBody[] = [];
     /** A failed tool: the user gets an explained callout, the bot gets the same explanation (see explain.ts). */
     const fail = (what: string, e: unknown) => {
@@ -603,11 +682,10 @@ export function createChatService(
           notes.push("🖥 Desktop use is available after this bot finishes onboarding.");
           continue;
         }
-        if (budget.browser <= 0) {
-          browserResults.push("action limit for this turn reached");
+        if (!(await spendAction())) {
+          browserResults.push(LIMIT_RESULT);
           continue;
         }
-        budget.browser--;
         try {
           const a = c.args;
           const step =
@@ -699,11 +777,10 @@ export function createChatService(
           notes.push("🖥 Desktop use is available after this bot finishes onboarding.");
           continue;
         }
-        if (budget.browser <= 0) {
-          browserResults.push("action limit for this turn reached");
+        if (!(await spendAction())) {
+          browserResults.push(LIMIT_RESULT);
           continue;
         }
-        budget.browser--;
         try {
           const profile = `d-${who.id}`;
           const a = c.args; // dedicated desktop per bot and user
@@ -842,11 +919,10 @@ export function createChatService(
           browserResults.push(`${desk ? "desktop" : "browser"} unavailable`);
           continue;
         }
-        if (budget.browser <= 0) {
-          browserResults.push("action limit for this turn reached");
+        if (!(await spendAction())) {
+          browserResults.push(LIMIT_RESULT);
           continue;
         }
-        budget.browser--;
         try {
           let title: string;
           if (desk) {
@@ -950,12 +1026,10 @@ export function createChatService(
         try {
           const a = c.args;
           const profile = `b-${who.id}`; // dedicated per bot: never shared implicitly across bots or users
-          if (budget.browser <= 0) {
-            browserResults.push("browser action limit for this turn reached");
-            notes.push("🖥 Browser limit for this turn reached.");
+          if (!(await spendAction())) {
+            browserResults.push(LIMIT_RESULT);
             continue;
           }
-          budget.browser--;
           await computer.start(actor.userId, profile);
           const epoch = computer.epochOf(actor.userId, profile);
           if (
@@ -1302,7 +1376,9 @@ export function createChatService(
     let current = reply;
     const allNotes: string[] = [];
     const allViews: WhatsappBody[] = [];
-    const budget: { browser: number; failed?: Set<string> } = { browser: 12 };
+    const budget: { browser: number; failed?: Set<string>; limitAsked?: boolean } = {
+      browser: who.computerActionLimit,
+    };
     const done = (text: string) => ({
       text: [text.replace(/```zetta:whatsapp[\s\S]*?```/g, "").trim(), ...whatsappBlocks(allViews)]
         .filter(Boolean)
@@ -1697,6 +1773,7 @@ export function createChatService(
               onboarded: b.onboarded,
               avatar: b.avatar,
               computerMode: b.computerMode,
+              computerActionLimit: b.computerActionLimit,
               codeAccess: b.codeAccess,
               requiredConnections: b.requiredConnections,
               archived: false,

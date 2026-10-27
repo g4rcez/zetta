@@ -67,6 +67,8 @@ export const bot = pgTable(
     computerMode: text("computer_mode", { enum: ["off", "browser", "desktop"] })
       .default("off")
       .notNull(),
+    // Most Computer actions (browser or desktop) this bot may take in one chat turn. Reaching it asks the owner to double it; approving makes the new value the default.
+    computerActionLimit: integer("computer_action_limit").default(12).notNull(),
     // Code access the owner granted this bot: a persistent per-user workspace where it can run git, edit files and push. On by default.
     codeAccess: boolean("code_access").default(true).notNull(),
     // Connections this bot needs before it is ready ([{ key, provider }]); bound per user in bot_connection.

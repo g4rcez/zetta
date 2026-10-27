@@ -53,6 +53,7 @@ const botInput = z.strictObject({
   personality: z.string().max(4096).optional(),
   instructions: z.string().max(16384).optional(),
   computerMode: z.enum(["off", "browser", "desktop"]).optional(),
+  computerActionLimit: z.number().int().min(1).max(400).optional(),
   codeAccess: z.boolean().optional(),
   requiredConnections: z
     .array(

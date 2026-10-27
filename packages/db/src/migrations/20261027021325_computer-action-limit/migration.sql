@@ -1,0 +1,1 @@
+ALTER TABLE "bot" ADD COLUMN "computer_action_limit" integer DEFAULT 12 NOT NULL;

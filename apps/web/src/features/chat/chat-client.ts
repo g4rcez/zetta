@@ -20,6 +20,7 @@ export type Bot = {
   personality: string;
   instructions: string;
   computerMode?: ComputerMode;
+  computerActionLimit?: number;
   codeAccess?: boolean;
   requiredConnections?: RequiredConnection[];
 };
@@ -42,6 +43,7 @@ export type BotPatch = Partial<{
   personality: string;
   instructions: string;
   computerMode: ComputerMode;
+  computerActionLimit: number;
   codeAccess: boolean;
   requiredConnections: RequiredConnection[];
 }>;

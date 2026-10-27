@@ -138,14 +138,16 @@ export function DiscussionsPage({ selectedId }: { selectedId?: string | undefine
                         ? "Bot working…"
                         : STATUS_LABEL[d.status]}
                   </span>
-                  <span className="truncate">{d.members.map((m) => m.name).join(", ")}</span>
+                  <span className="min-w-0 truncate">
+                    {d.members.map((m) => m.name).join(", ")}
+                  </span>
                 </span>
               </button>
             </li>
           ))}
         </ul>
       </aside>
-      <main className="flex min-h-0 flex-col">
+      <main className="flex min-h-0 min-w-0 flex-col">
         {creating ? (
           <NewDiscussion
             bots={bots}
@@ -268,8 +270,8 @@ function DiscussionView({
   const names = new Map(detail.members.map((m) => [m.botId, m.name]));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-      <section aria-label="Transcript" className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
+      <section aria-label="Transcript" className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
           <Button size="sm" variant="ghost" className="md:hidden" onClick={onBack}>
             Back
@@ -392,7 +394,7 @@ function DiscussionView({
       </section>
       <aside
         aria-label="Task context"
-        className="max-h-[45%] space-y-4 overflow-y-auto border-t p-4 text-sm lg:max-h-none lg:w-80 lg:border-t-0 lg:border-l"
+        className="max-h-[45%] min-w-0 shrink-0 space-y-4 overflow-x-hidden overflow-y-auto border-t p-4 text-sm break-words lg:max-h-none lg:w-80 lg:border-t-0 lg:border-l"
       >
         {d.tainted && (
           <Alert theme="warn">

@@ -65,12 +65,14 @@ export type AgentProfile = {
   maxBudgetCents: number | null;
   files: Record<string, string>;
   skills: { name: string; description: string; body: string }[];
+  /** The user's chief: any command and any rule even on the host (only the history-rewrite denials stay). Set by the server, never by a stored config. */
+  unrestricted?: boolean;
 };
 export const PLUGIN_NAME = "zetta-bot";
 
-/** A per-bot allow rule is honoured on the host only for plain tools or git; the container may take any rule, because the container is the boundary. */
+/** A per-bot allow rule is honoured on the host only for plain tools, git or the GitHub CLI (`gh`); the container may take any rule, because the container is the boundary. */
 export const claudeRuleAllowed = (rule: string, code: CodeMode) =>
-  code === "full" || CLAUDE_HOST_TOOLS.has(rule) || /^Bash\(git[ :]/.test(rule);
+  code === "full" || CLAUDE_HOST_TOOLS.has(rule) || /^Bash\((git|gh)[ :]/.test(rule);
 
 /**
  * Pure builder for the claude argv. Permissions only ever widen inside what the run's code mode allows (host: git and files; container:
@@ -80,15 +82,16 @@ export const claudeRuleAllowed = (rule: string, code: CodeMode) =>
 export function claudeArgs(
   prompt: string,
   model: string | null,
-  code?: CodeMode,
+  mode?: CodeMode,
   profile?: AgentProfile,
   pluginDir?: string,
 ): string[] {
+  const code: CodeMode | undefined = mode && profile?.unrestricted ? "full" : mode;
   const args = ["claude", "-p", ...(model ? ["--model", model] : [])];
   const deny = [...(profile?.deny ?? [])];
   const hasPlugin = Boolean(pluginDir);
   if (code) {
-    const preset = profile?.preset ?? "auto";
+    const preset = profile?.unrestricted ? "full" : (profile?.preset ?? "auto");
     const bash =
       preset === "edit"
         ? []
@@ -606,7 +609,7 @@ export const streamCli: StreamCli = async function* ({
     const argv = harnessCommands[harness](
       prompt,
       model,
-      workspace ? (docker ? "full" : "git") : undefined,
+      workspace ? (docker || profile?.unrestricted ? "full" : "git") : undefined,
       profile
         ? {
             profile,

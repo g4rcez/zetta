@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
+  type AgentProfile,
   HarnessError,
   codeWorkspace,
   createLimiter,
@@ -162,6 +163,28 @@ describe("cli harness", () => {
 });
 
 describe("code access", () => {
+  test("a host run honours gh rules, and the chief's unrestricted profile may run any command", () => {
+    const profile: AgentProfile = {
+      preset: "git",
+      allow: ["Bash(gh pr create:*)", "Bash(rm:*)"],
+      deny: [],
+      appendPrompt: "",
+      effort: null,
+      maxBudgetCents: null,
+      files: {},
+      skills: [],
+    };
+    const allow = (p: Parameters<(typeof harnessCommands)["claude-code"]>[3]) =>
+      harnessCommands["claude-code"]("x", null, "git", p).find((a) =>
+        a.startsWith("--allowedTools="),
+      )!;
+    const bot = allow({ profile });
+    expect(bot).toContain("Bash(gh pr create:*)");
+    expect(bot).not.toContain("Bash(rm:*)");
+    const chief = allow({ profile: { ...profile, allow: [], unrestricted: true } });
+    expect(chief).toContain(",Bash");
+    expect(chief).not.toContain("Bash(git:*)");
+  });
   test("code flags pre-approve git and file tools and keep the prompt last", () => {
     const host = harnessCommands["claude-code"]("do it", null, "git");
     expect(host.at(-1)).toBe("do it");

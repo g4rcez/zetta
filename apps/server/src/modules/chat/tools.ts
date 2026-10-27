@@ -11,6 +11,7 @@ import { z } from "zod";
  *   ```zetta:handoff     {"reason": "I need you to sign in"}                 -> attention item; the human takes over
  *   ```zetta:credential  {"ref": "1password:<item>", "field": "password"}    -> Zetta types a shared login into the focused input (value never shown to the bot)
  *   ```zetta:agenda      {"action": "add", "kind": "task", "title": "...", "start": "<ISO>"} | list | update | complete | remove -> the user's Agenda
+ *   ```zetta:bot_claude  {"bot": "<name or id>", "allow": ["Bash(gh pr create:*)"], "deny": [...], "revoke": [...], "preset": "git"} -> chief only: edits another bot's Claude Code permissions right away
  *   ```zetta:discussion  {"action": "open", "title", "goal", "context", "members": [{"bot": "Dev"}], "firstMessage"} | post | update_context | resolve -> group of bots (modules/discussions)
  *   ```zetta:ui          JSON-patch lines building a view from @zetta/render's catalog -> not a tool: it stays in the reply and the web chat draws it
  */
@@ -51,11 +52,17 @@ const DESKTOP_TOOLS = `
 \`\`\`   (only a proposal: asks the user for another computer, e.g. to keep a second account signed in. Use the default computer unless a separate one is really needed.)`;
 const CODE_TOOLS = `
 Code access is enabled for you. Your shell and file tools run in a persistent workspace folder that belongs to the current user (your current directory): it survives between turns and holds their cloned repositories. Use git directly, no zetta block is needed: run ls first, \`git clone <url>\` if the repository is not there yet, then read, edit, run tests, create branches, commit and push. Git and file edits are already approved, so do not ask the user for permission to run them. Work on a branch unless asked to change the default branch, and never force-push or rewrite history unless the user asks for it. Private repositories and pushes need a GitHub token the user bound to this bot (it is in GITHUB_TOKEN when present); if clone or push fails with an authentication error, say so instead of retrying. Never print, commit or store tokens. Finish by reporting the branch, the commits and what you ran.`;
-/** Tool instructions for one bot: browser and desktop are only described when the owner granted that computer-use mode, code only with code access. */
-export function toolPreamble(mode: ComputerMode = "off", code = false): string {
+const CHIEF_TOOLS = `
+You are the user's chief: you may use every tool and run any command, including gh and anything else on this machine, without asking for approval. You also manage what the other bots may do. When a bot says a command needs permission (for example gh pr create), grant it yourself instead of asking the user:
+\`\`\`zetta:bot_claude
+{"bot":"components","allow":["Bash(gh pr create:*)"]}
+\`\`\`   (takes effect at that bot's next turn. "bot" is a name or id from the bots list. Optional: "deny" adds deny rules, "revoke" removes rules from both lists, "preset" is auto|read_only|edit|git|full, "appendPrompt" replaces its extra instructions. Rules look like Bash(gh pr create:*) or WebFetch. Grant the narrowest rule that does the job, and tell the user what you granted.)`;
+/** Tool instructions for one bot: browser and desktop are only described when the owner granted that computer-use mode, code only with code access, bot permissions only for the chief. */
+export function toolPreamble(mode: ComputerMode = "off", code = false, chief = false): string {
   const extra = [
     mode !== "off" ? BROWSER_TOOLS + (mode === "desktop" ? DESKTOP_TOOLS : "") : "",
     code ? CODE_TOOLS : "",
+    chief ? CHIEF_TOOLS : "",
   ]
     .filter(Boolean)
     .map((x) => x.trimStart())
@@ -246,6 +253,14 @@ export const toolSchemas = {
       summary: bounded(2000),
     }),
   ]),
+  bot_claude: z.strictObject({
+    bot: bounded(80),
+    preset: z.enum(["auto", "read_only", "edit", "git", "full"]).optional(),
+    allow: z.array(bounded(200)).max(20).optional(),
+    deny: z.array(bounded(200)).max(20).optional(),
+    revoke: z.array(bounded(200)).max(20).optional(),
+    appendPrompt: z.string().max(8000).optional(),
+  }),
   agenda: z.discriminatedUnion("action", [
     z.strictObject({
       action: z.literal("add"),
@@ -269,7 +284,7 @@ export function parseTools(reply: string): { calls: ToolCall[]; text: string } {
   const calls: ToolCall[] = [];
   const text = reply
     .replace(
-      /```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|discussion)\s*\n([\s\S]*?)```/g,
+      /```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|discussion|bot_claude)\s*\n([\s\S]*?)```/g,
       (_, kind: keyof typeof toolSchemas, body: string) => {
         if (calls.length < 8) {
           try {

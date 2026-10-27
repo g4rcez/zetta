@@ -5,6 +5,7 @@ import { computerVm, hook as hooks } from "@zetta/db/schema/features";
 import { raiseAttention } from "../features/attention";
 import { createKnowledge, renderMemory, type MemorySnapshot } from "../features/knowledge";
 import { applyRedaction, matches, safeRegex } from "../features/safety";
+import { buildProfile, DEFAULT_CONFIG } from "../bot-claude/profile";
 import { createBotClaude } from "../bot-claude/store";
 import { buildHistory } from "./context";
 import { fixtureResponder } from "./fixture";
@@ -111,10 +112,20 @@ export function createTurnRunner(
   const knowledge = createKnowledge(db);
   const botClaude = createBotClaude(db);
   /** The bot's own Claude Code / Hermes settings. A lookup failure stops the run: falling back to defaults could grant more than the owner allowed. */
-  const claudeFor = async (b: Bot) =>
-    b.harness === "claude-code" || b.harness === "hermes"
-      ? { profile: await botClaude.profile(b.id) }
-      : {};
+  const claudeFor = async (b: Bot) => {
+    if (b.harness !== "claude-code" && b.harness !== "hermes") return {};
+    const profile = await botClaude.profile(b.id);
+    // The chief may do everything its owner can: any command, even on the host, and no stored preset narrows that.
+    if (b.kind === "chief")
+      return {
+        profile: {
+          ...(profile ?? buildProfile(DEFAULT_CONFIG, [])!),
+          preset: "full" as const,
+          unrestricted: true,
+        },
+      };
+    return { profile };
+  };
   async function call(
     b: Bot,
     prompt: string,
@@ -175,7 +186,7 @@ export function createTurnRunner(
     const toolText =
       b.harness === "fixture"
         ? ""
-        : `${toolPreamble(b.computerMode, codeEnabled(b, userId, noCode))}\nThe user's bots: ${(
+        : `${toolPreamble(b.computerMode, codeEnabled(b, userId, noCode), b.kind === "chief" && !noCode)}\nThe user's bots: ${(
             await db
               .select({ id: botTable.id, name: botTable.name })
               .from(botTable)

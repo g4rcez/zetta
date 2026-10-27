@@ -1,6 +1,8 @@
 import type { Database } from "@zetta/db";
 import { and, asc, eq, inArray, isNull, ne, or, sql } from "@zetta/db/query";
 import { botClaudeConfig } from "@zetta/db/schema/bot-claude";
+import { configInput } from "../bot-claude/profile";
+import { createBotClaude } from "../bot-claude/store";
 import { bot, botRevision, conversation, message, workspace } from "@zetta/db/schema/chat";
 import { attachment, configProposal, delegation, reaction } from "@zetta/db/schema/features";
 import {
@@ -196,6 +198,7 @@ export function createChatService(
   const routing = createRouting(db, decisions, jev);
   const turns = createTurnRegistry<ChatEvent>();
   const knowledge = createKnowledge(db);
+  const botClaudeStore = createBotClaude(db);
   const snapshotConfig = (r: typeof bot.$inferSelect) => ({
     name: r.name,
     description: r.description,
@@ -445,6 +448,59 @@ export function createChatService(
         receipts.push({ kind: "proposal", id: row!.id, text: target.name });
         proposals.push(row!.id);
         notes.push(`📝 Proposed a change to ${target.name}: review and approve it below.`);
+      } else if (c.kind === "bot_claude") {
+        // Only the chief may change what other bots can do, and it takes effect without a proposal.
+        if (who.kind !== "chief") {
+          browserResults.push("bot_claude: only the chief can change another bot's permissions.");
+          notes.push(
+            `🛡 ${who.name} tried to change another bot's permissions, which only the chief may do.`,
+          );
+          continue;
+        }
+        const ref = c.args.bot.trim().replace(/^@/, "").toLowerCase();
+        const mine = await db
+          .select()
+          .from(bot)
+          .where(and(eq(bot.ownerUserId, actor.userId), eq(bot.archived, false)));
+        const target =
+          mine.find((x) => x.id === ref) ??
+          mine.find((x) => x.name.replace(/\s+/g, "").toLowerCase() === ref.replace(/\s+/g, ""));
+        if (!target) {
+          browserResults.push(
+            `bot_claude: no bot called "${c.args.bot}". Use a name or id from the bots list.`,
+          );
+          continue;
+        }
+        if (target.harness !== "claude-code" && target.harness !== "hermes") {
+          browserResults.push(
+            `bot_claude: ${target.name} runs on ${target.harness}, which has no per-bot permissions.`,
+          );
+          continue;
+        }
+        const cur = (await botClaudeStore.get(target.id)).config;
+        const gone = new Set(c.args.revoke ?? []);
+        const next = configInput.safeParse({
+          ...cur,
+          preset: c.args.preset ?? cur.preset,
+          allow: [...cur.allow, ...(c.args.allow ?? [])].filter((r) => !gone.has(r)),
+          deny: [...cur.deny, ...(c.args.deny ?? [])].filter((r) => !gone.has(r)),
+          appendPrompt: c.args.appendPrompt ?? cur.appendPrompt,
+        });
+        if (!next.success) {
+          browserResults.push(`bot_claude: ${next.error.issues[0]?.message ?? "invalid rule"}`);
+          continue;
+        }
+        await botClaudeStore.save(target.id, next.data);
+        await audit(db, actor.userId, {
+          kind: "tool_call",
+          botId: target.id,
+          outcome: "ok",
+          detail: "bot_claude",
+        });
+        browserResults.push(
+          `bot_claude: ${target.name} now has preset ${next.data.preset}, allow [${next.data.allow.join(", ")}], deny [${next.data.deny.join(", ")}]. It applies at its next turn.`,
+        );
+        notes.push(`🔓 ${who.name} updated the permissions of ${target.name}.`);
       } else if (c.kind === "create_vm") {
         if (!vms) {
           notes.push("🖥 Extra computers are not available on this server.");
@@ -1212,6 +1268,7 @@ export function createChatService(
     "create_workflow",
     "create_vm",
     "agenda",
+    "bot_claude",
   ]);
   /** Reading the Agenda stays allowed after outside content; only its writes are persistent. */
   const writes = (c: ToolCall) =>

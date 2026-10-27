@@ -24,11 +24,19 @@ import { createBotClaude } from "./modules/bot-claude/store";
 import { createBotDatabase } from "./modules/bot-database/service";
 import { configureBotDatabase } from "./modules/bot-database/plugin";
 import { createEnrollmentService } from "./modules/identity/enrollment";
-import { createIdentityAccess, createMembershipLookup } from "./modules/identity/access";
+import {
+  createIdentityAccess,
+  createMembershipLookup,
+  issueBackgroundActor,
+} from "./modules/identity/access";
+import { TurnBusyError } from "./modules/chat/turns";
 import { createFirstAccountSetup, createSetupState } from "./modules/identity/first-account";
 import { createInvitationSignupPreflight } from "./modules/identity/signup-preflight";
 
-export const db = createDb(ENV);
+// `bun --hot` re-runs this module on every edit: keep one connection pool per process instead of leaking a new one (100 connections
+// fill up after a few dozen reloads).
+const reloaded = globalThis as { zettaDb?: ReturnType<typeof createDb> };
+export const db = (reloaded.zettaDb ??= createDb(ENV));
 export const auth = createAuth(ENV, db, desktopOrigins, {
   invitationSignupVerifier: createInvitationSignupPreflight(db),
   firstAccount: createFirstAccountSetup(db),
@@ -63,6 +71,11 @@ const vms = vmDocker
       allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
     })
   : undefined;
+// `bun --hot` re-runs this module: the previous instance lets go of its VMs (the new one reattaches on next use) instead of keeping a
+// second idle reaper and stale connections around.
+const hot = globalThis as { zettaVms?: { detach(): void } };
+hot.zettaVms?.detach();
+hot.zettaVms = vms;
 const computer = createComputerService({
   docker: dockerBrowserConfig(),
   db,
@@ -146,6 +159,26 @@ export const chatServices = {
   ),
   files,
 };
+// Routines run as real chat turns (tools, computers, plugins) in their conversation, as the owner. A busy conversation (the owner is
+// chatting in a routine that continues one chat) is retried for a while instead of failing the occurrence.
+features.routines.useChat(async (userId, conversationId, prompt, requestKey) => {
+  const actor = await issueBackgroundActor(membershipLookup, userId);
+  if (!actor) throw new Error("owner_inactive");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const { follow } = await chatServices.chat.startTurn(actor, conversationId, {
+        content: prompt,
+        clientRequestId: requestKey,
+      });
+      let saved: { status: string; content: string } | undefined;
+      for await (const { event } of follow()) if (event.type === "message") saved = event.message;
+      return { ok: saved?.status === "complete", text: saved?.content ?? "" };
+    } catch (e) {
+      if (!(e instanceof TurnBusyError) || attempt >= 24) throw e;
+      await Bun.sleep(5_000);
+    }
+  }
+});
 const discussionWorker = createDiscussionWorker(
   db,
   discussions,

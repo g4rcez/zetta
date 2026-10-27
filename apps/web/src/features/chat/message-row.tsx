@@ -335,7 +335,13 @@ export function MessageRow({
           <p className="text-xs italic text-muted-foreground">Stopped.</p>
         )}
         {computers.map((vm) => (
-          <VmCard key={vm.id} vm={vm} botName={author.bot?.name} working={Boolean(row.streaming)} />
+          <VmCard
+            key={vm.id}
+            vm={vm}
+            botName={author.bot?.name}
+            working={Boolean(row.streaming)}
+            steps={row.computerSteps?.filter((x) => x.vmId === vm.id)}
+          />
         ))}
         {row.meta?.discussion && (
           <Link

@@ -11,10 +11,14 @@ export type ChatDataParts = {
   proposal: { proposal: { id: string } };
   summary: { text: string };
   computer: { messageId: string; botId: string; vm: { id: string; name: string } };
+  "computer-step": { messageId: string; vmId: string; step: string; at: number };
 };
 export type ChatUIMessage = UIMessage<unknown, ChatDataParts>;
 
-const errorText = (error: unknown) => (error instanceof Error && error.message === "TURN_BUSY" ? "This chat is still answering." : "Something went wrong. Please retry.");
+const errorText = (error: unknown) =>
+  error instanceof Error && error.message === "TURN_BUSY"
+    ? "This chat is still answering."
+    : "Something went wrong. Please retry.";
 
 /**
  * Re-encodes a chat turn as an AI SDK UI message stream: one turn is one assistant UIMessage, and each answering bot is a
@@ -32,22 +36,53 @@ export function toUIMessageStream(events: AsyncIterable<ChatEvent>) {
         open = messageId;
       };
       for await (const ev of events) {
-        if (ev.type === "user") writer.write({ type: "data-user-saved", id: ev.message.id, data: { message: ev.message } });
+        if (ev.type === "user")
+          writer.write({
+            type: "data-user-saved",
+            id: ev.message.id,
+            data: { message: ev.message },
+          });
         else if (ev.type === "start") speak(ev.messageId, ev.botId, ev.botName);
-        else if (ev.type === "delta") { if (open) writer.write({ type: "text-delta", id: open, delta: ev.text }); }
-        else if (ev.type === "message") {
+        else if (ev.type === "delta") {
+          if (open) writer.write({ type: "text-delta", id: open, delta: ev.text });
+        } else if (ev.type === "message") {
           // An idempotent retry replays saved replies without start/delta: emit the whole text so the part still exists.
           if (open !== ev.message.id) {
             speak(ev.message.id, ev.message.botId ?? "", ev.botName);
-            if (ev.message.content) writer.write({ type: "text-delta", id: ev.message.id, delta: ev.message.content });
+            if (ev.message.content)
+              writer.write({ type: "text-delta", id: ev.message.id, delta: ev.message.content });
           }
           writer.write({ type: "text-end", id: ev.message.id });
           open = undefined;
-          writer.write({ type: "data-saved", id: ev.message.id, data: { message: ev.message, botName: ev.botName } });
-        } else if (ev.type === "proposal") writer.write({ type: "data-proposal", id: ev.proposalId, data: { proposal: { id: ev.proposalId } } });
-        else if (ev.type === "summary") writer.write({ type: "data-summary", data: { text: ev.text } });
-        else if (ev.type === "computer") writer.write({ type: "data-computer", id: `${ev.messageId}:${ev.vm.id}`, data: { messageId: ev.messageId, botId: ev.botId, vm: ev.vm } });
-        else if (ev.type === "done") { writer.write({ type: "finish" }); return; }
+          writer.write({
+            type: "data-saved",
+            id: ev.message.id,
+            data: { message: ev.message, botName: ev.botName },
+          });
+        } else if (ev.type === "proposal")
+          writer.write({
+            type: "data-proposal",
+            id: ev.proposalId,
+            data: { proposal: { id: ev.proposalId } },
+          });
+        else if (ev.type === "summary")
+          writer.write({ type: "data-summary", data: { text: ev.text } });
+        else if (ev.type === "computer") {
+          writer.write({
+            type: "data-computer",
+            id: `${ev.messageId}:${ev.vm.id}`,
+            data: { messageId: ev.messageId, botId: ev.botId, vm: ev.vm },
+          });
+          // Each step is its own part (no id), so the live card can list what the bot did on the computer, newest last.
+          if (ev.step)
+            writer.write({
+              type: "data-computer-step",
+              data: { messageId: ev.messageId, vmId: ev.vm.id, step: ev.step, at: Date.now() },
+            });
+        } else if (ev.type === "done") {
+          writer.write({ type: "finish" });
+          return;
+        }
       }
       if (open) writer.write({ type: "text-end", id: open });
     },

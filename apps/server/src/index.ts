@@ -44,8 +44,11 @@ createApp({
   console.log(`Server is running on http://localhost:${process.env.PORT ?? 3000}`);
 });
 
-// Simple in-process scheduler: one tick per 30s; each due routine is claimed atomically before it runs.
-setInterval(() => {
+// Simple in-process scheduler: one tick per 30s; each due routine is claimed atomically before it runs. A `bun --hot` reload replaces
+// the timer instead of stacking another one that keeps driving the previous module's services.
+const ticker = globalThis as { zettaTick?: ReturnType<typeof setInterval> };
+clearInterval(ticker.zettaTick);
+ticker.zettaTick = setInterval(() => {
   void featureServices.features.runDue().catch(() => {});
   void agendaServices.scheduler.tick().catch(() => {});
   void discussionServices.worker.tick().catch(() => {});

@@ -122,7 +122,7 @@ const sources = createSources(db, computer, {
 });
 const features = createFeaturesService(db, undefined, decisions, computer, sources as never);
 const agenda = createAgenda(db);
-const discussions = createDiscussionStore(db);
+const discussions = createDiscussionStore(db, files);
 // Each bot's private Postgres schema (modules/bot-database). Bot passwords are derived from this key; the app's database user needs CREATEROLE.
 const botDbKey = process.env.ZETTA_BOT_DATABASE_KEY || process.env.ZETTA_CONNECTION_KEY;
 const botDatabase = botDbKey

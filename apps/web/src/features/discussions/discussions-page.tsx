@@ -16,7 +16,10 @@ import {
   type Proposal,
 } from "../chat/chat-client";
 import type { Row } from "../chat/chat-rows";
+import { Composer, type Outgoing } from "../chat/composer";
+import { ComputerActivity } from "../computer/computer-activity";
 import { MessageList } from "../chat/message-list";
+import { useZettaChat } from "../chat/use-zetta-chat";
 import type { Author } from "../chat/message-row";
 import { ProposalsPanel } from "../chat/proposals-panel";
 import {
@@ -202,9 +205,13 @@ function DiscussionView({
       const d = await discussionsApi.get(id);
       setDetail(d);
       setMessages(await chatClient.messages(d.discussion.conversationId));
+      const memberIds = new Set(d.members.map((m) => m.botId));
+      // Same panel as a chat: the briefs that gate this discussion and whatever its bots proposed (config changes, and so on).
       setBriefs(
-        (await chatClient.proposals()).filter(
-          (p) => p.kind === "discussion_brief" && p.patch?.discussionId === id,
+        (await chatClient.proposals()).filter((p) =>
+          p.kind === "discussion_brief"
+            ? p.patch?.discussionId === id
+            : p.kind !== "open_discussion" && Boolean(p.botId && memberIds.has(p.botId)),
         ),
       );
     } catch (e) {
@@ -225,6 +232,17 @@ function DiscussionView({
     return () => clearInterval(t);
   }, [working, load]);
 
+  const runningTurn = detail?.turns.find((t) => t.status === "running");
+  // The turn that is running streams here live, exactly like a chat reply, and the page reloads when it settles.
+  const liveChat = useZettaChat({
+    conversationId: detail?.discussion.conversationId,
+    attachKey: runningTurn?.id,
+    onSettled: async () => {
+      await load();
+      onChanged();
+    },
+    onProposal: () => void load(),
+  });
   const me: Author = { name: session?.user.name ?? "You", image: session?.user.image };
   const authorOf = useCallback(
     (row: Row): Author => {
@@ -236,15 +254,19 @@ function DiscussionView({
     },
     [bots, session?.user.name, session?.user.image],
   );
-  const rows = useMemo<Row[]>(
-    () =>
-      messages.map((m) => ({
-        ...m,
-        createdAt: m.createdAt ?? new Date().toISOString(),
-        streaming: m.status === "running",
-      })),
-    [messages],
-  );
+  const rows = useMemo<Row[]>(() => {
+    const saved = messages.map((m) => ({
+      ...m,
+      createdAt: m.createdAt ?? new Date().toISOString(),
+      streaming: m.status === "running",
+    }));
+    const known = new Set(saved.filter((r) => r.status !== "running").map((r) => r.id));
+    const streaming = new Set(liveChat.rows.map((r) => r.id));
+    return [
+      ...saved.filter((r) => r.status !== "running" || !streaming.has(r.id)),
+      ...liveChat.rows.filter((r) => !known.has(r.id)),
+    ];
+  }, [messages, liveChat.rows]);
 
   async function act(work: () => Promise<unknown>, done?: string) {
     setBusy(true);
@@ -257,6 +279,21 @@ function DiscussionView({
       fail(e);
     }
     setBusy(false);
+  }
+  async function send(out: Outgoing) {
+    setBusy(true);
+    try {
+      await discussionsApi.post(id, out.text, out);
+      setDraft("");
+      await load();
+      onChanged();
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    } finally {
+      setBusy(false);
+    }
   }
   if (!detail)
     return (
@@ -331,23 +368,13 @@ function DiscussionView({
             </Button>
           )}
         </header>
-        {briefs.length > 0 && (
-          <div className="space-y-2 border-b p-3">
-            <ProposalsPanel
-              proposals={briefs}
-              bots={bots}
-              notify={(m) => toast(m)}
-              onResolved={() => void load()}
-              onBotsChanged={() => void load()}
-            />
-          </div>
-        )}
         <MessageList
+          key={d.conversationId}
           rows={rows}
           authorOf={authorOf}
-          busy={Boolean(working)}
+          busy={Boolean(working) || liveChat.busy}
           label="Discussion transcript"
-          inThread
+          threads={false}
           actions={{
             onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
             onReply: () => {},
@@ -356,41 +383,50 @@ function DiscussionView({
                 .saveInstruction(d.title, row.content)
                 .then(() => toast.success("Saved as an instruction."), fail),
           }}
+          intro={
+            rows.length === 0 ? (
+              <p role="status" className="px-4 py-6 text-sm text-muted-foreground">
+                No messages yet.
+              </p>
+            ) : null
+          }
           footer={
-            running ? (
+            running && !liveChat.busy ? (
               <p role="status" className="px-4 py-2 text-xs text-muted-foreground">
                 {names.get(running.botId) ?? "A bot"} is working…
               </p>
             ) : null
           }
         />
-        {!isClosed && (
-          <form
-            className="flex items-end gap-2 border-t p-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const text = draft.trim();
-              if (!text) return;
-              void act(async () => {
-                await discussionsApi.post(id, text);
-                setDraft("");
-              });
-            }}
-          >
-            <Textarea
-              title="Message the group"
-              hiddenLabel
-              container="flex-1"
-              rows={2}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder={`Mention a bot to ask it, e.g. @${detail.members[0]?.name.replace(/\s+/g, "") ?? "Bot"}`}
+        <div className="shrink-0 space-y-2 px-4 pb-4">
+          {briefs.length > 0 && (
+            <ProposalsPanel
+              proposals={briefs}
+              bots={bots}
+              notify={(m) => toast(m)}
+              onResolved={() => void load()}
+              onBotsChanged={() => void load()}
             />
-            <Button type="submit" disabled={busy || !draft.trim()}>
-              Send
-            </Button>
-          </form>
-        )}
+          )}
+          {liveChat.error && (
+            <Alert theme="danger" onClose={() => liveChat.clearError()}>
+              <p className="break-words">{errorMessage(liveChat.error)}</p>
+            </Alert>
+          )}
+          {running && <ComputerActivity botId={running.botId} botName={names.get(running.botId)} />}
+          {!isClosed && (
+            <Composer
+              value={draft}
+              onChange={setDraft}
+              placeholder={`Message the group, e.g. @${detail.members[0]?.name.replace(/\s+/g, "") ?? "Bot"}`}
+              bots={bots.filter((b) => names.has(b.id))}
+              busy={busy}
+              conversationId={d.conversationId}
+              onSubmit={send}
+              onError={fail}
+            />
+          )}
+        </div>
       </section>
       <aside
         aria-label="Task context"

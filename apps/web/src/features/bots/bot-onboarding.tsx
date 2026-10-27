@@ -13,7 +13,6 @@ import {
   PenLine,
   Sparkles,
   Telescope,
-  X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -45,6 +44,7 @@ import {
   reviewScore,
   type Brief,
 } from "./instruction-review";
+import { Alert } from "@g4rcez/components/alert";
 
 type Draft = {
   name: string;
@@ -346,30 +346,11 @@ export function BotOnboarding() {
           </header>
           <div className="flex-1 space-y-4 pb-10">
             {notice && (
-              <div
-                role="status"
-                className="flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm"
-              >
-                <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-                <p className="flex-1">{notice}</p>
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  aria-label="Dismiss"
-                  onClick={() => setNotice(undefined)}
-                >
-                  <X />
-                </Button>
-              </div>
+              <Alert theme="success" onClose={() => setNotice(undefined)}>
+                {notice}
+              </Alert>
             )}
-            {error && (
-              <p
-                role="alert"
-                className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              >
-                {error}
-              </p>
-            )}
+            {error && <Alert theme="danger">{error}</Alert>}
 
             {current.id === "start" && (
               <StartStep origin={origin} bots={bots.filter((b) => b.canEdit)} onChoose={choose} />
@@ -1075,11 +1056,10 @@ function ReviewStep({
           )}
         </dl>
         {draft.harness === "fixture" && (
-          <p className="flex items-start gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-amber-800 dark:text-amber-200">
-            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <Alert theme="warn">
             It runs on the offline test engine, so its replies will be canned. Switch the engine for
             real work.
-          </p>
+          </Alert>
         )}
         {missing.length > 0 && (
           <p className="text-muted-foreground">

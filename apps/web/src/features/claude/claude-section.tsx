@@ -13,6 +13,7 @@ import {
   type ClaudeConfig,
   type ClaudeSettings,
 } from "./claude-api";
+import { Alert } from "@g4rcez/components/alert";
 
 const EFFORT_OPTIONS = [
   { value: "", label: "Default" },
@@ -48,11 +49,7 @@ export function ClaudeSection({ bot, notify }: { bot: Bot; notify: (m: string) =
     );
   return (
     <section aria-label="Agent settings" className="space-y-6 text-sm">
-      {error && (
-        <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </p>
-      )}
+      {error && <Alert theme="danger">{error}</Alert>}
       {!data && !error && <Empty>Loading...</Empty>}
       {data && (
         <>
@@ -225,11 +222,7 @@ function Assets({
     act(() => claudeApi.updateAsset(bot.id, a.id, { ...a, enabled: !a.enabled }));
   return (
     <div className="space-y-4">
-      {error && (
-        <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </p>
-      )}
+      {error && <Alert theme="danger">{error}</Alert>}
       {data.harness === "hermes" && (
         <p className="text-xs text-muted-foreground">
           Hermes reads these skills as part of its prompt, so keep them short. Sub-agents and
@@ -479,14 +472,7 @@ function AssetDialog({
             />
           </div>
         )}
-        {error && (
-          <p
-            role="alert"
-            className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
-          >
-            {error}
-          </p>
-        )}
+        {error && <Alert theme="danger">{error}</Alert>}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Cancel

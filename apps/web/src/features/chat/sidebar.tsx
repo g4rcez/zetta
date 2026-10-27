@@ -12,7 +12,8 @@ import {
   Search,
   Star,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { Reorder } from "motion/react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@zetta/ui/components/button";
 import {
@@ -42,6 +43,18 @@ function depthOf(spaces: Workspace[], id: string | null) {
     cur = spaces.find((w) => w.id === cur!.parentId);
   }
   return d;
+}
+
+const ORDER_KEY = "zetta.bot-order";
+
+/** The user's manual bot order is a per-browser preference: ids in sidebar order, unknown bots fall to the end. */
+function readOrder(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]");
+    return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 type Props = {
@@ -265,13 +278,30 @@ export function ChatSidebar({
 }: Props) {
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
+  const [order, setOrder] = useState(readOrder);
+  const dragging = useRef(false);
+  useEffect(() => {
+    try {
+      localStorage.setItem(ORDER_KEY, JSON.stringify(order));
+    } catch {
+      // Storage unavailable (private mode): the order just lasts for this session.
+    }
+  }, [order]);
   const attention = useAttentionSummary();
   const q = query.trim().toLowerCase();
   const matches = (b: Bot) =>
     !q || b.name.toLowerCase().includes(q) || b.description.toLowerCase().includes(q);
   const visibleBots = bots.filter(matches);
   const chief = visibleBots.find((b) => b.kind === "chief");
-  const rest = visibleBots.filter((b) => b !== chief);
+  const rank = (b: Bot) => {
+    const i = order.indexOf(b.id);
+    return i < 0 ? Infinity : i;
+  };
+  // Array.sort is stable, so bots without a saved position keep the server's order after the ranked ones.
+  const rest = visibleBots.filter((b) => b !== chief).sort((a, b) => rank(a) - rank(b));
+  const canReorder = !q;
+  const reorder = (ids: string[]) =>
+    setOrder((prev) => [...prev.filter((id) => !ids.includes(id)), ...ids]);
   // Pinned first; the server already orders by recency, and Array.sort is stable.
   const visibleChats = chats
     .filter((c) => !q || c.title.toLowerCase().includes(q))
@@ -295,6 +325,45 @@ export function ChatSidebar({
       <BotRow b={b} current={b.id === botId} onBot={onBot} />
     </li>
   );
+  const dragRow = (b: Bot, ids: string[]) => {
+    const i = ids.indexOf(b.id);
+    return (
+      <Reorder.Item
+        key={b.id}
+        as="li"
+        value={b.id}
+        whileDrag={{ scale: 1.02, zIndex: 10, boxShadow: "0 4px 16px rgb(0 0 0 / 0.35)" }}
+        onDragStart={() => {
+          dragging.current = true;
+        }}
+        onDragEnd={() => {
+          // The pointer-up that ends a drag also fires a click on the row; swallow it.
+          setTimeout(() => {
+            dragging.current = false;
+          }, 0);
+        }}
+        onKeyDown={(e) => {
+          // Keyboard alternative to dragging: Alt+Up / Alt+Down moves the focused bot.
+          if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+          const j = e.key === "ArrowUp" ? i - 1 : i + 1;
+          if (j < 0 || j >= ids.length) return;
+          e.preventDefault();
+          const next = [...ids];
+          next.splice(j, 0, ...next.splice(i, 1));
+          reorder(next);
+        }}
+        className="cursor-grab active:cursor-grabbing"
+      >
+        <BotRow
+          b={b}
+          current={b.id === botId}
+          onBot={(id) => {
+            if (!dragging.current) onBot(id);
+          }}
+        />
+      </Reorder.Item>
+    );
+  };
   return (
     <aside
       className="flex h-full min-h-0 w-full min-w-0 flex-col bg-sidebar text-sidebar-foreground md:border-r md:border-sidebar-border"
@@ -433,7 +502,24 @@ export function ChatSidebar({
                       {group.name}
                     </h3>
                   )}
-                  <ul className="space-y-0.5">{members.map(row)}</ul>
+                  {canReorder ? (
+                    <Reorder.Group
+                      as="ul"
+                      axis="y"
+                      values={members.map((b) => b.id)}
+                      onReorder={reorder}
+                      className="space-y-0.5"
+                    >
+                      {members.map((b) =>
+                        dragRow(
+                          b,
+                          members.map((m) => m.id),
+                        ),
+                      )}
+                    </Reorder.Group>
+                  ) : (
+                    <ul className="space-y-0.5">{members.map(row)}</ul>
+                  )}
                 </li>
               );
             })}

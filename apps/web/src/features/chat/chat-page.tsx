@@ -7,7 +7,7 @@ import "../computer/register";
 import "../plugins/register";
 import "../discussions/register";
 import "../inbound/register";
-import { ChevronDown, Hash, Lock, Menu, Share2, X } from "lucide-react";
+import { ChevronDown, Hash, Lock, Menu, Share2 } from "lucide-react";
 import { Skeleton } from "@g4rcez/components";
 
 import { Button } from "@zetta/ui/components/button";
@@ -38,6 +38,7 @@ import { ChatSidebar } from "./sidebar";
 import { ThreadPanel } from "./thread-panel";
 import { draftKey, useDraft } from "./use-draft";
 import { useZettaChat } from "./use-zetta-chat";
+import { Alert } from "@g4rcez/components/alert";
 
 const SUGGESTIONS = [
   "What can you help me with?",
@@ -554,40 +555,20 @@ export function ChatPage() {
             </div>
           )}
           {notice && (
-            <div
-              role="status"
-              className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm"
-            >
-              <p className="flex-1">{notice}</p>
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                aria-label="Dismiss"
-                onClick={() => setNotice(undefined)}
-              >
-                <X />
-              </Button>
-            </div>
+            <Alert theme="info" onClose={() => setNotice(undefined)}>
+              {notice}
+            </Alert>
           )}
           {(error || main.error) && (
-            <div
-              role="alert"
-              className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            <Alert
+              theme="danger"
+              onClose={() => {
+                setError(undefined);
+                main.clearError();
+              }}
             >
-              <p className="min-w-0 flex-1 break-words">{error ?? errorMessage(main.error)}</p>
-              <Button
-                type="button"
-                size="icon-xs"
-                variant="ghost"
-                aria-label="Dismiss error"
-                onClick={() => {
-                  setError(undefined);
-                  main.clearError();
-                }}
-              >
-                <X />
-              </Button>
-            </div>
+              <p className="break-words">{error ?? errorMessage(main.error)}</p>
+            </Alert>
           )}
           {botId && <ComputerActivity botId={botId} botName={current?.name} />}
           <Composer

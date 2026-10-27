@@ -115,6 +115,9 @@ export const conversation = pgTable(
     title: text("title").default("New chat").notNull(),
     pinned: boolean("pinned").default(false).notNull(),
     favorite: boolean("favorite").default(false).notNull(),
+    /** Threads: an archived conversation leaves the tab bar and lists, and opening it restores it. */
+    archived: boolean("archived").default(false).notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     /** Frozen memory prompt block per bot, captured at the first turn so the prefix stays stable for the whole conversation. */
     memorySnapshot:
       jsonb("memory_snapshot").$type<

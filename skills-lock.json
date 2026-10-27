@@ -20,6 +20,12 @@
       "computedHash": "00ad2639d2da50af9922c0f61c2315564bbe6b29cb02d421f042db105fd11a03",
       "wellKnownDigest": "sha256:b23d47912c43ca0ef77c001186fcefe57133d5872124c368881e1424ae4b9836"
     },
+    "csscomponents": {
+      "source": "g4rcez/components",
+      "sourceType": "github",
+      "skillPath": "skills/csscomponents/SKILL.md",
+      "computedHash": "5bf2bf58a5ebeca76c79182acbe916cb894abb4535d4a486d26761124e789287"
+    },
     "elysiajs": {
       "source": "elysiajs/skills",
       "sourceType": "github",

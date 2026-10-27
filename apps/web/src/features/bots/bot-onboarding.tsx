@@ -11,7 +11,6 @@ import {
   FilePlus2,
   HeartHandshake,
   PenLine,
-  Sparkles,
   Telescope,
   type LucideIcon,
 } from "lucide-react";
@@ -36,14 +35,10 @@ import {
 import { registeredBotSections } from "../chat/bot-sections";
 import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
 import { field } from "../shared/ui";
-import {
-  composeInstructions,
-  EMPTY_BRIEF,
-  extractActions,
-  reviewInstructions,
-  reviewScore,
-  type Brief,
-} from "./instruction-review";
+import { extractActions, reviewInstructions, reviewScore } from "./instruction-review";
+import { FRESH_INTERVIEW, type InterviewState } from "./interview-flow";
+import { InstructionsInterview } from "./instructions-interview";
+import { Response } from "../chat/response";
 import { Alert } from "@g4rcez/components/alert";
 
 type Draft = {
@@ -159,40 +154,6 @@ const ArtTile = ({ icon: Icon, tint }: { icon: LucideIcon; tint: string }) => (
 
 const EXPERIMENTAL_HARNESSES = ["codex", "pi", "omp", "opencode", "cursor", "hermes"] as const;
 
-const QUESTIONS: { key: keyof Brief; label: string; placeholder: string; rows: number }[] = [
-  {
-    key: "job",
-    label: "What is its job, in one sentence?",
-    placeholder: "e.g. Turn merged pull requests into customer-facing release notes",
-    rows: 2,
-  },
-  {
-    key: "steps",
-    label: "What should it do, step by step? (one per line)",
-    placeholder:
-      "e.g. Read the PR titles and descriptions\nGroup changes by product area\nWrite one plain-language line per change",
-    rows: 4,
-  },
-  {
-    key: "output",
-    label: "What does a great answer look like?",
-    placeholder: "e.g. A markdown list grouped by area, under 200 words",
-    rows: 2,
-  },
-  {
-    key: "never",
-    label: "What must it never do?",
-    placeholder: "e.g. Mention internal ticket numbers or unreleased features",
-    rows: 2,
-  },
-  {
-    key: "ask",
-    label: "When should it stop and ask you?",
-    placeholder: "e.g. A change has no description or it is unclear who it affects",
-    rows: 2,
-  },
-];
-
 /** Full-page, step-by-step "new bot" experience: explains each choice, reviews the instructions, then wires plugins, accounts and extras. */
 export function BotOnboarding() {
   const navigate = useNavigate();
@@ -201,7 +162,7 @@ export function BotOnboarding() {
   const [draft, setDraft] = useState<Draft>(BLANK);
   const [origin, setOrigin] = useState<string>("blank");
   const [avatar, setAvatar] = useState<AvatarValue | null>(null);
-  const [brief, setBrief] = useState<Brief>(EMPTY_BRIEF);
+  const [interview, setInterview] = useState<InterviewState>(FRESH_INTERVIEW);
   const [bot, setBot] = useState<Bot>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -363,8 +324,9 @@ export function BotOnboarding() {
               <InstructionsStep
                 draft={draft}
                 set={set}
-                brief={brief}
-                setBrief={setBrief}
+                avatar={avatar}
+                interview={interview}
+                setInterview={setInterview}
                 checks={checks}
               />
             )}
@@ -823,124 +785,138 @@ function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draft>) => 
 function InstructionsStep({
   draft,
   set,
-  brief,
-  setBrief,
+  avatar,
+  interview,
+  setInterview,
   checks,
 }: {
   draft: Draft;
   set: (p: Partial<Draft>) => void;
-  brief: Brief;
-  setBrief: (b: Brief) => void;
+  avatar: AvatarValue | null;
+  interview: InterviewState;
+  setInterview: (s: InterviewState | ((s: InterviewState) => InterviewState)) => void;
   checks: ReturnType<typeof reviewInstructions>;
 }) {
-  const [guided, setGuided] = useState(!draft.instructions.trim());
-  const actions = useMemo(() => extractActions(draft.instructions), [draft.instructions]);
-  const answered = Object.values(brief).some((v) => v.trim());
-  function apply(mode: "replace" | "append") {
-    const text = composeInstructions(brief);
-    set({
-      instructions:
-        mode === "append" && draft.instructions.trim()
-          ? `${draft.instructions.trim()}\n\n${text}`
-          : text,
-    });
-    setGuided(false);
-  }
+  const [editing, setEditing] = useState(false);
+  const [details, setDetails] = useState(false);
+  const actions = useMemo(
+    () => (interview.summary.length ? interview.summary : extractActions(draft.instructions)),
+    [interview.summary, draft.instructions],
+  );
+  const hasDraft = draft.instructions.trim().length > 0 || draft.personality.trim().length > 0;
+  const edit = editing || interview.manual;
+  const score = reviewScore(checks);
+  const todo = checks.filter((c) => !c.ok);
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-12 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <div className="min-w-0 space-y-6 text-sm">
-        <section aria-label="Guided questions" className="rounded-lg border bg-card">
-          <button
-            type="button"
-            aria-expanded={guided}
-            onClick={() => setGuided((g) => !g)}
-            className="flex w-full items-center justify-between gap-2 rounded-lg p-3.5 text-left font-medium focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <span className="flex items-center gap-2">
-              <Sparkles className="size-4 text-primary" aria-hidden="true" />
-              Draft it from 5 questions
-            </span>
-            <span className="text-xs font-normal text-muted-foreground">
-              {guided ? "Hide" : "Show"}
-            </span>
-          </button>
-          {guided && (
-            <div className="space-y-3 border-t p-3.5">
-              {QUESTIONS.map((q) => (
-                <Textarea
-                  key={q.key}
-                  title={q.label}
-                  required={false}
-                  value={brief[q.key]}
-                  rows={q.rows}
-                  placeholder={q.placeholder}
-                  onChange={(e) => setBrief({ ...brief, [q.key]: e.target.value })}
-                />
-              ))}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={!answered}
-                  onClick={() => apply("replace")}
-                >
-                  {draft.instructions.trim() ? "Replace instructions" : "Draft instructions"}
-                </Button>
-                {draft.instructions.trim() && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={!answered}
-                    onClick={() => apply("append")}
-                  >
-                    Add to current instructions
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-        <Textarea
-          title="Personality"
-          required={false}
-          value={draft.personality}
-          onChange={(e) => set({ personality: e.target.value })}
-          rows={4}
-          maxLength={4096}
-          placeholder="You are a precise, friendly … who …"
-        />
-        <Textarea
-          title="Instructions"
-          required={false}
-          value={draft.instructions}
-          onChange={(e) => set({ instructions: e.target.value })}
-          rows={16}
-          maxLength={16384}
-          placeholder="Start by … then … Answer with … Never …"
-        />
-      </div>
-      <aside aria-label="Instruction review" className="space-y-8 self-start lg:sticky lg:top-8">
-        <ReviewCard checks={checks} />
-        <section aria-label="What it understood" className="text-sm">
-          <h3 className="font-medium">What it understood</h3>
-          <p className="mb-3 text-xs text-pretty text-muted-foreground">
-            The actions read back from your instructions. If something is missing here, the bot
-            won't know it either.
-          </p>
-          {actions.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Nothing yet.</p>
-          ) : (
-            <ol className="list-decimal space-y-1.5 pl-4 text-[13px] text-muted-foreground marker:text-muted-foreground/60">
+    <div className="max-w-3xl space-y-8 text-sm">
+      <InstructionsInterview
+        engine={{
+          harness: draft.harness,
+          model: draft.model || null,
+          name: draft.name,
+          description: draft.description,
+          avatar,
+        }}
+        state={interview}
+        setState={setInterview}
+        draft={{ personality: draft.personality, instructions: draft.instructions }}
+        onDraft={(d) =>
+          set({
+            instructions: d.instructions,
+            ...(d.personality !== undefined ? { personality: d.personality } : {}),
+          })
+        }
+      />
+      {(hasDraft || interview.manual) && (
+        <section aria-label="The draft" className="space-y-6">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-base font-semibold">What your bot will do</h2>
+            <Button type="button" size="sm" variant="outline" onClick={() => setEditing((e) => !e)}>
+              <PenLine className="size-4" aria-hidden="true" />
+              {edit ? "Done editing" : "Edit the text"}
+            </Button>
+          </div>
+          {actions.length > 0 && (
+            <ul className="grid gap-2 sm:grid-cols-2">
               {actions.map((a, i) => (
-                <li key={i} className="text-pretty">
-                  {a}
+                <li key={i} className="flex gap-2 rounded-lg border bg-card p-3 text-pretty">
+                  <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+                  <span>{a}</span>
                 </li>
               ))}
-            </ol>
+            </ul>
           )}
+          {edit ? (
+            <div className="space-y-6">
+              <Textarea
+                title="Personality"
+                required={false}
+                value={draft.personality}
+                onChange={(e) => set({ personality: e.target.value })}
+                rows={4}
+                maxLength={4096}
+                placeholder="You are a precise, friendly … who …"
+              />
+              <Textarea
+                title="Instructions"
+                required={false}
+                value={draft.instructions}
+                onChange={(e) => set({ instructions: e.target.value })}
+                rows={16}
+                maxLength={16384}
+                placeholder="Start by … then … Answer with … Never …"
+              />
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+              <article aria-label="Personality" className="rounded-lg border bg-card p-4">
+                <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Personality
+                </h3>
+                {draft.personality.trim() ? (
+                  <Response text={draft.personality} />
+                ) : (
+                  <p className="text-muted-foreground">Not set yet.</p>
+                )}
+              </article>
+              <article aria-label="Instructions" className="rounded-lg border bg-card p-4">
+                <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Instructions
+                </h3>
+                {draft.instructions.trim() ? (
+                  <Response text={draft.instructions} />
+                ) : (
+                  <p className="text-muted-foreground">Not set yet.</p>
+                )}
+              </article>
+            </div>
+          )}
+          <div className="text-xs text-muted-foreground">
+            <p className="flex flex-wrap items-center gap-x-2">
+              <span>
+                Quality check: {checks.length - todo.length} of {checks.length} good ({score}%).
+              </span>
+              <button
+                type="button"
+                aria-expanded={details}
+                onClick={() => setDetails((d) => !d)}
+                className="underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                {details
+                  ? "Hide details"
+                  : todo.length
+                    ? `See ${todo.length} to improve`
+                    : "See details"}
+              </button>
+            </p>
+            {details && (
+              <div className="mt-3 max-w-md text-sm">
+                <ReviewCard checks={checks} />
+              </div>
+            )}
+          </div>
         </section>
-      </aside>
+      )}
     </div>
   );
 }

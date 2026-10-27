@@ -1,9 +1,13 @@
+import { Link } from "@tanstack/react-router";
+import { ChevronRight, Plus, TriangleAlert } from "lucide-react";
 import { RoutineCalendar } from "./routine-calendar";
+import { RoutineTimeline } from "./routine-timeline";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Button, Input, Radiobox, Select, Textarea } from "@/components/ui";
 
 import { ApiError, call, errorMessage, type Bot } from "../chat/chat-client";
-import { Badge, ConfirmButton, Empty, list, listItem, useList, when } from "../shared/ui";
+import { Badge, ConfirmButton, Empty, Modal, list, listItem, useList, when } from "../shared/ui";
+import { relativeTime, summarize } from "./routine-format";
 import { refreshAttention } from "../attention/summary";
 import { buildSchedule, describeSchedule, type ScheduleMode } from "./routine-schedule";
 import { Alert } from "@g4rcez/components/alert";
@@ -22,8 +26,20 @@ type Routine = {
   workflowId?: string | null;
   onceAt?: string | null;
   paused: boolean;
+  status?: RoutineStatus;
+  statusReason?: string | null;
   nextRunAt: string | null;
+  lastRunAt?: string | null;
+  statusAt?: string;
 };
+type RoutineStatus =
+  | "paused"
+  | "scheduled"
+  | "running"
+  | "failed"
+  | "interrupted"
+  | "blocked"
+  | "completed";
 type Summary = {
   id?: string;
   task: string;
@@ -56,6 +72,18 @@ const RUN_STATUS: Record<Run["status"], string> = {
   skipped: "Skipped",
   blocked: "Blocked",
   interrupted: "Interrupted",
+};
+const ROUTINE_STATUS: Record<
+  RoutineStatus,
+  { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }
+> = {
+  paused: { label: "Paused", tone: "neutral" },
+  scheduled: { label: "Scheduled", tone: "success" },
+  running: { label: "Running", tone: "info" },
+  failed: { label: "Last run failed", tone: "danger" },
+  interrupted: { label: "Interrupted", tone: "warning" },
+  blocked: { label: "Blocked", tone: "warning" },
+  completed: { label: "Completed", tone: "neutral" },
 };
 const human = (s: string) => s.replace(/_/g, " ");
 const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -116,12 +144,16 @@ function ActivationCard({
       {summary && (
         <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[9rem_1fr]">
           <dt className="text-muted-foreground">Task</dt>
-          <dd className="break-words">{summary.task}</dd>
+          <dd className="line-clamp-4 break-words" title={summary.task}>
+            {summary.task}
+          </dd>
           <dt className="text-muted-foreground">Bot</dt>
           <dd>{summary.bot}</dd>
           <dt className="text-muted-foreground">Schedule</dt>
           <dd>
-            {summary.schedule} ({summary.timezone})
+            {summary.schedule.includes(summary.timezone)
+              ? summary.schedule
+              : `${summary.schedule} (${summary.timezone})`}
           </dd>
           <dt className="text-muted-foreground">Next runs</dt>
           <dd>
@@ -209,9 +241,13 @@ function History({ routineId }: { routineId: string }) {
               </details>
             )}
             {r.conversationId && (
-              <a className="text-xs underline" href={`/chat/${r.conversationId}`}>
+              <Link
+                className="text-xs underline"
+                to="/chat/{-$chatId}"
+                params={{ chatId: r.conversationId }}
+              >
                 Open the chat
-              </a>
+              </Link>
             )}
           </li>
         ))}
@@ -337,16 +373,25 @@ function EditForm({
   );
 }
 
-export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) => void }) {
-  const [rows, reload] = useList<Routine>("/api/routines", "routines", onError);
-  const [flows] = useList<Flow>("/api/workflows", "workflows", onError);
+const NEEDS_ATTENTION: RoutineStatus[] = ["failed", "interrupted", "blocked"];
+type View = "history" | "edit" | "activate";
+const statusOf = (r: Routine): RoutineStatus => r.status ?? (r.paused ? "paused" : "scheduled");
+
+/** Creating a routine is one focused task, so it gets its own dialog instead of sitting above the list. */
+function NewRoutineForm({
+  bots,
+  flows,
+  onCreated,
+  onClose,
+}: {
+  bots: Bot[];
+  flows: Flow[];
+  onCreated: (r: Routine) => void;
+  onClose: () => void;
+}) {
   const [mode, setMode] = useState<ScheduleMode>("daily");
   const [nextRuns, setNextRuns] = useState<string[]>();
-  const [status, setStatus] = useState<string>();
   const [formError, setFormError] = useState<string>();
-  const [card, setCard] = useState<string>();
-  const [creating, setCreating] = useState(false);
-  const [open, setOpen] = useState<{ id: string; what: "edit" | "history" }>();
   const schedule = (f: FormData) =>
     buildSchedule({
       mode,
@@ -355,7 +400,6 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
       everyMinutes: String(f.get("everyMinutes") ?? ""),
       onceLocal: String(f.get("onceLocal") ?? ""),
     });
-
   async function preview(form: HTMLFormElement) {
     setFormError(undefined);
     setNextRuns(undefined);
@@ -372,8 +416,7 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setFormError(undefined);
-    const form = e.currentTarget,
-      f = new FormData(form),
+    const f = new FormData(e.currentTarget),
       s = schedule(f);
     if (!s.ok) return setFormError(s.problem);
     const workflowId = String(f.get("workflowId") ?? "");
@@ -386,16 +429,295 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
         ...s.value,
         ...(workflowId ? { workflowId } : {}),
       });
-      form.reset();
-      setNextRuns(undefined);
-      setCreating(false);
-      setCard(r.routine.id);
-      setStatus("Routine created, but it is paused. Review it below, then activate it.");
-      void reload();
+      onCreated(r.routine);
     } catch (x) {
       setFormError(errorMessage(x));
     }
   }
+  return (
+    <form
+      onSubmit={(e) => void create(e)}
+      className="grid gap-3 sm:grid-cols-2"
+      aria-label="New routine"
+    >
+      <Select
+        title="Bot"
+        name="botId"
+        required
+        options={bots.map((b) => ({ value: b.id, label: b.name }))}
+      />
+      <Input title="Title" name="title" required maxLength={120} />
+      <Textarea
+        title="What should it do?"
+        container="sm:col-span-2"
+        name="prompt"
+        required
+        rows={3}
+      />
+      <fieldset className="sm:col-span-2">
+        <legend className="text-sm">When</legend>
+        <div className="flex flex-wrap gap-3 text-sm">
+          {(
+            [
+              ["daily", "Every day"],
+              ["interval", "Every few minutes"],
+              ["once", "Once"],
+            ] as const
+          ).map(([v, l]) => (
+            <Radiobox
+              key={v}
+              name="mode"
+              checked={mode === v}
+              onChange={() => {
+                setMode(v);
+                setNextRuns(undefined);
+              }}
+            >
+              {l}
+            </Radiobox>
+          ))}
+        </div>
+      </fieldset>
+      {mode === "daily" && <Input title="Time of day" name="dailyAt" type="time" required />}
+      {mode === "interval" && (
+        <Input
+          title="Every how many minutes (5 or more)"
+          name="everyMinutes"
+          type="number"
+          min={5}
+          max={10080}
+          defaultValue={60}
+          required
+        />
+      )}
+      {mode === "once" && (
+        <Input title="Date and time" name="onceLocal" type="datetime-local" required />
+      )}
+      <Input title="Timezone" name="timezone" defaultValue={localTz()} />
+      <Select
+        title="Chats"
+        required={false}
+        name="conversationMode"
+        defaultValue="new"
+        options={[
+          { value: "new", label: "Start a new chat each run" },
+          { value: "continue", label: "Continue the same chat" },
+        ]}
+      />
+      <Select
+        title="Run a workflow instead (optional)"
+        required={false}
+        name="workflowId"
+        options={[
+          { value: "", label: "No, just ask the bot" },
+          ...flows.map((w) => ({ value: w.id, label: w.name })),
+        ]}
+      />
+      {nextRuns && (
+        <div className="sm:col-span-2" role="status">
+          <p className="text-xs font-medium">Next runs</p>
+          <NextRuns runs={nextRuns} />
+        </div>
+      )}
+      {formError && (
+        <p role="alert" className="text-destructive sm:col-span-2">
+          {formError}
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground sm:col-span-2">
+        New routines start paused. You review them, then activate.
+      </p>
+      <div className="flex flex-wrap justify-end gap-2 sm:col-span-2">
+        <Button type="button" size="sm" variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={(e) => void preview(e.currentTarget.form!)}
+        >
+          Preview schedule
+        </Button>
+        <Button type="submit" size="sm">
+          Create routine
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function RoutineRow({
+  r,
+  botName,
+  now,
+  open,
+  busy,
+  bots,
+  onOpen,
+  onRun,
+  onPause,
+  onDelete,
+  onChanged,
+  onStatus,
+}: {
+  r: Routine;
+  botName: string;
+  now: number;
+  open: View | undefined;
+  busy: boolean;
+  bots: Bot[];
+  onOpen: (v: View | "closed") => void;
+  onRun: () => void;
+  onPause: () => void;
+  onDelete: () => Promise<void>;
+  onChanged: () => void;
+  onStatus: (m: string) => void;
+}) {
+  const st = statusOf(r);
+  const expanded = open !== undefined;
+  const panel = `routine-${r.id}`;
+  const timing = r.paused
+    ? "Not scheduled"
+    : r.nextRunAt
+      ? `Next run ${relativeTime(r.nextRunAt, now)}, ${new Date(r.nextRunAt).toLocaleString()}`
+      : "No upcoming run";
+  return (
+    <li className={`${listItem} py-4`}>
+      <div className="flex items-start gap-3">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={panel}
+          onClick={() => onOpen(expanded ? "closed" : r.paused ? "activate" : "history")}
+          className="flex min-w-0 flex-1 touch-manipulation items-start gap-2 rounded-md text-left focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          <ChevronRight
+            aria-hidden="true"
+            className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out ${expanded ? "rotate-90" : ""}`}
+          />
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="min-w-0 break-words font-medium">{r.title}</span>
+              <Badge tone={ROUTINE_STATUS[st].tone}>{ROUTINE_STATUS[st].label}</Badge>
+            </span>
+            <span className="mt-0.5 block text-muted-foreground">
+              {botName} · {describeSchedule(r)}
+              {r.dailyAt ? "" : ` (${r.timezone})`}
+            </span>
+            <span className="mt-0.5 block text-xs tabular-nums text-muted-foreground">
+              {timing}
+              {r.lastRunAt ? ` · Last run ${relativeTime(r.lastRunAt, now)}` : ""}
+            </span>
+          </span>
+        </button>
+        {r.paused ? (
+          <Button size="sm" variant="outline" onClick={() => onOpen("activate")}>
+            Activate…
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" disabled={busy || st === "running"} onClick={onRun}>
+            {busy || st === "running" ? "Running…" : "Run now"}
+          </Button>
+        )}
+      </div>
+      {expanded && (
+        <div id={panel} className="mt-3 space-y-3 sm:pl-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div role="group" aria-label="Show" className="flex gap-1">
+              {(
+                [
+                  ["history", "History"],
+                  ["edit", "Edit"],
+                ] as const
+              ).map(([v, l]) => (
+                <Button
+                  key={v}
+                  size="xs"
+                  variant={open === v ? "secondary" : "ghost"}
+                  aria-pressed={open === v}
+                  onClick={() => onOpen(v)}
+                >
+                  {l}
+                </Button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {!r.paused && (
+                <Button size="xs" variant="outline" onClick={onPause}>
+                  Pause
+                </Button>
+              )}
+              {r.paused && open !== "activate" && (
+                <Button size="xs" onClick={() => onOpen("activate")}>
+                  Activate…
+                </Button>
+              )}
+              <ConfirmButton
+                label="Delete"
+                question="Delete this routine? It will be archived."
+                confirmLabel="Delete"
+                size="xs"
+                onConfirm={onDelete}
+              />
+            </div>
+          </div>
+          {open === "activate" && (
+            <ActivationCard
+              routineId={r.id}
+              onClose={() => onOpen("closed")}
+              onDone={() => {
+                onOpen("closed");
+                onStatus("Routine activated.");
+                onChanged();
+              }}
+            />
+          )}
+          {open === "edit" && (
+            <EditForm
+              routine={r}
+              bots={bots}
+              onCancel={() => {
+                onOpen("closed");
+                onChanged();
+              }}
+              onSaved={() => {
+                onOpen("closed");
+                onStatus("Changes saved.");
+                onChanged();
+              }}
+            />
+          )}
+          {open === "history" && <History routineId={r.id} />}
+        </div>
+      )}
+    </li>
+  );
+}
+
+export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) => void }) {
+  const [rows, reload] = useList<Routine>("/api/routines", "routines", onError);
+  const [flows] = useList<Flow>("/api/workflows", "workflows", onError);
+  const [status, setStatus] = useState<string>();
+  const [creating, setCreating] = useState(false);
+  const [open, setOpen] = useState<{ id: string; view: View }>();
+  const [busy, setBusy] = useState<string>();
+  const [tab, setTab] = useState<"overview" | "calendar">("overview");
+  const [now, setNow] = useState(() => Date.now());
+  // Statuses change while the page is open (runs start, fail, finish), so the list keeps itself fresh.
+  useEffect(() => {
+    const t = setInterval(() => {
+      setNow(Date.now());
+      void reload();
+    }, 10_000);
+    return () => clearInterval(t);
+  }, [reload]);
+  useEffect(() => {
+    if (!status) return;
+    const t = setTimeout(() => setStatus(undefined), 6000);
+    return () => clearTimeout(t);
+  }, [status]);
+
   const act = async (work: () => Promise<unknown>, done?: string) => {
     try {
       await work();
@@ -406,266 +728,183 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
       onError(errorMessage(e));
     }
   };
+  const run = async (id: string) => {
+    setBusy(id);
+    await act(
+      () => call(`/api/routines/${id}/run`, "POST", { requestKey: crypto.randomUUID() }),
+      "Run finished. Open History to see the result.",
+    );
+    setBusy(undefined);
+  };
   const botName = (id: string) => bots.find((b) => b.id === id)?.name ?? "A bot";
+  const needs = (rows ?? []).filter((r) => NEEDS_ATTENTION.includes(statusOf(r)));
+  const summary = rows ? summarize(rows, now) : "";
+  const setView = (id: string, v: View | "closed") =>
+    setOpen(v === "closed" ? undefined : { id, view: v });
 
   return (
-    <section aria-label="Routines" className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-base font-semibold tracking-tight">
-          Your routines
-          {rows && (
-            <span className="ml-2 text-sm font-normal tabular-nums text-muted-foreground">
-              {rows.length}
-            </span>
-          )}
-        </h3>
-        <Button
-          size="sm"
-          variant={creating ? "outline" : "default"}
-          aria-expanded={creating}
-          aria-controls="new-routine"
-          onClick={() => setCreating(!creating)}
-        >
-          {creating ? "Close" : "New routine"}
+    <section aria-label="Routines" className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p role="status" className="min-w-0 text-sm text-pretty text-muted-foreground">
+          {summary}
+        </p>
+        <Button size="sm" onClick={() => setCreating(true)}>
+          <Plus aria-hidden="true" className="size-4" />
+          New routine
         </Button>
       </div>
-      {creating && (
-        <form
-          id="new-routine"
-          onSubmit={(e) => void create(e)}
-          className="grid gap-3 rounded-xl border bg-card p-5 sm:grid-cols-2"
-          aria-label="New routine"
-        >
-          <Select
-            title="Bot"
-            name="botId"
-            required
-            options={bots.map((b) => ({ value: b.id, label: b.name }))}
-          />
-          <Input title="Title" name="title" required maxLength={120} />
-          <Textarea
-            title="What should it do?"
-            container="sm:col-span-2"
-            name="prompt"
-            required
-            rows={2}
-          />
-          <fieldset className="sm:col-span-2">
-            <legend className="text-sm">When</legend>
-            <div className="flex flex-wrap gap-3 text-sm">
-              {(
-                [
-                  ["daily", "Every day"],
-                  ["interval", "Every few minutes"],
-                  ["once", "Once"],
-                ] as const
-              ).map(([v, l]) => (
-                <Radiobox
-                  key={v}
-                  name="mode"
-                  checked={mode === v}
-                  onChange={() => {
-                    setMode(v);
-                    setNextRuns(undefined);
-                  }}
-                >
-                  {l}
-                </Radiobox>
-              ))}
-            </div>
-          </fieldset>
-          {mode === "daily" && <Input title="Time of day" name="dailyAt" type="time" required />}
-          {mode === "interval" && (
-            <Input
-              title="Every how many minutes (5 or more)"
-              name="everyMinutes"
-              type="number"
-              min={5}
-              max={10080}
-              defaultValue={60}
-              required
-            />
-          )}
-          {mode === "once" && (
-            <Input title="Date and time" name="onceLocal" type="datetime-local" required />
-          )}
-          <Input title="Timezone" name="timezone" defaultValue={localTz()} />
-          <Select
-            title="Chats"
-            required={false}
-            name="conversationMode"
-            defaultValue="new"
-            options={[
-              { value: "new", label: "Start a new chat each run" },
-              { value: "continue", label: "Continue the same chat" },
-            ]}
-          />
-          <Select
-            title="Run a workflow instead (optional)"
-            required={false}
-            name="workflowId"
-            options={[
-              { value: "", label: "No, just ask the bot" },
-              ...(flows ?? []).map((w) => ({ value: w.id, label: w.name })),
-            ]}
-          />
-          {nextRuns && (
-            <div className="sm:col-span-2" role="status">
-              <p className="text-xs font-medium">Next runs</p>
-              <NextRuns runs={nextRuns} />
-            </div>
-          )}
-          {formError && (
-            <p role="alert" className="text-destructive sm:col-span-2">
-              {formError}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2 sm:col-span-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={(e) => void preview(e.currentTarget.form!)}
-            >
-              Preview schedule
-            </Button>
-            <Button type="submit" size="sm">
-              Create routine (paused)
-            </Button>
-          </div>
-        </form>
-      )}
       {status && <Alert theme="info">{status}</Alert>}
-      {rows?.length === 0 && (
-        <Empty>No routines yet. Choose New routine, then activate it once the bot is ready.</Empty>
-      )}
-      <ul className={list}>
-        {rows?.map((r) => (
-          <li key={r.id} className={`${listItem} py-4`}>
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="min-w-0 break-words font-medium">{r.title}</p>
-              {r.paused ? <Badge>Paused</Badge> : <Badge tone="success">Active</Badge>}
-            </div>
-            <p className="mt-0.5 text-muted-foreground">
-              {botName(r.botId)} · {describeSchedule(r)}
-              {r.dailyAt ? "" : ` (${r.timezone})`}
-              {!r.paused && (
-                <>
-                  {" "}
-                  · Next run{" "}
-                  <span className="tabular-nums">
-                    {r.nextRunAt ? new Date(r.nextRunAt).toLocaleString() : "-"}
+
+      {needs.length > 0 && (
+        <section
+          aria-label="Needs attention"
+          className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
+        >
+          <h3 className="flex items-center gap-2 text-sm font-semibold">
+            <TriangleAlert aria-hidden="true" className="size-4 text-destructive" />
+            Needs attention
+          </h3>
+          <ul className="space-y-1.5 text-sm">
+            {needs.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span className="min-w-0 break-words">
+                  <strong className="font-medium">{r.title}</strong>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · {ROUTINE_STATUS[statusOf(r)].label.toLowerCase()}
+                    {r.statusReason ? ` (${human(r.statusReason)})` : ""}
+                    {r.statusAt ? `, ${relativeTime(r.statusAt, now)}` : ""}
                   </span>
-                </>
-              )}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {r.paused ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setCard(card === r.id ? undefined : r.id)}
-                  aria-expanded={card === r.id}
-                >
-                  Activate…
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    void act(
-                      () => call(`/api/routines/${r.id}/paused`, "POST", { paused: true }),
-                      "Paused.",
-                    )
-                  }
-                >
-                  Pause
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  void act(
-                    () =>
-                      call(`/api/routines/${r.id}/run`, "POST", {
-                        requestKey: crypto.randomUUID(),
-                      }),
-                    "Started a run. Check the history for the result.",
-                  )
-                }
-              >
-                Run now
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                aria-expanded={open?.id === r.id && open.what === "edit"}
-                onClick={() =>
-                  setOpen(
-                    open?.id === r.id && open.what === "edit"
-                      ? undefined
-                      : { id: r.id, what: "edit" },
-                  )
-                }
-              >
-                Edit
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                aria-expanded={open?.id === r.id && open.what === "history"}
-                onClick={() =>
-                  setOpen(
-                    open?.id === r.id && open.what === "history"
-                      ? undefined
-                      : { id: r.id, what: "history" },
-                  )
-                }
-              >
-                History
-              </Button>
-              <ConfirmButton
-                label="Delete"
-                question="Delete this routine? It will be archived."
-                confirmLabel="Delete"
-                onConfirm={() =>
-                  act(() => call(`/api/routines/${r.id}`, "DELETE"), "Routine deleted.")
-                }
-              />
-            </div>
-            {card === r.id && (
-              <ActivationCard
-                routineId={r.id}
-                onClose={() => setCard(undefined)}
-                onDone={() => {
-                  setCard(undefined);
-                  setStatus("Routine activated.");
-                  void reload();
-                }}
-              />
-            )}
-            {open?.id === r.id && open.what === "edit" && (
-              <EditForm
-                routine={r}
-                bots={bots}
-                onCancel={() => {
-                  setOpen(undefined);
-                  void reload();
-                }}
-                onSaved={() => {
-                  setOpen(undefined);
-                  setStatus("Changes saved.");
-                  void reload();
-                }}
-              />
-            )}
-            {open?.id === r.id && open.what === "history" && <History routineId={r.id} />}
-          </li>
+                </span>
+                <span className="flex gap-2">
+                  {statusOf(r) !== "blocked" && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={busy === r.id}
+                      onClick={() => void run(r.id)}
+                    >
+                      Run again
+                    </Button>
+                  )}
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => {
+                      setTab("overview");
+                      setView(r.id, statusOf(r) === "blocked" ? "activate" : "history");
+                    }}
+                  >
+                    {statusOf(r) === "blocked" ? "Review" : "See why"}
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <div role="tablist" aria-label="Routines view" className="flex gap-1 border-b">
+        {(
+          [
+            ["overview", "Overview"],
+            ["calendar", "Calendar"],
+          ] as const
+        ).map(([v, l]) => (
+          <button
+            key={v}
+            id={`routines-tab-${v}`}
+            role="tab"
+            type="button"
+            aria-selected={tab === v}
+            aria-controls="routines-view"
+            tabIndex={tab === v ? 0 : -1}
+            onClick={() => setTab(v)}
+            className={`-mb-px touch-manipulation border-b-2 px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${tab === v ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            {l}
+          </button>
         ))}
-      </ul>
-      <RoutineCalendar refreshKey={rows?.length ?? 0} />
+      </div>
+
+      <div
+        id="routines-view"
+        role="tabpanel"
+        aria-labelledby={`routines-tab-${tab}`}
+        className="min-w-0 space-y-5"
+      >
+        {tab === "calendar" ? (
+          <RoutineCalendar refreshKey={rows?.length ?? 0} />
+        ) : (
+          <>
+            <RoutineTimeline refreshKey={rows?.length ?? 0} />
+            <div className="space-y-2">
+              <h3 className="text-base font-semibold tracking-tight">
+                All routines
+                {rows && (
+                  <span className="ml-2 text-sm font-normal tabular-nums text-muted-foreground">
+                    {rows.length}
+                  </span>
+                )}
+              </h3>
+              {rows?.length === 0 && (
+                <div className="space-y-3 rounded-lg border border-dashed px-4 py-8 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    No routines yet. A routine asks a bot to do something on a schedule and keeps
+                    the result in a chat you can open.
+                  </p>
+                  <Button size="sm" onClick={() => setCreating(true)}>
+                    Create your first routine
+                  </Button>
+                </div>
+              )}
+              <ul className={list}>
+                {rows?.map((r) => (
+                  <RoutineRow
+                    key={r.id}
+                    r={r}
+                    bots={bots}
+                    botName={botName(r.botId)}
+                    now={now}
+                    open={open?.id === r.id ? open.view : undefined}
+                    busy={busy === r.id}
+                    onOpen={(v) => setView(r.id, v)}
+                    onRun={() => void run(r.id)}
+                    onPause={() =>
+                      void act(
+                        () => call(`/api/routines/${r.id}/paused`, "POST", { paused: true }),
+                        "Paused.",
+                      )
+                    }
+                    onDelete={() =>
+                      act(() => call(`/api/routines/${r.id}`, "DELETE"), "Routine deleted.")
+                    }
+                    onChanged={() => void reload()}
+                    onStatus={setStatus}
+                  />
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
+      </div>
+
+      {creating && (
+        <Modal title="New routine" onClose={() => setCreating(false)}>
+          <NewRoutineForm
+            bots={bots}
+            flows={flows ?? []}
+            onClose={() => setCreating(false)}
+            onCreated={(created) => {
+              setCreating(false);
+              setTab("overview");
+              setView(created.id, "activate");
+              setStatus("Routine created, but it is paused. Review it below, then activate it.");
+              void reload();
+            }}
+          />
+        </Modal>
+      )}
     </section>
   );
 }

@@ -11,6 +11,7 @@ export type ZettaData = {
   summary: { text: string };
   computer: { messageId: string; botId?: string; vm: { id: string; name: string } };
   "computer-step": { messageId: string; vmId: string; step: string; at: number };
+  activity: { messageId: string; label: string };
 };
 export type ZettaUIMessage = UIMessage<unknown, ZettaData>;
 
@@ -20,6 +21,8 @@ export type Row = Message & {
   createdAt: string;
   botName?: string;
   streaming?: boolean;
+  /** What the bot is doing right now between text chunks (a tool call, waiting on the model). */
+  activity?: string;
   computers?: { id: string; name: string }[];
   computerSteps?: ComputerStep[];
 };
@@ -95,6 +98,9 @@ export function liveRows(messages: ZettaUIMessage[], parentMessageId?: string): 
         const target = rows.find((r) => r.id === p.data.messageId) ?? current;
         if (target && !target.computers?.some((c) => c.id === p.data.vm.id))
           target.computers = [...(target.computers ?? []), p.data.vm];
+      } else if (p.type === "data-activity") {
+        const target = rows.find((r) => r.id === p.data.messageId) ?? current;
+        if (target) target.activity = p.data.label;
       } else if (p.type === "data-computer-step") {
         const target = rows.find((r) => r.id === p.data.messageId) ?? current;
         if (target)

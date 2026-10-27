@@ -11,6 +11,8 @@ import {
   type ChatEvent,
   type ChatService,
 } from "./service";
+import { IMAGE_TYPES } from "./images";
+import { interviewInput, interviewTurn } from "./bot-interview";
 import { decisionConfigSchema } from "./routing";
 import { FileAccessError, type FileStore } from "./files";
 import { createUIMessageStreamResponse } from "ai";
@@ -41,6 +43,8 @@ const botAvatar = z.discriminatedUnion("kind", [
       .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/),
   }),
 ]);
+/** Per-user timestamps of recent setup-interview calls (each one runs the engine). */
+const interviewCalls = new Map<string, number[]>();
 const botInput = z.strictObject({
   avatar: botAvatar.nullable().optional(),
   name: z.string().trim().min(1).max(80),
@@ -74,22 +78,37 @@ const onboarding = z.strictObject({
   expectedVersion: z.number().int().positive(),
   satisfied: z.boolean(),
 });
-const send = z.strictObject({
+const sendBody = z.strictObject({
   clientRequestId: z.string().min(8).max(100).optional(),
-  content: z.string().trim().min(1).max(32768),
+  content: z.string().trim().max(32768),
   parentMessageId: uuid.optional(),
   attachmentIds: z.array(uuid).max(5).optional(),
   fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
 });
+/** A message may be only pictures or files, but never empty. */
+const hasBody = (v: {
+  content: string;
+  attachmentIds?: string[] | undefined;
+  fileRefs?: string[] | undefined;
+}) => !!v.content || !!v.attachmentIds?.length || !!v.fileRefs?.length;
+const send = sendBody.refine(hasBody);
 const conversationPatch = z.strictObject({
   title: z.string().trim().min(1).max(120).optional(),
   pinned: z.boolean().optional(),
   favorite: z.boolean().optional(),
+  archived: z.boolean().optional(),
 });
 const upload = z.strictObject({
   name: z.string().trim().min(1).max(200),
   mimeType: z.string().max(100).default("text/plain"),
   text: z.string().max(262144),
+  conversationId: uuid.optional(),
+});
+/** A picture travels as base64 inside JSON (10 MB of bytes is ~14 MB of text). */
+const uploadImage = z.strictObject({
+  name: z.string().trim().min(1).max(200),
+  mimeType: z.enum(IMAGE_TYPES),
+  dataBase64: z.string().min(1).max(14_000_000),
   conversationId: uuid.optional(),
 });
 const noFiles: FileStore = {
@@ -161,6 +180,17 @@ export function createChatRoutes(
     return new Response(
       new ReadableStream({
         async start(controller) {
+          // A bot can work for hours without a word; a comment frame keeps proxies and the server's idle timeout from closing the stream.
+          const beat = setInterval(
+            () => {
+              try {
+                controller.enqueue(encoder.encode(": ping\n\n"));
+              } catch {
+                /* closed */
+              }
+            },
+            Number(process.env.ZETTA_SSE_HEARTBEAT_MS ?? 30_000),
+          );
           try {
             for await (const { n, event } of follow)
               controller.enqueue(encoder.encode(`id: ${n}\ndata: ${JSON.stringify(event)}\n\n`));
@@ -171,6 +201,7 @@ export function createChatRoutes(
               /* closed */
             }
           }
+          clearInterval(beat);
           try {
             controller.close();
           } catch {
@@ -339,7 +370,11 @@ export function createChatRoutes(
         "That model isn't available for this harness. Pick one from the list or use the harness default.",
       );
     if (error instanceof AttachmentError)
-      return fail(400, "ATTACHMENT_INVALID", "Only text files up to 256 KB can be attached.");
+      return fail(
+        400,
+        "ATTACHMENT_INVALID",
+        "Attach a text file up to 256 KB or a PNG, JPEG, WebP or GIF image up to 10 MB.",
+      );
     if (error instanceof FileAccessError)
       return fail(
         error.code === "NOT_FOUND" ? 404 : 400,
@@ -384,7 +419,10 @@ export function createChatRoutes(
       "/attachments",
       guarded(
         async ({ actor, body }) => ({
-          attachment: await chat.addAttachment(actor, parse(upload, body)),
+          attachment:
+            body && typeof body === "object" && "dataBase64" in body
+              ? await chat.addImageAttachment(actor, parse(uploadImage, body))
+              : await chat.addAttachment(actor, parse(upload, body)),
         }),
         201,
       ),
@@ -421,6 +459,17 @@ export function createChatRoutes(
         }),
         201,
       ),
+    )
+    .post(
+      "/bots/interview",
+      guarded(async ({ actor, body }) => {
+        const now = Date.now();
+        const recent = (interviewCalls.get(actor.userId) ?? []).filter((t) => now - t < 60_000);
+        if (recent.length >= 20)
+          return { kind: "unavailable", reason: "Too many requests. Wait a minute and try again." };
+        interviewCalls.set(actor.userId, [...recent, now]);
+        return interviewTurn(parse(interviewInput, body), { userId: actor.userId });
+      }),
     )
     .patch(
       "/bots/:id",
@@ -537,6 +586,25 @@ export function createChatRoutes(
         ),
       })),
     )
+    .get("/attachments/:id/content", async ({ request, params }) => {
+      try {
+        const actor = await access.requireActive(request.headers);
+        const f = await chat.imageFile(actor, parse(uuid, params.id));
+        const file = Bun.file(f.path);
+        if (!(await file.exists())) return fail(404, "NOT_FOUND", "That image is not available.");
+        return new Response(file, {
+          headers: {
+            "content-type": f.mimeType,
+            "content-disposition": "inline",
+            "x-content-type-options": "nosniff",
+            "content-security-policy": "default-src 'none'; sandbox",
+            "cache-control": "private, max-age=31536000, immutable",
+          },
+        });
+      } catch (error) {
+        return mapError(error);
+      }
+    })
     .delete(
       "/attachments/:id",
       guarded(async ({ actor, params }) => ({
@@ -570,6 +638,7 @@ export function createChatRoutes(
           actor,
           query.botId ? parse(uuid, query.botId) : undefined,
           query.kind ? parse(z.enum(["chat", "discussion", "inbound"]), query.kind) : undefined,
+          query.archived === "true",
         ),
       })),
     )
@@ -590,6 +659,12 @@ export function createChatRoutes(
           parse(uuid, params.id),
           parse(conversationPatch, body),
         ),
+      })),
+    )
+    .delete(
+      "/conversations/:id",
+      guarded(async ({ actor, params }) => ({
+        deleted: await chat.deleteConversation(actor, parse(uuid, params.id)),
       })),
     )
     .get(

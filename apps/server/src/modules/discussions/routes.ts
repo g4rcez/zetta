@@ -28,11 +28,13 @@ const schemas = {
     goal: z.string().max(1000).optional(),
     context: z.string().max(8000).optional(),
   }),
-  post: z.strictObject({
-    content: z.string().trim().min(1).max(4000),
-    attachmentIds: z.array(uuid).max(5).optional(),
-    fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
-  }),
+  post: z
+    .strictObject({
+      content: z.string().trim().max(4000),
+      attachmentIds: z.array(uuid).max(5).optional(),
+      fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
+    })
+    .refine((v) => v.content || v.attachmentIds?.length || v.fileRefs?.length),
   resolve: z.strictObject({ summary: z.string().trim().min(1).max(2000) }),
   member: z.strictObject({ requireApproval: z.boolean() }),
   peers: z.strictObject({ peerBotIds: z.array(uuid).max(20) }),

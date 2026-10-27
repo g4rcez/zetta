@@ -14,21 +14,21 @@ Isolation002d independently passed13 actual no-network Docker scenarios and clea
 
 ## Prior checkpoint inventory (historical)
 
-| Work | Evidence / status |
-| --- | --- |
-| Product refinement, wiki and dependency-ordered backlog | 82 root RFCs across 20 modules; planning complete, not implementation complete. |
-| RFC-001 ownership contract | Accepted. One installation membership and explicit sole-admin selection/replacement; workspaces are visual organization, not access boundaries. |
-| RFC-003 test seams | Accepted. Infrastructure-free app composition; production startup remains separate. |
-| RFC-002 execution isolation | **In progress.** Linux-container boundary and bounded synthetic containment proof accepted; real runtime, egress, recovery and six-harness gates remain. |
-| RFC-004a/b | Accepted inactive identity storage and transactional enrollment source. |
-| RFC-004c | Accepted SQL-only proof: **14 actual PostgreSQL checks**, including constraints, named races and rollback; dedicated teardown confirmed. |
-| RFC-004d1/d2 | Accepted inactive signup preflight and explicit auth-factory injection. Production callsites remain unchanged. |
-| RFC-004d3 | Accepted actual in-process Better Auth/PostgreSQL proof: **5 checks**, summary, exit0 and scoped teardown. User screenshot also shows success. Not browser/native transport or production activation evidence. |
-| RFC-004e1 | Accepted inactive existing-account bootstrap/replacement transactions. |
-| RFC-004e2 | Operator command and shutdown correction **accepted as source**, after independent re-review and coordinator checks. |
-| RFC-004e3 | **Runtime verified:** six actual CLI/SQL checks, scoped teardown, 27 offline tests/366 assertions and strict diagnostics. Synthetic rows only; new independent review remains for integration. |
-| RFC-004e / RFC-004 | **Incomplete.** Credential provisioning, effective cookie/cache invalidation, invitation coordination, production composition/access and connected enrollment UI remain unfinished. |
-| RFC-005 and later product work | Not unblocked by these fixtures; use root task dependencies and current records before starting. |
+| Work                                                    | Evidence / status                                                                                                                                                                                              |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product refinement, wiki and dependency-ordered backlog | 82 root RFCs across 20 modules; planning complete, not implementation complete.                                                                                                                                |
+| RFC-001 ownership contract                              | Accepted. One installation membership and explicit sole-admin selection/replacement; workspaces are visual organization, not access boundaries.                                                                |
+| RFC-003 test seams                                      | Accepted. Infrastructure-free app composition; production startup remains separate.                                                                                                                            |
+| RFC-002 execution isolation                             | **In progress.** Linux-container boundary and bounded synthetic containment proof accepted; real runtime, egress, recovery and six-harness gates remain.                                                       |
+| RFC-004a/b                                              | Accepted inactive identity storage and transactional enrollment source.                                                                                                                                        |
+| RFC-004c                                                | Accepted SQL-only proof: **14 actual PostgreSQL checks**, including constraints, named races and rollback; dedicated teardown confirmed.                                                                       |
+| RFC-004d1/d2                                            | Accepted inactive signup preflight and explicit auth-factory injection. Production callsites remain unchanged.                                                                                                 |
+| RFC-004d3                                               | Accepted actual in-process Better Auth/PostgreSQL proof: **5 checks**, summary, exit0 and scoped teardown. User screenshot also shows success. Not browser/native transport or production activation evidence. |
+| RFC-004e1                                               | Accepted inactive existing-account bootstrap/replacement transactions.                                                                                                                                         |
+| RFC-004e2                                               | Operator command and shutdown correction **accepted as source**, after independent re-review and coordinator checks.                                                                                           |
+| RFC-004e3                                               | **Runtime verified:** six actual CLI/SQL checks, scoped teardown, 27 offline tests/366 assertions and strict diagnostics. Synthetic rows only; new independent review remains for integration.                 |
+| RFC-004e / RFC-004                                      | **Incomplete.** Credential provisioning, effective cookie/cache invalidation, invitation coordination, production composition/access and connected enrollment UI remain unfinished.                            |
+| RFC-005 and later product work                          | Not unblocked by these fixtures; use root task dependencies and current records before starting.                                                                                                               |
 
 Current records: [root RFC-004](../../tasks/004-implement-approved-enrollment-and-admin-bootstrap.md), [004d](../../tasks/004d-gate-auth-signup-with-invitations.md), [004e](../../tasks/004e-bootstrap-and-recover-installation-admin.md), [004e2](../../tasks/004e2-run-existing-account-admin-command.md).
 
@@ -84,7 +84,7 @@ The test-only `identity-proof-client.ts` now reuses the accepted termination-awa
 
 ## Environment and safety
 
-- Repo: `${HOME}/Documents/g4rcez/zetta`.
+- Repo: the repository root.
 - Installed: Bun1.3.14, TypeScript6.0.3, Drizzle1.0.0-rc.4, Better Auth1.7.7, pg8.23.1, pg-pool3.14.0.
 - Approved disposable definition: `docker-compose.identity-test.yml`, project `zetta-identity-tests`, PostgreSQL18, `127.0.0.1:55432`, dedicated role/database, tmpfs only. Never substitute root Compose or persistent application storage. See [SQL runbook](../verification/identity-database.md) and [auth runbook](../verification/identity-auth.md).
 - `bash scripts/verify-identity-auth.sh` already passed; it provisions and tears down its own disposable service. No need to rerun it for this checkpoint.

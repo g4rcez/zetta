@@ -3,6 +3,7 @@ import { Button } from "@/components/ui";
 import { useEffect, useRef, useState } from "react";
 import z from "zod";
 
+import { Logo } from "@/components/logo";
 import { AuthField } from "@/features/identity/auth-field";
 import { getIdentityError, identityClient } from "@/lib/identity-client";
 
@@ -27,14 +28,20 @@ export default function SignUpForm({
         name: z.string().min(2, "Name must be at least 2 characters"),
         email: z.email("Enter a valid email address"),
         password: z.string().min(8, "Password must be at least 8 characters"),
-        invitationToken: setup ? z.string() : z.string().trim().min(1, "Enter your invitation token"),
+        invitationToken: setup
+          ? z.string()
+          : z.string().trim().min(1, "Enter your invitation token"),
       }),
     },
     onSubmit: async ({ value }) => {
       setError(null);
       try {
         if (setup) {
-          await identityClient.signUp({ name: value.name, email: value.email, password: value.password });
+          await identityClient.signUp({
+            name: value.name,
+            email: value.email,
+            password: value.password,
+          });
           await onAuthenticated();
           return;
         }
@@ -48,7 +55,12 @@ export default function SignUpForm({
   return (
     <section className="mx-auto mt-16 w-full max-w-md space-y-6 rounded-xl border bg-card p-8 shadow-sm">
       <div className="space-y-3">
-        <h1 ref={heading} tabIndex={-1} className="text-center text-3xl font-semibold tracking-tight outline-none">
+        <Logo size={72} className="mx-auto" />
+        <h1
+          ref={heading}
+          tabIndex={-1}
+          className="text-center text-3xl font-semibold tracking-tight outline-none"
+        >
           {setup ? "Set up Zetta" : "Create account"}
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -115,42 +127,50 @@ export default function SignUpForm({
                   />
                 )}
               </form.Field>
-              {!setup && <form.Field name="invitationToken">
-                {(field) => (
-                  <AuthField
-                    id="signup-invitation"
-                    name={field.name}
-                    label="Invitation token"
-                    type="password"
-                    autoComplete="off"
-                    spellCheck={false}
-                    required
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    errors={field.state.meta.errors.map((issue) => issue?.message)}
-                  />
-                )}
-              </form.Field>}
+              {!setup && (
+                <form.Field name="invitationToken">
+                  {(field) => (
+                    <AuthField
+                      id="signup-invitation"
+                      name={field.name}
+                      label="Invitation token"
+                      type="password"
+                      autoComplete="off"
+                      spellCheck={false}
+                      required
+                      value={field.state.value}
+                      onBlur={field.handleBlur}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      errors={field.state.meta.errors.map((issue) => issue?.message)}
+                    />
+                  )}
+                </form.Field>
+              )}
               {error && (
                 <p role="alert" className="text-sm text-destructive">
                   {error}
                 </p>
               )}
               <Button type="submit" className="w-full" disabled={pending}>
-                {pending ? "Creating account…" : setup ? "Create administrator account" : "Create account with invitation"}
+                {pending
+                  ? "Creating account…"
+                  : setup
+                    ? "Create administrator account"
+                    : "Create account with invitation"}
               </Button>
               <p role="status" className="sr-only">
                 {pending ? "Creating your account and checking membership." : ""}
               </p>
-              {!setup && <Button
-                type="button"
-                variant="link"
-                className="h-auto w-full whitespace-normal"
-                onClick={onSwitchToSignIn}
-              >
-                Already have an account? Sign in
-              </Button>}
+              {!setup && (
+                <Button
+                  type="button"
+                  variant="link"
+                  className="h-auto w-full whitespace-normal"
+                  onClick={onSwitchToSignIn}
+                >
+                  Already have an account? Sign in
+                </Button>
+              )}
             </fieldset>
           )}
         </form.Subscribe>

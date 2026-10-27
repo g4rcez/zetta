@@ -6,6 +6,7 @@ import { bot } from "@zetta/db/schema/chat";
 import { discussionTurn } from "@zetta/db/schema/discussions";
 import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
+import { createBotClaude } from "../bot-claude/store";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
 import { createChatService } from "../chat/service";
@@ -123,18 +124,16 @@ suite("group discussions against compose postgres", () => {
 
   beforeAll(async () => {
     const now = new Date();
-    await db
-      .insert(user)
-      .values(
-        ids.map((id) => ({
-          id,
-          name: id,
-          email: `${id}@t.test`,
-          emailVerified: true,
-          createdAt: now,
-          updatedAt: now,
-        })),
-      );
+    await db.insert(user).values(
+      ids.map((id) => ({
+        id,
+        name: id,
+        email: `${id}@t.test`,
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
     await db
       .insert(membership)
       .values(
@@ -470,5 +469,91 @@ suite("group discussions against compose postgres", () => {
     const g = (await call(A, "GET", `/api/discussions/${created.id}`)).json;
     expect(g.discussion.status).toBe("stalled");
     expect(g.turns.find((t: { id: string }) => t.id === turn!.id).status).toBe("interrupted");
+  });
+
+  test("a bot asks the chief for a rule in one Permissions discussion; the chief turns it into Approve / Deny buttons and it applies only on Approve", async () => {
+    const chief = (await call(B, "GET", "/api/bots")).json.bots.find(
+      (b: { kind: string }) => b.kind === "chief",
+    ) as { id: string };
+    await db
+      .update(bot)
+      .set({ onboarded: true, harness: "claude-code" })
+      .where(eq(bot.id, chief.id));
+    const comps = await makeBot(B, "Components", { harness: "claude-code", codeAccess: true });
+    const other = await makeBot(B, "Docs", { harness: "claude-code", codeAccess: true });
+    const ask = (rule: string) =>
+      `I need a command.\n\`\`\`zetta:permission\n{"rule":"${rule}","reason":"run the routine"}\n\`\`\``;
+    const rulesOf = async (id: string) => (await createBotClaude(db).get(id)).config.allow;
+    replies.Components = [ask("Bash(pnpm:*)")];
+    replies.Docs = [ask("WebFetch")];
+    // The chief answers each bot's post with the grant it would make: the user is shown Approve / Deny instead of a typed question.
+    replies.Chief = [
+      'Asking.\n```zetta:bot_claude\n{"bot":"Components","allow":["Bash(pnpm:*)"]}\n```',
+      "Asked the user about Components.",
+      'Asking.\n```zetta:bot_claude\n{"bot":"Docs","allow":["WebFetch"]}\n```',
+      "Asked the user about Docs.",
+    ];
+    const compsChat = await chatWith(B, comps.id);
+    const first = await compsChat.say("run pnpm for the routine");
+    expect(first.json.assistant.content).toContain("asked");
+    await worker.drain();
+    await (await chatWith(B, other.id)).say("fetch the docs");
+    await worker.drain();
+    const list = (await call(B, "GET", "/api/discussions")).json.discussions as {
+      id: string;
+      title: string;
+      conversationId: string;
+      members: { name: string }[];
+    }[];
+    const perms = list.filter((d) => d.title === "Permissions");
+    expect(perms).toHaveLength(1);
+    expect(perms[0]!.members.map((m) => m.name).sort()).toEqual(["Chief", "Components", "Docs"]);
+    const talk = await messagesOf(B, perms[0]!.conversationId);
+    const said = talk.map((m) => m.content).join("\n---\n");
+    expect(said).toContain(
+      "@Chief Components asks to be allowed: Bash(pnpm:*)\nWhy: run the routine",
+    );
+    expect(said).toContain("@Chief Docs asks to be allowed: WebFetch\nWhy: run the routine");
+    expect(await rulesOf(comps.id)).toEqual([]);
+    expect(await rulesOf(other.id)).toEqual([]);
+    const pending = (await call(B, "GET", "/api/proposals")).json.proposals as {
+      id: string;
+      kind: string;
+      diff: { field: string; to: unknown }[];
+    }[];
+    const grants = pending.filter((p) => p.kind === "bot_permission");
+    expect(grants).toHaveLength(2);
+    const forComps = grants.find((p) => p.diff.some((d) => d.to === "Bash(pnpm:*)"))!;
+    const forDocs = grants.find((p) => p.diff.some((d) => d.to === "WebFetch"))!;
+    // Deny leaves Docs without the rule; Approve grants Components its rule.
+    replies.Components = ["pnpm ran, the routine is done."];
+    expect(
+      (await call(B, "POST", `/api/proposals/${forDocs.id}/decision`, { approve: false })).json
+        .status,
+    ).toBe("rejected");
+    expect(await rulesOf(other.id)).toEqual([]);
+    expect(
+      (await call(B, "POST", `/api/proposals/${forComps.id}/decision`, { approve: true })).json
+        .status,
+    ).toBe("approved");
+    expect(await rulesOf(comps.id)).toEqual(["Bash(pnpm:*)"]);
+    expect(await rulesOf(other.id)).toEqual([]);
+    // The request the bot stopped on runs again by itself: the user does not repeat it.
+    let chat = await messagesOf(B, compsChat.c);
+    for (
+      let i = 0;
+      i < 50 && !chat.some((m) => m.content === "pnpm ran, the routine is done.");
+      i++
+    ) {
+      await Bun.sleep(100);
+      chat = await messagesOf(B, compsChat.c);
+    }
+    expect(chat.map((m) => [m.role, m.content])).toContainEqual([
+      "system",
+      "Permission granted: Bash(pnpm:*). Running your last request again.",
+    ]);
+    expect(chat.map((m) => m.content)).toContain("pnpm ran, the routine is done.");
+    expect(chat.filter((m) => m.role === "user")).toHaveLength(1);
+    // Docs was not granted anything, so its chat stays as it was.
   });
 });

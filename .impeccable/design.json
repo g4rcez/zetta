@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-27T00:00:00Z",
+  "title": "Design System: Zetta",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Signal Violet",
+        "canonical": "oklch(0.55 0.2 275)",
+        "tonalRamp": [
+          "oklch(0.25 0.1 275)",
+          "oklch(0.35 0.14 275)",
+          "oklch(0.45 0.18 275)",
+          "oklch(0.55 0.2 275)",
+          "oklch(0.65 0.16 275)",
+          "oklch(0.75 0.11 275)",
+          "oklch(0.86 0.06 275)",
+          "oklch(0.94 0.02 275)"
+        ]
+      },
+      "background": {
+        "role": "neutral",
+        "displayName": "Cool Paper",
+        "canonical": "oklch(0.985 0.003 265)",
+        "tonalRamp": [
+          "oklch(0.2 0.01 265)",
+          "oklch(0.35 0.012 265)",
+          "oklch(0.5 0.015 265)",
+          "oklch(0.7 0.012 265)",
+          "oklch(0.83 0.01 265)",
+          "oklch(0.91 0.008 265)",
+          "oklch(0.955 0.006 265)",
+          "oklch(0.985 0.003 265)"
+        ]
+      },
+      "destructive": {
+        "role": "secondary",
+        "displayName": "Alarm Red",
+        "canonical": "oklch(0.58 0.22 27)",
+        "tonalRamp": [
+          "oklch(0.25 0.08 27)",
+          "oklch(0.35 0.13 27)",
+          "oklch(0.46 0.18 27)",
+          "oklch(0.58 0.22 27)",
+          "oklch(0.7 0.17 27)",
+          "oklch(0.8 0.11 27)",
+          "oklch(0.9 0.05 27)",
+          "oklch(0.96 0.02 27)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Page titles (h1)." },
+      "title": { "displayName": "Title", "purpose": "Section headings (h2)." },
+      "body": { "displayName": "Body", "purpose": "Default UI and chat text." },
+      "label": { "displayName": "Label", "purpose": "Buttons, badges, field labels." }
+    },
+    "shadows": [
+      {
+        "name": "float",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "purpose": "Menus and popovers."
+      },
+      {
+        "name": "sheet",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Side and bottom sheets."
+      }
+    ],
+    "motion": [
+      {
+        "name": "overlay-in",
+        "value": "100ms fade + zoom-95",
+        "purpose": "Menus and popovers opening."
+      },
+      {
+        "name": "sheet-slide",
+        "value": "200ms ease-in-out, 2.5rem offset",
+        "purpose": "Sheets entering and leaving."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main action on a surface.",
+      "html": "<button class=\"ds-btn-primary\">Run routine</button>",
+      "css": ".ds-btn-primary{height:36px;padding:0 14px;border:1px solid transparent;border-radius:6px;background:oklch(0.55 0.2 275);color:oklch(0.99 0 0);font:500 14px 'Inter Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-primary:hover{background:oklch(0.55 0.2 275 / .8)}.ds-btn-primary:focus-visible{outline:none;border-color:oklch(0.6 0.15 275);box-shadow:0 0 0 1px oklch(0.6 0.15 275 / .5)}.ds-btn-primary:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action.",
+      "html": "<button class=\"ds-btn-outline\">Cancel</button>",
+      "css": ".ds-btn-outline{height:36px;padding:0 14px;border:1px solid oklch(0.91 0.008 265);border-radius:6px;background:oklch(1 0 0);color:oklch(0.2 0.01 265);font:500 14px 'Inter Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-outline:hover{background:oklch(0.955 0.006 265)}.ds-btn-outline:focus-visible{outline:none;border-color:oklch(0.6 0.15 275);box-shadow:0 0 0 1px oklch(0.6 0.15 275 / .5)}"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Tinted danger action.",
+      "html": "<button class=\"ds-btn-danger\">Delete bot</button>",
+      "css": ".ds-btn-danger{height:36px;padding:0 14px;border:1px solid transparent;border-radius:6px;background:oklch(0.58 0.22 27 / .1);color:oklch(0.58 0.22 27);font:500 14px 'Inter Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-danger:hover{background:oklch(0.58 0.22 27 / .2)}.ds-btn-danger:focus-visible{outline:none;box-shadow:0 0 0 1px oklch(0.58 0.22 27 / .4)}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Standard single-line field.",
+      "html": "<input class=\"ds-input\" placeholder=\"Name this bot\">",
+      "css": ".ds-input{height:40px;width:240px;padding:0 12px;border:1px solid oklch(0.9 0.008 265);border-radius:6px;background:oklch(0.955 0.006 265 / .4);color:oklch(0.2 0.01 265);font:14px 'Inter Variable',sans-serif;transition:colors .15s}.ds-input::placeholder{color:oklch(0.5 0.015 265)}.ds-input:focus-visible{outline:none;border-color:oklch(0.6 0.15 275);box-shadow:0 0 0 1px oklch(0.6 0.15 275 / .5)}"
+    },
+    {
+      "name": "Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Compact status label.",
+      "html": "<span class=\"ds-badge\">Needs input</span>",
+      "css": ".ds-badge{display:inline-flex;align-items:center;height:20px;padding:2px 8px;background:oklch(0.55 0.2 275);color:oklch(0.99 0 0);font:500 12px 'Inter Variable',sans-serif;white-space:nowrap}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat container with a hairline ring.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Daily briefing</div><div class=\"ds-card-desc\">Runs weekdays at 07:30 with your chief.</div></div>",
+      "css": ".ds-card{display:flex;flex-direction:column;gap:4px;width:280px;padding:16px;border-radius:8px;background:oklch(1 0 0);color:oklch(0.2 0.01 265);box-shadow:0 0 0 1px oklch(0.2 0.01 265 / .1);font-family:'Inter Variable',sans-serif}.ds-card-title{font-size:14px;font-weight:500}.ds-card-desc{font-size:14px;color:oklch(0.5 0.015 265)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Dispatcher",
+    "overview": "Work happens on the server; the interface stays still until something needs the user. Zetta reads as a calm control room: indigo-tinted neutrals, one violet accent, hairline structure, and no decoration competing with bot output or attention states. When a bot is working, nothing should shout; when a person is needed, that is the loudest thing on screen.",
+    "keyCharacteristics": [
+      "Cool indigo-tinted neutrals (hue 265) with a single violet accent (hue 275).",
+      "Flat, tonal layering; depth from 1px rings and surface tint, not shadows.",
+      "Light and dark themes with equal standing (class-based .dark).",
+      "Dense, scannable app chrome at 14px body.",
+      "WCAG 2.2 AA is a requirement; focus rings are always visible."
+    ],
+    "rules": [
+      {
+        "name": "The One Voice Rule",
+        "body": "Signal Violet marks the thing you can act on or that is selected. It never decorates.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tint Not Fill Rule",
+        "body": "Danger and attention states use a low-opacity tint with colored text, never a saturated fill.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Family Rule",
+        "body": "Do not add a second typeface. Differentiate with weight and size.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-At-Rest Rule",
+        "body": "Cards, lists and panels carry no shadow. If something needs lifting, it should be a floating layer.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use the token variables (--primary, --border, etc.) rather than raw colors so both themes stay in step.",
+      "Do keep Signal Violet to actionable and selected elements.",
+      "Do give every interactive element a visible focus treatment (violet border plus 1px ring).",
+      "Do express danger as a tint plus colored text.",
+      "Do use the shared @zetta/ui components before building new primitives."
+    ],
+    "donts": [
+      "Don't add shadows to cards, lists or panels.",
+      "Don't introduce a second typeface or a second accent hue.",
+      "Don't use raw hex or Tailwind palette colors where a token exists.",
+      "Don't surface technical vocabulary (harness, MCP, hook) in default-visible UI.",
+      "Don't let status color alone carry meaning; pair it with text or an icon."
+    ]
+  }
+}

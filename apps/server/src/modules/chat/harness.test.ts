@@ -5,8 +5,10 @@ import { describe, expect, test } from "bun:test";
 import {
   type AgentProfile,
   HarnessError,
+  claudeArgs,
   codeWorkspace,
   createLimiter,
+  defaultLimiter,
   dockerArgs,
   gitEnv,
   harnessCommands,
@@ -82,6 +84,47 @@ describe("cli harness", () => {
     await Bun.sleep(1500);
     expect(await Bun.file(marker).exists()).toBe(false); // the grandchild was killed too
   });
+  test("a run without an explicit deadline is never stopped for taking long", async () => {
+    const fake = await script("sleep 1; echo finished");
+    const out = await runCli({ harness: "pi", prompt: "x", model: null, resolve: () => fake });
+    expect(out).toBe("finished");
+  });
+  test("a long run stops holding its concurrency slot so other chats can start", async () => {
+    process.env.ZETTA_HARNESS_SLOT_MS = "100";
+    try {
+      const long = await script("sleep 2; echo long");
+      const quick = await script("echo quick");
+      const user = "slot-user";
+      const runs = [long, long, quick].map((f) =>
+        runCli({ harness: "pi", prompt: "x", model: null, userId: user, resolve: () => f }).then(
+          (t) => t,
+          (e: HarnessError) => e.code,
+        ),
+      );
+      const first = await Promise.race(runs);
+      expect(first).toBe("quick");
+    } finally {
+      delete process.env.ZETTA_HARNESS_SLOT_MS;
+    }
+  });
+  test("claude code resumes a workspace session by id and names new ones", () => {
+    const fresh = claudeArgs("go", null, "git", undefined, undefined, {
+      id: "sess-1",
+      resume: false,
+    });
+    expect(fresh).toContain("--session-id");
+    expect(fresh[fresh.indexOf("--session-id") + 1]).toBe("sess-1");
+    expect(fresh).not.toContain("--resume");
+    const again = claudeArgs("go", null, "git", undefined, undefined, {
+      id: "sess-1",
+      resume: true,
+    });
+    expect(again[again.indexOf("--resume") + 1]).toBe("sess-1");
+    expect(again).not.toContain("--session-id");
+    expect(
+      claudeArgs("go", null, undefined, undefined, undefined, { id: "sess-1", resume: false }),
+    ).not.toContain("--session-id");
+  });
   test("an abort signal cancels the run", async () => {
     const slow = await script("sleep 30");
     const ac = new AbortController();
@@ -112,6 +155,26 @@ describe("cli harness", () => {
     expect(o.code).toBe("failed");
     expect(harnessMessage("claude-code", a.code)).not.toContain("login");
     expect(harnessMessage("pi", "not_installed")).toContain("not installed");
+  });
+  test("a thread over the per-user cap waits for a free slot and then runs", async () => {
+    const lim = createLimiter({ global: 8, perUser: 1, waitMs: 5_000 });
+    const first = await lim.acquire("a");
+    let started = false;
+    const second = lim.acquire("a").then((release) => {
+      started = true;
+      return release;
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    expect(started).toBe(false);
+    first();
+    (await second)();
+    expect(started).toBe(true);
+  });
+  test("the default limiter lets one user run four threads at once", async () => {
+    const releases = [];
+    for (const _ of [1, 2, 3, 4]) releases.push(await defaultLimiter.acquire("default-limit-user"));
+    expect(defaultLimiter.stats().active).toBe(4);
+    for (const r of releases) r();
   });
   test("limiter caps per-user and global concurrency and reports busy", async () => {
     const lim = createLimiter({ global: 2, perUser: 1, waitMs: 150 });
@@ -163,6 +226,20 @@ describe("cli harness", () => {
 });
 
 describe("code access", () => {
+  test("a bot with a bound GitHub token may run gh without a second grant", () => {
+    const withToken = claudeArgs("go", null, "git", undefined, undefined, undefined, true).join(
+      " ",
+    );
+    expect(withToken).toContain("Bash(gh:*)");
+    expect(
+      claudeArgs("go", null, "git", { preset: "edit" } as never, undefined, undefined, true).join(
+        " ",
+      ),
+    ).toContain("Bash(git:*)");
+    const without = claudeArgs("go", null, "git").join(" ");
+    expect(without).not.toContain("Bash(gh:*)");
+  });
+
   test("a host run honours gh rules, and the chief's unrestricted profile may run any command", () => {
     const profile: AgentProfile = {
       preset: "git",
@@ -184,6 +261,32 @@ describe("code access", () => {
     const chief = allow({ profile: { ...profile, allow: [], unrestricted: true } });
     expect(chief).toContain(",Bash");
     expect(chief).not.toContain("Bash(git:*)");
+  });
+  test("a host run honours a granted rule for one named program, and never a shell, an interpreter or a bare Bash", () => {
+    const profile: AgentProfile = {
+      preset: "auto",
+      allow: [
+        "Bash(pnpm:*)",
+        "Bash(pnpm --filter web test:*)",
+        "Bash",
+        "Bash(bash:*)",
+        "Bash(sudo rm -rf /)",
+        "Bash(node:*)",
+        "Bash(python3 -c x)",
+      ],
+      deny: [],
+      appendPrompt: "",
+      effort: null,
+      maxBudgetCents: null,
+      files: {},
+      skills: [],
+    };
+    const allow = harnessCommands["claude-code"]("x", null, "git", { profile }).find((a) =>
+      a.startsWith("--allowedTools="),
+    )!;
+    expect(allow).toBe(
+      "--allowedTools=Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(pnpm:*),Bash(pnpm --filter web test:*)",
+    );
   });
   test("code flags pre-approve git and file tools and keep the prompt last", () => {
     const host = harnessCommands["claude-code"]("do it", null, "git");

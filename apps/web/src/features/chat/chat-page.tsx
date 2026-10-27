@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ComputerActivity } from "../computer/computer-activity";
 import { DesktopButton } from "../computer/desktop-button";
@@ -8,6 +8,7 @@ import "../plugins/register";
 import "../discussions/register";
 import "../inbound/register";
 import { ChevronDown, Hash, Lock, Menu, Share2 } from "lucide-react";
+import { ThreadTabs } from "./thread-tabs";
 import { Skeleton } from "@g4rcez/components";
 
 import { Button } from "@zetta/ui/components/button";
@@ -324,6 +325,70 @@ export function ChatPage() {
     toChat(id);
     setNavOpen(false);
   }
+  // Threads: a delete waits a few seconds so Undo can bring the thread back untouched.
+  const [undoDelete, setUndoDelete] = useState<Conversation>();
+  const deleteTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const commitDelete = (c: Conversation) =>
+    void chatClient.deleteConversation(c.id).catch((e) => {
+      setChats((all) => (all.some((x) => x.id === c.id) ? all : [c, ...all]));
+      fail(e);
+    });
+  function deleteThread(id: string) {
+    const gone = chats.find((c) => c.id === id);
+    if (!gone) return;
+    if (undoDelete) {
+      clearTimeout(deleteTimer.current);
+      commitDelete(undoDelete);
+    }
+    const rest = chats.filter((c) => c.id !== id);
+    setChats(rest);
+    setUndoDelete(gone);
+    deleteTimer.current = setTimeout(() => {
+      commitDelete(gone);
+      setUndoDelete(undefined);
+    }, 6000);
+    if (id === chatId) {
+      const next = rest.find((c) => c.botId === gone.botId);
+      if (next) toChat(next.id, true);
+      else toDraft(gone.botId, true);
+    }
+  }
+  function undoDeleteThread() {
+    if (!undoDelete) return;
+    clearTimeout(deleteTimer.current);
+    const back = undoDelete;
+    setChats((all) => [back, ...all]);
+    setUndoDelete(undefined);
+    toChat(back.id);
+  }
+  function updateThread(id: string, patch: { title?: string; archived?: boolean }) {
+    const before = chats;
+    const row = chats.find((c) => c.id === id);
+    setChats((all) =>
+      patch.archived
+        ? all.filter((c) => c.id !== id)
+        : all.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    );
+    if (patch.archived && id === chatId && row) {
+      const next = chats.find((c) => c.botId === row.botId && c.id !== id);
+      if (next) toChat(next.id, true);
+      else toDraft(row.botId, true);
+    }
+    chatClient.updateConversation(id, patch).then(
+      (saved) => {
+        if (!saved.archived)
+          setChats((all) =>
+            all.some((c) => c.id === id)
+              ? all.map((c) => (c.id === id ? { ...c, ...saved } : c))
+              : [saved, ...all],
+          );
+      },
+      (e) => {
+        setChats(before);
+        fail(e);
+      },
+    );
+  }
   const ChannelIcon = current?.visibility === "private" ? Lock : Hash;
   const chatTitle = chats.find((c) => c.id === chatId)?.title;
 
@@ -463,6 +528,28 @@ export function ChatPage() {
             )}
           </div>
         </header>
+        {botId && (
+          <ThreadTabs
+            threads={chats.filter((c) => c.botId === botId && (c.kind ?? "chat") === "chat")}
+            botId={botId}
+            chatId={chatId}
+            onOpen={openChat}
+            onNew={() => toDraft(botId)}
+            onUpdate={updateThread}
+            onDelete={deleteThread}
+          />
+        )}
+        {undoDelete && (
+          <div
+            role="status"
+            className="flex items-center gap-2 border-b bg-muted px-3 py-1.5 text-xs"
+          >
+            <span className="truncate">Deleted “{undoDelete.title}”</span>
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={undoDeleteThread}>
+              Undo
+            </Button>
+          </div>
+        )}
         <MessageList
           key={chatId ?? `new:${botId}`}
           followToken={sent}

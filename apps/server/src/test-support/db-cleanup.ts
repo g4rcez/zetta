@@ -38,6 +38,7 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
   ])
     await q(`delete from ${t} where owner_user_id = any($1)`);
   for (const t of [
+    "task",
     "agenda_item",
     "agenda_sync",
     "memory",

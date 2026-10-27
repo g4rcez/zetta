@@ -13,6 +13,7 @@ import {
   HarnessError,
   runCli,
   streamCli,
+  type CliImage,
   type NativeHarness,
   type RunCli,
   type StreamCli,
@@ -42,6 +43,12 @@ export type Turn = {
   noCode?: boolean | undefined;
   /** Turn-specific tool text appended after the plugin tools (e.g. group discussions). */
   extraTools?: string | undefined;
+  /** Pictures attached to the message (absolute paths); staged next to the run by the harness. */
+  images?: CliImage[] | undefined;
+  /** Continue this Claude Code session (a run a server restart cut off) instead of starting a new one. */
+  resumeSession?: string | undefined;
+  /** Called with the Claude Code session id when the run is one that can be resumed (a code workspace), so the caller can record it. */
+  onSession?: ((id: string) => void) | undefined;
 };
 export type TurnResult = { text: string; stopped: boolean };
 
@@ -134,6 +141,7 @@ export function createTurnRunner(
     extraEnv?: Record<string, string>,
     signal?: AbortSignal,
     noCode?: boolean,
+    images?: CliImage[],
   ) {
     if (b.harness === "fixture") return fixtureResponder({ bot: b, history, prompt });
     const profile = await claudeFor(b);
@@ -146,6 +154,7 @@ export function createTurnRunner(
       ...(profile.profile ? profile : {}),
       ...(extraEnv ? { extraEnv } : {}),
       ...(signal ? { signal } : {}),
+      ...(images?.length ? { images } : {}),
     });
   }
   async function prepare({
@@ -266,6 +275,7 @@ export function createTurnRunner(
       turn.extraEnv,
       turn.signal,
       turn.noCode,
+      turn.images,
     );
     startBackground(turn.userId, turn.bot, p.background);
     return { text: reply, stopped: false };
@@ -284,7 +294,11 @@ export function createTurnRunner(
         yield w;
         await Bun.sleep(1);
       }
-    } else
+    } else {
+      const resumable =
+        turn.bot.harness === "claude-code" && codeEnabled(turn.bot, turn.userId, turn.noCode);
+      const sessionId = resumable ? (turn.resumeSession ?? crypto.randomUUID()) : undefined;
+      if (sessionId) turn.onSession?.(sessionId);
       yield* stream({
         harness: turn.bot.harness as NativeHarness,
         prompt: p.text,
@@ -294,7 +308,10 @@ export function createTurnRunner(
         ...(await claudeFor(turn.bot)),
         ...(turn.extraEnv ? { extraEnv: turn.extraEnv } : {}),
         ...(turn.signal ? { signal: turn.signal } : {}),
+        ...(turn.images?.length ? { images: turn.images } : {}),
+        ...(sessionId ? { session: { id: sessionId, resume: Boolean(turn.resumeSession) } } : {}),
       });
+    }
     startBackground(turn.userId, turn.bot, p.background);
   }
   return Object.assign(run, { stream: streamTurn });

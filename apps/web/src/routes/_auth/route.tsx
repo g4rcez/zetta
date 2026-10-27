@@ -1,8 +1,11 @@
 import { Link, Outlet, createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { TriangleAlertIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
 
+import { Logo } from "@/components/logo";
 import { authClient } from "@/lib/auth-client";
-import { getIdentityError, identityClient } from "@/lib/identity-client";
+import { IdentityRequestError, getIdentityError, identityClient } from "@/lib/identity-client";
 
 export const Route = createFileRoute("/_auth")({
   component: AuthLayout,
@@ -13,7 +16,7 @@ export const Route = createFileRoute("/_auth")({
   ),
   errorComponent: AccessError,
   beforeLoad: async () => {
-    const identity = await identityClient.status();
+    const identity = await statusWithRetry();
     if (identity.state !== "active") throw redirect({ to: "/login" });
     const session = await authClient.getSession();
     if (!session.data) throw redirect({ to: "/login" });
@@ -21,20 +24,77 @@ export const Route = createFileRoute("/_auth")({
   },
 });
 
-function AccessError({ error }: { error: unknown }) {
+const RETRY_DELAYS_MS = [400, 1200];
+
+// The status check is an idempotent GET, so transient network blips are retried before surfacing an error.
+async function statusWithRetry() {
+  for (const delay of RETRY_DELAYS_MS) {
+    try {
+      return await identityClient.status();
+    } catch (error) {
+      if (!(error instanceof IdentityRequestError) || error.code !== "IDENTITY_UNAVAILABLE")
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  return identityClient.status();
+}
+
+function AccessError({ error, reset }: { error: unknown; reset: () => void }) {
   const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
+  const retry = () => {
+    setRetrying(true);
+    reset();
+    void router.invalidate().finally(() => setRetrying(false));
+  };
+
+  // Recover on its own once the connection is back.
+  useEffect(() => {
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  });
+
   return (
-    <section className="mx-auto mt-10 w-full max-w-md space-y-4 p-6">
-      <h1 className="text-2xl font-bold">Unable to check your access</h1>
-      <p role="alert" className="text-sm text-destructive">
-        {getIdentityError(error)}
+    <section className="mx-auto mt-16 flex w-full max-w-md flex-col items-center gap-6 rounded-xl border bg-card p-8 text-center">
+      <Logo size={72} />
+      <div className="space-y-2">
+        <h1
+          ref={heading}
+          tabIndex={-1}
+          className="text-2xl font-semibold tracking-tight text-balance outline-none"
+        >
+          Zetta cannot confirm your access
+        </h1>
+        <p className="text-sm text-muted-foreground text-pretty">
+          Zetta could not finish checking your access, so it cannot open your workspace yet.
+        </p>
+      </div>
+      <p
+        role="alert"
+        className="flex w-full items-start gap-2 rounded-lg bg-destructive/10 p-3 text-left text-sm text-destructive"
+      >
+        <TriangleAlertIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+        <span>{getIdentityError(error)}</span>
       </p>
-      <div className="flex flex-wrap gap-3">
-        <Button onClick={() => void router.invalidate()}>Retry access check</Button>
-        <Link to="/login" className="text-sm underline">
+      <div className="flex w-full flex-col gap-3">
+        <Button onClick={retry} disabled={retrying} aria-busy={retrying} className="w-full">
+          {retrying ? "Checking…" : "Retry access check"}
+        </Button>
+        <Link
+          to="/login"
+          className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
           Return to sign in
         </Link>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Zetta retries by itself when your connection returns.
+      </p>
     </section>
   );
 }

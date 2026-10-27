@@ -16,6 +16,7 @@ import { createComputerService, dockerBrowserConfig } from "./modules/computer/s
 import { createDbVmStore, createVmService, dockerVmConfig } from "./modules/computer/vm";
 import { createFeaturesService } from "./modules/features/service";
 import { createAgenda } from "./modules/agenda/service";
+import { createTaskStore } from "./modules/tasks/store";
 import { createAgendaScheduler } from "./modules/agenda/scheduler";
 import { createDiscussionStore } from "./modules/discussions/store";
 import { createLoopDriver, createLoopStore } from "./modules/chat/loops";
@@ -123,6 +124,7 @@ const sources = createSources(db, computer, {
 });
 const features = createFeaturesService(db, undefined, decisions, computer, sources as never);
 const agenda = createAgenda(db);
+const tasks = createTaskStore(db);
 const discussions = createDiscussionStore(db, files);
 const loops = createLoopStore(db);
 // Each bot's private Postgres schema (modules/bot-database). Bot passwords are derived from this key; the app's database user needs CREATEROLE.
@@ -157,7 +159,7 @@ export const chatServices = {
     desktop,
     vms,
     agenda,
-    { discussions, botDatabase, loops },
+    { discussions, botDatabase, loops, tasks },
   ),
   files,
 };
@@ -204,6 +206,34 @@ const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKe
   }
 });
 loops.onStart = loopDriver.kick;
+/** Boot: continue the Claude Code runs a restart cut off, in their own sessions. A conversation with an active goal loop is left to the loop driver. */
+export async function resumeInterruptedRuns() {
+  for (const r of chatServices.chat.takeResumable()) {
+    void (async () => {
+      if (await loops.active(r.conversationId)) return;
+      const actor = await issueBackgroundActor(membershipLookup, r.ownerUserId);
+      if (!actor) return;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        try {
+          const { follow } = await chatServices.chat.startTurn(actor, r.conversationId, {
+            content: "Resuming after a server restart",
+            clientRequestId: `resume:${r.messageId}`,
+            resume: {
+              sessionId: r.sessionId,
+              prompt:
+                "The server restarted while you were working on your previous reply. Continue the task from where you stopped; do not redo finished steps.",
+            },
+          });
+          for await (const _ of follow());
+          return;
+        } catch (e) {
+          if (!(e instanceof TurnBusyError)) return;
+          await Bun.sleep(5_000);
+        }
+      }
+    })().catch(() => {});
+  }
+}
 export const loopServices = { driver: loopDriver };
 const discussionWorker = createDiscussionWorker(
   db,
@@ -227,6 +257,7 @@ export const featureServices = { access: identity.access, features };
 export const decisionServices = { access: identity.access, decisions };
 export const computerServices = { access: identity.access, computer, desktop, vms };
 export const integrationServices = { access: identity.access, mcp, sources };
+export const taskServices = { access: identity.access, tasks };
 export const agendaServices = {
   access: identity.access,
   agenda,

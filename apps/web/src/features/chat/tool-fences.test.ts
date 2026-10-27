@@ -1,0 +1,21 @@
+import { describe, expect, test as it } from "bun:test";
+
+import { stripToolFences } from "./tool-fences";
+
+describe("stripToolFences", () => {
+  it("removes a finished tool block and keeps the prose", () => {
+    const t = 'I\'ll check.\n\n```zetta:plugin\n{"plugin":"postgres"}\n```';
+    expect(stripToolFences(t)).toBe("I'll check.");
+  });
+  it("removes a block that is still being written", () => {
+    expect(stripToolFences('Checking.\n```zetta:plugin\n{"plug')).toBe("Checking.");
+  });
+  it("removes a permission request block", () => {
+    const t = 'Asked.\n```zetta:permission\n{"rule":"WebFetch"}\n```';
+    expect(stripToolFences(t)).toBe("Asked.");
+  });
+  it("keeps zetta:ui and zetta:whatsapp blocks", () => {
+    const t = "```zetta:ui\n{}\n```\n```zetta:whatsapp\n{}\n```";
+    expect(stripToolFences(t)).toBe(t);
+  });
+});

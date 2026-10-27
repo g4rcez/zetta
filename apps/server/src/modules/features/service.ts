@@ -339,13 +339,22 @@ export function createFeaturesService(
         .orderBy(asc(delegation.createdAt)),
     /** One boot hook: reconcile everything left running by a dead process. */
     async recover() {
-      return {
-        routines: await routines.recoverInterrupted(),
-        workflows: await workflows.recoverInterrupted(),
-      };
+      const interrupted = await routines.recoverInterrupted();
+      const workflowsInterrupted = await workflows.recoverInterrupted();
+      await routines.start();
+      // Once per process: a `bun --hot` reload re-runs boot while the runs it would restart are still alive.
+      const boot = globalThis as { zettaRoutinesRecovered?: boolean };
+      if (!boot.zettaRoutinesRecovered) {
+        boot.zettaRoutinesRecovered = true;
+        void routines.recoverRecent().catch(() => {});
+      }
+      return { routines: interrupted, workflows: workflowsInterrupted };
     },
     // Scheduler tick passthrough (kept for the in-process scheduler and tests).
     runDue: (now?: Date) => routines.runDue(now),
+    /** Re-runs, once each, the routines whose latest run in the window failed or was interrupted. */
+    recoverRecent: (now?: Date, windowMs?: number, userId?: string) =>
+      routines.recoverRecent(now, windowMs, userId),
   };
 }
 export type FeaturesService = ReturnType<typeof createFeaturesService>;

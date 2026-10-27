@@ -52,6 +52,7 @@ export type Conversation = {
   updatedAt: string;
   pinned?: boolean;
   favorite?: boolean;
+  archived?: boolean;
   kind?: "chat" | "discussion" | "inbound";
 };
 export type Workspace = { id: string; name: string; parentId?: string | null };
@@ -64,7 +65,8 @@ export type ProposalKind =
   | "create_vm"
   | "open_discussion"
   | "discussion_brief"
-  | "start_loop";
+  | "start_loop"
+  | "bot_permission";
 export type Proposal = {
   id: string;
   botId: string | null;
@@ -89,10 +91,11 @@ export type HookDryRun = {
   backgroundTasks: number;
   skippedInvalid: number;
 };
-export type Attachment = { id: string; name: string; size: number };
+export type Attachment = { id: string; name: string; size: number; mimeType?: string };
+export const isImage = (a: { mimeType?: string | undefined }) => !!a.mimeType?.startsWith("image/");
 export type Reaction = { emoji: string; count: number; mine: boolean };
 export type Receipt = {
-  kind: "memory" | "instruction" | "proposal" | "computer" | "agenda" | "discussion";
+  kind: "memory" | "instruction" | "proposal" | "computer" | "agenda" | "task" | "discussion";
   id: string;
   text: string;
   created?: boolean;
@@ -246,6 +249,19 @@ export async function call<T>(path: string, method = "GET", body?: object): Prom
   return response.json() as Promise<T>;
 }
 
+export type InterviewInput = {
+  harness: string;
+  model?: string | null;
+  name: string;
+  description?: string;
+  transcript: { question: string; answer: string }[];
+  refine?: { personality: string; instructions: string; change: string };
+};
+export type InterviewResult =
+  | { kind: "question"; question: string; suggestions: string[] }
+  | { kind: "draft"; personality: string; instructions: string; summary: string[] }
+  | { kind: "unavailable"; reason: string };
+
 export const chatClient = {
   bots: () => call<{ bots: Bot[] }>("/api/bots").then((r) => r.bots),
   createBot: (input: {
@@ -258,6 +274,8 @@ export const chatClient = {
     personality?: string;
     instructions?: string;
   }) => call<{ bot: Bot }>("/api/bots", "POST", input).then((r) => r.bot),
+  interviewBot: (input: InterviewInput) =>
+    call<InterviewResult>("/api/bots/interview", "POST", input),
   updateBot: (id: string, expectedVersion: number, patch: BotPatch) =>
     call<{ bot: Bot }>(`/api/bots/${id}`, "PATCH", { expectedVersion, patch }).then((r) => r.bot),
   askOnboarding: (id: string, conversationId: string) =>
@@ -271,17 +289,18 @@ export const chatClient = {
       satisfied: boolean;
     },
   ) => call<{ bot: Bot }>(`/api/bots/${id}/onboarding`, "POST", input).then((r) => r.bot),
-  conversations: (botId?: string) =>
+  conversations: (botId?: string, archived = false) =>
     call<{ conversations: Conversation[] }>(
-      `/api/conversations${botId ? `?botId=${botId}` : ""}`,
+      `/api/conversations?${new URLSearchParams({ ...(botId ? { botId } : {}), ...(archived ? { archived: "true" } : {}) })}`,
     ).then((r) => r.conversations),
+  deleteConversation: (id: string) => call(`/api/conversations/${id}`, "DELETE"),
   startConversation: (botId: string) =>
     call<{ conversation: Conversation }>("/api/conversations", "POST", { botId }).then(
       (r) => r.conversation,
     ),
   updateConversation: (
     id: string,
-    patch: { title?: string; pinned?: boolean; favorite?: boolean },
+    patch: { title?: string; pinned?: boolean; favorite?: boolean; archived?: boolean },
   ) =>
     call<{ conversation: Conversation }>(`/api/conversations/${id}`, "PATCH", patch).then(
       (r) => r.conversation,
@@ -375,6 +394,21 @@ export const uploadAttachment = (name: string, text: string, conversationId?: st
     name,
     mimeType: "text/plain",
     text,
+    ...(conversationId ? { conversationId } : {}),
+  }).then((r) => r.attachment);
+export const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const toBase64 = (file: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+export const uploadImage = async (file: File, conversationId?: string) =>
+  call<{ attachment: Attachment }>("/api/attachments", "POST", {
+    name: file.name || "image.png",
+    mimeType: file.type,
+    dataBase64: await toBase64(file),
     ...(conversationId ? { conversationId } : {}),
   }).then((r) => r.attachment);
 export const listFiles = (path: string) =>

@@ -89,13 +89,20 @@ describe("claudeArgs", () => {
       flag(claudeArgs("hi", null, "full", { ...base, preset: "full" }), "--allowedTools"),
     ).toContain("Bash");
   });
-  test("extra allow rules: on the host only plain tools and git; any rule in a container", () => {
-    const allow = ["WebFetch", "Bash(npm test:*)", "Bash", "mcp__srv__tool", "Bash(git log:*)"];
+  test("extra allow rules: on the host plain tools and one named program (never a shell or bare Bash); any rule in a container", () => {
+    const allow = [
+      "WebFetch",
+      "Bash(npm test:*)",
+      "Bash",
+      "mcp__srv__tool",
+      "Bash(git log:*)",
+      "Bash(bash -c x)",
+    ];
     expect(flag(claudeArgs("hi", null, "git", { ...base, allow }), "--allowedTools")).toEqual(
-      expect.arrayContaining(["WebFetch", "Bash(git log:*)"]),
+      expect.arrayContaining(["WebFetch", "Bash(git log:*)", "Bash(npm test:*)"]),
     );
     const host = flag(claudeArgs("hi", null, "git", { ...base, allow }), "--allowedTools")!;
-    for (const bad of ["Bash(npm test:*)", "Bash", "mcp__srv__tool"])
+    for (const bad of ["Bash", "mcp__srv__tool", "Bash(bash -c x)"])
       expect(host).not.toContain(bad);
     expect(flag(claudeArgs("hi", null, "full", { ...base, allow }), "--allowedTools")).toEqual(
       expect.arrayContaining(["Bash(npm test:*)", "mcp__srv__tool"]),

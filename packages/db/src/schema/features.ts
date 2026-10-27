@@ -120,6 +120,15 @@ export const routine = pgTable(
     paused: boolean("paused").default(true).notNull(),
     nextRunAt: timestamp("next_run_at", { withTimezone: true }),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    // Where the routine is in its life, kept in the database so a restart (or a bot) can tell what to continue:
+    // paused (not scheduled), scheduled (waiting for nextRunAt), running, failed/interrupted (needs a re-run), blocked (needs a person), completed (one-time routine done).
+    status: text("status", {
+      enum: ["paused", "scheduled", "running", "failed", "interrupted", "blocked", "completed"],
+    })
+      .default("paused")
+      .notNull(),
+    statusReason: text("status_reason"),
+    statusAt: timestamp("status_at", { withTimezone: true }).defaultNow().notNull(),
     createdAt: created(),
   },
   (t) => [index("routine_due_idx").on(t.paused, t.nextRunAt)],
@@ -141,7 +150,7 @@ export const routineRun = pgTable(
     conversationId: uuid("conversation_id").references(() => conversation.id, restrict),
     // Unique per (routine, scheduled instant) or per run-now request, so a crash/retry/second worker never repeats an occurrence.
     occurrenceKey: text("occurrence_key"),
-    trigger: text("trigger", { enum: ["schedule", "manual"] })
+    trigger: text("trigger", { enum: ["schedule", "manual", "recovery"] })
       .default("schedule")
       .notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
@@ -278,7 +287,7 @@ export const reaction = pgTable(
   (t) => [unique("reaction_unique").on(t.messageId, t.ownerUserId, t.emoji)],
 );
 
-/** Text attachments (<=256KB) owned by one user; linked to a message when sent. Binary files are rejected at upload. */
+/** Attachments owned by one user; linked to a message when sent. Text (<=256KB) lives in `content`; images (<=10MB) live on disk under `path` (relative to the attachments root) and are never deleted. */
 export const attachment = pgTable(
   "attachment",
   {
@@ -289,7 +298,8 @@ export const attachment = pgTable(
     name: text("name").notNull(),
     mimeType: text("mime_type").notNull(),
     size: integer("size").notNull(),
-    content: text("content").notNull(),
+    content: text("content").notNull().default(""),
+    path: text("path"),
     createdAt: created(),
   },
   (t) => [index("attachment_owner_idx").on(t.ownerUserId, t.conversationId)],
@@ -312,6 +322,7 @@ export const configProposal = pgTable(
         "open_discussion",
         "discussion_brief",
         "start_loop",
+        "bot_permission",
       ],
     })
       .default("config")

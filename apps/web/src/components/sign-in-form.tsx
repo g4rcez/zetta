@@ -3,6 +3,7 @@ import { Button } from "@/components/ui";
 import { useEffect, useRef, useState } from "react";
 import z from "zod";
 
+import { Logo } from "@/components/logo";
 import { AuthField } from "@/features/identity/auth-field";
 import { authClient } from "@/lib/auth-client";
 
@@ -42,7 +43,12 @@ export default function SignInForm({
   });
   return (
     <section className="mx-auto mt-16 w-full max-w-md space-y-6 rounded-xl border bg-card p-8 shadow-sm">
-      <h1 ref={heading} tabIndex={-1} className="text-center text-3xl font-semibold tracking-tight outline-none">
+      <Logo size={72} className="mx-auto" />
+      <h1
+        ref={heading}
+        tabIndex={-1}
+        className="text-center text-3xl font-semibold tracking-tight outline-none"
+      >
         Welcome back
       </h1>
       <form

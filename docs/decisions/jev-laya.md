@@ -6,42 +6,66 @@ Status: source-backed proposal, 2026-10-22. Bounded [046a research](../../tasks/
 
 Zetta needs both Jev and Laya to make bounded decisions within a run. Neither becomes the primary conversational harness or gains authority to execute an action. The current actor, allowed candidates, context provenance, account and deadline come from Zetta. Model output selects from those candidates; deterministic authorization and browser/tool guards still control execution.
 
-| Candidate | Trade-off | Recommendation |
-| --- | --- | --- |
-| TypeSafe HTTP and Laya HTTP behind separate adapters | Shares typed question vocabulary; preserves provider-specific versions/confidence/errors | Use |
-| Copy the browser runner into general decision routing | Browser state transformation and checkpoint evaluation do not cover general routing | Use only as browser-specific prior art |
-| Replace either required product with a generic chat completion | Changes the selected products and answer semantics | Reject |
+| Candidate                                                      | Trade-off                                                                                | Recommendation                         |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------- |
+| TypeSafe HTTP and Laya HTTP behind separate adapters           | Shares typed question vocabulary; preserves provider-specific versions/confidence/errors | Use                                    |
+| Copy the browser runner into general decision routing          | Browser state transformation and checkpoint evaluation do not cover general routing      | Use only as browser-specific prior art |
+| Replace either required product with a generic chat completion | Changes the selected products and answer semantics                                       | Reject                                 |
 
 Use direct fetch with existing platform validation; no new SDK dependency is needed for the proposed HTTP adapters. Select a backend explicitly. No automatic paid/cloud fallback or transmission of additional private state. Any configured fallback must be authorized, preserve the original actor/context bounds, and remain visible in result provenance.
 
 ## Identity and source pins
 
-| Product / artifact | Exact observed or target identity | License / evidence boundary |
-| --- | --- | --- |
-| Jev | TypeSafe System One hosted API. Proposed initial stable target `jev-1.13.0`; published `jev-1.14.0` is also available | Hosted service under account terms; no downloaded weights or open-source model license established. [API](https://docs.typesafe.ai/api/system-one), [models](https://docs.typesafe.ai/models), [customer agreement](https://typesafe.ai/legal/mca) |
-| Laya library | `NandhaKishorM/laya` 0.4.12, commit `ffc142012af63d015fa19f05f29f9c5ff329a2cc`; release published 2026-10-19 | Apache-2.0 code; [manifest](https://github.com/NandhaKishorM/laya/blob/ffc142012af63d015fa19f05f29f9c5ff329a2cc/pyproject.toml), [license](https://github.com/NandhaKishorM/laya/blob/ffc142012af63d015fa19f05f29f9c5ff329a2cc/LICENSE) |
-| Local browser checkpoint | `cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206`, model card identifies v19s/mmBERT-base 322M | Apache-2.0 declared in the exact revision's [model card](https://huggingface.co/cklxx/laya-browser/raw/645cf366a2ae35f1086e8c20eff48f909bb49206/README.md). Browser-specific quality only; no Zetta general-routing evaluation |
-| Local prior art | `agent-browser-plugin-jev` 0.2.0, clean source HEAD `d12a07c372a88e47bd0c72bf045941e4753473a1` | MIT, locally inspected README, LICENSE, `src/decision.ts`, `tools/laya-server.py`; source reads only |
+| Product / artifact       | Exact observed or target identity                                                                                     | License / evidence boundary                                                                                                                                                                                                                        |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Jev                      | TypeSafe System One hosted API. Proposed initial stable target `jev-1.13.0`; published `jev-1.14.0` is also available | Hosted service under account terms; no downloaded weights or open-source model license established. [API](https://docs.typesafe.ai/api/system-one), [models](https://docs.typesafe.ai/models), [customer agreement](https://typesafe.ai/legal/mca) |
+| Laya library             | `NandhaKishorM/laya` 0.4.12, commit `ffc142012af63d015fa19f05f29f9c5ff329a2cc`; release published 2026-10-19          | Apache-2.0 code; [manifest](https://github.com/NandhaKishorM/laya/blob/ffc142012af63d015fa19f05f29f9c5ff329a2cc/pyproject.toml), [license](https://github.com/NandhaKishorM/laya/blob/ffc142012af63d015fa19f05f29f9c5ff329a2cc/LICENSE)            |
+| Local browser checkpoint | `cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206`, model card identifies v19s/mmBERT-base 322M            | Apache-2.0 declared in the exact revision's [model card](https://huggingface.co/cklxx/laya-browser/raw/645cf366a2ae35f1086e8c20eff48f909bb49206/README.md). Browser-specific quality only; no Zetta general-routing evaluation                     |
+| Local prior art          | `agent-browser-plugin-jev` 0.2.0, clean source HEAD `d12a07c372a88e47bd0c72bf045941e4753473a1`                        | MIT, locally inspected README, LICENSE, `src/decision.ts`, `tools/laya-server.py`; source reads only                                                                                                                                               |
 
-The local project is `${HOME}/Documents/agent-browser-jev`. Observed SHA-256: `src/decision.ts` = `2615cdad5081c3210a0b643a5caf6e30bc5f3aa20413f66e129316238efdbd10`; `tools/laya-server.py` = `0ef7385330ab6b7683c8503abe9ade290bd59948fa04ccc3846095fcaebe85c6`. These identify actual files, not historical test receipts. No Python runtime, installed library, checkpoint availability or live service readiness was verified.
+The project is [testing-agent](https://github.com/g4rcez/testing-agent). Observed SHA-256: `src/decision.ts` = `2615cdad5081c3210a0b643a5caf6e30bc5f3aa20413f66e129316238efdbd10`; `tools/laya-server.py` = `0ef7385330ab6b7683c8503abe9ade290bd59948fa04ccc3846095fcaebe85c6`. These identify actual files, not historical test receipts. No Python runtime, installed library, checkpoint availability or live service readiness was verified.
 
 ## Jev wire contract
 
 `POST https://api.typesafe.ai/v1/systemone` uses `Authorization: Bearer <actor-authorized-key>` and UTF-8 `application/json`. Required body: `{model,state,questions}`; `state` accepts string/object/array. `questions` maps caller-chosen names to typed questions. Response: `{model,answers,usage:{input_tokens,output_tokens}}`; answers use the submitted names and matching question types. Treat examples below as synthetic shape fixtures, never observed model output. [Official System One reference](https://docs.typesafe.ai/api/system-one).
 
-| Question | Request / response contract | Initial adapter treatment |
-| --- | --- | --- |
-| Choice | `type:"choice"`, `instructions`, `criteria` mapping option IDs to descriptions; answer `type,choice,probabilities,confidence`. Choice is an argmax; probabilities cover offered options and sum to 1. Up to 255 provider options | First routing primitive; application provides labels and threshold. [Choice](https://docs.typesafe.ai/primitives/choice) |
-| Score | `type:"score"`, instructions and ordered descriptive levels; answer includes numeric `score`, `legend`, `probabilities`, `confidence` | Available provider capability; add only for a named caller with accepted level schema. [Score](https://docs.typesafe.ai/primitives/score) |
-| Noul | `type:"noul"`, instructions, optional true/false criteria; answer `type:"noul",noul` in [0,1] | No separate confidence field; define positive/negative/uncertain thresholds in caller configuration. [Noul](https://docs.typesafe.ai/primitives/noul) |
-| Box / assets | Vision questions and image assets require an explicit danger-zone image header and suitable model | Unsupported in the initial text-decision path; never infer image support from the text model catalog |
+| Question     | Request / response contract                                                                                                                                                                                                      | Initial adapter treatment                                                                                                                             |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Choice       | `type:"choice"`, `instructions`, `criteria` mapping option IDs to descriptions; answer `type,choice,probabilities,confidence`. Choice is an argmax; probabilities cover offered options and sum to 1. Up to 255 provider options | First routing primitive; application provides labels and threshold. [Choice](https://docs.typesafe.ai/primitives/choice)                              |
+| Score        | `type:"score"`, instructions and ordered descriptive levels; answer includes numeric `score`, `legend`, `probabilities`, `confidence`                                                                                            | Available provider capability; add only for a named caller with accepted level schema. [Score](https://docs.typesafe.ai/primitives/score)             |
+| Noul         | `type:"noul"`, instructions, optional true/false criteria; answer `type:"noul",noul` in [0,1]                                                                                                                                    | No separate confidence field; define positive/negative/uncertain thresholds in caller configuration. [Noul](https://docs.typesafe.ai/primitives/noul) |
+| Box / assets | Vision questions and image assets require an explicit danger-zone image header and suitable model                                                                                                                                | Unsupported in the initial text-decision path; never infer image support from the text model catalog                                                  |
 
 ```json
-{"model":"jev-1.13.0","state":{"request":"Summarize the supplied notes"},"questions":{"route":{"type":"choice","instructions":"Select a route for this request","criteria":{"summarize":"Summarize supplied notes","unsupported":"Request needs another capability"}}}}
+{
+  "model": "jev-1.13.0",
+  "state": { "request": "Summarize the supplied notes" },
+  "questions": {
+    "route": {
+      "type": "choice",
+      "instructions": "Select a route for this request",
+      "criteria": {
+        "summarize": "Summarize supplied notes",
+        "unsupported": "Request needs another capability"
+      }
+    }
+  }
+}
 ```
 
 ```json
-{"model":"jev-1.13.0","answers":{"route":{"type":"choice","choice":"summarize","probabilities":{"summarize":1,"unsupported":0},"confidence":1}},"usage":{"input_tokens":50,"output_tokens":10}}
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "route": {
+      "type": "choice",
+      "choice": "summarize",
+      "probabilities": { "summarize": 1, "unsupported": 0 },
+      "confidence": 1
+    }
+  },
+  "usage": { "input_tokens": 50, "output_tokens": 10 }
+}
 ```
 
 Validate exact answer/question identity, type, offered choice/probability keys, finite [0,1] values, nonnegative integer usage and expected model identity. Bound all strings/maps. A selected candidate must have maximal probability; tolerate only an explicitly chosen numerical sum tolerance, not missing/extra actions. Equal/tied or below-threshold decisions become `uncertain` under caller policy. Confidence and top probability are distinct; never manufacture one from the other. Action labels and thresholds are Zetta configuration, not provider-authorized operations.

@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BookmarkPlus,
   MessageSquareText,
@@ -28,12 +28,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/to
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
 
-import { chatClient, errorMessage, type Bot, type UsedKnowledge } from "./chat-client";
+import { chatClient, errorMessage, isImage, type Bot, type UsedKnowledge } from "./chat-client";
+import { PictureStrip } from "./attachment-image";
 import { CopyButton } from "./chat-copy";
 import { EmojiPicker } from "./emoji-picker";
 import { computersOf, type Row } from "./chat-rows";
 import { VmCard } from "./vm-card";
 import { Response } from "./response";
+import { stripToolFences } from "./tool-fences";
 
 export type Author = { name: string; bot?: Bot | undefined; image?: string | null | undefined };
 
@@ -208,12 +210,63 @@ function HoverBar({
   );
 }
 
+/** "plugin postgres.db_overview" -> "Running postgres · db_overview"; other labels pass through. */
+const friendly = (activity?: string) => {
+  const m = activity?.match(/^(?:plugin|mcp) ([^.\s]+)\.(\S*)$/);
+  return m ? `Running ${m[1]}${m[2] ? ` · ${m[2]}` : ""}` : activity;
+};
+
+/** Shown while the bot is thinking and no specific step is known, so the wait reads as progress. */
+const THINKING = [
+  "Thinking",
+  "Reading the request",
+  "Connecting the dots",
+  "Weighing the options",
+  "Checking what I know",
+  "Putting it together",
+  "Double-checking",
+  "Almost there",
+];
+const ROTATE_MS = 2800;
+
+/** A concrete step ("Running postgres · db_overview") is shown as is; with none, a thinking phrase rotates. */
+const isGeneric = (activity?: string) => !activity || activity === "Thinking";
+
+/** Live feedback line for a reply that is not ready yet: a label (or rotating thinking phrases) plus bouncing dots. */
+function WorkingStatus({ label, rotate = false }: { label: string; rotate?: boolean }) {
+  const [i, setI] = useState(() => Math.floor(Math.random() * THINKING.length));
+  useEffect(() => {
+    if (!rotate) return;
+    const t = setInterval(() => setI((n) => (n + 1) % THINKING.length), ROTATE_MS);
+    return () => clearInterval(t);
+  }, [rotate]);
+  return (
+    <p
+      role="status"
+      aria-live={rotate ? "off" : "polite"}
+      className="flex items-center gap-1 text-muted-foreground"
+    >
+      {rotate ? THINKING[i] : label}
+      <span className="inline-flex gap-0.5" aria-hidden="true">
+        {[0, 1, 2].map((i) => (
+          <i
+            key={i}
+            className="size-1 animate-bounce rounded-full bg-muted-foreground motion-reduce:animate-none"
+            style={{ animationDelay: `${i * 120}ms` }}
+          />
+        ))}
+      </span>
+    </p>
+  );
+}
+
 /** One Slack-style line: avatar + name + time on the first message of a group, then just the body for follow-ups. */
 export function MessageRow({
   row,
   author,
   continued,
   inThread = false,
+  readOnly = false,
   onReact,
   onReply,
   onSaveInstruction,
@@ -222,11 +275,15 @@ export function MessageRow({
   author: Author;
   continued: boolean;
   inThread?: boolean;
+  /** No reactions, replies or saving: for a log that only shows the conversation (the setup interview). */ readOnly?: boolean;
   onReact: (row: Row, emoji: string) => void;
   onReply: (row: Row) => void;
   onSaveInstruction: (row: Row) => void;
 }) {
-  const saved = !row.streaming;
+  const saved = !row.streaming && !readOnly;
+  // A reply is in progress while it streams here or while the saved row is still "running" (page reloaded mid-turn).
+  const working = Boolean(row.streaming) || row.status === "running";
+  const visible = working ? stripToolFences(row.content).trim() : row.content;
   const receipts = (row.meta?.receipts ?? []).filter(
     (r) => r.kind !== "proposal" && r.kind !== "computer",
   );
@@ -292,34 +349,37 @@ export function MessageRow({
             </time>
           </MessageHeader>
         )}
-        {row.attachments?.length ? (
+        <PictureStrip pics={(row.attachments ?? []).filter(isImage)} />
+        {row.attachments?.some((a) => !isImage(a)) ? (
           <ul className="flex flex-wrap gap-1.5" aria-label="Attachments">
-            {row.attachments.map((a) => (
-              <li
-                key={a.id}
-                className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs"
-              >
-                <Paperclip aria-hidden="true" className="size-3 text-muted-foreground" />
-                {a.name}
-              </li>
-            ))}
+            {row.attachments
+              .filter((a) => !isImage(a))
+              .map((a) => (
+                <li
+                  key={a.id}
+                  className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs"
+                >
+                  <Paperclip aria-hidden="true" className="size-3 text-muted-foreground" />
+                  {a.name}
+                </li>
+              ))}
           </ul>
         ) : null}
-        {row.streaming && !row.content ? (
-          <p role="status" className="flex items-center gap-1 text-muted-foreground">
-            typing
-            <span className="inline-flex gap-0.5" aria-hidden="true">
-              {[0, 1, 2].map((i) => (
-                <i
-                  key={i}
-                  className="size-1 animate-bounce rounded-full bg-muted-foreground motion-reduce:animate-none"
-                  style={{ animationDelay: `${i * 120}ms` }}
-                />
-              ))}
-            </span>
-          </p>
+        {working && !visible ? (
+          <WorkingStatus
+            label={friendly(row.activity) ?? "typing"}
+            rotate={isGeneric(row.activity)}
+          />
         ) : (
-          <Response text={row.content} streaming={row.streaming ?? false} />
+          <>
+            <Response text={row.content} streaming={working} />
+            {working && (
+              <WorkingStatus
+                label={friendly(row.activity) ?? "Working"}
+                rotate={isGeneric(row.activity)}
+              />
+            )}
+          </>
         )}
         {row.status === "failed" && (
           <p role="alert" className="text-xs font-medium text-destructive">
@@ -339,7 +399,7 @@ export function MessageRow({
             key={vm.id}
             vm={vm}
             botName={author.bot?.name}
-            working={Boolean(row.streaming)}
+            working={working}
             steps={row.computerSteps?.filter((x) => x.vmId === vm.id)}
           />
         ))}
@@ -363,6 +423,10 @@ export function MessageRow({
                 {r.kind === "agenda" ? (
                   <Link to="/agenda" search={{ item: r.id }} className="hover:underline">
                     📅 {r.created === false ? "updated" : "added"} “{r.text}”
+                  </Link>
+                ) : r.kind === "task" ? (
+                  <Link to="/tasks" className="hover:underline">
+                    📋 {r.created === false ? "updated" : "added"} “{r.text}”
                   </Link>
                 ) : r.kind === "discussion" ? (
                   <Link to="/discussions" search={{ id: r.id }} className="hover:underline">

@@ -63,3 +63,7 @@ temp
 .zetta-vm/
 .zetta-homes-test-*/
 .zetta-browser-test-*/
+
+# Agent run output (local only)
+.omo/
+.trash/

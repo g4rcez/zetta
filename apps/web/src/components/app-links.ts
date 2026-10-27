@@ -3,6 +3,7 @@ import {
   CalendarClock,
   CalendarDays,
   Gauge,
+  KanbanSquare,
   MessagesSquare,
   MonitorSmartphone,
   Plug,
@@ -19,4 +20,5 @@ export const appLinks = [
   { to: "/studio/$tab", params: { tab: "plugins" }, label: "Plugins", icon: Plug },
   { to: "/studio/$tab", params: { tab: "computer" }, label: "Computer", icon: MonitorSmartphone },
   { to: "/dashboard", label: "Dashboard", icon: Gauge },
+  { to: "/tasks", label: "Tasks", icon: KanbanSquare },
 ] as const;

@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Plus, UsersRound } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -536,12 +536,13 @@ function DiscussionView({
           </ul>
         </div>
         {d.originConversationId && (
-          <a
+          <Link
             className="block text-xs text-primary hover:underline"
-            href={`/chat/${d.originConversationId}`}
+            to="/chat/{-$chatId}"
+            params={{ chatId: d.originConversationId }}
           >
             Open the chat that started it
-          </a>
+          </Link>
         )}
       </aside>
     </div>

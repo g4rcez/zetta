@@ -1,5 +1,6 @@
 import type { Database } from "@zetta/db";
-import { and, asc, desc, eq, gte, lt, lte, sql } from "@zetta/db/query";
+import schedule from "node-schedule";
+import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "@zetta/db/query";
 import { bot, conversation, message } from "@zetta/db/schema/chat";
 import { routine, routineRun, workflow } from "@zetta/db/schema/features";
 import { membership } from "@zetta/db/schema/identity";
@@ -119,8 +120,43 @@ export function createRoutines(
     return m?.s === "active";
   }
 
+  type RoutineStatus = Routine["status"];
+  const mark = (id: string, status: RoutineStatus, reason: string | null = null) =>
+    db
+      .update(routine)
+      .set({ status, statusReason: reason, statusAt: new Date() })
+      .where(eq(routine.id, id));
+
+  /**
+   * Live node-schedule jobs, one per active routine, fired at its stored `nextRunAt`. The database stays the source of truth: jobs are
+   * rebuilt from it at boot, so a restart only loses timers, never schedules. Kept on globalThis so a `bun --hot` reload cancels the
+   * previous module's jobs instead of stacking a second set.
+   */
+  const g = globalThis as { zettaRoutineJobs?: Map<string, schedule.Job> };
+  const jobs = (g.zettaRoutineJobs ??= new Map());
+  const disarm = (id: string) => {
+    jobs.get(id)?.cancel();
+    jobs.delete(id);
+  };
+  /** (Re)schedules the routine's next occurrence; a paused, archived or unscheduled routine has no job. */
+  function arm(r: Routine) {
+    disarm(r.id);
+    if (r.paused || r.archived || !r.nextRunAt) return;
+    // node-schedule ignores dates in the past, so an overdue occurrence fires right away.
+    const at = r.nextRunAt.getTime() > Date.now() ? r.nextRunAt : new Date(Date.now() + 500);
+    const job = schedule.scheduleJob(`routine:${r.id}`, at, () => void fire(r.id).catch(() => {}));
+    if (job) jobs.set(r.id, job);
+  }
+
   /** Executes one claimed occurrence row. Never throws: the row ends as succeeded/failed/blocked. */
-  async function execute(r: Routine, runId: string, startedAt: Date) {
+  async function execute(
+    r: Routine,
+    runId: string,
+    startedAt: Date,
+    retry?: { prompt: string; conversationId: string | null },
+  ) {
+    const prompt = retry?.prompt ?? r.prompt;
+    await mark(r.id, "running");
     const finish = (
       status: "succeeded" | "failed" | "blocked" | "skipped",
       output: string,
@@ -137,6 +173,20 @@ export function createRoutines(
           finishedAt: new Date(),
         })
         .where(eq(routineRun.id, runId))
+        .then(() => {
+          if (status === "blocked" || status === "failed") return mark(r.id, status, reasonCode);
+          // A routine paused in the meantime (or run by hand while paused) goes back to "paused"; a finished one-time routine is completed.
+          return r.kind === "once"
+            ? mark(r.id, "completed")
+            : db
+                .update(routine)
+                .set({
+                  status: sql`case when ${routine.paused} then 'paused' else 'scheduled' end`,
+                  statusReason: null,
+                  statusAt: new Date(),
+                })
+                .where(eq(routine.id, r.id));
+        })
         .then(() =>
           audit(db, r.ownerUserId, {
             kind: "routine_run",
@@ -147,6 +197,7 @@ export function createRoutines(
           }),
         );
     const block = async (code: string, text: string) => {
+      disarm(r.id);
       await db.update(routine).set({ paused: true, nextRunAt: null }).where(eq(routine.id, r.id));
       await finish("blocked", text, code);
       await raiseAttention(db, r.ownerUserId, {
@@ -166,8 +217,8 @@ export function createRoutines(
     if (missing.length) return block("not_ready", missing[0]!);
     const [b] = await db.select().from(bot).where(eq(bot.id, r.botId));
     // Result destination: a chat the owner can open (new per run, or continuing the routine's chat).
-    let convId: string | undefined;
-    if (r.conversationMode === "continue") {
+    let convId: string | undefined = retry?.conversationId ?? undefined;
+    if (!convId && r.conversationMode === "continue") {
       const [last] = await db
         .select({ c: routineRun.conversationId })
         .from(routineRun)
@@ -187,12 +238,14 @@ export function createRoutines(
           })
           .returning()
       )[0]!.id;
+    // Link the live chat now so a running occurrence can be opened from the timeline.
+    await db.update(routineRun).set({ conversationId: convId }).where(eq(routineRun.id, runId));
     let status: "succeeded" | "failed" = "succeeded",
       output = "",
       reason: string | null = null;
     if (chatTurn && !r.workflowId) {
       try {
-        const t = await chatTurn(r.ownerUserId, convId, r.prompt, `routine:${runId}`);
+        const t = await chatTurn(r.ownerUserId, convId, prompt, `routine:${runId}`);
         output = t.text;
         if (!t.ok) {
           status = "failed";
@@ -206,15 +259,13 @@ export function createRoutines(
     } else {
       try {
         if (r.workflowId) {
-          const w = await runWorkflow(r.ownerUserId, r.workflowId, r.prompt);
+          const w = await runWorkflow(r.ownerUserId, r.workflowId, prompt);
           output = w.output;
           if (w.status !== "succeeded") {
             status = "failed";
             reason = "workflow_failed";
           }
-        } else
-          output = (await run({ userId: r.ownerUserId, bot: b!, history: [], prompt: r.prompt }))
-            .text;
+        } else output = (await run({ userId: r.ownerUserId, bot: b!, history: [], prompt })).text;
       } catch {
         status = "failed";
         reason = "bot_failed";
@@ -230,7 +281,7 @@ export function createRoutines(
           ownerUserId: r.ownerUserId,
           seq: Number(m) + 1,
           role: "user",
-          content: r.prompt,
+          content: prompt,
         },
         {
           conversationId: convId,
@@ -260,7 +311,12 @@ export function createRoutines(
   }
 
   /** Claims an occurrence by inserting its unique key first (a crash, retry or second worker cannot run it twice). */
-  async function claim(r: Routine, key: string, trigger: "schedule" | "manual", startedAt: Date) {
+  async function claim(
+    r: Routine,
+    key: string,
+    trigger: "schedule" | "manual" | "recovery",
+    startedAt: Date,
+  ) {
     const [row] = await db
       .insert(routineRun)
       .values({
@@ -277,8 +333,122 @@ export function createRoutines(
     return row;
   }
 
+  /** Claims the routine's due occurrence, advances `nextRunAt` (re-arming the job), then runs it. False when another worker owns it. */
+  async function occur(r: Routine, now: Date) {
+    const claimed = await claim(r, `sched:${r.nextRunAt!.toISOString()}`, "schedule", now);
+    const advance =
+      r.kind === "once"
+        ? { paused: true, nextRunAt: null }
+        : { nextRunAt: computeNextRun(now, rec(r)), lastRunAt: now };
+    const [next] = await db
+      .update(routine)
+      .set(advance)
+      .where(and(eq(routine.id, r.id), eq(routine.nextRunAt, r.nextRunAt!)))
+      .returning();
+    if (next) arm(next);
+    if (!claimed) return false; // another worker (or an earlier crash) already owns this occurrence
+    await execute(r, claimed.id, now);
+    return true;
+  }
+
+  /** The node-schedule callback: re-reads the routine so a pause or edit made since arming wins. */
+  async function fire(id: string) {
+    const [r] = await db.select().from(routine).where(eq(routine.id, id));
+    if (!r || r.paused || r.archived || !r.nextRunAt) return disarm(id);
+    await occur(r, new Date(Math.max(Date.now(), r.nextRunAt.getTime())));
+  }
+
+  /** Catch-up for occurrences whose job was lost (restart, clock jump): anything overdue runs now. Idempotent through the claim key. */
+  async function runDue(now = new Date()) {
+    const due = await db
+      .select()
+      .from(routine)
+      .where(
+        and(eq(routine.paused, false), eq(routine.archived, false), lte(routine.nextRunAt, now)),
+      );
+    let ran = 0;
+    for (const r of due) if (await occur(r, now)) ran++;
+    return ran;
+  }
+
+  const recoveryPrompt = (r: Routine, run: typeof routineRun.$inferSelect) =>
+    [
+      r.prompt,
+      "",
+      "---",
+      `Recovery: your previous run of this routine (started ${run.startedAt.toISOString()}) ${
+        run.status === "interrupted"
+          ? "was interrupted because the server restarted"
+          : `failed${run.reasonCode ? ` (${run.reasonCode})` : ""}`
+      }.`,
+      run.output ? `What it had produced: ${run.output.slice(0, 1500)}` : "",
+      "Check what already happened in this chat, finish only what is missing, and do not repeat actions that already took effect.",
+    ]
+      .filter((x) => x !== "")
+      .join("\n");
+
+  /**
+   * Asks the bots to run again: for every routine whose latest run in the last hour failed or was interrupted (and was not followed by a
+   * success), start one recovery run in the same chat with a prompt that tells the bot what happened. One retry per run, never a retry
+   * of a retry, so a persistent failure does not loop.
+   */
+  async function recoverRecent(now = new Date(), windowMs = 3600_000, userId?: string) {
+    const since = new Date(now.getTime() - windowMs);
+    const rows = await db
+      .select({ run: routineRun, r: routine })
+      .from(routineRun)
+      .innerJoin(routine, eq(routine.id, routineRun.routineId))
+      .where(
+        and(
+          gte(routineRun.startedAt, since),
+          eq(routine.archived, false),
+          userId ? eq(routine.ownerUserId, userId) : undefined,
+          sql`${routineRun.trigger} <> 'recovery'`,
+        ),
+      )
+      .orderBy(desc(routineRun.startedAt));
+    const latest = new Map<string, (typeof rows)[number]>();
+    for (const x of rows) if (!latest.has(x.r.id)) latest.set(x.r.id, x);
+    const todo = [...latest.values()].filter(
+      ({ run, r }) =>
+        (run.status === "failed" || run.status === "interrupted") &&
+        (!r.paused || r.kind === "once"),
+    );
+    const results = await Promise.allSettled(
+      todo.map(async ({ run, r }) => {
+        const claimed = await claim(r, `retry:${run.id}`, "recovery", now);
+        if (!claimed) return false;
+        await execute(r, claimed.id, now, {
+          prompt: recoveryPrompt(r, run),
+          conversationId: run.conversationId,
+        });
+        return true;
+      }),
+    );
+    return results.filter((x) => x.status === "fulfilled" && x.value).length;
+  }
+
   return {
     prerequisites,
+    recoverRecent,
+    runDue,
+    /** Arms a job for every active routine and cancels the rest; also a 5-minute sweep for anything overdue. Call once at boot. */
+    async start() {
+      const active = await db
+        .select()
+        .from(routine)
+        .where(and(eq(routine.paused, false), eq(routine.archived, false)));
+      const keep = new Set(active.map((r) => r.id));
+      const keys = Array.from(jobs.keys());
+      for (const id of keys) if (!keep.has(id)) disarm(id);
+      for (const r of active) arm(r);
+      const sweep = globalThis as { zettaRoutineSweep?: schedule.Job | null };
+      sweep.zettaRoutineSweep?.cancel();
+      sweep.zettaRoutineSweep = schedule.scheduleJob("routine-sweep", "*/5 * * * *", () => {
+        void runDue().catch(() => {});
+      });
+      return active.length;
+    },
     useChat(turn: ChatTurn) {
       chatTurn = turn;
     },
@@ -373,6 +543,7 @@ export function createRoutines(
         )
         .returning();
       if (!row) throw new RoutineError("CONFLICT");
+      arm(row);
       return row;
     },
     /** Everything a person should read before activating: task, owner bot, timezone/next runs, context mode, accounts, destination, blockers. */
@@ -455,6 +626,37 @@ export function createRoutines(
       items.sort((x, y) => x.at.localeCompare(y.at));
       return { items };
     },
+    /** Runs that overlap [from, to], with the ones still running first-class: the timeline draws them up to now. */
+    async timeline(a: ActiveActor, from: Date, to: Date) {
+      if (to.getTime() - from.getTime() > 7 * 24 * 3600 * 1000 || to <= from)
+        throw new RoutineError("INVALID");
+      const rows = await db
+        .select({ run: routineRun, title: routine.title, botId: routine.botId })
+        .from(routineRun)
+        .innerJoin(routine, eq(routine.id, routineRun.routineId))
+        .where(
+          and(
+            eq(routineRun.ownerUserId, a.userId),
+            lte(routineRun.startedAt, to),
+            sql`(${routineRun.finishedAt} is null or ${routineRun.finishedAt} >= ${from})`,
+          ),
+        )
+        .orderBy(asc(routineRun.startedAt))
+        .limit(300);
+      return {
+        runs: rows.map(({ run, title, botId }) => ({
+          id: run.id,
+          routineId: run.routineId,
+          title,
+          botId,
+          status: run.status,
+          trigger: run.trigger,
+          conversationId: run.conversationId,
+          startedAt: run.startedAt.toISOString(),
+          finishedAt: run.finishedAt?.toISOString() ?? null,
+        })),
+      };
+    },
     preview(
       _a: ActiveActor,
       v: { timezone: string; dailyAt?: string; everyMinutes?: number; onceAt?: string },
@@ -489,19 +691,34 @@ export function createRoutines(
         const missing = await prerequisites(a.userId, r);
         if (missing.length) throw new RoutineError("NOT_READY", missing);
       }
-      return first(
+      const row = first(
         await db
           .update(routine)
-          .set({ paused, nextRunAt: paused ? null : computeNextRun(new Date(), rec(r)) })
+          .set({
+            paused,
+            nextRunAt: paused ? null : computeNextRun(new Date(), rec(r)),
+            status: paused ? "paused" : "scheduled",
+            statusReason: null,
+            statusAt: new Date(),
+          })
           .where(eq(routine.id, id))
           .returning(),
       );
+      arm(row);
+      return row;
     },
     async remove(a: ActiveActor, id: string) {
+      disarm(id);
       return first(
         await db
           .update(routine)
-          .set({ archived: true, paused: true, nextRunAt: null })
+          .set({
+            archived: true,
+            paused: true,
+            nextRunAt: null,
+            status: "paused",
+            statusAt: new Date(),
+          })
           .where(and(eq(routine.id, id), eq(routine.ownerUserId, a.userId)))
           .returning(),
       );
@@ -525,32 +742,6 @@ export function createRoutines(
       await execute(r, claimed.id, claimed.startedAt);
       return first(await db.select().from(routineRun).where(eq(routineRun.id, claimed.id)));
     },
-    /** Scheduler tick. Each due occurrence is claimed by its unique (routine, scheduled instant) key, then nextRunAt advances. */
-    async runDue(now = new Date()) {
-      const due = await db
-        .select()
-        .from(routine)
-        .where(
-          and(eq(routine.paused, false), eq(routine.archived, false), lte(routine.nextRunAt, now)),
-        );
-      let ran = 0;
-      for (const r of due) {
-        const key = `sched:${r.nextRunAt!.toISOString()}`;
-        const claimed = await claim(r, key, "schedule", now);
-        const advance =
-          r.kind === "once"
-            ? { paused: true, nextRunAt: null }
-            : { nextRunAt: computeNextRun(now, rec(r)), lastRunAt: now };
-        await db
-          .update(routine)
-          .set(advance)
-          .where(and(eq(routine.id, r.id), eq(routine.nextRunAt, r.nextRunAt!)));
-        if (!claimed) continue; // another worker (or an earlier crash) already owns this occurrence
-        await execute(r, claimed.id, now);
-        ran++;
-      }
-      return ran;
-    },
     /** Boot recovery: occurrences left running by a dead process become interrupted, with one attention card per routine. */
     async recoverInterrupted() {
       const rows = await db
@@ -558,6 +749,17 @@ export function createRoutines(
         .set({ status: "interrupted", reasonCode: "process_restart", finishedAt: new Date() })
         .where(eq(routineRun.status, "running"))
         .returning();
+      // Only routines that really had a run in flight; a stale "running" label without one is not an interruption.
+      if (rows.length)
+        await db
+          .update(routine)
+          .set({ status: "interrupted", statusReason: "process_restart", statusAt: new Date() })
+          .where(
+            and(
+              eq(routine.status, "running"),
+              inArray(routine.id, [...new Set(rows.map((x) => x.routineId))]),
+            ),
+          );
       for (const x of rows)
         await raiseAttention(db, x.ownerUserId, {
           title: "A routine run was interrupted by a restart",

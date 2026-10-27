@@ -92,7 +92,7 @@ export function StudioPage() {
   const Current = ICON[tab];
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto grid w-full max-w-6xl gap-5 p-4 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-10 md:p-8">
+      <div className="mx-auto grid w-full max-w-6xl grid-cols-[minmax(0,1fr)] gap-5 p-4 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-10 md:p-8">
         <nav aria-label="Studio sections" className="md:sticky md:top-8 md:self-start">
           <h1 className="mb-3 hidden px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground md:block">
             Studio

@@ -41,6 +41,7 @@ export function MessageList({
   fallbackBotId,
   inThread = false,
   threads = true,
+  readOnly = false,
   busy,
   label,
   intro,
@@ -53,6 +54,7 @@ export function MessageList({
   fallbackBotId?: string | undefined;
   inThread?: boolean;
   /** false hides "Reply in thread" where replies are not supported (group discussions). */ threads?: boolean;
+  /** Rows without reaction, reply or save actions (the setup interview). */ readOnly?: boolean;
   busy: boolean;
   label: string;
   intro?: ReactNode;
@@ -99,6 +101,7 @@ export function MessageList({
                       author={authorOf(row)}
                       continued={continued}
                       inThread={inThread || !threads}
+                      readOnly={readOnly}
                       {...actions}
                     />
                   )}

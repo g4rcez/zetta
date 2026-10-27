@@ -23,6 +23,7 @@ export type Discussion = typeof discussion.$inferSelect;
 export type DiscussionTurn = typeof discussionTurn.$inferSelect;
 export type Member = typeof discussionMember.$inferSelect;
 
+export const PERMISSIONS_TITLE = "Permissions";
 export const MAX_MEMBERS = 6,
   MAX_OPEN = 5,
   MAX_PENDING_PROPOSALS = 3,
@@ -50,6 +51,8 @@ export type OpenInput = {
   originInbound?: { plugin: string; chat: string; chatName: string } | undefined;
   tainted: boolean;
   turnBudget?: number | undefined;
+  /** false: the opening post wakes nobody (system-made discussions). */
+  wake?: boolean | undefined;
 };
 export type Claimed = { turn: DiscussionTurn; discussion: Discussion; member: Member };
 
@@ -231,19 +234,17 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
           openKey,
         })
         .returning();
-      await tx
-        .insert(discussionMember)
-        .values(
-          all.map((b) => ({
-            discussionId: d!.id,
-            botId: b.id,
-            role: (b.id === input.createdBy?.id
-              ? roles.get(b.id) || "facilitator"
-              : (roles.get(b.id) ?? "")
-            ).slice(0, 200),
-            requireApproval: codeEnabled(b, a.userId),
-          })),
-        );
+      await tx.insert(discussionMember).values(
+        all.map((b) => ({
+          discussionId: d!.id,
+          botId: b.id,
+          role: (b.id === input.createdBy?.id
+            ? roles.get(b.id) || "facilitator"
+            : (roles.get(b.id) ?? "")
+          ).slice(0, 200),
+          requireApproval: codeEnabled(b, a.userId),
+        })),
+      );
       const first = await insertMessage(
         tx,
         conv!.id,
@@ -257,10 +258,11 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
             }
           : { ownerUserId: a.userId, role: "user", content: input.firstMessage },
       );
-      await enqueueWakes(tx, d!, input.createdBy?.id ?? null, input.firstMessage, first.id, true);
+      if (input.wake !== false)
+        await enqueueWakes(tx, d!, input.createdBy?.id ?? null, input.firstMessage, first.id, true);
       return { discussion: d!, created: true };
     });
-    if (res.created) onEnqueue?.();
+    if (res.created && input.wake !== false) onEnqueue?.();
     return { ...res, members: all };
   }
 
@@ -379,6 +381,110 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
     },
     resolveBots,
     open,
+    /**
+     * A bot asks the chief for a permission. Every request of the user lands in one "Permissions" discussion (the chief facilitates it), so
+     * the user answers in one place; the post wakes the chief, who asks the user before granting anything.
+     */
+    async requestPermission(
+      a: ActiveActor,
+      chief: Bot,
+      requester: Bot,
+      rule: string,
+      reason: string,
+      /** The chat turn the requester stopped in: runs again once the rule is granted (see takeGrantedRequests). */
+      stoppedAt?: { conversationId: string; messageId: string },
+    ) {
+      const goal = "Decide, with the user, which commands and tools the user's bots may use.";
+      const opened = await open(a, {
+        title: PERMISSIONS_TITLE,
+        goal,
+        context:
+          "Bots ask here for permission to run a command. The chief asks the user before it grants anything, and grants the narrowest rule that does the job.",
+        members: [{ bot: requester.id }],
+        firstMessage: "Permission requests from the bots are collected here.",
+        createdBy: chief,
+        tainted: false,
+        wake: false,
+      });
+      let d: Discussion = opened.discussion;
+      await db
+        .insert(discussionMember)
+        .values({ discussionId: d.id, botId: requester.id, role: "", requireApproval: false })
+        .onConflictDoNothing();
+      if (d.status === "paused")
+        throw new DiscussionError(
+          "CLOSED",
+          "The Permissions discussion is paused; ask the user to resume it.",
+        );
+      if (d.status === "stalled") {
+        const [again] = await db
+          .update(discussion)
+          .set({ status: "open" })
+          .where(eq(discussion.id, d.id))
+          .returning();
+        d = again ?? d;
+      }
+      const text = `@${chief.name.replace(/\s+/g, "")} ${requester.name} asks to be allowed: ${rule}\nWhy: ${reason}`;
+      const row = await post(db, d, requester, text);
+      if (stoppedAt)
+        await db
+          .update(message)
+          .set({ meta: { permissionRequest: { rule, ...stoppedAt } } })
+          .where(eq(message.id, row.id));
+      await raiseAttention(db, a.userId, {
+        botId: requester.id,
+        title: `${requester.name} asks for permission: ${rule}`,
+        detail: reason.slice(0, 400),
+        nextAction: "Open the Permissions discussion and answer the Chief.",
+        resultLink: `/discussions?id=${d.id}`,
+        source: "bot",
+        sourceKey: `permission:${d.id}:${row.id}`,
+      });
+      return d;
+    },
+    /**
+     * The chats a bot stopped in to wait for a permission, for the rules now granted. Each request is handed out once (a concurrent grant
+     * finds it already taken); requests for rules not granted stay waiting.
+     */
+    async takeGrantedRequests(a: ActiveActor, botId: string, allow: string[]) {
+      if (!allow.length) return [];
+      const waiting = await db
+        .select({ id: message.id, meta: message.meta })
+        .from(message)
+        .where(
+          and(
+            eq(message.ownerUserId, a.userId),
+            eq(message.botId, botId),
+            inArray(sql<string>`${message.meta} -> 'permissionRequest' ->> 'rule'`, allow),
+            sql`${message.meta} -> 'permissionRequest' ->> 'taken' is null`,
+          ),
+        );
+      const taken: {
+        requestId: string;
+        rule: string;
+        conversationId: string;
+        messageId: string;
+      }[] = [];
+      for (const w of waiting) {
+        const req = (
+          w.meta as {
+            permissionRequest: { rule: string; conversationId: string; messageId: string };
+          }
+        ).permissionRequest;
+        const [won] = await db
+          .update(message)
+          .set({ meta: { permissionRequest: { ...req, taken: true } } })
+          .where(
+            and(
+              eq(message.id, w.id),
+              sql`${message.meta} -> 'permissionRequest' ->> 'taken' is null`,
+            ),
+          )
+          .returning({ id: message.id });
+        if (won) taken.push({ requestId: w.id, ...req });
+      }
+      return taken;
+    },
     /** A bot asked to open a discussion: allowlisted peers open it now; others become a proposal (never for outside people). */
     async request(a: ActiveActor, input: OpenInput & { createdBy: Bot }, inbound: boolean) {
       const bots = await resolveBots(
@@ -519,10 +625,11 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
           "NOT_FOUND",
           "An attachment is no longer available. Attach it again.",
         );
-      const carried: { name: string; text: string }[] = picked.map((f) => ({
-        name: f.name,
-        text: f.content.slice(0, FILE_CLIP),
-      }));
+      const isPicture = (f: (typeof picked)[number]) => !!f.path && f.mimeType.startsWith("image/");
+      const images = picked.filter(isPicture).map((f) => ({ id: f.id, name: f.name }));
+      const carried: { name: string; text: string }[] = picked
+        .filter((f) => !isPicture(f))
+        .map((f) => ({ name: f.name, text: f.content.slice(0, FILE_CLIP) }));
       const fileHashes: { path: string; sha256: string }[] = [];
       for (const ref of refs) {
         try {
@@ -553,9 +660,14 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
           ownerUserId: a.userId,
           role: "user",
           content: text,
-          meta: carried.length
-            ? { files: carried, ...(refs.length ? { fileRefs: refs, fileHashes } : {}) }
-            : null,
+          meta:
+            carried.length || images.length
+              ? {
+                  ...(carried.length ? { files: carried } : {}),
+                  ...(images.length ? { images } : {}),
+                  ...(refs.length ? { fileRefs: refs, fileHashes } : {}),
+                }
+              : null,
         });
         if (picked.length)
           await tx

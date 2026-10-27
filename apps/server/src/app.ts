@@ -10,6 +10,7 @@ import { createIntegrationRoutes, type IntegrationServices } from "./modules/int
 import { createDecisionRoutes, type DecisionServices } from "./modules/decisions/routes";
 import { createFeatureRoutes, type FeatureServices } from "./modules/features/routes";
 import { createAgendaRoutes, type AgendaServices } from "./modules/agenda/routes";
+import { createTaskRoutes, type TaskServices } from "./modules/tasks/routes";
 import { createDiscussionRoutes, type DiscussionServices } from "./modules/discussions/routes";
 import { createInboundRoutes, type InboundServices } from "./modules/inbound/routes";
 import { createIdentityRoutes, type IdentityServices } from "./modules/identity/routes";
@@ -30,6 +31,7 @@ export type CreateAppOptions = {
   connections?: ConnectionServices;
   integrations?: IntegrationServices;
   agenda?: AgendaServices;
+  tasks?: TaskServices;
   discussions?: DiscussionServices;
   inbound?: InboundServices;
   botDatabase?: BotDatabaseServices;
@@ -50,6 +52,7 @@ export function createApp({
   connections,
   integrations,
   agenda,
+  tasks,
   discussions,
   inbound,
   botDatabase,
@@ -121,6 +124,7 @@ export function createApp({
         : new Elysia(),
     )
     .use(agenda ? createAgendaRoutes(agenda, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(tasks ? createTaskRoutes(tasks, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(
       discussions
         ? createDiscussionRoutes(discussions, [webOrigin, ...desktopOrigins])

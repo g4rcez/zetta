@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ShieldQuestion } from "lucide-react";
 
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@zetta/ui/components/item";
 
 import {
@@ -22,6 +22,7 @@ const KIND_LABEL: Record<ProposalKind, string> = {
   open_discussion: "Open a group discussion",
   discussion_brief: "Let a code bot act on outside content",
   start_loop: "Start a loop",
+  bot_permission: "Change what a bot may do",
 };
 const FIELD_LABEL: Record<string, string> = {
   discussion: "Discussion",
@@ -30,6 +31,10 @@ const FIELD_LABEL: Record<string, string> = {
   context: "Shared context",
   request: "What it was asked",
   bot: "Bot",
+  preset: "Preset",
+  allow: "Allow",
+  deny: "Deny",
+  revoke: "Remove",
   name: "Name",
   title: "Title",
   description: "Description",
@@ -152,13 +157,22 @@ export function ProposalsPanel({
             <ItemActions>
               <Button
                 size="sm"
-                variant="outline"
+                variant="destructive"
                 disabled={busy === p.id}
                 onClick={() => void decide(p, false)}
               >
-                {p.kind === "start_loop" ? "Not now" : "Reject"}
+                {p.kind === "start_loop"
+                  ? "Not now"
+                  : p.kind === "bot_permission"
+                    ? "Deny"
+                    : "Reject"}
               </Button>
-              <Button size="sm" disabled={busy === p.id} onClick={() => void decide(p, true)}>
+              <Button
+                size="sm"
+                variant="success"
+                disabled={busy === p.id}
+                onClick={() => void decide(p, true)}
+              >
                 {p.kind === "start_loop"
                   ? "Start loop"
                   : p.kind === "discussion_brief"

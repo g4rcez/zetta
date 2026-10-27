@@ -14,7 +14,7 @@ Integration proposal: resolve an actor-owned connection reference after authoriz
 
 ## Laya
 
-Related local project `${HOME}/Documents/agent-browser-jev` contains a guarded TypeScript browser runner and `tools/laya-server.py`. Its inspected decision client speaks the same System One endpoint shape to a loopback server, while its server pins a browser-trained Laya checkpoint. This is a lead for reproducibility, not a general-purpose model contract or proof of a running service. The [upstream model card](https://huggingface.co/cklxx/laya-browser) and exact pinned source must be reconciled before RFC-048 accepts it.
+Related project [testing-agent](https://github.com/g4rcez/testing-agent) contains a guarded TypeScript browser runner and `tools/laya-server.py`. Its inspected decision client speaks the same System One endpoint shape to a loopback server, while its server pins a browser-trained Laya checkpoint. This is a lead for reproducibility, not a general-purpose model contract or proof of a running service. The [upstream model card](https://huggingface.co/cklxx/laya-browser) and exact pinned source must be reconciled before RFC-048 accepts it.
 
 Open questions: selected deployment/runtime and revision, supported non-browser decision domain, typed payload/schema, model-loading cost, authorization, health/readiness, cancellation and concurrency. A loopback endpoint alone does not establish isolation; another actor must not reach its private state or select another actor's context. Test actual decision quality and malformed/unsupported cases before routing product work.
 

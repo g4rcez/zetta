@@ -12,6 +12,7 @@ export type ChatDataParts = {
   summary: { text: string };
   computer: { messageId: string; botId: string; vm: { id: string; name: string } };
   "computer-step": { messageId: string; vmId: string; step: string; at: number };
+  activity: { messageId: string; label: string };
 };
 export type ChatUIMessage = UIMessage<unknown, ChatDataParts>;
 
@@ -67,6 +68,13 @@ export function toUIMessageStream(events: AsyncIterable<ChatEvent>) {
           });
         else if (ev.type === "summary")
           writer.write({ type: "data-summary", data: { text: ev.text } });
+        else if (ev.type === "activity")
+          // Fixed id: each label replaces the previous one instead of piling up parts.
+          writer.write({
+            type: "data-activity",
+            id: `${ev.messageId}:activity`,
+            data: { messageId: ev.messageId, label: ev.label },
+          });
         else if (ev.type === "computer") {
           writer.write({
             type: "data-computer",

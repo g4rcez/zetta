@@ -7,6 +7,7 @@ import {
   agendaServices,
   auth,
   botClaudeServices,
+  taskServices,
   botDatabaseServices,
   chatServices,
   computerServices,
@@ -18,6 +19,7 @@ import {
   featureServices,
   identity,
   loopServices,
+  resumeInterruptedRuns,
 } from "./services";
 
 initLogger({
@@ -34,6 +36,7 @@ createApp({
   connections: connectionServices,
   integrations: integrationServices,
   agenda: agendaServices,
+  tasks: taskServices,
   discussions: discussionServices,
   inbound: inboundServices,
   botDatabase: botDatabaseServices,
@@ -45,12 +48,11 @@ createApp({
   console.log(`Server is running on http://localhost:${process.env.PORT ?? 3000}`);
 });
 
-// Simple in-process scheduler: one tick per 30s; each due routine is claimed atomically before it runs. A `bun --hot` reload replaces
+// Simple in-process ticker for the other workers (routines run from node-schedule jobs, see features/routines.ts); each unit is claimed atomically before it runs. A `bun --hot` reload replaces
 // the timer instead of stacking another one that keeps driving the previous module's services.
 const ticker = globalThis as { zettaTick?: ReturnType<typeof setInterval> };
 clearInterval(ticker.zettaTick);
 ticker.zettaTick = setInterval(() => {
-  void featureServices.features.runDue().catch(() => {});
   void agendaServices.scheduler.tick().catch(() => {});
   void discussionServices.worker.tick().catch(() => {});
   void inboundServices.inbound.tick().catch(() => {});
@@ -66,6 +68,13 @@ void chatServices.chat
   .recoverInterrupted()
   .then(() => Promise.all([discussionServices.store.recover(), inboundServices.inbound.recover()]))
   .then(() => loopServices.driver.tick())
+  .then(() => {
+    // Once per process: a `bun --hot` reload re-runs this file while the runs it would "resume" are still alive.
+    const g = globalThis as { zettaResumed?: boolean };
+    if (g.zettaResumed) return void chatServices.chat.takeResumable();
+    g.zettaResumed = true;
+    return resumeInterruptedRuns();
+  })
   .catch(() => {});
 void featureServices.features.recover().catch(() => {});
 

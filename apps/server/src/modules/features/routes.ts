@@ -317,6 +317,13 @@ export function createFeatureRoutes(
       }),
     )
     .post(
+      "/routines/timeline",
+      g(async (c) => {
+        const v = schemas.calendar.parse(c.body);
+        return f.routines.timeline(c.actor, new Date(v.from), new Date(v.to));
+      }),
+    )
+    .post(
       "/routines/preview",
       g(async (c) => {
         const v = schemas.routinePreview.parse(c.body);

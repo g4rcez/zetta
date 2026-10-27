@@ -13,7 +13,9 @@ import { z } from "zod";
  *   ```zetta:goal_progress / goal_done {"summary": "..."}                  -> inside an approved loop only: report progress, or finish it
  *   ```zetta:credential  {"ref": "1password:<item>", "field": "password"}    -> Zetta types a shared login into the focused input (value never shown to the bot)
  *   ```zetta:agenda      {"action": "add", "kind": "task", "title": "...", "start": "<ISO>"} | list | update | complete | remove -> the user's Agenda
- *   ```zetta:bot_claude  {"bot": "<name or id>", "allow": ["Bash(gh pr create:*)"], "deny": [...], "revoke": [...], "preset": "git"} -> chief only: edits another bot's Claude Code permissions right away
+ *   ```zetta:task        {"action": "add", "title": "...", "status": "backlog"} | list | update {"id", "status": "in_progress"|"blocked"|"review"|"done"} -> the shared task board
+ *   ```zetta:bot_claude  {"bot": "<name or id>", "allow": ["Bash(gh pr create:*)"], "deny": [...], "revoke": [...], "preset": "git"} -> chief only: edits another bot's Claude Code permissions (answering a bot's request in the Permissions discussion shows the user Approve / Deny buttons first)
+ *   ```zetta:permission  {"rule": "Bash(pnpm:*)", "reason": "run the tests"}                -> any other bot: asks the chief, in the Permissions discussion, for a rule
  *   ```zetta:discussion  {"action": "open", "title", "goal", "context", "members": [{"bot": "Dev"}], "firstMessage"} | post | update_context | resolve -> group of bots (modules/discussions)
  *   ```zetta:ui          JSON-patch lines building a view from @zetta/render's catalog -> not a tool: it stays in the reply and the web chat draws it
  */
@@ -30,6 +32,9 @@ export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks i
 \`\`\`zetta:agenda
 {"action":"add","kind":"task","title":"Call Ana about the contract","start":"2026-10-27T09:00:00-03:00"}
 \`\`\`   (the user's Agenda, a calendar they see in Zetta. Add what the conversation commits them to: kind task (something to do), reminder (a nudge at a time), event (a meeting or appointment, give "end"), note (context for a day). Fields: title, start, end, allDay, remindAt (defaults to start for tasks and reminders; null for none), description, location, timezone (IANA), syncToGoogle. Dates are ISO 8601 with the user's UTC offset. Other actions: list{from?,to?} (default next 7 days; returns ids), update{id,...fields}, complete{id}, remove{id}. Add only what the user asked for or clearly agreed to; tell them what you added.)
+\`\`\`zetta:task
+{"action":"add","title":"Draft the Q4 report","description":"optional detail","status":"backlog"}
+\`\`\`   (the shared task board all the user's bots and the user see, with fixed columns backlog, in_progress, blocked, review, done. Add a task when a message commits you or another bot to a piece of work that takes more than this reply; do not add one for quick answers. Move it as you work: update{id,status}. list returns the board with ids. Say in your reply what you added or moved.)
 \`\`\`zetta:create_routine
 {"botId":"<id of the bot that runs it, usually yours>","title":"Morning Reddit digest","prompt":"complete instructions for one run","timezone":"America/Sao_Paulo","dailyAt":"08:00"}
 \`\`\`   (a recurring task; only a proposal: the user approves it, then activates it in Studio > Routines. dailyAt "HH:MM" in that IANA timezone, or everyMinutes (5 to 10080) instead; several times a day = one routine per time. Each run is a new chat turn with your tools, so the prompt must stand on its own. Propose it in your first reply, before using a computer, plugin or reading anything: changes asked for after outside content are ignored.)
@@ -61,13 +66,19 @@ const CHIEF_TOOLS = `
 You are the user's chief: you may use every tool and run any command, including gh and anything else on this machine, without asking for approval. You also manage what the other bots may do. When a bot says a command needs permission (for example gh pr create), grant it yourself instead of asking the user:
 \`\`\`zetta:bot_claude
 {"bot":"components","allow":["Bash(gh pr create:*)"]}
-\`\`\`   (takes effect at that bot's next turn. "bot" is a name or id from the bots list. Optional: "deny" adds deny rules, "revoke" removes rules from both lists, "preset" is auto|read_only|edit|git|full, "appendPrompt" replaces its extra instructions. Rules look like Bash(gh pr create:*) or WebFetch. Grant the narrowest rule that does the job, and tell the user what you granted.)`;
+\`\`\`   (takes effect at that bot's next turn. "bot" is a name or id from the bots list. Optional: "deny" adds deny rules, "revoke" removes rules from both lists, "preset" is auto|read_only|edit|git|full, "appendPrompt" replaces its extra instructions. Rules look like Bash(gh pr create:*) or WebFetch. Grant the narrowest rule that does the job, and tell the user what you granted.)
+Other bots ask you for permissions in the "Permissions" discussion. When you are woken there by a bot's request, send the zetta:bot_claude block for the narrowest rule that does the job right away: the user is shown Approve and Deny buttons, so do not ask in text and do not wait for a typed yes. It only applies once they press Approve. After sending it, say in one short line which bot, rule and why you asked, then stop. If a user message later tells you to grant or decline something, do what it says.)`;
+const PERMISSION_TOOLS = `
+If a command or tool is refused because you lack permission, never edit settings files (.claude/settings*.json) and never ask the user to edit them: ask the chief, who collects every request in one Permissions discussion and asks the user:
+\`\`\`zetta:permission
+{"rule":"Bash(pnpm:*)","reason":"run the package tests the routine needs"}
+\`\`\`   (the narrowest rule that does the job, like Bash(pnpm test:*) or WebFetch. Then stop and say you asked; the rule applies at your next turn once the user approves.)`;
 /** Tool instructions for one bot: browser and desktop are only described when the owner granted that computer-use mode, code only with code access, bot permissions only for the chief. */
 export function toolPreamble(mode: ComputerMode = "off", code = false, chief = false): string {
   const extra = [
     mode !== "off" ? BROWSER_TOOLS + (mode === "desktop" ? DESKTOP_TOOLS : "") : "",
     code ? CODE_TOOLS : "",
-    chief ? CHIEF_TOOLS : "",
+    chief ? CHIEF_TOOLS : code ? PERMISSION_TOOLS : "",
   ]
     .filter(Boolean)
     .map((x) => x.trimStart())
@@ -82,6 +93,7 @@ export function toolPreamble(mode: ComputerMode = "off", code = false, chief = f
 const bounded = (n: number) => z.string().trim().min(1).max(n);
 /** Which of the user's computers a desktop action targets; omitted = their default one. */
 const vm = z.string().uuid().optional();
+const taskStatus = z.enum(["backlog", "in_progress", "blocked", "review", "done"]);
 const isoDate = z.string().datetime({ offset: true });
 const agendaFields = {
   kind: z.enum(["event", "task", "reminder", "note"]).optional(),
@@ -274,6 +286,23 @@ export const toolSchemas = {
     revoke: z.array(bounded(200)).max(20).optional(),
     appendPrompt: z.string().max(8000).optional(),
   }),
+  permission: z.strictObject({ rule: bounded(200), reason: bounded(500) }),
+  task: z.discriminatedUnion("action", [
+    z.strictObject({
+      action: z.literal("add"),
+      title: bounded(200),
+      description: z.string().max(2000).optional(),
+      status: taskStatus.optional(),
+    }),
+    z.strictObject({ action: z.literal("list") }),
+    z.strictObject({
+      action: z.literal("update"),
+      id: z.string().uuid(),
+      title: bounded(200).optional(),
+      description: z.string().max(2000).optional(),
+      status: taskStatus.optional(),
+    }),
+  ]),
   agenda: z.discriminatedUnion("action", [
     z.strictObject({
       action: z.literal("add"),
@@ -297,7 +326,7 @@ export function parseTools(reply: string): { calls: ToolCall[]; text: string } {
   const calls: ToolCall[] = [];
   const text = reply
     .replace(
-      /```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|discussion|bot_claude|goal_progress|goal_done|goal)\s*\n([\s\S]*?)```/g,
+      /```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|task|discussion|bot_claude|permission|goal_progress|goal_done|goal)\s*\n([\s\S]*?)```/g,
       (_, kind: keyof typeof toolSchemas, body: string) => {
         if (calls.length < 8) {
           try {

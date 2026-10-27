@@ -20,7 +20,6 @@ export type Bot = {
   personality: string;
   instructions: string;
   computerMode?: ComputerMode;
-  computerActionLimit?: number;
   codeAccess?: boolean;
   requiredConnections?: RequiredConnection[];
 };
@@ -43,7 +42,6 @@ export type BotPatch = Partial<{
   personality: string;
   instructions: string;
   computerMode: ComputerMode;
-  computerActionLimit: number;
   codeAccess: boolean;
   requiredConnections: RequiredConnection[];
 }>;
@@ -65,7 +63,8 @@ export type ProposalKind =
   | "create_instruction"
   | "create_vm"
   | "open_discussion"
-  | "discussion_brief";
+  | "discussion_brief"
+  | "start_loop";
 export type Proposal = {
   id: string;
   botId: string | null;
@@ -354,6 +353,23 @@ export const chatClient = {
 
 export const cancelTurn = (conversationId: string) =>
   call(`/api/conversations/${conversationId}/cancel`, "POST");
+/** A goal a bot keeps working on across turns after the user approved it (server: modules/chat/loops.ts). */
+export type GoalLoop = {
+  id: string;
+  conversationId: string;
+  botId: string;
+  goal: string;
+  doneWhen: string;
+  status: "running" | "paused" | "done" | "failed" | "cancelled";
+  iterations: number;
+  progress: string;
+  reason: string | null;
+  updatedAt: string;
+};
+export const loopsOf = (conversationId: string) =>
+  call<{ loops: GoalLoop[] }>(`/api/conversations/${conversationId}/loops`).then((r) => r.loops);
+export const setLoop = (id: string, to: "stop" | "resume") =>
+  call<{ loop: GoalLoop }>(`/api/loops/${id}/${to}`, "POST").then((r) => r.loop);
 export const uploadAttachment = (name: string, text: string, conversationId?: string) =>
   call<{ attachment: Attachment }>("/api/attachments", "POST", {
     name,

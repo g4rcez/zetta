@@ -17,6 +17,7 @@ import {
   decisionServices,
   featureServices,
   identity,
+  loopServices,
 } from "./services";
 
 initLogger({
@@ -53,6 +54,7 @@ ticker.zettaTick = setInterval(() => {
   void agendaServices.scheduler.tick().catch(() => {});
   void discussionServices.worker.tick().catch(() => {});
   void inboundServices.inbound.tick().catch(() => {});
+  void loopServices.driver.tick().catch(() => {});
 }, 30_000);
 
 // Laya runs inside the server process; warm it in the background (set ZETTA_LAYA_PRELOAD=0 to load on first use).
@@ -63,6 +65,7 @@ if (process.env.ZETTA_LAYA_PRELOAD !== "0") void decisionServices.decisions.warm
 void chatServices.chat
   .recoverInterrupted()
   .then(() => Promise.all([discussionServices.store.recover(), inboundServices.inbound.recover()]))
+  .then(() => loopServices.driver.tick())
   .catch(() => {});
 void featureServices.features.recover().catch(() => {});
 

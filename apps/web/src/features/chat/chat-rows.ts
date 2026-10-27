@@ -130,7 +130,11 @@ export const summaryOf = (messages: ZettaUIMessage[]) => {
 
 /** Stable author key: the user, or one bot. */
 export const authorOf = (r: Pick<Message, "role" | "botId">, fallbackBotId?: string) =>
-  r.role === "user" ? "user" : `bot:${r.botId ?? fallbackBotId ?? ""}`;
+  r.role === "user"
+    ? "user"
+    : r.role === "system"
+      ? "system"
+      : `bot:${r.botId ?? fallbackBotId ?? ""}`;
 
 export type Grouped<T> = { row: T; continued: boolean; day?: string };
 const GROUP_GAP_MS = 5 * 60_000;

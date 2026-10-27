@@ -21,6 +21,7 @@ const KIND_LABEL: Record<ProposalKind, string> = {
   create_vm: "New computer",
   open_discussion: "Open a group discussion",
   discussion_brief: "Let a code bot act on outside content",
+  start_loop: "Start a loop",
 };
 const FIELD_LABEL: Record<string, string> = {
   discussion: "Discussion",
@@ -37,7 +38,7 @@ const FIELD_LABEL: Record<string, string> = {
   prompt: "What it should do",
   harness: "Engine",
   model: "Model",
-  computerActionLimit: "Computer actions per turn",
+  doneWhen: "Done when",
   dailyAt: "Daily at",
   everyMinutes: "Every (minutes)",
   timezone: "Timezone",
@@ -54,7 +55,8 @@ export function showValue(v: unknown, max = 240): string {
 /** One-line plain summary for create_* proposals. */
 export function summarize(p: Proposal): string {
   const name = p.diff.find(
-    (d) => d.field === "name" || d.field === "title" || d.field === "discussion",
+    (d) =>
+      d.field === "name" || d.field === "title" || d.field === "discussion" || d.field === "goal",
   )?.to;
   return `${KIND_LABEL[p.kind ?? "config"]}${name ? `: ${showValue(name, 80)}` : ""}`;
 }
@@ -86,10 +88,10 @@ export function ProposalsPanel({
       else if (r.status === "rejected") notify("Rejected. Nothing was changed.");
       else {
         notify(
-          p.kind && p.kind !== "config"
-            ? `Done: ${summarize(p)}.`
-            : p.diff.every((d) => d.field === "computerActionLimit")
-              ? 'Limit raised and saved as the new default. Reply "continue" to let the bot pick up where it stopped.'
+          p.kind === "start_loop"
+            ? "Loop started. The bot keeps working until the goal is done; press Stop to end it."
+            : p.kind && p.kind !== "config"
+              ? `Done: ${summarize(p)}.`
               : "Change applied. Chat again to confirm the bot is ready.",
         );
         onBotsChanged();
@@ -154,16 +156,18 @@ export function ProposalsPanel({
                 disabled={busy === p.id}
                 onClick={() => void decide(p, false)}
               >
-                Reject
+                {p.kind === "start_loop" ? "Not now" : "Reject"}
               </Button>
               <Button size="sm" disabled={busy === p.id} onClick={() => void decide(p, true)}>
-                {p.kind === "discussion_brief"
-                  ? "Approve this brief"
-                  : p.kind === "open_discussion"
-                    ? "Approve and open"
-                    : creating
-                      ? "Approve and create"
-                      : "Approve"}
+                {p.kind === "start_loop"
+                  ? "Start loop"
+                  : p.kind === "discussion_brief"
+                    ? "Approve this brief"
+                    : p.kind === "open_discussion"
+                      ? "Approve and open"
+                      : creating
+                        ? "Approve and create"
+                        : "Approve"}
               </Button>
             </ItemActions>
           </Item>

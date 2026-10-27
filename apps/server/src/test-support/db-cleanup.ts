@@ -43,6 +43,7 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
     "memory",
     "instruction",
     "attention_item",
+    "goal_loop",
     "message",
     "conversation",
   ])

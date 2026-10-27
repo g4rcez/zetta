@@ -67,8 +67,6 @@ export const bot = pgTable(
     computerMode: text("computer_mode", { enum: ["off", "browser", "desktop"] })
       .default("off")
       .notNull(),
-    // Most Computer actions (browser or desktop) this bot may take in one chat turn. Reaching it asks the owner to double it; approving makes the new value the default.
-    computerActionLimit: integer("computer_action_limit").default(12).notNull(),
     // Code access the owner granted this bot: a persistent per-user workspace where it can run git, edit files and push. On by default.
     codeAccess: boolean("code_access").default(true).notNull(),
     // Connections this bot needs before it is ready ([{ key, provider }]); bound per user in bot_connection.
@@ -185,4 +183,45 @@ export const botRevision = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [unique("bot_revision_unique").on(table.botId, table.version)],
+);
+
+/**
+ * A goal a bot keeps working on across turns, started only after the user approved it (a `start_loop` proposal). Each iteration is one
+ * chat turn in the conversation; the bot ends it with goal_progress (keep going) or goal_done. No fixed turn limit: it pauses when it stops
+ * making progress, keeps failing, hands off, or the user presses Stop.
+ */
+export const goalLoop = pgTable(
+  "goal_loop",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => user.id, restrict),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversation.id, restrict),
+    botId: uuid("bot_id")
+      .notNull()
+      .references(() => bot.id, restrict),
+    goal: text("goal").notNull(),
+    doneWhen: text("done_when").notNull(),
+    status: text("status", { enum: ["running", "paused", "done", "failed", "cancelled"] })
+      .default("running")
+      .notNull(),
+    iterations: integer("iterations").default(0).notNull(),
+    /** The bot's latest summary of what is done and what is left. */
+    progress: text("progress").default("").notNull(),
+    /** Iterations in a row without new progress or with an error; the loop pauses at 3. */
+    stalls: integer("stalls").default(0).notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("goal_loop_conversation_idx").on(table.conversationId, table.status),
+    // One active loop per conversation: a second one would fight over the same turn.
+    uniqueIndex("goal_loop_one_active")
+      .on(table.conversationId)
+      .where(sql`${table.status} in ('running', 'paused')`),
+  ],
 );

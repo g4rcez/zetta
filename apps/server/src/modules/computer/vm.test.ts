@@ -279,6 +279,94 @@ describe("vm service (fake docker + fake spacesd)", () => {
     });
     await vm.closeAll();
   });
+  test("click_element clicks the center of element [n] from the last read; a shifted page is matched by label; gone is NO_ELEMENT", async () => {
+    const tree = [
+      '- [0] frame "Shop - Chromium"',
+      '  - [5] button "Add to cart"',
+      '  - [6] link "Checkout"',
+    ].join("\n");
+    let elements = [
+      {
+        element_index: 5,
+        role: "button",
+        label: "Add to cart",
+        frame: { x: 100, y: 200, w: 40, h: 20 },
+      },
+      {
+        element_index: 6,
+        role: "link",
+        label: "Checkout",
+        frame: { x: 300, y: 400, w: 60, h: 10 },
+      },
+    ];
+    const calls: { tool: string; args: Record<string, unknown> }[] = [];
+    const connect = async () => ({
+      call: (async (tool: string, args: Record<string, unknown>) => {
+        calls.push({ tool, args });
+        if (tool === "list_windows")
+          return { text: 'window_id=42 pid=7 "Shop - Chromium" 1280x773+0+27', isError: false };
+        if (tool === "get_window_state")
+          return args.tree_format === "elements"
+            ? {
+                text: "",
+                isError: false,
+                structured: {
+                  elements,
+                  coordinate_frame: "window",
+                  window_bounds: { x: 0, y: 27, height: 773 },
+                },
+              }
+            : { text: tree, isError: false };
+        return { text: "ok", isError: false };
+      }) as McpCall,
+      close: async () => {},
+    });
+    const { vm } = await setup({ connect });
+    const { id } = await vm.start("u");
+    const screen = await vm.read("u", id);
+    expect(screen).toContain('[5] button "Add to cart"');
+    expect(screen).toContain('[6] link "Checkout"');
+    await vm.act("u", id, "agent", { type: "click_element", n: 5 });
+    // frames are screen pixels: the center of the frame
+    expect(calls.at(-1)).toMatchObject({ tool: "click", args: { x: 120, y: 210 } });
+    // the page shifted: index 5 now holds another element, the label the bot saw wins
+    elements = [
+      { element_index: 5, role: "button", label: "Sign in", frame: { x: 0, y: 30, w: 10, h: 10 } },
+      {
+        element_index: 7,
+        role: "button",
+        label: "Add to cart",
+        frame: { x: 500, y: 600, w: 20, h: 20 },
+      },
+    ];
+    await vm.act("u", id, "agent", { type: "click_element", n: 5 });
+    expect(calls.at(-1)).toMatchObject({ tool: "click", args: { x: 510, y: 610 } });
+    elements = [];
+    expect(await code(vm.act("u", id, "agent", { type: "click_element", n: 6 }))).toBe(
+      "NO_ELEMENT",
+    );
+    // the window is looked up once and cached across actions
+    expect(calls.filter((c) => c.tool === "list_windows").length).toBeLessThanOrEqual(3);
+    await vm.closeAll();
+  });
+  test("a slow spacesd call is SLOW, not a dropped connection: the session survives", async () => {
+    let slow = true;
+    const connect = async () => ({
+      call: (async (tool: string) => {
+        if (tool === "list_windows")
+          return { text: 'window_id=42 pid=7 "X - Chromium"', isError: false };
+        if (tool === "click" && slow) throw new ComputerError("SLOW");
+        return { text: "ok", isError: false };
+      }) as McpCall,
+      close: async () => {},
+    });
+    const { vm } = await setup({ connect });
+    const { id } = await vm.start("u");
+    expect(await code(vm.act("u", id, "agent", { type: "click", x: 1, y: 1 }))).toBe("SLOW");
+    slow = false;
+    expect(await code(vm.act("u", id, "agent", { type: "click", x: 1, y: 1 }))).toBe("ok");
+    await vm.closeAll();
+  });
   test("VNC: a password file per start, one-time tickets bound to owner and VM, and viewers keep the VM from idling out", async () => {
     const { vm, d, tokenRoot } = await setup({ idleMs: 0 });
     const { id } = await vm.start("u");

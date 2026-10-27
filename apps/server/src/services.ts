@@ -18,6 +18,7 @@ import { createFeaturesService } from "./modules/features/service";
 import { createAgenda } from "./modules/agenda/service";
 import { createAgendaScheduler } from "./modules/agenda/scheduler";
 import { createDiscussionStore } from "./modules/discussions/store";
+import { createLoopDriver, createLoopStore } from "./modules/chat/loops";
 import { createDiscussionWorker } from "./modules/discussions/worker";
 import { createInbound } from "./modules/inbound/service";
 import { createBotClaude } from "./modules/bot-claude/store";
@@ -123,6 +124,7 @@ const sources = createSources(db, computer, {
 const features = createFeaturesService(db, undefined, decisions, computer, sources as never);
 const agenda = createAgenda(db);
 const discussions = createDiscussionStore(db, files);
+const loops = createLoopStore(db);
 // Each bot's private Postgres schema (modules/bot-database). Bot passwords are derived from this key; the app's database user needs CREATEROLE.
 const botDbKey = process.env.ZETTA_BOT_DATABASE_KEY || process.env.ZETTA_CONNECTION_KEY;
 const botDatabase = botDbKey
@@ -155,7 +157,7 @@ export const chatServices = {
     desktop,
     vms,
     agenda,
-    { discussions, botDatabase },
+    { discussions, botDatabase, loops },
   ),
   files,
 };
@@ -179,6 +181,30 @@ features.routines.useChat(async (userId, conversationId, prompt, requestKey) => 
     }
   }
 });
+// Goal loops: each step is a chat turn in the loop's conversation, as its owner. A busy conversation (the owner is typing there) is waited
+// for; the step's saved reply status tells the driver whether it completed, failed or was stopped.
+const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKey) => {
+  const actor = await issueBackgroundActor(membershipLookup, loop.ownerUserId);
+  if (!actor) throw new Error("owner_inactive");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const { follow } = await chatServices.chat.startTurn(actor, loop.conversationId, {
+        content: label,
+        clientRequestId: requestKey,
+        loop: { id: loop.id, prompt },
+      });
+      let status = "failed";
+      for await (const { event } of follow())
+        if (event.type === "message") status = event.message.status;
+      return { status };
+    } catch (e) {
+      if (!(e instanceof TurnBusyError) || attempt >= 60) throw e;
+      await Bun.sleep(5_000);
+    }
+  }
+});
+loops.onStart = loopDriver.kick;
+export const loopServices = { driver: loopDriver };
 const discussionWorker = createDiscussionWorker(
   db,
   discussions,

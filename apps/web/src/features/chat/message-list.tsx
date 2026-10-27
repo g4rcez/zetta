@@ -86,13 +86,22 @@ export function MessageList({
                   </div>
                 )}
                 <MessageScrollerItem messageId={row.id} className="[content-visibility:visible]">
-                  <MessageRow
-                    row={row}
-                    author={authorOf(row)}
-                    continued={continued}
-                    inThread={inThread || !threads}
-                    {...actions}
-                  />
+                  {row.role === "system" ? (
+                    // A loop step the server started (modules/chat/loops.ts): a quiet marker, not a message someone wrote.
+                    <div role="note" className="my-2 flex justify-center px-4">
+                      <span className="max-w-full truncate rounded-full border bg-muted/50 px-3 py-0.5 text-xs text-muted-foreground">
+                        {row.content}
+                      </span>
+                    </div>
+                  ) : (
+                    <MessageRow
+                      row={row}
+                      author={authorOf(row)}
+                      continued={continued}
+                      inThread={inThread || !threads}
+                      {...actions}
+                    />
+                  )}
                 </MessageScrollerItem>
               </Fragment>
             ))}

@@ -32,6 +32,7 @@ import { Composer } from "./composer";
 import { MessageList, type RowActions } from "./message-list";
 import type { Author } from "./message-row";
 import { ProposalsPanel } from "./proposals-panel";
+import { LoopBanner, useGoalLoop } from "./loop-banner";
 import { PublishDialog } from "./publish-dialog";
 import { toggleReaction } from "./reactions";
 import { ChatSidebar } from "./sidebar";
@@ -198,6 +199,14 @@ export function ChatPage() {
     onSettled: settle,
     onProposal: () => void loadProposals(),
   });
+  // A running goal loop starts each step on the server: follow it live, and reload when it moves on.
+  const goal = useGoalLoop(
+    chatId,
+    () => main.reattach(),
+    () => {
+      if (chatId) void reload(chatId);
+    },
+  );
 
   const current = bots.find((b) => b.id === botId);
   const replaceBot = (bot: Bot) =>
@@ -570,6 +579,7 @@ export function ChatPage() {
               <p className="break-words">{error ?? errorMessage(main.error)}</p>
             </Alert>
           )}
+          <LoopBanner loop={goal.loop} onChange={goal.update} onError={setError} />
           {botId && <ComputerActivity botId={botId} botName={current?.name} />}
           <Composer
             value={composer.value}

@@ -33,7 +33,9 @@ export type VmAction =
   | { type: "key"; key: string }
   | { type: "scroll"; direction: "up" | "down" | "left" | "right"; amount?: number }
   | { type: "launch"; app: string }
-  | { type: "navigate"; url: string };
+  | { type: "navigate"; url: string }
+  /** Element [n] of the last read, clicked at the center of its frame. */
+  | { type: "click_element"; n: number };
 export type VmRow = typeof computerVm.$inferSelect;
 export type VmStore = {
   list(userId: string): Promise<VmRow[]>;
@@ -78,6 +80,13 @@ type VSession = {
   lastUsed: number;
   queue: Promise<unknown>;
   keyboard: KeyboardLayout;
+  /** Chromium's window, cached between actions; dropped when a call on it fails. */
+  win?: { window_id: number; pid: number } | undefined;
+  /** Labels of the numbered elements in the last read, so click_element can find [n] again if the page shifted. */
+  labels?: Map<number, string>;
+  /** Chromium's window title at the last read, to see when an action changed the page. */
+  title?: string | undefined;
+  row?: VmRow;
 };
 /** Keyboard layouts a person can pick for their VM (setxkbmap layout[:variant]). */
 export const KEYBOARD_LAYOUTS = [
@@ -179,10 +188,22 @@ export const connectSpacesd: VmConnect = async (port, token, attempts = 240) => 
     new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers } }),
   );
   return {
-    call: async (tool, args) => {
-      const r = (await c.callTool({ name: tool, arguments: args }, undefined, {
-        timeout: 60_000,
-      })) as {
+    call: async (tool, args, opts) => {
+      const r = (await c
+        .callTool({ name: tool, arguments: args }, undefined, {
+          timeout: opts?.timeout ?? 60_000,
+          ...(opts?.signal ? { signal: opts.signal } : {}),
+        })
+        .catch((e: unknown) => {
+          // A slow step or a Stop is not a dead connection: keep the session, tell the caller what happened.
+          if (opts?.signal?.aborted) throw new ComputerError("CANCELLED");
+          if (
+            (e as { code?: unknown })?.code === -32001 ||
+            /timed? ?out/i.test(String((e as Error)?.message))
+          )
+            throw new ComputerError("SLOW");
+          throw e;
+        })) as {
         isError?: boolean;
         content?: { type: string; text?: string; data?: string }[];
         structuredContent?: unknown;
@@ -379,13 +400,22 @@ export function createVmService({
     return Number(m[1]);
   };
 
+  /** Each user's default VM id, so the hot path (a bot acting on a running VM) skips the database. */
+  const defaults = new Map<string, string>();
   /** Starts the user's VM (the default one when no id is given). One start at a time per user, so caps cannot be raced. */
-  const start = (userId: string, vmId?: string) =>
-    serial(userId, async () => {
+  const start = (userId: string, vmId?: string) => {
+    const hot = sessions.get(vmId ?? defaults.get(userId) ?? "");
+    if (hot?.row && hot.userId === userId) {
+      hot.lastUsed = Date.now();
+      return Promise.resolve(view(hot.row));
+    }
+    return serial(userId, async () => {
       const row = vmId ? await owned(userId, vmId) : await store.ensureDefault(userId);
+      if (!vmId) defaults.set(userId, row.id);
       const existing = sessions.get(row.id);
       if (existing) {
         existing.lastUsed = Date.now();
+        existing.row = { ...row, status: "running" };
         return view(row);
       }
       const running = [...sessions.values()];
@@ -412,7 +442,8 @@ export function createVmService({
           if (back) {
             orphans.delete(row.id);
             await store.setStatus(row.id, "running");
-            return view({ ...row, status: "running" });
+            back.row = { ...row, status: "running" };
+            return view(back.row);
           }
         }
         if (had.code === 0 && want.code === 0 && !current)
@@ -460,6 +491,7 @@ export function createVmService({
           epoch: 0,
           lastUsed: Date.now(),
           queue: Promise.resolve(),
+          row: { ...row, status: "running" },
         });
         orphans.delete(row.id);
         touched.delete(row.id);
@@ -472,6 +504,7 @@ export function createVmService({
         throw e instanceof ComputerError ? e : new ComputerError("UNAVAILABLE");
       }
     });
+  };
 
   /** A session for a container that is already running, from the token and VNC password on disk; undefined when they no longer work. */
   async function reattach(id: string, userId: string, tokenFile: string, vncFile: string) {
@@ -485,9 +518,12 @@ export function createVmService({
     if (!token || !password) return undefined;
     const ports = await Promise.all([portOf(id, 3211), portOf(id, 5900)]).catch(() => undefined);
     if (!ports) return undefined;
-    const client = await connect(ports[0], token, 8).catch(() => undefined);
+    // ~5 s of health checks: spacesd may be busy for a moment, and giving up here restarts the container (open tabs are lost).
+    const client = await connect(ports[0], token, 20).catch(() => undefined);
     if (!client) return undefined;
-    const probe = await client.call("list_windows", {}).catch(() => undefined);
+    const probe =
+      (await client.call("list_windows", {}).catch(() => undefined)) ??
+      (await Bun.sleep(500).then(() => client.call("list_windows", {}).catch(() => undefined)));
     if (!probe || probe.isError) {
       await client.close().catch(() => undefined);
       return undefined;
@@ -531,9 +567,12 @@ export function createVmService({
         throw new ComputerError("STALE_CONTROL");
       if (sessions.get(s.id) !== s) throw new ComputerError("DISCONNECTED");
       return guard(s, async () => {
-        const call = focused(s.client.call);
+        const call = focused((tool, args) => s.client.call(tool, args, { signal: opts.signal }));
         let r;
-        if (action.type === "click")
+        if (action.type === "click_element") {
+          const at = await elementCenter(s, call, action.n);
+          r = await call("click", { x: at.x, y: at.y, ...SCREEN });
+        } else if (action.type === "click")
           r = await call("click", { x: Math.round(action.x), y: Math.round(action.y), ...SCREEN });
         else if (action.type === "type")
           r = await call("type_text", { text: action.text.slice(0, 2000), ...FG });
@@ -566,6 +605,49 @@ export function createVmService({
     return run;
   }
 
+  /** Chromium's window for a session, cached until a call on it fails. */
+  async function windowOf(s: VSession, call: McpCall) {
+    s.win ??= await chromium(call);
+    return s.win;
+  }
+  /**
+   * Screen point of element [n] from the last read. Indices follow the page's tree order, so they hold while the page is the same; if the
+   * element there now has another label, the one with the label the bot saw is used instead. Off-screen or missing: NO_ELEMENT.
+   */
+  async function elementCenter(s: VSession, call: McpCall, n: number) {
+    const win = await windowOf(s, call);
+    if (!win) throw new ComputerError("NO_ELEMENT");
+    const r = await call("get_window_state", {
+      ...win,
+      include_screenshot: false,
+      max_elements: Math.min(5000, Math.max(400, n + 100)),
+      tree_format: "elements",
+    });
+    const st = (r.structured ?? {}) as {
+      elements?: (AxElement & { element_index?: number })[];
+      window_bounds?: { y?: number; height?: number };
+    };
+    if (r.isError || !Array.isArray(st.elements)) {
+      s.win = undefined;
+      throw new ComputerError("UNAVAILABLE");
+    }
+    const clean = (x?: string) => (x ?? "").replace(/\uFFFC/g, "").trim();
+    const want = s.labels?.get(n);
+    let el = st.elements.find((e) => e.element_index === n);
+    if (want && clean(el?.label) !== want)
+      el = st.elements.find((e) => clean(e.label) === want) ?? el;
+    const f = el?.frame;
+    if (!f || f.w <= 0 || f.h <= 0) throw new ComputerError("NO_ELEMENT");
+    // Frames are screen pixels, like click's desktop scope (checked on cua-spacesd 0.8.0: a Hacker News title link at y=158 h=15 opens
+    // when clicked at y=166, although the state says coordinate_frame "window"). Only the visible part of the element counts.
+    const top = Math.max(f.y, st.window_bounds?.y ?? 0),
+      bottom = Math.min(
+        f.y + f.h,
+        (st.window_bounds?.y ?? 0) + (st.window_bounds?.height ?? 10_000),
+      );
+    if (bottom <= top) throw new ComputerError("NO_ELEMENT"); // scrolled out of view
+    return { x: Math.round(f.x + f.w / 2), y: Math.round((top + bottom) / 2) };
+  }
   /** Chromium's window in this VM (the one bots drive), as list_windows reports it. */
   async function chromium(call: McpCall) {
     const windows = await call("list_windows", {});
@@ -717,22 +799,59 @@ export function createVmService({
       if (r.isError || !r.imageBase64) throw new ComputerError("UNAVAILABLE");
       return r.imageBase64;
     },
-    /** Text view for bots that cannot see images: windows plus the focused window's accessibility tree. */
-    async read(userId: string, id: string) {
+    /**
+     * Text view for bots that cannot see images: Chromium's accessibility tree with clickable elements numbered for click_element.
+     * `settle` (right after an action) waits briefly for the page to change and reads a smaller tree; an explicit read gets the full one.
+     */
+    async read(userId: string, id: string, opts: { settle?: boolean; signal?: AbortSignal } = {}) {
       const s = live(userId, id);
       return guard(s, async () => {
-        const windows = await s.client.call("list_windows", {});
-        const found = [...windows.text.matchAll(/window_id=(\d+) pid=(\d+) "([^"]*)"/g)];
-        const top = found.find((m) => /chromium/i.test(m[3]!)) ?? found[0];
-        if (windows.isError || !top) return windows.text.slice(0, 2000) || "No windows are open.";
-        const r = await s.client.call("get_window_state", {
-          pid: Number(top[2]),
-          window_id: Number(top[1]),
-          include_screenshot: false,
-          max_elements: 1500,
-        });
-        if (r.isError) throw new ComputerError("UNAVAILABLE");
-        return `Window "${top[3]}":\n${compactTree(r.text)}`.slice(0, 12_000);
+        const call: McpCall = (tool, args) => s.client.call(tool, args, { signal: opts.signal });
+        const win = await windowOf(s, call);
+        if (!win) {
+          const windows = await call("list_windows", {});
+          return windows.text.slice(0, 2000) || "No windows are open.";
+        }
+        const once = async () => {
+          const r = await call("get_window_state", {
+            ...win,
+            include_screenshot: false,
+            max_elements: opts.settle ? 800 : 1500,
+          });
+          if (r.isError) {
+            s.win = undefined; // the window may have closed: look it up again next time
+            throw new ComputerError("UNAVAILABLE");
+          }
+          return r.text;
+        };
+        // After a click or navigate the old page stays on screen for a moment: reading it at once makes the bot think the step failed.
+        // Wait (briefly) for Chromium's title to change; a click that does not navigate costs at most ~2 s.
+        if (opts.settle)
+          for (let i = 0; i < 7; i++) {
+            await Bun.sleep(300);
+            const title = /"([^"]*)"/.exec(
+              (await call("list_windows", {})).text.match(
+                new RegExp(`window_id=${win.window_id} [^\\n]*`),
+              )?.[0] ?? "",
+            )?.[1];
+            if (title !== undefined && title !== s.title) break;
+          }
+        let tree = await once();
+        // A page still loading has an almost empty tree: give it one more moment.
+        if (opts.settle && compactTree(tree).length < 400) {
+          await Bun.sleep(900);
+          tree = await once();
+        }
+        const title = /"([^"]*)"/.exec(
+          tree.split("\n").find((l) => /\[0\] frame/.test(l)) ?? "",
+        )?.[1];
+        s.title = title;
+        s.labels = new Map();
+        const body = compactTree(tree, s.labels);
+        return `Window "${title ?? "Chromium"}" (click_element{n} clicks [n]):\n${body}`.slice(
+          0,
+          opts.settle ? 6000 : 12_000,
+        );
       });
     },
     takeover(userId: string, id: string, human: boolean, expected?: "agent" | "human") {
@@ -866,25 +985,29 @@ const SCREEN = { scope: "desktop", ...FG } as const;
  * runs out of budget in the site's header. Keeps one line per element that has text (role and label), drops actions, indices, the
  * placeholder characters of empty containers and a label repeated by its own child.
  */
-export function compactTree(tree: string) {
+export function compactTree(tree: string, numbered?: Map<number, string>) {
   const out: string[] = [];
   let last = "";
   for (const raw of tree.split("\n")) {
     const m =
-      /^\s*- (?:\[\d+\] )?([a-z][a-z ]*?)(?: = | )"(.*?)"(?: \(description "(.*?)"\))?(?: .*)?$/.exec(
+      /^\s*- (?:\[(\d+)\] )?([a-z][a-z ]*?)(?: = | )"(.*?)"(?: \(description "(.*?)"\))?(?: .*)?$/.exec(
         raw.replace(/\uFFFC/g, ""),
       );
     if (!m) continue;
-    const [, role, label = "", description = ""] = m;
+    const [, index, role = "", label = "", description = ""] = m;
     const text = (label.trim() || description.trim()).replace(/\s+/g, " ");
     if (!text || text === last) continue;
     last = text;
-    out.push(
-      role === "static" || role === "section" || role === "panel" ? text : `${role} "${text}"`,
-    );
+    const plain = role === "static" || role === "section" || role === "panel";
+    // Clickable elements keep their index (when asked for), so the bot can click_element{n} instead of guessing coordinates.
+    const n = numbered && index !== undefined && CLICKABLE.test(role) ? Number(index) : undefined;
+    if (n !== undefined) numbered!.set(n, label.trim());
+    out.push(`${n !== undefined ? `[${n}] ` : ""}${plain ? text : `${role} "${text}"`}`);
   }
   return out.join("\n");
 }
+const CLICKABLE =
+  /^(button|link|entry|check box|radio button|combo box|menu item|tab|toggle button|list item|password text|text|heading)$/;
 
 /** "ctrl+l" style combos go through hotkey; a single key through press_key. */
 const pressKey = (call: McpCall, key: string) => {

@@ -53,7 +53,6 @@ const botInput = z.strictObject({
   personality: z.string().max(4096).optional(),
   instructions: z.string().max(16384).optional(),
   computerMode: z.enum(["off", "browser", "desktop"]).optional(),
-  computerActionLimit: z.number().int().min(1).max(400).optional(),
   codeAccess: z.boolean().optional(),
   requiredConnections: z
     .array(
@@ -361,6 +360,24 @@ export function createChatRoutes(
       "/conversations/:id/cancel",
       guarded(async ({ actor, params }) => ({
         cancelled: await chat.cancelTurn(actor, parse(uuid, params.id)),
+      })),
+    )
+    .get(
+      "/conversations/:id/loops",
+      guarded(async ({ actor, params }) => ({
+        loops: await chat.listLoops(actor, parse(uuid, params.id)),
+      })),
+    )
+    .post(
+      "/loops/:id/stop",
+      guarded(async ({ actor, params }) => ({
+        loop: await chat.setLoop(actor, parse(uuid, params.id), "cancelled"),
+      })),
+    )
+    .post(
+      "/loops/:id/resume",
+      guarded(async ({ actor, params }) => ({
+        loop: await chat.setLoop(actor, parse(uuid, params.id), "running"),
       })),
     )
     .post(

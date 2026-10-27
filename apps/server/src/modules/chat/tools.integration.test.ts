@@ -4,12 +4,13 @@ import { user } from "@zetta/db/schema/auth";
 import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
-import { createIdentityAccess } from "../identity/access";
+import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
 import { parseTools } from "./tools";
 import { createChatService } from "./service";
 import { createFeaturesService } from "../features/service";
 import { ComputerError } from "../computer/service";
 import { createDbVmStore, createVmService } from "../computer/vm";
+import { createLoopDriver, createLoopStore } from "./loops";
 
 describe("parseTools", () => {
   test("extracts valid blocks, strips them, and drops malformed or unknown ones", () => {
@@ -97,24 +98,42 @@ suite("bot tools against compose postgres", () => {
       close: async () => {},
     }),
   });
+  const loops = createLoopStore(db);
+  const chatSvc = createChatService(
+    db,
+    fakeRun as never,
+    undefined,
+    fakeComputer as never,
+    undefined,
+    undefined,
+    { routine: features.routines.create as never, workflow: features.workflows.save as never },
+    undefined,
+    undefined,
+    undefined,
+    vms,
+    undefined,
+    { loops },
+  );
+  // Same wiring as services.ts: each loop step is a chat turn as the loop's owner.
+  const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKey) => {
+    const actor = await issueBackgroundActor(
+      async () => ({ isAdmin: false }) as never,
+      loop.ownerUserId,
+    );
+    const { follow } = await chatSvc.startTurn(actor!, loop.conversationId, {
+      content: label,
+      clientRequestId: requestKey,
+      loop: { id: loop.id, prompt },
+    });
+    let status = "failed";
+    for await (const { event } of follow())
+      if (event.type === "message") status = event.message.status;
+    return { status };
+  });
+  loops.onStart = loopDriver.kick;
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
-    chat: {
-      access,
-      chat: createChatService(
-        db,
-        fakeRun as never,
-        undefined,
-        fakeComputer as never,
-        undefined,
-        undefined,
-        { routine: features.routines.create as never, workflow: features.workflows.save as never },
-        undefined,
-        undefined,
-        undefined,
-        vms,
-      ),
-    },
+    chat: { access, chat: chatSvc },
     features: { access, features },
     webOrigin: "http://web.test",
     desktopOrigins: [],
@@ -236,7 +255,10 @@ suite("bot tools against compose postgres", () => {
 
   test("browser blocks run in a bounded loop and feed results back; human takeover hands off with attention", async () => {
     const { bot: surfer, say } = await setup(A, "Surfer");
-    await db.$client.query("update bot set onboarded = true where id = $1", [surfer.id]); // browser tools need a ready bot
+    await db.$client.query(
+      "update bot set onboarded = true, computer_mode = 'browser' where id = $1",
+      [surfer.id],
+    ); // browser tools need a ready bot with Computer use on
     calls.length = 0;
     prompts.length = 0;
     script = [
@@ -247,7 +269,7 @@ suite("bot tools against compose postgres", () => {
     expect(calls).toEqual(["open"]);
     expect(prompts.some((p) => p.includes("Tool results") && p.includes("PAGE TEXT"))).toBe(true);
     expect(r.json.assistant.content).toContain("The page says PAGE TEXT.");
-    // endless browsing is capped
+    // endless identical browsing is stopped by the stuck guard
     calls.length = 0;
     script = Array.from(
       { length: 20 },
@@ -273,32 +295,108 @@ suite("bot tools against compose postgres", () => {
     ).toBe(true);
   });
 
-  test("reaching the per-turn Computer action limit proposes doubling it; approving makes the new value the bot's default", async () => {
-    const { bot: surfer, say } = await setup(A, "Limited");
+  test("no fixed action limit: twenty actions in one reply all run; a step repeating the same result ends the turn", async () => {
+    const { bot: surfer, say } = await setup(A, "Tireless");
     await db.$client.query(
-      "update bot set onboarded = true, computer_mode = 'browser', computer_action_limit = 2 where id = $1",
+      "update bot set onboarded = true, computer_mode = 'browser' where id = $1",
       [surfer.id],
     );
     calls.length = 0;
-    const click = '```zetta:browser\n{"action":"click_text","text":"next"}\n```';
-    script = [`${click}\n${click}\n${click}\n${click}`, "Stopped."];
-    const r = await say("click four times");
-    expect(calls).toHaveLength(2); // the third and fourth were refused
-    expect(r.json.assistant.content).toContain("Approve below to double the limit to 4");
-    const pending = (await call(A, "GET", "/api/proposals")).json.proposals.filter(
-      (p: { botId: string; patch: Record<string, unknown> }) =>
-        p.botId === surfer.id && "computerActionLimit" in p.patch,
+    const click = (n: number) =>
+      `\`\`\`zetta:browser\n{"action":"click_text","text":"item ${n}"}\n\`\`\``;
+    // 8 blocks per reply (parse bound) across three replies, then the answer: 20 actions, no cap
+    script = [
+      Array.from({ length: 8 }, (_, i) => click(i)).join("\n"),
+      Array.from({ length: 8 }, (_, i) => click(i + 8)).join("\n"),
+      Array.from({ length: 4 }, (_, i) => click(i + 16)).join("\n"),
+      "All twenty clicked.",
+    ];
+    const r = await say("click all twenty");
+    expect(calls).toHaveLength(20);
+    expect(r.json.assistant.content).toContain("All twenty clicked.");
+    // the identical step with the identical page result three times: stuck, the turn ends instead of spinning
+    calls.length = 0;
+    script = Array.from({ length: 10 }, () => click(0));
+    const stuck = await say("keep clicking");
+    expect(calls).toHaveLength(3);
+    expect(stuck.json.assistant.content).toContain("the same step kept giving the same result");
+  });
+
+  test("goal loops: proposing does nothing until approved; approval runs steps until goal_done; no progress pauses; goal tools need a loop", async () => {
+    const { bot: worker, c, say } = await setup(A, "Looper");
+    await db.$client.query(
+      "update bot set onboarded = true, computer_mode = 'browser' where id = $1",
+      [worker.id],
     );
-    expect(pending).toHaveLength(1); // asked once for the whole turn
-    expect(pending[0].diff).toEqual([{ field: "computerActionLimit", from: 2, to: 4 }]);
+    // outside a loop, goal_progress is refused and nothing is recorded
+    script = ['```zetta:goal_done\n{"summary":"pretend"}\n```', "ok"];
+    await say("finish");
+    expect(prompts.at(-1)).toContain("only works inside an approved loop");
+    // the bot proposes a loop: only a proposal
+    script = [
+      'I will work through the list.\n```zetta:goal\n{"goal":"Check all 3 pages","done_when":"every page was opened"}\n```',
+    ];
+    const r = await say("check every page, it takes a while");
+    expect(r.json.assistant.content).toContain("asks to start a loop");
+    expect((await call(A, "GET", `/api/conversations/${c}/loops`)).json.loops).toHaveLength(0);
+    const p = (await call(A, "GET", "/api/proposals")).json.proposals.find(
+      (x: { kind: string }) => x.kind === "start_loop",
+    );
+    expect(p.diff[0]).toEqual({ field: "goal", from: null, to: "Check all 3 pages" });
+    // another user cannot start it
     expect(
-      (await call(A, "POST", `/api/proposals/${pending[0].id}/decision`, { approve: true })).json
-        .status,
+      (await call(B, "POST", `/api/proposals/${p.id}/decision`, { approve: true })).status,
+    ).toBe(404);
+    // approve: each step reports progress, the third finishes
+    const page = (n: number) =>
+      `\`\`\`zetta:browser\n{"action":"open","url":"https://example.com/${n}"}\n\`\`\``;
+    script = [
+      page(1),
+      '```zetta:goal_progress\n{"summary":"page 1 done, 2 and 3 left"}\n```',
+      page(2),
+      '```zetta:goal_progress\n{"summary":"pages 1-2 done, 3 left"}\n```',
+      page(3),
+      '```zetta:goal_done\n{"summary":"All 3 pages checked."}\n```',
+    ];
+    calls.length = 0;
+    expect(
+      (await call(A, "POST", `/api/proposals/${p.id}/decision`, { approve: true })).json.status,
     ).toBe("approved");
-    const [row] = (
-      await db.$client.query("select computer_action_limit from bot where id = $1", [surfer.id])
+    const until = async (want: string) => {
+      for (let i = 0; i < 100; i++) {
+        const l = (await call(A, "GET", `/api/conversations/${c}/loops`)).json.loops[0];
+        if (l?.status === want) return l;
+        await Bun.sleep(50);
+      }
+      throw new Error(`loop never reached ${want}`);
+    };
+    const finished = await until("done");
+    expect(finished.iterations).toBe(3);
+    expect(finished.progress).toBe("All 3 pages checked.");
+    expect(calls).toEqual(["open", "open", "open"]);
+    const msgs = (await call(A, "GET", `/api/conversations/${c}/messages`)).json.messages as {
+      role: string;
+      content: string;
+    }[];
+    expect(msgs.filter((m) => m.role === "system").map((m) => m.content)).toEqual([
+      "↻ Loop step 1: Check all 3 pages",
+      "↻ Loop step 2: Check all 3 pages",
+      "↻ Loop step 3: Check all 3 pages",
+    ]);
+    // a loop that stops making progress pauses (and can be stopped)
+    const [{ id: stuckId }] = (
+      await db.$client.query(
+        "insert into goal_loop (owner_user_id, conversation_id, bot_id, goal, done_when, progress) values ($1, $2, $3, 'Spin', 'never', 'same') returning id",
+        [A, c, worker.id],
+      )
     ).rows;
-    expect(row.computer_action_limit).toBe(4);
+    script = Array.from({ length: 3 }, () => '```zetta:goal_progress\n{"summary":"same"}\n```');
+    loopDriver.kick(stuckId);
+    const paused = await until("paused");
+    expect(paused.reason).toContain("no new progress");
+    expect((await call(A, "POST", `/api/loops/${stuckId}/stop`)).json.loop.status).toBe(
+      "cancelled",
+    );
   });
 
   test("a bot's create_vm is only a proposal: another user cannot approve it, approval creates the computer once, the cap still applies", async () => {
@@ -388,7 +486,8 @@ suite("bot tools against compose postgres", () => {
         (w: { name: string }) => w.name === "Flow",
       ),
     ).toHaveLength(1);
-    // an unready bot is refused browser tools
+    // an unready bot is refused browser tools, even with Computer use on
+    await db.$client.query("update bot set computer_mode = 'browser' where id = $1", [bot.id]);
     calls.length = 0;
     script = ['```zetta:browser\n{"action":"open","url":"https://example.com"}\n```'];
     expect((await say("browse")).json.assistant.content).toContain(

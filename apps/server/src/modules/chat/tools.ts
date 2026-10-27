@@ -9,6 +9,8 @@ import { z } from "zod";
  *   ```zetta:create_bot / create_routine / create_workflow / create_vm  -> proposals shown as a creation summary; nothing exists until the user approves
  *   ```zetta:browser     {"action": "open", "url": "https://..."} | click_text | type | key | read
  *   ```zetta:handoff     {"reason": "I need you to sign in"}                 -> attention item; the human takes over
+ *   ```zetta:goal        {"goal": "...", "done_when": "..."}                 -> proposal to start a loop; once approved, the bot keeps working turn after turn
+ *   ```zetta:goal_progress / goal_done {"summary": "..."}                  -> inside an approved loop only: report progress, or finish it
  *   ```zetta:credential  {"ref": "1password:<item>", "field": "password"}    -> Zetta types a shared login into the focused input (value never shown to the bot)
  *   ```zetta:agenda      {"action": "add", "kind": "task", "title": "...", "start": "<ISO>"} | list | update | complete | remove -> the user's Agenda
  *   ```zetta:bot_claude  {"bot": "<name or id>", "allow": ["Bash(gh pr create:*)"], "deny": [...], "revoke": [...], "preset": "git"} -> chief only: edits another bot's Claude Code permissions right away
@@ -39,14 +41,17 @@ const BROWSER_TOOLS = `
 Computer use is enabled for you. It runs in the current user's own isolated session, never anyone else's.
 \`\`\`zetta:browser
 {"action":"open","url":"https://example.com"}
-\`\`\`   (actions: open{url}, click_text{text}, type{text}, key{key}, read. Every action returns the new url and the page text, so you do not need a separate read after it. Only public web addresses open. At most 12 computer actions per turn: plan them, and read the result before the next step. Never type passwords or codes yourself: when the user shared a login with you through a password manager, use zetta:credential; otherwise hand off.)
+\`\`\`   (actions: open{url}, click_text{text}, type{text}, key{key}, read. The page text comes back once, after the last action of your reply, so put several steps in one reply when you know them (open, then click, then type). Only public web addresses open. Never type passwords or codes yourself: when the user shared a login with you through a password manager, use zetta:credential; otherwise hand off.)
 \`\`\`zetta:handoff
 {"reason":"why a person must take over (sign-in, CAPTCHA, payment, anything sensitive)"}
-\`\`\`   (the user gets a Take over button in the chat; stop and wait after a handoff)`;
+\`\`\`   (the user gets a Take over button in the chat; stop and wait after a handoff)
+\`\`\`zetta:goal
+{"goal":"what the finished work looks like","done_when":"how you will know it is finished"}
+\`\`\`   (for work that needs many computer steps, more than one reply can finish: asks the user to start a loop. Nothing runs until they approve; then you are called again turn after turn, with your progress so far, until you report goal_done. Write what you will do and send this block; do not start the long work in this reply.)`;
 const DESKTOP_TOOLS = `
 \`\`\`zetta:desktop
 {"action":"navigate","url":"https://example.com"}
-\`\`\`   (the user's own persistent Linux computer with Chromium open; sites the user signed in to stay signed in. actions: navigate{url}, click{x,y}, type{text}, key{key, e.g. "Return" or "ctrl+l"}, scroll{direction: up|down|left|right}, launch{app}, read -> text description of the screen. Use read before clicking by coordinates. Add "vm":"<id>" to use one of the user's other computers instead of the default. The user can watch and click along from the chat. Shares the 12 action budget. If a site needs a sign-in, use zetta:credential with "target":"desktop" when the user shared a login for it, otherwise zetta:handoff.)
+\`\`\`   (the user's own persistent Linux computer with Chromium open; sites the user signed in to stay signed in. actions: navigate{url}, click_element{n} (clicks element [n] from the last screen, preferred), click{x,y}, type{text}, key{key, e.g. "Return" or "ctrl+l"}, scroll{direction: up|down|left|right}, launch{app}, read -> numbered list of what is on screen. The screen comes back after the last action of your reply, so batch steps you are sure of (navigate, click_element, type, key Return). Add "vm":"<id>" to use one of the user's other computers instead of the default. The user can watch and click along from the chat. If a site needs a sign-in, use zetta:credential with "target":"desktop" when the user shared a login for it, otherwise zetta:handoff.)
 \`\`\`zetta:create_vm
 {"name":"Banking","purpose":"why a separate computer is needed"}
 \`\`\`   (only a proposal: asks the user for another computer, e.g. to keep a second account signed in. Use the default computer unless a separate one is really needed.)`;
@@ -178,7 +183,15 @@ export const toolSchemas = {
     }),
     z.strictObject({ action: z.literal("read"), vm }),
     z.strictObject({ action: z.literal("navigate"), url: z.string().url().max(2000), vm }),
+    z.strictObject({
+      action: z.literal("click_element"),
+      n: z.number().int().min(0).max(5000),
+      vm,
+    }),
   ]),
+  goal: z.strictObject({ goal: bounded(500), done_when: bounded(300) }),
+  goal_progress: z.strictObject({ summary: bounded(1500) }),
+  goal_done: z.strictObject({ summary: bounded(1500) }),
   create_vm: z.strictObject({
     name: z
       .string()
@@ -284,7 +297,7 @@ export function parseTools(reply: string): { calls: ToolCall[]; text: string } {
   const calls: ToolCall[] = [];
   const text = reply
     .replace(
-      /```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|discussion|bot_claude)\s*\n([\s\S]*?)```/g,
+      /```zetta:(remember|instruction|config|browser|handoff|create_bot|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|discussion|bot_claude|goal_progress|goal_done|goal)\s*\n([\s\S]*?)```/g,
       (_, kind: keyof typeof toolSchemas, body: string) => {
         if (calls.length < 8) {
           try {

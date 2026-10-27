@@ -142,6 +142,14 @@ const BY_CODE: Record<string, Entry> = {
     why: "The connection to the computer dropped (it was restarted or stopped).",
     fix: "Ask the bot to try again; it reconnects on its own.",
   },
+  SLOW: {
+    why: "The computer took too long to answer this step; it is still connected.",
+    fix: "The bot can read the screen and try the step again.",
+  },
+  NO_ELEMENT: {
+    why: "That element is not on the screen any more (the page changed or it is scrolled out of view).",
+    fix: "The bot should read the screen again and pick the element from the new list.",
+  },
   NOT_FOUND: {
     why: "It could not be found.",
     fix: "It may have been removed. Check Studio and ask the bot again.",

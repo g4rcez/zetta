@@ -26,7 +26,9 @@ export class ComputerError extends Error {
       | "NO_ADDRESS"
       | "NO_INPUT"
       | "INSECURE"
-      | "DISCONNECTED",
+      | "DISCONNECTED"
+      | "SLOW"
+      | "NO_ELEMENT",
   ) {
     super(code);
   }

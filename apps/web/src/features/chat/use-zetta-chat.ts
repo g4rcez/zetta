@@ -152,6 +152,12 @@ export function useZettaChat({
         { body: { ...extras, ...(parentMessageId ? { parentMessageId } : {}) } },
       );
     },
+    /** Attach to a turn the server started on its own (a loop step) when nothing is streaming here. */
+    reattach: () => {
+      if (busy || !conv.current || parentMessageId) return;
+      origin.current = "resume";
+      void chat.resumeStream().catch(() => {});
+    },
     stop: async () => {
       await chat.stop();
       if (conv.current) await cancelTurn(conv.current).catch(() => {});

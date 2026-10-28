@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, symlink, writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +14,7 @@ import { createChatService } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`exp-a-${crypto.randomUUID()}`, `exp-b-${crypto.randomUUID()}`];
+const ids = [`exp-a-${uuidv7()}`, `exp-b-${uuidv7()}`];
 const [A, B] = ids as [string, string];
 
 suite("chat experience against compose postgres", () => {

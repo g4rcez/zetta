@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { useEffect, useState, type FormEvent } from "react";
 import { Button, Input, Select, Textarea } from "@/components/ui";
 
@@ -49,7 +50,7 @@ function RunPanel({ flow }: { flow: Flow }) {
   useEffect(() => { void loadPast(); }, [flow.id]); // eslint-disable-line react-hooks/exhaustive-deps
   async function run(e: FormEvent) {
     e.preventDefault(); setBusy(true); setError(undefined); setResult(undefined);
-    try { setResult(await call(`/api/workflows/${flow.id}/run`, "POST", { input, requestKey: crypto.randomUUID() })); void loadPast(); }
+    try { setResult(await call(`/api/workflows/${flow.id}/run`, "POST", { input, requestKey: uuidv7() })); void loadPast(); }
     catch (x) { setError(x instanceof ApiError && x.code === "BOT_NOT_READY" ? `${x.message} Open Chat to finish setting that bot up.` : errorMessage(x)); } finally { setBusy(false); }
   }
   return (

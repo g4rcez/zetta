@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { and, eq } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
@@ -26,7 +26,7 @@ export function createConnectionsService(db: Database, store?: Store) {
     async list(a: ActiveActor) { return (await need().listOwned(a, { limit: 100 })).items; },
     /** The secret is held only as bytes long enough to seal it, then zeroed by the store. Responses never include it. */
     async create(a: ActiveActor, v: { provider: string; label: string; secret: string; expiresAt?: number | null }) {
-      const c = await need().createApiKey(a, { operationId: randomUUID(), provider: v.provider, label: v.label, secret: new TextEncoder().encode(v.secret), expiresAt: v.expiresAt ?? null });
+      const c = await need().createApiKey(a, { operationId: uuidv7(), provider: v.provider, label: v.label, secret: new TextEncoder().encode(v.secret), expiresAt: v.expiresAt ?? null });
       await audit(db, a.userId, { kind: "connection", outcome: "ok", subjectId: c.id, detail: "created" });
       return c;
     },
@@ -38,7 +38,7 @@ export function createConnectionsService(db: Database, store?: Store) {
     },
     /** Decrypted secret of one of the actor's own active connections, for server-side use only (caller zeroes the buffer). */
     secretFor: (a: ActiveActor, id: string) => need().resolveForExecution(a, id),
-    async revoke(a: ActiveActor, id: string, expectedRevision: number) { const c = await need().revoke(a, { id, operationId: randomUUID(), expectedRevision }); await audit(db, a.userId, { kind: "connection", outcome: "ok", subjectId: id, detail: "revoked" }); return c; },
+    async revoke(a: ActiveActor, id: string, expectedRevision: number) { const c = await need().revoke(a, { id, operationId: uuidv7(), expectedRevision }); await audit(db, a.userId, { kind: "connection", outcome: "ok", subjectId: id, detail: "revoked" }); return c; },
     /** Binds one of the actor's own active connections to a required key of a bot they can use. Other users' bindings are separate rows. */
     async bind(a: ActiveActor, botId: string, key: string, connectionId: string) {
       const b = await visibleBot(a, botId);

@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -9,7 +10,7 @@ import { createChatService } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`chat-route-a-${crypto.randomUUID()}`, `chat-route-b-${crypto.randomUUID()}`];
+const ids = [`chat-route-a-${uuidv7()}`, `chat-route-b-${uuidv7()}`];
 const [A, B] = ids as [string, string];
 
 suite("decision routing against compose postgres", () => {
@@ -40,7 +41,7 @@ suite("decision routing against compose postgres", () => {
       { label: "abuse", description: "abusive content", action: "stop", reply: "I can't help with that." },
       { label: "general", description: "anything else", action: "respond" } ] };
     expect((await call(B, "PUT", `/api/bots/${front}/decision`, cfg)).status).toBe(404);
-    expect((await call(A, "PUT", `/api/bots/${front}/decision`, { ...cfg, options: [{ ...cfg.options[0], targetBotId: crypto.randomUUID() }, cfg.options[1]] })).status).toBe(404); // foreign/unknown target
+    expect((await call(A, "PUT", `/api/bots/${front}/decision`, { ...cfg, options: [{ ...cfg.options[0], targetBotId: uuidv7() }, cfg.options[1]] })).status).toBe(404); // foreign/unknown target
     expect((await call(A, "PUT", `/api/bots/${front}/decision`, cfg)).status).toBe(200);
     const conv = (await call(A, "POST", "/api/conversations", { botId: front })).json.conversation.id as string;
     const say = (t: string) => call(A, "POST", `/api/conversations/${conv}/messages`, { content: t });

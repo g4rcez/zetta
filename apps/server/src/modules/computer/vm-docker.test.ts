@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,7 +17,7 @@ function memoryStore(): VmStore {
   const live = (u: string) => rows.filter((r) => r.ownerUserId === u && r.status !== "deleted");
   return {
     list: async (u) => live(u), get: async (u, id) => live(u).find((r) => r.id === id),
-    ensureDefault: async (u) => { const hit = live(u).find((r) => r.kind === "default"); if (hit) return hit; const r: VmRow = { id: crypto.randomUUID(), ownerUserId: u, name: "Default", kind: "default", createdByBotId: null, purpose: null, status: "stopped", createdAt: new Date(), lastStartedAt: null, deletedAt: null }; rows.push(r); return r; },
+    ensureDefault: async (u) => { const hit = live(u).find((r) => r.kind === "default"); if (hit) return hit; const r: VmRow = { id: uuidv7(), ownerUserId: u, name: "Default", kind: "default", createdByBotId: null, purpose: null, status: "stopped", createdAt: new Date(), lastStartedAt: null, deletedAt: null }; rows.push(r); return r; },
     create: async () => { throw new Error("unused"); }, count: async (u) => live(u).length,
     setStatus: async (id, status) => { rows.find((r) => r.id === id)!.status = status; }, resetRunning: async () => {},
   };

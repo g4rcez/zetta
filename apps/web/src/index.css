@@ -1,4 +1,7 @@
 @import "@zetta/ui/globals.css";
+@import "@fontsource-variable/manrope";
+@import "@fontsource-variable/outfit";
+@import "@fontsource-variable/fira-code";
 @import "@g4rcez/components/index.css";
 @source "../node_modules/streamdown/dist/*.js";
 
@@ -53,7 +56,7 @@ html.dark {
   max-width: 100%;
   overflow-x: auto;
   padding: 0.75rem 2.75rem 0.75rem 0.75rem;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   line-height: 1.5;
   tab-size: 2;
 }
@@ -86,4 +89,100 @@ html.dark {
 .chat-code-copy svg {
   width: 0.875rem;
   height: 0.875rem;
+}
+
+/* Chat message body (Response -> Streamdown). Unlayered, so these beat Streamdown's utility classes (list-inside, space-y-4, mt-6). */
+.chat-response {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.chat-response > * {
+  margin-block: 0;
+}
+.chat-response > * + * {
+  margin-top: 0.5rem;
+}
+.chat-response [data-streamdown^="heading-"] {
+  font-family: var(--font-heading);
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+.chat-response [data-streamdown="heading-1"],
+.chat-response [data-streamdown="heading-2"] {
+  font-size: 1.0625rem;
+}
+.chat-response [data-streamdown="unordered-list"],
+.chat-response [data-streamdown="ordered-list"] {
+  list-style-position: outside;
+  padding-left: 1.25rem;
+}
+.chat-response [data-streamdown="unordered-list"] {
+  list-style-type: disc;
+}
+.chat-response [data-streamdown="ordered-list"] {
+  list-style-type: decimal;
+}
+.chat-response li > :is(ul, ol) {
+  margin-top: 0.125rem;
+  padding-left: 1.125rem;
+}
+.chat-response [data-streamdown="list-item"] {
+  padding-left: 0.125rem;
+}
+.chat-response [data-streamdown="list-item"] + [data-streamdown="list-item"] {
+  margin-top: 0.125rem;
+}
+.chat-response li > p {
+  margin: 0;
+}
+.chat-response li::marker {
+  color: var(--muted-foreground);
+}
+.chat-response [data-streamdown="strong"] {
+  font-weight: 600;
+}
+.chat-response [data-streamdown="link"] {
+  color: var(--primary);
+  text-decoration: none;
+}
+.chat-response [data-streamdown="link"]:hover {
+  text-decoration: underline;
+}
+.chat-response [data-streamdown="inline-code"] {
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.3125rem;
+  font-size: 0.875rem;
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.chat-response [data-streamdown="blockquote"] {
+  margin-block: 0;
+  border-left: 3px solid var(--border);
+  padding-left: 0.75rem;
+  font-style: normal;
+  color: var(--foreground);
+}
+.chat-response [data-streamdown="horizontal-rule"] {
+  margin-block: 0.75rem;
+}
+.chat-response [data-streamdown="code-block"] {
+  margin-block: 0;
+  font-size: 0.875rem;
+}
+.chat-response [data-streamdown="table-wrapper"] {
+  margin-block: 0;
+  font-size: 0.875rem;
+}
+.chat-response :is([data-streamdown="table-cell"], [data-streamdown="table-header-cell"]) {
+  padding: 0.25rem 0.5rem;
+}
+.chat-code pre,
+.chat-inline-code,
+.chat-response [data-streamdown="inline-code"] {
+  font-family: var(--font-mono);
 }

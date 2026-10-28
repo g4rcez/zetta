@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -17,7 +18,7 @@ import { createChatService } from "./service";
  */
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url?.endsWith("/zetta_test") ? describe : describe.skip; // initializes a key check: only ever against the dedicated test database
-const ids = [`cred-a-${crypto.randomUUID()}`, `cred-b-${crypto.randomUUID()}`];
+const ids = [`cred-a-${uuidv7()}`, `cred-b-${uuidv7()}`];
 const [A, B] = ids as [string, string];
 const KEY = Buffer.alloc(32, 7).toString("base64");
 const PASSWORD = "hunter2-very-secret", TOKEN = "ops_service_account_token";

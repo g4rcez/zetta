@@ -1,5 +1,6 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import type { Database } from "@zetta/db";
+import { uuidv7 } from "@zetta/core/uuid";
 import * as schema from "@zetta/db/schema/auth";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError, isAPIError } from "better-auth/api";
@@ -39,6 +40,7 @@ export function createAuthOptions(
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
     advanced: {
+      database: { generateId: () => uuidv7() },
       defaultCookieAttributes: {
         sameSite: "none",
         secure: true,

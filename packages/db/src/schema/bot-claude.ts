@@ -39,7 +39,7 @@ export const botClaudeConfig = pgTable("bot_claude_config", {
 export const botClaudeAsset = pgTable(
   "bot_claude_asset",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
     botId: uuid("bot_id")
       .notNull()
       .references(() => bot.id, restrict),

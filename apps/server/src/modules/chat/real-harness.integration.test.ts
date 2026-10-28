@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -10,7 +11,7 @@ import { createChatService } from "./service";
 // Opt-in: spends Claude Code quota (haiku). ZETTA_REAL_HARNESS_TEST=1 plus a database URL.
 const enabled = process.env.ZETTA_REAL_HARNESS_TEST === "1" && process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = enabled ? describe : describe.skip;
-const id = `real-${crypto.randomUUID()}`;
+const id = `real-${uuidv7()}`;
 
 suite("real claude-code haiku follows the Zetta tool protocol", () => {
   const db = createDb({ DATABASE_URL: process.env.ZETTA_CHAT_TEST_DATABASE_URL ?? "postgresql://unused@localhost/unused" } as never);

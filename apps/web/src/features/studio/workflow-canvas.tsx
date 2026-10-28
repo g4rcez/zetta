@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import "@xyflow/react/dist/style.css";
 import { addEdge, Background, Controls, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, type Connection, type Edge, type NodeProps } from "@xyflow/react";
 import { useCallback, useMemo, useState } from "react";
@@ -72,7 +73,7 @@ function Editor({ bots, initial, workflow, onSaved, onError }: { bots: Bot[]; in
   async function run() {
     if (!workflow) { setInfo("Save the workflow first, then run it."); return; }
     try {
-      const r = await call<{ run: { status: string; trace: Trace } }>(`/api/workflows/${workflow.id}/run`, "POST", { input: "", requestKey: crypto.randomUUID() });
+      const r = await call<{ run: { status: string; trace: Trace } }>(`/api/workflows/${workflow.id}/run`, "POST", { input: "", requestKey: uuidv7() });
       const byNode = new Map(r.run.trace.map((t) => [t.node, t]));
       setNodes((ns) => ns.map((n) => { const t = byNode.get(n.id); return { ...n, data: { ...n.data, state: !t ? undefined : t.error ? "failed" : t.skipped ? "skipped" : "done" } }; }));
       setInfo(`Run ${r.run.status}. Colours on the canvas show what ran.`);

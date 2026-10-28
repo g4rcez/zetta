@@ -1,5 +1,5 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomUUID } from "node:crypto";
 import type { StoreProofContext } from "./store.integration";
 
 export async function runStoreRaces(c: StoreProofContext) {
@@ -41,8 +41,8 @@ export async function runStoreRaces(c: StoreProofContext) {
   for (const firstOperation of ["replace", "revoke"] as const) {
     await c.scenario(`${firstOperation} wins before competing mutation by observed membership ordering`, async () => {
       const [s1, s2] = await c.fresh(); const created = await s1.createApiKey(a, c.input()); await updateGate();
-      const replace = { id: created.id, expectedRevision: 1, operationId: randomUUID(), secret: c.input().secret };
-      const revoke = { id: created.id, expectedRevision: 1, operationId: randomUUID() };
+      const replace = { id: created.id, expectedRevision: 1, operationId: uuidv7(), secret: c.input().secret };
+      const revoke = { id: created.id, expectedRevision: 1, operationId: uuidv7() };
       const one = c.capture(firstOperation === "replace" ? s1.replaceApiKey(a, replace) : s1.revoke(a, revoke));
       let two: typeof one | undefined;
       try {
@@ -59,7 +59,7 @@ export async function runStoreRaces(c: StoreProofContext) {
   }
   await c.scenario("membership removal waits for earlier mutation then denies replay and later writes", async () => {
     const [store] = await c.fresh(); const input = c.input(); const created = await store.createApiKey(a, input); await updateGate();
-    const one = c.capture(store.replaceApiKey(a, { id: created.id, expectedRevision: 1, operationId: randomUUID(), secret: input.secret }));
+    const one = c.capture(store.replaceApiKey(a, { id: created.id, expectedRevision: 1, operationId: uuidv7(), secret: input.secret }));
     let removal: Promise<{ readonly ok: boolean }> | undefined;
     try {
       await c.wait(firstPid, ownerPid, "connection");
@@ -69,13 +69,13 @@ export async function runStoreRaces(c: StoreProofContext) {
     {
       assert.equal((await one).ok, true); assert.equal((await removal)?.ok, true);
       await c.deny(() => store.createApiKey(a, input), "ACCESS_DENIED");
-      await c.deny(() => store.revoke(a, { id: created.id, expectedRevision: 2, operationId: randomUUID() }), "ACCESS_DENIED");
+      await c.deny(() => store.revoke(a, { id: created.id, expectedRevision: 2, operationId: uuidv7() }), "ACCESS_DENIED");
     }
   });
   await c.scenario("earlier committed removal denies waiting replacement after fresh row read", async () => {
     const [store] = await c.fresh(); const created = await store.createApiKey(a, c.input()); const before = await c.counts();
     await second.query("begin; update membership set status='removed',removed_at=now() where user_id='owner-a'");
-    const mutation = c.capture(store.replaceApiKey(a, { id: created.id, expectedRevision: 1, operationId: randomUUID(), secret: c.input().secret }));
+    const mutation = c.capture(store.replaceApiKey(a, { id: created.id, expectedRevision: 1, operationId: uuidv7(), secret: c.input().secret }));
     try { await c.wait(firstPid, secondPid, "membership"); }
     finally { await second.query("commit"); await mutation; }
     const result = await mutation; assert.equal(!result.ok && result.code === "ACCESS_DENIED", true); assert.equal(await c.counts(), before);

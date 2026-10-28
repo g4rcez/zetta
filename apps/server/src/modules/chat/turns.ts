@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 export class TurnBusyError extends Error { constructor() { super("TURN_BUSY"); } }
 
 export type TurnRecord<E> = {
@@ -19,7 +20,7 @@ export function createTurnRegistry<E>(ttlMs = 120_000, maxEvents = 5000) {
       const current = turns.get(key);
       if (current && !current.done) throw new TurnBusyError();
       let markReady!: () => void;
-      const rec: TurnRecord<E> = { id: crypto.randomUUID(), key, events: [], done: false, abort: new AbortController(), ready: new Promise<void>((r) => { markReady = r; }), waiters: new Set() };
+      const rec: TurnRecord<E> = { id: uuidv7(), key, events: [], done: false, abort: new AbortController(), ready: new Promise<void>((r) => { markReady = r; }), waiters: new Set() };
       turns.set(key, rec);
       const wake = () => { for (const w of [...rec.waiters]) w(); };
       void (async () => {

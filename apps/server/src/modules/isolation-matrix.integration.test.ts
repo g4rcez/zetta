@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -18,7 +19,7 @@ import { createSources } from "./integrations/sources";
  */
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`iso-a-${crypto.randomUUID()}`, `iso-b-${crypto.randomUUID()}`, `iso-c-${crypto.randomUUID()}`];
+const ids = [`iso-a-${uuidv7()}`, `iso-b-${uuidv7()}`, `iso-c-${uuidv7()}`];
 const [A, B, C] = ids as [string, string, string];
 
 suite("cross-user isolation matrix", () => {

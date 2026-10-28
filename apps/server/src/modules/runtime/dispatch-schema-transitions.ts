@@ -1,5 +1,5 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomUUID } from "node:crypto";
 import { at, epoch, type DispatchRow, type DispatchSchemaContext, type DispatchTable } from "./dispatch-schema.integration";
 import { parseDispatchGrant } from "./dispatch-state";
 
@@ -17,8 +17,8 @@ export async function dispatchSchemaTransitions(c: DispatchSchemaContext) {
   }));
   await c.scenario("every immutable claim field rejects an otherwise monotonic update", () => c.transaction(async () => {
     const claim = await c.prepared(await c.fixture()), id = key(claim);
-    for (const [column, value] of Object.entries({ attempt_id: randomUUID(), run_id: randomUUID(), owner_user_id: "dispatch-b", generation: 2,
-      lease_id: randomUUID(), claim_operation_id: randomUUID(), launcher_installation_id: "other", policy_version: "other", launch_spec_version: 2,
+    for (const [column, value] of Object.entries({ attempt_id: uuidv7(), run_id: uuidv7(), owner_user_id: "dispatch-b", generation: 2,
+      lease_id: uuidv7(), claim_operation_id: uuidv7(), launcher_installation_id: "other", policy_version: "other", launch_spec_version: 2,
       launch_spec_canonical: "[2]", launch_spec_digest: "c".repeat(64), launch_identity_digest: "c".repeat(64), image_digest: `sha256:${"c".repeat(64)}`, deadline_at: at(59000), created_at: at(1) })) {
       await c.reject(() => c.update("dispatch_claims", id, { [column]: value, revision: 3, updated_at: at(2) }), "dispatch_claims_identity_immutable");
     }
@@ -27,9 +27,9 @@ export async function dispatchSchemaTransitions(c: DispatchSchemaContext) {
     const id = key(await c.prepared(await c.fixture()));
     for (const [delta, constraint] of [
       [{ resource_state: "arbitrary" }, "dispatch_claims_state_check"],
-      [{ pending_operation_id: randomUUID() }, "dispatch_claims_pending_check"],
+      [{ pending_operation_id: uuidv7() }, "dispatch_claims_pending_check"],
       [{ pending_operation_kind: "input" }, "dispatch_claims_pending_check"],
-      [{ pending_operation_id: randomUUID(), pending_operation_kind: "arbitrary" }, "dispatch_claims_pending_check"],
+      [{ pending_operation_id: uuidv7(), pending_operation_kind: "arbitrary" }, "dispatch_claims_pending_check"],
       [{ cleanup_kind: "removed" }, "dispatch_claims_cleanup_check"],
       [{ cleanup_confirmed_at: at(2) }, "dispatch_claims_cleanup_check"],
       [{ cleanup_kind: "not_submitted", cleanup_confirmed_at: at(2) }, "dispatch_claims_cleanup_check"],
@@ -43,32 +43,32 @@ export async function dispatchSchemaTransitions(c: DispatchSchemaContext) {
       [{ cleanup_kind: "removed", resource_state: "cleaned", cleanup_confirmed_at: "infinity", updated_at: "infinity" }, "dispatch_claims_time_check"],
       [{ cancel_reason: "owner", cancel_requested_at: at(-1) }, "dispatch_claims_time_check"],
     ] as const) await c.reject(() => c.update("dispatch_claims", id, { revision: 3, updated_at: at(2), ...delta }), constraint);
-    const pending = randomUUID();
+    const pending = uuidv7();
     await c.update("dispatch_claims", id, { pending_operation_id: pending, pending_operation_kind: "input", revision: 3, updated_at: at(2) });
     await c.reject(() => c.update("dispatch_claims", id, { resource_state: "cleaned", cleanup_kind: "removed", cleanup_confirmed_at: at(3), revision: 4, updated_at: at(3) }), "dispatch_claims_cleanup_check");
     await c.update("dispatch_claims", id, { pending_operation_id: null, pending_operation_kind: null, revision: 4, updated_at: at(3) });
   }));
   await c.scenario("prepare pending missing receipt unknown and late receipt preserve structural facts", () => c.transaction(async () => {
     const claim = await c.fixture(), id = key(claim); await c.insert("dispatch_claims", claim);
-    await c.reject(() => c.update("dispatch_claims", id, { receipt_id: randomUUID(), revision: 2, updated_at: at(1) }), "dispatch_claims_state_check");
+    await c.reject(() => c.update("dispatch_claims", id, { receipt_id: uuidv7(), revision: 2, updated_at: at(1) }), "dispatch_claims_state_check");
     await c.reject(() => c.update("dispatch_claims", id, { resource_state: "prepare_pending", prepare_intent_at: at(1), revision: 2, updated_at: at(1) }), "dispatch_claims_state_check");
-    const pending = randomUUID();
+    const pending = uuidv7();
     await c.update("dispatch_claims", id, { resource_state: "prepare_pending", prepare_intent_at: at(1), pending_operation_id: pending, pending_operation_kind: "prepare", revision: 2, updated_at: at(1) });
     await c.update("dispatch_claims", id, { resource_state: "unknown", revision: 3, updated_at: at(2) });
     await c.reject(() => c.update("dispatch_claims", id, { pending_operation_kind: "input", revision: 4, updated_at: at(3) }), "dispatch_claims_pending_check");
-    await c.update("dispatch_claims", id, { receipt_id: randomUUID(), revision: 4, updated_at: at(3) });
+    await c.update("dispatch_claims", id, { receipt_id: uuidv7(), revision: 4, updated_at: at(3) });
     const read = (await first.query<{ pending_operation_id: string; resource_state: string }>("select pending_operation_id,resource_state from dispatch_claims where attempt_id=$1", [id])).rows[0];
     assert.equal(read?.pending_operation_id, pending); assert.equal(read?.resource_state, "unknown");
   }));
   await c.scenario("receipt prepare cancellation cleanup release facts bind once and released row is inert", () => c.transaction(async () => {
     const id = key(await c.prepared(await c.fixture()));
-    for (const delta of [{ receipt_id: null }, { receipt_id: randomUUID() }, { prepare_intent_at: null }, { prepare_intent_at: at(2) }, { resource_state: "not_submitted" }])
+    for (const delta of [{ receipt_id: null }, { receipt_id: uuidv7() }, { prepare_intent_at: null }, { prepare_intent_at: at(2) }, { resource_state: "not_submitted" }])
       await c.reject(() => c.update("dispatch_claims", id, { ...delta, revision: 3, updated_at: at(2) }), "dispatch_claims_forward_only");
     await c.update("dispatch_claims", id, { cancel_reason: "owner", cancel_requested_at: at(2), revision: 3, updated_at: at(2) });
     await c.reject(() => c.update("dispatch_claims", id, { cancel_reason: "shutdown", revision: 4, updated_at: at(3) }), "dispatch_claims_forward_only");
     await c.reject(() => c.update("dispatch_claims", id, { cancel_requested_at: at(3), revision: 4, updated_at: at(3) }), "dispatch_claims_forward_only");
     await c.update("dispatch_claims", id, { resource_state: "cleaned", cleanup_kind: "removed", cleanup_confirmed_at: at(3), revision: 4, updated_at: at(3) });
-    for (const delta of [{ cleanup_kind: null, cleanup_confirmed_at: null }, { cleanup_confirmed_at: at(4) }, { resource_state: "active" }, { pending_operation_id: randomUUID(), pending_operation_kind: "stop" }])
+    for (const delta of [{ cleanup_kind: null, cleanup_confirmed_at: null }, { cleanup_confirmed_at: at(4) }, { resource_state: "active" }, { pending_operation_id: uuidv7(), pending_operation_kind: "stop" }])
       await c.reject(() => c.update("dispatch_claims", id, { ...delta, revision: 5, updated_at: at(4) }), "dispatch_claims_forward_only");
     await c.reject(() => c.update("dispatch_claims", id, { released_at: at(2), revision: 5, updated_at: at(4) }), "dispatch_claims_release_check");
     await c.update("dispatch_claims", id, { released_at: at(4), revision: 5, updated_at: at(4) });
@@ -103,8 +103,8 @@ export async function dispatchSchemaTransitions(c: DispatchSchemaContext) {
   }));
   await c.scenario("every immutable grant field rejects an otherwise monotonic update", () => c.transaction(async () => {
     const grant = c.grant(await c.prepared(await c.fixture())); await c.insert("dispatch_grants", grant);
-    for (const [column, value] of Object.entries({ id: randomUUID(), attempt_id: randomUUID(), run_id: randomUUID(), owner_user_id: "dispatch-b", action_id: randomUUID(),
-      kind: "input", sequence: 2, canonical_action: "[2]", action_digest: "c".repeat(64), connection_id: randomUUID(), credential_version: 1, expires_at: at(29000), created_at: at(1) }))
+    for (const [column, value] of Object.entries({ id: uuidv7(), attempt_id: uuidv7(), run_id: uuidv7(), owner_user_id: "dispatch-b", action_id: uuidv7(),
+      kind: "input", sequence: 2, canonical_action: "[2]", action_digest: "c".repeat(64), connection_id: uuidv7(), credential_version: 1, expires_at: at(29000), created_at: at(1) }))
       await c.reject(() => c.update("dispatch_grants", key(grant, "id"), { [column]: value, revision: 2, updated_at: at(1) }), "dispatch_grants_identity_immutable");
   }));
   await c.scenario("unknown grant then late acknowledgement keeps null issue time and never readmits", () => c.transaction(async () => {

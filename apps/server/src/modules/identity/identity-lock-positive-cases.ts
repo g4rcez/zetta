@@ -1,5 +1,5 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomUUID } from "node:crypto";
 import type { LockOrderProof } from "./identity-lock-order.integration";
 import type { createAdminLifecycleService } from "./admin-lifecycle";
 import type { createConnectionStore } from "../connections/store";
@@ -68,7 +68,7 @@ export async function replace(c: PositiveContext, from = "lock-b", to = "lock-a"
 }
 export async function connectionDirections(c: PositiveContext) {
   for (const connectionFirst of [true, false]) {
-    for (const user of ["lock-a", "lock-b"]) await c.proof.owner.query("insert into session(id,user_id,token,expires_at,created_at,updated_at) values($1,$2,$3,now()+interval '1 hour',now(),now())", [randomUUID(), user, randomUUID()]);
+    for (const user of ["lock-a", "lock-b"]) await c.proof.owner.query("insert into session(id,user_id,token,expires_at,created_at,updated_at) values($1,$2,$3,now()+interval '1 hour',now(),now())", [uuidv7(), user, uuidv7()]);
     const before = await readLockOrderState(c.proof.owner);
     assert.equal(before.admin, "lock-b"); assert.ok(before.sessions_a.length && before.sessions_b.length && before.sessions_c.length);
     const first = traceClient(c.proof.first, connectionFirst ? "member-lock-a" : null);

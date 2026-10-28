@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { and, eq } from "@zetta/db/query";
@@ -18,7 +19,7 @@ import { CAPS, createInbound } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`inb-a-${crypto.randomUUID()}`, `inb-b-${crypto.randomUUID()}`];
+const ids = [`inb-a-${uuidv7()}`, `inb-b-${uuidv7()}`];
 const [A, B] = ids as [string, string];
 
 /** A channel plugin with a scripted inbox: each poll returns what is queued (keys make re-deliveries harmless). */

@@ -1,5 +1,6 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { requireIdentityAuthProofTarget } from "./signup.integration";
 import type { LockOrderProof } from "./identity-lock-order.integration";
 export async function runIdentityLockPositiveProof() {
@@ -41,13 +42,13 @@ export async function runIdentityLockPositiveProof() {
       const key = randomBytes(32); secrets.push(key);
       const store = await createConnectionStore(proof.firstDb, { configuration: { key: key.toString("base64"), keyId: "synthetic-positive" }, allowedProviders: ["synthetic"], initializeEmpty: true });
       key.fill(0);
-      for (const id of ["lock-a", "lock-b", "lock-c"]) await proof.owner.query("insert into session(id,user_id,token,expires_at,created_at,updated_at) values($1,$2,$3,now()+interval '1 hour',now(),now())", [randomUUID(), id, randomUUID()]);
+      for (const id of ["lock-a", "lock-b", "lock-c"]) await proof.owner.query("insert into session(id,user_id,token,expires_at,created_at,updated_at) values($1,$2,$3,now()+interval '1 hour',now(),now())", [uuidv7(), id, uuidv7()]);
       const { connectionDirections } = await import("./identity-lock-positive-cases");
       const { sessionDirections } = await import("./identity-lock-session-case");
       const { enrollmentDirections } = await import("./identity-lock-enrollment-case");
       const context = { proof, pids: [ownerPid, firstPid, secondPid] as const, actor, store, lifecycle, input() {
-        const secret = Buffer.from(randomUUID(), "utf8"); secrets.push(secret);
-        return { operationId: randomUUID(), provider: "synthetic", label: "synthetic", secret, expiresAt: null };
+        const secret = Buffer.from(uuidv7(), "utf8"); secrets.push(secret);
+        return { operationId: uuidv7(), provider: "synthetic", label: "synthetic", secret, expiresAt: null };
       } };
       phase = "connection directions"; await connectionDirections(context);
       phase = "session directions"; await sessionDirections(context);

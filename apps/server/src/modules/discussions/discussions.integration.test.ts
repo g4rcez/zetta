@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { eq, inArray } from "@zetta/db/query";
@@ -16,7 +17,7 @@ import { createDiscussionWorker } from "./worker";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`disc-a-${crypto.randomUUID()}`, `disc-b-${crypto.randomUUID()}`];
+const ids = [`disc-a-${uuidv7()}`, `disc-b-${uuidv7()}`];
 const [A, B] = ids as [string, string];
 
 suite("group discussions against compose postgres", () => {

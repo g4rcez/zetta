@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { and, desc, eq, isNull, sql } from "@zetta/db/query";
 import { instruction, memory } from "@zetta/db/schema/features";
@@ -74,7 +75,7 @@ export function createKnowledge(db: Database) {
           if (op.op === "add") {
             const content = op.content.trim();
             if (work.some((e) => contentHash(e.content) === contentHash(content))) continue; // exact duplicate: success, nothing added
-            const e = { id: crypto.randomUUID(), content, isNew: true, dirty: false }; work.push(e); added.push(e); noop = false;
+            const e = { id: uuidv7(), content, isNew: true, dirty: false }; work.push(e); added.push(e); noop = false;
           } else if (op.op === "patch") {
             const e = unique(op.match); const next = e.content.replace(op.match.trim(), op.content.trim());
             if (next === e.content) continue; e.content = next; e.dirty = !e.isNew; changed.push(e.id); noop = false;

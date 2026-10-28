@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -17,7 +18,7 @@ import { createFeaturesService } from "../features/service";
 void Client;
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`int-a-${crypto.randomUUID()}`, `int-b-${crypto.randomUUID()}`];
+const ids = [`int-a-${uuidv7()}`, `int-b-${uuidv7()}`];
 const [A, B] = ids as [string, string];
 
 describe("parseFeed", () => {

@@ -1,4 +1,5 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
 import { identityAudit, installationIdentity, invitation, membership } from "@zetta/db/schema/identity";
@@ -48,7 +49,7 @@ function tokenHash(token: string): string {
 
 async function audit(tx: Transaction, eventKind: AuditEvent, actorUserId: string, invitationId: string, subjectUserId: string | null) {
   await tx.insert(identityAudit).values({
-    id: randomUUID(), eventKind, actorKind: "user", actorUserId, subjectUserId, invitationId,
+    id: uuidv7(), eventKind, actorKind: "user", actorUserId, subjectUserId, invitationId,
     occurredAt: sql`clock_timestamp()`,
   });
 }
@@ -107,7 +108,7 @@ export function createEnrollmentService(db: Pick<Database, "transaction">) {
           await lockIdentity(tx, userId, { adminOnly: true, intendedUserId });
           const token = randomBytes(32).toString("base64url");
           const [issued] = await tx.insert(invitation).values({
-            id: randomUUID(), tokenHash: tokenHash(token), intendedEmail, intendedUserId, issuedByUserId: userId,
+            id: uuidv7(), tokenHash: tokenHash(token), intendedEmail, intendedUserId, issuedByUserId: userId,
             createdAt: sql`statement_timestamp()`, expiresAt: sql`statement_timestamp() + interval '24 hours'`,
           }).returning({ invitationId: invitation.id, expiresAt: invitation.expiresAt });
           if (!issued) return unavailable();

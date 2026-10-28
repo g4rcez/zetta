@@ -1,5 +1,5 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomUUID } from "node:crypto";
 import { at, epoch, type DispatchRow, type DispatchSchemaContext } from "./dispatch-schema.integration";
 import { decodeDispatchAction } from "./dispatch-contract";
 
@@ -47,18 +47,18 @@ export async function dispatchSchemaCases(c: DispatchSchemaContext) {
     await c.scenario(name, () => c.transaction(async () => c.controlInsert("dispatch_claims", await c.fixture(), delta, constraint, state)));
   }
   for (const [name, delta, constraint, state] of [
-    ["claim unknown attempt FK", { attempt_id: randomUUID() }, "dispatch_claims_attempt_fk", "23503"],
+    ["claim unknown attempt FK", { attempt_id: uuidv7() }, "dispatch_claims_attempt_fk", "23503"],
     ["claim cross-owner FK", { owner_user_id: "dispatch-b" }, "dispatch_claims_attempt_fk", "23503"],
-    ["claim foreign run FK", { run_id: randomUUID() }, "dispatch_claims_attempt_fk", "23503"],
+    ["claim foreign run FK", { run_id: uuidv7() }, "dispatch_claims_attempt_fk", "23503"],
     ["claim unknown policy FK", { policy_version: "other" }, "dispatch_claims_policy_fk", "23503"],
     ["claim zero generation", { generation: 0 }, "dispatch_claims_counters_check", "23514"],
     ["claim int32 overflow", { generation: 2147483648 }, null, "22003"],
     ["claim noninitial revision", { revision: 2 }, "dispatch_claims_initial", "23514"],
     ["claim initial updated timestamp", { updated_at: at(1) }, "dispatch_claims_initial", "23514"],
     ["claim pre-spent state", { resource_state: "unknown" }, "dispatch_claims_initial", "23514"],
-    ["claim initial receipt", { receipt_id: randomUUID() }, "dispatch_claims_initial", "23514"],
+    ["claim initial receipt", { receipt_id: uuidv7() }, "dispatch_claims_initial", "23514"],
     ["claim initial prepare intent", { prepare_intent_at: epoch }, "dispatch_claims_initial", "23514"],
-    ["claim initial pending operation", { pending_operation_id: randomUUID() }, "dispatch_claims_initial", "23514"],
+    ["claim initial pending operation", { pending_operation_id: uuidv7() }, "dispatch_claims_initial", "23514"],
     ["claim initial cleanup", { cleanup_kind: "not_submitted" }, "dispatch_claims_initial", "23514"],
     ["claim initial cancellation", { cancel_reason: "owner" }, "dispatch_claims_initial", "23514"],
     ["claim initial release", { released_at: epoch }, "dispatch_claims_initial", "23514"],
@@ -85,12 +85,12 @@ export async function dispatchSchemaCases(c: DispatchSchemaContext) {
   }));
   for (const [name, delta, constraint, state] of [
     ["grant cross-owner", { owner_user_id: "dispatch-b" }, "dispatch_grants_claim_fk", "23503"],
-    ["grant foreign claim", { attempt_id: randomUUID() }, "dispatch_grants_claim_fk", "23503"],
-    ["grant foreign run", { run_id: randomUUID() }, "dispatch_grants_claim_fk", "23503"],
+    ["grant foreign claim", { attempt_id: uuidv7() }, "dispatch_grants_claim_fk", "23503"],
+    ["grant foreign run", { run_id: uuidv7() }, "dispatch_grants_claim_fk", "23503"],
     ["grant noninitial issued", { state: "issued", issued_at: epoch }, "dispatch_grants_initial", "23514"],
     ["grant noninitial uncertain", { state: "uncertain", delivery_outcome: "unknown" }, "dispatch_grants_initial", "23514"],
     ["grant noninitial revision", { revision: 2 }, "dispatch_grants_initial", "23514"],
-    ["grant fixture connection", { connection_id: randomUUID() }, "dispatch_grants_credentials_check", "23514"],
+    ["grant fixture connection", { connection_id: uuidv7() }, "dispatch_grants_credentials_check", "23514"],
     ["grant fixture credential", { credential_version: 1 }, "dispatch_grants_credentials_check", "23514"],
     ["grant unknown kind", { kind: "tool" }, "dispatch_grants_action_check", "23514"],
     ["grant activation sequence", { sequence: 2 }, "dispatch_grants_action_check", "23514"],
@@ -104,13 +104,13 @@ export async function dispatchSchemaCases(c: DispatchSchemaContext) {
   await c.scenario("grant separate activation input sequences unique action and bounded input controls", () => c.transaction(async () => {
     const claim = await c.prepared(await c.fixture()), activation = c.grant(claim), input = c.grant(claim, "input");
     await c.insert("dispatch_grants", activation); await c.insert("dispatch_grants", input);
-    await c.reject(() => c.insert("dispatch_grants", { ...input, id: randomUUID(), action_id: activation.action_id ?? null, sequence: 2 }), "dispatch_grants_attempt_action_unique", "23505");
-    await c.reject(() => c.insert("dispatch_grants", { ...input, id: randomUUID(), action_id: randomUUID() }), "dispatch_grants_attempt_sequence_unique", "23505");
-    const boundary = { ...input, id: randomUUID(), action_id: randomUUID(), sequence: 65537 };
+    await c.reject(() => c.insert("dispatch_grants", { ...input, id: uuidv7(), action_id: activation.action_id ?? null, sequence: 2 }), "dispatch_grants_attempt_action_unique", "23505");
+    await c.reject(() => c.insert("dispatch_grants", { ...input, id: uuidv7(), action_id: uuidv7() }), "dispatch_grants_attempt_sequence_unique", "23505");
+    const boundary = { ...input, id: uuidv7(), action_id: uuidv7(), sequence: 65537 };
     await c.controlInsert("dispatch_grants", boundary, { sequence: 65538 }, "dispatch_grants_action_check");
     await c.controlInsert("dispatch_grants", boundary, { sequence: 0 }, "dispatch_grants_action_check");
     await c.insert("dispatch_grants", boundary);
-    const maximum = { ...input, id: randomUUID(), action_id: randomUUID(), sequence: 2, canonical_action: '["' + "é".repeat(8190) + '"]' };
+    const maximum = { ...input, id: uuidv7(), action_id: uuidv7(), sequence: 2, canonical_action: '["' + "é".repeat(8190) + '"]' };
     await c.insert("dispatch_grants", maximum);
     const bytes = await first.query<{ bytes: number }>("select octet_length(canonical_action) as bytes from dispatch_grants where id=$1", [maximum.id]);
     assert.equal(bytes.rows[0]?.bytes, 16384);

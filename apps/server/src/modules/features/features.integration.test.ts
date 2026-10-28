@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -11,7 +12,7 @@ import { nextDailyRun } from "./schedule";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`feat-a-${crypto.randomUUID()}`, `feat-b-${crypto.randomUUID()}`];
+const ids = [`feat-a-${uuidv7()}`, `feat-b-${uuidv7()}`];
 const [A, B] = ids as [string, string];
 
 describe("schedule", () => {
@@ -131,7 +132,7 @@ suite("features against compose postgres", () => {
     const msgs = (await call(A, "GET", `/api/conversations/${c.c}/messages`)).json.messages as { id: string }[];
     const thread = await call(A, "POST", `/api/conversations/${c.c}/messages`, { content: "in thread", parentMessageId: msgs[0]!.id });
     expect(thread.json.user.parentMessageId).toBe(msgs[0]!.id);
-    expect((await call(A, "POST", `/api/conversations/${c.c}/messages`, { content: "x", parentMessageId: crypto.randomUUID() })).status).toBe(404);
+    expect((await call(A, "POST", `/api/conversations/${c.c}/messages`, { content: "x", parentMessageId: uuidv7() })).status).toBe(404);
     expect((await call(A, "POST", `/api/messages/${msgs[0]!.id}/reactions`, { emoji: "👍" })).json.reactions).toHaveLength(1);
     expect((await call(B, "POST", `/api/messages/${msgs[0]!.id}/reactions`, { emoji: "👍" })).status).toBe(404);
   });

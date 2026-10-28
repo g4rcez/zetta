@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -13,8 +14,8 @@ import { createBotClaude } from "./store";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const OWNER = `claude-${crypto.randomUUID()}`,
-  OTHER = `claude-${crypto.randomUUID()}`;
+const OWNER = `claude-${uuidv7()}`,
+  OTHER = `claude-${uuidv7()}`;
 const ORIGIN = "https://zetta.test";
 
 suite("per-bot Claude Code settings against compose postgres", () => {
@@ -31,10 +32,7 @@ suite("per-bot Claude Code settings against compose postgres", () => {
         .values({
           ownerUserId: owner,
           name,
-          slug: `t${crypto
-            .randomUUID()
-            .replace(/[^a-z]/g, "")
-            .slice(0, 10)}`,
+          slug: `t${uuidv7().replace(/[^a-z]/g, "").slice(-10)}`,
           kind: "specialist",
           visibility: "private",
           harness,
@@ -148,7 +146,7 @@ suite("per-bot Claude Code settings against compose postgres", () => {
         })
       ).status,
     ).toBe(400);
-    expect((await req("DELETE", `/bots/${a}/claude/assets/${crypto.randomUUID()}`)).status).toBe(
+    expect((await req("DELETE", `/bots/${a}/claude/assets/${uuidv7()}`)).status).toBe(
       404,
     );
   });

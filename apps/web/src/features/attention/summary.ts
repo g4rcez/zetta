@@ -1,10 +1,15 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useRouterState } from "@tanstack/react-router";
 
-import { ApiError, chatClient, type AttentionSummary } from "../chat/chat-client";
+import { ApiError, call, chatClient, type AttentionSummary } from "../chat/chat-client";
+
+/** What one bot needs from the user: open items, and how many of those the user has not seen yet. */
+export type BotAttention = { open: number; unread: number };
+type Item = { botId: string | null; status: string; readAt: string | null };
 
 /** One shared poller for the attention counts (header + sidebar). Polls every 30s while at least one component uses it. */
 let state: AttentionSummary | undefined;
+let byBot: ReadonlyMap<string, BotAttention> = new Map();
 let signedOut = false;
 let subscribers = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -13,8 +18,17 @@ const emit = () => listeners.forEach((l) => l());
 
 export async function refreshAttention(force = false) {
   if (signedOut && !force) return;
-  try { state = await chatClient.attentionSummary(); signedOut = false; emit(); }
-  catch (e) { if (e instanceof ApiError && e.status === 401) { signedOut = true; state = undefined; emit(); } }
+  try {
+    const [summary, list] = await Promise.all([chatClient.attentionSummary(), call<{ items: Item[] }>("/api/attention")]);
+    const next = new Map<string, BotAttention>();
+    for (const i of list.items) {
+      if (i.botId === null || i.status !== "open") continue;
+      const n = next.get(i.botId) ?? { open: 0, unread: 0 };
+      next.set(i.botId, { open: n.open + 1, unread: n.unread + (i.readAt ? 0 : 1) });
+    }
+    state = summary; byBot = next; signedOut = false; emit();
+  }
+  catch (e) { if (e instanceof ApiError && e.status === 401) { signedOut = true; state = undefined; byBot = new Map(); emit(); } }
 }
 function subscribe(l: () => void) {
   listeners.add(l);
@@ -29,3 +43,9 @@ export function useAttentionSummary(): AttentionSummary | undefined {
   return value;
 }
 export const attentionLabel = (s?: AttentionSummary) => (s && s.unread > 0 ? `${s.unread} unread` : "");
+
+/** Per-bot attention from the same poll; a bot with nothing open has no entry. */
+export function useBotAttention(): ReadonlyMap<string, BotAttention> {
+  useAttentionSummary(); // subscribes to the poll; every emit re-renders the caller, which then reads the fresh map
+  return byBot;
+}

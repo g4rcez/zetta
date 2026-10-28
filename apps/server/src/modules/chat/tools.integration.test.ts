@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -36,7 +37,7 @@ describe("parseTools", () => {
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`tool-a-${crypto.randomUUID()}`, `tool-b-${crypto.randomUUID()}`];
+const ids = [`tool-a-${uuidv7()}`, `tool-b-${uuidv7()}`];
 const [A, B] = ids as [string, string];
 
 suite("bot tools against compose postgres", () => {

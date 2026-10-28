@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { uuidv7 } from "@zetta/core/uuid";
 import { z } from "zod";
 import type { Database } from "@zetta/db";
 import { and, eq, sql } from "@zetta/db/query";
@@ -80,7 +80,7 @@ export function createRunStore(db: Pick<Database, "transaction">) {
         };
         const existing = await prior();
         if (existing) return existing;
-        const now = new Date(await clock(tx, owner)), id = randomUUID(), attemptId = randomUUID();
+        const now = new Date(await clock(tx, owner)), id = uuidv7(), attemptId = uuidv7();
         const [row] = await tx.insert(runs).values({ id, ownerUserId: owner, requestKey: request.requestKey, originKind: request.origin,
           botId: request.botId, conversationId: request.conversationId, configurationId: request.configurationId,
           configurationVersion: request.configurationVersion, inputVersion: 1, inputSnapshot, createdAt: now,

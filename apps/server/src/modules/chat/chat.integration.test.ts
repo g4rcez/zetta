@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -17,7 +18,7 @@ const fakeRun = Object.assign(
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`chat-a-${crypto.randomUUID()}`, `chat-b-${crypto.randomUUID()}`];
+const ids = [`chat-a-${uuidv7()}`, `chat-b-${uuidv7()}`];
 
 suite("chat against compose postgres", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
@@ -390,7 +391,7 @@ suite("chat against compose postgres", () => {
     expect((await ask(ids[1]!)).status).toBe(404); // not the owner
     const q = (await (await ask(ids[0]!)).json()) as { questionId: string };
     expect((await answer(ids[1]!, q.questionId, true)).status).toBe(404);
-    expect((await answer(ids[0]!, crypto.randomUUID(), true)).status).toBe(409); // an answer must reference the persisted question
+    expect((await answer(ids[0]!, uuidv7(), true)).status).toBe(409); // an answer must reference the persisted question
     const no = (await (await answer(ids[0]!, q.questionId, false)).json()) as {
       bot: { onboarded: boolean };
     };

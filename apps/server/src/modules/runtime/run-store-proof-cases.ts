@@ -1,5 +1,5 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomUUID } from "node:crypto";
 import type { Database } from "@zetta/db";
 import type { RunStoreProofContext } from "./runs.integration";
 
@@ -80,9 +80,9 @@ export async function runOwnedCases(c: RunStoreProofContext) {
     await c.deny(() => store.getResultOwned(a, { runId: run.id, attemptId: another.attemptId }), "not_found");
     await c.deny(() => store.getResultOwned(a, { runId: run.id, attemptId: foreign.attemptId }), "not_found");
     await c.deny(() => store.getResultOwned(a, { runId: foreign.id, attemptId: run.attemptId }), "not_found");
-    await c.deny(() => store.getResultOwned(a, { runId: run.id, attemptId: randomUUID() }), "not_found");
+    await c.deny(() => store.getResultOwned(a, { runId: run.id, attemptId: uuidv7() }), "not_found");
     // Synthetic future-generation fixture only; no retry API or retry authority is supplied by009.
-    const next = randomUUID(); await owner.query("begin");
+    const next = uuidv7(); await owner.query("begin");
     try {
       await owner.query("insert into run_attempts(id,run_id,owner_user_id,generation,created_at,status,effect_state) values($1,$2,'owner-a',2,clock_timestamp(),'queued','no_effect')", [next, run.id]);
       await owner.query("update runs set current_generation=2,revision=revision+1,status='queued',started_at=null,finished_at=null,cancel_requested_at=null where id=$1", [run.id]);

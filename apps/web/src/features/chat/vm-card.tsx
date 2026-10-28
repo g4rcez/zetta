@@ -99,11 +99,17 @@ export function VmCard({
   const [open, setOpen] = useState(false);
   const recent = steps.slice(-5).reverse();
   return (
-    <div className="flex max-w-[760px] flex-col gap-2 rounded-lg border bg-card p-2 text-sm">
+    <div
+      className={
+        working
+          ? "flex max-w-[760px] flex-col gap-2 rounded-lg border bg-card p-2 text-sm"
+          : "flex max-w-[760px] flex-col gap-2 text-xs text-muted-foreground"
+      }
+    >
       <div className="flex items-center gap-2">
         <Monitor aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
         <span className="mr-auto truncate">
-          {working ? "Using" : "Used"} the computer <strong>{vm.name}</strong>
+          {working ? "Using" : "Used"} the computer <strong className={working ? undefined : "font-medium text-foreground"}>{vm.name}</strong>
           {working && (
             <span
               className="ml-1 inline-block size-2 animate-pulse rounded-full bg-green-500 align-middle motion-reduce:animate-none"
@@ -117,8 +123,12 @@ export function VmCard({
             </span>
           )}
         </span>
-        <Button size="sm" onClick={() => setOpen(true)}>
-          Watch live
+        <Button
+          size={working ? "sm" : "xs"}
+          variant={working ? "default" : "ghost"}
+          onClick={() => setOpen(true)}
+        >
+          {working ? "Watch live" : "Watch"}
         </Button>
       </div>
       {working && (

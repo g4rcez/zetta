@@ -1,5 +1,5 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomUUID } from "node:crypto";
 import type { openMembershipRoleProof } from "../../../../../packages/db/src/membership-role-proof-client";
 import { verifyMembershipRole } from "../../../../../packages/db/src/membership-role-proof-client";
 import { createAdminLifecycleService } from "./admin-lifecycle";
@@ -31,7 +31,7 @@ async function snapshot(p: RoleProof) {
   return result;
 }
 function input() {
-  return { requestKey: randomUUID(), origin: "interactive", botId: "bot", conversationId: "conversation", configurationId: "configuration", configurationVersion: 1,
+  return { requestKey: uuidv7(), origin: "interactive", botId: "bot", conversationId: "conversation", configurationId: "configuration", configurationVersion: 1,
     input: { prompt: "Synthetic role proof", harness: "fixture", model: null, resumeReference: null, connections: [],
       budgets: { deadlineMs: 1000, maxEvents: 10, maxOutputBytes: 1000, maxToolBytes: 100, maxToolCalls: 1 } } };
 }

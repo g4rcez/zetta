@@ -1,5 +1,6 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { Database } from "@zetta/db";
 import { createConnectionCrypto, type ConnectionEnvelope } from "./crypto";
 import type { ConnectionMetadata } from "./store-contract";
@@ -20,9 +21,9 @@ export async function runStoreCases(c: StoreProofContext) {
       from connection_credential where connection_id=$1`, [created.id])).rows[0]; assert.ok(row);
     const opened = createConnectionCrypto(c.configuration).open(row, { ownerUserId: a.userId, connectionId: created.id, kind: "api-key", credentialVersion: 1 });
     try { assert.equal(opened.equals(originalBytes), true); } finally { opened.fill(0); originalBytes.fill(0); }
-    const replaced = await store.replaceApiKey(a, { id: created.id, operationId: randomUUID(), expectedRevision: 1, secret: Buffer.from("new synthetic bytes") });
+    const replaced = await store.replaceApiKey(a, { id: created.id, operationId: uuidv7(), expectedRevision: 1, secret: Buffer.from("new synthetic bytes") });
     assert.equal(replaced.revision === 2 && replaced.credentialVersion === 2, true); safe(replaced);
-    const revoked = await store.revoke(a, { id: created.id, operationId: randomUUID(), expectedRevision: 2 });
+    const revoked = await store.revoke(a, { id: created.id, operationId: uuidv7(), expectedRevision: 2 });
     assert.equal(revoked.revision === 3 && revoked.state === "revoked" && revoked.revokedAt !== null, true); safe(revoked);
     const list = await store.listOwned(a, {}); assert.equal(list.items.length, 1); assert.equal(JSON.stringify(list.items[0]) === JSON.stringify(revoked), true);
     const retained = (await owner.query<{ versions: number; nonces: number; current: number }>(`select
@@ -30,16 +31,16 @@ export async function runStoreCases(c: StoreProofContext) {
       (select count(*)::int from connection_nonce where connection_id=$1) as nonces,
       (select count(*)::int from connection_credential v join connection m on m.id=v.connection_id and m.current_credential_version=v.credential_version where m.id=$1) as current`, [created.id])).rows[0];
     assert.equal(retained?.versions === 2 && retained.nonces === 2 && retained.current === 1, true);
-    await c.deny(() => store.replaceApiKey(a, { id: created.id, expectedRevision: 3, operationId: randomUUID(), secret: input.secret }), "conflict");
+    await c.deny(() => store.replaceApiKey(a, { id: created.id, expectedRevision: 3, operationId: uuidv7(), secret: input.secret }), "conflict");
   });
   await c.scenario("original receipt replays after replace revoke and now expired create request", async () => {
     const [store] = await c.fresh();
     const clock = (await owner.query<{ now: string }>("select floor(extract(epoch from clock_timestamp())*1000)::text as now")).rows[0]; assert.ok(clock);
     const input = { ...c.input(), expiresAt: Number(clock.now) + 1000 };
     const created = await store.createApiKey(a, input);
-    const replacementInput = { id: created.id, operationId: randomUUID(), expectedRevision: 1, secret: input.secret };
+    const replacementInput = { id: created.id, operationId: uuidv7(), expectedRevision: 1, secret: input.secret };
     const replaced = await store.replaceApiKey(a, replacementInput);
-    const revokeInput = { id: created.id, operationId: randomUUID(), expectedRevision: 2 }; const revoked = await store.revoke(a, revokeInput);
+    const revokeInput = { id: created.id, operationId: uuidv7(), expectedRevision: 2 }; const revoked = await store.revoke(a, revokeInput);
     const deadline = performance.now() + 2000;
     while (true) {
       assert.equal(performance.now() < deadline, true);
@@ -57,28 +58,28 @@ export async function runStoreCases(c: StoreProofContext) {
     for (const change of [{ provider: "other" }, { label: "different" }, { secret: Buffer.from("different") }, { expiresAt: Date.now() + 60000 }])
       await c.deny(() => store.createApiKey(a, { ...input, ...change }), "conflict");
     await c.deny(() => store.revoke(a, { operationId: input.operationId, id: created.id, expectedRevision: 1 }), "conflict");
-    const replacement = { id: created.id, operationId: randomUUID(), expectedRevision: 1, secret: input.secret };
+    const replacement = { id: created.id, operationId: uuidv7(), expectedRevision: 1, secret: input.secret };
     await store.replaceApiKey(a, replacement);
     await c.deny(() => store.revoke(a, { id: created.id, operationId: replacement.operationId, expectedRevision: 1 }), "conflict");
-    for (const change of [{ id: randomUUID() }, { expectedRevision: 2 }, { secret: Buffer.from("different") }, { expiresAt: Date.now() + 60000 }])
+    for (const change of [{ id: uuidv7() }, { expectedRevision: 2 }, { secret: Buffer.from("different") }, { expiresAt: Date.now() + 60000 }])
       await c.deny(() => store.replaceApiKey(a, { ...replacement, ...change }), "conflict");
-    const revoke = { id: created.id, operationId: randomUUID(), expectedRevision: 2 }; await store.revoke(a, revoke);
+    const revoke = { id: created.id, operationId: uuidv7(), expectedRevision: 2 }; await store.revoke(a, revoke);
     await c.deny(() => store.replaceApiKey(a, { ...revoke, secret: input.secret }), "conflict");
-    for (const change of [{ id: randomUUID() }, { expectedRevision: 3 }]) await c.deny(() => store.revoke(a, { ...revoke, ...change }), "conflict");
+    for (const change of [{ id: uuidv7() }, { expectedRevision: 3 }]) await c.deny(() => store.revoke(a, { ...revoke, ...change }), "conflict");
     const otherOwner = await store.createApiKey(b, input); assert.notEqual(otherOwner.id, created.id);
   });
   await c.scenario("foreign admin forged and removed actors denied with safe metadata only", async () => {
     const [store] = await c.fresh(); const input = c.input(); const created = await store.createApiKey(a, input);
     for (const actor of [b, admin, { userId: a.userId, isAdmin: true }]) {
-      await c.deny(() => store.revoke(actor, { id: created.id, operationId: randomUUID(), expectedRevision: 1 }), "NOT_FOUND");
-      await c.deny(() => store.replaceApiKey(actor, { id: created.id, operationId: randomUUID(), expectedRevision: 1, secret: input.secret }), "NOT_FOUND");
+      await c.deny(() => store.revoke(actor, { id: created.id, operationId: uuidv7(), expectedRevision: 1 }), "NOT_FOUND");
+      await c.deny(() => store.replaceApiKey(actor, { id: created.id, operationId: uuidv7(), expectedRevision: 1, secret: input.secret }), "NOT_FOUND");
     }
     assert.equal((await store.listOwned(b, {})).items.length, 0); assert.equal((await store.listOwned(admin, {})).items.length, 0);
     await c.deny(() => store.listOwned({ userId: a.userId, isAdmin: false }, {}), "NOT_FOUND");
     await owner.query("update membership set status='removed',removed_at=now() where user_id='owner-a'");
     await c.deny(() => store.createApiKey(a, input), "ACCESS_DENIED"); await c.deny(() => store.listOwned(a, {}), "ACCESS_DENIED");
-    await c.deny(() => store.replaceApiKey(a, { id: created.id, expectedRevision: 1, operationId: randomUUID(), secret: input.secret }), "ACCESS_DENIED");
-    await c.deny(() => store.revoke(a, { id: created.id, expectedRevision: 1, operationId: randomUUID() }), "ACCESS_DENIED");
+    await c.deny(() => store.replaceApiKey(a, { id: created.id, expectedRevision: 1, operationId: uuidv7(), secret: input.secret }), "ACCESS_DENIED");
+    await c.deny(() => store.revoke(a, { id: created.id, expectedRevision: 1, operationId: uuidv7() }), "ACCESS_DENIED");
   });
   await c.scenario("owner-bound pagination rejects tampering and visits each owned ID once", async () => {
     const [store] = await c.fresh(); const ids = [];
@@ -111,7 +112,7 @@ export async function runStoreCases(c: StoreProofContext) {
     const source = (size: number) => { assert.equal(size, 12); calls++; const nonce = sequence.shift(); assert.ok(nonce); return nonce; };
     const [store] = await c.fresh(source); const created = await store.createApiKey(a, c.input()); assert.equal(calls, 2);
     sequence = [nonce1, nonce1, nonce2]; calls = 0;
-    await store.replaceApiKey(a, { id: created.id, expectedRevision: 1, operationId: randomUUID(), secret: c.input().secret }); assert.equal(calls, 3);
+    await store.replaceApiKey(a, { id: created.id, expectedRevision: 1, operationId: uuidv7(), secret: c.input().secret }); assert.equal(calls, 3);
     await owner.query("delete from connection_credential where connection_id=$1 and credential_version=1", [created.id]);
     const before = await c.counts(); sequence = [nonce1, nonce1, nonce1]; calls = 0;
     await c.deny(() => store.createApiKey(a, c.input()), "unavailable"); assert.equal(calls, 3); assert.equal(await c.counts(), before);
@@ -138,9 +139,9 @@ export async function runStoreCases(c: StoreProofContext) {
   await c.scenario("revision and credential-version overflow deny without partial mutation", async () => {
     const [store] = await c.fresh(); const created = await store.createApiKey(a, c.input());
     await owner.query("update connection set revision=2147483647 where id=$1", [created.id]); const before = await c.counts();
-    await c.deny(() => store.revoke(a, { id: created.id, expectedRevision: 2147483647, operationId: randomUUID() }), "conflict");
+    await c.deny(() => store.revoke(a, { id: created.id, expectedRevision: 2147483647, operationId: uuidv7() }), "conflict");
     await owner.query("update connection set revision=1,current_credential_version=2147483647 where id=$1", [created.id]);
-    await c.deny(() => store.replaceApiKey(a, { id: created.id, expectedRevision: 1, operationId: randomUUID(), secret: c.input().secret }), "conflict");
+    await c.deny(() => store.replaceApiKey(a, { id: created.id, expectedRevision: 1, operationId: uuidv7(), secret: c.input().secret }), "conflict");
     assert.equal(await c.counts(), before);
   });
 }

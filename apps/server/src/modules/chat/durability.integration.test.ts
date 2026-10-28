@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -13,7 +14,7 @@ import { createChatService } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`chat-dur-a-${crypto.randomUUID()}`, `chat-dur-b-${crypto.randomUUID()}`];
+const ids = [`chat-dur-a-${uuidv7()}`, `chat-dur-b-${uuidv7()}`];
 const [A, B] = ids as [string, string];
 
 suite("durable chat turns against compose postgres", () => {
@@ -109,7 +110,7 @@ suite("durable chat turns against compose postgres", () => {
   const setup = async (as: string) => {
     const bot = (
       await call(as, "POST", "/api/bots", {
-        name: `B${crypto.randomUUID().slice(0, 4)}`,
+        name: `B${uuidv7().slice(-4)}`,
         harness: "pi",
       })
     ).json.bot.id as string;
@@ -163,7 +164,7 @@ suite("durable chat turns against compose postgres", () => {
   test("a Claude Code run a restart cut off is found again and continues the same session", async () => {
     const bot = (
       await call(A, "POST", "/api/bots", {
-        name: `R${crypto.randomUUID().slice(0, 4)}`,
+        name: `R${uuidv7().slice(-4)}`,
         harness: "claude-code",
       })
     ).json.bot.id as string;
@@ -250,7 +251,7 @@ suite("durable chat turns against compose postgres", () => {
   test("clientRequestId makes a retried send idempotent", async () => {
     const { c } = await setup(A);
     const before = runs;
-    const body = { content: "once", clientRequestId: "req-" + crypto.randomUUID() };
+    const body = { content: "once", clientRequestId: "req-" + uuidv7() };
     const a = await call(A, "POST", `/api/conversations/${c}/messages`, body);
     const b = await call(A, "POST", `/api/conversations/${c}/messages`, body);
     expect(a.status).toBe(201);

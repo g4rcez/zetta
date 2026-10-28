@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { uuidv7 } from "@zetta/core/uuid";
 import { expect, test } from "bun:test";
 import { createFixtureLaunchPolicy, expandFixtureRecipe } from "./launch-recipe";
 import { parseLaunchSpec } from "./launch-spec";
@@ -15,7 +15,7 @@ const fresh = () => createLaunchJournal(expandFixtureRecipe(parseLaunchSpec({ ve
   budgets: { deadlineMs: 30_000, maxInputBytes: 32, maxOutputBytes: 1024, maxFrameBytes: 16 },
 }, admission), policy), admission);
 const owner = (r: LaunchJournal) => ({ receiptId: r.receiptId, attemptId: r.spec.context.attemptId, leaseId: r.spec.leaseId, fence: r.spec.fence });
-const operation = (r: LaunchJournal, type: JournalOperation["type"], input: JournalOperation["input"] = null): JournalOperation => ({ id: randomUUID(), sequence: r.operationSequence + 1, type, input });
+const operation = (r: LaunchJournal, type: JournalOperation["type"], input: JournalOperation["input"] = null): JournalOperation => ({ id: uuidv7(), sequence: r.operationSequence + 1, type, input });
 const begin = (r: LaunchJournal, op: JournalOperation) => transitionJournal(r, { type: "begin", owner: owner(r), atEpochMs: 1000, operation: op });
 const fact = (r: LaunchJournal, type: "created_verified" | "started" | "input_written" | "stopped" | "removed") => ({ type, containerId: r.containerId ?? "a".repeat(64), containerName: r.containerName, ownershipLabel: r.ownershipLabel, identityDigest: r.identityDigest });
 const ackEvent = (r: LaunchJournal, op: JournalOperation, type: "created_verified" | "started" | "input_written" | "stopped" | "removed"): JournalEvent => ({ type: "ack", owner: owner(r), atEpochMs: 1000, operationId: op.id, operationSequence: op.sequence, fact: fact(r, type) });
@@ -254,10 +254,10 @@ test("rejects premature removal and an early deadline cancellation", () => {
 test("copies pending operation metadata so caller mutation cannot change an admitted input", () => {
   // Given
   const r = running(), input = { id: "input", sequence: 1, byteLength: 8, eof: false };
-  const source = { id: randomUUID(), sequence: 3, type: "input" as const, input };
+  const source = { id: uuidv7(), sequence: 3, type: "input" as const, input };
   const admitted = begin(r, source);
   // When
-  source.id = randomUUID();
+  source.id = uuidv7();
   input.byteLength = 16;
   // Then
   expect(admitted.record.pendingOperation?.id).not.toBe(source.id);

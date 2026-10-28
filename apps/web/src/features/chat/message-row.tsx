@@ -2,6 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
   BookmarkPlus,
+  CalendarPlus,
+  ListChecks,
+  Users,
+  Brain,
   MessageSquareText,
   MoreHorizontal,
   Paperclip,
@@ -9,7 +13,6 @@ import {
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@zetta/ui/components/avatar";
-import { Badge } from "@zetta/ui/components/badge";
 import { Button } from "@zetta/ui/components/button";
 import {
   DropdownMenu,
@@ -35,6 +38,7 @@ import { EmojiPicker } from "./emoji-picker";
 import { computersOf, type Row } from "./chat-rows";
 import { VmCard } from "./vm-card";
 import { Response } from "./response";
+import { splitActionNotes } from "./action-notes";
 import { stripToolFences } from "./tool-fences";
 
 export type Author = { name: string; bot?: Bot | undefined; image?: string | null | undefined };
@@ -59,7 +63,7 @@ function UsedNotes({ row }: { row: Row }) {
   if (n === 0) return null;
   return (
     <details
-      className="text-xs text-muted-foreground"
+      className="text-[13px] text-muted-foreground"
       onToggle={(e) => {
         if ((e.currentTarget as HTMLDetailsElement).open && !data)
           chatClient.usedKnowledge(row.id).then(setData, (x) => setError(errorMessage(x)));
@@ -244,7 +248,7 @@ function WorkingStatus({ label, rotate = false }: { label: string; rotate?: bool
     <p
       role="status"
       aria-live={rotate ? "off" : "polite"}
-      className="flex items-center gap-1 text-muted-foreground"
+      className="flex items-center gap-1 text-[14px] text-muted-foreground"
     >
       {rotate ? THINKING[i] : label}
       <span className="inline-flex gap-0.5" aria-hidden="true">
@@ -284,6 +288,10 @@ export function MessageRow({
   // A reply is in progress while it streams here or while the saved row is still "running" (page reloaded mid-turn).
   const working = Boolean(row.streaming) || row.status === "running";
   const visible = working ? stripToolFences(row.content).trim() : row.content;
+  const { body, notes } =
+    row.role === "assistant" && !working
+      ? splitActionNotes(row.content)
+      : { body: row.content, notes: [] };
   const receipts = (row.meta?.receipts ?? []).filter(
     (r) => r.kind !== "proposal" && r.kind !== "computer",
   );
@@ -293,8 +301,8 @@ export function MessageRow({
     <Message
       aria-label={`${author.name} at ${time(row.createdAt)}`}
       className={cn(
-        "gap-2 px-4 py-1 text-sm hover:bg-muted/40 has-aria-expanded:bg-muted/40",
-        !continued && "mt-2 pt-2",
+        "gap-3 px-4 py-0.5 text-[15px] hover:bg-foreground/[0.03] has-aria-expanded:bg-foreground/[0.03]",
+        !continued && "mt-3 pt-1.5",
       )}
     >
       {saved && (
@@ -310,18 +318,18 @@ export function MessageRow({
         <time
           dateTime={row.createdAt}
           title={fullDate(row.createdAt)}
-          className="w-9 shrink-0 pt-1 text-right text-[10px] leading-5 text-muted-foreground opacity-0 group-hover/message:opacity-100"
+          className="w-8 shrink-0 pt-0.5 text-right text-[11px] leading-5 text-muted-foreground opacity-0 group-hover/message:opacity-100"
         >
           {time(row.createdAt)}
         </time>
       ) : (
-        <MessageAvatar className="mt-0.5 size-9 min-w-9 self-start rounded-lg bg-transparent group-has-data-[slot=message-footer]/message:translate-y-0">
+        <MessageAvatar className="mt-0.5 size-8 min-w-8 self-start rounded-lg bg-transparent group-has-data-[slot=message-footer]/message:translate-y-0">
           {author.bot ? (
-            <BotAvatar bot={author.bot} size={36} square />
+            <BotAvatar bot={author.bot} size={32} square />
           ) : (
-            <Avatar className="size-9 rounded-lg after:rounded-lg">
+            <Avatar className="size-8 rounded-lg after:rounded-lg">
               {author.image && <AvatarImage src={author.image} alt="" className="rounded-lg" />}
-              <AvatarFallback className="rounded-lg bg-primary/15 text-xs font-semibold text-primary">
+              <AvatarFallback className="rounded-lg bg-primary/15 text-[13px] font-semibold text-primary">
                 {initials(author.name)}
               </AvatarFallback>
             </Avatar>
@@ -330,20 +338,15 @@ export function MessageRow({
       )}
       <MessageContent className="gap-1">
         {!continued && (
-          <MessageHeader className="gap-2 px-0 text-sm">
+          <MessageHeader className="gap-2 px-0 text-[14px] leading-5">
             <span className="truncate font-bold text-foreground">{author.name}</span>
             {author.bot && (
-              <Badge
-                variant="secondary"
-                className="h-4 rounded px-1 text-[10px] font-semibold uppercase"
-              >
-                App
-              </Badge>
+              <span className="text-[12px] font-medium text-muted-foreground">App</span>
             )}
             <time
               dateTime={row.createdAt}
               title={fullDate(row.createdAt)}
-              className="text-xs font-normal text-muted-foreground hover:underline"
+              className="text-[12px] font-normal text-muted-foreground hover:underline"
             >
               {time(row.createdAt)}
             </time>
@@ -357,7 +360,7 @@ export function MessageRow({
               .map((a) => (
                 <li
                   key={a.id}
-                  className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs"
+                  className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-[13px]"
                 >
                   <Paperclip aria-hidden="true" className="size-3 text-muted-foreground" />
                   {a.name}
@@ -372,7 +375,17 @@ export function MessageRow({
           />
         ) : (
           <>
-            <Response text={row.content} streaming={working} />
+            <Response text={body} streaming={working} />
+            {notes.length > 0 && (
+              <ul
+                aria-label="Actions"
+                className="list-disc space-y-0.5 pl-5 text-[13px] text-muted-foreground marker:text-muted-foreground/60"
+              >
+                {notes.map((n, i) => (
+                  <li key={i}>{n}</li>
+                ))}
+              </ul>
+            )}
             {working && (
               <WorkingStatus
                 label={friendly(row.activity) ?? "Working"}
@@ -382,17 +395,17 @@ export function MessageRow({
           </>
         )}
         {row.status === "failed" && (
-          <p role="alert" className="text-xs font-medium text-destructive">
+          <p role="alert" className="text-[13px] font-medium text-destructive">
             This reply failed.
           </p>
         )}
         {row.status === "interrupted" && (
-          <p role="alert" className="text-xs font-medium text-destructive">
+          <p role="alert" className="text-[13px] font-medium text-destructive">
             Interrupted: the server restarted while answering.
           </p>
         )}
         {row.status === "cancelled" && (
-          <p className="text-xs italic text-muted-foreground">Stopped.</p>
+          <p className="text-[13px] italic text-muted-foreground">Stopped.</p>
         )}
         {computers.map((vm) => (
           <VmCard
@@ -407,34 +420,55 @@ export function MessageRow({
           <Link
             to="/discussions"
             search={{ id: row.meta.discussion.id }}
-            className="w-fit text-xs text-primary hover:underline"
+            className="w-fit text-[13px] text-primary hover:underline"
           >
             Open the discussion “{row.meta.discussion.title}”
           </Link>
         )}
         {receipts.length > 0 && (
-          <ul className="flex flex-wrap gap-1 text-xs" aria-label="What the bot saved">
+          <ul
+            className="flex flex-wrap gap-x-3 gap-y-0.5 text-[13px] text-muted-foreground"
+            aria-label="What the bot saved"
+          >
             {receipts.map((r) => (
               <li
                 key={`${r.kind}-${r.id}`}
-                className="rounded bg-muted px-1.5 py-0.5"
+                className="flex items-center gap-1"
                 title={r.text}
               >
                 {r.kind === "agenda" ? (
-                  <Link to="/agenda" search={{ item: r.id }} className="hover:underline">
-                    📅 {r.created === false ? "updated" : "added"} “{r.text}”
+                  <Link
+                    to="/agenda"
+                    search={{ item: r.id }}
+                    className="flex items-center gap-1 hover:text-foreground hover:underline"
+                  >
+                    <CalendarPlus aria-hidden="true" className="size-3.5" />
+                    {r.created === false ? "updated" : "added"} “{r.text}”
                   </Link>
                 ) : r.kind === "task" ? (
-                  <Link to="/tasks" className="hover:underline">
-                    📋 {r.created === false ? "updated" : "added"} “{r.text}”
+                  <Link
+                    to="/tasks"
+                    className="flex items-center gap-1 hover:text-foreground hover:underline"
+                  >
+                    <ListChecks aria-hidden="true" className="size-3.5" />
+                    {r.created === false ? "updated" : "added"} “{r.text}”
                   </Link>
                 ) : r.kind === "discussion" ? (
-                  <Link to="/discussions" search={{ id: r.id }} className="hover:underline">
-                    👥 “{r.text}”
+                  <Link
+                    to="/discussions"
+                    search={{ id: r.id }}
+                    className="flex items-center gap-1 hover:text-foreground hover:underline"
+                  >
+                    <Users aria-hidden="true" className="size-3.5" />“{r.text}”
                   </Link>
                 ) : (
                   <>
-                    {r.kind === "memory" ? "💾 remembered" : "📘 saved instruction"}
+                    {r.kind === "memory" ? (
+                      <Brain aria-hidden="true" className="size-3.5" />
+                    ) : (
+                      <BookmarkPlus aria-hidden="true" className="size-3.5" />
+                    )}
+                    {r.kind === "memory" ? "remembered" : "saved instruction"}
                     {r.created === false ? " (already saved)" : ""}
                   </>
                 )}
@@ -455,7 +489,7 @@ export function MessageRow({
                   aria-label={`${r.emoji} ${r.count}${r.mine ? ", including you" : ""}`}
                   onClick={() => onReact(row, r.emoji)}
                   className={cn(
-                    "inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+                    "inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-ring",
                     r.mine
                       ? "border-primary/60 bg-primary/10 text-primary"
                       : "bg-muted/50 hover:border-foreground/30",
@@ -471,7 +505,7 @@ export function MessageRow({
           <button
             type="button"
             onClick={() => onReply(row)}
-            className="group/thread -ml-1 flex w-fit items-center gap-2 rounded-md border border-transparent px-1 py-0.5 text-xs hover:border-border hover:bg-card"
+            className="group/thread -ml-1 flex w-fit items-center gap-2 rounded-md border border-transparent px-1 py-0.5 text-[13px] hover:border-border hover:bg-card"
           >
             <span className="font-semibold text-primary group-hover/thread:underline">
               {replies} {replies === 1 ? "reply" : "replies"}

@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { containerUser } from "../container-user";
@@ -644,7 +645,7 @@ export const streamCli: StreamCli = async function* ({
   if (!exe) throw new HarnessError("not_installed");
   const release = await defaultLimiter.acquire(userId ?? "anonymous", signal);
   const home = harnessHome(userId, harness);
-  const containerName = docker ? `zetta-run-${crypto.randomUUID()}` : undefined;
+  const containerName = docker ? `zetta-run-${uuidv7()}` : undefined;
   const kill = (pid: number) => {
     killGroup(pid);
     if (docker && containerName) {

@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,7 +11,7 @@ import { ComputerError, createComputerService } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url && process.env.ZETTA_COMPUTER_TEST === "1" ? describe : describe.skip;
-const id = `comp-${crypto.randomUUID()}`;
+const id = `comp-${uuidv7()}`;
 const code = (p: Promise<unknown>) => p.then(() => "ok", (e) => (e as ComputerError).code);
 
 suite("browser profiles (real chromium + database)", () => {

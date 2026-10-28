@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { and, asc, eq, gt, sql } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
@@ -106,7 +106,7 @@ export async function createConnectionStore(db: Pick<Database, "transaction">, o
           if (input.expiresAt !== null && input.expiresAt <= nowMs) return fail("invalid-input");
           if (mutation.operation === "create-api-key" && !allowedProviders.has(mutation.input.provider)) return fail("invalid-input");
           if (check.encryptionCount >= 1000000) return fail("key-capacity");
-          const id = current?.id ?? randomUUID();
+          const id = current?.id ?? uuidv7();
           const credentialVersion = (current?.credentialVersion ?? 0) + 1;
           const envelope = await reserve(tx, () => keys.seal(input.secret, { ownerUserId: owner, connectionId: id, kind: "api-key", credentialVersion }), { connectionId: id, credentialVersion }, now);
           const insertVersion = () => tx.insert(connectionCredential).values({ connectionId: id, credentialVersion, ownerUserId: owner, kind: "api-key", ...envelope, createdAt: now });

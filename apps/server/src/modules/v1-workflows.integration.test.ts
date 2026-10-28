@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -17,7 +18,7 @@ import { createIdentityAccess } from "./identity/access";
  */
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`v1-a-${crypto.randomUUID()}`];
+const ids = [`v1-a-${uuidv7()}`];
 const [A] = ids as [string];
 
 suite("v1 user journeys", () => {

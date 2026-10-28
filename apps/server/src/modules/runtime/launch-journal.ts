@@ -1,4 +1,5 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { uuidv7 } from "@zetta/core/uuid";
 import { z } from "zod";
 import { createFixtureLaunchPolicy, expandFixtureRecipe } from "./launch-recipe";
 import type { FixtureLaunchPolicy, FixtureLaunchRecipe } from "./launch-recipe";
@@ -105,7 +106,7 @@ export function parseLaunchJournal(raw: unknown, trusted: Readonly<{ policy: Fix
 export function createLaunchJournal(recipe: FixtureLaunchRecipe, admission: LaunchAdmission): LaunchJournal {
   const spec = parseLaunchSpec(recipe.spec, admission);
   const policy = createFixtureLaunchPolicy({ installationId: recipe.installationId, policyVersion: recipe.policyVersion, image: recipe.container.Image });
-  const receiptId = randomUUID();
+  const receiptId = uuidv7();
   const identity = { receiptId, identityDigest: recipe.identityDigest, containerName: `zetta-${receiptId}`, ownershipLabel: randomBytes(32).toString("hex"), runnerUnitId: `zetta-attempt@${receiptId}.service` };
   return parseLaunchJournal({ ...identity, version: 1, policy, spec, specDigest: recipe.specDigest, ownershipDigest: ownershipDigest(identity), containerId: null,
     phase: "intent", pendingOperation: null, lastOperation: null, operationSequence: 0, cancelIntent: null, lastInput: null, inputBytes: 0,

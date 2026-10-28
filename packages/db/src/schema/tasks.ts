@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { user } from "./auth";
@@ -14,7 +15,7 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const task = pgTable(
   "task",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => user.id, restrict),
@@ -27,5 +28,8 @@ export const task = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index("task_owner_idx").on(t.ownerUserId, t.status, t.updatedAt)],
+  (t) => [
+    index("task_bot_id_idx").on(t.botId),
+    index("task_conversation_id_idx").on(t.conversationId),
+    index("task_message_id_idx").on(t.messageId),index("task_owner_idx").on(t.ownerUserId, t.status, t.updatedAt)],
 );

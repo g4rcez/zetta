@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, Plus, TriangleAlert } from "lucide-react";
 import { RoutineCalendar } from "./routine-calendar";
@@ -731,7 +732,7 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
   const run = async (id: string) => {
     setBusy(id);
     await act(
-      () => call(`/api/routines/${id}/run`, "POST", { requestKey: crypto.randomUUID() }),
+      () => call(`/api/routines/${id}/run`, "POST", { requestKey: uuidv7() }),
       "Run finished. Open History to see the result.",
     );
     setBusy(undefined);

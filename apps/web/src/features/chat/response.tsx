@@ -9,7 +9,7 @@ import { UiSkeleton, UiView } from "./ui-registry";
 import { parseWhatsapp, WhatsappView } from "./whatsapp-view";
 
 const BODY =
-  "chat-response min-w-0 text-[15px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
+  "chat-response min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
 
 const Markdown = memo(function Markdown({
   text,

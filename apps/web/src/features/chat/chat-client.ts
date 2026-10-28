@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { ENV } from "../../env";
 
 export type BotAvatarValue =
@@ -338,7 +339,7 @@ export const chatClient = {
     call("/api/snapshots", "POST", {
       conversationId,
       previewHash,
-      requestKey: crypto.randomUUID(),
+      requestKey: uuidv7(),
     }),
   react: (messageId: string, emoji: string) =>
     call(`/api/messages/${messageId}/reactions`, "POST", { emoji }),

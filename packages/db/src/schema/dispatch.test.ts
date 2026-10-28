@@ -57,7 +57,10 @@ test("capacity and occupancy indexes retain all unreleased states", () => {
   const c = checks(dispatchCapacity);
   expect(c["dispatch_capacity_limits_check"]).toContain('"global_limit" = 2');
   expect(c["dispatch_capacity_limits_check"]).toContain('"actor_limit" = 1');
-  const indexes = getTableConfig(dispatchClaims).indexes;
+  const all = getTableConfig(dispatchClaims).indexes;
+  // The only non-occupancy index serves the dispatch_capacity foreign key.
+  expect(all.filter((i) => !i.config.where).map((i) => i.config.name)).toEqual(["dispatch_claims_launcher_installation_id_policy_version_idx"]);
+  const indexes = all.filter((i) => i.config.where);
   expect(indexes).toHaveLength(2);
   for (const i of indexes) {
     expect(i.config.where).toBeDefined();

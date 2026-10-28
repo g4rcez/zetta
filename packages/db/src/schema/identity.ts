@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, integer, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { check, foreignKey, index, integer, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 
 import { user } from "./auth";
 
@@ -35,6 +35,7 @@ export const installationIdentity = pgTable(
     bootstrappedAt: timestamp("bootstrapped_at", { withTimezone: true }).notNull(),
   },
   (table) => [
+    index("installation_identity_admin_user_id_admin_membership_status_idx").on(table.adminUserId, table.adminMembershipStatus),
     check("installation_identity_singleton_check", sql`${table.id} = 1`),
     check("installation_identity_admin_active_check", sql`${table.adminMembershipStatus} = 'active'`),
     foreignKey({
@@ -62,6 +63,9 @@ export const invitation = pgTable(
     consumedByUserId: text("consumed_by_user_id").references(() => user.id, { onDelete: "restrict", onUpdate: "restrict" }),
   },
   (table) => [
+    index("invitation_issued_by_user_id_idx").on(table.issuedByUserId),
+    index("invitation_consumed_by_user_id_idx").on(table.consumedByUserId),
+    index("invitation_intended_user_id_idx").on(table.intendedUserId),
     unique("invitation_token_hash_unique").on(table.tokenHash),
     check("invitation_email_canonical_check", sql`${table.intendedEmail} = lower(${table.intendedEmail})`),
     check("invitation_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
@@ -84,6 +88,9 @@ export const identityAudit = pgTable(
     operatorReason: text("operator_reason"),
   },
   (table) => [
+    index("identity_audit_invitation_id_idx").on(table.invitationId),
+    index("identity_audit_actor_user_id_idx").on(table.actorUserId),
+    index("identity_audit_subject_user_id_idx").on(table.subjectUserId),
     check("identity_audit_event_kind_check", sql`${table.eventKind} in ('bootstrap', 'admin-replacement', 'invite-issued', 'invite-revoked', 'invite-consumed')`),
     check("identity_audit_actor_kind_check", sql`${table.actorKind} in ('operator', 'user')`),
     check("identity_audit_actor_check", sql`

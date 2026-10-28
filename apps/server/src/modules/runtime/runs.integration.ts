@@ -1,6 +1,6 @@
 // Standalone service/DB proof. Controlled sessions are not HTTP authentication proof.
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomUUID } from "node:crypto";
 import type { Database } from "@zetta/db";
 import type { ActiveActor } from "../identity/access";
 import type { createRunStore } from "./runs";
@@ -86,12 +86,12 @@ export async function runOwnedRunStoreProof() {
       const c: RunStoreProofContext = {
         proof, actors: [a, b, admin], pids, make: createRunStore, reset, backend,
         fresh: async () => { await reset(); return [createRunStore(firstDb), createRunStore(secondDb)] as const; },
-        input: () => ({ requestKey: randomUUID(), origin: "interactive", botId: "bot", conversationId: "conversation", configurationId: "configuration", configurationVersion: 1,
+        input: () => ({ requestKey: uuidv7(), origin: "interactive", botId: "bot", conversationId: "conversation", configurationId: "configuration", configurationVersion: 1,
           input: { prompt: " Synthetic private e\u0301 prompt ", harness: "fixture", model: null, resumeReference: null, connections: [],
             budgets: { deadlineMs: 1000, maxEvents: 10, maxOutputBytes: 1000, maxToolBytes: 100, maxToolCalls: 1 } } }),
         capture, deny: async (work, code) => { const result = await capture(Promise.resolve().then(work)); assert.equal(!result.ok && result.code === code, true); },
         stage: async (store, run) => {
-          await backend(firstDb, a, run, { type: "claimed", atMs: 0, leaseId: randomUUID(), leaseExpiresAtMs: 1 });
+          await backend(firstDb, a, run, { type: "claimed", atMs: 0, leaseId: uuidv7(), leaseExpiresAtMs: 1 });
           await backend(firstDb, a, run, { type: "admitted", atMs: 0 });
           return store.getOwned(a, { runId: run.id });
         },

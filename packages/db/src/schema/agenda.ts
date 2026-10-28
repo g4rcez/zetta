@@ -13,7 +13,7 @@ const created = () => timestamp("created_at", { withTimezone: true }).defaultNow
  * `syncState` drives the two-way Google sync: local edits are `pending_push` until the pusher writes them, and win over pulls meanwhile.
  */
 export const agendaItem = pgTable("agenda_item", {
-  id: uuid("id").primaryKey().defaultRandom(), ownerUserId: owner(),
+  id: uuid("id").primaryKey().default(sql`uuidv7()`), ownerUserId: owner(),
   kind: text("kind", { enum: ["event", "task", "reminder", "note"] }).default("event").notNull(),
   title: text("title").notNull(), description: text("description").default("").notNull(), location: text("location").default("").notNull(),
   startAt: timestamp("start_at", { withTimezone: true }).notNull(), endAt: timestamp("end_at", { withTimezone: true }), allDay: boolean("all_day").default(false).notNull(),
@@ -29,6 +29,8 @@ export const agendaItem = pgTable("agenda_item", {
   version: integer("version").default(1).notNull(), archived: boolean("archived").default(false).notNull(),
   createdAt: created(), updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
+    index("agenda_item_conversation_id_idx").on(t.conversationId),
+    index("agenda_item_created_by_bot_id_idx").on(t.createdByBotId),
   index("agenda_owner_start_idx").on(t.ownerUserId, t.startAt),
   uniqueIndex("agenda_owner_google_event").on(t.ownerUserId, t.googleEventId).where(sql`${t.googleEventId} is not null`),
   index("agenda_remind_idx").on(t.remindedAt, t.remindAt),
@@ -37,7 +39,7 @@ export const agendaItem = pgTable("agenda_item", {
 
 /** Per-user Google Calendar sync settings and cursor. */
 export const agendaSync = pgTable("agenda_sync", {
-  id: uuid("id").primaryKey().defaultRandom(), ownerUserId: owner().unique(),
+  id: uuid("id").primaryKey().default(sql`uuidv7()`), ownerUserId: owner().unique(),
   enabled: boolean("enabled").default(false).notNull(), pushByDefault: boolean("push_by_default").default(false).notNull(),
   syncToken: text("sync_token"), lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }), lastError: text("last_error").default("").notNull(),
   nextSyncAt: timestamp("next_sync_at", { withTimezone: true }).defaultNow().notNull(),

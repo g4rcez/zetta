@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -7,7 +8,7 @@ import { createKnowledge, KnowledgeError, MEMORY_LIMITS, renderMemory } from "./
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const A = `mem-a-${crypto.randomUUID()}`, B = `mem-b-${crypto.randomUUID()}`;
+const A = `mem-a-${uuidv7()}`, B = `mem-b-${uuidv7()}`;
 
 suite("Hermes-style bounded memory against compose postgres", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
@@ -16,7 +17,7 @@ suite("Hermes-style bounded memory against compose postgres", () => {
   beforeAll(async () => {
     const now = new Date();
     for (const id of [A, B]) await db.insert(user).values({ id, name: id, email: `${id}@t.test`, emailVerified: true, createdAt: now, updatedAt: now });
-    const mk = async (owner: string, name: string) => (await db.insert(bot).values({ ownerUserId: owner, name, slug: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${crypto.randomUUID().slice(0, 8)}`, kind: "specialist", visibility: "private", harness: "fixture" } as never).returning())[0]!.id;
+    const mk = async (owner: string, name: string) => (await db.insert(bot).values({ ownerUserId: owner, name, slug: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${uuidv7().slice(-8)}`, kind: "specialist", visibility: "private", harness: "fixture" } as never).returning())[0]!.id;
     botA = await mk(A, "a1"); botA2 = await mk(A, "a2"); botB = await mk(B, "b1");
   });
   afterAll(async () => { await cleanupTestUsers(db, [A, B]); });
@@ -77,7 +78,7 @@ suite("Hermes-style bounded memory against compose postgres", () => {
 suite("snapshot revocation is permanent (database trigger)", () => {
   const db2 = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
   test("a revoked snapshot cannot be un-revoked, even with direct SQL", async () => {
-    const now = new Date(); const id = `snap-${crypto.randomUUID()}`;
+    const now = new Date(); const id = `snap-${uuidv7()}`;
     await db2.insert(user).values({ id, name: id, email: `${id}@t.test`, emailVerified: true, createdAt: now, updatedAt: now });
     try {
       const { rows } = await db2.$client.query("insert into snapshot (owner_user_id, title, bot_name, content, content_hash, revoked_at) values ($1, 't', 'b', '[]'::jsonb, 'h', now()) returning id", [id]).catch(async () => ({ rows: [] as { id: string }[] }));

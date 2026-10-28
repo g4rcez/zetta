@@ -1,6 +1,7 @@
 // Opt-in service/database proof; imports never start services or open a database.
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { Database } from "@zetta/db";
 import type { ActiveActor } from "../identity/access";
 import type { createConnectionStore } from "./store";
@@ -76,7 +77,7 @@ export async function runConnectionStoreProof() {
       const context: StoreProofContext = {
         proof, actors: [a, b, admin], pids, configuration, make, reset,
         fresh: async nonce => { await reset(); return [await make(firstDb, true, nonce), await make(secondDb)] as const; },
-        input: () => ({ operationId: randomUUID(), provider: "synthetic", label: " Synthetic label ", secret: Buffer.from("\ufeff\0 synthetic credential bytes "), expiresAt: null }),
+        input: () => ({ operationId: uuidv7(), provider: "synthetic", label: " Synthetic label ", secret: Buffer.from("\ufeff\0 synthetic credential bytes "), expiresAt: null }),
         capture, deny: async (work, code) => { const result = await capture(Promise.resolve().then(work)); assert.equal(!result.ok && result.code === code, true); },
         scenario: async (name, work) => { phase = name; await work(); activeProof.healthy(); assert.equal(attempts, 0); checks++; process.stdout.write(`PASS ${name}\n`); },
         counts: async () => JSON.stringify((await owner.query(`select (select count(*) from connection) as connections,

@@ -1,6 +1,6 @@
 // Standalone proof: import never opens a database or application.
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomUUID } from "node:crypto";
 import { requireIdentityAuthProofTarget } from "../identity/signup.integration";
 
 type Proof = Awaited<ReturnType<typeof import("../../../../../packages/db/src/run-proof-client").openRunProof>>;
@@ -46,13 +46,13 @@ export async function runRunSchemaProof() {
       const firstPid = (await first.query<{ pid: number }>("select pg_backend_pid() as pid")).rows[0]?.pid;
       const secondPid = (await second.query<{ pid: number }>("select pg_backend_pid() as pid")).rows[0]?.pid;
       assert.ok(firstPid && secondPid && firstPid !== secondPid);
-      const runId = randomUUID(), attemptId = randomUUID();
+      const runId = uuidv7(), attemptId = uuidv7();
       const base = new Date("2026-01-01T00:00:00.000Z");
       async function insert(client: Client, table: "runs" | "run_attempts", overrides: Row = {}) {
-        const defaults: Row = table === "runs" ? { id: randomUUID(), owner_user_id: "owner-a", request_key: randomUUID(), origin_kind: "interactive",
+        const defaults: Row = table === "runs" ? { id: uuidv7(), owner_user_id: "owner-a", request_key: uuidv7(), origin_kind: "interactive",
           bot_id: "bot", conversation_id: "conversation", configuration_id: "configuration", configuration_version: 1,
           input_version: 1, input_snapshot: "[1]", created_at: base, revision: 1, status: "queued", current_generation: 1 }
-          : { id: randomUUID(), run_id: runId, owner_user_id: "owner-a", generation: 1, created_at: base, status: "queued", effect_state: "no_effect" };
+          : { id: uuidv7(), run_id: runId, owner_user_id: "owner-a", generation: 1, created_at: base, status: "queued", effect_state: "no_effect" };
         const row = { ...defaults, ...overrides }, columns = Object.keys(row);
         await client.query(`insert into ${table} (${columns.map(key => `"${key}"`).join(",")}) values (${columns.map((_, i) => `$${i + 1}`).join(",")})`, Object.values(row));
       }

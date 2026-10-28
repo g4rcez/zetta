@@ -11,6 +11,7 @@
   "dependencies": {
     "@better-auth/core": "1.7.7",
     "@better-auth/drizzle-adapter": "1.7.7",
+    "@zetta/core": "workspace:*",
     "@zetta/db": "workspace:*",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",

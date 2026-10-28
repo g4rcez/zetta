@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -17,7 +18,7 @@ import { createFeaturesService } from "../features/service";
  */
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url && process.env.ZETTA_MCP_CHROME_TEST === "1" ? describe : describe.skip;
-const id = `mcpc-${crypto.randomUUID()}`;
+const id = `mcpc-${uuidv7()}`;
 const NPX = Bun.which("npx") ?? "npx";
 
 suite("chrome-devtools MCP through Zetta", () => {

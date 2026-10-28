@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -28,7 +29,7 @@ function world(o: { url?: string; elements?: unknown[]; clipboard?: string; inac
     return { text: "ok", isError: false };
   };
   const rows: VmRow[] = [];
-  const store: VmStore = { list: async () => rows, get: async (_u, id) => rows.find((r) => r.id === id), ensureDefault: async (u) => { if (rows[0]) return rows[0]; const r = { id: crypto.randomUUID(), ownerUserId: u, name: "Default", kind: "default", createdByBotId: null, purpose: null, status: "stopped", createdAt: new Date(), lastStartedAt: null, deletedAt: null } as VmRow; rows.push(r); return r; }, create: async () => { throw 0; }, count: async () => rows.length, setStatus: async () => {}, resetRunning: async () => {} };
+  const store: VmStore = { list: async () => rows, get: async (_u, id) => rows.find((r) => r.id === id), ensureDefault: async (u) => { if (rows[0]) return rows[0]; const r = { id: uuidv7(), ownerUserId: u, name: "Default", kind: "default", createdByBotId: null, purpose: null, status: "stopped", createdAt: new Date(), lastStartedAt: null, deletedAt: null } as VmRow; rows.push(r); return r; }, create: async () => { throw 0; }, count: async () => rows.length, setStatus: async () => {}, resetRunning: async () => {} };
   return { calls, clip: () => clipboard, deactivate: () => { active = false; }, make: async () => createVmService({ store, docker: { bin: "docker", image: "x", memory: "1g", cpus: "1", pids: 64, shm: "64m" }, exec: async (a) => ({ code: a[0] === "start" ? 1 : 0, stdout: a[0] === "port" ? "127.0.0.1:1\n" : "" }), connect: async () => ({ call, close: async () => {} }), tokenRoot: await mkdtemp(join(tmpdir(), "zetta-vmc-")) }) };
 }
 const code = (p: Promise<unknown>) => p.then(() => "ok", (e) => (e as ComputerError).code ?? String(e));

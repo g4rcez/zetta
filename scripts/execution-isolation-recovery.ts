@@ -1,4 +1,5 @@
 // Synthetic launcher failure scenarios; never imported by application startup.
+import { uuidv7 } from "../packages/core/src/uuid";
 import { closeSync, copyFileSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { z } from "zod";
@@ -107,7 +108,7 @@ export async function runRecoveryProbe() {
   const root = mkdtempSync(join(repository, ".zetta-isolation-test-recovery-"));
   const cases: { case: string; passed: boolean }[] = [];
   let passed = false, cleanup = false, creationSettled = false;
-  const journal: Journal = { token: crypto.randomUUID(), A: `zetta-rfc002-${crypto.randomUUID()}`, B: `zetta-rfc002-${crypto.randomUUID()}`, markerA: crypto.randomUUID(), markerB: crypto.randomUUID() };
+  const journal: Journal = { token: uuidv7(), A: `zetta-rfc002-${uuidv7()}`, B: `zetta-rfc002-${uuidv7()}`, markerA: uuidv7(), markerB: uuidv7() };
   const owned = new Set([journal.B]);
   try {
     mkdirSync(join(root, "docker"), { mode: 0o700 });
@@ -121,7 +122,7 @@ export async function runRecoveryProbe() {
     creationSettled = true;
     const { cli, inspect } = runtime(root);
     for (const signal of ["SIGKILL", "SIGINT", "SIGTERM", "delayed"] as const) {
-      journal.A = `zetta-rfc002-${crypto.randomUUID()}`;
+      journal.A = `zetta-rfc002-${uuidv7()}`;
       owned.add(journal.A);
       save(root, journal);
       creationSettled = false;

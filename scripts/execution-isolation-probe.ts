@@ -1,4 +1,5 @@
 // Standalone synthetic RFC-002 evidence only; never import this into app startup.
+import { uuidv7 } from "../packages/core/src/uuid";
 import {
   mkdtempSync,
   mkdirSync,
@@ -317,7 +318,7 @@ async function main() {
   const config = join(root, "docker");
   mkdirSync(config, { mode: 0o700 });
   const env = { PATH, HOME: config, DOCKER_CONFIG: config, LANG: "C" };
-  const token = crypto.randomUUID(),
+  const token = uuidv7(),
     owned = new Set<string>(),
     leases = new Set<Actor>();
   const evidence: { case: string; passed: boolean; exit?: number; elapsedMs?: number }[] = [];
@@ -385,7 +386,7 @@ async function main() {
     evidence.push({ case: "foreign-and-busy-state-denied-prelaunch", passed: true });
     const fakeHost = join(root, "fake-host");
     mkdirSync(fakeHost, { mode: 0o700 });
-    const hostMarker = crypto.randomUUID();
+    const hostMarker = uuidv7();
     writeFileSync(join(fakeHost, "canary"), hostMarker);
     for (const mode of [
       "normal",
@@ -398,10 +399,10 @@ async function main() {
       "pid-pressure",
     ]) {
       const dirs = { A: join(root, `A-${mode}`), B: join(root, `B-${mode}`) };
-      const markers = { A: crypto.randomUUID(), B: crypto.randomUUID() };
+      const markers = { A: uuidv7(), B: uuidv7() };
       const names = {
-        A: `zetta-rfc002-${crypto.randomUUID()}`,
-        B: `zetta-rfc002-${crypto.randomUUID()}`,
+        A: `zetta-rfc002-${uuidv7()}`,
+        B: `zetta-rfc002-${uuidv7()}`,
       };
       const deadlines: ReturnType<typeof setTimeout>[] = [];
       let expired = false;

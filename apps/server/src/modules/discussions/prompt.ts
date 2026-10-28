@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 /**
  * Pure text for group discussions: the tool instructions bots get, the member prompt (shared brief + named transcript) and who a post wakes.
  * Everything other bots or outside people wrote is framed as data between nonce markers; fences are defused so it cannot carry tool calls.
@@ -60,7 +61,7 @@ export function fitTranscript(messages: readonly PromptMessage[], budget = TRANS
 }
 
 export function discussionPrompt(p: DiscussionPromptInput): string {
-  const nonce = p.nonce ?? crypto.randomUUID().slice(0, 8);
+  const nonce = p.nonce ?? uuidv7().slice(-8);
   const { kept, omitted } = fitTranscript(p.transcript);
   const members = p.members.map((m) => `${m.name}${m.role ? ` (${m.role}${m.code ? "; can change code" : ""})` : m.code ? " (can change code)" : ""}`).join(", ");
   const facilitator = p.creatorName ?? "the user";

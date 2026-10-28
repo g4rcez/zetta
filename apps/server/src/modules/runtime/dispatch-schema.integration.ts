@@ -1,6 +1,7 @@
 // Standalone structural SQL proof; importing this module never opens a connection.
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { requireIdentityAuthProofTarget } from "../identity/signup.integration";
 import { canonicalDispatchAction, digestDispatchAction } from "./dispatch-contract";
 
@@ -62,26 +63,26 @@ export async function runDispatchSchemaProof() {
           assert.equal(matched, true);
         },
         async fixture(owner = "dispatch-a") {
-          const run = randomUUID(), attempt = randomUUID(), lease = randomUUID();
-          await insertRaw("runs", { id: run, owner_user_id: owner, request_key: randomUUID(), origin_kind: "interactive", bot_id: "fixture-bot",
+          const run = uuidv7(), attempt = uuidv7(), lease = uuidv7();
+          await insertRaw("runs", { id: run, owner_user_id: owner, request_key: uuidv7(), origin_kind: "interactive", bot_id: "fixture-bot",
             conversation_id: "fixture-conversation", configuration_id: "fixture-configuration", configuration_version: 1, input_version: 1,
             input_snapshot: "[1]", created_at: epoch, revision: 1, status: "running", current_generation: 1 });
           await insertRaw("run_attempts", { id: attempt, run_id: run, owner_user_id: owner, generation: 1, created_at: epoch, status: "running",
             effect_state: "no_effect", lease_id: lease, lease_expires_at: at(60000), claimed_at: epoch });
           const tuple = JSON.stringify(["zetta.launch.spec", 1, [owner, run, attempt, "fixture-bot", "fixture-conversation", "fixture-configuration", null, null],
             lease, 1, "fixture-v1", "echo", "fixture-policy", at(60000).getTime(), [60000, 65536, 65536, 8192]]);
-          return { attempt_id: attempt, run_id: run, owner_user_id: owner, generation: 1, lease_id: lease, claim_operation_id: randomUUID(),
+          return { attempt_id: attempt, run_id: run, owner_user_id: owner, generation: 1, lease_id: lease, claim_operation_id: uuidv7(),
             launcher_installation_id: "fixture-installation", policy_version: "fixture-policy", launch_spec_version: 1, launch_spec_canonical: tuple,
             launch_spec_digest: createHash("sha256").update(tuple).digest("hex"), launch_identity_digest: "a".repeat(64), image_digest: `sha256:${"b".repeat(64)}`,
             deadline_at: at(60000), resource_state: "not_submitted", revision: 1, created_at: epoch, updated_at: epoch };
         },
         grant(claim, kind = "activate") {
-          const actionId = randomUUID();
+          const actionId = uuidv7();
           const action = { version: 1, ownerUserId: claim.owner_user_id, runId: claim.run_id, attemptId: claim.attempt_id, generation: 1,
             leaseId: claim.lease_id, actionId, launcherInstallationId: "fixture-installation", policyVersion: "fixture-policy", receiptId: claim.receipt_id,
             connectionId: null, credentialVersion: null, expiresAtMs: at(30000).getTime(), kind, sequence: 1,
             descriptor: kind === "activate" ? ["activate", actionId, "a".repeat(64)] : ["input", actionId, 1, 0, true, createHash("sha256").update("").digest("hex")] };
-          return { id: randomUUID(), attempt_id: claim.attempt_id ?? null, run_id: claim.run_id ?? null, owner_user_id: claim.owner_user_id ?? null,
+          return { id: uuidv7(), attempt_id: claim.attempt_id ?? null, run_id: claim.run_id ?? null, owner_user_id: claim.owner_user_id ?? null,
             action_id: actionId, kind, sequence: 1, canonical_action: canonicalDispatchAction(action), action_digest: digestDispatchAction(action),
             expires_at: at(30000), state: "pending", delivery_outcome: "not_attempted", revision: 1, created_at: epoch, updated_at: epoch };
         },
@@ -98,7 +99,7 @@ export async function runDispatchSchemaProof() {
         },
         async prepared(claim) {
           await insertRaw("dispatch_claims", claim);
-          const receipt = randomUUID(), id = claim.attempt_id; assert.equal(typeof id, "string"); if (typeof id !== "string") throw new Error("fixture");
+          const receipt = uuidv7(), id = claim.attempt_id; assert.equal(typeof id, "string"); if (typeof id !== "string") throw new Error("fixture");
           const patch = { resource_state: "prepared", receipt_id: receipt, prepare_intent_at: at(1), revision: 2, updated_at: at(1) };
           await c.update("dispatch_claims", id, patch); return { ...claim, ...patch };
         },

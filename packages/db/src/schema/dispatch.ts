@@ -38,6 +38,7 @@ export const dispatchClaims = pgTable("dispatch_claims", {
   cancelReason: text("cancel_reason", { enum: ["owner", "deadline", "revocation", "shutdown", "recovery"] }), cancelRequestedAt: instant("cancel_requested_at"),
   releasedAt: instant("released_at"), revision: integer("revision").notNull(), createdAt: instant("created_at").notNull(), updatedAt: instant("updated_at").notNull(),
 }, t => [
+    index("dispatch_claims_launcher_installation_id_policy_version_idx").on(t.launcherInstallationId, t.policyVersion),
   unique("dispatch_claims_operation_unique").on(t.claimOperationId),
   unique("dispatch_claims_attempt_run_owner_unique").on(t.attemptId, t.runId, t.ownerUserId),
   unique("dispatch_claims_installation_receipt_unique").on(t.launcherInstallationId, t.receiptId),
@@ -84,6 +85,7 @@ export const dispatchGrants = pgTable("dispatch_grants", {
   issuedAt: instant("issued_at"), cancelledAt: instant("cancelled_at"), revision: integer("revision").notNull(),
   createdAt: instant("created_at").notNull(), updatedAt: instant("updated_at").notNull(),
 }, t => [
+    index("dispatch_grants_attempt_id_run_id_owner_user_id_idx").on(t.attemptId, t.runId, t.ownerUserId),
   unique("dispatch_grants_attempt_action_unique").on(t.attemptId, t.actionId),
   unique("dispatch_grants_attempt_sequence_unique").on(t.attemptId, t.kind, t.sequence),
   foreignKey({ name: "dispatch_grants_claim_fk", columns: [t.attemptId, t.runId, t.ownerUserId], foreignColumns: [dispatchClaims.attemptId, dispatchClaims.runId, dispatchClaims.ownerUserId] }).onDelete("restrict").onUpdate("restrict"),

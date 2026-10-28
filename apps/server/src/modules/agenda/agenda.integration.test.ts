@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { and, eq } from "@zetta/db/query";
@@ -17,7 +18,7 @@ import { createAgenda } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`agenda-a-${crypto.randomUUID()}`, `agenda-b-${crypto.randomUUID()}`];
+const ids = [`agenda-a-${uuidv7()}`, `agenda-b-${uuidv7()}`];
 const [A, B] = ids as [string, string];
 const actor = (userId: string): ActiveActor => ({ userId, isAdmin: false });
 

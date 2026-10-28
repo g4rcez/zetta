@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -50,7 +51,7 @@ describe("schedule policy", () => {
 });
 
 describe("workflow graph validation", () => {
-  const bot = crypto.randomUUID();
+  const bot = uuidv7();
   test("rejects cycles, unreachable steps, missing end and dangling edges", () => {
     const bad = (nodes: unknown, start = "a") => graphSchema.safeParse({ start, nodes }).success;
     expect(
@@ -103,9 +104,9 @@ describe("workflow graph validation", () => {
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 const ids = [
-  `feat-w-a-${crypto.randomUUID()}`,
-  `feat-w-b-${crypto.randomUUID()}`,
-  `feat-w-c-${crypto.randomUUID()}`,
+  `feat-w-a-${uuidv7()}`,
+  `feat-w-b-${uuidv7()}`,
+  `feat-w-c-${uuidv7()}`,
 ];
 const [A, B, C] = ids as [string, string, string];
 

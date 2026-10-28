@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -31,7 +32,7 @@ const docker: VmDocker = {
 function memoryStore(): VmStore & { rows: VmRow[] } {
   const rows: VmRow[] = [];
   const row = (userId: string, v: Partial<VmRow>): VmRow => ({
-    id: crypto.randomUUID(),
+    id: uuidv7(),
     ownerUserId: userId,
     name: "Default",
     kind: "default",
@@ -374,7 +375,7 @@ describe("vm service (fake docker + fake spacesd)", () => {
     expect(d.log.find((x) => x[0] === "run")).toContain("127.0.0.1::5900");
     expect(() => vm.vncTicket("eve", id)).toThrow(ComputerError);
     const t = vm.vncTicket("u", id);
-    expect(() => vm.vncViewer(t, crypto.randomUUID())).toThrow(ComputerError); // wrong VM burns the ticket
+    expect(() => vm.vncViewer(t, uuidv7())).toThrow(ComputerError); // wrong VM burns the ticket
     const t2 = vm.vncTicket("u", id);
     const viewer = vm.vncViewer(t2, id);
     expect(viewer).toMatchObject({ userId: "u", port: 41234 });

@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -11,7 +12,7 @@ import { createChatService } from "./service";
 // Opt-in: spends Claude Code quota (haiku). ZETTA_REAL_HARNESS_TEST=1 plus a database URL. Claude is the only harness verified live for memory.
 const enabled = process.env.ZETTA_REAL_HARNESS_TEST === "1" && process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = enabled ? describe : describe.skip;
-const A = `rmem-a-${crypto.randomUUID()}`, B = `rmem-b-${crypto.randomUUID()}`;
+const A = `rmem-a-${uuidv7()}`, B = `rmem-b-${uuidv7()}`;
 let current = A;
 
 suite("real claude haiku: memory is written through the tool, recalled in a new chat, and private per user", () => {

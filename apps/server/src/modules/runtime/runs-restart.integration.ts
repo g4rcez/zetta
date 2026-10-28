@@ -1,6 +1,7 @@
 // Fixed parent/writer/reader proof. No production imports or IO run merely by importing this file.
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { parseRunDto, parseRunResultDto, runUuidSchema } from "./run-contract";
 import { requireIdentityAuthProofTarget } from "../identity/signup.integration";
@@ -51,7 +52,7 @@ async function childPhase(phase: "write" | "read", connectionString: string) {
     const store = createRunStore(proof.db);
     let expected: Message;
     if (phase === "write") {
-      const request = () => ({ requestKey: randomUUID(), origin: "interactive", botId: "bot", conversationId: "conversation", configurationId: "configuration", configurationVersion: 1,
+      const request = () => ({ requestKey: uuidv7(), origin: "interactive", botId: "bot", conversationId: "conversation", configurationId: "configuration", configurationVersion: 1,
         input: { prompt: "Synthetic restart private prompt", harness: "fixture", connections: [], model: null, resumeReference: null,
           budgets: { deadlineMs: 1000, maxEvents: 10, maxOutputBytes: 1000, maxToolBytes: 100, maxToolCalls: 1 } } });
       const run = await store.submitOwned(a, request()), other = await store.submitOwned(a, request());
@@ -63,7 +64,7 @@ async function childPhase(phase: "write" | "read", connectionString: string) {
           const state = readRunRows(row, attempt).state;
           const [clock] = await tx.select({ now: sql<string>`floor(extract(epoch from clock_timestamp())*1000)::text` }).from(membership).where(eq(membership.userId, a.userId));
           const atMs = Number(clock?.now); assert.ok(Number.isSafeInteger(atMs));
-          const fact = type === "claimed" ? { type, atMs, leaseId: randomUUID(), leaseExpiresAtMs: atMs + 60000 }
+          const fact = type === "claimed" ? { type, atMs, leaseId: uuidv7(), leaseExpiresAtMs: atMs + 60000 }
             : type === "admitted" ? { type, atMs } : { type, atMs, outcome: "succeeded" as const, result: { version: 1 as const, text: "Synthetic restart result", errorCode: null, lastSequence: 3 } };
           await applyRunTransition(tx, a.userId, { runId: state.runId, attemptId: state.attemptId, generation: state.generation, leaseId: state.leaseId, expectedRevision: state.revision }, fact);
         }

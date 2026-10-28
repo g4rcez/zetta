@@ -37,6 +37,7 @@
         "@receptron/laya": "^0.2.0",
         "@sinclair/typebox": "^0.34.52",
         "@zetta/auth": "workspace:*",
+        "@zetta/core": "workspace:*",
         "@zetta/db": "workspace:*",
         "@zetta/harness": "workspace:*",
         "@zetta/render": "workspace:*",
@@ -64,6 +65,9 @@
       "version": "0.0.0",
       "dependencies": {
         "@ai-sdk/react": "^4.0.157",
+        "@fontsource-variable/fira-code": "^5.3.0",
+        "@fontsource-variable/manrope": "^5.3.0",
+        "@fontsource-variable/outfit": "^5.3.0",
         "@g4rcez/components": "^7.0.2",
         "@json-render/core": "0.21.3",
         "@json-render/react": "0.21.3",
@@ -73,6 +77,7 @@
         "@tanstack/react-router": "^1.170.44",
         "@varlock/vite-integration": "1.5.1",
         "@xyflow/react": "^12.12.0",
+        "@zetta/core": "workspace:*",
         "@zetta/harness": "workspace:*",
         "@zetta/render": "workspace:*",
         "@zetta/ui": "workspace:*",
@@ -108,6 +113,7 @@
       "dependencies": {
         "@better-auth/core": "1.7.7",
         "@better-auth/drizzle-adapter": "1.7.7",
+        "@zetta/core": "workspace:*",
         "@zetta/db": "workspace:*",
         "better-auth": "catalog:",
         "drizzle-orm": "catalog:",
@@ -121,6 +127,15 @@
     "packages/config": {
       "name": "@zetta/config",
       "version": "0.0.0",
+    },
+    "packages/core": {
+      "name": "@zetta/core",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@zetta/config": "workspace:*",
+        "typescript": "catalog:",
+      },
     },
     "packages/db": {
       "name": "@zetta/db",
@@ -466,6 +481,12 @@
     "@floating-ui/react-dom": ["@floating-ui/react-dom@2.1.9", "", { "dependencies": { "@floating-ui/dom": "^1.8.0" }, "peerDependencies": { "react": ">=16.8.0", "react-dom": ">=16.8.0" } }, "sha512-JDjEFGCpImxDCA7JJKviA0M9+RtmJdj0m/NVU5IMgBK+AmZouAQQ7/+2GLH0GXXY0YMw9oXPB8hKdbPYg5QLYg=="],
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.12", "", {}, "sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww=="],
+
+    "@fontsource-variable/fira-code": ["@fontsource-variable/fira-code@5.3.0", "", {}, "sha512-ZhvHeknlicraKVSJBa1NrJnXDVByUkC407zwgELYfmnx3p9g8vwIPfQCxx8YD3K7dAeCdLuHJOHlpMfRsIcApQ=="],
+
+    "@fontsource-variable/manrope": ["@fontsource-variable/manrope@5.3.0", "", {}, "sha512-6D5dgokHsWDDMtmXHznKa0hK229NN+1a4BLPmUCLqcO1Pw5EEhWY5RFt0AcXnVRAljFFPfRtLkJePQj6LSsV6g=="],
+
+    "@fontsource-variable/outfit": ["@fontsource-variable/outfit@5.3.0", "", {}, "sha512-fPb5XnYK0k7SbR++HEmm4+ZqDszmLKQ+sPRUr8oQ/KNC0vy6r6hazJFe8iYozv4cqlHbvJ/JECkJWrfDodUMVQ=="],
 
     "@g4rcez/components": ["@g4rcez/components@7.0.2", "", { "dependencies": { "@base-ui/react": "1.6.0", "@floating-ui/react": "0.27.20", "@phosphor-icons/react": "2.1.10", "class-variance-authority": "0.7.1", "clsx": "2.1.1", "cn": "0.2.6", "date-fns": "4.4.0", "linq-arrays": "3.2.5", "motion": "12.43.0", "oxc-parser": "0.148.0", "pretty-bytes": "7.1.1", "qs": "6.15.3", "react-dropzone": "19.1.1", "react-use-measure": "2.1.7", "react-virtuoso": "4.18.11", "sidekicker": "0.1.10", "storage-manager-js": "4.2.6-5", "the-mask-input": "3.4.0", "use-sync-external-store": "1.6.0", "use-typed-reducer": "4.3.0", "zod": "3.25.67" }, "peerDependencies": { "react": ">=18", "react-dom": ">=18" }, "bin": { "csscomponents": "bin/csscomponents.mjs" } }, "sha512-G00f63B6M4G6fmuWXz1ySAsoMqwkeRUCbdw5lJeQ2S2lCwf25Rf4na2aHLrqDVmw5JetOkjSooao6dCnQ1Yscw=="],
 
@@ -1082,6 +1103,8 @@
     "@zetta/auth": ["@zetta/auth@workspace:packages/auth"],
 
     "@zetta/config": ["@zetta/config@workspace:packages/config"],
+
+    "@zetta/core": ["@zetta/core@workspace:packages/core"],
 
     "@zetta/db": ["@zetta/db@workspace:packages/db"],
 

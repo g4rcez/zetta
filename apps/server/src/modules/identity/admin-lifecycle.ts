@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { and, eq, or, sql } from "@zetta/db/query";
 import { session, user } from "@zetta/db/schema/auth";
@@ -65,7 +65,7 @@ async function activateMembership(tx: Transaction, userId: string, existing: { s
 
 async function audit(tx: Transaction, eventKind: "bootstrap" | "admin-replacement", subjectUserId: string, operatorReason: string | null) {
   await tx.insert(identityAudit).values({
-    id: randomUUID(), eventKind, actorKind: "operator", actorUserId: null, subjectUserId,
+    id: uuidv7(), eventKind, actorKind: "operator", actorUserId: null, subjectUserId,
     invitationId: null, occurredAt: sql`clock_timestamp()`, operatorReason,
   });
 }

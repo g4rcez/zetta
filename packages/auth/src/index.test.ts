@@ -64,7 +64,8 @@ test("createAuthOptions preserves the legacy config and existing createAuth invo
   // Boolean checks avoid emitting even synthetic secrets/config in a failure.
   expect(legacy.secret === env.BETTER_AUTH_SECRET).toBe(true);
   expect(legacy.baseURL === env.BETTER_AUTH_URL).toBe(true);
-  expect(legacy.advanced).toEqual({ defaultCookieAttributes: { sameSite: "none", secure: true, httpOnly: true } });
+  expect(legacy.advanced.defaultCookieAttributes).toEqual({ sameSite: "none", secure: true, httpOnly: true });
+  expect((legacy.advanced.database.generateId as () => string)()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   expect(legacy.plugins).toEqual([]);
   expect(createAuthOptions(env, database, desktopOrigins).trustedOrigins).toEqual([env.CORS_ORIGIN, ...desktopOrigins]);
   expect(createAuthOptions(env, database, desktopOrigins, undefined).databaseHooks).toBeUndefined();
@@ -91,7 +92,8 @@ test("createAuthOptions installs only the accepted invitation create-before dele
   expect(calls).toEqual([{ token, email: "member+tag@example.test" }]);
   expect(options.trustedOrigins).toEqual([env.CORS_ORIGIN, ...desktopOrigins]);
   expect(options.emailAndPassword).toEqual({ enabled: true });
-  expect(options.advanced).toEqual({ defaultCookieAttributes: { sameSite: "none", secure: true, httpOnly: true } });
+  expect(options.advanced.defaultCookieAttributes).toEqual({ sameSite: "none", secure: true, httpOnly: true });
+  expect((options.advanced.database.generateId as () => string)()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   expect(options.plugins).toEqual([]);
 });
 

@@ -74,6 +74,7 @@ export const runAttempts = pgTable("run_attempts", {
   resultLastSequence: integer("result_last_sequence"),
   cancellationReason: text("cancellation_reason", { enum: ["owner_requested"] }),
 }, (table) => [
+    index("run_attempts_run_id_owner_user_id_idx").on(table.runId, table.ownerUserId),
   unique("run_attempts_run_generation_unique").on(table.runId, table.generation),
   unique("run_attempts_id_run_owner_unique").on(table.id, table.runId, table.ownerUserId),
   foreignKey({ name: "run_attempts_owner_fk", columns: [table.runId, table.ownerUserId], foreignColumns: [runs.id, runs.ownerUserId] }).onDelete("restrict").onUpdate("restrict"),

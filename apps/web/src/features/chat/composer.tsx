@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import {
   useEffect,
   useRef,
@@ -179,7 +180,7 @@ export function Composer({
           continue;
         }
         room--;
-        const key = crypto.randomUUID(),
+        const key = uuidv7(),
           preview = URL.createObjectURL(f);
         previews.current.add(preview);
         setStaged((l) => [...l, { key, name: f.name || "image", preview, uploading: true }]);
@@ -364,7 +365,10 @@ export function Composer({
         </ul>
       )}
       <InputGroup className="h-auto rounded-lg bg-card shadow-xs">
-        <InputGroupAddon align="block-start" className="gap-0.5 border-b px-1.5 py-1">
+        <InputGroupAddon
+          align="block-start"
+          className="hidden gap-0.5 border-b px-1.5 py-1 group-focus-within/input-group:flex"
+        >
           <Tool label="Bold (⌘B)" onClick={() => wrap("**")}>
             <Bold />
           </Tool>

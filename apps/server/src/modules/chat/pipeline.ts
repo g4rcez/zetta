@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { and, asc, eq, ne } from "@zetta/db/query";
 import { bot as botTable, type bot } from "@zetta/db/schema/chat";
@@ -297,7 +298,7 @@ export function createTurnRunner(
     } else {
       const resumable =
         turn.bot.harness === "claude-code" && codeEnabled(turn.bot, turn.userId, turn.noCode);
-      const sessionId = resumable ? (turn.resumeSession ?? crypto.randomUUID()) : undefined;
+      const sessionId = resumable ? (turn.resumeSession ?? uuidv7()) : undefined;
       if (sessionId) turn.onSession?.(sessionId);
       yield* stream({
         harness: turn.bot.harness as NativeHarness,

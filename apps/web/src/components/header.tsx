@@ -79,30 +79,13 @@ export function AppRail() {
       transition={{ type: "spring", stiffness: 420, damping: 36 }}
       className={`z-10 flex shrink-0 items-center gap-1 overflow-hidden border-b bg-sidebar p-2 md:w-(--rail-w) md:flex-col md:border-r md:border-b-0 md:py-3 ${expanded ? "md:items-stretch" : ""}`}
     >
-      <div
-        className={`flex items-center gap-2 ${expanded ? "md:justify-between md:pl-0.5" : "md:flex-col"}`}
-      >
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Brand />
-          {expanded ? (
-            <span className="hidden truncate text-sm font-semibold tracking-tight md:inline">
-              Zetta
-            </span>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          onClick={toggle}
-          aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-          aria-expanded={expanded}
-          className="hidden size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-ring md:grid"
-        >
-          {expanded ? (
-            <PanelLeftClose className="size-4" aria-hidden="true" />
-          ) : (
-            <PanelLeftOpen className="size-4" aria-hidden="true" />
-          )}
-        </button>
+      <div className={`flex min-w-0 items-center gap-2.5 ${expanded ? "md:pl-0.5" : ""}`}>
+        <Brand />
+        {expanded ? (
+          <span className="hidden truncate text-sm font-semibold tracking-tight md:inline">
+            Zetta
+          </span>
+        ) : null}
       </div>
       <nav
         aria-label="Main"
@@ -156,6 +139,27 @@ export function AppRail() {
         })}
       </nav>
       <div className="flex items-center gap-1 md:w-full md:flex-col md:items-stretch">
+        <RailHint
+          collapsed={collapsed}
+          label="Expand sidebar"
+          icon={<PanelLeftOpen className="size-4" aria-hidden="true" />}
+        >
+          {/* Bottom stack, icon column: both anchored, so the button stays put when the rail changes width. */}
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+            aria-expanded={expanded}
+            className={`${railRow} ${expanded ? railRowExpanded : ""} hidden md:flex`}
+          >
+            {expanded ? (
+              <PanelLeftClose className="size-5 shrink-0" aria-hidden="true" />
+            ) : (
+              <PanelLeftOpen className="size-5 shrink-0" aria-hidden="true" />
+            )}
+            {expanded ? <span className={railLabel}>Collapse</span> : null}
+          </button>
+        </RailHint>
         <RailHint
           collapsed={collapsed}
           label="Search"

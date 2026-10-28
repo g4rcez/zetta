@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { containerUser } from "../container-user";
 import { createSerializer } from "./serial";
 import { lookup } from "node:dns/promises";
@@ -286,7 +287,7 @@ export function createComputerService({
     try {
       if (docker) {
         await chmod(dir, 0o700).catch(() => {});
-        container = `zetta-browser-${crypto.randomUUID()}`;
+        container = `zetta-browser-${uuidv7()}`;
         const run = Bun.spawn(
           [docker.bin, ...browserDockerArgs(docker, { name: container, profileDir: dir })],
           {

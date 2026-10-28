@@ -1,20 +1,20 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomUUID } from "node:crypto";
 import type { RunSchemaContext } from "./run-schema.integration";
 
 export async function runSchemaCases(c: RunSchemaContext) {
   const { proof: { first, owner }, runId, attemptId } = c;
-  const time = new Date("2026-01-01T00:00:00.000Z"), later = new Date(time.getTime() + 1000), lease = randomUUID();
+  const time = new Date("2026-01-01T00:00:00.000Z"), later = new Date(time.getTime() + 1000), lease = uuidv7();
   const running = { status: "running", lease_id: lease, claimed_at: time, lease_expires_at: later };
   async function denyInsert(table: "runs" | "run_attempts", name: string, fields: Readonly<Record<string, string | number | Date | null>>, constraint: string | null, code = "23514") {
     await c.scenario(name, () => c.reject(() => c.insert(first, table, { ...(table === "run_attempts" ? { generation: 3 } : {}), ...fields }), constraint, code));
   }
   await c.scenario("valid A and B owner-scoped request key and atomic initial attempts commit", async () => {
-    const key = randomUUID();
+    const key = uuidv7();
     await first.query("begin");
     try {
       for (const ownerUserId of ["owner-a", "owner-b"]) {
-        const id = randomUUID();
+        const id = uuidv7();
         await c.insert(first, "runs", { id, owner_user_id: ownerUserId, request_key: key });
         await c.insert(first, "run_attempts", { run_id: id, owner_user_id: ownerUserId });
       }
@@ -48,11 +48,11 @@ export async function runSchemaCases(c: RunSchemaContext) {
     await c.insert(first, "runs", { request_key: row.request_key });
   }, "runs_owner_request_unique", "23505"));
   await denyInsert("run_attempts", "duplicate run generation rejected", { generation: 1 }, "run_attempts_run_generation_unique", "23505");
-  for (const [column, value] of Object.entries({ id: randomUUID(), owner_user_id: "owner-b", request_key: randomUUID(), origin_kind: "setup",
+  for (const [column, value] of Object.entries({ id: uuidv7(), owner_user_id: "owner-b", request_key: uuidv7(), origin_kind: "setup",
     bot_id: "other", conversation_id: "other", configuration_id: "other", configuration_version: 2, input_version: 2, input_snapshot: "[2]", created_at: later })) {
     await c.scenario(`run immutable ${column} rejected`, () => c.reject(() => first.query(`update runs set ${column}=$1 where id=$2`, [value, runId]).then(() => {}), "runs_identity_immutable"));
   }
-  for (const [column, value] of Object.entries({ id: randomUUID(), run_id: randomUUID(), owner_user_id: "owner-b", generation: 3, created_at: later })) {
+  for (const [column, value] of Object.entries({ id: uuidv7(), run_id: uuidv7(), owner_user_id: "owner-b", generation: 3, created_at: later })) {
     await c.scenario(`attempt immutable ${column} rejected`, () => c.reject(() => first.query(`update run_attempts set ${column}=$1 where id=$2`, [value, attemptId]).then(() => {}), "run_attempts_identity_immutable"));
   }
   for (const [column, value, constraint] of [
@@ -88,7 +88,7 @@ export async function runSchemaCases(c: RunSchemaContext) {
     await denyInsert("run_attempts", `terminal ${column} invalid variant rejected`, { ...terminal, [column]: value }, constraint);
   }
   await c.scenario("positive text int32 timestamp result and stopped-running boundaries", () => c.rollback(async () => {
-    const id = randomUUID();
+    const id = uuidv7();
     await c.insert(first, "runs", { id, input_snapshot: '["' + "x".repeat(98300) + '"]', configuration_version: 2147483647, revision: 2147483647 });
     await c.insert(first, "run_attempts", { run_id: id });
     await c.insert(first, "run_attempts", { generation: 3, ...running, stop_confirmed_at: time, cancellation_reason: "owner_requested" });
@@ -101,7 +101,7 @@ export async function runSchemaCases(c: RunSchemaContext) {
     await owner.query("begin");
     await owner.query("update run_attempts set status='running',lease_id=$1,claimed_at=$2,lease_expires_at=$3 where id=$4", [lease, time, later, attemptId]);
     await owner.query("commit");
-    for (const replacement of [randomUUID(), null]) await c.reject(() => first.query("update run_attempts set lease_id=$1 where id=$2", [replacement, attemptId]).then(() => {}), "run_attempts_lease_immutable");
+    for (const replacement of [uuidv7(), null]) await c.reject(() => first.query("update run_attempts set lease_id=$1 where id=$2", [replacement, attemptId]).then(() => {}), "run_attempts_lease_immutable");
     for (const expiry of [time, null]) await c.reject(() => first.query("update run_attempts set lease_expires_at=$1 where id=$2", [expiry, attemptId]).then(() => {}), "run_attempts_expiry_monotonic");
     await c.rollback(async () => {
       const result = await first.query("update run_attempts set lease_expires_at=$1 where id=$2 returning id", [new Date(later.getTime() + 1000), attemptId]);

@@ -1,11 +1,12 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { strict as assert } from "node:assert";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { requireIdentityAuthProofTarget } from "./signup.integration";
 
 export type LockOrderProof = Awaited<ReturnType<typeof import("../../../../../packages/db/src/connection-proof-client").openConnectionProof>>;
 
 export function createLockOrderInput() {
-  return { operationId: randomUUID(), provider: "synthetic", label: "synthetic", secret: Buffer.from(randomUUID(), "utf8"), expiresAt: null };
+  return { operationId: uuidv7(), provider: "synthetic", label: "synthetic", secret: Buffer.from(uuidv7(), "utf8"), expiresAt: null };
 }
 
 export async function runIdentityLockOrderProof() {
@@ -67,7 +68,7 @@ export async function runIdentityLockOrderProof() {
         return value;
       };
       async function seedSessions(ids: readonly string[]) {
-        for (const id of ids) await owner.query("insert into session(id,user_id,token,expires_at,created_at,updated_at) values($1,$2,$3,now()+interval '1 hour',now(),now())", [randomUUID(), id, randomUUID()]);
+        for (const id of ids) await owner.query("insert into session(id,user_id,token,expires_at,created_at,updated_at) values($1,$2,$3,now()+interval '1 hour',now(),now())", [uuidv7(), id, uuidv7()]);
       }
       await seedSessions(["lock-a", "lock-b", "lock-c"]);
       phase = "create then replacement control";

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   check,
   index,
@@ -16,21 +17,23 @@ import {
 import { user } from "./auth";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
+const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
 
 /** Visual grouping of bots. Never an access boundary (RFC-001). */
 export const workspace = pgTable(
   "workspace",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => user.id, restrict),
     name: text("name").notNull(),
     // Inner groups: a workspace may sit inside another of the same owner (checked by the service).
-    parentId: uuid("parent_id"),
+    parentId: uuid("parent_id").references((): AnyPgColumn => workspace.id, restrict),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    index("workspace_parent_id_idx").on(table.parentId),
     unique("workspace_owner_name_unique").on(table.ownerUserId, table.name),
     check("workspace_name_check", sql`length(btrim(${table.name})) between 1 and 80`),
   ],
@@ -39,7 +42,7 @@ export const workspace = pgTable(
 export const bot = pgTable(
   "bot",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => user.id, restrict),
@@ -80,6 +83,7 @@ export const bot = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    index("bot_workspace_id_idx").on(table.workspaceId),
     index("bot_owner_idx").on(table.ownerUserId),
     // At most one personal chief per user, stable across workspace moves.
     uniqueIndex("bot_one_chief_per_owner")
@@ -101,7 +105,7 @@ export const bot = pgTable(
 export const conversation = pgTable(
   "conversation",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => user.id, restrict),
@@ -129,13 +133,14 @@ export const conversation = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index("conversation_owner_idx").on(table.ownerUserId, table.updatedAt)],
+  (table) => [
+    index("conversation_bot_id_idx").on(table.botId),index("conversation_owner_idx").on(table.ownerUserId, table.updatedAt)],
 );
 
 export const message = pgTable(
   "message",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
     conversationId: uuid("conversation_id")
       .notNull()
       .references(() => conversation.id, restrict),
@@ -156,12 +161,15 @@ export const message = pgTable(
     // Bot configuration version that produced an assistant message; onboarding evidence is version-specific.
     botVersion: integer("bot_version"),
     // Thread reply when set; points at a message in the same conversation.
-    parentMessageId: uuid("parent_message_id"),
+    parentMessageId: uuid("parent_message_id").references((): AnyPgColumn => message.id, setNull),
     // Author bot for assistant messages (mentions/delegation can come from a bot other than the chat's bot).
-    botId: uuid("author_bot_id"),
+    botId: uuid("author_bot_id").references(() => bot.id, setNull),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    index("message_parent_message_id_idx").on(table.parentMessageId),
+    index("message_author_bot_id_idx").on(table.botId),
+    index("message_owner_user_id_idx").on(table.ownerUserId),
     unique("message_conversation_seq_unique").on(table.conversationId, table.seq),
     uniqueIndex("message_client_request_unique")
       .on(table.conversationId, table.clientRequestId)
@@ -174,7 +182,7 @@ export const message = pgTable(
 export const botRevision = pgTable(
   "bot_revision",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
     botId: uuid("bot_id")
       .notNull()
       .references(() => bot.id, restrict),
@@ -185,7 +193,8 @@ export const botRevision = pgTable(
       .references(() => user.id, restrict),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [unique("bot_revision_unique").on(table.botId, table.version)],
+  (table) => [
+    index("bot_revision_changed_by_user_id_idx").on(table.changedByUserId),unique("bot_revision_unique").on(table.botId, table.version)],
 );
 
 /**
@@ -196,7 +205,7 @@ export const botRevision = pgTable(
 export const goalLoop = pgTable(
   "goal_loop",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => user.id, restrict),
@@ -221,6 +230,8 @@ export const goalLoop = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    index("goal_loop_owner_user_id_idx").on(table.ownerUserId),
+    index("goal_loop_bot_id_idx").on(table.botId),
     index("goal_loop_conversation_idx").on(table.conversationId, table.status),
     // One active loop per conversation: a second one would fight over the same turn.
     uniqueIndex("goal_loop_one_active")

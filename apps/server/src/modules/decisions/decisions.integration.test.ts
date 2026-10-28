@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { describe, expect, test } from "bun:test";
 import { createDecisionService, DecisionError } from "./service";
 import { executeGraph, graphSchema } from "../features/workflow";
@@ -47,7 +48,7 @@ describe("decision hardening", () => {
 
 describe("workflow browse node", () => {
   test("feeds page text to the next step and fails closed without a browser", async () => {
-    const graph = graphSchema.parse({ start: "b", nodes: { b: { type: "browse", url: "https://example.com/{{input}}", next: "p" }, p: { type: "prompt", botId: crypto.randomUUID(), template: "summarise {{prev}}", next: "e" }, e: { type: "end" } } });
+    const graph = graphSchema.parse({ start: "b", nodes: { b: { type: "browse", url: "https://example.com/{{input}}", next: "p" }, p: { type: "prompt", botId: uuidv7(), template: "summarise {{prev}}", next: "e" }, e: { type: "end" } } });
     const seen: string[] = [];
     const ok = await executeGraph(graph, "page1", async (_b, prompt) => { seen.push(prompt); return "summary"; }, undefined, async (url) => `TEXT of ${url}`);
     expect(seen[0]).toBe("summarise TEXT of https://example.com/page1"); expect(ok.status).toBe("succeeded");

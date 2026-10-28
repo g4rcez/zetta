@@ -86,6 +86,8 @@ export const connectionCredential = pgTable("connection_credential", {
   ...envelopeColumns(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 }, (table) => [
+    index("connection_credential_connection_id_owner_user_id_kind_idx").on(table.connectionId, table.ownerUserId, table.kind),
+    index("connection_credential_key_id_nonce_connection_id_credential_ver").on(table.keyId, table.nonce, table.connectionId, table.credentialVersion),
   primaryKey({ columns: [table.connectionId, table.credentialVersion] }),
   check("connection_credential_kind_check", sql`${table.kind} = 'api-key'`),
   check("connection_credential_version_check", sql`${table.credentialVersion} between 1 and 2147483647`),
@@ -101,6 +103,7 @@ export const connectionKeyCheck = pgTable("connection_key_check", {
   encryptionCount: integer("encryption_count").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 }, (table) => [
+    index("connection_key_check_key_id_nonce_nonce_purpose_idx").on(table.keyId, table.nonce, table.noncePurpose),
   check("connection_key_check_singleton_check", sql`${table.id} = 1`),
   check("connection_key_check_purpose_check", sql`${table.noncePurpose} = 'key-check'`),
   check("connection_key_check_count_check", sql`${table.encryptionCount} between 1 and 1000000`),
@@ -119,6 +122,7 @@ export const connectionMutationReceipt = pgTable("connection_mutation_receipt", 
   ...metadataColumns(),
   credentialVersion: integer("credential_version").notNull(),
 }, (table) => [
+    index("connection_mutation_receipt_connection_id_owner_user_id_kind_id").on(table.connectionId, table.ownerUserId, table.kind),
   primaryKey({ columns: [table.ownerUserId, table.operationId] }),
   ...metadataChecks("connection_receipt", table),
   check("connection_receipt_mac_check", sql`octet_length(${table.requestMac}) = 32`),

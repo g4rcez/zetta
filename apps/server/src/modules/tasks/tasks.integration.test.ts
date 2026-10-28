@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -9,7 +10,7 @@ import { createTaskStore } from "./store";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`task-a-${crypto.randomUUID()}`, `task-b-${crypto.randomUUID()}`];
+const ids = [`task-a-${uuidv7()}`, `task-b-${uuidv7()}`];
 
 suite("tasks kanban against compose postgres", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);

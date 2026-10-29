@@ -5,13 +5,16 @@ import { evlog, type EvlogElysiaOptions } from "evlog/elysia";
 
 import { createChatRoutes, type ChatServices } from "./modules/chat/routes";
 import { createComputerRoutes, type ComputerServices } from "./modules/computer/routes";
+import { createInstallationRoutes, type InstallationServices } from "./modules/installation/routes";
 import { createConnectionRoutes, type ConnectionServices } from "./modules/connections/routes";
 import { createIntegrationRoutes, type IntegrationServices } from "./modules/integrations/routes";
 import { createDecisionRoutes, type DecisionServices } from "./modules/decisions/routes";
 import { createFeatureRoutes, type FeatureServices } from "./modules/features/routes";
 import { createAgendaRoutes, type AgendaServices } from "./modules/agenda/routes";
 import { createTaskRoutes, type TaskServices } from "./modules/tasks/routes";
+import { createArtifactRoutes, type ArtifactServices } from "./modules/artifacts/routes";
 import { createDiscussionRoutes, type DiscussionServices } from "./modules/discussions/routes";
+import { createTeamRoutes, type TeamServices } from "./modules/teams/routes";
 import { createInboundRoutes, type InboundServices } from "./modules/inbound/routes";
 import { createIdentityRoutes, type IdentityServices } from "./modules/identity/routes";
 import { createBotClaudeRoutes, type BotClaudeServices } from "./modules/bot-claude/routes";
@@ -24,6 +27,7 @@ export interface AppAuth extends BetterAuthInstance {
 export type CreateAppOptions = {
   auth: AppAuth;
   identity?: IdentityServices;
+  installation?: InstallationServices;
   chat?: ChatServices;
   features?: FeatureServices;
   decisions?: DecisionServices;
@@ -32,7 +36,9 @@ export type CreateAppOptions = {
   integrations?: IntegrationServices;
   agenda?: AgendaServices;
   tasks?: TaskServices;
+  artifacts?: ArtifactServices;
   discussions?: DiscussionServices;
+  teams?: TeamServices;
   inbound?: InboundServices;
   botDatabase?: BotDatabaseServices;
   botClaude?: BotClaudeServices;
@@ -45,6 +51,7 @@ export type CreateAppOptions = {
 export function createApp({
   auth,
   identity,
+  installation,
   chat,
   features,
   decisions,
@@ -53,7 +60,9 @@ export function createApp({
   integrations,
   agenda,
   tasks,
+  artifacts,
   discussions,
+  teams,
   inbound,
   botDatabase,
   botClaude,
@@ -109,6 +118,11 @@ export function createApp({
       return status(405);
     })
     .use(identity ? createIdentityRoutes(identity, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(
+      installation
+        ? createInstallationRoutes(installation, [webOrigin, ...desktopOrigins])
+        : new Elysia(),
+    )
     .use(chat ? createChatRoutes(chat, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(features ? createFeatureRoutes(features, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(decisions ? createDecisionRoutes(decisions, [webOrigin, ...desktopOrigins]) : new Elysia())
@@ -125,11 +139,13 @@ export function createApp({
     )
     .use(agenda ? createAgendaRoutes(agenda, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(tasks ? createTaskRoutes(tasks, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(artifacts ? createArtifactRoutes(artifacts, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(
       discussions
         ? createDiscussionRoutes(discussions, [webOrigin, ...desktopOrigins])
         : new Elysia(),
     )
+    .use(teams ? createTeamRoutes(teams, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(inbound ? createInboundRoutes(inbound, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(
       botDatabase

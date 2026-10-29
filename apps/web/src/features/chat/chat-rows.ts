@@ -128,6 +128,20 @@ export function liveRows(messages: ZettaUIMessage[], parentMessageId?: string): 
   return rows;
 }
 
+/**
+ * A live user row keeps the client's id until the server's `user-saved` part arrives. If history reloads first, the saved copy
+ * is already there under another id: drop the live one when a recent saved user message has the same text.
+ */
+export const isSavedUserEcho = (live: Row, saved: Row[], now = Date.now()) =>
+  live.role === "user" &&
+  live.seq === Number.MAX_SAFE_INTEGER &&
+  saved.some(
+    (s) =>
+      s.role === "user" &&
+      s.content === live.content &&
+      now - new Date(s.createdAt).getTime() < 60_000,
+  );
+
 export const summaryOf = (messages: ZettaUIMessage[]) => {
   for (const m of messages)
     for (const p of m.parts) if (p.type === "data-summary") return p.data.text;

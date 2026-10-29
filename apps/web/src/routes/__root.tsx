@@ -11,6 +11,7 @@ import Header, { AppRail, inApp } from "@/components/header";
 import { ThemeProvider } from "@/components/theme-provider";
 
 import "../index.css";
+import { Fragment } from "react";
 
 export interface RouterAppContext {}
 
@@ -45,11 +46,13 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
   }),
 });
 
+const REGEX_COMPUTER = /^\/computer\/[^/]+$/;
+
 function RootComponent() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const app = inApp(pathname);
   return (
-    <>
+    <Fragment>
       <HeadContent />
       <ThemeProvider
         attribute="class"
@@ -57,7 +60,7 @@ function RootComponent() {
         disableTransitionOnChange
         storageKey="vite-ui-theme"
       >
-        {/^\/computer\/[^/]+$/.test(pathname) ? (
+        {REGEX_COMPUTER.test(pathname) ? (
           <main className="h-svh overflow-hidden">
             <Outlet />
           </main>
@@ -81,6 +84,6 @@ function RootComponent() {
       {import.meta.env.DEV && !import.meta.env.VITE_HIDE_DEVTOOLS ? (
         <TanStackRouterDevtools position="bottom-right" />
       ) : null}
-    </>
+    </Fragment>
   );
 }

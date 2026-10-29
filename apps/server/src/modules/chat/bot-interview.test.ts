@@ -58,9 +58,9 @@ describe("bot interview", () => {
     expect(out).toEqual({ kind: "question", question: "ok", suggestions: [] });
   });
 
-  test("tells the engine to answer in the language the person writes in", async () => {
+  test("tells the engine to default to English and follow the language of the latest answer", async () => {
     const deps = await engine(
-      `printf '%s' "$2" | grep -q 'same language' && echo '{"kind":"question","question":"ok","suggestions":[]}' || echo '{"kind":"question","question":"NO","suggestions":[]}'`,
+      `printf '%s' "$2" | grep -q 'in English by default.*most recent answer' && echo '{"kind":"question","question":"ok","suggestions":[]}' || echo '{"kind":"question","question":"NO","suggestions":[]}'`,
     );
     const out = await interviewTurn(
       {

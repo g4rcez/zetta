@@ -15,6 +15,8 @@ export type Discussion = {
   summary: string;
   version: number;
   createdByBotId: string | null;
+  /** Set for a team room: `createdByBotId` is the team's chief. */
+  teamId: string | null;
   originConversationId: string | null;
   originInbound: { plugin: string; chat: string; chatName: string } | null;
   createdAt: string;
@@ -55,6 +57,24 @@ export type DiscussionDetail = {
   members: DiscussionMember[];
   turns: DiscussionTurn[];
 };
+export type TurnStep = {
+  at: string;
+  kind: "activity" | "computer" | "tool" | "post" | "report" | "error";
+  label: string;
+  detail?: string;
+};
+export type RoomTurn = Pick<DiscussionTurn, "id" | "botId" | "kind" | "status" | "createdAt"> & {
+  finishedAt: string | null;
+  steps: TurnStep[];
+};
+export type RoomTaskStatus = "backlog" | "in_progress" | "blocked" | "review" | "done";
+export type RoomTask = {
+  id: string;
+  title: string;
+  description: string;
+  status: RoomTaskStatus;
+  botId: string | null;
+};
 export type NewDiscussion = {
   title: string;
   goal: string;
@@ -68,6 +88,10 @@ export const discussionsApi = {
   list: () =>
     call<{ discussions: DiscussionListItem[] }>("/api/discussions").then((r) => r.discussions),
   get: (id: string) => call<DiscussionDetail>(`/api/discussions/${id}`),
+  startLoop: (id: string, v: { goal: string; doneWhen: string }) =>
+    call(`/api/discussions/${id}/loop`, "POST", v),
+  steps: (id: string) =>
+    call<{ turns: RoomTurn[]; tasks: RoomTask[] }>(`/api/discussions/${id}/steps`),
   create: (v: NewDiscussion) =>
     call<{ discussion: Discussion }>("/api/discussions", "POST", v).then((r) => r.discussion),
   update: (
@@ -82,12 +106,13 @@ export const discussionsApi = {
   post: (
     id: string,
     content: string,
-    files: { attachmentIds?: string[]; fileRefs?: string[] } = {},
+    files: { attachmentIds?: string[]; fileRefs?: string[]; instructionIds?: string[] } = {},
   ) =>
     call(`/api/discussions/${id}/messages`, "POST", {
       content,
       ...(files.attachmentIds?.length ? { attachmentIds: files.attachmentIds } : {}),
       ...(files.fileRefs?.length ? { fileRefs: files.fileRefs } : {}),
+      ...(files.instructionIds?.length ? { instructionIds: files.instructionIds } : {}),
     }),
   act: (id: string, action: "pause" | "resume" | "cancel") =>
     call<{ discussion: Discussion }>(`/api/discussions/${id}/${action}`, "POST", {}).then(

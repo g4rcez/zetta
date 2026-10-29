@@ -107,6 +107,17 @@ describe("identity client boundary", () => {
     expect(JSON.parse(String(requests[0]?.init.body))).toEqual(input);
   });
 
+  test("verifySetupKey posts the key and maps a mismatch to a safe message", async () => {
+    const ok = fixture({ ok: true });
+    await ok.client.verifySetupKey("synthetic-key");
+    expect(ok.requests[0]?.url.pathname).toBe("/api/identity/setup/key");
+    expect(JSON.parse(String(ok.requests[0]?.init.body))).toEqual({ key: "synthetic-key" });
+    const bad = fixture({ error: { code: "SETUP_KEY_MISMATCH", message: "unsafe-echo" } }, 403);
+    await expect(bad.client.verifySetupKey("wrong")).rejects.toThrow(
+      "does not match this server's ZETTA_CONNECTION_KEY",
+    );
+  });
+
   test("known error codes produce safe messages without reflecting server text", async () => {
     const { client } = fixture(
       { error: { code: "ENROLLMENT_UNAVAILABLE", message: "unsafe-echo-synthetic-token" } },

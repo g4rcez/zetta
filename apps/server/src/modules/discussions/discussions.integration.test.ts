@@ -1,9 +1,10 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
-import { eq, inArray } from "@zetta/db/query";
+import { and, eq, inArray } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { bot } from "@zetta/db/schema/chat";
+import { attentionItem } from "@zetta/db/schema/features";
 import { discussionTurn } from "@zetta/db/schema/discussions";
 import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
@@ -36,14 +37,27 @@ suite("group discussions against compose postgres", () => {
   );
   /** Scripted replies per bot name; every run records who ran, its prompt and its turn options. */
   const replies: Record<string, string[]> = {};
-  const runs: { bot: string; prompt: string; extraTools?: string; noCode?: boolean }[] = [];
+  const runs: {
+    bot: string;
+    prompt: string;
+    extraTools?: string;
+    noCode?: boolean;
+    referenced?: { title: string; body: string }[];
+  }[] = [];
   const reply = (t: {
     bot: { name: string };
     prompt: string;
     extraTools?: string;
     noCode?: boolean;
+    referenced?: { title: string; body: string }[];
   }) => {
-    runs.push({ bot: t.bot.name, prompt: t.prompt, extraTools: t.extraTools, noCode: t.noCode });
+    runs.push({
+      bot: t.bot.name,
+      prompt: t.prompt,
+      extraTools: t.extraTools,
+      noCode: t.noCode,
+      referenced: t.referenced,
+    });
     return replies[t.bot.name]?.shift() ?? "ok";
   };
   const fakeRun = Object.assign(async (t: never) => ({ text: reply(t), stopped: false }), {
@@ -446,6 +460,44 @@ suite("group discussions against compose postgres", () => {
     ).toBe(404);
   });
 
+  test("instructions picked on a post are followed by the bots it wakes; an unknown one is refused", async () => {
+    const p = await makeBot(A, "Steps1"),
+      q = await makeBot(A, "Steps2");
+    const d = (
+      await call(A, "POST", "/api/discussions", {
+        title: "Steps",
+        goal: "x",
+        members: [{ bot: p.id }, { bot: q.id }],
+        firstMessage: "@Steps1 start",
+      })
+    ).json.discussion;
+    await worker.drain();
+    const ins = (
+      await call(A, "POST", "/api/instructions", {
+        title: "Launch steps",
+        body: "1) freeze the branch 2) tag it",
+      })
+    ).json.instruction as { id: string };
+    const posted = await call(A, "POST", `/api/discussions/${d.id}/messages`, {
+      content: "@Steps2 do the launch",
+      instructionIds: [ins.id],
+    });
+    expect(posted.status).toBe(201);
+    await worker.drain();
+    const run = runs.filter((x) => x.bot === "Steps2").at(-1)!;
+    expect(run.referenced).toMatchObject([
+      { title: "Launch steps", body: "1) freeze the branch 2) tag it" },
+    ]);
+    expect(
+      (
+        await call(A, "POST", `/api/discussions/${d.id}/messages`, {
+          content: "again",
+          instructionIds: [uuidv7()],
+        })
+      ).status,
+    ).toBe(404);
+  });
+
   test("a restart interrupts running turns and stalls their discussion instead of retrying", async () => {
     const p = await makeBot(A, "Restart1"),
       q = await makeBot(A, "Restart2");
@@ -556,5 +608,81 @@ suite("group discussions against compose postgres", () => {
     expect(chat.map((m) => m.content)).toContain("pnpm ran, the routine is done.");
     expect(chat.filter((m) => m.role === "user")).toHaveLength(1);
     // Docs was not granted anything, so its chat stays as it was.
+  });
+  test("a blocked bot escalates to the chief: the answer resumes the bot, and a handoff shows the question on the blocked bot, not on the chief", async () => {
+    const chief = (await call(A, "GET", "/api/bots")).json.bots.find(
+      (b: { kind: string }) => b.kind === "chief",
+    ) as { id: string };
+    await db.update(bot).set({ onboarded: true }).where(eq(bot.id, chief.id));
+    const escalate = (problem: string) =>
+      `Blocked.\n\`\`\`zetta:escalate\n{"problem":"${problem}","tried":"WebFetch"}\n\`\`\``;
+    const helpOf = async (name: string) =>
+      (
+        (await call(A, "GET", "/api/discussions")).json.discussions as {
+          title: string;
+          status: string;
+          summary: string;
+        }[]
+      ).find((d) => d.title.startsWith(`Help: ${name}:`));
+
+    // The Chief solves it: the discussion closes with the answer and the bot runs its last request again by itself.
+    const scout = await makeBot(A, "Scout");
+    replies.Scout = [
+      escalate("Reddit blocks fetches"),
+      "I wait for the Chief.",
+      "Posted the newsletter.",
+    ];
+    replies.Chief = [
+      'Decided.\n```zetta:discussion\n{"action":"resolve","summary":"Read the pages with WebFetch and say they are public."}\n```',
+    ];
+    const scoutChat = await chatWith(A, scout.id);
+    await scoutChat.say("post the newsletter");
+    await worker.drain();
+    let chat = await messagesOf(A, scoutChat.c);
+    for (let i = 0; i < 50 && !chat.some((m) => m.content === "Posted the newsletter."); i++) {
+      await Bun.sleep(100);
+      chat = await messagesOf(A, scoutChat.c);
+    }
+    expect(chat.map((m) => m.content)).toContain("Posted the newsletter.");
+    expect(chat.filter((m) => m.role === "user")).toHaveLength(1);
+    expect(await helpOf("Scout")).toMatchObject({
+      status: "resolved",
+      summary: "Read the pages with WebFetch and say they are public.",
+    });
+
+    // The Chief needs a person: the question is on the blocked bot's chat and card, and the user is asked nothing on the Chief's behalf.
+    const rider = await makeBot(A, "Rider");
+    replies.Rider = [escalate("Reddit needs a sign-in"), "I wait."];
+    replies.Chief = [
+      'Only a person can sign in.\n```zetta:handoff\n{"reason":"Sign in to Reddit on the desktop"}\n```',
+    ];
+    const riderChat = await chatWith(A, rider.id);
+    await riderChat.say("read my feed");
+    await worker.drain();
+    const asked = (await messagesOf(A, riderChat.c)).filter(
+      (m) => m.role === "assistant" && m.botId === rider.id,
+    );
+    expect(asked.map((m) => m.content)).toContain(
+      "I need you for this: Sign in to Reddit on the desktop",
+    );
+    const cards = await db
+      .select()
+      .from(attentionItem)
+      .where(
+        and(eq(attentionItem.ownerUserId, A), eq(attentionItem.sourceKey, `handoff:${rider.id}`)),
+      );
+    expect(cards.map((c) => c.title)).toEqual(["Rider needs you"]);
+    expect(
+      await db
+        .select()
+        .from(attentionItem)
+        .where(
+          and(eq(attentionItem.ownerUserId, A), eq(attentionItem.sourceKey, `handoff:${chief.id}`)),
+        ),
+    ).toHaveLength(0);
+    expect(await helpOf("Rider")).toMatchObject({
+      status: "resolved",
+      summary: "Asked the user: Sign in to Reddit on the desktop",
+    });
   });
 });

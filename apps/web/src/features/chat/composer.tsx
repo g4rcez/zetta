@@ -12,6 +12,7 @@ import {
   ArrowUp,
   AtSign,
   Bold,
+  BookOpen,
   Code,
   Eye,
   FolderOpen,
@@ -52,13 +53,22 @@ import {
   uploadImage,
   type Attachment as Attached,
   type Bot,
+  call,
 } from "./chat-client";
+import { matchTrigger } from "./triggers";
 import { Response } from "./response";
 
-export type Outgoing = { text: string; attachmentIds: string[]; fileRefs: string[] };
+export type Outgoing = {
+  text: string;
+  attachmentIds: string[];
+  fileRefs: string[];
+  instructionIds?: string[];
+};
+type Instruction = { id: string; title: string; trigger?: string };
 const mentionKey = (name: string) => name.replace(/\s+/g, "");
 const PICTURES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_ATTACHMENTS = 5;
+const MAX_INSTRUCTIONS = 5;
 /** A picture the person picked: shown at once from the local file, kept until the message is sent. */
 type Staged = { key: string; name: string; preview: string; id?: string; uploading: boolean };
 
@@ -107,6 +117,7 @@ export function Composer({
   onError,
   autoFocus,
   minimal,
+  instructions,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -119,6 +130,8 @@ export function Composer({
   onStop?: () => void;
   onError: (e: unknown) => void;
   autoFocus?: boolean;
+  /** Turn on the `/` picker: only for screens whose submit forwards `instructionIds`. */
+  instructions?: boolean;
   /** Text only: no attachments, server files or @mentions (the setup interview). */ minimal?: boolean;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
@@ -144,6 +157,19 @@ export function Composer({
         )
         .slice(0, 6)
     : [];
+  const [slash, setSlash] = useState<{ query: string; at: number; index: number }>();
+  const [library, setLibrary] = useState<Instruction[]>();
+  const [chosen, setChosen] = useState<Instruction[]>([]);
+  const instructionCandidates =
+    slash && library
+      ? library
+          .filter(
+            (i) =>
+              !chosen.some((c) => c.id === i.id) &&
+              i.title.toLowerCase().includes(slash.query.toLowerCase()),
+          )
+          .slice(0, 6)
+      : [];
   const pictures = staged.filter((x) => x.id);
   const total = attached.length + staged.length;
   const canSend =
@@ -224,8 +250,26 @@ export function Composer({
     });
   }
   function trackMention(text: string, caret: number) {
-    const m = /(^|\s)@([\p{L}\p{N}_-]{0,40})$/u.exec(text.slice(0, caret));
-    setMention(m ? { query: m[2]!, at: caret - m[2]!.length - 1, index: 0 } : undefined);
+    const m = matchTrigger(text, caret, "@");
+    setMention(m ? { ...m, index: 0 } : undefined);
+    const s = instructions ? matchTrigger(text, caret, "/") : undefined;
+    setSlash(s ? { ...s, index: 0 } : undefined);
+    if (s && !library && chosen.length < MAX_INSTRUCTIONS)
+      void call<{ instructions: Instruction[] }>("/api/instructions").then(
+        (r) => setLibrary(r.instructions),
+        onError,
+      );
+  }
+  function pickInstruction(i: Instruction) {
+    if (!slash) return;
+    const end = slash.at + 1 + slash.query.length;
+    onChange(value.slice(0, slash.at) + value.slice(end).replace(/^ /, ""));
+    setChosen((l) => (l.length < MAX_INSTRUCTIONS ? [...l, i] : l));
+    setSlash(undefined);
+    requestAnimationFrame(() => {
+      input.current?.focus();
+      input.current?.setSelectionRange(slash.at, slash.at);
+    });
   }
   function pickMention(b: Bot) {
     if (!mention) return;
@@ -246,8 +290,10 @@ export function Composer({
       text: value.trim(),
       attachmentIds: [...attached.map((a) => a.id), ...pictures.map((x) => x.id!)],
       fileRefs,
+      ...(chosen.length ? { instructionIds: chosen.map((i) => i.id) } : {}),
     });
     if (ok) {
+      setChosen([]);
       setAttached([]);
       setFileRefs([]);
       setPreviewing(false);
@@ -259,6 +305,27 @@ export function Composer({
     }
   }
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (slash && instructionCandidates.length) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const d = e.key === "ArrowDown" ? 1 : -1;
+        setSlash({
+          ...slash,
+          index: (slash.index + d + instructionCandidates.length) % instructionCandidates.length,
+        });
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        pickInstruction(instructionCandidates[slash.index]!);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlash(undefined);
+        return;
+      }
+    }
     if (mention && candidates.length) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -334,6 +401,35 @@ export function Composer({
           onClose={() => setViewing(undefined)}
         />
       )}
+      {slash && instructionCandidates.length > 0 && (
+        <ul
+          role="listbox"
+          aria-label="Follow an instruction"
+          className="absolute bottom-full left-0 z-20 mb-1 w-72 overflow-hidden rounded-lg border bg-popover p-1 shadow-md"
+        >
+          <li className="px-2 py-1 text-xs font-medium text-muted-foreground" role="presentation">
+            Instructions
+          </li>
+          {instructionCandidates.map((i, k) => (
+            <li
+              key={i.id}
+              role="option"
+              aria-selected={k === slash.index}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pickInstruction(i);
+              }}
+              className={cn(
+                "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+                k === slash.index ? "bg-accent text-accent-foreground" : "hover:bg-muted",
+              )}
+            >
+              <BookOpen className="size-4 shrink-0" />
+              <span className="truncate font-medium">{i.title}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {mention && candidates.length > 0 && (
         <ul
           role="listbox"
@@ -365,10 +461,7 @@ export function Composer({
         </ul>
       )}
       <InputGroup className="h-auto rounded-lg bg-card shadow-xs">
-        <InputGroupAddon
-          align="block-start"
-          className="hidden gap-0.5 border-b px-1.5 py-1 group-focus-within/input-group:flex"
-        >
+        <InputGroupAddon align="block-start" className="gap-0.5 border-b px-1.5 py-1">
           <Tool label="Bold (⌘B)" onClick={() => wrap("**")}>
             <Bold />
           </Tool>
@@ -427,7 +520,7 @@ export function Composer({
             </ul>
           </InputGroupAddon>
         )}
-        {(attached.length > 0 || fileRefs.length > 0) && (
+        {(attached.length > 0 || fileRefs.length > 0 || chosen.length > 0) && (
           <InputGroupAddon align="block-start" className="pb-0">
             <AttachmentGroup aria-label="Attachments" className="flex-wrap">
               {attached.map((a) => (
@@ -442,6 +535,24 @@ export function Composer({
                     <AttachmentAction
                       aria-label={`Remove ${a.name}`}
                       onClick={() => setAttached((l) => l.filter((x) => x.id !== a.id))}
+                    >
+                      <X />
+                    </AttachmentAction>
+                  </AttachmentActions>
+                </Attachment>
+              ))}
+              {chosen.map((i) => (
+                <Attachment key={i.id} size="sm">
+                  <AttachmentMedia>
+                    <BookOpen />
+                  </AttachmentMedia>
+                  <AttachmentContent>
+                    <AttachmentTitle className="max-w-40 truncate">{i.title}</AttachmentTitle>
+                  </AttachmentContent>
+                  <AttachmentActions>
+                    <AttachmentAction
+                      aria-label={`Remove ${i.title}`}
+                      onClick={() => setChosen((l) => l.filter((x) => x.id !== i.id))}
                     >
                       <X />
                     </AttachmentAction>

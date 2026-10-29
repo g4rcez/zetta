@@ -6,11 +6,7 @@ export function ThemeProvider({
   ...props
 }: React.ComponentProps<typeof NextThemesProvider>) {
   return (
-    <NextThemesProvider
-      {...props}
-      // This SPA has no SSR bootstrap; next-themes applies the theme in its client effect.
-      scriptProps={{ ...props.scriptProps, type: "text/plain" }}
-    >
+    <NextThemesProvider {...props} scriptProps={{ ...props.scriptProps, type: "text/plain" }}>
       {children}
     </NextThemesProvider>
   );

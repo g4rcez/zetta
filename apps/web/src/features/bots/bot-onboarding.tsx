@@ -41,7 +41,7 @@ import { InstructionsInterview } from "./instructions-interview";
 import { Response } from "../chat/response";
 import { Alert } from "@g4rcez/components/alert";
 
-type Draft = {
+export type Draft = {
   name: string;
   description: string;
   harness: string;
@@ -634,16 +634,18 @@ function StartStep({
   );
 }
 
-function IdentityStep({
+export function IdentityStep({
   draft,
   set,
   avatar,
   setAvatar,
+  kind,
 }: {
   draft: Draft;
   set: (p: Partial<Draft>) => void;
   avatar: AvatarValue | null;
   setAvatar: (v: AvatarValue | null) => void;
+  kind?: "chief" | "specialist";
 }) {
   return (
     <Guided
@@ -676,7 +678,7 @@ function IdentityStep({
         />
       </div>
       <Group label="Picture">
-        <BotAvatarPicker botId="new-bot" value={avatar} onChange={setAvatar} />
+        <BotAvatarPicker botId="new-bot" kind={kind} value={avatar} onChange={setAvatar} />
       </Group>
       <Group label="Who can chat with it?">
         <div role="radiogroup" aria-label="Visibility" className="grid gap-3 sm:grid-cols-2">
@@ -704,7 +706,7 @@ function IdentityStep({
   );
 }
 
-function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draft>) => void }) {
+export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draft>) => void }) {
   const pick = (h: string) =>
     set({ harness: h, model: isAllowedModel(h, draft.model) ? draft.model : "" });
   return (
@@ -782,7 +784,7 @@ function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draft>) => 
   );
 }
 
-function InstructionsStep({
+export function InstructionsStep({
   draft,
   set,
   avatar,
@@ -970,7 +972,7 @@ function ReviewCard({ checks }: { checks: ReturnType<typeof reviewInstructions> 
   );
 }
 
-function ReviewStep({
+export function ReviewStep({
   draft,
   checks,
   onEdit,
@@ -1051,7 +1053,7 @@ function ReviewStep({
   );
 }
 
-function PluginsStep({
+export function PluginsStep({
   bot,
   bots,
   onBotChange,

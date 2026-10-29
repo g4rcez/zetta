@@ -118,7 +118,13 @@ export function createFeaturesService(
         .orderBy(desc(instruction.createdAt)),
     addInstruction: async (
       a: ActiveActor,
-      v: { title: string; body: string; trigger?: string; verification?: string },
+      v: {
+        title: string;
+        body: string;
+        trigger?: string;
+        verification?: string;
+        teamId?: string | null;
+      },
     ) => (await knowledge.addInstruction(a.userId, v)).instruction,
     updateInstruction: (
       a: ActiveActor,
@@ -130,6 +136,7 @@ export function createFeaturesService(
         trigger?: string;
         verification?: string;
         archived?: boolean;
+        teamId?: string | null;
       },
     ) => knowledge.updateInstruction(a.userId, id, expectedVersion, v),
     deleteInstruction: async (a: ActiveActor, id: string) =>

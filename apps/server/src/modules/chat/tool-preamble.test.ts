@@ -10,11 +10,33 @@ describe("toolPreamble", () => {
     expect(toolPreamble("browser")).not.toContain("zetta:desktop");
     expect(toolPreamble("desktop")).toContain("zetta:desktop");
   });
+  test("every bot is told to pick the method itself", () => {
+    expect(toolPreamble("off")).toContain("Never ask the user to choose a method");
+    expect(toolPreamble("desktop", true, true)).toContain("Pick it yourself");
+  });
   test("code access is only described when the owner enabled it", () => {
     expect(toolPreamble("off")).not.toContain("Code access");
     expect(toolPreamble("off", true)).toContain("git clone");
     expect(toolPreamble("browser", true)).toContain("zetta:browser");
     expect(toolPreamble("browser", true)).toContain("Code access");
+  });
+});
+
+describe("escalation", () => {
+  test("a bot that is not the chief is taught to escalate instead of asking the user", () => {
+    expect(toolPreamble("off")).toContain("what blocks you");
+    expect(toolPreamble("desktop", true)).toContain("what blocks you");
+    expect(toolPreamble("off", true, true)).not.toContain("what blocks you");
+  });
+  test("escalate parses with a problem and what was tried, and rejects extra fields", () => {
+    const ok = parseTools(
+      '```zetta:escalate\n{"problem":"Reddit blocks fetches","tried":"WebFetch"}\n```',
+    );
+    expect(ok.calls).toHaveLength(1);
+    expect(ok.calls[0]!.kind).toBe("escalate");
+    expect(
+      parseTools('```zetta:escalate\n{"problem":"x","tried":"y","ask":"user"}\n```').calls,
+    ).toHaveLength(0);
   });
 });
 
@@ -34,6 +56,37 @@ describe("chief tools", () => {
     expect(ok.calls[0]!.kind).toBe("bot_claude");
     expect(parseTools('```zetta:bot_claude\n{"bot":"x","nope":1}\n```').calls).toHaveLength(0);
   });
+  test("artifact needs exactly one of path or content", () => {
+    expect(toolPreamble()).toContain("zetta:artifact");
+    const path = parseTools('```zetta:artifact\n{"title":"Sales","path":"out/sales.html"}\n```');
+    expect(path.calls).toHaveLength(1);
+    expect(path.calls[0]!.kind).toBe("artifact");
+    expect(
+      parseTools('```zetta:artifact\n{"title":"Note","content":"hello"}\n```').calls,
+    ).toHaveLength(1);
+    expect(
+      parseTools('```zetta:artifact\n{"title":"Both","path":"a","content":"b"}\n```').calls,
+    ).toHaveLength(0);
+    expect(parseTools('```zetta:artifact\n{"title":"None"}\n```').calls).toHaveLength(0);
+  });
+  test("instruction accepts the old create form and a read by id, and nothing else", () => {
+    expect(
+      parseTools('```zetta:instruction\n{"title":"Report","body":"1. pull 2. sum"}\n```').calls,
+    ).toHaveLength(1);
+    expect(
+      parseTools(
+        '```zetta:instruction\n{"action":"read","id":"0192f5a0-7b1c-7000-8000-000000000001"}\n```',
+      ).calls,
+    ).toHaveLength(1);
+    expect(
+      parseTools('```zetta:instruction\n{"action":"read","id":"not-a-uuid"}\n```').calls,
+    ).toHaveLength(0);
+    expect(
+      parseTools(
+        '```zetta:instruction\n{"action":"read","id":"0192f5a0-7b1c-7000-8000-000000000001","body":"x"}\n```',
+      ).calls,
+    ).toHaveLength(0);
+  });
 });
 
 describe("rich answers", () => {
@@ -43,5 +96,18 @@ describe("rich answers", () => {
     expect(toolPreamble("off").endsWith("Only use a tool when it is needed.")).toBe(true);
     const reply = 'See:\n```zetta:ui\n{"op":"add","path":"/root","value":"a"}\n```';
     expect(parseTools(reply)).toEqual({ calls: [], text: reply });
+  });
+});
+
+describe("chief creation tools", () => {
+  test("only the chief is told to create bots and teams itself", () => {
+    expect(toolPreamble("off", false, true)).toContain("zetta:create_team");
+    expect(toolPreamble("off", false, true)).toContain("zetta:create_bot");
+    expect(toolPreamble("off")).not.toContain("zetta:create_team");
+  });
+  test("create_team defaults to no goal and no members", () => {
+    expect(parseTools('```zetta:create_team\n{"name":"Launch"}\n```').calls).toEqual([
+      { kind: "create_team", args: { name: "Launch", goal: "", members: [] } },
+    ]);
   });
 });

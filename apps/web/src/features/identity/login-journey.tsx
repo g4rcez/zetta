@@ -7,6 +7,7 @@ import SignUpForm from "@/components/sign-up-form";
 import { authClient } from "@/lib/auth-client";
 import { getIdentityError, identityClient, type IdentityStatus } from "@/lib/identity-client";
 
+import { installationApi } from "../onboarding/installation-api";
 import { EnrollmentForm } from "./enrollment-form";
 
 export function LoginJourney() {
@@ -14,21 +15,31 @@ export function LoginJourney() {
   const { refetch: refreshSession } = authClient.useSession();
   const [identity, setIdentity] = useState<IdentityStatus | null>(null);
   const [showSignUp, setShowSignUp] = useState(false);
-  const [setupRequired, setSetupRequired] = useState(false);
   const [token, setToken] = useState("");
   const [pending, setPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
+
+  // An administrator whose install onboarding is unfinished resumes it instead of landing in chat.
+  const enter = useCallback(
+    async (status: Extract<IdentityStatus, { state: "active" }>) => {
+      const installation = status.isAdmin ? await installationApi.get().catch(() => null) : null;
+      if (installation?.onboarding === "pending")
+        await navigate({ to: "/onboarding", replace: true });
+      else await navigate({ to: "/chat/{-$chatId}", replace: true });
+    },
+    [navigate],
+  );
 
   const checkStatus = useCallback(async () => {
     const status = await identityClient.status();
     setIdentity(status);
     if (status.state === "active") {
       setToken("");
-      await navigate({ to: "/chat/{-$chatId}", replace: true });
+      await enter(status);
     }
     return status;
-  }, [navigate]);
+  }, [enter]);
 
   useEffect(() => {
     let alive = true;
@@ -39,12 +50,9 @@ export function LoginJourney() {
         setIdentity(status);
         if (status.state === "anonymous") {
           const setup = await identityClient.setup().catch(() => ({ required: false }));
-          if (alive && setup.required) {
-            setSetupRequired(true);
-            setShowSignUp(true);
-          }
+          if (alive && setup.required) await navigate({ to: "/onboarding", replace: true });
         }
-        if (status.state === "active") await navigate({ to: "/chat/{-$chatId}", replace: true });
+        if (status.state === "active") await enter(status);
       })
       .catch((failure: unknown) => {
         if (alive) setError(getIdentityError(failure));
@@ -55,7 +63,7 @@ export function LoginJourney() {
     return () => {
       alive = false;
     };
-  }, [navigate]);
+  }, [navigate, enter]);
 
   async function run(action: () => Promise<void>) {
     if (inFlight.current) return;
@@ -129,7 +137,10 @@ export function LoginJourney() {
   }
   if (identity === null || identity.state === "active") {
     return (
-      <section className="mx-auto mt-16 w-full max-w-md space-y-6 rounded-xl border bg-card p-8 shadow-sm" aria-busy={pending}>
+      <section
+        className="mx-auto mt-16 w-full max-w-md space-y-6 rounded-xl border bg-card p-8 shadow-sm"
+        aria-busy={pending}
+      >
         <h1 className="text-2xl font-bold">Checking your access</h1>
         {pending && <p role="status">Checking your membership…</p>}
         {error && (
@@ -165,7 +176,7 @@ export function LoginJourney() {
         </p>
       )}
       {showSignUp ? (
-        <SignUpForm setup={setupRequired} onAuthenticated={authenticated} onSwitchToSignIn={() => setShowSignUp(false)} />
+        <SignUpForm onAuthenticated={authenticated} onSwitchToSignIn={() => setShowSignUp(false)} />
       ) : (
         <SignInForm onAuthenticated={authenticated} onSwitchToSignUp={() => setShowSignUp(true)} />
       )}

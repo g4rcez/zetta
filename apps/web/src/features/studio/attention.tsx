@@ -2,7 +2,11 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui";
 
-import { refreshAttention } from "../attention/summary";
+import {
+  enableNativeNotifications,
+  nativeNotificationState,
+  refreshAttention,
+} from "../attention/summary";
 import { call, errorMessage, type Bot } from "../chat/chat-client";
 import { Badge, Empty, useList, when } from "../shared/ui";
 
@@ -39,13 +43,7 @@ const COLUMNS: {
     status: "acknowledged",
     dot: "bg-amber-500",
     label: "Seen",
-    hint: "You have seen it. Seeing it does not fix anything.",
-  },
-  {
-    status: "resolved",
-    dot: "bg-emerald-500",
-    label: "Resolved",
-    hint: "You marked it as dealt with.",
+    hint: "You have seen it. It is still not fixed.",
   },
 ];
 /** Only a safe, same-purpose link: web addresses or paths inside the app. */
@@ -123,19 +121,17 @@ function Card({
       <div className="flex flex-wrap gap-1 pt-1">
         {item.status === "open" && (
           <>
-            {unread && btn("Mark as read", "read")}
+            {btn("Resolve", "resolve", "default")}
             {btn("I've seen this", "acknowledge")}
-            {btn("Resolve", "resolve")}
           </>
         )}
         {item.status === "acknowledged" && (
           <>
-            {btn("Resolve", "resolve")}
+            {btn("Resolve", "resolve", "default")}
             {btn("Reopen", "reopen")}
           </>
         )}
-        {(item.status === "resolved" || item.status === "cancelled") && btn("Reopen", "reopen")}
-        {item.status !== "cancelled" && item.status !== "resolved" && btn("Dismiss", "cancel")}
+        {btn("Dismiss", "cancel")}
       </div>
     </article>
   );
@@ -144,7 +140,7 @@ function Card({
 export function Attention({ bots, onError }: { bots: Bot[]; onError: (m: string) => void }) {
   const [rows, reload] = useList<Item>("/api/attention", "items", onError);
   const [busy, setBusy] = useState<string>();
-  const [showCancelled, setShowCancelled] = useState(false);
+  const [permission, setPermission] = useState(nativeNotificationState);
   async function act(id: string, action: Action) {
     setBusy(id);
     try {
@@ -158,14 +154,27 @@ export function Attention({ bots, onError }: { bots: Bot[]; onError: (m: string)
     }
   }
   const nameOf = (id: string | null) => (id ? bots.find((b) => b.id === id)?.name : undefined);
-  const cancelled = rows?.filter((i) => i.status === "cancelled") ?? [];
   return (
-    <section aria-label="Attention" className="space-y-4">
+    <section aria-label="Notifications" className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Things bots and routines want you to look at. Marking something as seen only hides the
-        alert; it does not fix the problem.
+        Things bots and routines want you to look at. Open the result, then resolve or dismiss it.
+        Seeing something does not fix it.
       </p>
-      <div className="grid items-start gap-4 lg:grid-cols-3">
+      {permission === "default" && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => void enableNativeNotifications().then((r) => setPermission(r))}
+        >
+          Enable desktop notifications
+        </Button>
+      )}
+      {permission === "denied" && (
+        <p className="text-xs text-muted-foreground">
+          Desktop notifications are blocked. Allow them in the browser site settings.
+        </p>
+      )}
+      <div className="grid items-start gap-4 lg:grid-cols-2">
         {COLUMNS.map((c) => {
           const items = rows?.filter((i) => i.status === c.status) ?? [];
           return (
@@ -198,30 +207,6 @@ export function Attention({ bots, onError }: { bots: Bot[]; onError: (m: string)
             </div>
           );
         })}
-      </div>
-      <div>
-        <Button
-          size="sm"
-          variant="outline"
-          aria-expanded={showCancelled}
-          onClick={() => setShowCancelled(!showCancelled)}
-        >
-          {showCancelled ? "Hide" : "Show"} dismissed ({cancelled.length})
-        </Button>
-        {showCancelled && (
-          <div className="mt-2 grid gap-2 lg:grid-cols-3">
-            {cancelled.map((i) => (
-              <Card
-                key={i.id}
-                item={i}
-                botName={nameOf(i.botId)}
-                busy={busy === i.id}
-                onAction={(a) => void act(i.id, a)}
-              />
-            ))}
-            {cancelled.length === 0 && <Empty>No dismissed items.</Empty>}
-          </div>
-        )}
       </div>
       {rows?.some((i) => i.updatedAt) && (
         <p className="text-xs text-muted-foreground">

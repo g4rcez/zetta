@@ -84,6 +84,7 @@ const sendBody = z.strictObject({
   parentMessageId: uuid.optional(),
   attachmentIds: z.array(uuid).max(5).optional(),
   fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
+  instructionIds: z.array(uuid).max(5).optional(),
 });
 /** A message may be only pictures or files, but never empty. */
 const hasBody = (v: {
@@ -687,6 +688,7 @@ export function createChatRoutes(
         return chat.sendMessage(actor, parse(uuid, params.id), v.content, v.parentMessageId, {
           attachmentIds: v.attachmentIds,
           fileRefs: v.fileRefs,
+          instructionIds: v.instructionIds,
           clientRequestId: v.clientRequestId,
         });
       }, 201),

@@ -7,15 +7,19 @@ import {
   discussion,
   discussionMember,
   discussionTurn,
+  turnStep,
+  type TurnStep,
 } from "@zetta/db/schema/discussions";
-import { attachment, configProposal } from "@zetta/db/schema/features";
+import { attachment, configProposal, instruction } from "@zetta/db/schema/features";
+import { task } from "@zetta/db/schema/tasks";
 import { raiseAttention } from "../features/attention";
 import { AccessError, requireOwned, type ActiveActor } from "../identity/access";
 import { dockerConfig } from "../chat/harness";
 import type { FileStore } from "../chat/files";
 import { insertMessage } from "../chat/messages";
 import { codeEnabled } from "../chat/pipeline";
-import { mentionKey, wakeTargets } from "./prompt";
+import type { LoopStore } from "../chat/loops";
+import { HELP_PREFIX, mentionKey, wakeTargets } from "./prompt";
 
 type Bot = typeof bot.$inferSelect;
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -24,10 +28,13 @@ export type DiscussionTurn = typeof discussionTurn.$inferSelect;
 export type Member = typeof discussionMember.$inferSelect;
 
 export const PERMISSIONS_TITLE = "Permissions";
+/** Where a blocked bot stopped, kept on its help request so the answer can resume it (a loop, or the chat turn). */
+export type HelpStop = { conversationId: string; messageId: string | null; loopId?: string };
 export const MAX_MEMBERS = 6,
   MAX_OPEN = 5,
   MAX_PENDING_PROPOSALS = 3,
-  MAX_PEERS = 20;
+  MAX_PEERS = 20,
+  STEP_LIMIT = 200;
 const ACTIVE = ["open", "paused", "stalled"] as const;
 
 /** `safe` is shown to the user and to the bot that asked (no ids of other users, no secrets). */
@@ -50,6 +57,8 @@ export type OpenInput = {
   origin?: { conversationId: string; messageId: string | null } | undefined;
   originInbound?: { plugin: string; chat: string; chatName: string } | undefined;
   tainted: boolean;
+  /** Set for a team room: the chief opens it (`createdBy`) and the team's other bots are the members. */
+  teamId?: string | undefined;
   turnBudget?: number | undefined;
   /** false: the opening post wakes nobody (system-made discussions). */
   wake?: boolean | undefined;
@@ -63,10 +72,29 @@ export type Claimed = { turn: DiscussionTurn; discussion: Discussion; member: Me
  * owner-approved brief for members that can change code.
  */
 /** What a person attached to a post: uploaded attachments and files from the server folder, like in a chat. */
-export type PostFiles = { attachmentIds?: string[] | undefined; fileRefs?: string[] | undefined };
+export type PostFiles = {
+  attachmentIds?: string[] | undefined;
+  fileRefs?: string[] | undefined;
+  instructionIds?: string[] | undefined;
+};
 const FILE_CLIP = 12_000;
 
-export function createDiscussionStore(db: Database, files?: Pick<FileStore, "readWithHash">) {
+/** How a room loop step ended: the room went quiet (`idle`, or `failed` when a member turn failed) or something else took over. */
+export type RoomSettle =
+  | "idle"
+  | "failed"
+  | "resolved"
+  | "cancelled"
+  | "paused"
+  | "approval"
+  | "stopped";
+const SETTLE_POLL_MS = 2_000;
+
+export function createDiscussionStore(
+  db: Database,
+  files?: Pick<FileStore, "readWithHash">,
+  loops?: Pick<LoopStore, "start" | "active">,
+) {
   let onEnqueue: (() => void) | undefined;
   const visible = (a: ActiveActor) => or(eq(bot.ownerUserId, a.userId), eq(bot.visibility, "team"));
 
@@ -176,7 +204,7 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
     ];
     if (all.length < 2 && input.createdBy)
       throw new DiscussionError("INVALID", "Invite at least one other bot.");
-    if (all.length > MAX_MEMBERS)
+    if (all.length > MAX_MEMBERS && !input.teamId)
       throw new DiscussionError("LIMIT", `A discussion has at most ${MAX_MEMBERS} bots.`);
     const openKey = createHash("sha256")
       .update(
@@ -223,6 +251,7 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
           ownerUserId: a.userId,
           conversationId: conv!.id,
           createdByBotId: input.createdBy?.id ?? null,
+          teamId: input.teamId ?? null,
           originConversationId: input.origin?.conversationId ?? null,
           originMessageId: input.origin?.messageId ?? null,
           originInbound: input.originInbound ?? null,
@@ -443,6 +472,56 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
       return d;
     },
     /**
+     * A blocked bot asks the Chief for help. Each request is its own discussion led by the Chief, so the bots settle it between
+     * themselves; the user is only asked if the Chief cannot (see HELP_CHIEF_TOOLS). The request post remembers where the bot stopped.
+     */
+    async requestHelp(
+      a: ActiveActor,
+      chief: Bot,
+      requester: Bot,
+      problem: string,
+      tried: string,
+      stoppedAt: HelpStop,
+    ) {
+      const opened = await open(a, {
+        title: `${HELP_PREFIX}${requester.name}: ${problem}`.slice(0, 120),
+        goal: `Solve the blocker of ${requester.name} without asking the user.`,
+        context: `Problem: ${problem}\nTried: ${tried}`,
+        members: [{ bot: requester.id }],
+        firstMessage: `${requester.name} is blocked and asks the Chief for help.`,
+        createdBy: chief,
+        tainted: false,
+        wake: false,
+      });
+      const row = await post(
+        db,
+        opened.discussion,
+        requester,
+        `@${chief.name.replace(/\s+/g, "")} I am blocked: ${problem}\nTried: ${tried}`,
+      );
+      await db
+        .update(message)
+        .set({ meta: { helpRequest: { botId: requester.id, ...stoppedAt } } })
+        .where(eq(message.id, row.id));
+      return opened.discussion;
+    },
+    /** Where the blocked bot of a help discussion stopped, or undefined for any other discussion. */
+    async helpRequestOf(a: ActiveActor, id: string) {
+      const d = await loadOwned(a, id);
+      if (!d.title.startsWith(HELP_PREFIX)) return undefined;
+      const [row] = await db
+        .select({ meta: message.meta })
+        .from(message)
+        .where(
+          and(
+            eq(message.conversationId, d.conversationId),
+            sql`${message.meta} -> 'helpRequest' is not null`,
+          ),
+        )
+        .limit(1);
+      return (row?.meta as { helpRequest?: HelpStop & { botId: string } } | null)?.helpRequest;
+    },
+    /**
      * The chats a bot stopped in to wait for a permission, for the rules now granted. Each request is handed out once (a concurrent grant
      * finds it already taken); requests for rules not granted stay waiting.
      */
@@ -641,6 +720,22 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
           throw new DiscussionError("NOT_FOUND", `The file ${ref} could not be read.`);
         }
       }
+      // Instructions the person picked: they must be the owner's, and they stay on the post for the bots woken by it.
+      const instructionIds = [...new Set(attached.instructionIds ?? [])];
+      if (instructionIds.length) {
+        const owned = await db
+          .select({ id: instruction.id })
+          .from(instruction)
+          .where(
+            and(
+              inArray(instruction.id, instructionIds),
+              eq(instruction.ownerUserId, a.userId),
+              eq(instruction.archived, false),
+            ),
+          );
+        if (owned.length !== instructionIds.length)
+          throw new DiscussionError("NOT_FOUND", "An instruction is no longer available.");
+      }
       const res = await db.transaction(async (tx) => {
         const cur =
           d.status === "stalled"
@@ -661,8 +756,9 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
           role: "user",
           content: text,
           meta:
-            carried.length || images.length
+            carried.length || images.length || instructionIds.length
               ? {
+                  ...(instructionIds.length ? { instructionIds } : {}),
                   ...(carried.length ? { files: carried } : {}),
                   ...(images.length ? { images } : {}),
                   ...(refs.length ? { fileRefs: refs, fileHashes } : {}),
@@ -801,14 +897,16 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
             content: `👥 Discussion "${d.title}" was resolved: ${summary}`,
             meta: { discussion: { id: d.id, title: d.title, status: "resolved" } },
           });
-        await raiseAttention(tx, d.ownerUserId, {
-          botId: by?.id ?? null,
-          title: `Discussion resolved: ${d.title}`,
-          detail: summary,
-          resultLink: `/discussions?id=${d.id}`,
-          source: "bot",
-          sourceKey: `discussion:${d.id}:resolved`,
-        });
+        // A help request is settled between the bots; it only reaches the user when the Chief hands off.
+        if (!d.title.startsWith(HELP_PREFIX))
+          await raiseAttention(tx, d.ownerUserId, {
+            botId: by?.id ?? null,
+            title: `Discussion resolved: ${d.title}`,
+            detail: summary,
+            resultLink: `/discussions?id=${d.id}`,
+            source: "bot",
+            sourceKey: `discussion:${d.id}:resolved`,
+          });
         return r;
       });
       if (wrap) onEnqueue?.();
@@ -925,6 +1023,165 @@ export function createDiscussionStore(db: Database, files?: Pick<FileStore, "rea
           (t) => t.discussionId === d.id && t.status === "awaiting_approval",
         ),
       }));
+    },
+    async byConversation(conversationId: string) {
+      return (
+        await db.select().from(discussion).where(eq(discussion.conversationId, conversationId))
+      )[0];
+    },
+    /** The owner starts a goal loop for a room: its facilitator leads, the members discuss how to reach the goal. */
+    async startLoop(a: ActiveActor, id: string, v: { goal: string; doneWhen: string }) {
+      if (!loops) throw new DiscussionError("INVALID", "Loops are not available.");
+      const d = await loadOwned(a, id);
+      if (!d.createdByBotId)
+        throw new DiscussionError("INVALID", "A loop needs a facilitator bot to lead the room.");
+      if (d.status === "resolved" || d.status === "cancelled")
+        throw new DiscussionError("CLOSED", `This discussion is ${d.status}.`);
+      if ((await membersOf(d)).length < 2)
+        throw new DiscussionError("INVALID", "A loop needs at least two bots in the room.");
+      const goal = (v.goal || d.goal).trim();
+      if (!goal) throw new DiscussionError("INVALID", "Give the loop a goal.");
+      if (await loops.active(d.conversationId))
+        throw new DiscussionError(
+          "CONFLICT",
+          "This room already has a loop. Stop it before starting another.",
+        );
+      return loops.start(a.userId, {
+        conversationId: d.conversationId,
+        botId: d.createdByBotId,
+        goal: goal.slice(0, 500),
+        doneWhen: v.doneWhen,
+      });
+    },
+    /**
+     * One loop step: the turn budget counts per step (reset here, a stalled room reopens), and a system post wakes the facilitator.
+     * Returns why no step started when the room is paused or closed.
+     */
+    async startLoopStep(
+      id: string,
+      label: string,
+    ): Promise<{ state: "started"; since: Date } | { state: "resolved" | "cancelled" | "paused" }> {
+      const since = new Date();
+      const [d] = await db
+        .update(discussion)
+        .set({ status: "open", turnsUsed: 0, updatedAt: since })
+        .where(and(eq(discussion.id, id), inArray(discussion.status, ["open", "stalled"])))
+        .returning();
+      if (!d) {
+        const [now] = await db
+          .select({ status: discussion.status })
+          .from(discussion)
+          .where(eq(discussion.id, id));
+        return {
+          state:
+            now?.status === "resolved"
+              ? "resolved"
+              : now?.status === "paused"
+                ? "paused"
+                : "cancelled",
+        };
+      }
+      await db.transaction(async (tx) => {
+        const row = await insertMessage(tx, d.conversationId, {
+          ownerUserId: d.ownerUserId,
+          role: "system",
+          content: label,
+          meta: { discussionEvent: "loop" },
+        });
+        // No text to scan for mentions: the goal may name a member, but a loop step always goes to the facilitator first.
+        await enqueueWakes(tx, d, null, "", row.id);
+      });
+      onEnqueue?.();
+      return { state: "started", since };
+    },
+    /** Waits until the room is quiet (nothing queued or running), or something stops the step. */
+    async settle(
+      id: string,
+      since: Date,
+      stopped: () => Promise<boolean>,
+    ): Promise<{ state: RoomSettle; summary: string }> {
+      for (;;) {
+        if (await stopped()) return { state: "stopped", summary: "" };
+        const [d] = await db.select().from(discussion).where(eq(discussion.id, id));
+        if (!d || d.status === "cancelled") return { state: "cancelled", summary: "" };
+        if (d.status === "resolved") return { state: "resolved", summary: d.summary };
+        if (d.status === "paused") return { state: "paused", summary: "" };
+        const pending = (
+          await db
+            .select({ status: discussionTurn.status })
+            .from(discussionTurn)
+            .where(
+              and(
+                eq(discussionTurn.discussionId, id),
+                inArray(discussionTurn.status, ["queued", "running", "awaiting_approval"]),
+              ),
+            )
+        ).map((t) => t.status);
+        const running = pending.includes("running");
+        // A stalled room (turn budget spent) keeps its queued turns; the next step reopens it.
+        const quiet = !running && (d.status === "stalled" || !pending.includes("queued"));
+        if (quiet) {
+          if (pending.includes("awaiting_approval")) return { state: "approval", summary: "" };
+          const [{ n } = { n: 0 }] = await db
+            .select({ n: sql<number>`count(*)::int` })
+            .from(discussionTurn)
+            .where(
+              and(
+                eq(discussionTurn.discussionId, id),
+                eq(discussionTurn.status, "failed"),
+                sql`${discussionTurn.createdAt} >= ${since}`,
+              ),
+            );
+          return { state: n > 0 ? "failed" : "idle", summary: "" };
+        }
+        await Bun.sleep(SETTLE_POLL_MS);
+      }
+    },
+    /** One step row per member turn (the room drawer reads it). */
+    async startSteps(t: Pick<DiscussionTurn, "id" | "ownerUserId" | "botId">) {
+      await db
+        .insert(turnStep)
+        .values({ discussionTurnId: t.id, ownerUserId: t.ownerUserId, botId: t.botId })
+        .onConflictDoNothing();
+    },
+    /** Appends one step to `data.steps` in a single statement; only the newest STEP_LIMIT steps stay. */
+    async addStep(turnId: string, step: TurnStep, messageId?: string) {
+      await db
+        .update(turnStep)
+        .set({
+          data: sql`jsonb_build_object('steps', (select coalesce(jsonb_agg(x.e order by x.n), '[]'::jsonb) from (select e, n from jsonb_array_elements(${turnStep.data} -> 'steps' || ${JSON.stringify([step])}::jsonb) with ordinality as t(e, n) order by n desc limit ${STEP_LIMIT}) x))`,
+          ...(messageId ? { messageId } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(turnStep.discussionTurnId, turnId));
+    },
+    /** Turns of a room with their saved steps, and the tasks its bots put on the board. */
+    async steps(a: ActiveActor, id: string) {
+      const d = await loadOwned(a, id);
+      const rows = await db
+        .select({ turn: discussionTurn, data: turnStep.data })
+        .from(discussionTurn)
+        .leftJoin(turnStep, eq(turnStep.discussionTurnId, discussionTurn.id))
+        .where(eq(discussionTurn.discussionId, d.id))
+        .orderBy(desc(discussionTurn.createdAt))
+        .limit(100);
+      const tasks = await db
+        .select()
+        .from(task)
+        .where(and(eq(task.conversationId, d.conversationId), eq(task.ownerUserId, a.userId)))
+        .orderBy(desc(task.updatedAt));
+      return {
+        turns: rows.map((r) => ({
+          id: r.turn.id,
+          botId: r.turn.botId,
+          kind: r.turn.kind,
+          status: r.turn.status,
+          createdAt: r.turn.createdAt,
+          finishedAt: r.turn.finishedAt,
+          steps: r.data?.steps ?? [],
+        })),
+        tasks,
+      };
     },
     async get(a: ActiveActor, id: string) {
       const d = await loadOwned(a, id);

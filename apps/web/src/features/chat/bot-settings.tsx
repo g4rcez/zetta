@@ -144,7 +144,7 @@ function AvatarTab({ bot, onBotChange, notify }: Common) {
   const [draft, setDraft] = useState<BotAvatarValue | null>(bot.avatar ?? null);
   return (
     <Card title="Picture">
-      <BotAvatarPicker botId={bot.id} value={draft} onChange={setDraft} />
+      <BotAvatarPicker botId={bot.id} kind={bot.kind} value={draft} onChange={setDraft} />
       <Button
         type="button"
         size="sm"

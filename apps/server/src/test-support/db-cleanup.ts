@@ -29,6 +29,7 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
     "delete from discussion_member where discussion_id in (select id from discussion where owner_user_id = any($1))",
   );
   for (const t of [
+    "turn_step",
     "discussion_turn",
     "discussion",
     "inbound_event",
@@ -78,6 +79,10 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
   await q(
     "delete from bot_revision where bot_id in (select id from bot where owner_user_id = any($1))",
   );
+  await q(
+    "delete from team_member where team_id in (select id from team where owner_user_id = any($1))",
+  );
+  await q("delete from team where owner_user_id = any($1)");
   await q("delete from bot where owner_user_id = any($1)");
   await q("delete from workspace where owner_user_id = any($1)");
   await q("delete from connection where owner_user_id = any($1)");

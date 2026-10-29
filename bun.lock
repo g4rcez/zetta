@@ -84,6 +84,7 @@
         "ai": "^7.0.153",
         "better-auth": "catalog:",
         "emojibase-data": "^18.0.0",
+        "fflate": "^0.8.3",
         "lucide-react": "^1.56.0",
         "motion": "^14.6.0",
         "next-themes": "catalog:",

@@ -5,6 +5,7 @@ import { useState, type ReactElement, type ReactNode } from "react";
 import { Tooltip } from "@g4rcez/components/tooltip";
 
 import { appLinks } from "@/components/app-links";
+import { useBackgroundNotifications } from "@/features/attention/background-notifications";
 import { useAttentionSummary } from "@/features/attention/summary";
 import { AppCommandPalette } from "@/features/command-palette/app-command-palette";
 import { isRailTab } from "@/features/studio/studio-tabs";
@@ -14,7 +15,16 @@ import { Logo } from "./logo";
 import { ModeToggle } from "./mode-toggle";
 import UserMenu from "./user-menu";
 
-export const APP_PREFIXES = ["/chat", "/discussions", "/agenda", "/tasks", "/studio", "/dashboard"];
+export const APP_PREFIXES = [
+  "/chat",
+  "/discussions",
+  "/agenda",
+  "/tasks",
+  "/studio",
+  "/dashboard",
+  "/teams",
+  "/artifacts",
+];
 export const inApp = (pathname: string) =>
   APP_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
@@ -56,9 +66,9 @@ function RailHint({
   );
 }
 
-/** Signed-in application shell: a slim icon rail on the left (bottom bar on phones). */
 export function AppRail() {
   const attention = useAttentionSummary();
+  useBackgroundNotifications();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(readCollapsed);
@@ -125,10 +135,10 @@ export function AppRail() {
                     {label}
                   </span>
                 ) : null}
-                {to === "/studio" && attention && attention.unread > 0 ? (
+                {params?.tab === "attention" && attention && attention.unread > 0 ? (
                   <span
                     className="absolute top-0.5 left-6 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white"
-                    aria-label={`${attention.unread} unread attention items`}
+                    aria-label={`${attention.unread} unread notifications`}
                   >
                     {attention.unread}
                   </span>
@@ -139,27 +149,6 @@ export function AppRail() {
         })}
       </nav>
       <div className="flex items-center gap-1 md:w-full md:flex-col md:items-stretch">
-        <RailHint
-          collapsed={collapsed}
-          label="Expand sidebar"
-          icon={<PanelLeftOpen className="size-4" aria-hidden="true" />}
-        >
-          {/* Bottom stack, icon column: both anchored, so the button stays put when the rail changes width. */}
-          <button
-            type="button"
-            onClick={toggle}
-            aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-            aria-expanded={expanded}
-            className={`${railRow} ${expanded ? railRowExpanded : ""} hidden md:flex`}
-          >
-            {expanded ? (
-              <PanelLeftClose className="size-5 shrink-0" aria-hidden="true" />
-            ) : (
-              <PanelLeftOpen className="size-5 shrink-0" aria-hidden="true" />
-            )}
-            {expanded ? <span className={railLabel}>Collapse</span> : null}
-          </button>
-        </RailHint>
         <RailHint
           collapsed={collapsed}
           label="Search"
@@ -182,11 +171,31 @@ export function AppRail() {
           </button>
         </RailHint>
         <RailHint
-          collapsed={collapsed}
           label="Theme"
+          collapsed={collapsed}
           icon={<Moon className="size-4" aria-hidden="true" />}
         >
           <ModeToggle rail={expanded ? "expanded" : "collapsed"} />
+        </RailHint>
+        <RailHint
+          collapsed={collapsed}
+          label="Expand sidebar"
+          icon={<PanelLeftOpen className="size-4" aria-hidden="true" />}
+        >
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+            aria-expanded={expanded}
+            className={`${railRow} ${expanded ? railRowExpanded : ""} hidden md:flex`}
+          >
+            {expanded ? (
+              <PanelLeftClose className="size-5 shrink-0" aria-hidden="true" />
+            ) : (
+              <PanelLeftOpen className="size-5 shrink-0" aria-hidden="true" />
+            )}
+            {expanded ? <span className={railLabel}>Collapse</span> : null}
+          </button>
         </RailHint>
         <UserMenu rail={expanded ? "expanded" : "collapsed"} />
       </div>
@@ -195,7 +204,6 @@ export function AppRail() {
   );
 }
 
-/** Public pages (home, sign in): a minimal top bar. */
 export default function Header() {
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">

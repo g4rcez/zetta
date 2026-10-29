@@ -10,6 +10,7 @@ import { RedditConnect } from "../plugins/reddit-connect";
 import { TelegramConnect, TelegramInstall } from "../plugins/telegram";
 import { VaultGrants } from "../plugins/vault-grants";
 import { ToggleCard } from "../plugins/toggle-card";
+import { WhatsappInstall } from "../plugins/whatsapp-install";
 import { WhatsappPairing } from "../plugins/whatsapp-pairing";
 import {
   CATEGORY_LABEL,
@@ -603,6 +604,16 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
             bots={bots}
             onClose={() => setInstalling(undefined)}
             onDone={() => void reload()}
+          />
+        ) : installing.id === "whatsapp" ? (
+          <WhatsappInstall
+            meta={installing}
+            bots={bots}
+            onClose={() => setInstalling(undefined)}
+            onInstalled={() => {
+              void reload();
+              setPairing(true);
+            }}
           />
         ) : (
           <InstallDialog

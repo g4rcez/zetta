@@ -96,10 +96,21 @@ export type Attachment = { id: string; name: string; size: number; mimeType?: st
 export const isImage = (a: { mimeType?: string | undefined }) => !!a.mimeType?.startsWith("image/");
 export type Reaction = { emoji: string; count: number; mine: boolean };
 export type Receipt = {
-  kind: "memory" | "instruction" | "proposal" | "computer" | "agenda" | "task" | "discussion";
+  kind:
+    | "memory"
+    | "instruction"
+    | "proposal"
+    | "computer"
+    | "agenda"
+    | "task"
+    | "discussion"
+    | "artifact"
+    | "bot"
+    | "team";
   id: string;
   text: string;
   created?: boolean;
+  avatar?: BotAvatarValue | null;
 };
 export type MessageMeta = {
   used?: { memories?: string[]; instructions?: string[] };

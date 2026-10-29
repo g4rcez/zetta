@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   BookmarkPlus,
   CalendarPlus,
+  FileBox,
   ListChecks,
   Users,
   Brain,
@@ -292,9 +293,11 @@ export function MessageRow({
     row.role === "assistant" && !working
       ? splitActionNotes(row.content)
       : { body: row.content, notes: [] };
-  const receipts = (row.meta?.receipts ?? []).filter(
-    (r) => r.kind !== "proposal" && r.kind !== "computer",
+  const all = row.meta?.receipts ?? [];
+  const receipts = all.filter(
+    (r) => r.kind !== "proposal" && r.kind !== "computer" && r.kind !== "bot" && r.kind !== "team",
   );
+  const made = all.filter((r) => r.kind === "bot" || r.kind === "team");
   const computers = computersOf(row);
   const replies = row.replyCount ?? 0;
   return (
@@ -425,17 +428,47 @@ export function MessageRow({
             Open the discussion “{row.meta.discussion.title}”
           </Link>
         )}
+        {made.length > 0 && (
+          <ul className="flex flex-wrap gap-2" aria-label="Created by the bot">
+            {made.map((r) => (
+              <li key={`${r.kind}-${r.id}`}>
+                {r.kind === "bot" ? (
+                  <Link
+                    to="/chat/{-$chatId}"
+                    search={{ bot: r.id }}
+                    className="flex items-center gap-2.5 rounded-lg border bg-card py-2 pr-3 pl-2 text-[13px] hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <BotAvatar bot={{ id: r.id, avatar: r.avatar ?? null }} size={32} square />
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-foreground">{r.text}</span>
+                      <span className="block text-muted-foreground">New bot · open chat</span>
+                    </span>
+                  </Link>
+                ) : (
+                  <Link
+                    to="/teams"
+                    className="flex items-center gap-2.5 rounded-lg border bg-card py-2 pr-3 pl-2 text-[13px] hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                      <Users aria-hidden="true" className="size-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-foreground">{r.text}</span>
+                      <span className="block text-muted-foreground">New team · open teams</span>
+                    </span>
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
         {receipts.length > 0 && (
           <ul
             className="flex flex-wrap gap-x-3 gap-y-0.5 text-[13px] text-muted-foreground"
             aria-label="What the bot saved"
           >
             {receipts.map((r) => (
-              <li
-                key={`${r.kind}-${r.id}`}
-                className="flex items-center gap-1"
-                title={r.text}
-              >
+              <li key={`${r.kind}-${r.id}`} className="flex items-center gap-1" title={r.text}>
                 {r.kind === "agenda" ? (
                   <Link
                     to="/agenda"
@@ -452,6 +485,15 @@ export function MessageRow({
                   >
                     <ListChecks aria-hidden="true" className="size-3.5" />
                     {r.created === false ? "updated" : "added"} “{r.text}”
+                  </Link>
+                ) : r.kind === "artifact" ? (
+                  <Link
+                    to="/artifacts/$artifactId"
+                    params={{ artifactId: r.id }}
+                    className="flex items-center gap-1 hover:text-foreground hover:underline"
+                  >
+                    <FileBox aria-hidden="true" className="size-3.5" />
+                    published “{r.text}”
                   </Link>
                 ) : r.kind === "discussion" ? (
                   <Link

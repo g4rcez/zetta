@@ -2,23 +2,28 @@ import { initLogger } from "evlog";
 
 import { createApp } from "./app";
 import { sweepHarnessContainers } from "./modules/chat/harness";
-import { desktopOrigins, ENV } from "./env.server";
+import { ENV } from "./env.server";
 import {
   agendaServices,
   auth,
   botClaudeServices,
   taskServices,
+  artifactServices,
   botDatabaseServices,
   chatServices,
   computerServices,
   connectionServices,
   discussionServices,
+  teamServices,
   inboundServices,
   integrationServices,
   decisionServices,
   featureServices,
   identity,
+  installationServices,
   loopServices,
+  networkMode,
+  trustedExtraOrigins,
   resumeInterruptedRuns,
 } from "./services";
 
@@ -29,6 +34,7 @@ initLogger({
 createApp({
   auth,
   identity,
+  installation: installationServices,
   chat: chatServices,
   features: featureServices,
   decisions: decisionServices,
@@ -37,16 +43,25 @@ createApp({
   integrations: integrationServices,
   agenda: agendaServices,
   tasks: taskServices,
+  artifacts: artifactServices,
   discussions: discussionServices,
+  teams: teamServices,
   inbound: inboundServices,
   botDatabase: botDatabaseServices,
   botClaude: botClaudeServices,
   webOrigin: ENV.CORS_ORIGIN,
-  desktopOrigins,
-}).listen({ port: Number(process.env.PORT ?? 3000), idleTimeout: 120 }, () => {
-  // Bun's default (10s) cuts a chat stream while a tool such as WhatsApp is still working
-  console.log(`Server is running on http://localhost:${process.env.PORT ?? 3000}`);
-});
+  desktopOrigins: trustedExtraOrigins,
+}).listen(
+  {
+    hostname: process.env.ZETTA_HOST || (networkMode === "network" ? "0.0.0.0" : "127.0.0.1"),
+    port: Number(process.env.PORT ?? 3000),
+    idleTimeout: 120,
+  },
+  () => {
+    // Bun's default (10s) cuts a chat stream while a tool such as WhatsApp is still working
+    console.log(`Server is running on http://localhost:${process.env.PORT ?? 3000}`);
+  },
+);
 
 // Simple in-process ticker for the other workers (routines run from node-schedule jobs, see features/routines.ts); each unit is claimed atomically before it runs. A `bun --hot` reload replaces
 // the timer instead of stacking another one that keeps driving the previous module's services.

@@ -25,6 +25,8 @@ export type SignUpInput = {
   email: string;
   password: string;
   invitationToken?: string;
+  /** First-run onboarding only: the server's ZETTA_CONNECTION_KEY, proof that the caller owns the installation. */
+  setupKey?: string;
 };
 export type IdentityFetch = (input: URL, init: RequestInit) => Promise<Response>;
 
@@ -47,6 +49,10 @@ export function identityErrorMessage(code: string): string {
       return "This app address is not authorized. Contact the installation operator.";
     case "ENROLLMENT_UNAVAILABLE":
       return "This invitation cannot be used. Ask the installation operator for a new invitation.";
+    case "SETUP_KEY_MISMATCH":
+      return "That key does not match this server's ZETTA_CONNECTION_KEY. Copy it again from the server settings.";
+    case "SETUP_CLOSED":
+      return "Zetta is already set up. Sign in instead.";
     case "SIGNUP_FAILED":
       return "The account could not be created. Check your invitation and account details, or try signing in if you already have an account.";
     case "INVALID_RESPONSE":
@@ -126,6 +132,8 @@ export function createIdentityClient(
   return {
     status: () => request("/api/identity/status", identityStatusSchema),
     setup: () => request("/api/identity/setup", z.object({ required: z.boolean() }).strict()),
+    verifySetupKey: (key: string) =>
+      request("/api/identity/setup/key", z.object({ ok: z.literal(true) }).strict(), { key }),
     issue: (input: InvitationInput) =>
       request("/api/identity/invitations", invitationSchema, input),
     accept: (token: string) =>
@@ -158,6 +166,7 @@ function configuredClient() {
 export const identityClient = {
   status: () => configuredClient().status(),
   setup: () => configuredClient().setup(),
+  verifySetupKey: (key: string) => configuredClient().verifySetupKey(key),
   issue: (input: InvitationInput) => configuredClient().issue(input),
   accept: (token: string) => configuredClient().accept(token),
   revoke: (invitationId: string) => configuredClient().revoke(invitationId),

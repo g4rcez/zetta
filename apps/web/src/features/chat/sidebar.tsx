@@ -329,10 +329,9 @@ function BotSection({
     ) : null;
   const header = (
     <div
-      className="flex items-center rounded-lg hover:bg-sidebar-accent/60"
+      className="flex items-center gap-2 rounded-lg hover:bg-sidebar-accent/60"
       onPointerDown={reordering ? (e) => controls.start(e) : undefined}
       onKeyDown={(e) => {
-        // Keyboard alternative to dragging: Alt+Up / Alt+Down moves the focused bot.
         if (!reordering || !e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
         const i = reordering.ids.indexOf(bot.id);
         const j = e.key === "ArrowUp" ? i - 1 : i + 1;
@@ -364,7 +363,12 @@ function BotSection({
         <BotAvatar bot={bot} size={32} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span className={cn("min-w-0 flex-1 truncate text-sm", current ? "font-semibold" : "font-medium")}>
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-sm",
+                current ? "font-semibold" : "font-medium",
+              )}
+            >
               {bot.name}
               {tag}
             </span>
@@ -390,7 +394,10 @@ function BotSection({
             ) : (
               latest &&
               !setup && (
-                <time dateTime={latest.updatedAt} className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                <time
+                  dateTime={latest.updatedAt}
+                  className="shrink-0 text-xs text-muted-foreground tabular-nums"
+                >
                   {ago(latest.updatedAt)}
                 </time>
               )
@@ -398,7 +405,11 @@ function BotSection({
           </span>
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {setup && (
-              <span role="img" aria-label="Finish setup" className="size-2 shrink-0 rounded-full bg-amber-400" />
+              <span
+                role="img"
+                aria-label="Finish setup"
+                className="size-2 shrink-0 rounded-full bg-amber-400"
+              />
             )}
             <span className="truncate">{second}</span>
           </span>
@@ -411,7 +422,10 @@ function BotSection({
         onClick={onToggle}
         className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
       >
-        <ChevronDown aria-hidden="true" className={cn("size-4", !open && "-rotate-90")} />
+        <ChevronDown
+          aria-hidden="true"
+          className={cn("transition-all duration-300 ease-liner size-4", !open && "rotate-90")}
+        />
       </button>
     </div>
   );
@@ -429,7 +443,13 @@ function BotSection({
         </button>
       </li>
       {shown.map((c) => (
-        <ChatRow key={c.id} c={c} current={c.id === chatId} onOpen={onChat} onUpdate={onUpdateChat} />
+        <ChatRow
+          key={c.id}
+          c={c}
+          current={c.id === chatId}
+          onOpen={onChat}
+          onUpdate={onUpdateChat}
+        />
       ))}
       {chats.length > shown.length && (
         <li>
@@ -466,7 +486,6 @@ function BotSection({
         reordering.dragging.current = true;
       }}
       onDragEnd={() => {
-        // The pointer-up that ends a drag also fires a click on the header; swallow it.
         setTimeout(() => {
           reordering.dragging.current = false;
         }, 0);
@@ -597,7 +616,11 @@ export function ChatSidebar({
   );
   const newChatBot = botId ?? chief?.id;
   const newChatName = (newChatBot && botById.get(newChatBot)?.name) || "bot";
-  const empty = q && (mode === "recent" ? recent.length === 0 : !bots.some((b) => chatsOf(b).length > 0) && favorites.length === 0);
+  const empty =
+    q &&
+    (mode === "recent"
+      ? recent.length === 0
+      : !bots.some((b) => chatsOf(b).length > 0) && favorites.length === 0);
   return (
     <aside
       className="flex h-full min-h-0 w-full min-w-0 flex-col bg-sidebar text-sidebar-foreground md:border-r md:border-sidebar-border"
@@ -688,7 +711,13 @@ export function ChatSidebar({
             }}
             className="flex gap-2 rounded-lg border bg-card p-2"
           >
-            <Input title="New workspace" hiddenLabel name="space" placeholder="New workspace" autoFocus />
+            <Input
+              title="New workspace"
+              hiddenLabel
+              name="space"
+              placeholder="New workspace"
+              autoFocus
+            />
             {spaces.length > 0 && (
               <Select
                 title="Inside workspace"
@@ -714,7 +743,7 @@ export function ChatSidebar({
             className="flex h-8 items-center gap-2 rounded-md px-2.5 text-sm transition-colors hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring"
           >
             <Bell aria-hidden="true" className="size-4 text-muted-foreground" />
-            <span className="flex-1">Needs your attention</span>
+            <span className="flex-1">Notifications</span>
             <span
               className="rounded-full bg-destructive px-2 text-xs font-medium text-white"
               aria-label={`${attention.unread} unread, ${attention.open} open`}
@@ -723,7 +752,11 @@ export function ChatSidebar({
             </span>
           </Link>
         )}
-        <div role="group" aria-label="Sidebar view" className="grid grid-cols-2 gap-0.5 rounded-lg bg-sidebar-accent/50 p-0.5">
+        <div
+          role="group"
+          aria-label="Sidebar view"
+          className="grid grid-cols-2 gap-0.5 rounded-lg bg-sidebar-accent/50 p-0.5"
+        >
           {(["bots", "recent"] as const).map((m) => (
             <button
               key={m}
@@ -743,9 +776,9 @@ export function ChatSidebar({
         </div>
       </div>
       <nav
-        aria-label={mode === "bots" ? "Bots" : "Recent conversations"}
         onKeyDown={walkRows}
         className="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+        aria-label={mode === "bots" ? "Bots" : "Recent conversations"}
       >
         {mode === "recent" ? (
           recent.map((g) => (
@@ -779,7 +812,13 @@ export function ChatSidebar({
                       </h3>
                     )}
                     {!q && members.length > 1 ? (
-                      <Reorder.Group axis="y" as="ul" values={ids} onReorder={reorder} className="space-y-0.5">
+                      <Reorder.Group
+                        axis="y"
+                        as="ul"
+                        values={ids}
+                        onReorder={reorder}
+                        className="space-y-0.5"
+                      >
                         {members.map((b) => section(b, ids))}
                       </Reorder.Group>
                     ) : (

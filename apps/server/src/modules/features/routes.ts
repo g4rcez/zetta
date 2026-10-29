@@ -33,6 +33,7 @@ const schemas = {
     body: text(8000),
     trigger: z.string().max(300).optional(),
     verification: z.string().max(500).optional(),
+    teamId: z.string().uuid().nullable().optional(),
   }),
   instructionUpdate: z.strictObject({
     expectedVersion: counter,
@@ -41,6 +42,7 @@ const schemas = {
     trigger: z.string().max(300).optional(),
     verification: z.string().max(500).optional(),
     archived: z.boolean().optional(),
+    teamId: z.string().uuid().nullable().optional(),
   }),
   hook: z.strictObject({
     kind: z.enum(["add_context", "redact", "stop", "background"]),

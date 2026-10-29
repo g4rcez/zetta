@@ -15,6 +15,7 @@ import {
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
 import { connection } from "./connections";
+import { team } from "./teams";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
@@ -28,7 +29,9 @@ const created = () => timestamp("created_at", { withTimezone: true }).defaultNow
 export const memory = pgTable(
   "memory",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     botId: uuid("bot_id").references(() => bot.id, restrict),
     // Hermes-style stores: "user" = profile of the person (shared by their bots), "memory" = this bot's own notes about working for them.
@@ -55,11 +58,16 @@ export const memory = pgTable(
   ],
 );
 
-/** Reusable procedures learned from completed tasks. */
+/**
+ * Reusable ordered steps a bot must follow. `teamId` null = every bot of the owner; set = only bots in that team.
+ * `createdByBotId` is set when a bot wrote it.
+ */
 export const instruction = pgTable(
   "instruction",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     title: text("title").notNull(),
     body: text("body").notNull(),
@@ -69,9 +77,12 @@ export const instruction = pgTable(
     version: integer("version").default(1).notNull(),
     archived: boolean("archived").default(false).notNull(),
     contentHash: text("content_hash").notNull().default(""),
+    teamId: uuid("team_id").references(() => team.id, restrict),
+    createdByBotId: uuid("created_by_bot_id").references(() => bot.id, setNull),
   },
   (t) => [
     index("instruction_owner_idx").on(t.ownerUserId),
+    index("instruction_team_id_idx").on(t.teamId),
     uniqueIndex("instruction_owner_hash")
       .on(t.ownerUserId, t.contentHash)
       .where(sql`${t.contentHash} <> ''`),
@@ -82,7 +93,9 @@ export const instruction = pgTable(
 export const hook = pgTable(
   "hook",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     botId: uuid("bot_id")
       .notNull()
@@ -94,14 +107,15 @@ export const hook = pgTable(
     position: integer("position").default(0).notNull(),
     createdAt: created(),
   },
-  (t) => [
-    index("hook_owner_user_id_idx").on(t.ownerUserId),index("hook_bot_idx").on(t.botId)],
+  (t) => [index("hook_owner_user_id_idx").on(t.ownerUserId), index("hook_bot_idx").on(t.botId)],
 );
 
 export const routine = pgTable(
   "routine",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     botId: uuid("bot_id")
       .notNull()
@@ -138,13 +152,17 @@ export const routine = pgTable(
   (t) => [
     index("routine_workflow_id_idx").on(t.workflowId),
     index("routine_owner_user_id_idx").on(t.ownerUserId),
-    index("routine_bot_id_idx").on(t.botId),index("routine_due_idx").on(t.paused, t.nextRunAt)],
+    index("routine_bot_id_idx").on(t.botId),
+    index("routine_due_idx").on(t.paused, t.nextRunAt),
+  ],
 );
 
 export const routineRun = pgTable(
   "routine_run",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     routineId: uuid("routine_id")
       .notNull()
       .references(() => routine.id, restrict),
@@ -177,7 +195,9 @@ export const routineRun = pgTable(
 export const attentionItem = pgTable(
   "attention_item",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     botId: uuid("bot_id").references(() => bot.id, restrict),
     title: text("title").notNull(),
@@ -211,7 +231,9 @@ export const attentionItem = pgTable(
 export const workflow = pgTable(
   "workflow",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     name: text("name").notNull(),
     graph: jsonb("graph").notNull(),
@@ -225,7 +247,9 @@ export const workflow = pgTable(
 export const workflowVersion = pgTable(
   "workflow_version",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     workflowId: uuid("workflow_id")
       .notNull()
       .references(() => workflow.id, restrict),
@@ -239,7 +263,9 @@ export const workflowVersion = pgTable(
 export const workflowRun = pgTable(
   "workflow_run",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     workflowId: uuid("workflow_id")
       .notNull()
       .references(() => workflow.id, restrict),
@@ -266,7 +292,9 @@ export const workflowRun = pgTable(
 export const snapshot = pgTable(
   "snapshot",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     title: text("title").notNull(),
     botName: text("bot_name").notNull(),
@@ -288,7 +316,9 @@ export const snapshot = pgTable(
 export const reaction = pgTable(
   "reaction",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     messageId: uuid("message_id")
       .notNull()
       .references(() => message.id, restrict),
@@ -297,14 +327,18 @@ export const reaction = pgTable(
     createdAt: created(),
   },
   (t) => [
-    index("reaction_owner_user_id_idx").on(t.ownerUserId),unique("reaction_unique").on(t.messageId, t.ownerUserId, t.emoji)],
+    index("reaction_owner_user_id_idx").on(t.ownerUserId),
+    unique("reaction_unique").on(t.messageId, t.ownerUserId, t.emoji),
+  ],
 );
 
 /** Attachments owned by one user; linked to a message when sent. Text (<=256KB) lives in `content`; images (<=10MB) live on disk under `path` (relative to the attachments root) and are never deleted. */
 export const attachment = pgTable(
   "attachment",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     conversationId: uuid("conversation_id").references(() => conversation.id, restrict),
     messageId: uuid("message_id").references(() => message.id, restrict),
@@ -317,14 +351,18 @@ export const attachment = pgTable(
   },
   (t) => [
     index("attachment_conversation_id_idx").on(t.conversationId),
-    index("attachment_message_id_idx").on(t.messageId),index("attachment_owner_idx").on(t.ownerUserId, t.conversationId)],
+    index("attachment_message_id_idx").on(t.messageId),
+    index("attachment_owner_idx").on(t.ownerUserId, t.conversationId),
+  ],
 );
 
 /** Bot-proposed configuration changes. Nothing is applied until the owner approves the exact diff. */
 export const configProposal = pgTable(
   "config_proposal",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     kind: text("kind", {
       enum: [
@@ -356,14 +394,18 @@ export const configProposal = pgTable(
   },
   (t) => [
     index("config_proposal_proposed_by_bot_id_idx").on(t.proposedByBotId),
-    index("config_proposal_bot_id_idx").on(t.botId),index("config_proposal_owner_idx").on(t.ownerUserId, t.status)],
+    index("config_proposal_bot_id_idx").on(t.botId),
+    index("config_proposal_owner_idx").on(t.ownerUserId, t.status),
+  ],
 );
 
 /** One delegated bot answer inside a user turn (mention-based specialist dispatch) with its outcome. */
 export const delegation = pgTable(
   "delegation",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     conversationId: uuid("conversation_id")
       .notNull()
@@ -383,63 +425,73 @@ export const delegation = pgTable(
     index("delegation_result_message_id_idx").on(t.resultMessageId),
     index("delegation_parent_message_id_idx").on(t.parentMessageId),
     index("delegation_bot_id_idx").on(t.botId),
-    index("delegation_owner_user_id_idx").on(t.ownerUserId),index("delegation_conv_idx").on(t.conversationId, t.parentMessageId)],
+    index("delegation_owner_user_id_idx").on(t.ownerUserId),
+    index("delegation_conv_idx").on(t.conversationId, t.parentMessageId),
+  ],
 );
 
 /** Per-bot decision routing with the builtin Laya model: the options map to bounded actions. */
-export const decisionConfig = pgTable("decision_config", {
-  botId: uuid("bot_id")
-    .primaryKey()
-    .references(() => bot.id, restrict),
-  ownerUserId: owner(),
-  enabled: boolean("enabled").default(false).notNull(),
-  // laya = builtin local model (default, free). jev = Typesafe hosted API, only with the owner's own connection; the message text is sent to that provider.
-  backend: text("backend", { enum: ["laya", "jev"] })
-    .default("laya")
-    .notNull(),
-  question: text("question").notNull(),
-  options: jsonb("options")
-    .$type<
-      {
-        label: string;
-        description: string;
-        action: "respond" | "ask_user" | "delegate" | "stop";
-        targetBotId?: string;
-        reply?: string;
-      }[]
-    >()
-    .notNull(),
-  minConfidence: integer("min_confidence_pct").default(50).notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-},
-  (t) => [
-    index("decision_config_owner_user_id_idx").on(t.ownerUserId),
-  ],
+export const decisionConfig = pgTable(
+  "decision_config",
+  {
+    botId: uuid("bot_id")
+      .primaryKey()
+      .references(() => bot.id, restrict),
+    ownerUserId: owner(),
+    enabled: boolean("enabled").default(false).notNull(),
+    // laya = builtin local model (default, free). jev = Typesafe hosted API, only with the owner's own connection; the message text is sent to that provider.
+    backend: text("backend", { enum: ["laya", "jev"] })
+      .default("laya")
+      .notNull(),
+    question: text("question").notNull(),
+    options: jsonb("options")
+      .$type<
+        {
+          label: string;
+          description: string;
+          action: "respond" | "ask_user" | "delegate" | "stop";
+          targetBotId?: string;
+          reply?: string;
+        }[]
+      >()
+      .notNull(),
+    minConfidence: integer("min_confidence_pct").default(50).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("decision_config_owner_user_id_idx").on(t.ownerUserId)],
 );
 
 /** Which of the user's connections a bot uses for each required key. References only; secrets stay in the sealed connection store. */
 export const botConnection = pgTable(
   "bot_connection",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     botId: uuid("bot_id")
       .notNull()
       .references(() => bot.id, restrict),
     ownerUserId: owner(),
     key: text("key").notNull(),
-    connectionId: uuid("connection_id").notNull().references(() => connection.id, restrict),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => connection.id, restrict),
     createdAt: created(),
   },
   (t) => [
     index("bot_connection_connection_id_idx").on(t.connectionId),
-    index("bot_connection_owner_user_id_idx").on(t.ownerUserId),unique("bot_connection_unique").on(t.botId, t.ownerUserId, t.key)],
+    index("bot_connection_owner_user_id_idx").on(t.ownerUserId),
+    unique("bot_connection_unique").on(t.botId, t.ownerUserId, t.key),
+  ],
 );
 
 /** Isolated browser profiles per user: dedicated to one bot or explicitly shared among the same user's bots. */
 export const browserProfile = pgTable(
   "browser_profile",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     name: text("name").notNull(),
     mode: text("mode", { enum: ["dedicated", "shared"] })
@@ -451,14 +503,18 @@ export const browserProfile = pgTable(
     createdAt: created(),
   },
   (t) => [
-    index("browser_profile_bot_id_idx").on(t.botId),unique("browser_profile_unique").on(t.ownerUserId, t.name)],
+    index("browser_profile_bot_id_idx").on(t.botId),
+    unique("browser_profile_unique").on(t.ownerUserId, t.name),
+  ],
 );
 
 /** Persistent Linux desktops ("VMs"): one default per user, plus extras a bot proposed and the user approved. Home lives on volume `zetta-vm-<id>`. */
 export const computerVm = pgTable(
   "computer_vm",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     name: text("name").notNull(),
     kind: text("kind", { enum: ["default", "extra"] }).notNull(),
@@ -484,7 +540,9 @@ export const computerVm = pgTable(
 export const auditEvent = pgTable(
   "audit_event",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     kind: text("kind", {
       enum: [
@@ -522,7 +580,9 @@ export const auditEvent = pgTable(
 export const mcpServer = pgTable(
   "mcp_server",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     name: text("name").notNull(),
     transport: text("transport", { enum: ["http", "stdio"] }).notNull(),
@@ -533,14 +593,18 @@ export const mcpServer = pgTable(
     createdAt: created(),
   },
   (t) => [
-    index("mcp_server_connection_id_idx").on(t.connectionId),unique("mcp_server_owner_name").on(t.ownerUserId, t.name)],
+    index("mcp_server_connection_id_idx").on(t.connectionId),
+    unique("mcp_server_owner_name").on(t.ownerUserId, t.name),
+  ],
 );
 
 /** Which of a user's MCP servers a bot may use (per user: sharing a bot never shares servers). */
 export const botIntegration = pgTable(
   "bot_integration",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     botId: uuid("bot_id")
       .notNull()
       .references(() => bot.id, restrict),
@@ -552,14 +616,18 @@ export const botIntegration = pgTable(
   },
   (t) => [
     index("bot_integration_owner_user_id_idx").on(t.ownerUserId),
-    index("bot_integration_server_id_idx").on(t.serverId),unique("bot_integration_unique").on(t.botId, t.ownerUserId, t.serverId)],
+    index("bot_integration_server_id_idx").on(t.serverId),
+    unique("bot_integration_unique").on(t.botId, t.ownerUserId, t.serverId),
+  ],
 );
 
 /** Public web/RSS sources a user follows for briefings (read through the SSRF-guarded fetcher or the isolated browser). */
 export const source = pgTable(
   "source",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: owner(),
     kind: text("kind", { enum: ["rss", "web", "email", "x"] }).notNull(),
     url: text("url").notNull(),
@@ -572,5 +640,7 @@ export const source = pgTable(
     createdAt: created(),
   },
   (t) => [
-    index("source_connection_id_idx").on(t.connectionId),unique("source_owner_url").on(t.ownerUserId, t.url)],
+    index("source_connection_id_idx").on(t.connectionId),
+    unique("source_owner_url").on(t.ownerUserId, t.url),
+  ],
 );

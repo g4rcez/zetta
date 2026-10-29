@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
 import { membership } from "@zetta/db/schema/identity";
+import { team, teamMember } from "@zetta/db/schema/teams";
 import { createApp } from "../app";
 import { cleanupTestUsers } from "../test-support/db-cleanup";
 import { createChatService } from "./chat/service";
@@ -23,108 +24,310 @@ const [A] = ids as [string];
 
 suite("v1 user journeys", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
-  const access = createIdentityAccess({ api: { async getSession({ headers }) { const id = headers.get("x-test-user"); return id ? { user: { id } } : null; } } }, async () => ({ isAdmin: false }));
-  const script: string[] = []; const prompts: string[] = [];
-  const cli = async (t: { prompt: string; harness: string }) => { if (t.harness === "cursor") throw new HarnessError("not_installed"); prompts.push(t.prompt); return script.shift() ?? "OK"; };
-  const stream = async function* (t: { prompt: string; harness: string }) { if (t.harness === "cursor") throw new HarnessError("not_installed"); prompts.push(t.prompt); yield script.shift() ?? "OK"; };
+  const access = createIdentityAccess(
+    {
+      api: {
+        async getSession({ headers }) {
+          const id = headers.get("x-test-user");
+          return id ? { user: { id } } : null;
+        },
+      },
+    },
+    async () => ({ isAdmin: false }),
+  );
+  const script: string[] = [];
+  const prompts: string[] = [];
+  const cli = async (t: { prompt: string; harness: string }) => {
+    if (t.harness === "cursor") throw new HarnessError("not_installed");
+    prompts.push(t.prompt);
+    return script.shift() ?? "OK";
+  };
+  const stream = async function* (t: { prompt: string; harness: string }) {
+    if (t.harness === "cursor") throw new HarnessError("not_installed");
+    prompts.push(t.prompt);
+    yield script.shift() ?? "OK";
+  };
   const run = createTurnRunner(db, cli as never, stream as never);
   const features = createFeaturesService(db, run);
-  const chat = createChatService(db, run, undefined, undefined, undefined, undefined, { routine: features.routines.create as never, workflow: features.workflows.save as never });
-  const app = createApp({ auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never, chat: { access, chat }, features: { access, features }, webOrigin: "http://web.test", desktopOrigins: [], drain: () => {} });
+  const chat = createChatService(db, run, undefined, undefined, undefined, undefined, {
+    routine: features.routines.create as never,
+    workflow: features.workflows.save as never,
+  });
+  const app = createApp({
+    auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
+    chat: { access, chat },
+    features: { access, features },
+    webOrigin: "http://web.test",
+    desktopOrigins: [],
+    drain: () => {},
+  });
   const call = async (method: string, path: string, body?: unknown) => {
-    const r = await app.handle(new Request(`http://localhost${path}`, { method, headers: { "x-test-user": A, origin: "http://web.test", "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined }));
+    const r = await app.handle(
+      new Request(`http://localhost${path}`, {
+        method,
+        headers: {
+          "x-test-user": A,
+          origin: "http://web.test",
+          "content-type": "application/json",
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      }),
+    );
     return { status: r.status, json: (await r.json().catch(() => ({}))) as any };
   };
   beforeAll(async () => {
     const now = new Date();
-    await db.insert(user).values({ id: A, name: A, email: `${A}@t.test`, emailVerified: true, createdAt: now, updatedAt: now });
-    await db.insert(membership).values({ userId: A, status: "active", joinedAt: now, updatedAt: now });
+    await db.insert(user).values({
+      id: A,
+      name: A,
+      email: `${A}@t.test`,
+      emailVerified: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db
+      .insert(membership)
+      .values({ userId: A, status: "active", joinedAt: now, updatedAt: now });
   });
-  afterAll(async () => { await cleanupTestUsers(db, ids); });
+  afterAll(async () => {
+    await cleanupTestUsers(db, ids);
+  });
 
   test("onboarding journey: configure -> real answer -> bot asks -> explicit yes -> ready; 'no' returns to refinement; reconfiguring needs a fresh check", async () => {
-    const bot = (await call("POST", "/api/bots", { name: "Newsie", harness: "pi", personality: "brief" })).json.bot;
+    const bot = (
+      await call("POST", "/api/bots", { name: "Newsie", harness: "pi", personality: "brief" })
+    ).json.bot;
     const conv = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation.id;
-    expect((await call("POST", `/api/bots/${bot.id}/onboarding/question`, { conversationId: conv })).status).toBe(409); // no real conversation yet
+    expect(
+      (await call("POST", `/api/bots/${bot.id}/onboarding/question`, { conversationId: conv }))
+        .status,
+    ).toBe(409); // no real conversation yet
     await call("POST", `/api/conversations/${conv}/messages`, { content: "Introduce yourself" });
-    const q1 = (await call("POST", `/api/bots/${bot.id}/onboarding/question`, { conversationId: conv })).json.questionId;
-    expect((await call("POST", `/api/bots/${bot.id}/onboarding`, { conversationId: conv, questionId: q1, expectedVersion: 1, satisfied: false })).json.bot.onboarded).toBe(false);
+    const q1 = (
+      await call("POST", `/api/bots/${bot.id}/onboarding/question`, { conversationId: conv })
+    ).json.questionId;
+    expect(
+      (
+        await call("POST", `/api/bots/${bot.id}/onboarding`, {
+          conversationId: conv,
+          questionId: q1,
+          expectedVersion: 1,
+          satisfied: false,
+        })
+      ).json.bot.onboarded,
+    ).toBe(false);
     // routines cannot be activated for a bot that is not ready (admission gate)
-    const r = (await call("POST", "/api/routines", { botId: bot.id, title: "Digest", prompt: "digest", timezone: "UTC", everyMinutes: 60 })).json.routine;
-    expect((await call("POST", `/api/routines/${r.id}/paused`, { paused: false })).json.error.missing[0]).toContain("onboarding");
-    const q2 = (await call("POST", `/api/bots/${bot.id}/onboarding/question`, { conversationId: conv })).json.questionId;
-    expect((await call("POST", `/api/bots/${bot.id}/onboarding`, { conversationId: conv, questionId: q2, expectedVersion: 1, satisfied: true })).json.bot.onboarded).toBe(true);
-    expect((await call("POST", `/api/routines/${r.id}/paused`, { paused: false })).status).toBe(200);
+    const r = (
+      await call("POST", "/api/routines", {
+        botId: bot.id,
+        title: "Digest",
+        prompt: "digest",
+        timezone: "UTC",
+        everyMinutes: 60,
+      })
+    ).json.routine;
+    expect(
+      (await call("POST", `/api/routines/${r.id}/paused`, { paused: false })).json.error.missing[0],
+    ).toContain("onboarding");
+    const q2 = (
+      await call("POST", `/api/bots/${bot.id}/onboarding/question`, { conversationId: conv })
+    ).json.questionId;
+    expect(
+      (
+        await call("POST", `/api/bots/${bot.id}/onboarding`, {
+          conversationId: conv,
+          questionId: q2,
+          expectedVersion: 1,
+          satisfied: true,
+        })
+      ).json.bot.onboarded,
+    ).toBe(true);
+    expect((await call("POST", `/api/routines/${r.id}/paused`, { paused: false })).status).toBe(
+      200,
+    );
+  });
+
+  test("a team instruction reaches only bots of that team, and a picked instruction is followed in full", async () => {
+    const mk = async (name: string) => {
+      const b = (await call("POST", "/api/bots", { name, harness: "pi" })).json.bot;
+      await db.$client.query("update bot set onboarded = true where id = $1", [b.id]);
+      return b;
+    };
+    const [inside, outside] = [await mk("Insider"), await mk("Outsider")];
+    const [t] = await db
+      .insert(team)
+      .values({ ownerUserId: A, name: `Deployers-${uuidv7().slice(-6)}` })
+      .returning();
+    await db.insert(teamMember).values({ teamId: t!.id, botId: inside.id, kind: "chief" });
+    expect(
+      (await call("POST", "/api/instructions", { title: "Nope", body: "1) x", teamId: uuidv7() }))
+        .status,
+    ).toBe(404);
+    const made = await call("POST", "/api/instructions", {
+      title: "Release checklist",
+      body: "1) tag the commit 2) push the tag",
+      trigger: "release",
+      teamId: t!.id,
+    });
+    expect(made.status).toBe(201);
+    const say = async (b: { id: string }, content: string, instructionIds?: string[]) => {
+      const conv = (await call("POST", "/api/conversations", { botId: b.id })).json.conversation.id;
+      prompts.length = 0;
+      return call("POST", `/api/conversations/${conv}/messages`, {
+        content,
+        ...(instructionIds ? { instructionIds } : {}),
+      });
+    };
+    await say(inside, "Prepare the release");
+    expect(prompts.at(-1)).toContain("tag the commit");
+    await say(outside, "Prepare the release");
+    expect(prompts.at(-1)).not.toContain("Release checklist");
+    const picked = await say(outside, "Go", [made.json.instruction.id]);
+    expect(prompts.at(-1)).toContain("The user asked you to follow these instructions");
+    expect(prompts.at(-1)).toContain("1) tag the commit 2) push the tag");
+    expect(picked.json.assistant.meta.used.instructions).toEqual([
+      { id: made.json.instruction.id },
+    ]);
+    expect((await say(outside, "Go", [uuidv7()])).status).toBe(404);
   });
 
   test("journey: successful task -> reusable instruction -> routine -> first occurrence -> durable result", async () => {
     const bot = (await call("POST", "/api/bots", { name: "Worker", harness: "pi" })).json.bot;
     await db.$client.query("update bot set onboarded = true where id = $1", [bot.id]);
     const conv = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation.id;
-    script.push('Here is the weekly summary.\n```zetta:instruction\n{"title":"Weekly metrics summary","body":"1) pull metrics 2) compare to last week 3) three bullets","verification":"numbers match source"}\n```');
-    const first = await call("POST", `/api/conversations/${conv}/messages`, { content: "Summarize this week's metrics" });
-    expect(first.json.assistant.meta.receipts[0]).toMatchObject({ kind: "proposal", text: "Weekly metrics summary" });
-    const prop = (await call("GET", "/api/proposals")).json.proposals.find((p: { kind: string }) => p.kind === "create_instruction"); // the user approves before it shapes future turns
-    expect((await call("POST", `/api/proposals/${prop.id}/decision`, { approve: true })).json.status).toBe("approved");
-    const ins = (await call("GET", "/api/instructions")).json.instructions.find((i: { title: string }) => i.title === "Weekly metrics summary");
+    script.push(
+      'Here is the weekly summary.\n```zetta:instruction\n{"title":"Weekly metrics summary","body":"1) pull metrics 2) compare to last week 3) three bullets","verification":"numbers match source"}\n```',
+    );
+    const first = await call("POST", `/api/conversations/${conv}/messages`, {
+      content: "Summarize this week's metrics",
+    });
+    expect(first.json.assistant.meta.receipts[0]).toMatchObject({
+      kind: "instruction",
+      text: "Weekly metrics summary",
+    });
+    const ins = (await call("GET", "/api/instructions")).json.instructions.find(
+      (i: { title: string }) => i.title === "Weekly metrics summary",
+    );
     expect(ins).toBeTruthy();
     // the instruction is retrieved for similar later work, and the answer says what it used
     prompts.length = 0;
-    const second = await call("POST", `/api/conversations/${conv}/messages`, { content: "Do the weekly metrics summary again" });
-    expect(prompts.at(-1)).toContain("pull metrics"); expect(second.json.assistant.meta.used.instructions).toHaveLength(1);
+    const second = await call("POST", `/api/conversations/${conv}/messages`, {
+      content: "Do the weekly metrics summary again",
+    });
+    expect(prompts.at(-1)).toContain("pull metrics");
+    expect(second.json.assistant.meta.used.instructions).toHaveLength(1);
     // make it recurring: the routine summary explains task, bot, timezone/next run, context mode, accounts and destination before activation
-    const routine = (await call("POST", "/api/routines", { botId: bot.id, title: "Weekly metrics", prompt: "Do the weekly metrics summary", timezone: "Europe/Lisbon", dailyAt: "08:00", conversationMode: "new" })).json.routine;
+    const routine = (
+      await call("POST", "/api/routines", {
+        botId: bot.id,
+        title: "Weekly metrics",
+        prompt: "Do the weekly metrics summary",
+        timezone: "Europe/Lisbon",
+        dailyAt: "08:00",
+        conversationMode: "new",
+      })
+    ).json.routine;
     const sum = (await call("GET", `/api/routines/${routine.id}/summary`)).json.summary;
-    expect(sum).toMatchObject({ bot: "Worker", timezone: "Europe/Lisbon", contextMode: "Each run starts a new chat", missing: [] }); expect(sum.nextRuns).toHaveLength(3);
+    expect(sum).toMatchObject({
+      bot: "Worker",
+      timezone: "Europe/Lisbon",
+      contextMode: "Each run starts a new chat",
+      missing: [],
+    });
+    expect(sum.nextRuns).toHaveLength(3);
     await call("POST", `/api/routines/${routine.id}/paused`, { paused: false });
     script.push("Weekly result: three bullets.");
-    const done = (await call("POST", `/api/routines/${routine.id}/run`, { requestKey: "first-occurrence-001" })).json.run;
+    const done = (
+      await call("POST", `/api/routines/${routine.id}/run`, { requestKey: "first-occurrence-001" })
+    ).json.run;
     expect(done.status).toBe("succeeded");
-    const result = (await call("GET", `/api/conversations/${done.conversationId}/messages`)).json.messages;
+    const result = (await call("GET", `/api/conversations/${done.conversationId}/messages`)).json
+      .messages;
     expect(result.at(-1).content).toBe("Weekly result: three bullets."); // durable result in a chat the owner can open
   });
 
   test("journey: wrong result -> inspect knowledge used -> correct it -> improved later context", async () => {
     const bot = (await call("POST", "/api/bots", { name: "Fact", harness: "pi" })).json.bot;
     await db.$client.query("update bot set onboarded = true where id = $1", [bot.id]);
-    const mem = (await call("POST", "/api/memories", { content: "The office closes at 17:00 on Fridays" })).json.memory;
+    const mem = (
+      await call("POST", "/api/memories", { content: "The office closes at 17:00 on Fridays" })
+    ).json.memory;
     const conv = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation.id;
-    const wrong = await call("POST", `/api/conversations/${conv}/messages`, { content: "When does the office close on Fridays?" });
+    const wrong = await call("POST", `/api/conversations/${conv}/messages`, {
+      content: "When does the office close on Fridays?",
+    });
     const used = (await call("GET", `/api/messages/${wrong.json.assistant.id}/knowledge`)).json;
     expect(used.memories.map((m: { id: string }) => m.id)).toContain(mem.id); // the person can see which note drove the answer
-    await call("PATCH", `/api/memories/${mem.id}`, { expectedVersion: 1, content: "The office closes at 15:00 on Fridays" });
+    await call("PATCH", `/api/memories/${mem.id}`, {
+      expectedVersion: 1,
+      content: "The office closes at 15:00 on Fridays",
+    });
     prompts.length = 0;
     // memory is frozen per conversation (stable prompt prefix): the correction shows in the next conversation
-    const conv2 = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation.id;
-    await call("POST", `/api/conversations/${conv2}/messages`, { content: "When does the office close on Fridays?" });
-    expect(prompts.at(-1)).toContain("15:00"); expect(prompts.at(-1)).not.toContain("17:00");
+    const conv2 = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation
+      .id;
+    await call("POST", `/api/conversations/${conv2}/messages`, {
+      content: "When does the office close on Fridays?",
+    });
+    expect(prompts.at(-1)).toContain("15:00");
+    expect(prompts.at(-1)).not.toContain("17:00");
   });
 
   test("journey: blocked task -> repair -> return to the retained work -> deliberate next attempt; screens agree", async () => {
     const bot = (await call("POST", "/api/bots", { name: "Blocked", harness: "cursor" })).json.bot; // cursor-agent is not installed here
     await db.$client.query("update bot set onboarded = true where id = $1", [bot.id]);
-    const routine = (await call("POST", "/api/routines", { botId: bot.id, title: "Daily intake", prompt: "intake", timezone: "UTC", everyMinutes: 60 })).json.routine;
+    const routine = (
+      await call("POST", "/api/routines", {
+        botId: bot.id,
+        title: "Daily intake",
+        prompt: "intake",
+        timezone: "UTC",
+        everyMinutes: 60,
+      })
+    ).json.routine;
     await call("POST", `/api/routines/${routine.id}/paused`, { paused: false });
-    const failed = (await call("POST", `/api/routines/${routine.id}/run`, { requestKey: "blocked-attempt-01" })).json.run;
+    const failed = (
+      await call("POST", `/api/routines/${routine.id}/run`, { requestKey: "blocked-attempt-01" })
+    ).json.run;
     expect(failed.status).toBe("failed");
-    const card = (await call("GET", "/api/attention")).json.items.find((i: { title: string }) => i.title.includes('"Daily intake" failed'));
+    const card = (await call("GET", "/api/attention")).json.items.find((i: { title: string }) =>
+      i.title.includes('"Daily intake" failed'),
+    );
     expect(card).toMatchObject({ status: "open", resultLink: expect.stringContaining("/chat/") });
     const summary = (await call("GET", "/api/attention/summary")).json.summary;
-    expect(summary.open).toBe((await call("GET", "/api/attention")).json.items.filter((i: { status: string }) => i.status === "open").length); // sidebar badge == kanban column
+    expect(summary.open).toBe(
+      (await call("GET", "/api/attention")).json.items.filter(
+        (i: { status: string }) => i.status === "open",
+      ).length,
+    ); // sidebar badge == kanban column
     const activity = (await call("GET", "/api/activity")).json.events;
-    expect(activity.some((e: { kind: string; outcome: string }) => e.kind === "routine_run" && e.outcome === "failed")).toBe(true); // same fact in the activity trail
+    expect(
+      activity.some(
+        (e: { kind: string; outcome: string }) =>
+          e.kind === "routine_run" && e.outcome === "failed",
+      ),
+    ).toBe(true); // same fact in the activity trail
     // acknowledging does not make the run succeed
     await call("POST", `/api/attention/${card.id}/action`, { action: "acknowledge" });
-    expect((await call("GET", `/api/routines/${routine.id}/runs`)).json.runs[0].status).toBe("failed");
+    expect((await call("GET", `/api/routines/${routine.id}/runs`)).json.runs[0].status).toBe(
+      "failed",
+    );
     // repair: switch the bot to a working harness, then retry deliberately (a NEW request key; the old attempt is retained)
     await call("PATCH", `/api/bots/${bot.id}`, { expectedVersion: 1, patch: { harness: "pi" } });
     await db.$client.query("update bot set onboarded = true where id = $1", [bot.id]); // stands in for the explicit satisfaction check
     script.push("Intake handled.");
-    const retry = (await call("POST", `/api/routines/${routine.id}/run`, { requestKey: "deliberate-retry-02" })).json.run;
-    expect(retry.status).toBe("succeeded"); expect(retry.id).not.toBe(failed.id);
-    const history = (await call("GET", `/api/routines/${routine.id}/runs`)).json.runs.map((r: { status: string }) => r.status);
+    const retry = (
+      await call("POST", `/api/routines/${routine.id}/run`, { requestKey: "deliberate-retry-02" })
+    ).json.run;
+    expect(retry.status).toBe("succeeded");
+    expect(retry.id).not.toBe(failed.id);
+    const history = (await call("GET", `/api/routines/${routine.id}/runs`)).json.runs.map(
+      (r: { status: string }) => r.status,
+    );
     expect(history).toEqual(["succeeded", "failed"]); // the earlier attempt is kept
     await call("POST", `/api/attention/${card.id}/action`, { action: "resolve" });
-    expect((await call("GET", "/api/attention/summary")).json.summary.open).toBeLessThan(summary.open + 1);
+    expect((await call("GET", "/api/attention/summary")).json.summary.open).toBeLessThan(
+      summary.open + 1,
+    );
   });
 });

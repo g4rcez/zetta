@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Plus, UsersRound } from "lucide-react";
+import { MessagesSquare, Network, Plus, Repeat, UsersRound } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -17,6 +17,10 @@ import {
 } from "../chat/chat-client";
 import type { Row } from "../chat/chat-rows";
 import { Composer, type Outgoing } from "../chat/composer";
+import { LoopBanner, useGoalLoop } from "../chat/loop-banner";
+import { BotAvatar } from "@/components/bot-avatar";
+import { BotIdentity } from "@/components/bot-identity";
+import { Drawer } from "@/components/drawer";
 import { ComputerActivity } from "../computer/computer-activity";
 import { MessageList } from "../chat/message-list";
 import { useZettaChat } from "../chat/use-zetta-chat";
@@ -28,7 +32,11 @@ import {
   type DiscussionDetail,
   type DiscussionListItem,
   type DiscussionStatus,
+  type RoomTask,
+  type RoomTurn,
 } from "./discussions-api";
+import { RoomCanvas } from "./room-canvas";
+import { StepsDrawer } from "./steps-drawer";
 import { Alert } from "@g4rcez/components/alert";
 
 const STATUS_CLASS: Record<DiscussionStatus, string> = {
@@ -51,7 +59,13 @@ const ago = (iso: string) => {
 const closed = (s: DiscussionStatus) => s === "resolved" || s === "cancelled";
 
 /** Group discussions between bots: the list, one discussion's shared context and transcript, and a form to start one yourself. */
-export function DiscussionsPage({ selectedId }: { selectedId?: string | undefined }) {
+export function DiscussionsPage({
+  selectedId,
+  view = "chat",
+}: {
+  selectedId?: string | undefined;
+  view?: "chat" | "canvas";
+}) {
   const navigate = useNavigate();
   const [list, setList] = useState<DiscussionListItem[]>();
   const [bots, setBots] = useState<Bot[]>([]);
@@ -141,8 +155,18 @@ export function DiscussionsPage({ selectedId }: { selectedId?: string | undefine
                         ? "Bot working…"
                         : STATUS_LABEL[d.status]}
                   </span>
-                  <span className="min-w-0 truncate">
-                    {d.members.map((m) => m.name).join(", ")}
+                  <span className="flex min-w-0 items-center gap-1">
+                    {d.members.map((m) => (
+                      <span key={m.botId} title={m.name} className="shrink-0">
+                        <BotAvatar
+                          bot={bots.find((b) => b.id === m.botId) ?? { id: m.botId }}
+                          size={18}
+                        />
+                      </span>
+                    ))}
+                    <span className="min-w-0 truncate">
+                      {d.members.map((m) => m.name).join(", ")}
+                    </span>
                   </span>
                 </span>
               </button>
@@ -164,6 +188,13 @@ export function DiscussionsPage({ selectedId }: { selectedId?: string | undefine
           <DiscussionView
             key={selectedId}
             id={selectedId}
+            view={view}
+            onView={(v) =>
+              void navigate({
+                to: "/discussions",
+                search: v === "canvas" ? { id: selectedId, view: v } : { id: selectedId },
+              })
+            }
             bots={bots}
             onBack={() => select()}
             onChanged={() => void reloadList()}
@@ -183,11 +214,15 @@ export function DiscussionsPage({ selectedId }: { selectedId?: string | undefine
 
 function DiscussionView({
   id,
+  view,
+  onView,
   bots,
   onBack,
   onChanged,
 }: {
   id: string;
+  view: "chat" | "canvas";
+  onView: (v: "chat" | "canvas") => void;
   bots: Bot[];
   onBack: () => void;
   onChanged: () => void;
@@ -199,11 +234,18 @@ function DiscussionView({
   const [draft, setDraft] = useState("");
   const [context, setContext] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [room, setRoom] = useState<{ turns: RoomTurn[]; tasks: RoomTask[] }>({
+    turns: [],
+    tasks: [],
+  });
+  const [openBot, setOpenBot] = useState<string>();
+  const [loopForm, setLoopForm] = useState<{ goal: string; doneWhen: string }>();
   const fail = useCallback((e: unknown) => toast.error(errorMessage(e)), []);
   const load = useCallback(async () => {
     try {
       const d = await discussionsApi.get(id);
       setDetail(d);
+      if (d.discussion.teamId && view === "canvas") setRoom(await discussionsApi.steps(id));
       setMessages(await chatClient.messages(d.discussion.conversationId));
       const memberIds = new Set(d.members.map((m) => m.botId));
       // Same panel as a chat: the briefs that gate this discussion and whatever its bots proposed (config changes, and so on).
@@ -217,10 +259,16 @@ function DiscussionView({
     } catch (e) {
       fail(e);
     }
-  }, [id, fail]);
+  }, [id, view, fail]);
   useEffect(() => {
     void load();
   }, [load]);
+  // The room's goal loop: each step wakes the facilitator and the members discuss it; the room polling above shows the result.
+  const goalLoop = useGoalLoop(
+    detail?.discussion.conversationId,
+    () => {},
+    () => void load(),
+  );
   const working = detail?.turns.some((t) => t.status === "running" || t.status === "queued");
   useEffect(() => {
     const t = setInterval(
@@ -320,6 +368,44 @@ function DiscussionView({
           <span className="text-xs text-muted-foreground" title="Bot turns used of the budget">
             {d.turnsUsed}/{d.turnBudget} turns
           </span>
+          {d.teamId && (
+            <div
+              role="group"
+              aria-label="Room view"
+              className="flex overflow-hidden rounded-md border"
+            >
+              <Button
+                size="sm"
+                variant={view === "chat" ? "default" : "ghost"}
+                aria-pressed={view === "chat"}
+                onClick={() => onView("chat")}
+              >
+                <MessagesSquare className="size-4" aria-hidden="true" /> Chat
+              </Button>
+              <Button
+                size="sm"
+                variant={view === "canvas" ? "default" : "ghost"}
+                aria-pressed={view === "canvas"}
+                onClick={() => onView("canvas")}
+              >
+                <Network className="size-4" aria-hidden="true" /> Canvas
+              </Button>
+            </div>
+          )}
+          {!isClosed &&
+            d.createdByBotId &&
+            detail.members.length > 1 &&
+            (!goalLoop.loop ||
+              (goalLoop.loop.status !== "running" && goalLoop.loop.status !== "paused")) && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setLoopForm({ goal: d.goal, doneWhen: "" })}
+              >
+                <Repeat className="size-4" aria-hidden="true" /> Pursue goal
+              </Button>
+            )}
           {!isClosed &&
             (d.status === "open" ? (
               <Button
@@ -368,65 +454,141 @@ function DiscussionView({
             </Button>
           )}
         </header>
-        <MessageList
-          key={d.conversationId}
-          rows={rows}
-          authorOf={authorOf}
-          busy={Boolean(working) || liveChat.busy}
-          label="Discussion transcript"
-          threads={false}
-          actions={{
-            onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
-            onReply: () => {},
-            onSaveInstruction: (row) =>
-              void chatClient
-                .saveInstruction(d.title, row.content)
-                .then(() => toast.success("Saved as an instruction."), fail),
-          }}
-          intro={
-            rows.length === 0 ? (
-              <p role="status" className="px-4 py-6 text-sm text-muted-foreground">
-                No messages yet.
-              </p>
-            ) : null
-          }
-          footer={
-            running && !liveChat.busy ? (
-              <p role="status" className="px-4 py-2 text-xs text-muted-foreground">
-                {names.get(running.botId) ?? "A bot"} is working…
-              </p>
-            ) : null
-          }
+        <LoopBanner
+          loop={goalLoop.loop}
+          onChange={goalLoop.update}
+          onError={(m) => toast.error(m)}
         />
-        <div className="shrink-0 space-y-2 px-4 pb-4">
-          {briefs.length > 0 && (
-            <ProposalsPanel
-              proposals={briefs}
+        {loopForm && (
+          <Drawer
+            open
+            onClose={() => setLoopForm(undefined)}
+            title="Pursue a goal"
+            description="The team keeps discussing and working, step after step, until the goal is met. You can stop it at any time."
+          >
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void act(() => discussionsApi.startLoop(id, loopForm), "The team is on it.").then(
+                  () => setLoopForm(undefined),
+                );
+              }}
+            >
+              <Textarea
+                title="Goal"
+                rows={3}
+                maxLength={500}
+                value={loopForm.goal}
+                onChange={(e) => setLoopForm({ ...loopForm, goal: e.target.value })}
+              />
+              <Input
+                title="Done when"
+                maxLength={300}
+                placeholder="How the team will know it is finished"
+                value={loopForm.doneWhen}
+                onChange={(e) => setLoopForm({ ...loopForm, doneWhen: e.target.value })}
+              />
+              <Button
+                type="submit"
+                disabled={busy || !loopForm.goal.trim() || !loopForm.doneWhen.trim()}
+              >
+                Start the loop
+              </Button>
+            </form>
+          </Drawer>
+        )}
+        {d.teamId && view === "canvas" ? (
+          <>
+            <RoomCanvas
               bots={bots}
-              notify={(m) => toast(m)}
-              onResolved={() => void load()}
-              onBotsChanged={() => void load()}
+              members={detail.members}
+              chiefId={d.createdByBotId}
+              turns={room.turns}
+              tasks={room.tasks}
+              onOpen={setOpenBot}
             />
-          )}
-          {liveChat.error && (
-            <Alert theme="danger" onClose={() => liveChat.clearError()}>
-              <p className="break-words">{errorMessage(liveChat.error)}</p>
-            </Alert>
-          )}
-          {running && <ComputerActivity botId={running.botId} botName={names.get(running.botId)} />}
-          {!isClosed && (
-            <Composer
-              value={draft}
-              onChange={setDraft}
-              placeholder={`Message the group, e.g. @${detail.members[0]?.name.replace(/\s+/g, "") ?? "Bot"}`}
-              bots={bots.filter((b) => names.has(b.id))}
-              busy={busy}
-              conversationId={d.conversationId}
-              onSubmit={send}
-              onError={fail}
+            {openBot && (
+              <StepsDrawer
+                bot={
+                  bots.find((b) => b.id === openBot) ?? {
+                    id: openBot,
+                    name: names.get(openBot) ?? "Bot",
+                  }
+                }
+                role={detail.members.find((m) => m.botId === openBot)?.role ?? ""}
+                turns={room.turns.filter((t) => t.botId === openBot)}
+                tasks={room.tasks.filter((t) => t.botId === openBot)}
+                onClose={() => setOpenBot(undefined)}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <MessageList
+              key={d.conversationId}
+              rows={rows}
+              authorOf={authorOf}
+              busy={Boolean(working) || liveChat.busy}
+              label="Discussion transcript"
+              threads={false}
+              actions={{
+                onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
+                onReply: () => {},
+                onSaveInstruction: (row) =>
+                  void chatClient
+                    .saveInstruction(d.title, row.content)
+                    .then(() => toast.success("Saved as an instruction."), fail),
+              }}
+              intro={
+                rows.length === 0 ? (
+                  <p role="status" className="px-4 py-6 text-sm text-muted-foreground">
+                    No messages yet.
+                  </p>
+                ) : null
+              }
+              footer={
+                running && !liveChat.busy ? (
+                  <p role="status" className="px-4 py-2 text-xs text-muted-foreground">
+                    {names.get(running.botId) ?? "A bot"} is working…
+                  </p>
+                ) : null
+              }
             />
-          )}
-        </div>
+            <div className="shrink-0 space-y-2 px-4 pb-4">
+              {briefs.length > 0 && (
+                <ProposalsPanel
+                  proposals={briefs}
+                  bots={bots}
+                  notify={(m) => toast(m)}
+                  onResolved={() => void load()}
+                  onBotsChanged={() => void load()}
+                />
+              )}
+              {liveChat.error && (
+                <Alert theme="danger" onClose={() => liveChat.clearError()}>
+                  <p className="break-words">{errorMessage(liveChat.error)}</p>
+                </Alert>
+              )}
+              {running && (
+                <ComputerActivity botId={running.botId} botName={names.get(running.botId)} />
+              )}
+              {!isClosed && (
+                <Composer
+                  value={draft}
+                  onChange={setDraft}
+                  placeholder={`Message the group, e.g. @${detail.members[0]?.name.replace(/\s+/g, "") ?? "Bot"}`}
+                  bots={bots.filter((b) => names.has(b.id))}
+                  busy={busy}
+                  conversationId={d.conversationId}
+                  instructions
+                  onSubmit={send}
+                  onError={fail}
+                />
+              )}
+            </div>
+          </>
+        )}
       </section>
       <aside
         aria-label="Task context"
@@ -631,7 +793,7 @@ function NewDiscussion({
                 setPicked((p) => (e.target.checked ? [...p, b.id] : p.filter((x) => x !== b.id)))
               }
             >
-              {b.name}
+              <BotIdentity bot={b} size={24} sub={b.description} />
             </Checkbox>
           ))
         )}

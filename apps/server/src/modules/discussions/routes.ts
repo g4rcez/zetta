@@ -33,8 +33,13 @@ const schemas = {
       content: z.string().trim().max(4000),
       attachmentIds: z.array(uuid).max(5).optional(),
       fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
+      instructionIds: z.array(uuid).max(5).optional(),
     })
     .refine((v) => v.content || v.attachmentIds?.length || v.fileRefs?.length),
+  loop: z.strictObject({
+    goal: z.string().trim().max(500).default(""),
+    doneWhen: z.string().trim().min(1).max(300),
+  }),
   resolve: z.strictObject({ summary: z.string().trim().min(1).max(2000) }),
   member: z.strictObject({ requireApproval: z.boolean() }),
   peers: z.strictObject({ peerBotIds: z.array(uuid).max(20) }),
@@ -131,6 +136,17 @@ export function createDiscussionRoutes(
     .get(
       "/discussions/:id",
       g(async (c) => store.get(c.actor, id(c))),
+    )
+    .get(
+      "/discussions/:id/steps",
+      g(async (c) => store.steps(c.actor, id(c))),
+    )
+    .post(
+      "/discussions/:id/loop",
+      g(
+        async (c) => ({ loop: await store.startLoop(c.actor, id(c), schemas.loop.parse(c.body)) }),
+        201,
+      ),
     )
     .patch(
       "/discussions/:id",

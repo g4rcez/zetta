@@ -32,7 +32,7 @@ const tabs = studioTabs.filter((t) => !isRailTab(t.slug)).map((t) => t.label);
 type Tab = (typeof studioTabs)[number]["label"];
 const ICON: Record<Tab, LucideIcon> = {
   Routines: CalendarClock,
-  Attention: Inbox,
+  Notifications: Inbox,
   Knowledge: BookOpen,
   Workflows: GitBranch,
   Decisions: Route,
@@ -45,7 +45,7 @@ const ICON: Record<Tab, LucideIcon> = {
 const BLURB: Record<Tab, string> = {
   Plugins: "Connect tools and MCP servers, then choose which bots may use them.",
   Routines: "Schedule bots to work for you.",
-  Attention: "Things that need a human decision.",
+  Notifications: "Things that need you, with the actions to deal with them.",
   Knowledge: "What your bots remember, reusable instructions and sources.",
   Workflows: "Chain steps across bots and sources.",
   Decisions: "How messages are routed.",
@@ -151,7 +151,7 @@ export function StudioPage() {
             className="min-w-0"
           >
             {tab === "Routines" && <Routines bots={bots} onError={setError} />}
-            {tab === "Attention" && <Attention bots={bots} onError={setError} />}
+            {tab === "Notifications" && <Attention bots={bots} onError={setError} />}
             {tab === "Knowledge" && <Knowledge onError={setError} />}
             {tab === "Workflows" && <Workflows bots={bots} onError={setError} />}
             {tab === "Decisions" && <Decisions onError={setError} />}

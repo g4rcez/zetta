@@ -1,6 +1,6 @@
 export const studioTabs = [
   { slug: "routines", label: "Routines" },
-  { slug: "attention", label: "Attention" },
+  { slug: "attention", label: "Notifications" },
   { slug: "knowledge", label: "Knowledge" },
   { slug: "workflows", label: "Workflows" },
   { slug: "decisions", label: "Decisions" },
@@ -13,8 +13,9 @@ export const studioTabs = [
 
 export type StudioTab = (typeof studioTabs)[number]["slug"];
 
-export const isStudioTab = (value: string): value is StudioTab => studioTabs.some((t) => t.slug === value);
+export const isStudioTab = (value: string): value is StudioTab =>
+  studioTabs.some((t) => t.slug === value);
 
 /** Studio sections promoted to the main app rail; the Studio side nav lists the rest. */
-export const railTabs: readonly StudioTab[] = ["routines", "plugins", "computer"];
+export const railTabs: readonly StudioTab[] = ["routines", "attention", "plugins", "computer"];
 export const isRailTab = (slug: string) => railTabs.includes(slug as StudioTab);

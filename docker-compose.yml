@@ -42,6 +42,7 @@ services:
         required: false
     environment:
       CORS_ORIGIN: http://localhost:3001
+      ZETTA_HOST: 0.0.0.0
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/zetta
     healthcheck:
       test:

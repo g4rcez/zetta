@@ -10,9 +10,7 @@ import { getIdentityError, identityClient } from "@/lib/identity-client";
 export default function SignUpForm({
   onSwitchToSignIn,
   onAuthenticated,
-  setup = false,
 }: {
-  setup?: boolean;
   onSwitchToSignIn: () => void;
   onAuthenticated: (invitationToken?: string) => Promise<void>;
 }) {
@@ -28,23 +26,12 @@ export default function SignUpForm({
         name: z.string().min(2, "Name must be at least 2 characters"),
         email: z.email("Enter a valid email address"),
         password: z.string().min(8, "Password must be at least 8 characters"),
-        invitationToken: setup
-          ? z.string()
-          : z.string().trim().min(1, "Enter your invitation token"),
+        invitationToken: z.string().trim().min(1, "Enter your invitation token"),
       }),
     },
     onSubmit: async ({ value }) => {
       setError(null);
       try {
-        if (setup) {
-          await identityClient.signUp({
-            name: value.name,
-            email: value.email,
-            password: value.password,
-          });
-          await onAuthenticated();
-          return;
-        }
         await identityClient.signUp({ ...value, invitationToken: value.invitationToken.trim() });
         await onAuthenticated(value.invitationToken.trim());
       } catch (failure) {
@@ -61,12 +48,11 @@ export default function SignUpForm({
           tabIndex={-1}
           className="text-center text-3xl font-semibold tracking-tight outline-none"
         >
-          {setup ? "Set up Zetta" : "Create account"}
+          Create account
         </h1>
         <p className="text-sm text-muted-foreground">
-          {setup
-            ? "Create the first account. It becomes the root administrator of this installation and no invitation is needed."
-            : "An invitation from the installation operator is required. Use the email address your invitation was issued for."}
+          An invitation from the installation operator is required. Use the email address your
+          invitation was issued for.
         </p>
       </div>
       <form
@@ -127,50 +113,42 @@ export default function SignUpForm({
                   />
                 )}
               </form.Field>
-              {!setup && (
-                <form.Field name="invitationToken">
-                  {(field) => (
-                    <AuthField
-                      id="signup-invitation"
-                      name={field.name}
-                      label="Invitation token"
-                      type="password"
-                      autoComplete="off"
-                      spellCheck={false}
-                      required
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      errors={field.state.meta.errors.map((issue) => issue?.message)}
-                    />
-                  )}
-                </form.Field>
-              )}
+              <form.Field name="invitationToken">
+                {(field) => (
+                  <AuthField
+                    id="signup-invitation"
+                    name={field.name}
+                    label="Invitation token"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    required
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    errors={field.state.meta.errors.map((issue) => issue?.message)}
+                  />
+                )}
+              </form.Field>
               {error && (
                 <p role="alert" className="text-sm text-destructive">
                   {error}
                 </p>
               )}
               <Button type="submit" className="w-full" disabled={pending}>
-                {pending
-                  ? "Creating account…"
-                  : setup
-                    ? "Create administrator account"
-                    : "Create account with invitation"}
+                {pending ? "Creating account…" : "Create account with invitation"}
               </Button>
               <p role="status" className="sr-only">
                 {pending ? "Creating your account and checking membership." : ""}
               </p>
-              {!setup && (
-                <Button
-                  type="button"
-                  variant="link"
-                  className="h-auto w-full whitespace-normal"
-                  onClick={onSwitchToSignIn}
-                >
-                  Already have an account? Sign in
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="link"
+                className="h-auto w-full whitespace-normal"
+                onClick={onSwitchToSignIn}
+              >
+                Already have an account? Sign in
+              </Button>
             </fieldset>
           )}
         </form.Subscribe>

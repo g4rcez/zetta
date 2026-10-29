@@ -1,23 +1,38 @@
 import type { BetterAuthOptions } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 
-export type InvitationSignupBefore = NonNullable<NonNullable<NonNullable<
-  NonNullable<BetterAuthOptions["databaseHooks"]>["user"]
->["create"]>["before"]>;
+export type InvitationSignupBefore = NonNullable<
+  NonNullable<
+    NonNullable<NonNullable<BetterAuthOptions["databaseHooks"]>["user"]>["create"]
+  >["before"]
+>;
 
 /** Preflight only. A true result grants neither membership nor invitation consumption. */
-export type InvitationSignupVerifier = (input: Readonly<{ token: string; email: string }>) => Promise<boolean>;
+export type InvitationSignupVerifier = (
+  input: Readonly<{ token: string; email: string }>,
+) => Promise<boolean>;
 
 /** First-account setup: while no installation exists, a signup without an invitation
- * is allowed and `claim` must atomically make it the admin. `discard` removes the
- * account again when the claim fails (e.g. a concurrent first signup won). */
+ * is allowed when it proves ownership of the server (`verifyKey`), and `claim` must
+ * atomically make it the admin. `discard` removes the account again when the claim
+ * fails (e.g. a concurrent first signup won). */
 export type FirstAccountSetup = Readonly<{
   isOpen: () => Promise<boolean>;
+  verifyKey: (key: string) => boolean;
   claim: (userId: string) => Promise<void>;
   discard: (userId: string) => Promise<void>;
 }>;
 
-const signupFields = ["name", "email", "password", "image", "callbackURL", "rememberMe", "invitationToken"];
+const signupFields = [
+  "name",
+  "email",
+  "password",
+  "image",
+  "callbackURL",
+  "rememberMe",
+  "invitationToken",
+  "setupKey",
+];
 const userFields = ["id", "name", "email", "emailVerified", "image", "createdAt", "updatedAt"];
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -34,8 +49,15 @@ function tokenShaped(value: unknown): boolean {
 
 async function setupSignup(body: unknown, setup?: FirstAccountSetup): Promise<boolean> {
   try {
-    if (!setup || !record(body) || !email(body.email) || Object.keys(body).some((key) => !signupFields.includes(key))) return false;
-    return await setup.isOpen() === true;
+    if (
+      !setup ||
+      !record(body) ||
+      !email(body.email) ||
+      Object.keys(body).some((key) => !signupFields.includes(key))
+    )
+      return false;
+    if (typeof body.setupKey !== "string" || !setup.verifyKey(body.setupKey)) return false;
+    return (await setup.isOpen()) === true;
   } catch {
     return false;
   }
@@ -43,23 +65,39 @@ async function setupSignup(body: unknown, setup?: FirstAccountSetup): Promise<bo
 
 async function invited(body: unknown, verify: InvitationSignupVerifier): Promise<boolean> {
   try {
-    if (typeof verify !== "function" || !record(body) || !email(body.email)
-      || Object.keys(body).some((key) => !signupFields.includes(key))) return false;
+    if (
+      typeof verify !== "function" ||
+      !record(body) ||
+      !email(body.email) ||
+      "setupKey" in body ||
+      Object.keys(body).some((key) => !signupFields.includes(key))
+    )
+      return false;
     const token = body.invitationToken;
-    if (typeof token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(token)
-      || Buffer.from(token, "base64url").toString("base64url") !== token) return false;
-    return await verify({ token, email: body.email.toLowerCase() }) === true;
+    if (
+      typeof token !== "string" ||
+      !/^[A-Za-z0-9_-]{43}$/.test(token) ||
+      Buffer.from(token, "base64url").toString("base64url") !== token
+    )
+      return false;
+    return (await verify({ token, email: body.email.toLowerCase() })) === true;
   } catch {
     return false;
   }
 }
 
 /** Run before the endpoint can disclose whether an account already exists. */
-export function createInvitationSignupGate(verify: InvitationSignupVerifier, setup?: FirstAccountSetup) {
+export function createInvitationSignupGate(
+  verify: InvitationSignupVerifier,
+  setup?: FirstAccountSetup,
+) {
   return createAuthMiddleware(async (context) => {
     if (context.path !== "/sign-up/email") return;
-    if (!await invited(context.body, verify) && !await setupSignup(context.body, setup)) {
-      throw new APIError("BAD_REQUEST", { code: "FAILED_TO_CREATE_USER", message: "Failed to create user" });
+    if (!(await invited(context.body, verify)) && !(await setupSignup(context.body, setup))) {
+      throw new APIError("BAD_REQUEST", {
+        code: "FAILED_TO_CREATE_USER",
+        message: "Failed to create user",
+      });
     }
   });
 }
@@ -70,15 +108,30 @@ export function createInvitationSignupGate(verify: InvitationSignupVerifier, set
  * Return false for every denial (including absent runtime context/verifier), so
  * Better Auth aborts creation without receiving sensitive verifier errors.
  */
-export function createInvitationSignupPolicy(verify: InvitationSignupVerifier, setup?: FirstAccountSetup): InvitationSignupBefore {
+export function createInvitationSignupPolicy(
+  verify: InvitationSignupVerifier,
+  setup?: FirstAccountSetup,
+): InvitationSignupBefore {
   return async (user, context) => {
     try {
-      if (typeof verify !== "function" || !context || context.path !== "/sign-up/email") return false;
+      if (typeof verify !== "function" || !context || context.path !== "/sign-up/email")
+        return false;
       const body: unknown = context.body;
-      if (!record(body) || Object.keys(body).some((key) => !signupFields.includes(key))) return false;
-      if (!record(user) || Object.keys(user).some((key) => !userFields.includes(key)) || user.emailVerified !== false) return false;
-      if (!email(user.email) || !email(body.email) || body.email.toLowerCase() !== user.email.toLowerCase()) return false;
-      if (!await invited(body, verify) && !await setupSignup(body, setup)) return false;
+      if (!record(body) || Object.keys(body).some((key) => !signupFields.includes(key)))
+        return false;
+      if (
+        !record(user) ||
+        Object.keys(user).some((key) => !userFields.includes(key)) ||
+        user.emailVerified !== false
+      )
+        return false;
+      if (
+        !email(user.email) ||
+        !email(body.email) ||
+        body.email.toLowerCase() !== user.email.toLowerCase()
+      )
+        return false;
+      if (!(await invited(body, verify)) && !(await setupSignup(body, setup))) return false;
       // No replacement data: leave account creation to Better Auth. Acceptance
       // must later recheck/consume atomically in authenticated enrollment (004b).
       return;
@@ -88,20 +141,26 @@ export function createInvitationSignupPolicy(verify: InvitationSignupVerifier, s
   };
 }
 
-type SignupAfter = NonNullable<NonNullable<NonNullable<
-  NonNullable<BetterAuthOptions["databaseHooks"]>["user"]
->["create"]>["after"]>;
+type SignupAfter = NonNullable<
+  NonNullable<
+    NonNullable<NonNullable<BetterAuthOptions["databaseHooks"]>["user"]>["create"]
+  >["after"]
+>;
 
 /** Promotes a tokenless first signup to installation admin; rolls the account back if it cannot. */
 export function createFirstAccountClaim(setup: FirstAccountSetup): SignupAfter {
   return async (user, context) => {
     const body: unknown = context?.body;
-    if (context?.path !== "/sign-up/email" || !record(body) || tokenShaped(body.invitationToken)) return;
+    if (context?.path !== "/sign-up/email" || !record(body) || tokenShaped(body.invitationToken))
+      return;
     try {
       await setup.claim(user.id);
     } catch {
       await setup.discard(user.id).catch(() => {});
-      throw new APIError("BAD_REQUEST", { code: "FAILED_TO_CREATE_USER", message: "Failed to create user" });
+      throw new APIError("BAD_REQUEST", {
+        code: "FAILED_TO_CREATE_USER",
+        message: "Failed to create user",
+      });
     }
   };
 }

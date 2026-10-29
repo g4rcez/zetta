@@ -1,3 +1,4 @@
+import { createTeamStore } from "../teams/store";
 import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
@@ -100,6 +101,7 @@ suite("bot tools against compose postgres", () => {
     }),
   });
   const loops = createLoopStore(db);
+  const teamStore = createTeamStore(db, {} as never);
   const chatSvc = createChatService(
     db,
     fakeRun as never,
@@ -113,7 +115,7 @@ suite("bot tools against compose postgres", () => {
     undefined,
     vms,
     undefined,
-    { loops },
+    { loops, teams: teamStore },
   );
   // Same wiring as services.ts: each loop step is a chat turn as the loop's owner.
   const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKey) => {
@@ -136,6 +138,7 @@ suite("bot tools against compose postgres", () => {
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: { access, chat: chatSvc },
     features: { access, features },
+    teams: { access, store: teamStore } as never,
     webOrigin: "http://web.test",
     desktopOrigins: [],
     drain: () => {},
@@ -186,7 +189,7 @@ suite("bot tools against compose postgres", () => {
     };
   };
 
-  test("remember and instruction blocks self-teach; config blocks only propose, applied on approval with version check", async () => {
+  test("remember and instruction blocks self-teach at once; config blocks only propose, applied on approval with version check", async () => {
     const { bot, say } = await setup(A, "Learner");
     script = [
       'Done.\n```zetta:remember\n{"content":"prefers metric units"}\n```\n```zetta:instruction\n{"title":"Expense report","body":"Sum by category."}\n```',
@@ -199,15 +202,9 @@ suite("bot tools against compose postgres", () => {
         (m: { content: string }) => m.content,
       ),
     ).toContain("prefers metric units");
-    expect((await call(A, "GET", "/api/instructions")).json.instructions).toHaveLength(0); // an instruction is a proposal until approved
-    const ip = (await call(A, "GET", "/api/proposals")).json.proposals.find(
-      (p: { kind: string }) => p.kind === "create_instruction",
-    );
-    expect(ip).toBeTruthy();
-    expect(
-      (await call(A, "POST", `/api/proposals/${ip.id}/decision`, { approve: true })).json.status,
-    ).toBe("approved");
-    expect((await call(A, "GET", "/api/instructions")).json.instructions).toHaveLength(1);
+    expect((await call(A, "GET", "/api/instructions")).json.instructions).toMatchObject([
+      { title: "Expense report", createdByBotId: bot.id, teamId: null }, // a bot-written instruction is active at once
+    ]);
     script = [
       `I suggest a tweak.\n\`\`\`zetta:config\n{"botId":"${bot.id}","patch":{"personality":"concise"}}\n\`\`\``,
     ];
@@ -431,6 +428,65 @@ suite("bot tools against compose postgres", () => {
       (await call(A, "POST", `/api/proposals/${p2.id}/decision`, { approve: true })).json.status,
     ).toBe("stale"); // over maxPerUser=2
     expect(await vmStore.list(A)).toHaveLength(2);
+  });
+
+  test("the chief creates a bot and a team at once when asked", async () => {
+    const found = (
+      (await call(A, "GET", "/api/bots")).json.bots as {
+        id: string;
+        kind: string;
+        version: number;
+      }[]
+    ).find((b) => b.kind === "chief")!;
+    // A chief on the practice engine only guides setup; a real engine lets the scripted reply run.
+    const chief = (
+      await call(A, "PATCH", `/api/bots/${found.id}`, {
+        expectedVersion: found.version,
+        patch: { harness: "codex" },
+      })
+    ).json.bot as { id: string };
+    const c = (await call(A, "POST", "/api/conversations", { botId: chief.id })).json.conversation
+      .id as string;
+    script = [
+      '```zetta:create_bot\n{"name":"Scout","personality":"curious"}\n```\n```zetta:create_team\n{"name":"Launch","goal":"ship it","members":[{"bot":"Scout","role":"finds sources"}]}\n```',
+    ];
+    await call(A, "POST", `/api/conversations/${c}/messages`, {
+      content: "make a researcher and a launch team",
+    });
+    const bots = (await call(A, "GET", "/api/bots")).json.bots as {
+      name: string;
+      visibility: string;
+      onboarded: boolean;
+    }[];
+    expect(bots.find((b) => b.name === "Scout")).toMatchObject({
+      visibility: "private",
+      onboarded: true,
+    });
+    const reply = (
+      (await call(A, "GET", `/api/conversations/${c}/messages`)).json.messages as {
+        role: string;
+        meta: { receipts?: { kind: string; text: string }[] } | null;
+      }[]
+    ).find((m) => m.role === "assistant");
+    expect(reply?.meta?.receipts?.map((r) => `${r.kind}:${r.text}`).sort()).toEqual([
+      "bot:Scout",
+      "team:Launch",
+    ]);
+    const teams = (await call(A, "GET", "/api/teams")).json.teams as {
+      name: string;
+      members: { name: string; kind: string }[];
+    }[];
+    expect(
+      teams
+        .find((t) => t.name === "Launch")
+        ?.members.map((m) => m.kind)
+        .sort(),
+    ).toEqual(["chief", "member"]);
+    expect(
+      (await call(A, "GET", "/api/proposals")).json.proposals.some(
+        (p: { kind: string }) => p.kind === "create_bot",
+      ),
+    ).toBe(false);
   });
 
   test("bot-proposed creations (bot, routine, workflow) are only summaries until approved, exactly once, and unready bots cannot browse", async () => {

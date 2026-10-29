@@ -6,7 +6,12 @@ import { ENV } from "../../env";
 import { cancelTurn } from "./chat-client";
 import { liveRows, summaryOf, type ZettaUIMessage } from "./chat-rows";
 
-type Extras = { parentMessageId?: string; attachmentIds?: string[]; fileRefs?: string[] };
+type Extras = {
+  parentMessageId?: string;
+  attachmentIds?: string[];
+  fileRefs?: string[];
+  instructionIds?: string[];
+};
 const url = (path: string) => new URL(path, ENV.VITE_SERVER_URL).toString();
 
 /**
@@ -57,6 +62,7 @@ export function useZettaChat({
               ...(extras.parentMessageId ? { parentMessageId: extras.parentMessageId } : {}),
               ...(extras.attachmentIds?.length ? { attachmentIds: extras.attachmentIds } : {}),
               ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
+              ...(extras.instructionIds?.length ? { instructionIds: extras.instructionIds } : {}),
             },
           };
         },

@@ -1,7 +1,9 @@
 import type { Database } from "@zetta/db";
 import { and, desc, eq, inArray } from "@zetta/db/query";
 import { goalLoop } from "@zetta/db/schema/chat";
+import { discussion } from "@zetta/db/schema/discussions";
 import { raiseAttention } from "../features/attention";
+import { AUTONOMY } from "./tools";
 
 export type GoalLoop = typeof goalLoop.$inferSelect;
 /** Iterations in a row without new progress (or with an error) before a loop pauses and asks the user. */
@@ -67,23 +69,50 @@ export function createLoopStore(db: Database) {
         })
         .where(and(eq(goalLoop.id, id), eq(goalLoop.status, "running")));
     },
-    async pause(id: string, reason: string) {
+    /** `quiet`: the loop waits for the Chief, not for the user, so no card is raised. */
+    async pause(id: string, reason: string, quiet = false) {
       const [row] = await db
         .update(goalLoop)
         .set({ status: "paused", reason, updatedAt: new Date() })
         .where(and(eq(goalLoop.id, id), eq(goalLoop.status, "running")))
         .returning();
-      if (row)
+      if (row && !quiet) {
+        const [room] = await db
+          .select({ id: discussion.id })
+          .from(discussion)
+          .where(eq(discussion.conversationId, row.conversationId));
         await raiseAttention(db, row.ownerUserId, {
           botId: row.botId,
           title: "A loop paused and needs you",
           detail: `${row.goal.slice(0, 200)}: ${reason}`,
-          nextAction: "Open the chat, then resume or stop the loop.",
-          resultLink: `/chat/${row.conversationId}`,
+          nextAction: room
+            ? "Open the room, then resume or stop the loop."
+            : "Open the chat, then resume or stop the loop.",
+          resultLink: room ? `/discussions?id=${room.id}` : `/chat/${row.conversationId}`,
           source: "bot",
           sourceKey: `loop:${row.id}`,
         });
+      }
       return row;
+    },
+    /** The Chief answered a blocked loop: the answer joins the progress, which the next step reads, and the loop goes on. */
+    async resumeWith(id: string, answer: string) {
+      const loop = await store.get(id);
+      if (!loop || loop.status !== "paused") return;
+      const [row] = await db
+        .update(goalLoop)
+        .set({
+          status: "running",
+          stalls: 0,
+          reason: null,
+          progress: `${loop.progress}\nThe Chief answered your question: ${answer}`
+            .trim()
+            .slice(-2000),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(goalLoop.id, id), eq(goalLoop.status, "paused")))
+        .returning();
+      if (row) store.onStart?.(row.id);
     },
     /** Owner actions from the banner. Resume clears the stall count so the loop gets a fresh run of attempts. */
     async setStatus(ownerUserId: string, id: string, to: "running" | "cancelled") {
@@ -143,7 +172,27 @@ Do the next part of the work now. End your reply with exactly one of these block
 \`\`\`zetta:goal_done
 {"summary":"the result, written for the user"}
 \`\`\`   (only when "done when" is met)
-If you need the user (sign-in, a decision, payment), use zetta:handoff instead; the loop waits for them.`;
+${AUTONOMY} The loop waits for the user after a handoff.`;
+}
+
+/**
+ * The facilitator's part of a loop in a room with more than one bot. A step ends when the room is quiet, which happens when the
+ * facilitator posts without mentioning anyone, so that is also when it reports.
+ */
+export function roomLoopPrompt(loop: GoalLoop, step: number) {
+  return `The team is pursuing a goal the user approved as a loop (step ${step}). There is no limit on steps, only on making progress.
+Goal: ${loop.goal}
+Done when: ${loop.doneWhen}
+Progress so far: ${loop.progress || "nothing yet, this is the first step"}
+
+Discuss with the members how to reach the goal and hand each part of the work to the member who fits best with an @mention. While members still owe you an answer, mention them and do not report yet. When their answers are in and this step is settled, reply WITHOUT mentioning anyone and end with exactly one of these blocks:
+\`\`\`zetta:goal_progress
+{"summary":"what the team did in this step and what is left"}
+\`\`\`   (keeps the loop going: you are called again for the next step)
+\`\`\`zetta:goal_done
+{"summary":"the result, written for the user"}
+\`\`\`   (only when "done when" is met)
+${AUTONOMY} The loop waits for the user after a handoff.`;
 }
 
 /**

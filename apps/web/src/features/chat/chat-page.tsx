@@ -28,7 +28,7 @@ import {
   type Proposal,
   type Workspace,
 } from "./chat-client";
-import type { Row } from "./chat-rows";
+import { isSavedUserEcho, type Row } from "./chat-rows";
 import { Composer } from "./composer";
 import { MessageList, type RowActions } from "./message-list";
 import type { Author } from "./message-row";
@@ -192,6 +192,11 @@ export function ChatPage() {
       await reload(id);
       void loadChats().catch(() => {});
       void refreshAttention();
+      // The chief may have just created bots: show them in the list and make their cards open.
+      void chatClient
+        .bots()
+        .then(setBots)
+        .catch(() => {});
     },
     [reload, loadChats],
   );
@@ -237,7 +242,9 @@ export function ChatPage() {
     const top = saved.filter((m) => !m.parentMessageId).map(asRow);
     return [
       ...top,
-      ...main.rows.filter((r) => !r.parentMessageId && !top.some((x) => x.id === r.id)),
+      ...main.rows.filter(
+        (r) => !r.parentMessageId && !top.some((x) => x.id === r.id) && !isSavedUserEcho(r, top),
+      ),
     ];
   }, [saved, main.rows]);
   const thread = threadId
@@ -252,10 +259,12 @@ export function ChatPage() {
     text,
     attachmentIds,
     fileRefs,
+    instructionIds,
   }: {
     text: string;
     attachmentIds: string[];
     fileRefs: string[];
+    instructionIds?: string[] | undefined;
   }) {
     if (!botId) return false;
     setError(undefined);
@@ -270,7 +279,7 @@ export function ChatPage() {
       }
       composer.clear();
       setSent((n) => n + 1);
-      void main.send(text, { conversationId: id, attachmentIds, fileRefs });
+      void main.send(text, { conversationId: id, attachmentIds, fileRefs, instructionIds });
       return true;
     } catch (e) {
       fail(e);
@@ -460,18 +469,18 @@ export function ChatPage() {
           <Button
             size="icon-sm"
             variant="ghost"
-            className="md:hidden"
             aria-label="Bots"
+            className="md:hidden"
             onClick={() => setNavOpen(true)}
           >
             <Menu />
           </Button>
           <button
             type="button"
-            onClick={() => setSettingsOpen((o) => !o)}
-            aria-expanded={settingsOpen}
-            aria-label={current ? `${current.name} settings` : "Bot settings"}
             disabled={!current}
+            aria-expanded={settingsOpen}
+            onClick={() => setSettingsOpen((o) => !o)}
+            aria-label={current ? `${current.name} settings` : "Bot settings"}
             title={
               current
                 ? [
@@ -519,9 +528,9 @@ export function ChatPage() {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                aria-label="Publish snapshot to team"
                 title="Publish snapshot to team"
                 onClick={() => setPublishing(true)}
+                aria-label="Publish snapshot to team"
               >
                 <Share2 />
               </Button>
@@ -669,6 +678,7 @@ export function ChatPage() {
           <LoopBanner loop={goal.loop} onChange={goal.update} onError={setError} />
           {botId && <ComputerActivity botId={botId} botName={current?.name} />}
           <Composer
+            instructions
             value={composer.value}
             onChange={composer.set}
             placeholder={

@@ -1,4 +1,4 @@
-import { KeyRound, Search } from "lucide-react";
+import { KeyIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { Button, Input } from "@/components/ui";
@@ -195,7 +195,7 @@ export function VaultGrants({
             {grants.map((g) => (
               <li key={g.id} className="px-3 py-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <KeyRound aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  <KeyIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate font-medium">{g.title}</span>
                   <span className="text-xs text-muted-foreground">{g.origins.join(", ")}</span>
                   {g.fields.map((f) => (
@@ -248,7 +248,7 @@ export function VaultGrants({
             autoComplete="off"
           />
           <Button type="submit" size="sm" variant="outline" loading={busy}>
-            <Search aria-hidden className="size-3.5" />
+            <MagnifyingGlassIcon aria-hidden className="size-3.5" />
             {items ? "Search" : "Browse vault"}
           </Button>
         </form>

@@ -15,15 +15,19 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { user } from "./auth";
+import { searchVector } from "./search";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
+const cascade = { onDelete: "cascade", onUpdate: "restrict" } as const;
 
 /** Visual grouping of bots. Never an access boundary (RFC-001). */
 export const workspace = pgTable(
   "workspace",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => user.id, restrict),
@@ -42,7 +46,9 @@ export const workspace = pgTable(
 export const bot = pgTable(
   "bot",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => user.id, restrict),
@@ -105,7 +111,9 @@ export const bot = pgTable(
 export const conversation = pgTable(
   "conversation",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => user.id, restrict),
@@ -134,13 +142,18 @@ export const conversation = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index("conversation_bot_id_idx").on(table.botId),index("conversation_owner_idx").on(table.ownerUserId, table.updatedAt)],
+    index("conversation_bot_id_idx").on(table.botId),
+    index("conversation_owner_idx").on(table.ownerUserId, table.updatedAt),
+    index("conversation_search_idx").using("gin", searchVector(table.title)),
+  ],
 );
 
 export const message = pgTable(
   "message",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     conversationId: uuid("conversation_id")
       .notNull()
       .references(() => conversation.id, restrict),
@@ -175,6 +188,42 @@ export const message = pgTable(
       .on(table.conversationId, table.clientRequestId)
       .where(sql`${table.clientRequestId} is not null`),
     check("message_content_check", sql`length(${table.content}) <= 65536`),
+    index("message_search_idx").using("gin", searchVector(table.content)),
+  ],
+);
+
+/** A user message sent while its chat was busy: saved at once, answered in its thread when the turn before it ends. The row is deleted
+ * when that answer ends, so it only lives while the message waits or is being answered (and survives a restart). */
+export const chatQueue = pgTable(
+  "chat_queue",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => user.id, cascade),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversation.id, cascade),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => message.id, cascade),
+    status: text("status", { enum: ["pending", "running", "failed"] })
+      .default("pending")
+      .notNull(),
+    // Starts of this answer; a message that keeps failing (or crashing the process) stops at a limit instead of looping.
+    attempts: integer("attempts").default(0).notNull(),
+    reasonCode: text("reason_code"),
+    // Send options read when the answer runs: { fileRefs, instructionIds }.
+    input: jsonb("input"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("chat_queue_message_unique").on(table.messageId),
+    index("chat_queue_conversation_created_idx").on(table.conversationId, table.createdAt),
+    index("chat_queue_status_created_idx").on(table.status, table.createdAt),
+    index("chat_queue_owner_user_id_idx").on(table.ownerUserId),
   ],
 );
 
@@ -182,7 +231,9 @@ export const message = pgTable(
 export const botRevision = pgTable(
   "bot_revision",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     botId: uuid("bot_id")
       .notNull()
       .references(() => bot.id, restrict),
@@ -194,7 +245,9 @@ export const botRevision = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index("bot_revision_changed_by_user_id_idx").on(table.changedByUserId),unique("bot_revision_unique").on(table.botId, table.version)],
+    index("bot_revision_changed_by_user_id_idx").on(table.changedByUserId),
+    unique("bot_revision_unique").on(table.botId, table.version),
+  ],
 );
 
 /**
@@ -205,7 +258,9 @@ export const botRevision = pgTable(
 export const goalLoop = pgTable(
   "goal_loop",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => user.id, restrict),
@@ -217,6 +272,8 @@ export const goalLoop = pgTable(
       .references(() => bot.id, restrict),
     goal: text("goal").notNull(),
     doneWhen: text("done_when").notNull(),
+    /** The user's own words that led to the loop: every step reads them, and goal_done is checked against them. */
+    request: text("request").default("").notNull(),
     status: text("status", { enum: ["running", "paused", "done", "failed", "cancelled"] })
       .default("running")
       .notNull(),
@@ -226,6 +283,14 @@ export const goalLoop = pgTable(
     /** Iterations in a row without new progress or with an error; the loop pauses at 3. */
     stalls: integer("stalls").default(0).notNull(),
     reason: text("reason"),
+    /** Failed steps in a row. Separate from `stalls`: a failure waits (backoff), a stall changes approach. */
+    failures: integer("failures").default(0).notNull(),
+    /** While set and in the future, the driver waits before the next step. */
+    retryAt: timestamp("retry_at", { withTimezone: true }),
+    /** Why the last step failed, handed to the bot in the next step's prompt. */
+    lastError: text("last_error"),
+    /** What the bot learned along the way, newest last; the next steps read it. */
+    lessons: text("lessons").default("").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -234,6 +299,12 @@ export const goalLoop = pgTable(
     index("goal_loop_bot_id_idx").on(table.botId),
     index("goal_loop_conversation_idx").on(table.conversationId, table.status),
     // One active loop per conversation: a second one would fight over the same turn.
+    // The driver polls running loops that are due.
+    index("goal_loop_running_retry_idx")
+      .on(table.retryAt)
+      .where(sql`${table.status} = 'running'`),
+    // wiki jobs scan finished loops of the last day across owners
+    index("goal_loop_status_updated_idx").on(table.status, table.updatedAt),
     uniqueIndex("goal_loop_one_active")
       .on(table.conversationId)
       .where(sql`${table.status} in ('running', 'paused')`),

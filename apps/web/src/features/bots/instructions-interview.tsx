@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { SparkleIcon } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui";
 import { Alert } from "@g4rcez/components/alert";
@@ -205,7 +205,7 @@ export function InstructionsInterview({ engine, state, setState, draft, onDraft 
       <section aria-label="Write it yourself" className="rounded-lg border bg-card p-4 text-sm">
         <p className="text-muted-foreground">You're writing it yourself.</p>
         <Button type="button" size="sm" variant="outline" className="mt-3" onClick={restart}>
-          <Sparkles className="size-4" aria-hidden="true" /> Let me be interviewed instead
+          <SparkleIcon className="size-4" aria-hidden="true" /> Let me be interviewed instead
         </Button>
       </section>
     );

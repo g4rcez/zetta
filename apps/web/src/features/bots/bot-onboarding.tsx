@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
-  ArrowLeft,
-  ArrowRight,
-  ChartColumn,
-  Check,
-  CircleAlert,
-  CodeXml,
-  ConciergeBell,
-  FilePlus2,
-  HeartHandshake,
-  PenLine,
-  Telescope,
-  type LucideIcon,
-} from "lucide-react";
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ChartBarIcon,
+  CheckIcon,
+  WarningCircleIcon,
+  CodeIcon,
+  BellSimpleIcon,
+  FilePlusIcon,
+  HandshakeIcon,
+  PencilLineIcon,
+  BinocularsIcon,
+  type Icon as PhosphorIcon,
+} from "@phosphor-icons/react";
 
 import { BotAvatar, type AvatarValue } from "@/components/bot-avatar";
 import { Button, Input, Select, Textarea } from "@/components/ui";
@@ -135,20 +135,20 @@ const PRIMARY_HARNESSES = [
   },
 ] as const;
 /** Illustration per template: an icon and a tint, so the grid scans by shape and colour before reading. */
-const TEMPLATE_ART: Record<string, { icon: LucideIcon; tint: string }> = {
-  researcher: { icon: Telescope, tint: "bg-sky-500/12 text-sky-600 dark:text-sky-400" },
-  coder: { icon: CodeXml, tint: "bg-violet-500/12 text-violet-600 dark:text-violet-400" },
-  editor: { icon: PenLine, tint: "bg-amber-500/12 text-amber-600 dark:text-amber-400" },
-  analyst: { icon: ChartColumn, tint: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400" },
-  coach: { icon: HeartHandshake, tint: "bg-rose-500/12 text-rose-600 dark:text-rose-400" },
-  concierge: { icon: ConciergeBell, tint: "bg-teal-500/12 text-teal-600 dark:text-teal-400" },
+const TEMPLATE_ART: Record<string, { icon: PhosphorIcon; tint: string }> = {
+  researcher: { icon: BinocularsIcon, tint: "bg-info/12 text-info" },
+  coder: { icon: CodeIcon, tint: "bg-info/12 text-info" },
+  editor: { icon: PencilLineIcon, tint: "bg-warn/12 text-warn" },
+  analyst: { icon: ChartBarIcon, tint: "bg-success/12 text-success" },
+  coach: { icon: HandshakeIcon, tint: "bg-destructive/12 text-destructive" },
+  concierge: { icon: BellSimpleIcon, tint: "bg-success/12 text-success" },
 };
-const ArtTile = ({ icon: Icon, tint }: { icon: LucideIcon; tint: string }) => (
+const ArtTile = ({ icon: Icon, tint }: { icon: PhosphorIcon; tint: string }) => (
   <span
     aria-hidden="true"
     className={`grid size-11 shrink-0 place-items-center rounded-lg ${tint}`}
   >
-    <Icon className="size-5" strokeWidth={1.75} />
+    <Icon className="size-5" />
   </span>
 );
 
@@ -251,7 +251,7 @@ export function BotOnboarding() {
             to="/chat/{-$chatId}"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
           >
-            <ArrowLeft className="size-4" aria-hidden="true" />
+            <ArrowLeftIcon className="size-4" aria-hidden="true" />
             {bot ? "Back to chat" : "Cancel"}
           </Link>
           <div className="mt-6 flex items-baseline justify-between gap-2">
@@ -361,7 +361,7 @@ export function BotOnboarding() {
               disabled={step === 0 || step === CREATE_AT + 1}
               onClick={() => go(step - 1)}
             >
-              <ArrowLeft />
+              <ArrowLeftIcon />
               Back
             </Button>
             <div className="flex items-center gap-2">
@@ -378,7 +378,7 @@ export function BotOnboarding() {
               {step < CREATE_AT && (
                 <Button type="button" disabled={!canNext} onClick={() => go(step + 1)}>
                   Continue
-                  <ArrowRight />
+                  <ArrowRightIcon />
                 </Button>
               )}
               {step === CREATE_AT && (
@@ -393,13 +393,13 @@ export function BotOnboarding() {
               {step > CREATE_AT && step < STEPS.length - 1 && (
                 <Button type="button" onClick={() => go(step + 1)}>
                   Continue
-                  <ArrowRight />
+                  <ArrowRightIcon />
                 </Button>
               )}
               {step === STEPS.length - 1 && (
                 <Button type="button" onClick={finish}>
                   Start chatting
-                  <ArrowRight />
+                  <ArrowRightIcon />
                 </Button>
               )}
             </div>
@@ -447,7 +447,7 @@ function StepGroup({
                   aria-hidden="true"
                   className={`grid size-5 shrink-0 place-items-center rounded-full text-[11px] tabular-nums ${done ? "bg-primary text-primary-foreground" : active ? "ring-1 ring-primary text-primary" : "ring-1 ring-border"}`}
                 >
-                  {done ? <Check className="size-3" /> : i + 1}
+                  {done ? <CheckIcon className="size-3" /> : i + 1}
                 </span>
                 <span className="truncate">{s.title}</span>
               </button>
@@ -468,8 +468,8 @@ function Guided({ good, bad, children }: { good: string[]; bad: string[]; childr
         aria-label="Tips"
         className="space-y-5 border-t pt-6 text-[13px] leading-relaxed lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
       >
-        <TipList title="What works" tone="text-emerald-600 dark:text-emerald-400" items={good} />
-        <TipList title="What to avoid" tone="text-amber-600 dark:text-amber-400" items={bad} />
+        <TipList title="What works" tone="text-success" items={good} />
+        <TipList title="What to avoid" tone="text-warn" items={bad} />
       </aside>
     </div>
   );
@@ -542,7 +542,7 @@ function Choice({
             aria-hidden="true"
             className={`grid size-4 shrink-0 place-items-center rounded-full ${checked ? "bg-primary text-primary-foreground" : "ring-1 ring-border"}`}
           >
-            {checked && <Check className="size-3" />}
+            {checked && <CheckIcon className="size-3" />}
           </span>
         </span>
         {children && (
@@ -582,7 +582,7 @@ function StartStep({
           value="blank"
           checked={origin === "blank"}
           onSelect={onChoose}
-          art={<ArtTile icon={FilePlus2} tint="bg-muted text-muted-foreground" />}
+          art={<ArtTile icon={FilePlusIcon} tint="bg-muted text-muted-foreground" />}
           title="Start blank"
         >
           Write it yourself. The instructions step will guide you with a few questions.
@@ -734,7 +734,7 @@ export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draf
                 <span className="flex items-center gap-2">
                   {h.name}
                   {h.badge && (
-                    <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                    <span className="rounded-full bg-success/15 px-1.5 py-0.5 text-[11px] font-medium text-success">
                       {h.badge}
                     </span>
                   )}
@@ -834,7 +834,7 @@ export function InstructionsStep({
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-base font-semibold">What your bot will do</h2>
             <Button type="button" size="sm" variant="outline" onClick={() => setEditing((e) => !e)}>
-              <PenLine className="size-4" aria-hidden="true" />
+              <PencilLineIcon className="size-4" aria-hidden="true" />
               {edit ? "Done editing" : "Edit the text"}
             </Button>
           </div>
@@ -842,7 +842,7 @@ export function InstructionsStep({
             <ul className="grid gap-2 sm:grid-cols-2">
               {actions.map((a, i) => (
                 <li key={i} className="flex gap-2 rounded-lg border bg-card p-3 text-pretty">
-                  <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+                  <CheckIcon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
                   <span>{a}</span>
                 </li>
               ))}
@@ -925,7 +925,7 @@ export function InstructionsStep({
 
 function ReviewCard({ checks }: { checks: ReturnType<typeof reviewInstructions> }) {
   const score = reviewScore(checks);
-  const tone = score >= 85 ? "bg-emerald-500" : score >= 55 ? "bg-amber-500" : "bg-destructive";
+  const tone = score >= 85 ? "bg-success" : score >= 55 ? "bg-warn" : "bg-destructive";
   return (
     <section aria-label="Quality checks" className="rounded-lg border bg-card p-4 text-sm">
       <div className="mb-2 flex items-baseline justify-between">
@@ -951,13 +951,10 @@ function ReviewCard({ checks }: { checks: ReturnType<typeof reviewInstructions> 
         {checks.map((c) => (
           <li key={c.id} className="flex gap-2">
             {c.ok ? (
-              <Check
-                className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                aria-label="Good"
-              />
+              <CheckIcon className="mt-0.5 size-4 shrink-0 text-success" aria-label="Good" />
             ) : (
-              <CircleAlert
-                className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+              <WarningCircleIcon
+                className="mt-0.5 size-4 shrink-0 text-warn"
                 aria-label="Needs work"
               />
             )}

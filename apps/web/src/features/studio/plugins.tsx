@@ -1,4 +1,4 @@
-import { ExternalLink } from "lucide-react";
+import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { BotAvatar } from "@/components/bot-avatar";
@@ -17,6 +17,7 @@ import {
   pluginsApi,
   usePlugins,
   type PluginMeta,
+  type PluginSharing,
   type PluginTest,
 } from "../plugins/plugins-api";
 import { ConfirmButton, Empty, Modal } from "../shared/ui";
@@ -160,7 +161,7 @@ function InstallDialog({
               rel="noreferrer noopener"
               className="inline-flex items-center gap-1 text-xs underline"
             >
-              Docs <ExternalLink aria-hidden className="size-3" />
+              Docs <ArrowSquareOutIcon aria-hidden className="size-3" />
             </a>
           ) : (
             <span />
@@ -375,6 +376,14 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
       (category === "all" || c.category === category) &&
       `${c.name} ${c.description} ${c.id}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
+  async function share(id: string, sharing: PluginSharing) {
+    try {
+      await pluginsApi.setSharing(id, sharing);
+      await reload();
+    } catch (e) {
+      onError(errorMessage(e));
+    }
+  }
   async function remove(id: string) {
     try {
       await pluginsApi.remove(id);
@@ -463,6 +472,23 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
                       <Button size="sm" variant="outline" onClick={() => setBotsFor(m)}>
                         Bots
                       </Button>
+                      {m.teamShare === "optional" &&
+                        (i.sharing === "team" ? (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => void share(i.id, "private")}
+                          >
+                            Shared with team: stop
+                          </Button>
+                        ) : (
+                          <ConfirmButton
+                            label="Share with team"
+                            question={`Let your teammates' bots use ${m.name} through your account?`}
+                            confirmLabel="Share"
+                            onConfirm={() => share(i.id, "team")}
+                          />
+                        ))}
                       <ConfirmButton
                         label="Remove"
                         question={`Remove ${m.name}?`}
@@ -471,6 +497,13 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
                       />
                     </div>
                   </div>
+                  {i.sharing === "team" && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Your teammates can connect their bots to this {m.name} and use it through your
+                      account, with a limited set of tools (no reading of your private history).
+                      Choose “Only me” to cut them off at once.
+                    </p>
+                  )}
                   {i.id === "telegram" && (
                     <TelegramConnect
                       probe={p === "loading" ? undefined : p}
@@ -563,9 +596,7 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
                   </span>
                 </div>
                 <p className="flex-1 text-xs text-muted-foreground">{m.description}</p>
-                {!m.verified && (
-                  <p className="text-xs text-amber-700 dark:text-amber-300">Not fully verified</p>
-                )}
+                {!m.verified && <p className="text-xs text-warn">Not fully verified</p>}
                 <div className="flex items-center justify-between gap-2">
                   {m.docsUrl ? (
                     <a
@@ -574,7 +605,7 @@ export function Plugins({ bots, onError }: { bots: Bot[]; onError: (m: string) =
                       rel="noreferrer noopener"
                       className="inline-flex items-center gap-1 text-xs underline"
                     >
-                      Docs <ExternalLink aria-hidden className="size-3" />
+                      Docs <ArrowSquareOutIcon aria-hidden className="size-3" />
                     </a>
                   ) : (
                     <span />

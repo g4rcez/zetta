@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, ImageOff, X } from "lucide-react";
+import {
+  CaretLeftIcon,
+  CaretRightIcon,
+  DownloadSimpleIcon,
+  ImageBrokenIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 
 import { Skeleton } from "@zetta/ui/components/skeleton";
 import { cn } from "@zetta/ui/lib/utils";
@@ -8,7 +14,11 @@ import { ENV } from "../../env";
 export type Pic = { id: string; name: string };
 
 /** One object URL per stored picture for the whole session: the server serves each file with an immutable cache header too. */
+// The object URLs live as long as the session on purpose: every message that shows a picture shares them, so none is revoked on unmount.
 const cache = new Map<string, Promise<string>>();
+/** Resolved URLs and natural sizes, read synchronously so a picture seen before renders at its final size on the first frame. */
+const urls = new Map<string, string>();
+const sizes = new Map<string, { w: number; h: number }>();
 function load(id: string) {
   let hit = cache.get(id);
   if (!hit) {
@@ -19,7 +29,11 @@ function load(id: string) {
         if (!r.ok) throw new Error("image");
         return r.blob();
       })
-      .then((b) => URL.createObjectURL(b));
+      .then((b) => {
+        const url = URL.createObjectURL(b);
+        urls.set(id, url);
+        return url;
+      });
     hit.catch(() => cache.delete(id));
     cache.set(id, hit);
   }
@@ -27,11 +41,12 @@ function load(id: string) {
 }
 
 /** `undefined` while loading, `null` when the picture is gone. */
-export function useAttachmentSrc(id: string) {
-  const [src, setSrc] = useState<string | null | undefined>();
+export function useAttachmentSrc(id: string, enabled = true) {
+  const [src, setSrc] = useState<string | null | undefined>(() => urls.get(id));
   useEffect(() => {
+    if (!enabled) return;
     let live = true;
-    setSrc(undefined);
+    setSrc(urls.get(id));
     load(id).then(
       (u) => live && setSrc(u),
       () => live && setSrc(null),
@@ -39,7 +54,7 @@ export function useAttachmentSrc(id: string) {
     return () => {
       live = false;
     };
-  }, [id]);
+  }, [id, enabled]);
   return src;
 }
 
@@ -52,8 +67,24 @@ export function AttachmentImage({
   className?: string;
   onOpen: () => void;
 }) {
-  const src = useAttachmentSrc(pic.id);
-  if (src === undefined) return <Skeleton className={cn("size-40 rounded-lg", className)} />;
+  // Fetch only once the tile is near the viewport: a long history does not download every picture on open.
+  const [near, setNear] = useState(urls.has(pic.id));
+  const tile = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = tile.current;
+    if (near || !el) return;
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (e?.isIntersecting) setNear(true);
+      },
+      { rootMargin: "400px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near]);
+  const src = useAttachmentSrc(pic.id, near);
+  if (src === undefined)
+    return <Skeleton ref={tile} className={cn("size-40 rounded-lg", className)} />;
   if (src === null)
     return (
       <span
@@ -62,7 +93,7 @@ export function AttachmentImage({
           className,
         )}
       >
-        <ImageOff className="size-5" aria-hidden="true" />
+        <ImageBrokenIcon className="size-5" aria-hidden="true" />
         Image unavailable
       </span>
     );
@@ -76,7 +107,11 @@ export function AttachmentImage({
       <img
         src={src}
         alt={pic.name}
-        loading="lazy"
+        width={sizes.get(pic.id)?.w}
+        height={sizes.get(pic.id)?.h}
+        onLoad={(e) =>
+          sizes.set(pic.id, { w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
+        }
         className={cn("block h-auto max-h-[360px] max-w-full object-contain", className)}
       />
     </button>
@@ -159,7 +194,7 @@ export function ImageViewer({
             aria-label="Download"
             className="rounded p-1.5 hover:bg-muted"
           >
-            <Download className="size-4" />
+            <DownloadSimpleIcon className="size-4" />
           </a>
         )}
         <button
@@ -168,7 +203,7 @@ export function ImageViewer({
           onClick={() => ref.current?.close()}
           className="rounded p-1.5 hover:bg-muted"
         >
-          <X className="size-4" />
+          <XIcon className="size-4" />
         </button>
       </div>
       <div className="relative flex max-h-[calc(94vh-3rem)] min-h-48 items-center justify-center bg-black/80 p-2">
@@ -191,7 +226,7 @@ export function ImageViewer({
               onClick={() => step(-1)}
               className="absolute left-3 rounded-full bg-background/80 p-2 hover:bg-background"
             >
-              <ChevronLeft className="size-5" />
+              <CaretLeftIcon className="size-5" />
             </button>
             <button
               type="button"
@@ -199,7 +234,7 @@ export function ImageViewer({
               onClick={() => step(1)}
               className="absolute right-3 rounded-full bg-background/80 p-2 hover:bg-background"
             >
-              <ChevronRight className="size-5" />
+              <CaretRightIcon className="size-5" />
             </button>
           </>
         )}

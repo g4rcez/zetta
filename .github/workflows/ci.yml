@@ -1,5 +1,7 @@
 name: ci
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   # Zetta must run the same way on Linux, macOS and Windows, with or without Docker: unit tests run everywhere,
   # database-backed suites run where a Postgres service is available (Linux).

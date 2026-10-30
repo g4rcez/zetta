@@ -1,13 +1,13 @@
 import {
-  AlertTriangle,
-  CheckCircle2,
-  Circle,
-  Loader2,
-  MessageSquare,
-  MonitorSmartphone,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
+  WarningIcon,
+  CheckCircleIcon,
+  CircleIcon,
+  CircleNotchIcon,
+  ChatIcon,
+  DevicesIcon,
+  WrenchIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 
 import { cn } from "@zetta/ui/lib/utils";
 import { BotIdentity } from "@/components/bot-identity";
@@ -15,13 +15,13 @@ import { Drawer } from "@/components/drawer";
 import { Response } from "../chat/response";
 import type { DiscussionTurn, RoomTask, RoomTurn, TurnStep } from "./discussions-api";
 
-const ICON: Record<TurnStep["kind"], LucideIcon> = {
-  activity: Loader2,
-  computer: MonitorSmartphone,
-  tool: Wrench,
-  post: MessageSquare,
-  report: CheckCircle2,
-  error: AlertTriangle,
+const ICON: Record<TurnStep["kind"], Icon> = {
+  activity: CircleNotchIcon,
+  computer: DevicesIcon,
+  tool: WrenchIcon,
+  post: ChatIcon,
+  report: CheckCircleIcon,
+  error: WarningIcon,
 };
 const TURN_LABEL: Record<DiscussionTurn["status"], string> = {
   queued: "Waiting",
@@ -35,10 +35,10 @@ const TURN_LABEL: Record<DiscussionTurn["status"], string> = {
 };
 const TASK_CLASS: Record<RoomTask["status"], string> = {
   backlog: "bg-muted text-muted-foreground",
-  in_progress: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  in_progress: "bg-info/15 text-info",
   blocked: "bg-destructive/15 text-destructive",
-  review: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-  done: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  review: "bg-warn/15 text-warn",
+  done: "bg-success/15 text-success",
 };
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -110,7 +110,7 @@ export function StepsDrawer({
               ) : (
                 <ol className="relative space-y-3 border-l pl-5">
                   {turn.steps.map((s, j) => {
-                    const Icon = ICON[s.kind] ?? Circle;
+                    const Icon = ICON[s.kind] ?? CircleIcon;
                     return (
                       <li key={j} className="relative text-sm">
                         <span

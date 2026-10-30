@@ -5,7 +5,7 @@ import { and, eq, inArray } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { bot } from "@zetta/db/schema/chat";
 import { attentionItem } from "@zetta/db/schema/features";
-import { discussionTurn } from "@zetta/db/schema/discussions";
+import { discussion, discussionTurn } from "@zetta/db/schema/discussions";
 import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
 import { createBotClaude } from "../bot-claude/store";
@@ -18,8 +18,8 @@ import { createDiscussionWorker } from "./worker";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`disc-a-${uuidv7()}`, `disc-b-${uuidv7()}`];
-const [A, B] = ids as [string, string];
+const ids = [`disc-a-${uuidv7()}`, `disc-b-${uuidv7()}`, `disc-c-${uuidv7()}`];
+const [A, B, C] = ids as [string, string, string];
 
 suite("group discussions against compose postgres", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
@@ -498,6 +498,46 @@ suite("group discussions against compose postgres", () => {
     ).toBe(404);
   });
 
+  test("the Discussions badge counts running discussions; resolving or cancelling one closes its notifications", async () => {
+    const p = await makeBot(C, "Badge1"),
+      q = await makeBot(C, "Badge2");
+    expect((await call(C, "GET", "/api/discussions/running")).json).toEqual({ running: 0 });
+    const start = async (title: string) =>
+      (
+        await call(C, "POST", "/api/discussions", {
+          title,
+          goal: "x",
+          members: [{ bot: p.id }, { bot: q.id }],
+          firstMessage: "@Badge1 go",
+        })
+      ).json.discussion.id as string;
+    const release = await start("Release");
+    const rollback = await start("Rollback");
+    await worker.drain();
+    expect((await call(C, "GET", "/api/discussions/running")).json).toEqual({ running: 2 });
+    await store.sweepIdle(new Date(Date.now() + 31 * 60_000));
+
+    await call(C, "POST", `/api/discussions/${release}/resolve`, { summary: "Shipped." });
+    await call(C, "POST", `/api/discussions/${rollback}/cancel`);
+
+    expect((await call(C, "GET", "/api/discussions/running")).json).toEqual({ running: 0 });
+    expect((await call(C, "GET", "/api/attention/summary")).json.summary).toEqual({
+      open: 0,
+      unread: 0,
+      acknowledged: 0,
+    });
+    expect(
+      await db
+        .select({ title: attentionItem.title, status: attentionItem.status })
+        .from(attentionItem)
+        .where(eq(attentionItem.ownerUserId, C))
+        .orderBy(attentionItem.title),
+    ).toEqual([
+      { title: 'Discussion "Release" is waiting', status: "resolved" },
+      { title: 'Discussion "Rollback" is waiting', status: "cancelled" },
+    ]);
+  });
+
   test("a restart interrupts running turns and stalls their discussion instead of retrying", async () => {
     const p = await makeBot(A, "Restart1"),
       q = await makeBot(A, "Restart2");
@@ -614,6 +654,16 @@ suite("group discussions against compose postgres", () => {
       (b: { kind: string }) => b.kind === "chief",
     ) as { id: string };
     await db.update(bot).set({ onboarded: true }).where(eq(bot.id, chief.id));
+    // Earlier tests leave discussions running; clear them so the limit of 5 open discussions does not block the help request.
+    await db
+      .update(discussion)
+      .set({ status: "cancelled" })
+      .where(
+        and(
+          eq(discussion.ownerUserId, A),
+          inArray(discussion.status, ["open", "paused", "stalled"]),
+        ),
+      );
     const escalate = (problem: string) =>
       `Blocked.\n\`\`\`zetta:escalate\n{"problem":"${problem}","tried":"WebFetch"}\n\`\`\``;
     const helpOf = async (name: string) =>
@@ -649,6 +699,45 @@ suite("group discussions against compose postgres", () => {
       status: "resolved",
       summary: "Read the pages with WebFetch and say they are public.",
     });
+    // The Chief sees the user's own words as binding; the rerun puts them first and the Chief's answer after, as advice.
+    expect(
+      runs.find((r) => r.bot === "Chief" && r.prompt.includes("Reddit blocks fetches"))?.prompt,
+    ).toContain(
+      "User's request (binding; keep its sources, sites, scope and output):\npost the newsletter",
+    );
+    expect(
+      runs.find((r) => r.bot === "Scout" && r.prompt.includes("The Chief answered:"))?.prompt,
+    ).toContain(
+      "The user's request (binding: its sources, sites, scope and output are hard limits):\n\npost the newsletter\n\nYou were blocked on it and asked the Chief for help. The Chief's answer is advice",
+    );
+
+    // Blocked again while running the request a second time: the next rerun still carries the user's words, not the notice.
+    const pilot = await makeBot(A, "Pilot");
+    replies.Pilot = [
+      escalate("Reddit returns 429"),
+      "I wait.",
+      escalate("Reddit still returns 429"),
+      "I wait again.",
+      "Posted the r/neovim digest.",
+    ];
+    replies.Chief = [
+      'Decided.\n```zetta:discussion\n{"action":"resolve","summary":"Wait 10 seconds between requests."}\n```',
+      'Decided.\n```zetta:discussion\n{"action":"resolve","summary":"Use old.reddit.com pages."}\n```',
+    ];
+    const pilotChat = await chatWith(A, pilot.id);
+    await pilotChat.say("digest of r/neovim, Reddit only");
+    const until = async (text: string) => {
+      for (let i = 0; i < 50; i++) {
+        await worker.drain();
+        if ((await messagesOf(A, pilotChat.c)).some((m) => m.content === text)) return;
+        await Bun.sleep(100);
+      }
+    };
+    await until("I wait again.");
+    await until("Posted the r/neovim digest.");
+    expect(
+      runs.find((r) => r.bot === "Pilot" && r.prompt.includes("Use old.reddit.com pages."))?.prompt,
+    ).toContain("\n\ndigest of r/neovim, Reddit only\n\n");
 
     // The Chief needs a person: the question is on the blocked bot's chat and card, and the user is asked nothing on the Chief's behalf.
     const rider = await makeBot(A, "Rider");
@@ -684,5 +773,5 @@ suite("group discussions against compose postgres", () => {
       status: "resolved",
       summary: "Asked the user: Sign in to Reddit on the desktop",
     });
-  });
+  }, 30_000);
 });

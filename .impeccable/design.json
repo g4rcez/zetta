@@ -1,60 +1,121 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-27T00:00:00Z",
+  "generatedAt": "2026-10-29T00:00:00Z",
   "title": "Design System: Zetta",
   "extensions": {
     "colorMeta": {
       "primary": {
         "role": "primary",
-        "displayName": "Signal Violet",
-        "canonical": "oklch(0.55 0.2 275)",
+        "displayName": "Azure Signal",
+        "canonical": "oklch(0.593 0.151 245)",
         "tonalRamp": [
-          "oklch(0.25 0.1 275)",
-          "oklch(0.35 0.14 275)",
-          "oklch(0.45 0.18 275)",
-          "oklch(0.55 0.2 275)",
-          "oklch(0.65 0.16 275)",
-          "oklch(0.75 0.11 275)",
-          "oklch(0.86 0.06 275)",
-          "oklch(0.94 0.02 275)"
+          "oklch(0.2 0.04 180)",
+          "oklch(0.3 0.065 180)",
+          "oklch(0.4 0.085 180)",
+          "oklch(0.593 0.151 245)",
+          "oklch(0.62 0.11 180)",
+          "oklch(0.78 0.12 180)",
+          "oklch(0.88 0.06 180)",
+          "oklch(0.95 0.025 180)"
         ]
       },
       "background": {
         "role": "neutral",
-        "displayName": "Cool Paper",
-        "canonical": "oklch(0.985 0.003 265)",
+        "displayName": "Warm Paper",
+        "canonical": "oklch(0.975 0.008 85)",
         "tonalRamp": [
-          "oklch(0.2 0.01 265)",
-          "oklch(0.35 0.012 265)",
-          "oklch(0.5 0.015 265)",
-          "oklch(0.7 0.012 265)",
-          "oklch(0.83 0.01 265)",
-          "oklch(0.91 0.008 265)",
-          "oklch(0.955 0.006 265)",
-          "oklch(0.985 0.003 265)"
+          "oklch(0.2 0.015 60)",
+          "oklch(0.35 0.018 65)",
+          "oklch(0.48 0.02 70)",
+          "oklch(0.7 0.016 75)",
+          "oklch(0.83 0.013 80)",
+          "oklch(0.88 0.012 80)",
+          "oklch(0.945 0.01 85)",
+          "oklch(0.975 0.008 85)"
         ]
       },
       "destructive": {
         "role": "secondary",
         "displayName": "Alarm Red",
-        "canonical": "oklch(0.58 0.22 27)",
+        "canonical": "oklch(0.56 0.21 27)",
         "tonalRamp": [
           "oklch(0.25 0.08 27)",
           "oklch(0.35 0.13 27)",
           "oklch(0.46 0.18 27)",
-          "oklch(0.58 0.22 27)",
+          "oklch(0.56 0.21 27)",
           "oklch(0.7 0.17 27)",
           "oklch(0.8 0.11 27)",
           "oklch(0.9 0.05 27)",
           "oklch(0.96 0.02 27)"
         ]
+      },
+      "attention": {
+        "role": "secondary",
+        "displayName": "Attention Amber",
+        "canonical": "oklch(0.72 0.16 70)",
+        "tonalRamp": [
+          "oklch(0.25 0.06 70)",
+          "oklch(0.35 0.09 70)",
+          "oklch(0.45 0.11 70)",
+          "oklch(0.55 0.13 70)",
+          "oklch(0.72 0.16 70)",
+          "oklch(0.8 0.13 70)",
+          "oklch(0.9 0.07 70)",
+          "oklch(0.96 0.03 70)"
+        ]
+      },
+      "success": {
+        "role": "secondary",
+        "displayName": "Success",
+        "canonical": "oklch(0.5 0.11 155)",
+        "tonalRamp": [
+          "oklch(0.25 0.055 155)",
+          "oklch(0.35 0.083 155)",
+          "oklch(0.5 0.11 155)",
+          "oklch(0.62 0.11 155)",
+          "oklch(0.78 0.132 155)",
+          "oklch(0.86 0.088 155)",
+          "oklch(0.93 0.044 155)",
+          "oklch(0.97 0.017 155)"
+        ]
+      },
+      "info": {
+        "role": "secondary",
+        "displayName": "Info",
+        "canonical": "oklch(0.5 0.11 245)",
+        "tonalRamp": [
+          "oklch(0.25 0.055 245)",
+          "oklch(0.35 0.083 245)",
+          "oklch(0.5 0.11 245)",
+          "oklch(0.62 0.11 245)",
+          "oklch(0.78 0.132 245)",
+          "oklch(0.86 0.088 245)",
+          "oklch(0.93 0.044 245)",
+          "oklch(0.97 0.017 245)"
+        ]
       }
     },
     "typographyMeta": {
-      "headline": { "displayName": "Headline", "purpose": "Page titles (h1)." },
-      "title": { "displayName": "Title", "purpose": "Section headings (h2)." },
-      "body": { "displayName": "Body", "purpose": "Default UI and chat text." },
-      "label": { "displayName": "Label", "purpose": "Buttons, badges, field labels." }
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles (h1), Geist sans."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings (h2), Geist sans."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default UI and chat text, Geist."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Buttons, badges, field labels, Geist."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Sidebar groups, list group headings, day separators, Geist Mono uppercase (.label-mono); timestamps in mono."
+      }
     },
     "shadows": [
       {
@@ -81,9 +142,18 @@
       }
     ],
     "breakpoints": [
-      { "name": "sm", "value": "640px" },
-      { "name": "md", "value": "768px" },
-      { "name": "lg", "value": "1024px" }
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      }
     ]
   },
   "components": [
@@ -93,7 +163,7 @@
       "refersTo": "button-primary",
       "description": "Main action on a surface.",
       "html": "<button class=\"ds-btn-primary\">Run routine</button>",
-      "css": ".ds-btn-primary{height:36px;padding:0 14px;border:1px solid transparent;border-radius:6px;background:oklch(0.55 0.2 275);color:oklch(0.99 0 0);font:500 14px 'Inter Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-primary:hover{background:oklch(0.55 0.2 275 / .8)}.ds-btn-primary:focus-visible{outline:none;border-color:oklch(0.6 0.15 275);box-shadow:0 0 0 1px oklch(0.6 0.15 275 / .5)}.ds-btn-primary:active{transform:translateY(1px)}"
+      "css": ".ds-btn-primary{height:36px;padding:0 14px;border:1px solid transparent;border-radius:4px;background:oklch(0.593 0.151 245);color:oklch(0.985 0.005 85);font:500 14px 'Geist Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-primary:hover{background:oklch(0.5 0.1 180 / .8)}.ds-btn-primary:focus-visible{outline:none;border-color:oklch(0.64 0.15 245);box-shadow:0 0 0 1px oklch(0.55 0.1 180 / .5)}.ds-btn-primary:active{transform:translateY(1px)}"
     },
     {
       "name": "Outline Button",
@@ -101,7 +171,7 @@
       "refersTo": "button-outline",
       "description": "Secondary action.",
       "html": "<button class=\"ds-btn-outline\">Cancel</button>",
-      "css": ".ds-btn-outline{height:36px;padding:0 14px;border:1px solid oklch(0.91 0.008 265);border-radius:6px;background:oklch(1 0 0);color:oklch(0.2 0.01 265);font:500 14px 'Inter Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-outline:hover{background:oklch(0.955 0.006 265)}.ds-btn-outline:focus-visible{outline:none;border-color:oklch(0.6 0.15 275);box-shadow:0 0 0 1px oklch(0.6 0.15 275 / .5)}"
+      "css": ".ds-btn-outline{height:36px;padding:0 14px;border:1px solid oklch(0.88 0.012 80);border-radius:4px;background:oklch(0.992 0.005 85);color:oklch(0.2 0.015 60);font:500 14px 'Geist Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-outline:hover{background:oklch(0.945 0.01 85)}.ds-btn-outline:focus-visible{outline:none;border-color:oklch(0.64 0.15 245);box-shadow:0 0 0 1px oklch(0.55 0.1 180 / .5)}"
     },
     {
       "name": "Destructive Button",
@@ -109,7 +179,7 @@
       "refersTo": "button-destructive",
       "description": "Tinted danger action.",
       "html": "<button class=\"ds-btn-danger\">Delete bot</button>",
-      "css": ".ds-btn-danger{height:36px;padding:0 14px;border:1px solid transparent;border-radius:6px;background:oklch(0.58 0.22 27 / .1);color:oklch(0.58 0.22 27);font:500 14px 'Inter Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-danger:hover{background:oklch(0.58 0.22 27 / .2)}.ds-btn-danger:focus-visible{outline:none;box-shadow:0 0 0 1px oklch(0.58 0.22 27 / .4)}"
+      "css": ".ds-btn-danger{height:36px;padding:0 14px;border:1px solid transparent;border-radius:4px;background:oklch(0.56 0.21 27 / .1);color:oklch(0.56 0.21 27);font:500 14px 'Geist Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-danger:hover{background:oklch(0.56 0.21 27 / .2)}.ds-btn-danger:focus-visible{outline:none;box-shadow:0 0 0 1px oklch(0.56 0.21 27 / .4)}"
     },
     {
       "name": "Text Input",
@@ -117,7 +187,7 @@
       "refersTo": "input",
       "description": "Standard single-line field.",
       "html": "<input class=\"ds-input\" placeholder=\"Name this bot\">",
-      "css": ".ds-input{height:40px;width:240px;padding:0 12px;border:1px solid oklch(0.9 0.008 265);border-radius:6px;background:oklch(0.955 0.006 265 / .4);color:oklch(0.2 0.01 265);font:14px 'Inter Variable',sans-serif;transition:colors .15s}.ds-input::placeholder{color:oklch(0.5 0.015 265)}.ds-input:focus-visible{outline:none;border-color:oklch(0.6 0.15 275);box-shadow:0 0 0 1px oklch(0.6 0.15 275 / .5)}"
+      "css": ".ds-input{height:40px;width:240px;padding:0 12px;border:1px solid oklch(0.86 0.012 80);border-radius:4px;background:oklch(0.945 0.01 85 / .4);color:oklch(0.2 0.015 60);font:14px 'Geist Variable',sans-serif;transition:colors .15s}.ds-input::placeholder{color:oklch(0.48 0.02 70)}.ds-input:focus-visible{outline:none;border-color:oklch(0.64 0.15 245);box-shadow:0 0 0 1px oklch(0.55 0.1 180 / .5)}"
     },
     {
       "name": "Badge",
@@ -125,7 +195,7 @@
       "refersTo": "badge",
       "description": "Compact status label.",
       "html": "<span class=\"ds-badge\">Needs input</span>",
-      "css": ".ds-badge{display:inline-flex;align-items:center;height:20px;padding:2px 8px;background:oklch(0.55 0.2 275);color:oklch(0.99 0 0);font:500 12px 'Inter Variable',sans-serif;white-space:nowrap}"
+      "css": ".ds-badge{display:inline-flex;align-items:center;height:20px;padding:2px 8px;background:oklch(0.593 0.151 245);color:oklch(0.985 0.005 85);font:500 12px 'Geist Variable',sans-serif;white-space:nowrap}"
     },
     {
       "name": "Card",
@@ -133,14 +203,14 @@
       "refersTo": "card",
       "description": "Flat container with a hairline ring.",
       "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Daily briefing</div><div class=\"ds-card-desc\">Runs weekdays at 07:30 with your chief.</div></div>",
-      "css": ".ds-card{display:flex;flex-direction:column;gap:4px;width:280px;padding:16px;border-radius:8px;background:oklch(1 0 0);color:oklch(0.2 0.01 265);box-shadow:0 0 0 1px oklch(0.2 0.01 265 / .1);font-family:'Inter Variable',sans-serif}.ds-card-title{font-size:14px;font-weight:500}.ds-card-desc{font-size:14px;color:oklch(0.5 0.015 265)}"
+      "css": ".ds-card{display:flex;flex-direction:column;gap:4px;width:280px;padding:16px;border-radius:6px;background:oklch(0.992 0.005 85);color:oklch(0.2 0.015 60);box-shadow:0 0 0 1px oklch(0.2 0.015 60 / .1);font-family:'Geist Variable',sans-serif}.ds-card-title{font-size:14px;font-weight:500}.ds-card-desc{font-size:14px;color:oklch(0.48 0.02 70)}"
     }
   ],
   "narrative": {
     "northStar": "The Quiet Dispatcher",
-    "overview": "Work happens on the server; the interface stays still until something needs the user. Zetta reads as a calm control room: indigo-tinted neutrals, one violet accent, hairline structure, and no decoration competing with bot output or attention states. When a bot is working, nothing should shout; when a person is needed, that is the loudest thing on screen.",
+    "overview": "Work happens on the server; the interface stays still until something needs the user. Zetta reads as an editorial control room: warm paper and ink neutrals, one azure signal, hairline structure, and no decoration competing with bot output or attention states. When a bot is working, nothing should shout; when a person is needed, that is the loudest thing on screen.",
     "keyCharacteristics": [
-      "Cool indigo-tinted neutrals (hue 265) with a single violet accent (hue 275).",
+      "Warm paper and ink neutrals (hue 60 to 85) with a single azure signal (hue 245); amber (--attention) is the only other loud color.",
       "Flat, tonal layering; depth from 1px rings and surface tint, not shadows.",
       "Light and dark themes with equal standing (class-based .dark).",
       "Dense, scannable app chrome at 14px body.",
@@ -149,7 +219,12 @@
     "rules": [
       {
         "name": "The One Voice Rule",
-        "body": "Signal Violet marks the thing you can act on or that is selected. It never decorates.",
+        "body": "Azure marks the thing you can act on or that is selected. It never decorates.",
+        "section": "colors"
+      },
+      {
+        "name": "The Attention Rule",
+        "body": "Amber is spent only on \"a person is needed\". Not for decoration or ordinary warnings.",
         "section": "colors"
       },
       {
@@ -158,8 +233,8 @@
         "section": "colors"
       },
       {
-        "name": "The One Family Rule",
-        "body": "Do not add a second typeface. Differentiate with weight and size.",
+        "name": "The Three Voices Rule",
+        "body": "Serif speaks (headings), sans works (UI), mono annotates (metadata). Do not set body copy in serif or headings in mono.",
         "section": "typography"
       },
       {
@@ -170,15 +245,15 @@
     ],
     "dos": [
       "Do use the token variables (--primary, --border, etc.) rather than raw colors so both themes stay in step.",
-      "Do keep Signal Violet to actionable and selected elements.",
-      "Do give every interactive element a visible focus treatment (violet border plus 1px ring).",
+      "Do keep azure to actionable and selected elements, and amber to attention.",
+      "Do give every interactive element a visible focus treatment (azure border plus 1px ring).",
       "Do express danger as a tint plus colored text.",
       "Do use the shared @zetta/ui components before building new primitives."
     ],
     "donts": [
       "Don't add shadows to cards, lists or panels.",
-      "Don't introduce a second typeface or a second accent hue.",
-      "Don't use raw hex or Tailwind palette colors where a token exists.",
+      "Don't introduce a fourth typeface or a second accent hue; status colors are the success, warn, info and destructive tokens.",
+      "Don't use raw hex or Tailwind palette colors (amber-500, emerald-600); use the tokens.",
       "Don't surface technical vocabulary (harness, MCP, hook) in default-visible UI.",
       "Don't let status color alone carry meaning; pair it with text or an icon."
     ]

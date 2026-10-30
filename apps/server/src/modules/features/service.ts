@@ -1,5 +1,5 @@
 import type { Database } from "@zetta/db";
-import { and, asc, desc, eq, sql } from "@zetta/db/query";
+import { and, asc, desc, eq, inArray, sql } from "@zetta/db/query";
 import { bot, message } from "@zetta/db/schema/chat";
 import {
   attentionItem,
@@ -158,14 +158,32 @@ export function createFeaturesService(
         }
       ).used ?? { memories: [], instructions: [] };
       const mem = used.memories.length
-        ? (await db.select().from(memory).where(eq(memory.ownerUserId, a.userId))).filter((x) =>
-            used.memories.some((u) => u.id === x.id),
-          )
+        ? await db
+            .select({ id: memory.id, content: memory.content })
+            .from(memory)
+            .where(
+              and(
+                eq(memory.ownerUserId, a.userId),
+                inArray(
+                  memory.id,
+                  used.memories.map((u) => u.id),
+                ),
+              ),
+            )
         : [];
       const ins = used.instructions.length
-        ? (await db.select().from(instruction).where(eq(instruction.ownerUserId, a.userId))).filter(
-            (x) => used.instructions.some((u) => u.id === x.id),
-          )
+        ? await db
+            .select({ id: instruction.id, title: instruction.title })
+            .from(instruction)
+            .where(
+              and(
+                eq(instruction.ownerUserId, a.userId),
+                inArray(
+                  instruction.id,
+                  used.instructions.map((u) => u.id),
+                ),
+              ),
+            )
         : [];
       return {
         memories: mem.map((x) => ({ id: x.id, content: x.content })),
@@ -362,6 +380,8 @@ export function createFeaturesService(
     /** Re-runs, once each, the routines whose latest run in the window failed or was interrupted. */
     recoverRecent: (now?: Date, windowMs?: number, userId?: string) =>
       routines.recoverRecent(now, windowMs, userId),
+    /** Runs the retries of failed routine runs whose wait is over (also called by the 5-minute sweep). */
+    retryDue: (now?: Date) => routines.retryDue(now),
   };
 }
 export type FeaturesService = ReturnType<typeof createFeaturesService>;

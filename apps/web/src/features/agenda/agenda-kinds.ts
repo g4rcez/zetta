@@ -1,4 +1,10 @@
-import { CalendarCheck2, CalendarDays, BellRing, StickyNote, type LucideIcon } from "lucide-react";
+import {
+  CalendarCheckIcon,
+  CalendarIcon,
+  BellRingingIcon,
+  NoteIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 
 import type { AgendaKind } from "./agenda-api";
 
@@ -8,11 +14,11 @@ export const KIND_LABEL: Record<AgendaKind, string> = {
   reminder: "Reminder",
   note: "Note",
 };
-export const KIND_ICON: Record<AgendaKind, LucideIcon> = {
-  event: CalendarDays,
-  task: CalendarCheck2,
-  reminder: BellRing,
-  note: StickyNote,
+export const KIND_ICON: Record<AgendaKind, Icon> = {
+  event: CalendarIcon,
+  task: CalendarCheckIcon,
+  reminder: BellRingingIcon,
+  note: NoteIcon,
 };
 export const KIND_THEME = {
   event: "primary",

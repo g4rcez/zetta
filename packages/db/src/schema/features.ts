@@ -16,6 +16,7 @@ import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
 import { connection } from "./connections";
 import { team } from "./teams";
+import { searchVector } from "./search";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
@@ -52,6 +53,7 @@ export const memory = pgTable(
   (t) => [
     index("memory_bot_id_idx").on(t.botId),
     index("memory_owner_idx").on(t.ownerUserId),
+    index("memory_search_idx").using("gin", searchVector(t.content)),
     uniqueIndex("memory_owner_hash")
       .on(t.ownerUserId, t.contentHash)
       .where(sql`${t.contentHash} <> ''`),
@@ -82,6 +84,7 @@ export const instruction = pgTable(
   },
   (t) => [
     index("instruction_owner_idx").on(t.ownerUserId),
+    index("instruction_search_idx").using("gin", searchVector(sql`${t.title} || ' ' || ${t.body}`)),
     index("instruction_team_id_idx").on(t.teamId),
     uniqueIndex("instruction_owner_hash")
       .on(t.ownerUserId, t.contentHash)
@@ -180,11 +183,19 @@ export const routineRun = pgTable(
       .notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /** 0 for the scheduled run, then 1, 2, … for each retry of it. */
+    attempt: integer("attempt").default(0).notNull(),
+    /** A failed run with this set in the future is waiting to be retried; the sweep runs it when due. */
+    retryAt: timestamp("retry_at", { withTimezone: true }),
   },
   (t) => [
     index("routine_run_owner_user_id_idx").on(t.ownerUserId),
     index("routine_run_conversation_id_idx").on(t.conversationId),
     index("routine_run_routine_idx").on(t.routineId, t.startedAt),
+    index("routine_run_started_idx").on(t.startedAt),
+    index("routine_run_retry_idx")
+      .on(t.retryAt)
+      .where(sql`${t.status} = 'failed'`),
     uniqueIndex("routine_run_occurrence")
       .on(t.routineId, t.occurrenceKey)
       .where(sql`${t.occurrenceKey} is not null`),
@@ -376,6 +387,8 @@ export const configProposal = pgTable(
         "discussion_brief",
         "start_loop",
         "bot_permission",
+        "create_memory",
+        "create_wiki_page",
       ],
     })
       .default("config")
@@ -590,6 +603,15 @@ export const mcpServer = pgTable(
     command: text("command"),
     args: jsonb("args").$type<string[]>().default([]).notNull(),
     connectionId: uuid("connection_id").references(() => connection.id, setNull),
+    /**
+     * Who may use this server. `private`: only its owner (default). `team`: the owner's teammates may bind their bots to it and call the
+     * tools the plugin lists as safe for teams, through the owner's account. Only plugins that declare team tools can be shared.
+     */
+    sharing: text("sharing", { enum: ["private", "team"] })
+      .default("private")
+      .notNull(),
+    /** Tool catalogue seen at the last listing (remote MCP servers only; native plugins read theirs from the registry). */
+    tools: jsonb("tools").$type<{ name: string; description: string }[]>().default([]).notNull(),
     createdAt: created(),
   },
   (t) => [
@@ -612,6 +634,11 @@ export const botIntegration = pgTable(
     serverId: uuid("server_id")
       .notNull()
       .references(() => mcpServer.id, restrict),
+    /** `all`: every tool of the server. `selected`: only the names in `allowedTools`. */
+    toolsMode: text("tools_mode", { enum: ["all", "selected"] })
+      .default("all")
+      .notNull(),
+    allowedTools: jsonb("allowed_tools").$type<string[]>().default([]).notNull(),
     createdAt: created(),
   },
   (t) => [

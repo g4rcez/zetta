@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, Eye, EyeOff, Globe, Laptop } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  GlobeIcon,
+  LaptopIcon,
+} from "@phosphor-icons/react";
 import { Alert } from "@g4rcez/components/alert";
 import z from "zod";
 
@@ -22,7 +29,7 @@ const STEPS: readonly { id: StepId; title: string; question: string; lede: strin
     id: "key",
     title: "Server key",
     question: "Prove this is your server",
-    lede: "Paste the ZETTA_CONNECTION_KEY the server was started with. It encrypts everything Zetta stores for you, and only the person who runs the server has it.",
+    lede: "Paste the setup key the server was started with. Only the person who runs the server has it.",
   },
   {
     id: "network",
@@ -372,19 +379,20 @@ export function InstallOnboarding() {
                 aria-pressed={showKey}
                 onClick={() => setShowKey((v) => !v)}
               >
-                {showKey ? <EyeOff /> : <Eye />}
+                {showKey ? <EyeSlashIcon /> : <EyeIcon />}
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              It is the value of <code className="font-mono">ZETTA_CONNECTION_KEY</code> in the
-              server's environment. Don't have one? Create it with{" "}
+              It is the value of <code className="font-mono">ZETTA_SETUP_KEY</code> in the server's
+              environment (or <code className="font-mono">ZETTA_CONNECTION_KEY</code> when no setup
+              key is set). Don't have one? Create it with{" "}
               <code className="font-mono">openssl rand -base64 32</code>, set it, and restart the
               server.
             </p>
             <Nav>
               <Button type="submit" disabled={busy || !setupKey.trim()}>
                 {busy ? "Checking…" : "Continue"}
-                <ArrowRight />
+                <ArrowRightIcon />
               </Button>
             </Nav>
           </form>
@@ -399,14 +407,14 @@ export function InstallOnboarding() {
             >
               <ModeCard
                 active={mode === "local"}
-                icon={<Laptop className="size-5" />}
+                icon={<LaptopIcon className="size-5" />}
                 title="Only this computer"
                 body="Zetta listens on this machine only. The safest start."
                 onSelect={() => setMode("local")}
               />
               <ModeCard
                 active={mode === "network"}
-                icon={<Globe className="size-5" />}
+                icon={<GlobeIcon className="size-5" />}
                 title="Open to my network"
                 body="Your phone and teammates can reach Zetta at an address you choose."
                 onSelect={() => setMode("network")}
@@ -436,7 +444,7 @@ export function InstallOnboarding() {
                 onClick={() => go("account")}
               >
                 Continue
-                <ArrowRight />
+                <ArrowRightIcon />
               </Button>
             </Nav>
           </div>
@@ -495,7 +503,7 @@ export function InstallOnboarding() {
             <Nav back={() => go("network")}>
               <Button type="submit" disabled={busy}>
                 {busy ? "Creating…" : "Create account"}
-                <ArrowRight />
+                <ArrowRightIcon />
               </Button>
             </Nav>
           </form>
@@ -531,19 +539,19 @@ export function InstallOnboarding() {
             {step === "identity" && (
               <Button type="button" disabled={nameMissing} onClick={() => go("engine")}>
                 Continue
-                <ArrowRight />
+                <ArrowRightIcon />
               </Button>
             )}
             {step === "engine" && (
               <Button type="button" onClick={() => go("instructions")}>
                 Continue
-                <ArrowRight />
+                <ArrowRightIcon />
               </Button>
             )}
             {step === "instructions" && (
               <Button type="button" disabled={busy || nameMissing} onClick={() => void saveChief()}>
                 {busy ? "Saving…" : "Save my Chief"}
-                <ArrowRight />
+                <ArrowRightIcon />
               </Button>
             )}
             {step === "plugins" && (
@@ -553,7 +561,7 @@ export function InstallOnboarding() {
                 </Button>
                 <Button type="button" onClick={() => go("test")}>
                   Continue
-                  <ArrowRight />
+                  <ArrowRightIcon />
                 </Button>
               </>
             )}
@@ -575,7 +583,7 @@ export function InstallOnboarding() {
                   onClick={() => void finish()}
                 >
                   {busy ? "Finishing…" : "Start chatting"}
-                  <ArrowRight />
+                  <ArrowRightIcon />
                 </Button>
               </>
             )}
@@ -591,7 +599,7 @@ function Nav({ back, children }: { back?: () => void; children: ReactNode }) {
     <div className="flex items-center justify-between gap-2 pt-2">
       {back ? (
         <Button type="button" variant="ghost" onClick={back}>
-          <ArrowLeft />
+          <ArrowLeftIcon />
           Back
         </Button>
       ) : (

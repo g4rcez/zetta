@@ -1,11 +1,11 @@
 import {
-  CalendarDays,
-  CheckCircle2,
-  HardDrive,
-  Mail,
-  ShieldCheck,
-  type LucideIcon,
-} from "lucide-react";
+  CalendarIcon,
+  CheckCircleIcon,
+  HardDriveIcon,
+  EnvelopeIcon,
+  ShieldCheckIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui";
@@ -64,10 +64,10 @@ export function GoogleLogo({ className = "size-5" }: { className?: string }) {
     </svg>
   );
 }
-const GROUPS: Record<string, { icon: LucideIcon; color: string; hint: string }> = {
-  Gmail: { icon: Mail, color: "text-[#EA4335]", hint: "Search and draft mail" },
-  Calendar: { icon: CalendarDays, color: "text-[#4285F4]", hint: "Check and schedule events" },
-  Drive: { icon: HardDrive, color: "text-[#34A853]", hint: "Read documents and files" },
+const GROUPS: Record<string, { icon: Icon; color: string; hint: string }> = {
+  Gmail: { icon: EnvelopeIcon, color: "text-[#EA4335]", hint: "Search and draft mail" },
+  Calendar: { icon: CalendarIcon, color: "text-[#4285F4]", hint: "Check and schedule events" },
+  Drive: { icon: HardDriveIcon, color: "text-[#34A853]", hint: "Read documents and files" },
 };
 
 /** Mirrors the server's scope ids (plugins/google/oauth.ts). Nothing is requested until the user ticks it. */
@@ -173,7 +173,7 @@ export function GoogleConnect({
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {connected ? (
           <>
-            <CheckCircle2 aria-hidden className="size-4 text-primary" />
+            <CheckCircleIcon aria-hidden className="size-4 text-primary" />
             Connected as{" "}
             <strong className="text-foreground">{info?.email ?? "your Google account"}</strong>
           </>
@@ -220,7 +220,7 @@ export function GoogleConnect({
         >
           {connected ? (
             <>
-              <ShieldCheck aria-hidden className="size-4" />
+              <ShieldCheckIcon aria-hidden className="size-4" />
               Update permissions
             </>
           ) : (

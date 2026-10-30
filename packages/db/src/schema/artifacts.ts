@@ -4,6 +4,7 @@ import { bigint, check, index, pgTable, text, timestamp, uuid } from "drizzle-or
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
 import { routineRun } from "./features";
+import { searchVector } from "./search";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
@@ -55,6 +56,10 @@ export const artifact = pgTable(
   (t) => [
     index("artifact_owner_created_idx").on(t.ownerUserId, t.createdAt.desc()),
     index("artifact_bot_id_idx").on(t.botId),
+    index("artifact_search_idx").using(
+      "gin",
+      searchVector(sql`${t.title} || ' ' || ${t.description} || ' ' || ${t.fileName}`),
+    ),
     index("artifact_conversation_id_idx").on(t.conversationId),
     index("artifact_routine_run_id_idx").on(t.routineRunId),
     check("artifact_title_check", sql`length(btrim(${t.title})) between 1 and 200`),

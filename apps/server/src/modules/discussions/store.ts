@@ -12,7 +12,7 @@ import {
 } from "@zetta/db/schema/discussions";
 import { attachment, configProposal, instruction } from "@zetta/db/schema/features";
 import { task } from "@zetta/db/schema/tasks";
-import { raiseAttention } from "../features/attention";
+import { closeAttention, raiseAttention } from "../features/attention";
 import { AccessError, requireOwned, type ActiveActor } from "../identity/access";
 import { dockerConfig } from "../chat/harness";
 import type { FileStore } from "../chat/files";
@@ -481,12 +481,14 @@ export function createDiscussionStore(
       requester: Bot,
       problem: string,
       tried: string,
+      request: string,
       stoppedAt: HelpStop,
     ) {
       const opened = await open(a, {
         title: `${HELP_PREFIX}${requester.name}: ${problem}`.slice(0, 120),
-        goal: `Solve the blocker of ${requester.name} without asking the user.`,
-        context: `Problem: ${problem}\nTried: ${tried}`,
+        goal: `Unblock ${requester.name} inside the user's request. Hand off to the user when a person must act or the request's limits block the work.`,
+        // The user's own words travel with the request: the Chief must keep their limits (sources, sites, scope, output).
+        context: `${request ? `User's request (binding; keep its sources, sites, scope and output):\n${request}\n\n` : ""}Problem: ${problem}\nTried: ${tried}`,
         members: [{ bot: requester.id }],
         firstMessage: `${requester.name} is blocked and asks the Chief for help.`,
         createdBy: chief,
@@ -843,8 +845,8 @@ export function createDiscussionStore(
       return row!;
     },
     /**
-     * Resolves: queued turns are cancelled, the facilitator gets one wrap-up turn (when someone else resolved it), and the origin chat and
-     * the owner's attention list get the summary.
+     * Resolves: queued turns are cancelled, the facilitator gets one wrap-up turn (when someone else resolved it), and the origin chat
+     * gets the summary. The discussion's notifications close: a solved discussion needs nothing from the owner.
      */
     async resolve(a: ActiveActor, id: string, by: Bot | null, summary: string) {
       const d = await loadOwned(a, id);
@@ -897,16 +899,7 @@ export function createDiscussionStore(
             content: `👥 Discussion "${d.title}" was resolved: ${summary}`,
             meta: { discussion: { id: d.id, title: d.title, status: "resolved" } },
           });
-        // A help request is settled between the bots; it only reaches the user when the Chief hands off.
-        if (!d.title.startsWith(HELP_PREFIX))
-          await raiseAttention(tx, d.ownerUserId, {
-            botId: by?.id ?? null,
-            title: `Discussion resolved: ${d.title}`,
-            detail: summary,
-            resultLink: `/discussions?id=${d.id}`,
-            source: "bot",
-            sourceKey: `discussion:${d.id}:resolved`,
-          });
+        await closeAttention(tx, d.ownerUserId, `/discussions?id=${d.id}`, "resolved");
         return r;
       });
       if (wrap) onEnqueue?.();
@@ -935,7 +928,7 @@ export function createDiscussionStore(
           .set({ ...set, updatedAt: new Date(), version: sql`${discussion.version} + 1` })
           .where(eq(discussion.id, d.id))
           .returning();
-        if (action === "cancel")
+        if (action === "cancel") {
           await tx
             .update(discussionTurn)
             .set({ status: "cancelled", finishedAt: new Date(), reasonCode: "cancelled" })
@@ -945,6 +938,8 @@ export function createDiscussionStore(
                 inArray(discussionTurn.status, ["queued", "awaiting_approval"]),
               ),
             );
+          await closeAttention(tx, d.ownerUserId, `/discussions?id=${d.id}`, "cancelled");
+        }
         // Resuming retries what a restart interrupted (the owner saw the card and chose to go on).
         if (action === "resume")
           await tx
@@ -968,6 +963,14 @@ export function createDiscussionStore(
       });
       if (action === "resume") onEnqueue?.();
       return row;
+    },
+    /** Discussions the bots are working on now (status open): the count on the Discussions rail badge. */
+    async countRunning(a: ActiveActor) {
+      const [r] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(discussion)
+        .where(and(eq(discussion.ownerUserId, a.userId), eq(discussion.status, "open")));
+      return r?.n ?? 0;
     },
     async list(a: ActiveActor, status?: Discussion["status"]) {
       const rows = await db
@@ -1470,6 +1473,29 @@ export function createDiscussionStore(
         }).catch(() => {});
       }
       return idle.length;
+    },
+    /** Drops the step trace of turns that ended over 30 days ago. The turn and its message stay. */
+    async purgeSteps(now = new Date()) {
+      await db.delete(turnStep).where(
+        and(
+          lt(turnStep.updatedAt, new Date(now.getTime() - 30 * 86_400_000)),
+          inArray(
+            turnStep.discussionTurnId,
+            db
+              .select({ id: discussionTurn.id })
+              .from(discussionTurn)
+              .where(
+                inArray(discussionTurn.status, [
+                  "done",
+                  "failed",
+                  "skipped",
+                  "interrupted",
+                  "cancelled",
+                ]),
+              ),
+          ),
+        ),
+      );
     },
   };
 }

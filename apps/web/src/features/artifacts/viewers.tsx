@@ -1,7 +1,8 @@
 import { unzipSync } from "fflate";
-import { Download, File as FileIcon, Folder } from "lucide-react";
+import { DownloadSimpleIcon, FileIcon, FolderIcon } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { ARTIFACT_HTML_CSP, ARTIFACT_HTML_SANDBOX } from "@zetta/core/artifact-csp";
 import { Skeleton } from "@zetta/ui/components/skeleton";
 import { CodeBlock } from "../chat/chat-copy";
 import { Response } from "../chat/response";
@@ -20,7 +21,7 @@ const Download_ = ({ a, children }: { a: Artifact; children: ReactNode }) => (
     href={contentUrl(a.id, true)}
     className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
   >
-    <Download aria-hidden="true" className="size-4" />
+    <DownloadSimpleIcon aria-hidden="true" className="size-4" />
     {children}
   </a>
 );
@@ -65,10 +66,11 @@ function HtmlViewer({ a }: { a: Artifact }) {
   if (text === null) return <Gone />;
   return (
     <iframe
-      title={a.title}
-      sandbox="allow-scripts allow-popups allow-forms"
       srcDoc={text}
-      className="h-[75vh] w-full rounded-lg border bg-white"
+      title={a.title}
+      sandbox={ARTIFACT_HTML_SANDBOX}
+      {...{ csp: ARTIFACT_HTML_CSP }}
+      className="h-[75vh] w-full rounded-lg border border-border"
     />
   );
 }
@@ -200,7 +202,7 @@ function ZipViewer({ a }: { a: Artifact }) {
       >
         {entries.map((e) => {
           const dir = e.name.endsWith("/");
-          const Icon = dir ? Folder : FileIcon;
+          const Icon = dir ? FolderIcon : FileIcon;
           return (
             <li key={e.name}>
               <button

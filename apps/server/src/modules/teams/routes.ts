@@ -24,14 +24,16 @@ const schemas = {
     name: z.string().trim().min(1).max(80),
     goal: z.string().trim().max(1000),
     canvas: box,
-    members: z.array(
-      z.strictObject({
-        botId: uuid,
-        kind: z.enum(["chief", "member"]),
-        role: z.string().trim().max(200).default(""),
-        canvas: point,
-      }),
-    ),
+    members: z
+      .array(
+        z.strictObject({
+          botId: uuid,
+          kind: z.enum(["chief", "member"]),
+          role: z.string().trim().max(200).default(""),
+          canvas: point,
+        }),
+      )
+      .max(50),
   }),
   room: z.strictObject({
     title: z.string().trim().min(1).max(120),

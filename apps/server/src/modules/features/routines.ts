@@ -1,10 +1,11 @@
 import type { Database } from "@zetta/db";
 import schedule from "node-schedule";
-import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "@zetta/db/query";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from "@zetta/db/query";
 import { bot, conversation, message } from "@zetta/db/schema/chat";
 import { routine, routineRun, workflow } from "@zetta/db/schema/features";
 import { membership } from "@zetta/db/schema/identity";
 import { AccessError, type ActiveActor } from "../identity/access";
+import { failureKind, retryDelayMs } from "../chat/retry";
 import { raiseAttention } from "./attention";
 import { audit } from "./audit";
 import {
@@ -55,7 +56,7 @@ export type ChatTurn = (
   conversationId: string,
   prompt: string,
   requestKey: string,
-) => Promise<{ ok: boolean; text: string }>;
+) => Promise<{ ok: boolean; text: string; error?: string | undefined }>;
 export function createRoutines(
   db: Database,
   run: RunTurn,
@@ -153,9 +154,10 @@ export function createRoutines(
     r: Routine,
     runId: string,
     startedAt: Date,
-    retry?: { prompt: string; conversationId: string | null },
+    retry?: { prompt: string; conversationId: string | null; attempt: number },
   ) {
     const prompt = retry?.prompt ?? r.prompt;
+    const attempt = retry?.attempt ?? 0;
     await mark(r.id, "running");
     const finish = (
       status: "succeeded" | "failed" | "blocked" | "skipped",
@@ -242,7 +244,8 @@ export function createRoutines(
     await db.update(routineRun).set({ conversationId: convId }).where(eq(routineRun.id, runId));
     let status: "succeeded" | "failed" = "succeeded",
       output = "",
-      reason: string | null = null;
+      reason: string | null = null,
+      errCode: string | undefined;
     if (chatTurn && !r.workflowId) {
       try {
         const t = await chatTurn(r.ownerUserId, convId, prompt, `routine:${runId}`);
@@ -250,10 +253,12 @@ export function createRoutines(
         if (!t.ok) {
           status = "failed";
           reason = "bot_failed";
+          errCode = t.error;
         }
-      } catch {
+      } catch (e) {
         status = "failed";
         reason = "bot_failed";
+        errCode = e instanceof Error ? e.message : undefined;
         output = "The routine could not complete.";
       }
     } else {
@@ -266,9 +271,10 @@ export function createRoutines(
             reason = "workflow_failed";
           }
         } else output = (await run({ userId: r.ownerUserId, bot: b!, history: [], prompt })).text;
-      } catch {
+      } catch (e) {
         status = "failed";
         reason = "bot_failed";
+        errCode = e instanceof Error ? e.message : undefined;
         output = "The routine could not complete.";
       }
       const [{ m } = { m: 0 }] = await db
@@ -296,17 +302,29 @@ export function createRoutines(
       ]);
     }
     await finish(status, output, reason, convId);
-    if (status === "failed")
+    if (status === "failed") {
+      // A failed bot run is tried again after a wait (retryDue); the user is asked only when waiting cannot help or the tries ran out.
+      // A workflow is not retried: its steps may already have had effects.
+      const delay =
+        reason === "bot_failed" ? retryDelayMs(failureKind(errCode), attempt + 1) : null;
+      if (delay !== null) {
+        await db
+          .update(routineRun)
+          .set({ retryAt: new Date(Date.now() + delay) })
+          .where(eq(routineRun.id, runId));
+        return;
+      }
       await raiseAttention(db, r.ownerUserId, {
         botId: b!.id,
         title: `Routine "${r.title}" failed`,
-        detail: output,
+        detail: attempt ? `${output}\n(after ${attempt + 1} attempts)` : output,
         nextAction: "Check the bot, then run the routine again.",
         resultLink: `/chat/${convId}`,
         source: "routine",
         sourceKey: `routine:${r.id}:failed`,
         remaining: "This occurrence",
       });
+    }
     return;
   }
 
@@ -316,6 +334,7 @@ export function createRoutines(
     key: string,
     trigger: "schedule" | "manual" | "recovery",
     startedAt: Date,
+    attempt = 0,
   ) {
     const [row] = await db
       .insert(routineRun)
@@ -327,6 +346,7 @@ export function createRoutines(
         occurrenceKey: key,
         trigger,
         startedAt,
+        attempt,
       })
       .onConflictDoNothing()
       .returning();
@@ -382,6 +402,7 @@ export function createRoutines(
           : `failed${run.reasonCode ? ` (${run.reasonCode})` : ""}`
       }.`,
       run.output ? `What it had produced: ${run.output.slice(0, 1500)}` : "",
+      `This is retry ${run.attempt + 1}. Use the zetta-recover-from-failure skill: change approach instead of repeating the step that failed, and save what you learn as a wiki gotcha.`,
       "Check what already happened in this chat, finish only what is missing, and do not repeat actions that already took effect.",
     ]
       .filter((x) => x !== "")
@@ -404,6 +425,8 @@ export function createRoutines(
           eq(routine.archived, false),
           userId ? eq(routine.ownerUserId, userId) : undefined,
           sql`${routineRun.trigger} <> 'recovery'`,
+          // A run waiting for its backoff belongs to retryDue; retrying it at boot would skip the wait.
+          sql`${routineRun.retryAt} is null`,
         ),
       )
       .orderBy(desc(routineRun.startedAt));
@@ -421,6 +444,7 @@ export function createRoutines(
         await execute(r, claimed.id, now, {
           prompt: recoveryPrompt(r, run),
           conversationId: run.conversationId,
+          attempt: run.attempt + 1,
         });
         return true;
       }),
@@ -428,9 +452,53 @@ export function createRoutines(
     return results.filter((x) => x.status === "fulfilled" && x.value).length;
   }
 
+  /** Clears the output text of runs older than 90 days. The run row, status and times stay. */
+  async function trimOldOutput(now = new Date()) {
+    await db
+      .update(routineRun)
+      .set({ output: "" })
+      .where(
+        and(
+          lt(routineRun.startedAt, new Date(now.getTime() - 90 * 86_400_000)),
+          sql`${routineRun.output} <> ''`,
+          sql`${routineRun.status} <> 'running'`,
+          isNull(routineRun.retryAt),
+        ),
+      );
+  }
+
+  /**
+   * Runs the retries whose wait is over. Each retry claims `retry:<failed run id>`, so a second worker or `recoverRecent` cannot run
+   * the same retry twice. A retry that fails again schedules the next one itself, until the delays run out.
+   */
+  async function retryDue(now = new Date()) {
+    const due = await db
+      .select({ run: routineRun, r: routine })
+      .from(routineRun)
+      .innerJoin(routine, eq(routine.id, routineRun.routineId))
+      .where(and(eq(routineRun.status, "failed"), lte(routineRun.retryAt, now)));
+    let ran = 0;
+    for (const { run, r } of due) {
+      const eligible = !r.archived && (!r.paused || r.kind === "once");
+      const claimed = eligible
+        ? await claim(r, `retry:${run.id}`, "recovery", now, run.attempt + 1)
+        : undefined;
+      await db.update(routineRun).set({ retryAt: null }).where(eq(routineRun.id, run.id));
+      if (!claimed) continue;
+      await execute(r, claimed.id, now, {
+        prompt: recoveryPrompt(r, run),
+        conversationId: run.conversationId,
+        attempt: run.attempt + 1,
+      });
+      ran++;
+    }
+    return ran;
+  }
+
   return {
     prerequisites,
     recoverRecent,
+    retryDue,
     runDue,
     /** Arms a job for every active routine and cancels the rest; also a 5-minute sweep for anything overdue. Call once at boot. */
     async start() {
@@ -446,6 +514,8 @@ export function createRoutines(
       sweep.zettaRoutineSweep?.cancel();
       sweep.zettaRoutineSweep = schedule.scheduleJob("routine-sweep", "*/5 * * * *", () => {
         void runDue().catch(() => {});
+        void retryDue().catch(() => {});
+        if (new Date().getMinutes() < 5) void trimOldOutput().catch(() => {}); // once an hour
       });
       return active.length;
     },
@@ -585,6 +655,33 @@ export function createRoutines(
         status?: string;
       }[] = [];
       const now = new Date();
+      // One query for all routines: the newest 100 runs of each, without the output text.
+      const ranked = db
+        .select({
+          routineId: routineRun.routineId,
+          startedAt: routineRun.startedAt,
+          status: routineRun.status,
+          rn: sql<number>`row_number() over (partition by ${routineRun.routineId} order by ${routineRun.startedAt} desc)`.as(
+            "rn",
+          ),
+        })
+        .from(routineRun)
+        .where(
+          and(
+            inArray(
+              routineRun.routineId,
+              mine.map((r) => r.id),
+            ),
+            eq(routineRun.ownerUserId, a.userId),
+            gte(routineRun.startedAt, from),
+            lte(routineRun.startedAt, to),
+          ),
+        )
+        .as("ranked");
+      const pastRows = mine.length
+        ? await db.select().from(ranked).where(lte(ranked.rn, 100)).orderBy(desc(ranked.startedAt))
+        : [];
+      const pastByRoutine = Map.groupBy(pastRows, (p) => p.routineId);
       for (const r of mine) {
         if (!r.paused) {
           let cursor = from > now ? from : now;
@@ -601,19 +698,7 @@ export function createRoutines(
             cursor = n;
           }
         }
-        const past = await db
-          .select()
-          .from(routineRun)
-          .where(
-            and(
-              eq(routineRun.routineId, r.id),
-              eq(routineRun.ownerUserId, a.userId),
-              gte(routineRun.startedAt, from),
-              lte(routineRun.startedAt, to),
-            ),
-          )
-          .orderBy(desc(routineRun.startedAt))
-          .limit(100);
+        const past = pastByRoutine.get(r.id) ?? [];
         for (const p of past)
           items.push({
             at: p.startedAt.toISOString(),

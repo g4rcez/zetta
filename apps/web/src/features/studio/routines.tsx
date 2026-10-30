@@ -1,6 +1,6 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Plus, TriangleAlert } from "lucide-react";
+import { CaretRightIcon, PlusIcon, WarningIcon } from "@phosphor-icons/react";
 import { RoutineCalendar } from "./routine-calendar";
 import { RoutineTimeline } from "./routine-timeline";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
@@ -138,7 +138,7 @@ function ActivationCard({
   return (
     <section
       aria-label="Before you activate"
-      className="mt-2 space-y-2 rounded-lg border border-yellow-600/50 p-3 text-sm"
+      className="mt-2 space-y-2 rounded-lg border border-warn/50 p-3 text-sm"
     >
       <h3 className="font-medium">Before you activate</h3>
       {!summary && !error && <p role="status">Loading…</p>}
@@ -593,7 +593,7 @@ function RoutineRow({
           onClick={() => onOpen(expanded ? "closed" : r.paused ? "activate" : "history")}
           className="flex min-w-0 flex-1 touch-manipulation items-start gap-2 rounded-md text-left focus-visible:outline-2 focus-visible:outline-ring"
         >
-          <ChevronRight
+          <CaretRightIcon
             aria-hidden="true"
             className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out ${expanded ? "rotate-90" : ""}`}
           />
@@ -707,11 +707,18 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
   const [now, setNow] = useState(() => Date.now());
   // Statuses change while the page is open (runs start, fail, finish), so the list keeps itself fresh.
   useEffect(() => {
-    const t = setInterval(() => {
+    // Hidden tabs skip the refresh and catch up when they become visible.
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
       setNow(Date.now());
       void reload();
-    }, 10_000);
-    return () => clearInterval(t);
+    };
+    const t = setInterval(tick, 10_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, [reload]);
   useEffect(() => {
     if (!status) return;
@@ -750,7 +757,7 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
           {summary}
         </p>
         <Button size="sm" onClick={() => setCreating(true)}>
-          <Plus aria-hidden="true" className="size-4" />
+          <PlusIcon aria-hidden="true" className="size-4" />
           New routine
         </Button>
       </div>
@@ -762,7 +769,7 @@ export function Routines({ bots, onError }: { bots: Bot[]; onError: (m: string) 
           className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
         >
           <h3 className="flex items-center gap-2 text-sm font-semibold">
-            <TriangleAlert aria-hidden="true" className="size-4 text-destructive" />
+            <WarningIcon aria-hidden="true" className="size-4 text-destructive" />
             Needs attention
           </h3>
           <ul className="space-y-1.5 text-sm">

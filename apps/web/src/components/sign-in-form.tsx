@@ -1,10 +1,12 @@
 import { useForm } from "@tanstack/react-form";
+import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui";
 import { useEffect, useRef, useState } from "react";
 import z from "zod";
 
 import { Logo } from "@/components/logo";
 import { AuthField } from "@/features/identity/auth-field";
+import { isAppUrl, signedOAuthQuery } from "@/features/identity/oauth";
 import { authClient } from "@/lib/auth-client";
 
 export default function SignInForm({
@@ -15,6 +17,7 @@ export default function SignInForm({
   onAuthenticated: () => Promise<void>;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     heading.current?.focus();
@@ -30,9 +33,22 @@ export default function SignInForm({
     onSubmit: async ({ value }) => {
       setError(null);
       try {
-        const result = await authClient.signIn.email(value);
+        const oauthQuery = signedOAuthQuery();
+        const result = await authClient.signIn.email({
+          ...value,
+          ...(oauthQuery && { oauth_query: oauthQuery }),
+        });
         if (result.error) {
           setError("Could not sign in. Check your email and password and try again.");
+          return;
+        }
+        // Signing in for an MCP client: the API answers with the next step (consent here, or the client's callback).
+        const next = oauthQuery ? (result.data as { url?: string } | null)?.url : undefined;
+        if (next) {
+          if (isAppUrl(next)) {
+            const url = new URL(next);
+            await navigate({ href: url.pathname + url.search, replace: true });
+          } else window.location.assign(next);
           return;
         }
         await onAuthenticated();

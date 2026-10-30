@@ -67,3 +67,6 @@ temp
 # Agent run output (local only)
 .omo/
 .trash/
+
+# Local TLS certificates (scripts/dev-certs.sh)
+.certs/

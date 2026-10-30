@@ -1,10 +1,11 @@
 import { Link, Outlet, createFileRoute, redirect, useRouter } from "@tanstack/react-router";
-import { TriangleAlertIcon } from "lucide-react";
+import { WarningIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
 
 import { Logo } from "@/components/logo";
 import { authClient } from "@/lib/auth-client";
+import { cachedAuthGuard } from "@/lib/auth-guard";
 import { IdentityRequestError, getIdentityError, identityClient } from "@/lib/identity-client";
 
 export const Route = createFileRoute("/_auth")({
@@ -15,13 +16,17 @@ export const Route = createFileRoute("/_auth")({
     </p>
   ),
   errorComponent: AccessError,
-  beforeLoad: async () => {
-    const identity = await statusWithRetry();
-    if (identity.state !== "active") throw redirect({ to: "/login" });
-    const session = await authClient.getSession();
-    if (!session.data) throw redirect({ to: "/login" });
-    return { session, identity };
-  },
+  beforeLoad: () =>
+    cachedAuthGuard(async () => {
+      // Both requests start together. The identity result still decides first, so its errors and redirect keep priority.
+      const sessionRequest = authClient.getSession();
+      sessionRequest.catch(() => {}); // surfaced below only when the identity is active
+      const identity = await statusWithRetry();
+      if (identity.state !== "active") throw redirect({ to: "/login" });
+      const session = await sessionRequest;
+      if (!session.data) throw redirect({ to: "/login" });
+      return { session, identity };
+    }),
 });
 
 const RETRY_DELAYS_MS = [400, 1200];
@@ -78,7 +83,7 @@ function AccessError({ error, reset }: { error: unknown; reset: () => void }) {
         role="alert"
         className="flex w-full items-start gap-2 rounded-lg bg-destructive/10 p-3 text-left text-sm text-destructive"
       >
-        <TriangleAlertIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+        <WarningIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
         <span>{getIdentityError(error)}</span>
       </p>
       <div className="flex w-full flex-col gap-3">

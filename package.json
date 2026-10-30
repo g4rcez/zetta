@@ -30,6 +30,7 @@
     "format": "vp fmt",
     "staged": "vp staged",
     "zetta": "bash scripts/zetta.sh",
+    "certs": "bash scripts/dev-certs.sh",
     "dev:web": "vp run --filter web dev",
     "dev:desktop": "vp run --filter desktop dev:hmr",
     "build:desktop": "vp run --filter desktop build:stable",

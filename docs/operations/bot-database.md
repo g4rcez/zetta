@@ -31,8 +31,8 @@ Postgres itself enforces isolation. Zetta does not check SQL text.
   - Rotating the key works the same way.
 - **Timeouts.** The role has `statement_timeout`, `lock_timeout` and `idle_in_transaction_session_timeout` set. The app also cancels any call that runs past 8 s from its own connection, because a bot can lift its own timeout.
 - **Quota.** Writes stop when the schema reaches `ZETTA_BOT_DATABASE_QUOTA_MB` (default 50).
-- **Known limit.** In a shared database, any role can read `pg_catalog`. A bot can therefore see the *names* of other schemas and tables, but never their rows.
-- **Shared bots.** A team bot's database is shared by everyone who talks to that bot. The bot is told to record who an entry is about, and never to show one person's private entries to someone else.
+- **Known limit.** In a shared database, any role can read `pg_catalog`. A bot can therefore see the _names_ of other schemas and tables, but never their rows.
+- **Shared bots.** A bot's database belongs to the bot's owner. When a teammate talks to a bot someone else shared with the team, the bot has no database for that conversation, so entries of one person never reach another.
 
 ## Setup
 
@@ -44,12 +44,12 @@ A bot's role and schema are created when the bot is created. Older bots get thei
 
 ## What bots can do
 
-| Tool | Effect | Notes |
-| --- | --- | --- |
-| `db_overview` | read | Tables with their descriptions and columns, row counts, and space used. |
-| `db_query` | read | One `SELECT` with `$1` parameters. At most 200 rows. Allowed when answering outside people. |
-| `db_execute` | write | DDL and DML. Several statements are allowed when no parameters are used. Refused at the quota. |
-| `db_apply_template` | write | Ready-made `tasks`, `preferences` or `notes` tables. |
+| Tool                | Effect | Notes                                                                                          |
+| ------------------- | ------ | ---------------------------------------------------------------------------------------------- |
+| `db_overview`       | read   | Tables with their descriptions and columns, row counts, and space used.                        |
+| `db_query`          | read   | One `SELECT` with `$1` parameters. At most 200 rows. Allowed when answering outside people.    |
+| `db_execute`        | write  | DDL and DML. Several statements are allowed when no parameters are used. Refused at the quota. |
+| `db_apply_template` | write  | Ready-made `tasks`, `preferences` or `notes` tables.                                           |
 
 Bots are told to `COMMENT ON` every table, in the form `Short title: one sentence`, and every column, in the user's language. That text is what people see.
 

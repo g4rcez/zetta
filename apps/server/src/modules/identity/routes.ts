@@ -86,7 +86,7 @@ export function createIdentityRoutes(
             return errorResponse(
               403,
               "SETUP_KEY_MISMATCH",
-              "That key does not match this server's ZETTA_CONNECTION_KEY.",
+              "That key does not match this server's setup key.",
             );
           return Response.json({ ok: true }, { headers: { "cache-control": "no-store" } });
         } catch {

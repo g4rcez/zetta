@@ -1,4 +1,6 @@
+import { CompanyDocs } from "./company-docs";
 import { Sources } from "./sources";
+import { Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { Button, Input, Select, Textarea } from "@/components/ui";
 
@@ -11,7 +13,7 @@ type Memory = {
   category: "fact" | "preference" | "decision" | "correction";
   version: number;
 };
-type Instruction = {
+export type Instruction = {
   id: string;
   title: string;
   body: string;
@@ -20,6 +22,7 @@ type Instruction = {
   version: number;
   teamId: string | null;
   createdByBotId: string | null;
+  createdAt: string;
 };
 type TeamName = { id: string; name: string };
 const CATEGORY = {
@@ -172,7 +175,7 @@ function MemorySection({ onError }: { onError: (m: string) => void }) {
   );
 }
 
-function InstructionSection({ onError }: { onError: (m: string) => void }) {
+export function Instructions({ onError }: { onError: (m: string) => void }) {
   const [rows, reload] = useList<Instruction>("/api/instructions", "instructions", onError);
   const [teams] = useList<TeamName>("/api/teams", "teams", onError);
   const [bots] = useList<{ id: string; name: string }>("/api/bots", "bots", onError);
@@ -307,7 +310,13 @@ function InstructionSection({ onError }: { onError: (m: string) => void }) {
               </form>
             ) : (
               <>
-                <p className="font-medium">{m.title}</p>
+                <Link
+                  to="/instructions/$instructionId"
+                  params={{ instructionId: m.id }}
+                  className="block w-fit font-medium hover:underline"
+                >
+                  {m.title}
+                </Link>
                 <p className="whitespace-pre-wrap break-words">{m.body}</p>
                 <p className="text-xs text-muted-foreground">
                   {teamName(m.teamId)}
@@ -355,10 +364,11 @@ function InstructionSection({ onError }: { onError: (m: string) => void }) {
 export function Knowledge({ onError }: { onError: (m: string) => void }) {
   return (
     <div className="space-y-6">
-      <div className="grid items-start gap-6 xl:grid-cols-2">
-        <MemorySection onError={onError} />
-        <InstructionSection onError={onError} />
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Reusable instructions moved to the Instructions tab.
+      </p>
+      <MemorySection onError={onError} />
+      <CompanyDocs onError={onError} />
       <Sources onError={onError} />
     </div>
   );

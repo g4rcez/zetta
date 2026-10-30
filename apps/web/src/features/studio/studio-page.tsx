@@ -1,52 +1,63 @@
 import {
-  Activity as ActivityIcon,
-  BookOpen,
-  CalendarClock,
-  GitBranch,
-  Inbox,
-  KeyRound,
-  MonitorSmartphone,
-  Plug,
-  Route,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+  PulseIcon as ActivityIcon,
+  BookOpenIcon,
+  CalendarDotsIcon,
+  GitBranchIcon,
+  ListChecksIcon,
+  TrayIcon,
+  KeyIcon,
+  BooksIcon,
+  DevicesIcon,
+  PlugIcon,
+  SignpostIcon,
+  UsersIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 
 import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
-import { Accounts } from "./accounts";
-import { Activity } from "./activity";
-import { Attention } from "./attention";
-import { Computer } from "./computer";
-import { Decisions } from "./decisions";
-import { Knowledge } from "./knowledge";
-import { Plugins } from "./plugins";
-import { Routines } from "./routines";
-import { Snapshots } from "./snapshots";
+import { Loading } from "../shared/ui";
 import { isRailTab, isStudioTab, studioTabs } from "./studio-tabs";
-import { Workflows } from "./workflows";
 import { Alert } from "@g4rcez/components/alert";
+
+// Each tab is its own chunk: opening Studio no longer downloads every tab (the workflow canvas alone pulls in @xyflow/react).
+const Accounts = lazy(() => import("./accounts").then((m) => ({ default: m.Accounts })));
+const Activity = lazy(() => import("./activity").then((m) => ({ default: m.Activity })));
+const Attention = lazy(() => import("./attention").then((m) => ({ default: m.Attention })));
+const Computer = lazy(() => import("./computer").then((m) => ({ default: m.Computer })));
+const Decisions = lazy(() => import("./decisions").then((m) => ({ default: m.Decisions })));
+const Wiki = lazy(() => import("./wiki").then((m) => ({ default: m.Wiki })));
+const Plugins = lazy(() => import("./plugins").then((m) => ({ default: m.Plugins })));
+const Routines = lazy(() => import("./routines").then((m) => ({ default: m.Routines })));
+const Snapshots = lazy(() => import("./snapshots").then((m) => ({ default: m.Snapshots })));
+const Workflows = lazy(() => import("./workflows").then((m) => ({ default: m.Workflows })));
+const Knowledge = lazy(() => import("./knowledge").then((m) => ({ default: m.Knowledge })));
+const Instructions = lazy(() => import("./knowledge").then((m) => ({ default: m.Instructions })));
 
 const tabs = studioTabs.filter((t) => !isRailTab(t.slug)).map((t) => t.label);
 type Tab = (typeof studioTabs)[number]["label"];
-const ICON: Record<Tab, LucideIcon> = {
-  Routines: CalendarClock,
-  Notifications: Inbox,
-  Knowledge: BookOpen,
-  Workflows: GitBranch,
-  Decisions: Route,
-  Accounts: KeyRound,
-  Computer: MonitorSmartphone,
-  Plugins: Plug,
-  "Team snapshots": Users,
+const ICON: Record<Tab, Icon> = {
+  Routines: CalendarDotsIcon,
+  Notifications: TrayIcon,
+  Knowledge: BookOpenIcon,
+  Wiki: BooksIcon,
+  Instructions: ListChecksIcon,
+  Workflows: GitBranchIcon,
+  Decisions: SignpostIcon,
+  Accounts: KeyIcon,
+  Computer: DevicesIcon,
+  Plugins: PlugIcon,
+  "Team snapshots": UsersIcon,
   Activity: ActivityIcon,
 };
 const BLURB: Record<Tab, string> = {
   Plugins: "Connect tools and MCP servers, then choose which bots may use them.",
   Routines: "Schedule bots to work for you.",
   Notifications: "Things that need you, with the actions to deal with them.",
-  Knowledge: "What your bots remember, reusable instructions and sources.",
+  Knowledge: "What your bots remember and the sources they can read.",
+  Wiki: "Pages your bots share about what they learned, so no bot does the same work twice.",
+  Instructions: "Saved steps your bots follow. Type / in a chat to use one.",
   Workflows: "Chain steps across bots and sources.",
   Decisions: "How messages are routed.",
   Accounts: "Engines and provider keys.",
@@ -94,9 +105,7 @@ export function StudioPage() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto grid w-full max-w-6xl grid-cols-[minmax(0,1fr)] gap-5 p-4 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-10 md:p-8">
         <nav aria-label="Studio sections" className="md:sticky md:top-8 md:self-start">
-          <h1 className="mb-3 hidden px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground md:block">
-            Studio
-          </h1>
+          <h1 className="label-mono mb-3 hidden px-3 md:block">Studio</h1>
           <h1 className="sr-only md:hidden">Studio</h1>
           <div
             role="tablist"
@@ -138,7 +147,7 @@ export function StudioPage() {
               <Current className="size-5" />
             </span>
             <div className="min-w-0">
-              <h2 className="text-2xl font-semibold tracking-tight text-balance">{tab}</h2>
+              <h2 className="text-2xl text-balance">{tab}</h2>
               <p className="text-sm text-pretty text-muted-foreground">{BLURB[tab]}</p>
             </div>
           </header>
@@ -150,16 +159,20 @@ export function StudioPage() {
             aria-label={tabs.includes(tab) ? undefined : tab}
             className="min-w-0"
           >
-            {tab === "Routines" && <Routines bots={bots} onError={setError} />}
-            {tab === "Notifications" && <Attention bots={bots} onError={setError} />}
-            {tab === "Knowledge" && <Knowledge onError={setError} />}
-            {tab === "Workflows" && <Workflows bots={bots} onError={setError} />}
-            {tab === "Decisions" && <Decisions onError={setError} />}
-            {tab === "Accounts" && <Accounts onError={setError} />}
-            {tab === "Computer" && <Computer onError={setError} />}
-            {tab === "Plugins" && <Plugins bots={bots} onError={setError} />}
-            {tab === "Team snapshots" && <Snapshots onError={setError} />}
-            {tab === "Activity" && <Activity bots={bots} onError={setError} />}
+            <Suspense fallback={<Loading />}>
+              {tab === "Routines" && <Routines bots={bots} onError={setError} />}
+              {tab === "Notifications" && <Attention bots={bots} onError={setError} />}
+              {tab === "Knowledge" && <Knowledge onError={setError} />}
+              {tab === "Wiki" && <Wiki onError={setError} />}
+              {tab === "Instructions" && <Instructions onError={setError} />}
+              {tab === "Workflows" && <Workflows bots={bots} onError={setError} />}
+              {tab === "Decisions" && <Decisions onError={setError} />}
+              {tab === "Accounts" && <Accounts onError={setError} />}
+              {tab === "Computer" && <Computer onError={setError} />}
+              {tab === "Plugins" && <Plugins bots={bots} onError={setError} />}
+              {tab === "Team snapshots" && <Snapshots onError={setError} />}
+              {tab === "Activity" && <Activity bots={bots} onError={setError} />}
+            </Suspense>
           </div>
         </div>
       </div>

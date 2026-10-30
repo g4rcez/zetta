@@ -41,7 +41,7 @@ const COLUMNS: {
   },
   {
     status: "acknowledged",
-    dot: "bg-amber-500",
+    dot: "bg-warn",
     label: "Seen",
     hint: "You have seen it. It is still not fixed.",
   },

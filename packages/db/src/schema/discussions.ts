@@ -106,6 +106,9 @@ export const discussion = pgTable(
     index("discussion_team_id_idx").on(t.teamId),
     index("discussion_origin_message_id_idx").on(t.originMessageId),
     index("discussion_owner_idx").on(t.ownerUserId, t.status),
+    index("discussion_open_updated_idx")
+      .on(t.updatedAt)
+      .where(sql`${t.status} = 'open'`),
     /** Room names (discussions of a team) are unique per owner, whatever their status. */
     uniqueIndex("discussion_room_name_unique")
       .on(t.ownerUserId, sql`lower(${t.title})`)

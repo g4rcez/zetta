@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
 import { Skeleton } from "@zetta/ui/components/skeleton";
-import { ChevronsUpDown, UserRound } from "lucide-react";
+import { CaretUpDownIcon, UserIcon } from "@phosphor-icons/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -111,7 +111,7 @@ export default function UserMenu({
                     {session.user.email}
                   </span>
                 </span>
-                <ChevronsUpDown aria-hidden="true" className="hidden size-4 shrink-0 md:block" />
+                <CaretUpDownIcon aria-hidden="true" className="hidden size-4 shrink-0 md:block" />
               </>
             ) : null}
           </>
@@ -129,7 +129,7 @@ export default function UserMenu({
           <span aria-hidden="true">{session.user.name.slice(0, 1).toUpperCase()}</span>
         ) : (
           <>
-            <UserRound aria-hidden="true" className="sm:hidden" />
+            <UserIcon aria-hidden="true" className="sm:hidden" />
             <span className="hidden min-w-0 truncate sm:block">{session.user.name}</span>
           </>
         )}

@@ -1,19 +1,28 @@
 import { Link } from "@tanstack/react-router";
 import {
-  Bell,
-  Bot as BotIcon,
-  ChevronDown,
-  FolderPlus,
-  MoreHorizontal,
-  Pencil,
-  Pin,
-  PinOff,
-  Plus,
-  Search,
-  Star,
-} from "lucide-react";
+  BellIcon,
+  RobotIcon as BotIcon,
+  CaretDownIcon,
+  FolderPlusIcon,
+  DotsThreeIcon,
+  PencilSimpleIcon,
+  PushPinIcon,
+  PushPinSlashIcon,
+  PlusIcon,
+  MagnifyingGlassIcon,
+  StarIcon,
+} from "@phosphor-icons/react";
 import { Reorder, useDragControls } from "motion/react";
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 
 import { Button } from "@zetta/ui/components/button";
 import {
@@ -85,6 +94,8 @@ function bucketByDay(chats: Conversation[]) {
   }
   return out;
 }
+
+const NO_CHATS: Conversation[] = [];
 
 /** Which bot sections the user opened (true) or closed (false); a bot with no entry follows the default. */
 function readOpen(): Record<string, boolean> {
@@ -221,9 +232,9 @@ function ChatRow({
           <span className={cn("block truncate", current && "font-medium")}>{c.title}</span>
           {bot && <span className="block truncate text-xs text-muted-foreground">{bot.name}</span>}
         </span>
-        {c.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0 opacity-60" />}
+        {c.pinned && <PushPinIcon aria-label="Pinned" className="size-3 shrink-0 opacity-60" />}
         {c.favorite && (
-          <Star aria-label="Favorite" className="size-3 shrink-0 fill-amber-400 text-amber-400" />
+          <StarIcon aria-label="Favorite" className="size-3 shrink-0 fill-warn text-warn" />
         )}
         <time
           dateTime={c.updatedAt}
@@ -242,20 +253,20 @@ function ChatRow({
             />
           }
         >
-          <MoreHorizontal aria-hidden="true" className="size-4" />
+          <DotsThreeIcon aria-hidden="true" className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-44">
           <DropdownMenuItem onClick={() => setEditing(true)}>
-            <Pencil />
+            <PencilSimpleIcon />
             Rename
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onUpdate(c.id, { pinned: !c.pinned })}>
-            {c.pinned ? <PinOff /> : <Pin />}
+            {c.pinned ? <PushPinSlashIcon /> : <PushPinIcon />}
             {c.pinned ? "Unpin" : "Pin"}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => onUpdate(c.id, { favorite: !c.favorite })}>
-            <Star />
+            <StarIcon />
             {c.favorite ? "Remove from favorites" : "Add to favorites"}
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -408,7 +419,7 @@ function BotSection({
               <span
                 role="img"
                 aria-label="Finish setup"
-                className="size-2 shrink-0 rounded-full bg-amber-400"
+                className="size-2 shrink-0 rounded-full bg-warn"
               />
             )}
             <span className="truncate">{second}</span>
@@ -422,7 +433,7 @@ function BotSection({
         onClick={onToggle}
         className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
       >
-        <ChevronDown
+        <CaretDownIcon
           aria-hidden="true"
           className={cn("transition-all duration-300 ease-liner size-4", !open && "rotate-90")}
         />
@@ -438,7 +449,7 @@ function BotSection({
           onClick={() => onNewChat(bot.id)}
           className="flex h-8 w-full items-center gap-1.5 rounded-lg pl-[3.125rem] text-left text-sm text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
         >
-          <Plus aria-hidden="true" className="size-3.5" />
+          <PlusIcon aria-hidden="true" className="size-3.5" />
           New chat
         </button>
       </li>
@@ -499,11 +510,11 @@ function BotSection({
 }
 
 function GroupTitle({ children }: { children: string }) {
-  return <h3 className="px-2 pt-3 pb-1 text-xs font-medium text-muted-foreground">{children}</h3>;
+  return <h3 className="label-mono px-2 pt-3 pb-1">{children}</h3>;
 }
 
 /** Two modes over the same conversations. Bots: the bots come first and the open one unfolds its chats. Recent: every chat by time, each showing its bot. */
-export function ChatSidebar({
+export const ChatSidebar = memo(function ChatSidebar({
   bots,
   spaces,
   chats,
@@ -543,18 +554,29 @@ export function ChatSidebar({
   };
   // Array.sort is stable, so bots without a saved position keep the server's order after the ranked ones.
   const rest = bots.filter((b) => b !== chief).sort((a, b) => rank(a) - rank(b));
-  const botById = new Map(bots.map((b) => [b.id, b]));
+  const botById = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
   // A bot whose name matches shows all its chats; otherwise only chats whose title matches.
-  const matches = (c: Conversation) =>
-    !q ||
-    c.title.toLowerCase().includes(q) ||
-    !!botById.get(c.botId)?.name.toLowerCase().includes(q);
-  const chatsOf = (b: Bot) =>
-    chats
-      .filter((c) => c.botId === b.id && !c.favorite && matches(c))
-      // Pinned first; the server already orders by recency, and Array.sort is stable.
-      .sort((a, z) => Number(!!z.pinned) - Number(!!a.pinned));
-  const favorites = chats.filter((c) => c.favorite && matches(c));
+  const matches = useCallback(
+    (c: Conversation) =>
+      !q ||
+      c.title.toLowerCase().includes(q) ||
+      !!botById.get(c.botId)?.name.toLowerCase().includes(q),
+    [q, botById],
+  );
+  // One pass over the chats, not one per bot. Pinned first; the server already orders by recency, and Array.sort is stable.
+  const byBot = useMemo(() => {
+    const map = new Map<string, Conversation[]>();
+    for (const c of chats) {
+      if (c.favorite || !matches(c)) continue;
+      const list = map.get(c.botId);
+      if (list) list.push(c);
+      else map.set(c.botId, [c]);
+    }
+    for (const list of map.values()) list.sort((a, z) => Number(!!z.pinned) - Number(!!a.pinned));
+    return map;
+  }, [chats, matches]);
+  const chatsOf = (b: Bot) => byBot.get(b.id) ?? NO_CHATS;
+  const favorites = useMemo(() => chats.filter((c) => c.favorite && matches(c)), [chats, matches]);
   // Only the open bot is unfolded by default; while searching every match shows.
   const isOpen = (b: Bot) => !!q || (opened[b.id] ?? b.id === botId);
   const toggle = (b: Bot) => setOpened((o) => ({ ...o, [b.id]: !isOpen(b) }));
@@ -591,24 +613,29 @@ export function ChatSidebar({
     { id: null, name: "Ungrouped" },
   ];
   // Recent mode: everything by time (pinned and favorites first), the bot shown on each row.
-  const everything = chats.filter(matches);
-  const top = everything.filter((c) => c.pinned || c.favorite);
-  const recent = [
-    { title: "Pinned", list: top },
-    ...bucketByDay(everything.filter((c) => !c.pinned && !c.favorite)),
-  ].filter((g) => g.list.length > 0);
+  const recent = useMemo(() => {
+    const everything = chats.filter(matches);
+    const top = everything.filter((c) => c.pinned || c.favorite);
+    return [
+      { title: "Pinned", list: top },
+      ...bucketByDay(everything.filter((c) => !c.pinned && !c.favorite)),
+    ].filter((g) => g.list.length > 0);
+  }, [chats, matches]);
   // One alert dot per bot, on its latest conversation, so a bot with many rows does not light them all.
-  const latestOf = new Map<string, string>();
-  for (const c of chats) {
-    const at = chats.find((x) => x.id === latestOf.get(c.botId));
-    if (!at || c.updatedAt > at.updatedAt) latestOf.set(c.botId, c.id);
-  }
+  const latestOf = useMemo(() => {
+    const latest = new Map<string, Conversation>();
+    for (const c of chats) {
+      const at = latest.get(c.botId);
+      if (!at || c.updatedAt > at.updatedAt) latest.set(c.botId, c);
+    }
+    return latest;
+  }, [chats]);
   const rowOf = (c: Conversation) => (
     <ChatRow
       key={c.id}
       c={c}
       bot={botById.get(c.botId)}
-      alert={latestOf.get(c.botId) === c.id && !!botAttention.get(c.botId)?.unread}
+      alert={latestOf.get(c.botId)?.id === c.id && !!botAttention.get(c.botId)?.unread}
       current={c.id === chatId}
       onOpen={onChat}
       onUpdate={onUpdateChat}
@@ -637,7 +664,7 @@ export function ChatSidebar({
             }
           >
             <span className="truncate">Chats</span>
-            <ChevronDown aria-hidden="true" className="size-4 shrink-0 opacity-70" />
+            <CaretDownIcon aria-hidden="true" className="size-4 shrink-0 opacity-70" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
             <DropdownMenuItem
@@ -650,7 +677,7 @@ export function ChatSidebar({
               New bot
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setAdding(true)}>
-              <FolderPlus />
+              <FolderPlusIcon />
               New workspace
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -675,7 +702,7 @@ export function ChatSidebar({
           aria-expanded={adding}
           onClick={() => setAdding((a) => !a)}
         >
-          <FolderPlus />
+          <FolderPlusIcon />
         </Button>
         {newChatBot && (
           <Button
@@ -685,7 +712,7 @@ export function ChatSidebar({
             aria-label={`New chat with ${newChatName}`}
             onClick={() => onNewChat(newChatBot)}
           >
-            <Plus />
+            <PlusIcon />
           </Button>
         )}
       </div>
@@ -697,7 +724,7 @@ export function ChatSidebar({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter…"
-          left={<Search aria-hidden="true" className="size-4 text-muted-foreground" />}
+          left={<MagnifyingGlassIcon aria-hidden="true" className="size-4 text-muted-foreground" />}
         />
         {adding && (
           <form
@@ -742,7 +769,7 @@ export function ChatSidebar({
             params={{ tab: "attention" }}
             className="flex h-8 items-center gap-2 rounded-md px-2.5 text-sm transition-colors hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring"
           >
-            <Bell aria-hidden="true" className="size-4 text-muted-foreground" />
+            <BellIcon aria-hidden="true" className="size-4 text-muted-foreground" />
             <span className="flex-1">Notifications</span>
             <span
               className="rounded-full bg-destructive px-2 text-xs font-medium text-white"
@@ -837,4 +864,4 @@ export function ChatSidebar({
       </nav>
     </aside>
   );
-}
+});

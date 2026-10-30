@@ -16,8 +16,10 @@ import {
   configInput,
   DEFAULT_CONFIG,
   pluginFiles,
+  withBuiltinSkills,
   type Asset,
 } from "./profile";
+import { BUILTIN_SKILLS } from "./builtin-skills";
 
 const base: AgentProfile = {
   preset: "auto",
@@ -57,7 +59,9 @@ describe("claudeArgs", () => {
       "Write",
       "Glob",
       "Grep",
-      "Bash(git:*)",
+      "Bash",
+      "WebFetch",
+      "WebSearch",
     ]);
     expect(flag(claudeArgs("hi", null, "full"), "--allowedTools")).toContain("Bash");
     expect(host.at(-1)).toBe("hi");
@@ -82,31 +86,38 @@ describe("claudeArgs", () => {
       flag(claudeArgs("hi", null, "full", { ...base, preset: "git" }), "--allowedTools"),
     ).not.toContain("Bash");
   });
-  test("'full' only widens inside a container", () => {
+  test("'full' runs any command and uses the web on the host too", () => {
     expect(
       flag(claudeArgs("hi", null, "git", { ...base, preset: "full" }), "--allowedTools"),
-    ).not.toContain("Bash");
-    expect(
-      flag(claudeArgs("hi", null, "full", { ...base, preset: "full" }), "--allowedTools"),
-    ).toContain("Bash");
+    ).toEqual(expect.arrayContaining(["Bash", "WebFetch", "WebSearch"]));
   });
-  test("extra allow rules: on the host plain tools and one named program (never a shell or bare Bash); any rule in a container", () => {
-    const allow = [
-      "WebFetch",
-      "Bash(npm test:*)",
-      "Bash",
-      "mcp__srv__tool",
-      "Bash(git log:*)",
-      "Bash(bash -c x)",
-    ];
-    expect(flag(claudeArgs("hi", null, "git", { ...base, allow }), "--allowedTools")).toEqual(
-      expect.arrayContaining(["WebFetch", "Bash(git log:*)", "Bash(npm test:*)"]),
+  test("deletes, sudo and mail stay denied until the bot's allow list names that rule", () => {
+    expect(flag(claudeArgs("hi", null, "git", base), "--disallowedTools")).toEqual(
+      expect.arrayContaining([
+        "Bash(rm:*)",
+        "Bash(rmdir:*)",
+        "Bash(shred:*)",
+        "Bash(unlink:*)",
+        "Bash(sudo:*)",
+        "Bash(mail:*)",
+        "Bash(sendmail:*)",
+      ]),
     );
-    const host = flag(claudeArgs("hi", null, "git", { ...base, allow }), "--allowedTools")!;
-    for (const bad of ["Bash", "mcp__srv__tool", "Bash(bash -c x)"])
-      expect(host).not.toContain(bad);
-    expect(flag(claudeArgs("hi", null, "full", { ...base, allow }), "--allowedTools")).toEqual(
-      expect.arrayContaining(["Bash(npm test:*)", "mcp__srv__tool"]),
+    const granted = claudeArgs("hi", null, "git", { ...base, allow: ["Bash(rm:*)"] });
+    expect(flag(granted, "--disallowedTools")).not.toContain("Bash(rm:*)");
+    expect(flag(granted, "--disallowedTools")).toContain("Bash(sudo:*)");
+    expect(flag(granted, "--allowedTools")).toContain("Bash(rm:*)");
+  });
+  test("extra allow rules apply on the host, except MCP rules, which only a container takes", () => {
+    const allow = ["Bash(python3:*)", "Bash(bash /tmp/fetch.sh)", "mcp__srv__tool"];
+    const host = flag(
+      claudeArgs("hi", null, "git", { ...base, preset: "git", allow }),
+      "--allowedTools",
+    );
+    expect(host).toEqual(expect.arrayContaining(["Bash(python3:*)", "Bash(bash /tmp/fetch.sh)"]));
+    expect(host).not.toContain("mcp__srv__tool");
+    expect(flag(claudeArgs("hi", null, "full", { ...base, allow }), "--allowedTools")).toContain(
+      "mcp__srv__tool",
     );
   });
   test("deny rules always apply, with or without code access, and the built-in denials stay", () => {
@@ -139,7 +150,25 @@ describe("claudeArgs", () => {
     expect(a[a.indexOf("--append-system-prompt") + 1]).toBe("Be brief");
     expect(a[a.indexOf("--effort") + 1]).toBe("high");
     expect(a[a.indexOf("--max-budget-usd") + 1]).toBe("2.50");
-    expect(flag(a, "--allowedTools")).toEqual(expect.arrayContaining(["Skill", "Agent"]));
+    expect(flag(a, "--allowedTools")).toContain("Skill");
+  });
+  test("sub-agents are allowed only when the bot has agents of its own", () => {
+    const skillsOnly = claudeArgs("hi", null, "git", base, "/p");
+    expect(flag(skillsOnly, "--allowedTools")).toContain("Skill");
+    expect(flag(skillsOnly, "--allowedTools")).not.toContain("Agent");
+    expect(flag(skillsOnly, "--allowedTools")).not.toContain("Task");
+    const withAgent = claudeArgs(
+      "hi",
+      null,
+      "git",
+      { ...base, files: { "agents/reviewer.md": "x" } },
+      "/p",
+    );
+    expect(flag(withAgent, "--allowedTools")).toEqual(
+      expect.arrayContaining(["Skill", "Agent", "Task"]),
+    );
+    const noCode = claudeArgs("hi", null, undefined, base, "/p");
+    expect(noCode).toContain("--allowedTools=Skill");
   });
 });
 
@@ -208,6 +237,47 @@ describe("plugin files", () => {
     expect((await stat(dir)).mode & 0o777).toBe(0o700);
     await expect(writePluginDir({ "../escape.txt": "x" }, root)).rejects.toThrow();
     await rm(root, { recursive: true, force: true });
+  });
+});
+
+describe("built-in skills", () => {
+  test("they are valid skills", () => {
+    for (const { id: _id, ...input } of BUILTIN_SKILLS)
+      expect(assetInput.safeParse(input).success).toBe(true);
+    expect(BUILTIN_SKILLS.map((k) => k.name)).toEqual([
+      "zetta-recover-from-failure",
+      "zetta-long-running-work",
+      "zetta-verify-before-done",
+    ]);
+  });
+  test("a bot without any settings still gets them as plugin files and as Hermes prompt text", () => {
+    const p = withBuiltinSkills(undefined);
+    expect(Object.keys(p.files).sort()).toEqual([
+      ".claude-plugin/plugin.json",
+      "skills/zetta-long-running-work/SKILL.md",
+      "skills/zetta-recover-from-failure/SKILL.md",
+      "skills/zetta-verify-before-done/SKILL.md",
+    ]);
+    expect(hermesPrompt("hi", p)).toContain("## Skill: zetta-recover-from-failure");
+  });
+  test("the owner's settings and skills are kept, and an owner skill with the same name wins", () => {
+    const mine = skill({
+      name: "zetta-verify-before-done",
+      description: "my own",
+      body: "My steps.",
+    });
+    const p = withBuiltinSkills(
+      buildProfile({ ...DEFAULT_CONFIG, preset: "read_only", appendPrompt: "Be brief" }, [
+        mine,
+        skill({ id: "9", name: "release-notes" }),
+      ]),
+    );
+    expect(p.preset).toBe("read_only");
+    expect(p.appendPrompt).toBe("Be brief");
+    expect(p.files["skills/zetta-verify-before-done/SKILL.md"]).toContain("My steps.");
+    expect(Object.keys(p.files)).toContain("skills/release-notes/SKILL.md");
+    expect(Object.keys(p.files)).toContain("skills/zetta-recover-from-failure/SKILL.md");
+    expect(p.skills.filter((k) => k.name === "zetta-verify-before-done")).toHaveLength(1);
   });
 });
 

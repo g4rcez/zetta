@@ -7,7 +7,8 @@ while true; do
   # A container stop is an unclean exit for Chromium: mark it clean so no "Restore pages?" bubble covers the page.
   sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$HOME/.config/chromium/Default/Preferences" 2>/dev/null || true
   # ACCESSIBILITY_ENABLED exposes the page through AT-SPI, which is what cua-driver's text reads (get_window_state) walk.
+  # DevTools listens on 127.0.0.1:9223 only; socat (entrypoint) relays it on 9222, which the server publishes on the host's 127.0.0.1.
   ACCESSIBILITY_ENABLED=1 chromium --no-first-run --hide-crash-restore-bubble --no-default-browser-check --disable-dev-shm-usage --no-sandbox --force-renderer-accessibility \
-    --user-data-dir="$HOME/.config/chromium" --start-maximized about:blank >/tmp/chromium.log 2>&1
+    --remote-debugging-port=9223 --user-data-dir="$HOME/.config/chromium" --start-maximized about:blank >/tmp/chromium.log 2>&1
   sleep 2
 done

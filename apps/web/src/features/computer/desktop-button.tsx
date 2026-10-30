@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Monitor } from "lucide-react";
+import { CircleNotchIcon, MonitorIcon } from "@phosphor-icons/react";
 
 import { Button } from "@zetta/ui/components/button";
 
@@ -45,7 +45,11 @@ export function DesktopButton({
         disabled={busy}
         onClick={() => void connect()}
       >
-        {busy ? <Loader2 className="animate-spin motion-reduce:animate-none" /> : <Monitor />}
+        {busy ? (
+          <CircleNotchIcon className="animate-spin motion-reduce:animate-none" />
+        ) : (
+          <MonitorIcon />
+        )}
       </Button>
       {vmId && <VmDialog vmId={vmId} botName={botName} onClose={() => setVmId(undefined)} />}
     </>

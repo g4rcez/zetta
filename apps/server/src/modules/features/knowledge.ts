@@ -44,7 +44,10 @@ const UNSAFE = [
   /\b(ignore|disregard|forget)\b[^.\n]{0,40}\b(previous|prior|above|earlier|all)\b[^.\n]{0,40}\b(instructions?|rules?|prompts?)\b/i,
   /\bsystem prompt\b/i,
   /\byou are now\b/i,
-  /\b(curl|wget)\b[^\n]{0,80}(\||https?:)/i,
+  // A plain fetch is a normal step; refuse fetches that run the download, send data out or expand variables into the request.
+  /\b(curl|wget)\b[^\n]{0,200}\|\s*(sudo\s+)?((ba|z|da|k|fi)?sh|python\d*|perl|node|ruby)\b/i,
+  /\b(curl|wget)\b[^\n]{0,200}\s(-d|-F|-T|--data[\w-]*|--form[\w-]*|--upload-file|--post-(data|file)|-X\s*(POST|PUT|PATCH))(?=[\s=@'"]|$)/,
+  /\b(curl|wget)\b[^\n]{0,200}\$[({A-Za-z_]/,
   /authorized_keys|ssh-(rsa|ed25519)\s+[A-Za-z0-9+/=]{20,}/i,
   /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/,
 ];
@@ -442,14 +445,13 @@ export function createKnowledge(db: Database) {
         return s;
       };
       const score = (text: string, i: number) => overlap(text) + Math.max(0, 1 - i / 50) * 0.1; // recency only breaks ties
-      const procs = (
-        await db
-          .select()
-          .from(instruction)
-          .where(usableBy(ownerUserId, botId))
-          .orderBy(desc(instruction.createdAt))
-          .limit(100)
-      )
+      const recent = await db
+        .select()
+        .from(instruction)
+        .where(usableBy(ownerUserId, botId))
+        .orderBy(desc(instruction.createdAt))
+        .limit(INSTRUCTION_CAP);
+      const procs = recent
         .map((i, k) => ({ i, s: score(`${i.title} ${i.trigger}`, k) }))
         .filter((x) => x.s >= 2)
         .sort((a, b) => b.s - a.s);
@@ -465,7 +467,13 @@ export function createKnowledge(db: Database) {
         chosenIns.push(i);
         ib += size;
       }
-      return { instructions: chosenIns };
+      // Same list as `index`, from the rows already loaded (the newest are the same ones): excludeIds stays far below INSTRUCTION_CAP.
+      const library = (excludeIds: string[] = []) =>
+        recent
+          .filter((r) => !excludeIds.includes(r.id))
+          .slice(0, INSTRUCTION_INDEX_MAX)
+          .map((r) => ({ id: r.id, title: r.title, trigger: r.trigger }));
+      return { instructions: chosenIns, library };
     },
   };
 }

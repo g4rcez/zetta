@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import { Button } from "@/components/ui";
@@ -41,7 +41,7 @@ export function CopyButton({
           />
         }
       >
-        {done ? <Check /> : <Copy />}
+        {done ? <CheckIcon /> : <CopyIcon />}
       </TooltipTrigger>
       <TooltipContent>{done ? "Copied!" : label}</TooltipContent>
     </Tooltip>

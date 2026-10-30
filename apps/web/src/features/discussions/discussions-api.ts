@@ -87,6 +87,7 @@ export type NewDiscussion = {
 export const discussionsApi = {
   list: () =>
     call<{ discussions: DiscussionListItem[] }>("/api/discussions").then((r) => r.discussions),
+  running: () => call<{ running: number }>("/api/discussions/running").then((r) => r.running),
   get: (id: string) => call<DiscussionDetail>(`/api/discussions/${id}`),
   startLoop: (id: string, v: { goal: string; doneWhen: string }) =>
     call(`/api/discussions/${id}/loop`, "POST", v),

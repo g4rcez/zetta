@@ -1,5 +1,5 @@
 import { defineRegistry, JSONUIProvider, Renderer } from "@json-render/react";
-import { ArrowDownRight, ArrowRight, ArrowUpRight } from "lucide-react";
+import { ArrowDownRightIcon, ArrowRightIcon, ArrowUpRightIcon } from "@phosphor-icons/react";
 import { Alert } from "@g4rcez/components/alert";
 import type { ReactNode } from "react";
 
@@ -20,17 +20,17 @@ type Tone = "default" | "muted" | "info" | "success" | "warning" | "danger";
 const TEXT: Record<Tone, string> = {
   default: "text-foreground",
   muted: "text-muted-foreground",
-  info: "text-sky-600 dark:text-sky-400",
-  success: "text-emerald-600 dark:text-emerald-400",
-  warning: "text-amber-600 dark:text-amber-400",
+  info: "text-info",
+  success: "text-success",
+  warning: "text-warn",
   danger: "text-destructive",
 };
 const BOX: Record<Tone, string> = {
   default: "border-border bg-muted/40",
   muted: "border-border bg-muted/40",
-  info: "border-sky-500/40 bg-sky-500/10",
-  success: "border-emerald-500/40 bg-emerald-500/10",
-  warning: "border-amber-500/40 bg-amber-500/10",
+  info: "border-info/40 bg-info/10",
+  success: "border-success/40 bg-success/10",
+  warning: "border-warn/40 bg-warn/10",
   danger: "border-destructive/40 bg-destructive/10",
 };
 const ALERT_THEME = {
@@ -47,7 +47,7 @@ const HEADING = {
   "2": "text-base font-semibold",
   "3": "text-sm font-semibold",
 } as const;
-const TREND = { up: ArrowUpRight, down: ArrowDownRight, flat: ArrowRight } as const;
+const TREND = { up: ArrowUpRightIcon, down: ArrowDownRightIcon, flat: ArrowRightIcon } as const;
 const cell = "px-2.5 py-1.5 text-left align-top";
 
 /** Model-written links only ever point at public web pages; the catalog already checks this, the renderer checks again. */

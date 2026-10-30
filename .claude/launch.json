@@ -15,7 +15,7 @@
     },
     {
       "name": "web",
-      "url": "http://localhost:3001",
+      "url": "https://localhost:3001",
       "port": 3001
     }
   ]

@@ -2,7 +2,7 @@ name: zetta-identity-tests
 
 services:
   postgres:
-    image: postgres:18
+    image: pgvector/pgvector:pg18-trixie
     environment:
       POSTGRES_DB: zetta_identity_test
       POSTGRES_USER: zetta_identity_runner
@@ -23,7 +23,17 @@ services:
     networks:
       - identity-test
     healthcheck:
-      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "zetta_identity_runner", "-d", "zetta_identity_test"]
+      test:
+        [
+          "CMD",
+          "pg_isready",
+          "-h",
+          "127.0.0.1",
+          "-U",
+          "zetta_identity_runner",
+          "-d",
+          "zetta_identity_test",
+        ]
       interval: 2s
       timeout: 2s
       retries: 20

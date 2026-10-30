@@ -32,7 +32,9 @@ suite("per-bot Claude Code settings against compose postgres", () => {
         .values({
           ownerUserId: owner,
           name,
-          slug: `t${uuidv7().replace(/[^a-z]/g, "").slice(-10)}`,
+          slug: `t${uuidv7()
+            .replace(/[^a-z]/g, "")
+            .slice(-10)}`,
           kind: "specialist",
           visibility: "private",
           harness,
@@ -57,16 +59,14 @@ suite("per-bot Claude Code settings against compose postgres", () => {
   beforeAll(async () => {
     const now = new Date();
     for (const id of [OWNER, OTHER])
-      await db
-        .insert(user)
-        .values({
-          id,
-          name: id,
-          email: `${id}@t.test`,
-          emailVerified: true,
-          createdAt: now,
-          updatedAt: now,
-        });
+      await db.insert(user).values({
+        id,
+        name: id,
+        email: `${id}@t.test`,
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      });
     a = await mk("Claude A", "claude-code");
     b = await mk("Claude B", "claude-code");
     codex = await mk("Codex C", "codex");
@@ -146,9 +146,7 @@ suite("per-bot Claude Code settings against compose postgres", () => {
         })
       ).status,
     ).toBe(400);
-    expect((await req("DELETE", `/bots/${a}/claude/assets/${uuidv7()}`)).status).toBe(
-      404,
-    );
+    expect((await req("DELETE", `/bots/${a}/claude/assets/${uuidv7()}`)).status).toBe(404);
   });
 
   test("edit, switch off and remove", async () => {
@@ -239,7 +237,19 @@ suite("per-bot Claude Code settings against compose postgres", () => {
     await run({ userId: OWNER, bot: await row(codex), history: [], prompt: "hi" });
     expect(seen[0]!.profile).toMatchObject({ preset: "read_only", appendPrompt: "Be terse" });
     expect(Object.keys(seen[0]!.profile!.files)).toContain("agents/reviewer.md");
-    expect(seen[1]!.profile).toBeUndefined();
+    // A Claude Code bot without settings gets Zetta's own skills and nothing else; other harnesses get no profile.
+    expect(seen[1]!.profile).toMatchObject({
+      preset: "auto",
+      allow: [],
+      deny: [],
+      appendPrompt: "",
+    });
+    expect(Object.keys(seen[1]!.profile!.files).sort()).toEqual([
+      ".claude-plugin/plugin.json",
+      "skills/zetta-long-running-work/SKILL.md",
+      "skills/zetta-recover-from-failure/SKILL.md",
+      "skills/zetta-verify-before-done/SKILL.md",
+    ]);
     expect(seen[2]!.profile).toBeUndefined();
   });
 

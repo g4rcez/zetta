@@ -14,8 +14,8 @@ export type NativeHarness =
   | "hermes";
 
 /**
- * Code access for a run. "git" = host run: only what the CLI can enforce (git and file tools); "full" = the run is inside a hardened
- * container, which is the boundary, so the CLI may run any command. Without it, non-interactive CLIs auto-deny every command that
+ * Code access for a run. "git" = host run; "full" = the run is inside a hardened container, which is the boundary. Claude Code runs any
+ * command in both (see claudeArgs); other harnesses keep git and file tools on the host. Without it, non-interactive CLIs auto-deny every command that
  * would need approval (git clone included), which is why bots could not touch code.
  */
 export type CodeMode = "git" | "full";
@@ -36,21 +36,19 @@ const CLAUDE_DENIED = [
   "Bash(git config --global:*)",
   "Bash(git config --system:*)",
 ];
-/** Tools a per-bot allow rule may name on the host, where the CLI is the only boundary. Anything else (arbitrary Bash, MCP servers of the server's own login) needs the container. */
-const CLAUDE_HOST_TOOLS = new Set([
-  "Read",
-  "Edit",
-  "Write",
-  "Glob",
-  "Grep",
-  "NotebookEdit",
-  "WebFetch",
-  "WebSearch",
-  "TodoWrite",
-  "Task",
-  "Agent",
-  "Skill",
-]);
+/**
+ * Deletes, root and mail wait for the user: each rule stays denied until the bot's approved allow list names that same rule (a
+ * zetta:permission request). git and gh are not here: a bound GitHub token is already the user's consent to push and comment.
+ */
+const CLAUDE_GUARDED = [
+  "Bash(rm:*)",
+  "Bash(rmdir:*)",
+  "Bash(shred:*)",
+  "Bash(unlink:*)",
+  "Bash(sudo:*)",
+  "Bash(mail:*)",
+  "Bash(sendmail:*)",
+];
 
 /**
  * How one bot runs Claude Code or Hermes (see modules/bot-claude). `auto` is the original behaviour: git on the host, any command in the container.
@@ -66,89 +64,64 @@ export type AgentProfile = {
   maxBudgetCents: number | null;
   files: Record<string, string>;
   skills: { name: string; description: string; body: string }[];
-  /** The user's chief: any command and any rule even on the host (only the history-rewrite denials stay). Set by the server, never by a stored config. */
-  unrestricted?: boolean;
 };
 export const PLUGIN_NAME = "zetta-bot";
 
-/** Programs a host allow rule can never name: shells, escalation, interpreters and destructive tools turn one rule into any command. */
-const HOST_BLOCKED_PROGRAMS = new Set([
-  "sh",
-  "bash",
-  "zsh",
-  "fish",
-  "dash",
-  "ksh",
-  "csh",
-  "tcsh",
-  "sudo",
-  "su",
-  "doas",
-  "env",
-  "eval",
-  "exec",
-  "xargs",
-  "nohup",
-  "ssh",
-  "scp",
-  "nc",
-  "ncat",
-  "rm",
-  "dd",
-  "mkfs",
-  "chmod",
-  "chown",
-  "kill",
-  "killall",
-  "osascript",
-  "open",
-  "python",
-  "python3",
-  "node",
-  "perl",
-  "ruby",
-  "php",
-]);
 /**
- * A per-bot allow rule is honoured on the host for plain tools and for `Bash(<program> ...)` with one named program (git, gh, pnpm, ...),
- * which is how the chief grants a bot a command. Shells, escalation and interpreters are not: the container may take any rule, because
- * the container is the boundary.
+ * The MCP servers zetta bound to the bot, handed to Claude Code next to the ones in its own HOME config. Header values hold `${NAME}`
+ * references to variables in the run's environment, never the secret itself, so a token never shows in the process list.
+ * `allow` are `mcp__server` / `mcp__server__tool` rules, which keeps a bot limited to selected tools inside the CLI too.
  */
-export const claudeRuleAllowed = (rule: string, code: CodeMode) => {
-  if (code === "full" || CLAUDE_HOST_TOOLS.has(rule)) return true;
-  const m = /^Bash\(([A-Za-z0-9._-]+)(?:[ :].*)?\)$/.exec(rule);
-  return Boolean(m && !HOST_BLOCKED_PROGRAMS.has(m[1]!.toLowerCase()));
+export type McpRun = {
+  servers: Record<string, { type: "http"; url: string; headers?: Record<string, string> }>;
+  allow: string[];
 };
 
 /**
- * Pure builder for the claude argv. Permissions only ever widen inside what the run's code mode allows (host: git and files; container:
- * anything), and the deny list always wins. Without code access the preset and allow rules do nothing; deny rules, prompt, effort,
- * budget and the plugin still apply. The prompt stays the last element.
+ * A per-bot allow rule is honoured everywhere, except MCP rules on the host: there the CLI's MCP servers are the server's own login
+ * (see harnessHome), so only the container may take them.
+ */
+export const claudeRuleAllowed = (rule: string, code: CodeMode) =>
+  code === "full" || !rule.startsWith("mcp__");
+
+/**
+ * Pure builder for the claude argv. `auto` and `full` run any command and use the web without asking, on the host and in the container;
+ * deletes, root and mail stay denied until granted (CLAUDE_GUARDED), and the deny list always wins. Without code access the preset and
+ * allow rules do nothing; deny rules, prompt, effort, budget and the plugin still apply. The prompt stays the last element.
  */
 export function claudeArgs(
   prompt: string,
   model: string | null,
-  mode?: CodeMode,
+  code?: CodeMode,
   profile?: AgentProfile,
   pluginDir?: string,
   session?: CliSession,
   github = false,
+  mcp?: McpRun,
 ): string[] {
-  const code: CodeMode | undefined = mode && profile?.unrestricted ? "full" : mode;
   const args = ["claude", "-p", ...(model ? ["--model", model] : [])];
   // Only a code workspace outlives the run, so only there can a cut-off session be found again.
   if (code && session) args.push(session.resume ? "--resume" : "--session-id", session.id);
   const deny = [...(profile?.deny ?? [])];
   const hasPlugin = Boolean(pluginDir);
+  // Sub-agents only when the bot has agents of its own; the skills Zetta adds to every run do not need them.
+  const pluginTools = hasPlugin
+    ? [
+        "Skill",
+        ...(Object.keys(profile?.files ?? {}).some((f) => f.startsWith("agents/"))
+          ? ["Agent", "Task"]
+          : []),
+      ]
+    : [];
   if (code) {
-    const preset = profile?.unrestricted ? "full" : (profile?.preset ?? "auto");
+    const preset = profile?.preset ?? "auto";
     const bash =
       preset === "edit"
         ? []
         : preset === "git"
           ? ["Bash(git:*)"]
           : preset === "full" || preset === "auto"
-            ? [code === "full" ? "Bash" : "Bash(git:*)"]
+            ? ["Bash", "WebFetch", "WebSearch"]
             : [];
     const tools = preset === "read_only" ? CLAUDE_READ_TOOLS : [...CLAUDE_FILE_TOOLS, ...bash];
     const allow = [
@@ -156,10 +129,12 @@ export function claudeArgs(
       ...(profile?.allow ?? []).filter((r) => claudeRuleAllowed(r, code)),
       // A GitHub token or the GitHub plugin on the bot is the user's consent to use their account: no second grant for git and gh.
       ...(github && preset !== "read_only" ? ["Bash(git:*)", "Bash(gh:*)"] : []),
-      ...(hasPlugin ? ["Skill", "Agent", "Task"] : []),
+      ...pluginTools,
+      ...(mcp?.allow ?? []),
     ];
     const denied = [
       ...CLAUDE_DENIED,
+      ...CLAUDE_GUARDED.filter((r) => !(profile?.allow ?? []).includes(r)),
       ...(preset === "read_only" ? ["Edit", "Write", "NotebookEdit"] : []),
       ...deny,
     ];
@@ -172,8 +147,12 @@ export function claudeArgs(
     );
   } else {
     if (deny.length) args.push(`--disallowedTools=${[...new Set(deny)].join(",")}`);
-    if (hasPlugin) args.push("--allowedTools=Skill,Agent,Task");
+    const allow = [...pluginTools, ...(mcp?.allow ?? [])];
+    if (allow.length) args.push(`--allowedTools=${allow.join(",")}`);
   }
+  // No --strict-mcp-config: the servers in the CLI's own config keep working next to these.
+  if (mcp && Object.keys(mcp.servers).length)
+    args.push(`--mcp-config=${JSON.stringify({ mcpServers: mcp.servers })}`);
   if (pluginDir) args.push("--plugin-dir", pluginDir);
   if (profile?.appendPrompt) args.push("--append-system-prompt", profile.appendPrompt);
   if (profile?.effort) args.push("--effort", profile.effort);
@@ -264,11 +243,17 @@ export const harnessCommands: Record<
     prompt: string,
     model: string | null,
     code?: CodeMode,
-    claude?: { profile?: AgentProfile; pluginDir?: string; session?: CliSession; github?: boolean },
+    claude?: {
+      profile?: AgentProfile;
+      pluginDir?: string;
+      session?: CliSession;
+      github?: boolean;
+      mcp?: McpRun;
+    },
   ) => string[]
 > = {
   "claude-code": (p, m, c, x) =>
-    claudeArgs(p, m, c, x?.profile, x?.pluginDir, x?.session, x?.github),
+    claudeArgs(p, m, c, x?.profile, x?.pluginDir, x?.session, x?.github, x?.mcp),
   codex: (p, m, c) => [
     "codex",
     "exec",
@@ -539,6 +524,7 @@ export type CliInput = {
   };
   /** Claude Code and Hermes: this bot's own permissions, prompt, effort, skills (and, for Claude Code, budget and sub-agents). */ profile?: AgentProfile;
   extraEnv?: Record<string, string>;
+  /** Claude Code: the MCP servers zetta bound to this bot (see McpRun). */ mcp?: McpRun;
   /** Pictures the user attached: copied next to the run and named in the prompt, since a CLI takes only text. `path` is absolute. */ images?: CliImage[];
   /** Claude Code in a code workspace: a named session, so a run cut off by a restart can be resumed. */ session?: CliSession;
   signal?: AbortSignal;
@@ -559,32 +545,51 @@ const OUTPUT_CAP = 65_000;
 export function createLimiter({ global = 4, perUser = 2, waitMs = 15_000 } = {}) {
   let active = 0;
   const byUser = new Map<string, number>();
-  const waiters: (() => void)[] = [];
+  type Waiter = { user: string; grant: () => void };
+  const waiters: Waiter[] = []; // first come, first served among the ones that fit
   const free = (u: string) => active < global && (byUser.get(u) ?? 0) < perUser;
+  const take = (user: string) => {
+    active++;
+    byUser.set(user, (byUser.get(user) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      active--;
+      byUser.set(user, (byUser.get(user) ?? 1) - 1);
+      // A slot is free: hand it to the oldest waiter that fits (the head may be over its per-user cap).
+      const next = waiters.find((w) => free(w.user));
+      if (next) next.grant();
+    };
+  };
   return {
-    async acquire(user: string, signal?: AbortSignal): Promise<() => void> {
-      const deadline = Date.now() + waitMs;
-      while (!free(user)) {
-        if (signal?.aborted) throw new HarnessError("cancelled");
-        if (Date.now() >= deadline) throw new HarnessError("busy");
-        await new Promise<void>((res) => {
-          const t = setTimeout(res, 100);
-          waiters.push(() => {
-            clearTimeout(t);
-            res();
-          });
-        });
-      }
-      active++;
-      byUser.set(user, (byUser.get(user) ?? 0) + 1);
-      let released = false;
-      return () => {
-        if (released) return;
-        released = true;
-        active--;
-        byUser.set(user, (byUser.get(user) ?? 1) - 1);
-        waiters.shift()?.();
-      };
+    acquire(user: string, signal?: AbortSignal): Promise<() => void> {
+      if (free(user)) return Promise.resolve(take(user));
+      if (signal?.aborted) return Promise.reject(new HarnessError("cancelled"));
+      return new Promise((resolve, reject) => {
+        const leave = () => {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
+          waiters.splice(waiters.indexOf(waiter), 1);
+        };
+        const waiter: Waiter = {
+          user,
+          grant: () => {
+            leave();
+            resolve(take(user));
+          },
+        };
+        const timer = setTimeout(() => {
+          leave();
+          reject(new HarnessError("busy"));
+        }, waitMs);
+        const onAbort = () => {
+          leave();
+          reject(new HarnessError("cancelled"));
+        };
+        signal?.addEventListener("abort", onAbort, { once: true });
+        waiters.push(waiter);
+      });
     },
     stats: () => ({ active }),
   };
@@ -636,6 +641,7 @@ export const streamCli: StreamCli = async function* ({
   profile: given,
   images,
   session,
+  mcp,
 }) {
   const docker = dockerConfig();
   const workspace = code && userId ? codeWorkspace(userId) : undefined;
@@ -687,10 +693,11 @@ export const streamCli: StreamCli = async function* ({
     const argv = harnessCommands[harness](
       imagePaths.length ? prompt + imageNote(imagePaths) : prompt,
       model,
-      workspace ? (docker || profile?.unrestricted ? "full" : "git") : undefined,
-      profile || (workspace && baseEnv?.GITHUB_TOKEN)
+      workspace ? (docker ? "full" : "git") : undefined,
+      profile || mcp || (workspace && baseEnv?.GITHUB_TOKEN)
         ? {
             profile,
+            ...(mcp ? { mcp } : {}),
             ...(workspace && baseEnv?.GITHUB_TOKEN ? { github: true } : {}),
             ...(pluginDir ? { pluginDir: docker ? CONTAINER_PLUGIN_DIR : pluginDir } : {}),
             ...(workspace && session ? { session } : {}),

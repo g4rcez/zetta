@@ -1,14 +1,13 @@
 @import "@zetta/ui/globals.css";
-@import "@fontsource-variable/manrope";
-@import "@fontsource-variable/outfit";
-@import "@fontsource-variable/fira-code";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 @import "@g4rcez/components/index.css";
 @source "../node_modules/streamdown/dist/*.js";
 
 /* Native selects: consistent chevron and no platform chrome. */
 select {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 256 256' fill='%23888'%3E%3Cpath d='M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.75rem center;
   padding-right: 2.25rem !important;
@@ -21,7 +20,7 @@ input[type="radio"] {
 /* @g4rcez/components theme bridge: the library reads --var-* tokens; point them at the app palette and keep corners tight. */
 :root,
 html.dark {
-  --var-radius-base: 0.5rem;
+  --var-radius-base: 0.375rem;
   --var-spacing-base: 0.95rem;
   --var-fontsize: 0.9375rem;
   --var-color-background: var(--background);
@@ -43,6 +42,25 @@ html.dark {
   --var-tooltip-surface-foreground: var(--popover-foreground);
   --var-tooltip-surface-border: var(--border);
   --var-modal-overlay-background: oklch(0 0 0 / 60%);
+}
+
+/* Status tokens of @g4rcez/components (also Tailwind's success, warn and info colors); dark warn is the app's attention amber. */
+:root {
+  --var-color-success: oklch(0.5 0.11 155);
+  --var-color-info: oklch(0.5 0.11 245);
+  --var-color-warn: oklch(0.55 0.13 70);
+  --var-color-warn-foreground: oklch(0.985 0.005 85);
+}
+html.dark {
+  --var-color-success: oklch(0.78 0.14 155);
+  --var-color-info: oklch(0.76 0.1 245);
+  --var-color-warn: var(--attention);
+  --var-color-warn-foreground: var(--attention-foreground);
+}
+:root,
+html.dark {
+  --var-color-success-foreground: var(--primary-foreground);
+  --var-color-info-foreground: var(--primary-foreground);
 }
 
 /* Chat (features/chat): all rules are prefixed .chat- */

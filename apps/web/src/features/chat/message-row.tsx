@@ -1,17 +1,18 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  BookmarkPlus,
-  CalendarPlus,
-  FileBox,
-  ListChecks,
-  Users,
-  Brain,
-  MessageSquareText,
-  MoreHorizontal,
-  Paperclip,
-  SmilePlus,
-} from "lucide-react";
+  BookmarkSimpleIcon,
+  CalendarPlusIcon,
+  FileArchiveIcon,
+  BooksIcon,
+  ListChecksIcon,
+  UsersIcon,
+  BrainIcon,
+  ChatTextIcon,
+  DotsThreeIcon,
+  PaperclipIcon,
+  SmileyIcon,
+} from "@phosphor-icons/react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@zetta/ui/components/avatar";
 import { Button } from "@zetta/ui/components/button";
@@ -98,7 +99,13 @@ function UsedNotes({ row }: { row: Row }) {
             <ul className="list-disc pl-4">
               {data.instructions.map((m) => (
                 <li key={m.id} className="break-words">
-                  {m.title}
+                  <Link
+                    to="/instructions/$instructionId"
+                    params={{ instructionId: m.id }}
+                    className="hover:text-foreground hover:underline"
+                  >
+                    {m.title}
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -107,6 +114,56 @@ function UsedNotes({ row }: { row: Row }) {
         {data && !data.memories.length && !data.instructions.length && (
           <p>Those notes no longer exist.</p>
         )}
+      </div>
+    </details>
+  );
+}
+
+/** The company documents an answer used. Each is re-checked against Drive when opened, so a file you lost access to is not listed. */
+function Sources({ row }: { row: Row }) {
+  const [list, setList] = useState<Awaited<ReturnType<typeof chatClient.sources>>>();
+  const [error, setError] = useState<string>();
+  const n = row.meta?.used?.docs?.length ?? 0;
+  if (n === 0) return null;
+  return (
+    <details
+      className="text-[13px] text-muted-foreground"
+      onToggle={(e) => {
+        if ((e.currentTarget as HTMLDetailsElement).open && !list)
+          chatClient.sources(row.id).then(setList, (x) => setError(errorMessage(x)));
+      }}
+    >
+      <summary className="w-fit cursor-pointer select-none hover:text-foreground">
+        {n} {n === 1 ? "source" : "sources"}
+      </summary>
+      <div aria-live="polite" className="mt-1 space-y-1 border-l-2 pl-3">
+        {!list && !error && <p>Checking access…</p>}
+        {error && (
+          <p role="alert" className="text-destructive">
+            {error}
+          </p>
+        )}
+        {list?.length === 0 && <p>You can no longer open these files.</p>}
+        <ol className="space-y-1">
+          {list?.map((s) => (
+            <li key={s.n} className="break-words">
+              <span className="font-medium">[{s.n}]</span>{" "}
+              {s.link ? (
+                <a
+                  href={s.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-foreground"
+                >
+                  {s.name}
+                </a>
+              ) : (
+                s.name
+              )}
+              {s.snippet && <span className="line-clamp-2 block text-xs">{s.snippet}</span>}
+            </li>
+          ))}
+        </ol>
       </div>
     </details>
   );
@@ -137,7 +194,7 @@ function ReactionPicker({ onReact }: { onReact: (emoji: string) => void }) {
         <PopoverTrigger
           render={<Button size="icon-xs" variant="ghost" aria-label="Add reaction" />}
         >
-          <SmilePlus />
+          <SmileyIcon />
         </PopoverTrigger>
       </Tip>
       <PopoverContent align="end" initialFocus={search} className="w-auto rounded-lg p-2">
@@ -157,18 +214,26 @@ function ReactionPicker({ onReact }: { onReact: (emoji: string) => void }) {
 function HoverBar({
   row,
   inThread,
+  entry,
   onReact,
   onReply,
   onSaveInstruction,
 }: {
   row: Row;
   inThread: boolean;
+  /** "keyboard": the bar replaced the focused tab stop, so focus moves to its first button. */
+  entry: "pointer" | "keyboard";
   onReact: (emoji: string) => void;
   onReply: () => void;
   onSaveInstruction: () => void;
 }) {
+  const bar = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (entry === "keyboard") bar.current?.querySelector("button")?.focus();
+  }, [entry]);
   return (
     <div
+      ref={bar}
       role="toolbar"
       aria-label="Message actions"
       className="absolute -top-4 right-4 z-10 flex items-center rounded-lg border bg-popover p-0.5 opacity-0 shadow-sm transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 has-aria-expanded:opacity-100 [@media(hover:none)]:hidden"
@@ -189,7 +254,7 @@ function HoverBar({
       {!inThread && (
         <Tip label="Reply in thread">
           <Button size="icon-xs" variant="ghost" aria-label="Reply in thread" onClick={onReply}>
-            <MessageSquareText />
+            <ChatTextIcon />
           </Button>
         </Tip>
       )}
@@ -200,12 +265,12 @@ function HoverBar({
             <DropdownMenuTrigger
               render={<Button size="icon-xs" variant="ghost" aria-label="More actions" />}
             >
-              <MoreHorizontal />
+              <DotsThreeIcon />
             </DropdownMenuTrigger>
           </Tip>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={onSaveInstruction}>
-              <BookmarkPlus />
+              <BookmarkSimpleIcon />
               Save as instruction
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -266,7 +331,7 @@ function WorkingStatus({ label, rotate = false }: { label: string; rotate?: bool
 }
 
 /** One Slack-style line: avatar + name + time on the first message of a group, then just the body for follow-ups. */
-export function MessageRow({
+export const MessageRow = memo(function MessageRow({
   row,
   author,
   continued,
@@ -275,6 +340,7 @@ export function MessageRow({
   onReact,
   onReply,
   onSaveInstruction,
+  onQueue,
 }: {
   row: Row;
   author: Author;
@@ -284,8 +350,12 @@ export function MessageRow({
   onReact: (row: Row, emoji: string) => void;
   onReply: (row: Row) => void;
   onSaveInstruction: (row: Row) => void;
+  /** A queued message: drop it before it is answered, or put a failed one back in line. */
+  onQueue?: (row: Row, action: "remove" | "retry") => void;
 }) {
   const saved = !row.streaming && !readOnly;
+  // The toolbar (tooltips, popover, menu) mounts on first hover or keyboard focus, not for every row of a long history.
+  const [bar, setBar] = useState<"idle" | "pointer" | "keyboard">("idle");
   // A reply is in progress while it streams here or while the saved row is still "running" (page reloaded mid-turn).
   const working = Boolean(row.streaming) || row.status === "running";
   const visible = working ? stripToolFences(row.content).trim() : row.content;
@@ -307,21 +377,38 @@ export function MessageRow({
         "gap-3 px-4 py-0.5 text-[15px] hover:bg-foreground/[0.03] has-aria-expanded:bg-foreground/[0.03]",
         !continued && "mt-3 pt-1.5",
       )}
+      onPointerEnter={
+        saved && bar === "idle"
+          ? (e) => {
+              if (e.pointerType !== "touch") setBar("pointer");
+            }
+          : undefined
+      }
     >
-      {saved && (
-        <HoverBar
-          row={row}
-          inThread={inThread}
-          onReact={(e) => onReact(row, e)}
-          onReply={() => onReply(row)}
-          onSaveInstruction={() => onSaveInstruction(row)}
-        />
-      )}
+      {saved &&
+        (bar === "idle" ? (
+          // The one tab stop each row had to reach the toolbar; focusing it swaps in the real toolbar.
+          <button
+            type="button"
+            aria-label="Message actions"
+            className="sr-only [@media(hover:none)]:hidden"
+            onFocus={() => setBar("keyboard")}
+          />
+        ) : (
+          <HoverBar
+            row={row}
+            inThread={inThread}
+            entry={bar}
+            onReact={(e) => onReact(row, e)}
+            onReply={() => onReply(row)}
+            onSaveInstruction={() => onSaveInstruction(row)}
+          />
+        ))}
       {continued ? (
         <time
           dateTime={row.createdAt}
           title={fullDate(row.createdAt)}
-          className="w-8 shrink-0 pt-0.5 text-right text-[11px] leading-5 text-muted-foreground opacity-0 group-hover/message:opacity-100"
+          className="w-8 shrink-0 pt-0.5 text-right font-mono text-[10px] leading-5 text-muted-foreground opacity-0 group-hover/message:opacity-100"
         >
           {time(row.createdAt)}
         </time>
@@ -342,14 +429,14 @@ export function MessageRow({
       <MessageContent className="gap-1">
         {!continued && (
           <MessageHeader className="gap-2 px-0 text-[14px] leading-5">
-            <span className="truncate font-bold text-foreground">{author.name}</span>
+            <span className="truncate font-semibold text-foreground">{author.name}</span>
             {author.bot && (
               <span className="text-[12px] font-medium text-muted-foreground">App</span>
             )}
             <time
               dateTime={row.createdAt}
               title={fullDate(row.createdAt)}
-              className="text-[12px] font-normal text-muted-foreground hover:underline"
+              className="font-mono text-[11px] font-normal text-muted-foreground hover:underline"
             >
               {time(row.createdAt)}
             </time>
@@ -365,7 +452,7 @@ export function MessageRow({
                   key={a.id}
                   className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-[13px]"
                 >
-                  <Paperclip aria-hidden="true" className="size-3 text-muted-foreground" />
+                  <PaperclipIcon aria-hidden="true" className="size-3 text-muted-foreground" />
                   {a.name}
                 </li>
               ))}
@@ -410,6 +497,43 @@ export function MessageRow({
         {row.status === "cancelled" && (
           <p className="text-[13px] italic text-muted-foreground">Stopped.</p>
         )}
+        {row.queue === "pending" && (
+          <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+            <span>Queued: the bot answers it in its thread after the current reply.</span>
+            {onQueue && !readOnly && (
+              <Button size="xs" variant="ghost" onClick={() => onQueue(row, "remove")}>
+                Remove
+              </Button>
+            )}
+          </div>
+        )}
+        {row.queue === "running" && (
+          <div className="flex flex-wrap items-center gap-2">
+            <WorkingStatus label="Answering in its thread" />
+            {!inThread && (
+              <Button size="xs" variant="ghost" onClick={() => onReply(row)}>
+                View thread
+              </Button>
+            )}
+          </div>
+        )}
+        {row.queue === "failed" && (
+          <div className="flex flex-wrap items-center gap-2 text-[13px]">
+            <span role="alert" className="font-medium text-destructive">
+              Not answered.
+            </span>
+            {onQueue && !readOnly && (
+              <>
+                <Button size="xs" variant="ghost" onClick={() => onQueue(row, "retry")}>
+                  Retry
+                </Button>
+                <Button size="xs" variant="ghost" onClick={() => onQueue(row, "remove")}>
+                  Remove
+                </Button>
+              </>
+            )}
+          </div>
+        )}
         {computers.map((vm) => (
           <VmCard
             key={vm.id}
@@ -450,7 +574,7 @@ export function MessageRow({
                     className="flex items-center gap-2.5 rounded-lg border bg-card py-2 pr-3 pl-2 text-[13px] hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
                   >
                     <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
-                      <Users aria-hidden="true" className="size-4" />
+                      <UsersIcon aria-hidden="true" className="size-4" />
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate font-medium text-foreground">{r.text}</span>
@@ -475,7 +599,7 @@ export function MessageRow({
                     search={{ item: r.id }}
                     className="flex items-center gap-1 hover:text-foreground hover:underline"
                   >
-                    <CalendarPlus aria-hidden="true" className="size-3.5" />
+                    <CalendarPlusIcon aria-hidden="true" className="size-3.5" />
                     {r.created === false ? "updated" : "added"} “{r.text}”
                   </Link>
                 ) : r.kind === "task" ? (
@@ -483,7 +607,7 @@ export function MessageRow({
                     to="/tasks"
                     className="flex items-center gap-1 hover:text-foreground hover:underline"
                   >
-                    <ListChecks aria-hidden="true" className="size-3.5" />
+                    <ListChecksIcon aria-hidden="true" className="size-3.5" />
                     {r.created === false ? "updated" : "added"} “{r.text}”
                   </Link>
                 ) : r.kind === "artifact" ? (
@@ -492,8 +616,18 @@ export function MessageRow({
                     params={{ artifactId: r.id }}
                     className="flex items-center gap-1 hover:text-foreground hover:underline"
                   >
-                    <FileBox aria-hidden="true" className="size-3.5" />
+                    <FileArchiveIcon aria-hidden="true" className="size-3.5" />
                     published “{r.text}”
+                  </Link>
+                ) : r.kind === "wiki" ? (
+                  <Link
+                    to="/studio/$tab"
+                    params={{ tab: "wiki" }}
+                    search={{ page: r.id } as never}
+                    className="flex items-center gap-1 hover:text-foreground hover:underline"
+                  >
+                    <BooksIcon aria-hidden="true" className="size-3.5" />
+                    {r.created === false ? "updated wiki" : "added to wiki"} “{r.text}”
                   </Link>
                 ) : r.kind === "discussion" ? (
                   <Link
@@ -501,16 +635,21 @@ export function MessageRow({
                     search={{ id: r.id }}
                     className="flex items-center gap-1 hover:text-foreground hover:underline"
                   >
-                    <Users aria-hidden="true" className="size-3.5" />“{r.text}”
+                    <UsersIcon aria-hidden="true" className="size-3.5" />“{r.text}”
+                  </Link>
+                ) : r.kind === "instruction" ? (
+                  <Link
+                    to="/instructions/$instructionId"
+                    params={{ instructionId: r.id }}
+                    className="flex items-center gap-1 hover:text-foreground hover:underline"
+                  >
+                    <BookmarkSimpleIcon aria-hidden="true" className="size-3.5" />
+                    saved instruction “{r.text}”{r.created === false ? " (already saved)" : ""}
                   </Link>
                 ) : (
                   <>
-                    {r.kind === "memory" ? (
-                      <Brain aria-hidden="true" className="size-3.5" />
-                    ) : (
-                      <BookmarkPlus aria-hidden="true" className="size-3.5" />
-                    )}
-                    {r.kind === "memory" ? "remembered" : "saved instruction"}
+                    <BrainIcon aria-hidden="true" className="size-3.5" />
+                    remembered
                     {r.created === false ? " (already saved)" : ""}
                   </>
                 )}
@@ -519,6 +658,7 @@ export function MessageRow({
           </ul>
         )}
         {row.role === "assistant" && saved && <UsedNotes row={row} />}
+        {row.role === "assistant" && saved && <Sources row={row} />}
         {row.reactions?.some((r) => r.count > 0) && (
           <div role="group" aria-label="Reactions" className="flex flex-wrap items-center gap-1">
             {row.reactions
@@ -558,4 +698,4 @@ export function MessageRow({
       </MessageContent>
     </Message>
   );
-}
+});

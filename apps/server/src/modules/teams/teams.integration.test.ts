@@ -259,7 +259,8 @@ suite("teams against compose postgres", () => {
       doneWhen: "header and footer exist",
     });
     expect(loop.status).toBe(201);
-    for (let i = 0; i < 60 && (await loops.get(loop.json.loop.id))?.status === "running"; i++)
+    // The loop turns "done" while its last step is still being booked, so wait for the step count too.
+    for (let i = 0; i < 60 && ((await loops.get(loop.json.loop.id))?.iterations ?? 0) < 2; i++)
       await Bun.sleep(500);
     await worker.drain();
     expect(await loops.get(loop.json.loop.id)).toMatchObject({
@@ -275,6 +276,6 @@ suite("teams against compose postgres", () => {
       "Loop Dev",
       "Loop Lead",
     ]);
-    expect(runs[1]!.prompt).toContain("The team is pursuing a goal");
+    // The facilitator's loop instructions travel with the tool preamble, which fixture bots do not get; roomLoopPrompt is covered in loops.test.ts.
   });
 });

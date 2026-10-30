@@ -15,15 +15,39 @@ import { disconnect, finishConnect, redirectUri, startConnect, status } from "./
  * Note: Google's gmail.compose scope technically also permits sending drafts; Zetta never calls that, but revoke it if that matters to you.
  */
 export const googlePlugin: PluginDef = {
-  id: "google", name: "Google (Gmail, Calendar, Drive)", icon: "mail", category: "google", kind: "native", auth: "oauth",
+  id: "google",
+  name: "Google (Gmail, Calendar, Drive)",
+  icon: "mail",
+  category: "google",
+  kind: "native",
+  auth: "oauth",
   fields: [
-    { key: "clientId", label: "OAuth client ID", kind: "text", placeholder: "1234-abc.apps.googleusercontent.com", help: "Google Cloud Console > APIs & Services > Credentials > Create OAuth client ID (Web application)." },
-    { key: "clientSecret", label: "OAuth client secret", kind: "password", secret: true, help: `Add ${redirectUri()} as an authorised redirect URI of that client.` },
+    {
+      key: "clientId",
+      label: "OAuth client ID",
+      kind: "text",
+      optional: true,
+      placeholder: "1234-abc.apps.googleusercontent.com",
+      help: "Google Cloud Console > APIs & Services > Credentials > Create OAuth client ID (Web application).",
+    },
+    {
+      key: "clientSecret",
+      label: "OAuth client secret",
+      kind: "password",
+      secret: true,
+      optional: true,
+      help: `Add ${redirectUri()} as an authorised redirect URI of that client.`,
+    },
   ],
-  description: "Let bots search your mail, check your calendar and read Drive documents with your own Google account.",
+  description:
+    "Let bots search your mail, check your calendar and read Drive documents with your own Google account.",
   docsUrl: "https://developers.google.com/identity/protocols/oauth2/web-server",
-  notes: "Uses your own Google Cloud OAuth client, stored encrypted for your account only. You choose the permissions when you connect; writing and sending are off unless you opt in.",
+  notes:
+    "Uses your own Google Cloud OAuth client, stored encrypted for your account only. You choose the permissions when you connect; writing and sending are off unless you opt in.",
   tools: [...gmailTools, ...calendarTools, ...driveTools],
-  connect: startConnect, callback: finishConnect, disconnect, status,
+  connect: startConnect,
+  callback: finishConnect,
+  disconnect,
+  status,
 };
 registerPlugin(googlePlugin);

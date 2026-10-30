@@ -1,0 +1,1 @@
+ALTER TABLE "goal_loop" ADD COLUMN "request" text DEFAULT '' NOT NULL;

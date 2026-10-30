@@ -8,7 +8,7 @@ import {
 } from "@shadcn/react/message-scroller";
 import { Button } from "@zetta/ui/components/button";
 import { cn } from "@zetta/ui/lib/utils";
-import { ArrowDownIcon } from "lucide-react";
+import { ArrowDownIcon } from "@phosphor-icons/react";
 import * as React from "react";
 
 function MessageScrollerProvider(

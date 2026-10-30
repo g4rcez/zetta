@@ -1,0 +1,1 @@
+ALTER TABLE "knowledge_doc" ALTER COLUMN "state" SET DEFAULT 'pending';

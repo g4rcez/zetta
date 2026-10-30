@@ -6,7 +6,7 @@ type SavedMessage = Extract<ChatEvent, { type: "message" }>["message"];
 /** Data parts of the assistant UIMessage for one HTTP turn; the web client (`useChat`) renders against these names. */
 export type ChatDataParts = {
   "user-saved": { message: SavedMessage };
-  speaker: { messageId: string; botId: string; botName: string };
+  speaker: { messageId: string; botId: string; botName: string; parentMessageId?: string };
   saved: { message: SavedMessage; botName: string };
   proposal: { proposal: { id: string } };
   summary: { text: string };
@@ -31,8 +31,12 @@ export function toUIMessageStream(events: AsyncIterable<ChatEvent>) {
     async execute({ writer }) {
       writer.write({ type: "start" });
       let open: string | undefined;
-      const speak = (messageId: string, botId: string, botName: string) => {
-        writer.write({ type: "data-speaker", id: messageId, data: { messageId, botId, botName } });
+      const speak = (messageId: string, botId: string, botName: string, parent?: string | null) => {
+        writer.write({
+          type: "data-speaker",
+          id: messageId,
+          data: { messageId, botId, botName, ...(parent ? { parentMessageId: parent } : {}) },
+        });
         writer.write({ type: "text-start", id: messageId });
         open = messageId;
       };
@@ -43,13 +47,13 @@ export function toUIMessageStream(events: AsyncIterable<ChatEvent>) {
             id: ev.message.id,
             data: { message: ev.message },
           });
-        else if (ev.type === "start") speak(ev.messageId, ev.botId, ev.botName);
+        else if (ev.type === "start") speak(ev.messageId, ev.botId, ev.botName, ev.parentMessageId);
         else if (ev.type === "delta") {
           if (open) writer.write({ type: "text-delta", id: open, delta: ev.text });
         } else if (ev.type === "message") {
           // An idempotent retry replays saved replies without start/delta: emit the whole text so the part still exists.
           if (open !== ev.message.id) {
-            speak(ev.message.id, ev.message.botId ?? "", ev.botName);
+            speak(ev.message.id, ev.message.botId ?? "", ev.botName, ev.message.parentMessageId);
             if (ev.message.content)
               writer.write({ type: "text-delta", id: ev.message.id, delta: ev.message.content });
           }

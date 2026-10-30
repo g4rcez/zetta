@@ -18,6 +18,10 @@ const BY_CODE: Record<string, Entry> = {
     why: "This bot is not allowed to use it.",
     fix: "Open the bot's settings, switch it on under Plugins & MCP, then try again.",
   },
+  TOOL_NOT_ALLOWED: {
+    why: "This bot may not use that tool.",
+    fix: "Open the bot's settings > Plugins & MCP and allow the tool, then ask again.",
+  },
   UNKNOWN_TOOL: {
     why: "The bot asked for something this plugin cannot do.",
     fix: "Ask the bot to try again, or to tell you what it can do with this plugin.",

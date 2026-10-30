@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ComponentProps,
+  type RefObject,
+} from "react";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ComputerActivity } from "../computer/computer-activity";
 import { DesktopButton } from "../computer/desktop-button";
@@ -7,7 +16,13 @@ import "../computer/register";
 import "../plugins/register";
 import "../discussions/register";
 import "../inbound/register";
-import { ChevronDown, Hash, Lock, Menu, Share2 } from "lucide-react";
+import {
+  CaretDownIcon,
+  HashIcon,
+  LockIcon,
+  ListIcon,
+  ShareNetworkIcon,
+} from "@phosphor-icons/react";
 import { ThreadTabs } from "./thread-tabs";
 import { Skeleton } from "@g4rcez/components";
 
@@ -58,9 +73,48 @@ const useMedia = (query: string) =>
     () => window.matchMedia(query).matches,
     () => true,
   );
-const asRow = (m: Message): Row => ({ ...m, createdAt: m.createdAt ?? new Date(0).toISOString() });
+// A saved message keeps the same Row object while it is unchanged, so memoized rows skip rendering after a reaction or reload.
+const rowCache = new WeakMap<Message, Row>();
+const asRow = (m: Message): Row => {
+  let row = rowCache.get(m);
+  if (!row) {
+    row = { ...m, createdAt: m.createdAt ?? new Date(0).toISOString() };
+    rowCache.set(m, row);
+  }
+  return row;
+};
+
+/** A callback with a fixed identity that always runs the latest closure: lets memoized children skip renders. */
+function useEvent<A extends unknown[], R>(fn: (...args: A) => R) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...args: A) => ref.current(...args), []);
+}
+
+type DraftHandle = ReturnType<typeof useDraft>;
+/** The composer owns its draft text, so each keystroke renders this component and not the whole page. `handle` gives the page adopt/clear. */
+function DraftComposer({
+  storageKey,
+  handle,
+  ...props
+}: Omit<ComponentProps<typeof Composer>, "value" | "onChange"> & {
+  storageKey: string | undefined;
+  handle: RefObject<DraftHandle | null>;
+}) {
+  const draft = useDraft(storageKey);
+  handle.current = draft;
+  return <Composer {...props} value={draft.value} onChange={draft.set} />;
+}
 
 const NEW_CHAT = "new";
+const LAST_CHAT_KEY = "zetta:last-chat";
+const readLastChat = () => {
+  try {
+    return localStorage.getItem(LAST_CHAT_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
 type ChatSearchState = { thread?: string | undefined; bot?: string | undefined };
 
 export function ChatPage() {
@@ -92,7 +146,7 @@ export function ChatPage() {
     bots.find((b) => b.id === search.bot) ?? bots.find((b) => b.kind === "chief") ?? bots[0];
   // A conversation decides its bot; a draft (or a bare /chat) takes the bot from ?bot=, falling back to the chief.
   const botId = chatId ? openChatRow?.botId : defaultBot?.id;
-  const composer = useDraft(draftKey(botId, chatId));
+  const draft = useRef<DraftHandle | null>(null);
 
   const toChat = (id: string, replace = false) =>
     void navigate({ to: "/chat/{-$chatId}", params: { chatId: id }, search: {}, replace });
@@ -124,8 +178,13 @@ export function ChatPage() {
         .catch(() => {}),
     [],
   );
+  // Proposals also come from loops, routines and other chats, which send no stream part: poll while the tab is visible.
   useEffect(() => {
     void loadProposals();
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void loadProposals();
+    }, 5_000);
+    return () => clearInterval(t);
   }, [loadProposals]);
   useEffect(() => {
     chatClient.workspaces().then(setSpaces).catch(fail);
@@ -147,11 +206,22 @@ export function ChatPage() {
       .then(() => setChatsLoaded(true))
       .catch(fail);
   }, [loadChats]);
-  // A bare /chat has no state of its own: it becomes the default bot's latest conversation. A chat that no longer exists falls back the same way.
+  // Remember the open conversation so the rail's Chat item returns to it.
+  useEffect(() => {
+    if (!openChatRow) return;
+    try {
+      localStorage.setItem(LAST_CHAT_KEY, openChatRow.id);
+    } catch {
+      // storage unavailable: the last chat just won't persist
+    }
+  }, [openChatRow?.id]);
+  // A bare /chat has no state of its own: it becomes the last used conversation, else the default bot's latest. A chat that no longer exists falls back to the default bot.
   useEffect(() => {
     if (!chatsLoaded || !bots.length) return;
     if (!urlChat || (chatId && !openChatRow)) {
-      if (defaultBot) toBot(defaultBot.id, true);
+      const last = !urlChat ? readLastChat() : undefined;
+      if (last && chats.some((c) => c.id === last)) toChat(last, true);
+      else if (defaultBot) toBot(defaultBot.id, true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatsLoaded, bots, urlChat, chatId, openChatRow, defaultBot?.id]);
@@ -191,6 +261,7 @@ export function ChatPage() {
     async (id: string) => {
       await reload(id);
       void loadChats().catch(() => {});
+      void loadProposals();
       void refreshAttention();
       // The chief may have just created bots: show them in the list and make their cards open.
       void chatClient
@@ -198,7 +269,7 @@ export function ChatPage() {
         .then(setBots)
         .catch(() => {});
     },
-    [reload, loadChats],
+    [reload, loadChats, loadProposals],
   );
   const main = useZettaChat({
     conversationId: chatId,
@@ -206,11 +277,25 @@ export function ChatPage() {
     onProposal: () => void loadProposals(),
   });
   // A running goal loop starts each step on the server: follow it live, and reload when it moves on.
+  // The server answers queued messages one after another, each in its thread: follow each answer live and refresh until none waits.
+  const waiting = saved.some((m) => m.queue === "pending" || m.queue === "running");
+  const follow = useRef(main);
+  follow.current = main;
+  useEffect(() => {
+    if (!chatId || !waiting || main.busy) return;
+    follow.current.reattach();
+    const t = setInterval(() => {
+      void reload(chatId);
+      follow.current.reattach();
+    }, 2_000);
+    return () => clearInterval(t);
+  }, [chatId, waiting, main.busy, reload]);
   const goal = useGoalLoop(
     chatId,
     () => main.reattach(),
     () => {
       if (chatId) void reload(chatId);
+      void loadProposals();
     },
   );
 
@@ -224,29 +309,40 @@ export function ChatPage() {
       .bots()
       .then(setBots)
       .catch(() => {});
-  const me: Author = { name: session?.user.name ?? "You", image: session?.user.image };
-  const authorOf = useCallback(
-    (row: Row): Author => {
+  const meName = session?.user.name ?? "You",
+    meImage = session?.user.image;
+  // Author objects are cached so memoized rows see the same one on every render; the cache resets when its inputs change.
+  const authorOf = useMemo(() => {
+    const cache = new Map<string, Author>();
+    const once = (key: string, make: () => Author) => {
+      let a = cache.get(key);
+      if (!a) cache.set(key, (a = make()));
+      return a;
+    };
+    return (row: Row): Author => {
       // Outside people writing through a channel plugin are not the signed-in user.
-      if (row.role === "user" && row.meta?.inbound)
-        return { name: `${row.meta.inbound.label} · ${row.meta.inbound.chatName}` };
-      if (row.role === "user") return me;
-      const bot = bots.find((b) => b.id === (row.botId ?? botId));
-      return { name: bot?.name ?? row.botName ?? "Bot", bot };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    },
-    [bots, botId, me.name, me.image],
-  );
+      if (row.role === "user" && row.meta?.inbound) {
+        const { label, chatName } = row.meta.inbound;
+        return once(`in:${label}:${chatName}`, () => ({ name: `${label} · ${chatName}` }));
+      }
+      if (row.role === "user") return once("me", () => ({ name: meName, image: meImage }));
+      const id = row.botId ?? botId;
+      return once(`bot:${id}:${row.botName ?? ""}`, () => {
+        const bot = bots.find((b) => b.id === id);
+        return { name: bot?.name ?? row.botName ?? "Bot", bot };
+      });
+    };
+  }, [bots, botId, meName, meImage]);
 
+  // Saved history is rebuilt only when it changes; each streamed chunk just appends the live rows.
+  const top = useMemo(() => saved.filter((m) => !m.parentMessageId).map(asRow), [saved]);
   const rows = useMemo(() => {
-    const top = saved.filter((m) => !m.parentMessageId).map(asRow);
-    return [
-      ...top,
-      ...main.rows.filter(
-        (r) => !r.parentMessageId && !top.some((x) => x.id === r.id) && !isSavedUserEcho(r, top),
-      ),
-    ];
-  }, [saved, main.rows]);
+    const ids = new Set(top.map((x) => x.id));
+    const live = main.rows.filter(
+      (r) => !r.parentMessageId && !ids.has(r.id) && !isSavedUserEcho(r, top),
+    );
+    return live.length ? [...top, ...live] : top;
+  }, [top, main.rows]);
   const thread = threadId
     ? (rows.find((r) => r.id === threadId) ?? saved.map(asRow).find((r) => r.id === threadId))
     : undefined;
@@ -271,15 +367,17 @@ export function ChatPage() {
     try {
       let id = chatId;
       if (!id) {
-        composer.adopt();
+        draft.current?.adopt();
         const created = await chatClient.startConversation(botId);
         id = created.id;
         setChats((c) => [created, ...c]);
         toChat(id, true);
       }
-      composer.clear();
+      draft.current?.clear();
       setSent((n) => n + 1);
-      void main.send(text, { conversationId: id, attachmentIds, fileRefs, instructionIds });
+      void main
+        .send(text, { conversationId: id, attachmentIds, fileRefs, instructionIds })
+        .catch(fail);
       return true;
     } catch (e) {
       fail(e);
@@ -322,14 +420,33 @@ export function ChatPage() {
       fail(e);
     }
   }
-  const actions: RowActions = {
+  // Stable identity: memoized rows must not re-render because the page did. Handlers read the latest closure through a ref.
+  const latestActions = useRef<RowActions>(null as never);
+  latestActions.current = {
     onReact: (row, emoji) => void toggleReact(row, emoji),
     onReply: (row) => setThread(row.id),
     onSaveInstruction: (row) =>
       void chatClient
         .saveInstruction(`From chat: ${row.content.slice(0, 40)}`, row.content)
         .then(() => setNotice("Saved to your instruction library."), fail),
+    onQueue: (row, action) => {
+      if (!chatId) return;
+      void (
+        action === "remove"
+          ? chatClient.removeQueued(chatId, row.id)
+          : chatClient.retryQueued(chatId, row.id)
+      ).then(() => reload(chatId), fail);
+    },
   };
+  const actions = useMemo<RowActions>(
+    () => ({
+      onReact: (row, emoji) => latestActions.current.onReact(row, emoji),
+      onReply: (row) => latestActions.current.onReply(row),
+      onSaveInstruction: (row) => latestActions.current.onSaveInstruction(row),
+      onQueue: (row, action) => latestActions.current.onQueue?.(row, action),
+    }),
+    [],
+  );
   function openChat(id: string) {
     toChat(id);
     setNavOpen(false);
@@ -398,7 +515,37 @@ export function ChatPage() {
       },
     );
   }
-  const ChannelIcon = current?.visibility === "private" ? Lock : Hash;
+  // Stable handlers for the memoized sidebar.
+  const onSidebarBot = useEvent((id: string) => {
+    toBot(id);
+    setNavOpen(false);
+  });
+  const onSidebarChat = useEvent(openChat);
+  const onSidebarUpdateChat = useEvent(
+    (id: string, patch: { title?: string; pinned?: boolean; favorite?: boolean }) => {
+      const before = chats;
+      setChats((all) => all.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+      chatClient.updateConversation(id, patch).then(
+        (row) => setChats((all) => all.map((c) => (c.id === id ? { ...c, ...row } : c))),
+        (e) => {
+          setChats(before);
+          fail(e);
+        },
+      );
+    },
+  );
+  const onSidebarNewChat = useEvent((id: string) => {
+    toDraft(id);
+    setNavOpen(false);
+  });
+  const onSidebarNewBot = useEvent(() => void navigate({ to: "/bots/new" }));
+  const onSidebarAddSpace = useEvent(
+    (name: string, parentId?: string) =>
+      void chatClient
+        .createWorkspace(name, parentId)
+        .then((w) => setSpaces((s) => [...s, w]), fail),
+  );
+  const ChannelIcon = current?.visibility === "private" ? LockIcon : HashIcon;
   const chatTitle = chats.find((c) => c.id === chatId)?.title;
 
   const threadPane =
@@ -408,6 +555,7 @@ export function ChatPage() {
         conversationId={chatId}
         parent={thread}
         replies={replies}
+        streamed={main.rows.filter((r) => r.parentMessageId === thread.id)}
         bots={bots}
         bot={current}
         authorOf={authorOf}
@@ -433,32 +581,12 @@ export function ChatPage() {
           chats={chats}
           botId={botId}
           chatId={chatId}
-          onBot={(id) => {
-            toBot(id);
-            setNavOpen(false);
-          }}
-          onChat={openChat}
-          onUpdateChat={(id, patch) => {
-            const before = chats;
-            setChats((all) => all.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-            chatClient.updateConversation(id, patch).then(
-              (row) => setChats((all) => all.map((c) => (c.id === id ? { ...c, ...row } : c))),
-              (e) => {
-                setChats(before);
-                fail(e);
-              },
-            );
-          }}
-          onNewChat={(id) => {
-            toDraft(id);
-            setNavOpen(false);
-          }}
-          onNewBot={() => void navigate({ to: "/bots/new" })}
-          onAddSpace={(name, parentId) =>
-            void chatClient
-              .createWorkspace(name, parentId)
-              .then((w) => setSpaces((s) => [...s, w]), fail)
-          }
+          onBot={onSidebarBot}
+          onChat={onSidebarChat}
+          onUpdateChat={onSidebarUpdateChat}
+          onNewChat={onSidebarNewChat}
+          onNewBot={onSidebarNewBot}
+          onAddSpace={onSidebarAddSpace}
         />
       </div>
       <section
@@ -473,7 +601,7 @@ export function ChatPage() {
             className="md:hidden"
             onClick={() => setNavOpen(true)}
           >
-            <Menu />
+            <ListIcon />
           </Button>
           <button
             type="button"
@@ -501,7 +629,7 @@ export function ChatPage() {
             ) : (
               <ChannelIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
             )}
-            <h2 className="truncate text-sm font-semibold leading-tight">
+            <h2 className="truncate font-heading text-base font-medium leading-tight">
               {current?.name ?? "Chat"}
             </h2>
             {current && (
@@ -510,7 +638,7 @@ export function ChatPage() {
                 className="size-3.5 shrink-0 text-muted-foreground"
               />
             )}
-            <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+            <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
           </button>
           <div className="ml-auto flex min-w-0 items-center gap-1">
             {current?.computerMode === "desktop" && (
@@ -532,7 +660,7 @@ export function ChatPage() {
                 onClick={() => setPublishing(true)}
                 aria-label="Publish snapshot to team"
               >
-                <Share2 />
+                <ShareNetworkIcon />
               </Button>
             )}
           </div>
@@ -589,7 +717,7 @@ export function ChatPage() {
               {!loadingMessages && rows.length === 0 && current && (
                 <div className="mt-auto space-y-3 px-4 pt-10 pb-4">
                   <BotAvatar bot={current} size={64} square />
-                  <h3 className="text-2xl font-bold">
+                  <h3 className="font-heading text-3xl font-medium tracking-tight text-balance">
                     <ChannelIcon
                       aria-hidden="true"
                       className="mr-1 inline size-5 align-baseline text-muted-foreground"
@@ -677,10 +805,10 @@ export function ChatPage() {
           )}
           <LoopBanner loop={goal.loop} onChange={goal.update} onError={setError} />
           {botId && <ComputerActivity botId={botId} botName={current?.name} />}
-          <Composer
+          <DraftComposer
             instructions
-            value={composer.value}
-            onChange={composer.set}
+            storageKey={draftKey(botId, chatId)}
+            handle={draft}
             placeholder={
               current
                 ? `Message ${current.visibility === "private" ? "" : "#"}${current.name}`

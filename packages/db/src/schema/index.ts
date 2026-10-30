@@ -14,3 +14,5 @@ export * from "./bot-claude";
 export * from "./tasks";
 export * from "./artifacts";
 export * from "./installation";
+export * from "./knowledge";
+export * from "./wiki";

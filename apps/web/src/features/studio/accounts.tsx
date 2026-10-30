@@ -31,9 +31,9 @@ const PROVIDER_NAME: Record<Provider, string> = {
   github: "GitHub",
 };
 const HARNESS_STATUS: Record<Harness["status"], { label: string; tone: string }> = {
-  ready: { label: "Ready", tone: "border-green-600/60" },
+  ready: { label: "Ready", tone: "border-success/60" },
   not_installed: { label: "Not installed", tone: "border-destructive/60" },
-  needs_login: { label: "Needs sign-in", tone: "border-yellow-600/60" },
+  needs_login: { label: "Needs sign-in", tone: "border-warn/60" },
   unverified: { label: "Not tested yet", tone: "" },
 };
 /** Distinct, plain guidance per status (used when the server sends none). */

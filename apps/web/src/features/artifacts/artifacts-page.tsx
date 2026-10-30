@@ -1,21 +1,20 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
-  Archive,
-  AudioLines,
-  Code2,
-  File as FileIcon,
-  FileImage,
-  FileJson,
-  FileText,
-  FileType,
-  ChevronDown,
-  Film,
-  Globe,
-  Pin,
-  Search,
-  Table2,
-  type LucideIcon,
-} from "lucide-react";
+  ArchiveIcon,
+  WaveformIcon,
+  CodeIcon,
+  FileIcon,
+  FileImageIcon,
+  FileCodeIcon,
+  FileTextIcon,
+  CaretDownIcon,
+  FilmStripIcon,
+  GlobeIcon,
+  PushPinIcon,
+  MagnifyingGlassIcon,
+  TableIcon,
+  type Icon as PhosphorIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -36,18 +35,18 @@ import {
 } from "./artifacts-api";
 import { groupVersions } from "./versions";
 
-export const KIND_ICON: Record<ArtifactKind, LucideIcon> = {
-  html: Globe,
-  markdown: FileText,
-  text: FileText,
-  code: Code2,
-  csv: Table2,
-  json: FileJson,
-  image: FileImage,
-  video: Film,
-  audio: AudioLines,
-  pdf: FileType,
-  zip: Archive,
+export const KIND_ICON: Record<ArtifactKind, PhosphorIcon> = {
+  html: GlobeIcon,
+  markdown: FileTextIcon,
+  text: FileTextIcon,
+  code: CodeIcon,
+  csv: TableIcon,
+  json: FileCodeIcon,
+  image: FileImageIcon,
+  video: FilmStripIcon,
+  audio: WaveformIcon,
+  pdf: FileIcon,
+  zip: ArchiveIcon,
   binary: FileIcon,
 };
 
@@ -138,7 +137,7 @@ export function ArtifactsPage({ filter }: { filter: ArtifactFilter }) {
         </header>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-48 flex-1 sm:max-w-xs">
-            <Search
+            <MagnifyingGlassIcon
               aria-hidden="true"
               className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             />
@@ -216,7 +215,7 @@ export function ArtifactsPage({ filter }: { filter: ArtifactFilter }) {
                         className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
                       >
                         {older.length} older
-                        <ChevronDown
+                        <CaretDownIcon
                           aria-hidden="true"
                           className={`size-3.5 transition-transform ${open.has(head.id) ? "rotate-180" : ""}`}
                         />
@@ -357,7 +356,11 @@ function Row({
         onClick={() => onPin(a)}
         className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:text-primary"
       >
-        <Pin aria-hidden="true" className={`size-4 ${a.pinnedAt ? "fill-current" : ""}`} />
+        <PushPinIcon
+          aria-hidden="true"
+          weight={a.pinnedAt ? "fill" : "regular"}
+          className="size-4"
+        />
       </button>
       {manage && (
         <ConfirmButton

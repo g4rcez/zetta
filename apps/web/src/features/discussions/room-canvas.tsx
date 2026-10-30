@@ -8,7 +8,7 @@ import {
   ReactFlowProvider,
   type NodeProps,
 } from "@xyflow/react";
-import { Crown } from "lucide-react";
+import { CrownIcon } from "@phosphor-icons/react";
 import { useMemo } from "react";
 
 import { cn } from "@zetta/ui/lib/utils";
@@ -27,9 +27,9 @@ const STATE_LABEL: Record<MemberState, string> = {
 };
 const STATE_CLASS: Record<MemberState, string> = {
   idle: "bg-muted text-muted-foreground",
-  queued: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-  running: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
-  done: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  queued: "bg-warn/15 text-warn",
+  running: "bg-info/15 text-info",
+  done: "bg-success/15 text-success",
   failed: "bg-destructive/15 text-destructive",
 };
 const TASK_LABEL = {
@@ -48,7 +48,7 @@ function MemberCard({ data, selected }: NodeProps<MemberNode>) {
       style={{ width: NODE_W }}
       className={cn(
         "space-y-1.5 rounded-lg border bg-card p-3 text-xs shadow",
-        data.kind === "chief" && "border-amber-500",
+        data.kind === "chief" && "border-warn",
         selected && "ring-2 ring-primary",
       )}
     >
@@ -59,7 +59,7 @@ function MemberCard({ data, selected }: NodeProps<MemberNode>) {
         trailing={
           <>
             {data.kind === "chief" && (
-              <Crown className="size-3.5 shrink-0 text-amber-500" aria-label="Chief" />
+              <CrownIcon className="size-3.5 shrink-0 text-warn" aria-label="Chief" />
             )}
             <span
               className={cn("shrink-0 rounded px-1.5 py-0.5 font-medium", STATE_CLASS[data.state])}

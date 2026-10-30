@@ -1,4 +1,19 @@
-import { Bug, BookOpen, ChartLine, Cloud, Database, GitBranch, Globe, KeyRound, Library, ListChecks, Mail, MessageCircle, NotebookText, Plug } from "lucide-react";
+import {
+  BugIcon,
+  BookOpenIcon,
+  ChartLineIcon,
+  CloudIcon,
+  DatabaseIcon,
+  GitBranchIcon,
+  GlobeIcon,
+  KeyIcon,
+  BooksIcon,
+  ListChecksIcon,
+  EnvelopeIcon,
+  ChatCircleIcon,
+  NotebookIcon,
+  PlugIcon,
+} from "@phosphor-icons/react";
 import type { ComponentType } from "react";
 
 import chromeDevtools from "./logos/chrome-devtools.png";
@@ -18,21 +33,62 @@ import whatsapp from "./logos/whatsapp.svg";
 type IconProps = { className?: string; "aria-hidden"?: boolean };
 
 const ICONS: Record<string, ComponentType<IconProps>> = {
-  bug: Bug, "bug-play": Bug, "chart-line": ChartLine, cloud: Cloud, "book-open": BookOpen, github: GitBranch, "list-checks": ListChecks, notebook: NotebookText, library: Library, globe: Globe,
-  mail: Mail, "message-circle": MessageCircle, telegram: TelegramLogo, reddit: RedditLogo, "key-round": KeyRound, database: Database,
+  bug: BugIcon,
+  "bug-play": BugIcon,
+  "chart-line": ChartLineIcon,
+  cloud: CloudIcon,
+  "book-open": BookOpenIcon,
+  github: GitBranchIcon,
+  "list-checks": ListChecksIcon,
+  notebook: NotebookIcon,
+  library: BooksIcon,
+  globe: GlobeIcon,
+  mail: EnvelopeIcon,
+  "message-circle": ChatCircleIcon,
+  telegram: TelegramLogo,
+  reddit: RedditLogo,
+  "key-round": KeyIcon,
+  database: DatabaseIcon,
 };
 
 /** Brand marks downloaded from each vendor's own site (favicon / brand asset), keyed by plugin id. `plate` sits a light tile behind marks that are dark-on-transparent. */
 const LOGOS: Record<string, { src: string; plate?: boolean }> = {
-  sentry: { src: sentry }, posthog: { src: posthog }, cloudflare: { src: cloudflare }, "cloudflare-docs": { src: cloudflare }, github: { src: github, plate: true }, linear: { src: linear },
-  notion: { src: notion }, context7: { src: context7 }, playwright: { src: playwright }, "chrome-devtools": { src: chromeDevtools }, whatsapp: { src: whatsapp },
+  sentry: { src: sentry },
+  posthog: { src: posthog },
+  cloudflare: { src: cloudflare },
+  "cloudflare-docs": { src: cloudflare },
+  github: { src: github, plate: true },
+  linear: { src: linear },
+  notion: { src: notion },
+  context7: { src: context7 },
+  playwright: { src: playwright },
+  "chrome-devtools": { src: chromeDevtools },
+  whatsapp: { src: whatsapp },
 };
 
-/** Logo for a plugin: its vendor's brand mark when we have one, else the lucide icon named by the definition (unknown names fall back to a plug). */
-export function PluginIcon({ id, name, className = "size-5" }: { id?: string; name: string; className?: string }) {
+/** Logo for a plugin: its vendor's brand mark when we have one, else the icon key named by the definition (unknown names fall back to a plug). */
+export function PluginIcon({
+  id,
+  name,
+  className = "size-5",
+}: {
+  id?: string;
+  name: string;
+  className?: string;
+}) {
   if (id === "google") return <GoogleLogo className={className} />;
   const logo = id ? LOGOS[id] : undefined;
-  if (logo) return <img src={logo.src} alt="" aria-hidden draggable={false} loading="lazy" className={`${className} shrink-0 rounded-[22%] object-contain ${logo.plate ? "bg-white p-px" : ""}`} />;
-  const Icon = ICONS[name] ?? Plug;
+  if (logo)
+    return (
+      <img
+        src={logo.src}
+        alt=""
+        aria-hidden
+        draggable={false}
+        loading="lazy"
+        className={`${className} shrink-0 rounded-[22%] object-contain ${logo.plate ? "bg-white p-px" : ""}`}
+      />
+    );
+  const Icon = ICONS[name] ?? PlugIcon;
   return <Icon aria-hidden className={className} />;
 }

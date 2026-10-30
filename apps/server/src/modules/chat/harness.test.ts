@@ -125,6 +125,28 @@ describe("cli harness", () => {
       claudeArgs("go", null, undefined, undefined, undefined, { id: "sess-1", resume: false }),
     ).not.toContain("--session-id");
   });
+  test("claude code gets the bound MCP servers next to its own, limited to the allowed tools", () => {
+    const mcp = {
+      servers: {
+        files: {
+          type: "http" as const,
+          url: "https://mcp.example.test/mcp",
+          headers: { Authorization: "Bearer ${ZETTA_MCP_TOKEN_0}" },
+        },
+      },
+      allow: ["mcp__files__echo"],
+    };
+    for (const mode of [undefined, "git"] as const) {
+      const args = claudeArgs("go", null, mode, undefined, undefined, undefined, false, mcp);
+      expect(args).toContain(
+        '--mcp-config={"mcpServers":{"files":{"type":"http","url":"https://mcp.example.test/mcp","headers":{"Authorization":"Bearer ${ZETTA_MCP_TOKEN_0}"}}}}',
+      );
+      expect(args.find((a) => a.startsWith("--allowedTools="))).toContain("mcp__files__echo");
+      expect(args).not.toContain("--strict-mcp-config");
+      expect(args.at(-1)).toBe("go");
+    }
+    expect(claudeArgs("go", null).some((a) => a.startsWith("--mcp-config"))).toBe(false);
+  });
   test("an abort signal cancels the run", async () => {
     const slow = await script("sleep 30");
     const ac = new AbortController();
@@ -240,40 +262,10 @@ describe("code access", () => {
     expect(without).not.toContain("Bash(gh:*)");
   });
 
-  test("a host run honours gh rules, and the chief's unrestricted profile may run any command", () => {
+  test("a host run honours granted rules, including interpreters and scripts", () => {
     const profile: AgentProfile = {
       preset: "git",
-      allow: ["Bash(gh pr create:*)", "Bash(rm:*)"],
-      deny: [],
-      appendPrompt: "",
-      effort: null,
-      maxBudgetCents: null,
-      files: {},
-      skills: [],
-    };
-    const allow = (p: Parameters<(typeof harnessCommands)["claude-code"]>[3]) =>
-      harnessCommands["claude-code"]("x", null, "git", p).find((a) =>
-        a.startsWith("--allowedTools="),
-      )!;
-    const bot = allow({ profile });
-    expect(bot).toContain("Bash(gh pr create:*)");
-    expect(bot).not.toContain("Bash(rm:*)");
-    const chief = allow({ profile: { ...profile, allow: [], unrestricted: true } });
-    expect(chief).toContain(",Bash");
-    expect(chief).not.toContain("Bash(git:*)");
-  });
-  test("a host run honours a granted rule for one named program, and never a shell, an interpreter or a bare Bash", () => {
-    const profile: AgentProfile = {
-      preset: "auto",
-      allow: [
-        "Bash(pnpm:*)",
-        "Bash(pnpm --filter web test:*)",
-        "Bash",
-        "Bash(bash:*)",
-        "Bash(sudo rm -rf /)",
-        "Bash(node:*)",
-        "Bash(python3 -c x)",
-      ],
+      allow: ["Bash(gh pr create:*)", "Bash(python3:*)", "Bash(bash /tmp/fetch.sh)"],
       deny: [],
       appendPrompt: "",
       effort: null,
@@ -285,15 +277,15 @@ describe("code access", () => {
       a.startsWith("--allowedTools="),
     )!;
     expect(allow).toBe(
-      "--allowedTools=Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(pnpm:*),Bash(pnpm --filter web test:*)",
+      "--allowedTools=Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh pr create:*),Bash(python3:*),Bash(bash /tmp/fetch.sh)",
     );
   });
-  test("code flags pre-approve git and file tools and keep the prompt last", () => {
+  test("code flags pre-approve commands, files and the web, and keep the prompt last", () => {
     const host = harnessCommands["claude-code"]("do it", null, "git");
     expect(host.at(-1)).toBe("do it");
     expect(host).toContain("acceptEdits");
     expect(host.find((a) => a.startsWith("--allowedTools="))).toBe(
-      "--allowedTools=Read,Edit,Write,Glob,Grep,Bash(git:*)",
+      "--allowedTools=Read,Edit,Write,Glob,Grep,Bash,WebFetch,WebSearch",
     );
     expect(host.find((a) => a.startsWith("--disallowedTools="))).toContain(
       "Bash(git push --force:*)",

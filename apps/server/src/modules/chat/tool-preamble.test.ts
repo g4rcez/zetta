@@ -69,6 +69,30 @@ describe("chief tools", () => {
     ).toHaveLength(0);
     expect(parseTools('```zetta:artifact\n{"title":"None"}\n```').calls).toHaveLength(0);
   });
+  test("a dropped block is reported with its reason instead of vanishing", () => {
+    expect(
+      parseTools('```zetta:artifact\n{"title":"Odd","content":"x","format":"html"}\n```').rejected,
+    ).toEqual([{ kind: "artifact", title: "Odd", reason: 'Unrecognized key: "format"' }]);
+    expect(parseTools('```zetta:artifact\n{"title":"None"}\n```').rejected).toEqual([
+      { kind: "artifact", title: "None", reason: "give exactly one of path or content" },
+    ]);
+    expect(parseTools("```zetta:artifact\n{not json\n```").rejected).toEqual([
+      { kind: "artifact", reason: "the block is not valid JSON" },
+    ]);
+    const nine = Array.from(
+      { length: 9 },
+      (_, i) => `\`\`\`zetta:artifact\n{"title":"A${i}","content":"x"}\n\`\`\``,
+    ).join("\n");
+    const r = parseTools(nine);
+    expect(r.calls).toHaveLength(8);
+    expect(r.rejected).toEqual([
+      {
+        kind: "artifact",
+        title: "A8",
+        reason: "over the 8-block limit for one reply; send it in your next reply",
+      },
+    ]);
+  });
   test("instruction accepts the old create form and a read by id, and nothing else", () => {
     expect(
       parseTools('```zetta:instruction\n{"title":"Report","body":"1. pull 2. sum"}\n```').calls,
@@ -95,7 +119,7 @@ describe("rich answers", () => {
     expect(toolPreamble("desktop", true)).toContain("- Table ");
     expect(toolPreamble("off").endsWith("Only use a tool when it is needed.")).toBe(true);
     const reply = 'See:\n```zetta:ui\n{"op":"add","path":"/root","value":"a"}\n```';
-    expect(parseTools(reply)).toEqual({ calls: [], text: reply });
+    expect(parseTools(reply)).toEqual({ calls: [], text: reply, rejected: [] });
   });
 });
 

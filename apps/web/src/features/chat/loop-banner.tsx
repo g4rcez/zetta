@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Pause, Play, Repeat, Square } from "lucide-react";
+import {
+  CircleNotchIcon,
+  PauseIcon,
+  PlayIcon,
+  RepeatIcon,
+  SquareIcon,
+} from "@phosphor-icons/react";
 
 import { Button } from "@zetta/ui/components/button";
 import { cn } from "@zetta/ui/lib/utils";
@@ -25,6 +31,9 @@ export function useGoalLoop(
       timer: ReturnType<typeof setTimeout> | undefined,
       last = "";
     const poll = async () => {
+      clearTimeout(timer);
+      // Hidden tab: skip the fetch; the visibilitychange listener below polls again as soon as the tab is back.
+      if (document.visibilityState !== "visible") return;
       const latest = await loopsOf(conversationId)
         .then((l) => l[0])
         .catch(() => undefined);
@@ -35,12 +44,16 @@ export function useGoalLoop(
       last = key;
       if (latest?.status === "running") handlers.current.onTick();
       const active = latest?.status === "running" || latest?.status === "paused";
+      clearTimeout(timer);
       timer = setTimeout(() => void poll(), active ? 3_000 : 20_000);
     };
+    const onVisible = () => void poll();
+    document.addEventListener("visibilitychange", onVisible);
     void poll();
     return () => {
       stop = true;
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [conversationId]);
   return { loop, update: setLoopState };
@@ -78,45 +91,52 @@ export function LoopBanner({
     }
   };
   const running = loop.status === "running";
+  const retryAt = running && loop.retryAt ? new Date(loop.retryAt) : undefined;
+  const waiting = retryAt !== undefined && retryAt > new Date();
+  const label = waiting ? "Loop waiting to retry" : LABEL[loop.status];
   return (
     <div
       role="status"
-      aria-label={LABEL[loop.status]}
+      aria-label={label}
       className={cn(
         "flex items-center gap-3 rounded-lg border px-3 py-2 text-sm",
         running && "border-primary/30 bg-primary/5",
-        loop.status === "paused" && "border-amber-500/40 bg-amber-500/5",
-        loop.status === "done" && "border-emerald-500/30 bg-emerald-500/5",
+        loop.status === "paused" && "border-warn/40 bg-warn/5",
+        loop.status === "done" && "border-success/30 bg-success/5",
       )}
     >
       <span className="shrink-0 text-muted-foreground">
         {running ? (
-          <Loader2 className="size-4 animate-spin" />
+          <CircleNotchIcon className="size-4 animate-spin" />
         ) : loop.status === "paused" ? (
-          <Pause className="size-4" />
+          <PauseIcon className="size-4" />
         ) : (
-          <Repeat className="size-4" />
+          <RepeatIcon className="size-4" />
         )}
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium">
-          {LABEL[loop.status]} · step {Math.max(loop.iterations, running ? loop.iterations + 1 : 0)}
+          {label} · step {Math.max(loop.iterations, running ? loop.iterations + 1 : 0)}
           <span className="font-normal text-muted-foreground"> · {loop.goal}</span>
         </p>
         {(loop.reason || loop.progress) && (
           <p className="truncate text-xs text-muted-foreground">
-            {loop.status === "paused" && loop.reason ? loop.reason : loop.progress}
+            {waiting
+              ? `${loop.reason ?? "Retrying"} · next try at ${retryAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+              : loop.status === "paused" && loop.reason
+                ? loop.reason
+                : loop.progress}
           </p>
         )}
       </div>
       {loop.status === "paused" && (
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("resume")}>
-          <Play /> Resume
+          <PlayIcon /> Resume
         </Button>
       )}
       {(running || loop.status === "paused") && (
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("stop")}>
-          <Square /> Stop
+          <SquareIcon /> Stop
         </Button>
       )}
     </div>

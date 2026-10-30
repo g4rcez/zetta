@@ -67,7 +67,9 @@ export type ProposalKind =
   | "open_discussion"
   | "discussion_brief"
   | "start_loop"
-  | "bot_permission";
+  | "bot_permission"
+  | "create_memory"
+  | "create_wiki_page";
 export type Proposal = {
   id: string;
   botId: string | null;
@@ -105,6 +107,7 @@ export type Receipt = {
     | "task"
     | "discussion"
     | "artifact"
+    | "wiki"
     | "bot"
     | "team";
   id: string;
@@ -113,7 +116,14 @@ export type Receipt = {
   avatar?: BotAvatarValue | null;
 };
 export type MessageMeta = {
-  used?: { memories?: string[]; instructions?: string[] };
+  used?: {
+    memories?: string[];
+    instructions?: string[];
+    /** Company documents the bot was shown, in citation order. */ docs?: {
+      docId: string;
+      chunkId: string;
+    }[];
+  };
   receipts?: Receipt[];
   decision?: { action: string; choice?: string; confidence?: number };
   /** Written by outside people through a channel plugin (WhatsApp, Telegram...). */ inbound?: {
@@ -141,6 +151,8 @@ export type Message = {
   meta?: MessageMeta;
   createdAt?: string;
   replyCount?: number;
+  /** Sent while the chat was busy: waits for its answer (in its thread), is being answered, or could not be answered. */
+  queue?: "pending" | "running" | "failed";
 };
 export type UsedKnowledge = {
   memories: { id: string; content: string }[];
@@ -248,15 +260,41 @@ export const errorCode = (e: unknown) => (e instanceof ApiError ? e.code : undef
 
 /** A read that never answers must surface as an error instead of an endless spinner (writes can legitimately run long). */
 const REQUEST_TIMEOUT_MS = 30_000;
+/**
+ * Identical GETs in flight share one request (several components load the same list on mount). Each caller reads its own clone.
+ * Any write clears the map, so a read that starts after a write never joins a request that began before it.
+ */
+const inflight = new Map<string, Promise<Response>>();
 export async function call<T>(path: string, method = "GET", body?: object): Promise<T> {
-  const response = await fetch(new URL(path, ENV.VITE_SERVER_URL), {
-    method,
-    credentials: "include",
-    cache: "no-store",
-    ...(method === "GET" ? { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } : {}),
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const request = () =>
+    fetch(new URL(path, ENV.VITE_SERVER_URL), {
+      method,
+      credentials: "include",
+      cache: "no-store",
+      ...(method === "GET" ? { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } : {}),
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  let response: Response;
+  if (method === "GET" && !body) {
+    let pending = inflight.get(path);
+    if (!pending) {
+      const started = (pending = request());
+      inflight.set(path, started);
+      const done = () => {
+        if (inflight.get(path) === started) inflight.delete(path);
+      };
+      started.then(done, done);
+    }
+    response = (await pending).clone();
+  } else {
+    inflight.clear();
+    try {
+      response = await request();
+    } finally {
+      inflight.clear();
+    }
+  }
   if (!response.ok) throw await toApiError(response);
   return response.json() as Promise<T>;
 }
@@ -319,6 +357,25 @@ export const chatClient = {
     ),
   messages: (id: string) =>
     call<{ messages: Message[] }>(`/api/conversations/${id}/messages`).then((r) => r.messages),
+  /** Saves a message while the chat is busy; the server answers it in its thread when the turns before it end. */
+  enqueue: (
+    id: string,
+    body: {
+      clientRequestId: string;
+      content: string;
+      parentMessageId?: string;
+      attachmentIds?: string[];
+      fileRefs?: string[];
+      instructionIds?: string[];
+    },
+  ) =>
+    call<{ message: Message }>(`/api/conversations/${id}/queue`, "POST", body).then(
+      (r) => r.message,
+    ),
+  removeQueued: (id: string, messageId: string) =>
+    call(`/api/conversations/${id}/queue/${messageId}`, "DELETE"),
+  retryQueued: (id: string, messageId: string) =>
+    call(`/api/conversations/${id}/queue/${messageId}/retry`, "POST"),
   workspaces: () => call<{ workspaces: Workspace[] }>("/api/workspaces").then((r) => r.workspaces),
   createWorkspace: (name: string, parentId?: string) =>
     call<{ workspace: Workspace }>("/api/workspaces", "POST", {
@@ -356,6 +413,10 @@ export const chatClient = {
     call(`/api/messages/${messageId}/reactions`, "POST", { emoji }),
   unreact: (messageId: string, emoji: string) =>
     call(`/api/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, "DELETE"),
+  sources: (messageId: string) =>
+    call<{
+      sources: { n: number; docId: string; name: string; link: string | null; snippet: string }[];
+    }>(`/api/messages/${messageId}/sources`).then((r) => r.sources),
   usedKnowledge: (messageId: string) => call<UsedKnowledge>(`/api/messages/${messageId}/knowledge`),
   saveInstruction: (title: string, body: string) =>
     call("/api/instructions", "POST", { title, body }),
@@ -395,6 +456,8 @@ export type GoalLoop = {
   iterations: number;
   progress: string;
   reason: string | null;
+  /** While in the future, the loop waits before its next try (a failed step is retried with backoff). */
+  retryAt: string | null;
   updatedAt: string;
 };
 export const loopsOf = (conversationId: string) =>

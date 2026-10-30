@@ -2,15 +2,15 @@
   "mcpServers": {
     "better-t-stack": {
       "command": "bunx",
-      "args": ["create-better-t-stack@latest", "mcp"]
+      "args": ["create-better-t-stack@3.49.0", "mcp"]
     },
     "context7": {
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"]
+      "args": ["-y", "@upstash/context7-mcp@4.4.4"]
     },
     "shadcn": {
       "command": "npx",
-      "args": ["-y", "shadcn@latest", "mcp"]
+      "args": ["-y", "shadcn@4.23.0", "mcp"]
     },
     "better-auth": {
       "type": "http",

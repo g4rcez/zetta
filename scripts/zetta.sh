@@ -20,7 +20,7 @@ $CONTAINER exec zetta-postgres pg_isready -U postgres >/dev/null || { echo "post
 echo "▶ Applying migrations"
 (cd packages/db && vp exec varlock run -- vp exec drizzle-kit migrate)
 
-echo "▶ Starting server (http://localhost:3000) and web (see vite output)"
+echo "▶ Starting server (BETTER_AUTH_URL in apps/server/.env) and web (see vite output)"
 pids=()
 cleanup() { trap - INT TERM EXIT; kill "${pids[@]}" 2>/dev/null || true; wait 2>/dev/null || true; }
 trap cleanup INT TERM EXIT

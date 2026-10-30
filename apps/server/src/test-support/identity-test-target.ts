@@ -16,6 +16,7 @@ export class IdentityTestTargetError extends Error {
 function endpoint(connectionString: string) {
   // Check the raw form first: URL parsing alone can erase whitespace/path tricks.
   const parts = /^(postgres|postgresql):\/\/([^/?#\\\s]+)\/([^/?#\\\s]+)$/i.exec(connectionString);
+  // oxlint-disable-next-line no-control-regex
   if (!parts || parts[0] !== connectionString || /[\u0000-\u001f\u007f]/.test(connectionString)) {
     throw new IdentityTestTargetError();
   }
@@ -34,28 +35,42 @@ function endpoint(connectionString: string) {
   // HTTP URL parsing canonicalizes IPv4 shorthand and expanded IPv6 without DNS/IO.
   const hostname = new URL(`http://${address[1]}`).hostname.toLowerCase().replace(/\.$/, "");
   const host = ["localhost", "127.0.0.1", "[::1]"].includes(hostname) ? "loopback" : hostname;
-  return { host, port, database: decodeURIComponent(parts[3]!), rawHost: address[1]!, rawPath: parts[3]! };
+  return {
+    host,
+    port,
+    database: decodeURIComponent(parts[3]!),
+    rawHost: address[1]!,
+    rawPath: parts[3]!,
+  };
 }
 
 /** Pure pre-client boundary, not proof of operator approval or database disposability. */
 export function requireIdentityTestTarget(env: IdentityTestTargetEnvironment): IdentityTestTarget {
   try {
     const connectionString = env.ZETTA_TEST_DATABASE_URL;
-    if (env.ZETTA_TEST_DATABASE_ALLOW_MUTATION !== "identity-tests"
-      || typeof connectionString !== "string" || connectionString.length === 0) {
+    if (
+      env.ZETTA_TEST_DATABASE_ALLOW_MUTATION !== "identity-tests" ||
+      typeof connectionString !== "string" ||
+      connectionString.length === 0
+    ) {
       throw new IdentityTestTargetError();
     }
     const target = endpoint(connectionString);
-    if (!["localhost", "127.0.0.1", "[::1]"].includes(target.rawHost.toLowerCase())
-      || target.rawPath !== "zetta_identity_test") {
+    if (
+      !["localhost", "127.0.0.1", "[::1]"].includes(target.rawHost.toLowerCase()) ||
+      target.rawPath !== "zetta_identity_test"
+    ) {
       throw new IdentityTestTargetError();
     }
 
     if (env.DATABASE_URL !== undefined) {
       if (typeof env.DATABASE_URL !== "string") throw new IdentityTestTargetError();
       const application = endpoint(env.DATABASE_URL);
-      if (target.host === application.host && target.port === application.port
-        && target.database === application.database) {
+      if (
+        target.host === application.host &&
+        target.port === application.port &&
+        target.database === application.database
+      ) {
         throw new IdentityTestTargetError();
       }
     }

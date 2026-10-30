@@ -1,5 +1,11 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { MessagesSquare, Network, Plus, Repeat, UsersRound } from "lucide-react";
+import {
+  ChatsIcon,
+  TreeStructureIcon,
+  PlusIcon,
+  RepeatIcon,
+  UsersThreeIcon,
+} from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -22,6 +28,7 @@ import { BotAvatar } from "@/components/bot-avatar";
 import { BotIdentity } from "@/components/bot-identity";
 import { Drawer } from "@/components/drawer";
 import { ComputerActivity } from "../computer/computer-activity";
+import { refreshAttention } from "../attention/summary";
 import { MessageList } from "../chat/message-list";
 import { useZettaChat } from "../chat/use-zetta-chat";
 import type { Author } from "../chat/message-row";
@@ -40,10 +47,10 @@ import { StepsDrawer } from "./steps-drawer";
 import { Alert } from "@g4rcez/components/alert";
 
 const STATUS_CLASS: Record<DiscussionStatus, string> = {
-  open: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  open: "bg-info/15 text-info",
   paused: "bg-muted text-muted-foreground",
-  stalled: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-  resolved: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  stalled: "bg-warn/15 text-warn",
+  resolved: "bg-success/15 text-success",
   cancelled: "bg-muted text-muted-foreground",
 };
 const ago = (iso: string) => {
@@ -109,7 +116,7 @@ export function DiscussionsPage({
         )}
       >
         <div className="flex items-center justify-between gap-2 border-b p-3">
-          <h1 className="text-base font-semibold">Discussions</h1>
+          <h1 className="text-xl">Discussions</h1>
           <Button
             size="sm"
             onClick={() => {
@@ -117,7 +124,7 @@ export function DiscussionsPage({
               void navigate({ to: "/discussions", search: {} });
             }}
           >
-            <Plus className="size-4" aria-hidden="true" />
+            <PlusIcon className="size-4" aria-hidden="true" />
             New
           </Button>
         </div>
@@ -202,7 +209,7 @@ export function DiscussionsPage({
         ) : (
           <div className="grid flex-1 place-items-center p-8 text-center text-sm text-muted-foreground">
             <div className="space-y-2">
-              <UsersRound className="mx-auto size-8" aria-hidden="true" />
+              <UsersThreeIcon className="mx-auto size-8" aria-hidden="true" />
               <p>Pick a discussion to follow what the bots are doing.</p>
             </div>
           </div>
@@ -323,6 +330,7 @@ function DiscussionView({
       if (done) toast.success(done);
       await load();
       onChanged();
+      void refreshAttention();
     } catch (e) {
       fail(e);
     }
@@ -380,7 +388,7 @@ function DiscussionView({
                 aria-pressed={view === "chat"}
                 onClick={() => onView("chat")}
               >
-                <MessagesSquare className="size-4" aria-hidden="true" /> Chat
+                <ChatsIcon className="size-4" aria-hidden="true" /> Chat
               </Button>
               <Button
                 size="sm"
@@ -388,7 +396,7 @@ function DiscussionView({
                 aria-pressed={view === "canvas"}
                 onClick={() => onView("canvas")}
               >
-                <Network className="size-4" aria-hidden="true" /> Canvas
+                <TreeStructureIcon className="size-4" aria-hidden="true" /> Canvas
               </Button>
             </div>
           )}
@@ -403,7 +411,7 @@ function DiscussionView({
                 disabled={busy}
                 onClick={() => setLoopForm({ goal: d.goal, doneWhen: "" })}
               >
-                <Repeat className="size-4" aria-hidden="true" /> Pursue goal
+                <RepeatIcon className="size-4" aria-hidden="true" /> Pursue goal
               </Button>
             )}
           {!isClosed &&
@@ -735,6 +743,7 @@ function NewDiscussion({
         firstMessage: String(f.get("first") ?? ""),
       });
       onCreated(d.id);
+      void refreshAttention();
     } catch (e) {
       toast.error(errorMessage(e));
     }

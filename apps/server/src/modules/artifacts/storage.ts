@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { constants, createReadStream, createWriteStream } from "node:fs";
-import { chmod, mkdir, open, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
@@ -156,6 +156,11 @@ export async function savePath(
   try {
     const info = await handle.stat();
     if (!info.isFile()) throw new ArtifactFileError("NOT_FOUND");
+    // O_NOFOLLOW guards only the last path component: re-resolve to catch a parent directory swapped for a symlink since the check above.
+    const again = await realpath(target).catch(() => "");
+    const now = again ? await stat(again).catch(() => undefined) : undefined;
+    if (!again.startsWith(base + sep) || !now || now.ino !== info.ino || now.dev !== info.dev)
+      throw new ArtifactFileError("NOT_FOUND");
     if (info.size > MAX_ARTIFACT_BYTES) throw new ArtifactFileError("TOO_LARGE");
     if (info.size === 0) throw new ArtifactFileError("INVALID");
     const hash = createHash("sha256");

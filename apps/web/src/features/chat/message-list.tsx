@@ -1,4 +1,4 @@
-import { Fragment, useEffect, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useMemo, type ReactNode } from "react";
 
 import {
   MessageScroller,
@@ -19,6 +19,7 @@ export type RowActions = {
   onReact: (row: Row, emoji: string) => void;
   onReply: (row: Row) => void;
   onSaveInstruction: (row: Row) => void;
+  onQueue?: (row: Row, action: "remove" | "retry") => void;
 };
 
 /** Sending always brings you back to the newest message, even after reading history. */
@@ -29,6 +30,68 @@ function FollowOnSend({ token }: { token: number }) {
   }, [token, scrollToEnd]);
   return null;
 }
+
+/** The newest rows stay fully rendered so following the bottom measures real heights; older ones keep the scroller's `content-visibility: auto`. */
+const RENDERED_TAIL = 30;
+
+type LineProps = {
+  row: Row;
+  author: Author;
+  continued: boolean;
+  day: string | undefined;
+  inThread: boolean;
+  threads: boolean;
+  readOnly: boolean;
+  recent: boolean;
+  actions: RowActions;
+};
+
+/** One row of the log. Memoized: while a reply streams, only the rows whose props changed render. */
+const Line = memo(function Line({
+  row,
+  author,
+  continued,
+  day,
+  inThread,
+  threads,
+  readOnly,
+  recent,
+  actions,
+}: LineProps) {
+  return (
+    <Fragment>
+      {day && !inThread && (
+        <div role="separator" aria-label={day} className="relative my-3 flex items-center px-4">
+          <span className="h-px flex-1 bg-border" />
+          <span className="label-mono bg-background px-3">{day}</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+      )}
+      <MessageScrollerItem
+        messageId={row.id}
+        className={recent ? "[content-visibility:visible]" : undefined}
+      >
+        {row.role === "system" ? (
+          // A loop step the server started (modules/chat/loops.ts): a quiet marker, not a message someone wrote.
+          <div role="note" className="my-2 flex justify-center px-4">
+            <span className="max-w-full truncate rounded-full border bg-muted/50 px-3 py-0.5 text-xs text-muted-foreground">
+              {row.content}
+            </span>
+          </div>
+        ) : (
+          <MessageRow
+            row={row}
+            author={author}
+            continued={continued}
+            inThread={inThread || !threads}
+            readOnly={readOnly}
+            {...actions}
+          />
+        )}
+      </MessageScrollerItem>
+    </Fragment>
+  );
+});
 
 /**
  * The scrolling log (AI Elements Chat pattern): day dividers, grouped rows, and a jump-to-latest button while you read history.
@@ -62,6 +125,7 @@ export function MessageList({
   actions: RowActions;
   followToken?: number;
 }) {
+  const grouped = useMemo(() => groupMessages(rows, fallbackBotId), [rows, fallbackBotId]);
   return (
     <MessageScrollerProvider autoScroll>
       <FollowOnSend token={followToken} />
@@ -72,41 +136,19 @@ export function MessageList({
             className={cn("gap-0 pb-4", inThread ? "justify-start" : "justify-end")}
           >
             {intro}
-            {groupMessages(rows, fallbackBotId).map(({ row, continued, day }) => (
-              <Fragment key={row.id}>
-                {day && !inThread && (
-                  <div
-                    role="separator"
-                    aria-label={day}
-                    className="relative my-3 flex items-center px-4"
-                  >
-                    <span className="h-px flex-1 bg-border" />
-                    <span className="rounded-full border bg-background px-3 py-0.5 text-xs font-semibold shadow-xs">
-                      {day}
-                    </span>
-                    <span className="h-px flex-1 bg-border" />
-                  </div>
-                )}
-                <MessageScrollerItem messageId={row.id} className="[content-visibility:visible]">
-                  {row.role === "system" ? (
-                    // A loop step the server started (modules/chat/loops.ts): a quiet marker, not a message someone wrote.
-                    <div role="note" className="my-2 flex justify-center px-4">
-                      <span className="max-w-full truncate rounded-full border bg-muted/50 px-3 py-0.5 text-xs text-muted-foreground">
-                        {row.content}
-                      </span>
-                    </div>
-                  ) : (
-                    <MessageRow
-                      row={row}
-                      author={authorOf(row)}
-                      continued={continued}
-                      inThread={inThread || !threads}
-                      readOnly={readOnly}
-                      {...actions}
-                    />
-                  )}
-                </MessageScrollerItem>
-              </Fragment>
+            {grouped.map(({ row, continued, day }, i) => (
+              <Line
+                key={row.id}
+                row={row}
+                author={authorOf(row)}
+                continued={continued}
+                day={day}
+                inThread={inThread}
+                threads={threads}
+                readOnly={readOnly}
+                recent={i >= grouped.length - RENDERED_TAIL}
+                actions={actions}
+              />
             ))}
             {footer}
           </MessageScrollerContent>

@@ -1,5 +1,10 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Download, ExternalLink, MessageSquare } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  DownloadSimpleIcon,
+  ArrowSquareOutIcon,
+  ChatIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -52,7 +57,7 @@ export function ArtifactPage({ id }: { id: string }) {
           to="/artifacts"
           className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft aria-hidden="true" className="size-4" />
+          <ArrowLeftIcon aria-hidden="true" className="size-4" />
           Artifacts
         </Link>
         {artifact === undefined ? (
@@ -63,7 +68,7 @@ export function ArtifactPage({ id }: { id: string }) {
           <>
             <header className="flex flex-wrap items-start gap-x-6 gap-y-3">
               <div className="min-w-0 flex-1 space-y-1">
-                <h1 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
+                <h1 className="flex flex-wrap items-center gap-2 text-lg">
                   <span className="min-w-0 break-words">{artifact.title}</span>
                   <Badge>{kindLabel(artifact.kind)}</Badge>
                   {artifact.routineRunId && <Badge tone="info">Routine</Badge>}
@@ -92,7 +97,7 @@ export function ArtifactPage({ id }: { id: string }) {
             </header>
             <div className="flex flex-wrap items-center gap-2">
               <a href={contentUrl(artifact.id, true)} className={action}>
-                <Download aria-hidden="true" className="size-4" />
+                <DownloadSimpleIcon aria-hidden="true" className="size-4" />
                 Download
               </a>
               <a
@@ -101,7 +106,7 @@ export function ArtifactPage({ id }: { id: string }) {
                 rel="noopener noreferrer"
                 className={action}
               >
-                <ExternalLink aria-hidden="true" className="size-4" />
+                <ArrowSquareOutIcon aria-hidden="true" className="size-4" />
                 Open in a new tab
               </a>
               <CopyButton text={window.location.href} label="Copy link" />
@@ -111,7 +116,7 @@ export function ArtifactPage({ id }: { id: string }) {
                   params={{ chatId: artifact.conversationId }}
                   className={action}
                 >
-                  <MessageSquare aria-hidden="true" className="size-4" />
+                  <ChatIcon aria-hidden="true" className="size-4" />
                   Open the chat
                 </Link>
               )}

@@ -1,16 +1,16 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Moon, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { MoonIcon, SidebarSimpleIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
-import { useState, type ReactElement, type ReactNode } from "react";
+import { Fragment, useState, type ReactElement, type ReactNode } from "react";
 import { Tooltip } from "@g4rcez/components/tooltip";
 
 import { appLinks } from "@/components/app-links";
 import { useBackgroundNotifications } from "@/features/attention/background-notifications";
-import { useAttentionSummary } from "@/features/attention/summary";
+import { useAttentionSummary, useRunningDiscussions } from "@/features/attention/summary";
 import { AppCommandPalette } from "@/features/command-palette/app-command-palette";
 import { isRailTab } from "@/features/studio/studio-tabs";
 
-import { railLabel, railRow, railRowActive, railRowExpanded } from "./rail-row";
+import { railGroupLabel, railLabel, railRow, railRowActive, railRowExpanded } from "./rail-row";
 import { Logo } from "./logo";
 import { ModeToggle } from "./mode-toggle";
 import UserMenu from "./user-menu";
@@ -24,6 +24,8 @@ export const APP_PREFIXES = [
   "/dashboard",
   "/teams",
   "/artifacts",
+  "/instructions",
+  "/search",
 ];
 export const inApp = (pathname: string) =>
   APP_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
@@ -68,6 +70,7 @@ function RailHint({
 
 export function AppRail() {
   const attention = useAttentionSummary();
+  const running = useRunningDiscussions();
   useBackgroundNotifications();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -92,17 +95,18 @@ export function AppRail() {
       <div className={`flex min-w-0 items-center gap-2.5 ${expanded ? "md:pl-0.5" : ""}`}>
         <Brand />
         {expanded ? (
-          <span className="hidden truncate text-sm font-semibold tracking-tight md:inline">
+          <span className="hidden truncate font-heading text-xl font-medium tracking-tight md:inline">
             Zetta
           </span>
         ) : null}
       </div>
       <nav
         aria-label="Main"
-        className="ml-2 flex flex-1 items-center gap-1 md:ml-0 md:mt-3 md:flex-col md:items-stretch"
+        className="ml-2 flex flex-1 items-center gap-1 md:ml-0 md:mt-3 md:flex-col md:items-stretch md:overflow-y-auto"
       >
-        {appLinks.map((link) => {
-          const { to, label, icon: Icon } = link;
+        {appLinks.map((link, index) => {
+          const { to, label, icon: Icon, group } = link;
+          const startsGroup = index === 0 || appLinks[index - 1]!.group !== group;
           const params = "params" in link ? link.params : undefined;
           const target = params ? `/studio/${params.tab}` : to;
           const railTab =
@@ -115,36 +119,57 @@ export function AppRail() {
                 ? pathname === target
                 : pathname === base || pathname.startsWith(`${base}/`);
           return (
-            <RailHint
-              key={target}
-              collapsed={collapsed}
-              label={label}
-              icon={<Icon className="size-4" aria-hidden="true" />}
-            >
-              <Link
-                to={to as string}
-                params={params as never}
-                aria-label={label}
-                aria-current={active ? "page" : undefined}
-                className={`${railRow} ${expanded ? railRowExpanded : ""} ${active ? railRowActive : ""}`}
-              >
-                <Icon className="size-5 shrink-0" aria-hidden="true" />
-                <span className="sr-only md:hidden">{label}</span>
-                {expanded ? (
-                  <span className={railLabel} aria-hidden="true">
-                    {label}
+            <Fragment key={target}>
+              {startsGroup ? (
+                expanded ? (
+                  <span className={railGroupLabel} aria-hidden="true">
+                    {group}
                   </span>
-                ) : null}
-                {params?.tab === "attention" && attention && attention.unread > 0 ? (
+                ) : (
                   <span
-                    className="absolute top-0.5 left-6 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white"
-                    aria-label={`${attention.unread} unread notifications`}
-                  >
-                    {attention.unread}
-                  </span>
-                ) : null}
-              </Link>
-            </RailHint>
+                    className="mx-2 my-1.5 hidden h-px bg-sidebar-border first:hidden md:block"
+                    aria-hidden="true"
+                  />
+                )
+              ) : null}
+              <RailHint
+                collapsed={collapsed}
+                label={label}
+                icon={<Icon className="size-4" aria-hidden="true" />}
+              >
+                <Link
+                  to={to as string}
+                  params={params as never}
+                  aria-label={label}
+                  aria-current={active ? "page" : undefined}
+                  className={`${railRow} ${expanded ? railRowExpanded : ""} ${active ? railRowActive : ""}`}
+                >
+                  <Icon className="size-5 shrink-0" aria-hidden="true" />
+                  <span className="sr-only md:hidden">{label}</span>
+                  {expanded ? (
+                    <span className={railLabel} aria-hidden="true">
+                      {label}
+                    </span>
+                  ) : null}
+                  {params?.tab === "attention" && attention && attention.unread > 0 ? (
+                    <span
+                      className="absolute top-0.5 left-6 grid min-w-4 place-items-center rounded-full bg-attention px-1 font-mono text-[10px] font-semibold leading-4 text-attention-foreground"
+                      aria-label={`${attention.unread} unread notifications`}
+                    >
+                      {attention.unread}
+                    </span>
+                  ) : null}
+                  {to === "/discussions" && running > 0 ? (
+                    <span
+                      className="absolute top-0.5 left-6 grid min-w-4 place-items-center rounded-full bg-primary px-1 font-mono text-[10px] font-semibold leading-4 text-primary-foreground"
+                      aria-label={`${running} running discussions`}
+                    >
+                      {running > 99 ? "99+" : running}
+                    </span>
+                  ) : null}
+                </Link>
+              </RailHint>
+            </Fragment>
           );
         })}
       </nav>
@@ -152,7 +177,7 @@ export function AppRail() {
         <RailHint
           collapsed={collapsed}
           label="Search"
-          icon={<Search className="size-4" aria-hidden="true" />}
+          icon={<MagnifyingGlassIcon className="size-4" aria-hidden="true" />}
         >
           <button
             type="button"
@@ -161,11 +186,13 @@ export function AppRail() {
             aria-keyshortcuts="Meta+K Control+K"
             className={`${railRow} ${expanded ? railRowExpanded : ""} hidden md:flex`}
           >
-            <Search className="size-5 shrink-0" aria-hidden="true" />
+            <MagnifyingGlassIcon className="size-5 shrink-0" aria-hidden="true" />
             {expanded ? (
               <>
                 <span className={railLabel}>Search</span>
-                <kbd className="ml-auto hidden text-xs font-normal md:inline">⌘K</kbd>
+                <kbd className="ml-auto hidden rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] font-normal md:inline">
+                  ⌘K
+                </kbd>
               </>
             ) : null}
           </button>
@@ -173,14 +200,14 @@ export function AppRail() {
         <RailHint
           label="Theme"
           collapsed={collapsed}
-          icon={<Moon className="size-4" aria-hidden="true" />}
+          icon={<MoonIcon className="size-4" aria-hidden="true" />}
         >
           <ModeToggle rail={expanded ? "expanded" : "collapsed"} />
         </RailHint>
         <RailHint
           collapsed={collapsed}
           label="Expand sidebar"
-          icon={<PanelLeftOpen className="size-4" aria-hidden="true" />}
+          icon={<SidebarSimpleIcon className="size-4" aria-hidden="true" />}
         >
           <button
             type="button"
@@ -189,11 +216,11 @@ export function AppRail() {
             aria-expanded={expanded}
             className={`${railRow} ${expanded ? railRowExpanded : ""} hidden md:flex`}
           >
-            {expanded ? (
-              <PanelLeftClose className="size-5 shrink-0" aria-hidden="true" />
-            ) : (
-              <PanelLeftOpen className="size-5 shrink-0" aria-hidden="true" />
-            )}
+            <SidebarSimpleIcon
+              weight={expanded ? "fill" : "regular"}
+              className="size-5 shrink-0"
+              aria-hidden="true"
+            />
             {expanded ? <span className={railLabel}>Collapse</span> : null}
           </button>
         </RailHint>
@@ -209,7 +236,7 @@ export default function Header() {
     <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
       <div className="flex items-center gap-2">
         <Brand small />
-        <span className="text-sm font-semibold tracking-tight">Zetta</span>
+        <span className="font-heading text-lg font-medium tracking-tight">Zetta</span>
       </div>
       <div className="flex items-center gap-1">
         <ModeToggle inline />

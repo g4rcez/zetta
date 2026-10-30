@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { dayLabel, groupMessages, liveRows, type ZettaUIMessage } from "./chat-rows";
+import {
+  dayLabel,
+  groupMessages,
+  liveRows,
+  reuseRows,
+  type Row,
+  type ZettaUIMessage,
+} from "./chat-rows";
 
 const at = (iso: string) => ({ createdAt: iso });
 
@@ -46,6 +53,25 @@ describe("groupMessages", () => {
 });
 
 describe("liveRows", () => {
+  test("a streamed reply goes into the thread the server names, even when the main chat follows the turn", () => {
+    const turn: ZettaUIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-speaker",
+            id: "m9",
+            data: { messageId: "m9", botId: "chief", botName: "Chief", parentMessageId: "q1" },
+          },
+          { type: "text", text: "On it" },
+        ],
+      },
+    ];
+    expect(
+      liveRows(turn, undefined, "2026-10-26T10:00:00Z").map((r) => [r.id, r.parentMessageId]),
+    ).toEqual([["m9", "q1"]]);
+  });
   test("splits one streamed turn into a row per speaker and swaps in saved messages", () => {
     const turn: ZettaUIMessage[] = [
       { id: "u1", role: "user", parts: [{ type: "text", text: "hi @Scout" }] },
@@ -111,5 +137,33 @@ describe("liveRows", () => {
       },
     ];
     expect(liveRows(turn)[0]!.activity).toBe("plugin postgres.db_overview");
+  });
+});
+
+describe("reuseRows", () => {
+  const row = (id: string, content: string, extra: Partial<Row> = {}): Row => ({
+    id,
+    seq: 1,
+    role: "assistant",
+    content,
+    status: "running",
+    createdAt: "2026-10-26T10:00:00.000Z",
+    parentMessageId: null,
+    ...extra,
+  });
+  test("keeps the previous object for an unchanged row and takes the new one when it changed", () => {
+    const prev = [row("a", "hello", { computers: [{ id: "vm", name: "Desk" }] }), row("b", "wor")];
+    const next = [
+      row("a", "hello", { computers: [{ id: "vm", name: "Desk" }] }),
+      row("b", "world"),
+    ];
+    const out = reuseRows(prev, next);
+    expect(out[0]).toBe(prev[0]!);
+    expect(out[1]).toBe(next[1]!);
+  });
+  test("a changed nested list counts as a change", () => {
+    const prev = [row("a", "x", { computers: [{ id: "vm", name: "Desk" }] })];
+    const next = [row("a", "x", { computers: [{ id: "vm", name: "Laptop" }] })];
+    expect(reuseRows(prev, next)[0]).toBe(next[0]!);
   });
 });

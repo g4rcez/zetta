@@ -1,8 +1,9 @@
-import { createAuth } from "@zetta/auth";
+import { createAuth, mcpResource } from "@zetta/auth";
 import { createDb } from "@zetta/db";
 
 import { ENV, desktopOrigins } from "./env.server";
 
+import { createTurnRunner } from "./modules/chat/pipeline";
 import { createChatService } from "./modules/chat/service";
 import { createDecisionService } from "./modules/decisions/service";
 import { createJevDecider } from "./modules/decisions/jev";
@@ -16,6 +17,11 @@ import { createComputerService, dockerBrowserConfig } from "./modules/computer/s
 import { createDbVmStore, createVmService, dockerVmConfig } from "./modules/computer/vm";
 import { createFeaturesService } from "./modules/features/service";
 import { createAgenda } from "./modules/agenda/service";
+import { createLocalEmbedder } from "./modules/knowledge/embed";
+import { createKnowledge as createCompanyKnowledge } from "./modules/knowledge/service";
+import { createWikiJobs } from "./modules/wiki/jobs";
+import { createWiki } from "./modules/wiki/service";
+import { createSearch } from "./modules/search/service";
 import { createTaskStore } from "./modules/tasks/store";
 import { createArtifactStore } from "./modules/artifacts/store";
 import { createAgendaScheduler } from "./modules/agenda/scheduler";
@@ -47,20 +53,39 @@ const installation = createInstallationService(db);
 // Network mode is read once at boot: it adds the public origin to every trusted-origin list and (in index.ts) opens the listener to the network.
 const installed = await installation.load();
 export const networkMode = installed.networkMode;
+// Code access on the host runs the CLI as the server's own OS user, so one member's bot could read another member's files, VM tokens and browser
+// profiles. Once Zetta is open to the network the CLI must run in the Docker runtime; ZETTA_CODE_ACCESS=host is the operator's explicit opt-out.
+if (
+  installed.networkMode === "network" &&
+  process.env.ZETTA_HARNESS_RUNTIME !== "docker" &&
+  process.env.ZETTA_CODE_ACCESS === undefined
+) {
+  process.env.ZETTA_CODE_ACCESS = "off";
+  console.warn(
+    "Code access is off: Zetta is open to the network and ZETTA_HARNESS_RUNTIME is not docker. Set ZETTA_HARNESS_RUNTIME=docker, or ZETTA_CODE_ACCESS=host to accept the risk.",
+  );
+}
 export const trustedExtraOrigins = [
   ...desktopOrigins,
   ...(installed.networkMode === "network" && installed.publicUrl ? [installed.publicUrl] : []),
 ];
+// The key typed in the browser at first run. A dedicated ZETTA_SETUP_KEY keeps the encryption key (ZETTA_CONNECTION_KEY) out of web forms,
+// proxy logs and browser history; without it the connection key still works so existing installs keep booting.
+const setupKey = process.env.ZETTA_SETUP_KEY?.trim() || ENV.ZETTA_CONNECTION_KEY;
+if (setupKey === ENV.ZETTA_CONNECTION_KEY)
+  console.warn(
+    "ZETTA_SETUP_KEY is not set: first-run onboarding asks for ZETTA_CONNECTION_KEY. Set ZETTA_SETUP_KEY to a separate value.",
+  );
 export const auth = createAuth(ENV, db, trustedExtraOrigins, {
   invitationSignupVerifier: createInvitationSignupPreflight(db),
-  firstAccount: createFirstAccountSetup(db, ENV.ZETTA_CONNECTION_KEY),
+  firstAccount: createFirstAccountSetup(db, setupKey),
 });
 const membershipLookup = createMembershipLookup(db);
 export const identity = {
   access: createIdentityAccess(auth, membershipLookup),
   enrollment: createEnrollmentService(db),
   setupOpen: createSetupState(db),
-  verifySetupKey: (key: string) => matchesConnectionKey(key, ENV.ZETTA_CONNECTION_KEY),
+  verifySetupKey: (key: string) => matchesConnectionKey(key, setupKey),
 };
 export const installationServices = {
   access: identity.access,
@@ -162,11 +187,23 @@ if (botDatabase)
       );
   });
 const teamStore = createTeamStore(db, discussions);
+// Company knowledge: the user's Drive documents, indexed in Postgres (see modules/knowledge).
+const embedder = createLocalEmbedder();
+const companyKnowledge = createCompanyKnowledge(db, {
+  plugins: mcp.plugins,
+  lookup: membershipLookup,
+  embedder,
+});
+// The operator's wiki: pages all of a user's bots share (see modules/wiki).
+const wiki = createWiki(db, { embedder });
+const turnRunner = createTurnRunner(db, undefined, undefined, companyKnowledge, wiki);
+// Bots learn from finished work and the chief reviews the wiki, through the same turn runner as the chat.
+const wikiJobs = createWikiJobs(db, { wiki, run: turnRunner, lookup: membershipLookup });
 export const chatServices = {
   access: identity.access,
   chat: createChatService(
     db,
-    undefined,
+    turnRunner,
     files,
     computer,
     decisions,
@@ -177,7 +214,16 @@ export const chatServices = {
     desktop,
     vms,
     agenda,
-    { discussions, botDatabase, loops, tasks, artifacts, teams: teamStore },
+    {
+      discussions,
+      botDatabase,
+      loops,
+      tasks,
+      artifacts,
+      wiki,
+      teams: teamStore,
+      backgroundActor: (userId) => issueBackgroundActor(membershipLookup, userId),
+    },
   ),
   files,
 };
@@ -192,9 +238,13 @@ features.routines.useChat(async (userId, conversationId, prompt, requestKey) => 
         content: prompt,
         clientRequestId: requestKey,
       });
-      let saved: { status: string; content: string } | undefined;
+      let saved: { status: string; content: string; meta?: unknown } | undefined;
       for await (const { event } of follow()) if (event.type === "message") saved = event.message;
-      return { ok: saved?.status === "complete", text: saved?.content ?? "" };
+      return {
+        ok: saved?.status === "complete",
+        text: saved?.content ?? "",
+        error: (saved?.meta as { error?: string } | null | undefined)?.error,
+      };
     } catch (e) {
       if (!(e instanceof TurnBusyError) || attempt >= 24) throw e;
       await Bun.sleep(5_000);
@@ -239,9 +289,15 @@ const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKe
         loop: { id: loop.id, prompt },
       });
       let status = "failed";
+      let error: string | undefined;
+      let detail: string | undefined;
       for await (const { event } of follow())
-        if (event.type === "message") status = event.message.status;
-      return { status };
+        if (event.type === "message") {
+          status = event.message.status;
+          error = (event.message.meta as { error?: string } | null)?.error;
+          detail = status === "failed" ? event.message.content.slice(0, 500) : undefined;
+        }
+      return { status, error, detail };
     } catch (e) {
       if (!(e instanceof TurnBusyError) || attempt >= 60) throw e;
       await Bun.sleep(5_000);
@@ -301,8 +357,22 @@ export const decisionServices = { access: identity.access, decisions };
 export const computerServices = { access: identity.access, computer, desktop, vms };
 export const integrationServices = { access: identity.access, mcp, sources };
 export const taskServices = { access: identity.access, tasks };
+export const knowledgeServices = { access: identity.access, knowledge: companyKnowledge };
+export const wikiServices = { access: identity.access, wiki, jobs: wikiJobs };
+export const searchServices = { access: identity.access, search: createSearch(db) };
 export const artifactServices = { access: identity.access, artifacts };
 export const teamServices = { access: identity.access, store: teamStore };
+export const zettaMcpServices = {
+  auth,
+  resource: mcpResource(ENV),
+  actorFor: (userId: string) => issueBackgroundActor(membershipLookup, userId),
+  chat: chatServices.chat,
+  mcp,
+  connections,
+  features,
+  wiki,
+  tasks,
+};
 export const agendaServices = {
   access: identity.access,
   agenda,

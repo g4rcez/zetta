@@ -53,12 +53,15 @@ export function openToolText(peers: readonly { name: string }[], inbound: boolea
 /** Title prefix of the discussion where the Chief solves one blocked bot's problem before the user is asked. */
 export const HELP_PREFIX = "Help: ";
 
-/** For the Chief inside a help discussion: solve it, close it with the answer, and ask the user only for what a person must do. */
-export const HELP_CHIEF_TOOLS = `This discussion is a help request from a bot that is blocked. Solve it yourself: choose the method, grant a rule with zetta:bot_claude, or give exact steps. Do not ask the user to choose. Close it with the answer, written to the bot, and the bot continues by itself:
+/**
+ * For the Chief inside a help discussion: unblock the bot inside the user's request, close it with the answer, and ask the user only
+ * for what a person must do. The Chief advises; it never does the bot's task or changes what the user asked for.
+ */
+export const HELP_CHIEF_TOOLS = `This discussion is a help request from a bot that is blocked. Unblock it; do not do its task yourself. The user's request in the context is binding: never change the sources, sites, accounts, scope or output it names, and never tell the bot to skip one or use another source. Inside those limits, pick the method for it (another page or route of the same site, the browser, a script, an API of that same source), grant a rule with zetta:bot_claude, or give exact steps. Do not ask the user to choose a method. Close it with the answer, written to the bot, and the bot continues by itself:
 \`\`\`zetta:discussion
 {"action":"resolve","summary":"what the bot must do now"}
 \`\`\`
-Only when a person must act (sign-in, CAPTCHA, payment, a private fact only they know) send this instead; the question is shown to the user on the blocked bot's chat, not on yours, and this discussion closes:
+When a person must act (sign-in, CAPTCHA, payment, a private fact only they know), or no method works inside the user's request, send this instead; the question is shown to the user on the blocked bot's chat, not on yours, and this discussion closes:
 \`\`\`zetta:handoff
 {"reason":"what the user must do or decide, in plain words"}
 \`\`\``;

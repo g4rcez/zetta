@@ -1,6 +1,7 @@
 import z from "zod";
 
 import { ENV } from "../env";
+import { invalidateAuthGuard } from "./auth-guard";
 
 const identifier = z.string().min(1);
 export const identityStatusSchema = z.discriminatedUnion("state", [
@@ -25,7 +26,7 @@ export type SignUpInput = {
   email: string;
   password: string;
   invitationToken?: string;
-  /** First-run onboarding only: the server's ZETTA_CONNECTION_KEY, proof that the caller owns the installation. */
+  /** First-run onboarding only: the server's setup key (ZETTA_SETUP_KEY, or ZETTA_CONNECTION_KEY when unset), proof that the caller owns the installation. */
   setupKey?: string;
 };
 export type IdentityFetch = (input: URL, init: RequestInit) => Promise<Response>;
@@ -50,7 +51,7 @@ export function identityErrorMessage(code: string): string {
     case "ENROLLMENT_UNAVAILABLE":
       return "This invitation cannot be used. Ask the installation operator for a new invitation.";
     case "SETUP_KEY_MISMATCH":
-      return "That key does not match this server's ZETTA_CONNECTION_KEY. Copy it again from the server settings.";
+      return "That key does not match this server's setup key. Copy it again from the server settings.";
     case "SETUP_CLOSED":
       return "Zetta is already set up. Sign in instead.";
     case "SIGNUP_FAILED":
@@ -160,7 +161,15 @@ function configuredClient() {
     typeof window === "undefined" && processEnv?.SERVER_URL
       ? processEnv.SERVER_URL
       : ENV.VITE_SERVER_URL;
-  return createIdentityClient(serverUrl);
+  // A write (sign-up, accepting an invitation, setup) changes what the `_auth` guard should answer: drop its cache.
+  return createIdentityClient(serverUrl, async (input, init) => {
+    if (init.method !== "GET") invalidateAuthGuard();
+    try {
+      return await fetch(input, init);
+    } finally {
+      if (init.method !== "GET") invalidateAuthGuard();
+    }
+  });
 }
 
 export const identityClient = {

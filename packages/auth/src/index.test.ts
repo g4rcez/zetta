@@ -2,7 +2,15 @@ import { expect, test } from "bun:test";
 import type { Database } from "@zetta/db";
 import type { betterAuth, BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
-import { createAuth, createAuthOptions, type AuthConfig, type AuthFactoryOptions, type Session } from "./index";
+import {
+  createAuth,
+  createAuthOptions,
+  MCP_SCOPES,
+  mcpResource,
+  type AuthConfig,
+  type AuthFactoryOptions,
+  type Session,
+} from "./index";
 import type { InvitationSignupBefore, InvitationSignupVerifier } from "./invitation-policy";
 
 const env: AuthConfig = {
@@ -13,20 +21,32 @@ const env: AuthConfig = {
 // Only configuration assembly is tested. Any database access is a fixture error;
 // no client, Better Auth instance, auth context or handler is initialized.
 const database = new Proxy({} as Database, {
-  get() { throw new Error("Configuration assembly accessed the database"); },
+  get() {
+    throw new Error("Configuration assembly accessed the database");
+  },
 });
 const desktopOrigins = Object.freeze(["tauri://localhost", "http://tauri.localhost"]);
 const token = Buffer.alloc(32, 7).toString("base64url");
 const user: Parameters<InvitationSignupBefore>[0] = {
-  id: "new-user", name: "New member", email: "Member+Tag@Example.test", emailVerified: false,
-  createdAt: new Date(0), updatedAt: new Date(0),
+  id: "new-user",
+  name: "New member",
+  email: "Member+Tag@Example.test",
+  emailVerified: false,
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
 };
 function signupContext() {
   // Deliberately partial synthetic path/body fixture, as in invitation-policy.test.
   // Reflect.apply below supplies it without claiming a real endpoint context.
-  return { path: "/sign-up/email", body: {
-    name: user.name, email: user.email, password: "synthetic-only", invitationToken: token,
-  } };
+  return {
+    path: "/sign-up/email",
+    body: {
+      name: user.name,
+      email: user.email,
+      password: "synthetic-only",
+      invitationToken: token,
+    },
+  };
 }
 function before(options: ReturnType<typeof createAuthOptions>) {
   const hook = options.databaseHooks?.user.create.before;
@@ -35,19 +55,28 @@ function before(options: ReturnType<typeof createAuthOptions>) {
 }
 
 test("gated auth preserves API failures and bounds unexpected errors before router diagnostics", () => {
-  const options = createAuthOptions(env, database, [], { invitationSignupVerifier: async () => false });
+  const options = createAuthOptions(env, database, [], {
+    invitationSignupVerifier: async () => false,
+  });
   const boundary = options.onAPIError?.onError;
   if (!boundary) throw new Error("Missing error boundary");
-  const original = new APIError("BAD_REQUEST", { code: "EXISTING", message: "Existing safe error" });
+  const original = new APIError("BAD_REQUEST", {
+    code: "EXISTING",
+    message: "Existing safe error",
+  });
   expect(() => boundary(original)).toThrow(original);
   for (const cause of [new Error("private driver detail"), { detail: "private row" }, null]) {
     try {
       boundary(cause);
       throw new Error("Unexpected error was not bounded");
     } catch (error) {
-      expect(error).toMatchObject({ status: "INTERNAL_SERVER_ERROR", body: {
-        code: "AUTHENTICATION_UNAVAILABLE", message: "Authentication unavailable",
-      } });
+      expect(error).toMatchObject({
+        status: "INTERNAL_SERVER_ERROR",
+        body: {
+          code: "AUTHENTICATION_UNAVAILABLE",
+          message: "Authentication unavailable",
+        },
+      });
     }
   }
 });
@@ -55,7 +84,14 @@ test("gated auth preserves API failures and bounds unexpected errors before rout
 test("createAuthOptions preserves the legacy config and existing createAuth invocation/Session contracts", () => {
   const legacy = createAuthOptions(env, database) satisfies BetterAuthOptions;
   expect(Object.keys(legacy).sort()).toEqual([
-    "advanced", "baseURL", "database", "emailAndPassword", "plugins", "secret", "trustedOrigins",
+    "advanced",
+    "baseURL",
+    "database",
+    "emailAndPassword",
+    "plugins",
+    "rateLimit",
+    "secret",
+    "trustedOrigins",
   ]);
   expect(legacy.databaseHooks).toBeUndefined();
   expect(typeof legacy.database).toBe("function");
@@ -64,17 +100,36 @@ test("createAuthOptions preserves the legacy config and existing createAuth invo
   // Boolean checks avoid emitting even synthetic secrets/config in a failure.
   expect(legacy.secret === env.BETTER_AUTH_SECRET).toBe(true);
   expect(legacy.baseURL === env.BETTER_AUTH_URL).toBe(true);
-  expect(legacy.advanced.defaultCookieAttributes).toEqual({ sameSite: "none", secure: true, httpOnly: true });
-  expect((legacy.advanced.database.generateId as () => string)()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  expect(legacy.plugins).toEqual([]);
-  expect(createAuthOptions(env, database, desktopOrigins).trustedOrigins).toEqual([env.CORS_ORIGIN, ...desktopOrigins]);
+  expect(legacy.advanced.defaultCookieAttributes).toEqual({
+    sameSite: "none",
+    secure: true,
+    httpOnly: true,
+  });
+  expect((legacy.advanced.database.generateId as () => string)()).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  // The OAuth server for MCP clients only (see the mcp test below); no other plugin.
+  expect(legacy.plugins.map((plugin) => plugin.id)).toEqual(["jwt", "oauth-provider", "cimd"]);
+  expect(legacy.advanced.ipAddress.ipAddressHeaders).toEqual(["x-zetta-client-ip"]);
+  expect(legacy.rateLimit.customRules["/sign-in/email"]).toEqual({ window: 900, max: 20 });
+  expect(createAuthOptions(env, database, desktopOrigins).trustedOrigins).toEqual([
+    env.CORS_ORIGIN,
+    ...desktopOrigins,
+  ]);
   expect(createAuthOptions(env, database, desktopOrigins, undefined).databaseHooks).toBeUndefined();
-  const existingCaller: (env: AuthConfig, db: Database, origins?: readonly string[]) => ReturnType<typeof createAuth> = createAuth;
+  const existingCaller: (
+    env: AuthConfig,
+    db: Database,
+    origins?: readonly string[],
+  ) => ReturnType<typeof createAuth> = createAuth;
   expect(typeof existingCaller).toBe("function");
-  const verifierRequired: {} extends NonNullable<Parameters<typeof createAuth>[3]> ? false : true = true;
+  const verifierRequired: {} extends NonNullable<Parameters<typeof createAuth>[3]> ? false : true =
+    true;
   type LegacyConfig = Omit<ReturnType<typeof createAuthOptions>, "databaseHooks">;
   type LegacySession = ReturnType<typeof betterAuth<LegacyConfig>>["$Infer"]["Session"];
-  const sessionInferenceUnchanged: [Session, LegacySession] extends [LegacySession, Session] ? true : false = true;
+  const sessionInferenceUnchanged: [Session, LegacySession] extends [LegacySession, Session]
+    ? true
+    : false = true;
   expect(verifierRequired).toBe(true);
   expect(sessionInferenceUnchanged).toBe(true);
 });
@@ -82,7 +137,10 @@ test("createAuthOptions preserves the legacy config and existing createAuth invo
 test("createAuthOptions installs only the accepted invitation create-before delegate", async () => {
   const calls: Parameters<InvitationSignupVerifier>[0][] = [];
   const trustedOptions: AuthFactoryOptions = {
-    invitationSignupVerifier: async (input) => { calls.push(input); return true; },
+    invitationSignupVerifier: async (input) => {
+      calls.push(input);
+      return true;
+    },
   };
   const options = createAuthOptions(env, database, desktopOrigins, trustedOptions);
   expect(Object.keys(options.databaseHooks ?? {})).toEqual(["user"]);
@@ -92,23 +150,69 @@ test("createAuthOptions installs only the accepted invitation create-before dele
   expect(calls).toEqual([{ token, email: "member+tag@example.test" }]);
   expect(options.trustedOrigins).toEqual([env.CORS_ORIGIN, ...desktopOrigins]);
   expect(options.emailAndPassword).toEqual({ enabled: true });
-  expect(options.advanced.defaultCookieAttributes).toEqual({ sameSite: "none", secure: true, httpOnly: true });
-  expect((options.advanced.database.generateId as () => string)()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  expect(options.plugins).toEqual([]);
+  expect(options.advanced.defaultCookieAttributes).toEqual({
+    sameSite: "none",
+    secure: true,
+    httpOnly: true,
+  });
+  expect((options.advanced.database.generateId as () => string)()).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  expect(options.plugins.map((plugin) => plugin.id)).toEqual(["jwt", "oauth-provider", "cimd"]);
+});
+
+test("MCP access tokens are bound to the API's /api/mcp resource", () => {
+  expect(mcpResource({ BETTER_AUTH_URL: "https://zetta.example.test" })).toBe(
+    "https://zetta.example.test/api/mcp",
+  );
+  expect(mcpResource({ BETTER_AUTH_URL: "https://zetta.example.test/" })).toBe(
+    "https://zetta.example.test/api/mcp",
+  );
+  expect(MCP_SCOPES).toEqual({ read: "mcp:read", write: "mcp:write" });
 });
 
 test("createAuthOptions explicit malformed verifier/context fails closed through the existing policy", async () => {
-  for (const supplied of [null, false, 0, "", {}, { invitationSignupVerifier: undefined }, { invitationSignupVerifier: null },
-    { invitationSignupVerifier: true }, { invitationSignupVerifier: async () => false },
+  for (const supplied of [
+    null,
+    false,
+    0,
+    "",
+    {},
+    { invitationSignupVerifier: undefined },
+    { invitationSignupVerifier: null },
+    { invitationSignupVerifier: true },
+    { invitationSignupVerifier: async () => false },
     { invitationSignupVerifier: async () => "true" },
-    { invitationSignupVerifier: async () => { throw new Error("synthetic private driver cause"); } }]) {
-    const config = Reflect.apply(createAuthOptions, undefined, [env, database, desktopOrigins, supplied]);
+    {
+      invitationSignupVerifier: async () => {
+        throw new Error("synthetic private driver cause");
+      },
+    },
+  ]) {
+    const config = Reflect.apply(createAuthOptions, undefined, [
+      env,
+      database,
+      desktopOrigins,
+      supplied,
+    ]);
     expect(await Reflect.apply(before(config), undefined, [user, signupContext()])).toBe(false);
   }
   let calls = 0;
-  const hook = before(createAuthOptions(env, database, [], { invitationSignupVerifier: async () => { calls++; return true; } }));
-  for (const context of [undefined, null, {}, { path: "/sign-in/email", body: signupContext().body },
-    { path: "/sign-up/email", body: null }]) {
+  const hook = before(
+    createAuthOptions(env, database, [], {
+      invitationSignupVerifier: async () => {
+        calls++;
+        return true;
+      },
+    }),
+  );
+  for (const context of [
+    undefined,
+    null,
+    {},
+    { path: "/sign-in/email", body: signupContext().body },
+    { path: "/sign-up/email", body: null },
+  ]) {
     expect(await Reflect.apply(hook, undefined, [user, context])).toBe(false);
   }
   expect(calls).toBe(0);
@@ -137,10 +241,14 @@ test("createAuthOptions import/config assembly is offline in an env-autoload-dis
       || typeof legacy.database !== "function") throw new Error("Incorrect auth config seam");
   `;
   const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], {
-    env: { NODE_ENV: "test" }, stdout: "pipe", stderr: "pipe",
+    env: { NODE_ENV: "test" },
+    stdout: "pipe",
+    stderr: "pipe",
   });
   const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
   ]);
   // Do not print subprocess diagnostic causes or configuration on failure.
   expect(exitCode === 0 && stdout === "" && stderr === "").toBe(true);
@@ -154,9 +262,13 @@ test("installed Better Auth 1.7.7 is eager; createAuth delegates exact config wi
   const full = await Bun.file(new URL("auth/full.mjs", base)).text();
   expect(full).toContain("return createBetterAuth(options, init);");
   const source = await Bun.file(new URL("./index.ts", import.meta.url)).text();
-  expect(source).toContain("return betterAuth(createAuthOptions(env, database, desktopOrigins, options));");
+  expect(source).toContain(
+    "return betterAuth(createAuthOptions(env, database, desktopOrigins, options));",
+  );
   expect(source).toContain('import * as schema from "@zetta/db/schema/auth"');
   expect(source).toContain('provider: "pg",\n      transaction: true,\n      schema,');
-  expect(source).toContain("before: createInvitationSignupPolicy(options?.invitationSignupVerifier, options?.firstAccount)");
+  expect(source).toContain(
+    "before: createInvitationSignupPolicy(options?.invitationSignupVerifier, options?.firstAccount)",
+  );
   expect(source).not.toContain("/schema/identity");
 });

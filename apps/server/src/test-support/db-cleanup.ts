@@ -3,7 +3,17 @@ import type { Database } from "@zetta/db";
 /** Deletes everything owned by the given synthetic test users, in foreign-key-safe order. Test databases only. */
 export async function cleanupTestUsers(db: Database, ids: string[]) {
   const q = (sql: string) => db.$client.query(sql, [ids]);
+  await q(
+    "delete from wiki_suggestion where author_user_id = any($1) or page_owner_user_id = any($1)",
+  );
   for (const t of [
+    "wiki_job",
+    "wiki_source",
+    "wiki_revision",
+    "wiki_page",
+    "knowledge_chunk",
+    "knowledge_doc",
+    "knowledge_source",
     "audit_event",
     "reaction",
     "attachment",
@@ -18,6 +28,7 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
     "browser_profile",
     "computer_vm",
     "source",
+    "artifact",
   ])
     await q(`delete from ${t} where owner_user_id = any($1)`);
   await q("delete from routine where owner_user_id = any($1)");

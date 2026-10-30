@@ -1,4 +1,10 @@
-import { BookOpen, CheckCircle2, PenLine, ShieldCheck, type LucideIcon } from "lucide-react";
+import {
+  BookOpenIcon,
+  CheckCircleIcon,
+  PencilLineIcon,
+  ShieldCheckIcon,
+  type Icon as PhosphorIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
 import { Button, Input } from "@/components/ui";
@@ -52,9 +58,9 @@ const SCOPES: { id: string; label: string; group: "Read" | "Act" }[] = [
   { id: "save", group: "Act", label: "Save and unsave" },
   { id: "subscribe", group: "Act", label: "Join and leave subreddits" },
 ];
-const GROUPS: Record<"Read" | "Act", { icon: LucideIcon; hint: string }> = {
-  Read: { icon: BookOpen, hint: "What bots may read" },
-  Act: { icon: PenLine, hint: "What bots may do as you" },
+const GROUPS: Record<"Read" | "Act", { icon: PhosphorIcon; hint: string }> = {
+  Read: { icon: BookOpenIcon, hint: "What bots may read" },
+  Act: { icon: PencilLineIcon, hint: "What bots may do as you" },
 };
 const WRITE = new Set(["submit", "vote", "edit", "save", "subscribe", "privatemessages"]);
 const REASON: Record<string, string> = {
@@ -164,7 +170,7 @@ export function RedditConnect({
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {connected ? (
           <>
-            <CheckCircle2 aria-hidden className="size-4 text-primary" />
+            <CheckCircleIcon aria-hidden className="size-4 text-primary" />
             Connected as{" "}
             <strong className="text-foreground">
               {info?.username ? `u/${info.username}` : "your Reddit account"}
@@ -234,7 +240,7 @@ export function RedditConnect({
         >
           {connected ? (
             <>
-              <ShieldCheck aria-hidden className="size-4" />
+              <ShieldCheckIcon aria-hidden className="size-4" />
               Update permissions
             </>
           ) : (

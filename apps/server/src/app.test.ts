@@ -44,10 +44,20 @@ describe("createApp", () => {
     // Keep the import graph closed: production environment/services/Axiom and
     // bootstrap calls belong only in index.ts, never in the testable factory.
     const source = await Bun.file(new URL("./app.ts", import.meta.url)).text();
-    const allowedImports = ["@elysiajs/cors", "elysia", "evlog/better-auth", "evlog/elysia", "./modules/identity/routes", "./modules/chat/routes", "./modules/features/routes", "./modules/decisions/routes", "./modules/computer/routes", "./modules/connections/routes", "./modules/integrations/routes", "./modules/agenda/routes", "./modules/discussions/routes", "./modules/inbound/routes", "./modules/bot-database/routes"];
+    const allowedImports = [
+      "@elysiajs/cors",
+      "./client-ip",
+      "elysia",
+      "evlog/better-auth",
+      "evlog/elysia",
+    ];
     const imports = [...source.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1] ?? "");
     expect(imports.length).toBeGreaterThan(0);
-    for (const imported of imports) expect(allowedImports).toContain(imported);
+    // Route modules are the only application code the factory may import; each one takes its services as arguments.
+    for (const imported of imports)
+      expect(
+        allowedImports.includes(imported) || /^\.\/modules\/[a-z-]+\/routes$/.test(imported),
+      ).toBe(true);
     expect(source).not.toMatch(/initLogger|createAxiomDrain|\.listen\s*\(|import\s*\(/);
   });
 
@@ -60,7 +70,13 @@ describe("createApp", () => {
     expect(fixture.sessionLookups).toHaveLength(1);
     expect(fixture.authRequests).toHaveLength(0);
     const { event } = await fixture.nextEvent();
-    expect(event).toMatchObject({ service: "zetta-server", method: "GET", path: "/", status: 200, auth: { identified: false } });
+    expect(event).toMatchObject({
+      service: "zetta-server",
+      method: "GET",
+      path: "/",
+      status: 200,
+      auth: { identified: false },
+    });
     expect(event.userId).toBeUndefined();
     expect(event.user).toBeUndefined();
   });
@@ -73,7 +89,11 @@ describe("createApp", () => {
     test(`forwards the original auth ${method} ${contentType} request and preserves its ${status} response`, async () => {
       const request = new Request("http://localhost/api/auth/session?fixture=only", {
         method,
-        headers: { "content-type": contentType, "x-fixture": "forwarded", cookie: "fixture-session=A" },
+        headers: {
+          "content-type": contentType,
+          "x-fixture": "forwarded",
+          cookie: "fixture-session=A",
+        },
         body,
       });
       const fixture = createAppFixture(async (forwarded) => {
@@ -105,7 +125,9 @@ describe("createApp", () => {
   for (const method of ["PUT", "PATCH", "DELETE", "HEAD"]) {
     test(`returns 405 for unsupported auth ${method} without forwarding or session lookup`, async () => {
       const fixture = createAppFixture();
-      const response = await fixture.app.handle(new Request("http://localhost/api/auth/session", { method }));
+      const response = await fixture.app.handle(
+        new Request("http://localhost/api/auth/session", { method }),
+      );
       expect(response.status).toBe(405);
       expect(fixture.authRequests).toHaveLength(0);
       expect(fixture.sessionLookups).toHaveLength(0);
@@ -116,7 +138,9 @@ describe("createApp", () => {
   for (const origin of [fixtureOrigins.webOrigin, ...fixtureOrigins.desktopOrigins]) {
     test(`allows credentialed CORS for ${origin}`, async () => {
       const fixture = createAppFixture();
-      const response = await fixture.app.handle(new Request("http://localhost/", { headers: { origin } }));
+      const response = await fixture.app.handle(
+        new Request("http://localhost/", { headers: { origin } }),
+      );
       expect(response.status).toBe(200);
       expect(response.headers.get("access-control-allow-origin")).toBe(origin);
       expect(response.headers.get("access-control-allow-credentials")).toBe("true");
@@ -127,7 +151,9 @@ describe("createApp", () => {
 
   test("does not approve an unlisted CORS origin (CORS is not an authorization rejection)", async () => {
     const fixture = createAppFixture();
-    const response = await fixture.app.handle(new Request("http://localhost/", { headers: { origin: "https://unapproved.invalid" } }));
+    const response = await fixture.app.handle(
+      new Request("http://localhost/", { headers: { origin: "https://unapproved.invalid" } }),
+    );
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("OK");
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
@@ -137,19 +163,35 @@ describe("createApp", () => {
     await fixture.nextEvent();
   });
 
-  for (const origin of [fixtureOrigins.webOrigin, ...fixtureOrigins.desktopOrigins, "https://unapproved.invalid"]) {
+  for (const origin of [
+    fixtureOrigins.webOrigin,
+    ...fixtureOrigins.desktopOrigins,
+    "https://unapproved.invalid",
+  ]) {
     test(`handles auth OPTIONS preflight for ${origin} before the 405 route`, async () => {
       const fixture = createAppFixture();
-      const response = await fixture.app.handle(new Request("http://localhost/api/auth/sign-in/email", {
-        method: "OPTIONS",
-        headers: { origin, "access-control-request-method": "POST", "access-control-request-headers": "content-type,authorization" },
-      }));
+      const response = await fixture.app.handle(
+        new Request("http://localhost/api/auth/sign-in/email", {
+          method: "OPTIONS",
+          headers: {
+            origin,
+            "access-control-request-method": "POST",
+            "access-control-request-headers": "content-type,authorization",
+          },
+        }),
+      );
       expect(response.status).toBe(204);
       expect(await response.text()).toBe("");
-      expect(response.headers.get("access-control-allow-origin")).toBe(origin === "https://unapproved.invalid" ? null : origin);
+      expect(response.headers.get("access-control-allow-origin")).toBe(
+        origin === "https://unapproved.invalid" ? null : origin,
+      );
       expect(response.headers.get("access-control-allow-credentials")).toBe("true");
-      expect(response.headers.get("access-control-allow-methods")).toBe("GET, POST, PUT, PATCH, DELETE, OPTIONS");
-      expect(response.headers.get("access-control-allow-headers")).toBe("Content-Type, Authorization");
+      expect(response.headers.get("access-control-allow-methods")).toBe(
+        "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+      );
+      expect(response.headers.get("access-control-allow-headers")).toBe(
+        "Content-Type, Authorization",
+      );
       expect(fixture.authRequests).toHaveLength(0);
       expect(fixture.sessionLookups).toHaveLength(0);
       // CORS short-circuits in onRequest; Elysia 1.4 does not run the evlog
@@ -171,7 +213,11 @@ describe("createApp", () => {
         const session = fixtureSessions[actor];
         expect(event).toMatchObject({
           userId: session.user.id,
-          user: { id: session.user.id, name: session.user.name, email: `${session.user.email[0]}***@example.invalid` },
+          user: {
+            id: session.user.id,
+            name: session.user.name,
+            email: `${session.user.email[0]}***@example.invalid`,
+          },
           session: { id: session.session.id },
           auth: { identified: true },
         });
@@ -196,20 +242,44 @@ test("private session failures remain opaque while actual identity access return
   createAppFixture();
   const warnings = spyOn(console, "warn").mockImplementation(() => {});
   const drained = Promise.withResolvers<DrainContext>();
-  const auth = { api: { getSession: async () => { throw new Error("synthetic-private-driver-detail"); } }, handler: () => new Response("auth") };
-  const app = createApp({ auth, ...fixtureOrigins, drain: (event) => { drained.resolve(event); }, identity: {
-    access: createIdentityAccess(auth, async () => { throw new Error("Membership must not resolve"); }),
-    enrollment: {
-      issueInvitation: async () => { throw new Error("unused"); },
-      acceptInvitation: async () => { throw new Error("unused"); },
-      revokeInvitation: async () => { throw new Error("unused"); },
+  const auth = {
+    api: {
+      getSession: async () => {
+        throw new Error("synthetic-private-driver-detail");
+      },
     },
-  } });
+    handler: () => new Response("auth"),
+  };
+  const app = createApp({
+    auth,
+    ...fixtureOrigins,
+    drain: (event) => {
+      drained.resolve(event);
+    },
+    identity: {
+      access: createIdentityAccess(auth, async () => {
+        throw new Error("Membership must not resolve");
+      }),
+      enrollment: {
+        issueInvitation: async () => {
+          throw new Error("unused");
+        },
+        acceptInvitation: async () => {
+          throw new Error("unused");
+        },
+        revokeInvitation: async () => {
+          throw new Error("unused");
+        },
+      },
+    },
+  });
   try {
     const response = await app.handle(new Request("http://localhost/api/identity/status"));
     expect(response.status).toBe(503);
     expect(await response.text()).not.toContain("synthetic-private-driver-detail");
     expect(warnings.mock.calls).toHaveLength(0);
     expect((await drained.promise).event.status).toBe(503);
-  } finally { warnings.mockRestore(); }
+  } finally {
+    warnings.mockRestore();
+  }
 });

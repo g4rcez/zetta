@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { useRouterState } from "@tanstack/react-router";
 
 import { ApiError, call, chatClient, type AttentionSummary } from "../chat/chat-client";
+import { discussionsApi } from "../discussions/discussions-api";
 
 /** What one bot needs from the user: open items, and how many of those the user has not seen yet. */
 export type BotAttention = { open: number; unread: number };
@@ -67,21 +68,26 @@ function notifyNew(items: Item[]) {
   writeNotified(all);
 }
 
-/** One shared poller for the attention counts (header + sidebar). Polls every 30s while at least one component uses it. */
+/** One shared poller for the rail counts: attention (header + sidebar) and running discussions. Polls every 30s while at least one component uses it. */
 let state: AttentionSummary | undefined;
 let byBot: ReadonlyMap<string, BotAttention> = new Map();
+let running = 0;
 let signedOut = false;
 let subscribers = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
+let lastRefresh = 0;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
 export async function refreshAttention(force = false) {
   if (signedOut && !force) return;
+  lastRefresh = Date.now();
   try {
-    const [summary, list] = await Promise.all([
+    const [summary, list, discussions] = await Promise.all([
       chatClient.attentionSummary(),
       call<{ items: Item[] }>("/api/attention"),
+      // A failed count keeps the last one, so it never blocks the attention counts.
+      discussionsApi.running().catch(() => running),
     ]);
     const next = new Map<string, BotAttention>();
     for (const i of list.items) {
@@ -92,6 +98,7 @@ export async function refreshAttention(force = false) {
     notifyNew(list.items);
     state = summary;
     byBot = next;
+    running = discussions;
     signedOut = false;
     emit();
   } catch (e) {
@@ -99,21 +106,30 @@ export async function refreshAttention(force = false) {
       signedOut = true;
       state = undefined;
       byBot = new Map();
+      running = 0;
       emit();
     }
   }
 }
+const onVisible = () => {
+  if (!document.hidden) void refreshAttention();
+};
 function subscribe(l: () => void) {
   listeners.add(l);
   if (++subscribers === 1) {
     void refreshAttention(true);
-    timer = setInterval(() => void refreshAttention(), 30_000);
+    // A hidden tab polls at most once a minute (native alerts for new items still arrive), and catches up as soon as it is visible again.
+    timer = setInterval(() => {
+      if (!document.hidden || Date.now() - lastRefresh >= 55_000) void refreshAttention();
+    }, 30_000);
+    document.addEventListener("visibilitychange", onVisible);
   }
   return () => {
     listeners.delete(l);
     if (--subscribers === 0 && timer) {
       clearInterval(timer);
       timer = undefined;
+      document.removeEventListener("visibilitychange", onVisible);
     }
   };
 }
@@ -132,6 +148,15 @@ export function useAttentionSummary(): AttentionSummary | undefined {
 }
 export const attentionLabel = (s?: AttentionSummary) =>
   s && s.unread > 0 ? `${s.unread} unread` : "";
+
+/** Discussions the bots are working on now, from the same poll. */
+export function useRunningDiscussions(): number {
+  return useSyncExternalStore(
+    subscribe,
+    () => running,
+    () => 0,
+  );
+}
 
 /** Per-bot attention from the same poll; a bot with nothing open has no entry. */
 export function useBotAttention(): ReadonlyMap<string, BotAttention> {

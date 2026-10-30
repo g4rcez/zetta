@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { XIcon } from "@phosphor-icons/react";
 
 import { Button } from "@zetta/ui/components/button";
 
@@ -16,6 +16,7 @@ export function ThreadPanel({
   conversationId,
   parent,
   replies,
+  streamed = [],
   bots,
   bot,
   authorOf,
@@ -28,6 +29,8 @@ export function ThreadPanel({
   conversationId: string;
   parent: Row;
   replies: Row[];
+  /** This thread's rows in the chat's own stream: the answer to a queued message is followed there. */
+  streamed?: Row[];
   bots: Bot[];
   bot?: Bot | undefined;
   authorOf: (row: Row) => Author;
@@ -40,7 +43,7 @@ export function ThreadPanel({
   const chat = useZettaChat({ conversationId, parentMessageId: parent.id, onSettled, onProposal });
   const draft = useDraft(draftKey(undefined, `${conversationId}:t:${parent.id}`));
   const [sent, setSent] = useState(0);
-  const live = chat.rows.filter(
+  const live = [...chat.rows, ...streamed].filter(
     (r) => !replies.some((x) => x.id === r.id) && !isSavedUserEcho(r, replies),
   );
   const all = [...replies, ...live];
@@ -52,7 +55,7 @@ export function ThreadPanel({
           {bot && <p className="truncate text-xs text-muted-foreground"># {bot.name}</p>}
         </div>
         <Button size="icon-sm" variant="ghost" aria-label="Close thread" onClick={onClose}>
-          <X />
+          <XIcon />
         </Button>
       </header>
       <MessageList
@@ -107,8 +110,13 @@ export function ThreadPanel({
           onSubmit={async ({ text, attachmentIds, fileRefs, instructionIds }) => {
             draft.clear();
             setSent((n) => n + 1);
-            await chat.send(text, { attachmentIds, fileRefs, instructionIds });
-            return true;
+            try {
+              await chat.send(text, { attachmentIds, fileRefs, instructionIds });
+              return true;
+            } catch (e) {
+              onError(e);
+              return false;
+            }
           }}
         />
       </div>

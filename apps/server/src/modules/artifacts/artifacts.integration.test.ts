@@ -96,9 +96,11 @@ suite("artifacts against compose postgres", () => {
   test("html is served sandboxed with scripts allowed, other kinds run nothing", async () => {
     const html = await publish(ids[0]!, "<script>1</script>", "a.html", "Page");
     const res = await call(ids[0]!, "GET", `/api/artifacts/${html.id}/content`);
-    expect(res.headers.get("content-security-policy")).toBe(
-      "sandbox allow-scripts allow-popups allow-forms",
-    );
+    const csp = res.headers.get("content-security-policy") ?? "";
+    expect(csp.startsWith("sandbox allow-scripts allow-popups; ")).toBe(true); // no forms, no same-origin
+    expect(csp).toContain("connect-src 'none'");
+    expect(csp).toContain("form-action 'none'");
+    expect(csp).toContain("img-src data: blob:");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     const csv = await publish(ids[0]!, "a,b\n1,2", "t.csv", "Table");
     const res2 = await call(ids[0]!, "GET", `/api/artifacts/${csv.id}/content`);

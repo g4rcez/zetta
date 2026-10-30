@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Outlet, createFileRoute, useChildMatches } from "@tanstack/react-router";
 
 import { ArtifactsPage } from "@/features/artifacts/artifacts-page";
 import { ARTIFACT_KINDS, type ArtifactKind } from "@/features/artifacts/artifacts-api";
@@ -27,6 +27,9 @@ export const Route = createFileRoute("/_auth/artifacts")({
   component: RouteComponent,
 });
 
+/** This route is the parent of /artifacts/$artifactId: the list shows only when no child page is open. */
 function RouteComponent() {
-  return <ArtifactsPage filter={Route.useSearch()} />;
+  const filter = Route.useSearch();
+  const child = useChildMatches();
+  return child.length ? <Outlet /> : <ArtifactsPage filter={filter} />;
 }

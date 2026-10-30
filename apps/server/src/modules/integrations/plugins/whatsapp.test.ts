@@ -17,7 +17,10 @@ const server = Bun.serve({
       body,
     });
     if (req.headers.get("x-api-key") !== "k3y") return new Response("no", { status: 401 });
-    if (u.pathname === "/api/sessions/default")
+    if (
+      u.pathname === "/api/sessions/default" ||
+      u.pathname === "/api/sessions/ubb82030dbc2bcaba32a90bf2"
+    )
       return Response.json({ status: sessionStatus, me: { id: "5511@c.us" } });
     if (u.pathname === "/api/sessions/default/start") {
       if (notReady) {
@@ -96,6 +99,15 @@ describe("whatsapp plugin", () => {
         await WHATSAPP.status!({ userId: "u1", config: {}, setConfig: async () => {} }),
       ).toEqual({ state: "connected" });
       expect(calls[0]!.key).toBe("k3y");
+      // On the shared server the session is named after the user; the form's session name is ignored.
+      expect(calls[0]!.path).toBe("/api/sessions/ubb82030dbc2bcaba32a90bf2");
+      calls.length = 0;
+      await WHATSAPP.status!({
+        userId: "u2",
+        config: { session: "default" },
+        setConfig: async () => {},
+      });
+      expect(calls[0]!.path).toBe("/api/sessions/u6ca202c88e549dff68c09bfa");
     } finally {
       for (const [name, value] of [
         ["ZETTA_WAHA_URL", saved.url],

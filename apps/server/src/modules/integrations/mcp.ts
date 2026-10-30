@@ -4,14 +4,18 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Database } from "@zetta/db";
-import { and, eq } from "@zetta/db/query";
+import { and, eq, ne } from "@zetta/db/query";
+import { user } from "@zetta/db/schema/auth";
 import { bot } from "@zetta/db/schema/chat";
 import { botIntegration, mcpServer } from "@zetta/db/schema/features";
 import { assertPublicUrl, ComputerError } from "../computer/service";
 import type { ConnectionsService } from "../connections/service";
-import { audit } from "../features/audit";
+import { audit, auditToolDetail } from "../features/audit";
+import type { McpRun } from "../chat/harness";
 import { AccessError, type ActiveActor } from "../identity/access";
 import { catalogStdio } from "./plugins/catalog";
+import { getPlugin } from "./plugins/registry";
+import { toolAllowed } from "./tool-access";
 import { configureWhatsapp } from "./plugins/whatsapp"; // importing registers the plugin
 import "./plugins/google"; // importing registers the plugin
 import "./plugins/telegram"; // importing registers the plugin
@@ -26,6 +30,7 @@ export class McpError extends Error {
       | "STDIO_NOT_ALLOWED"
       | "BLOCKED_URL"
       | "NOT_BOUND"
+      | "TOOL_NOT_ALLOWED"
       | "TIMEOUT"
       | "FAILED"
       | "INVALID",
@@ -45,6 +50,8 @@ export type McpOptions = {
   allowPrivate?: boolean;
   stdioAllowlist?: StdioEntry[];
   connect?: McpConnect;
+  /** Lets members, not only the administrator, run local (stdio) servers. Default: ZETTA_MCP_MEMBER_STDIO=1. */
+  memberStdio?: boolean;
 };
 /** ZETTA_MCP_ALLOWLIST: entries separated by `;`, each a space-separated argv (no shell), e.g. `/usr/bin/npx -y chrome-devtools-mcp@latest --headless`. */
 export const parseAllowlist = (raw = process.env.ZETTA_MCP_ALLOWLIST ?? ""): StdioEntry[] =>
@@ -82,6 +89,10 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
   // Catalog entries are the only built-in local commands; the administrator may add more with ZETTA_MCP_ALLOWLIST.
   const allow = opts.stdioAllowlist ?? [...catalogStdio(), ...parseAllowlist()];
   const connect = opts.connect ?? defaultConnect;
+  // A local server is a process on the host with the server's OS user (browsers that can reach the host network and files), outside the
+  // address policy. Only the administrator who runs the server may use one, unless they open it to members.
+  const memberStdio = opts.memberStdio ?? process.env.ZETTA_MCP_MEMBER_STDIO === "1";
+  const stdioOk = (a: ActiveActor) => a.isAdmin || memberStdio;
   const owned = async (a: ActiveActor, id: string) => {
     const [s] = await db
       .select()
@@ -91,9 +102,24 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     return s;
   };
 
+  /** A server the user owns, or one a teammate shared with the team (native plugins that declare team tools only). */
+  const visible = async (a: ActiveActor, id: string) => {
+    const [s] = await db.select().from(mcpServer).where(eq(mcpServer.id, id));
+    if (!s) throw new AccessError("NOT_FOUND");
+    if (s.ownerUserId === a.userId) return s;
+    if (
+      s.sharing === "team" &&
+      s.url?.startsWith(NATIVE_URL_PREFIX) &&
+      getPlugin(s.name)?.teamTools
+    )
+      return s;
+    throw new AccessError("NOT_FOUND");
+  };
+
   /** Opens one connected session (credentials resolved now). The caller must close it. */
   async function openSession(a: ActiveActor, s: Server) {
     if (s.url?.startsWith(NATIVE_URL_PREFIX)) throw new McpError("INVALID"); // in-process plugins have no MCP session
+    if (s.transport === "stdio" && !stdioOk(a)) throw new McpError("STDIO_NOT_ALLOWED");
     let auth: string | undefined;
     if (s.connectionId) {
       const secret = connections
@@ -150,6 +176,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     work: (c: Client) => Promise<T>,
   ): Promise<T> {
     if (s.url?.startsWith(NATIVE_URL_PREFIX)) throw new McpError("INVALID");
+    if (s.transport === "stdio" && !stdioOk(a)) throw new McpError("STDIO_NOT_ALLOWED");
     let auth: string | undefined;
     if (s.connectionId) {
       // Fails closed: a revoked/missing connection means the call does not happen, and no other credential is tried.
@@ -160,6 +187,10 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       auth = `Bearer ${secret.toString("utf8")}`;
       secret.fill(0);
     }
+    if (s.transport === "http" && !opts.allowPrivate)
+      await assertPublicUrl(s.url!).catch(() => {
+        throw new McpError("BLOCKED_URL");
+      });
     const client = new Client({ name: "zetta", version: "1" });
     const transport = await connect(s, auth);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -190,6 +221,13 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       .slice(0, MAX_TEXT);
   };
 
+  const boundRows = (a: ActiveActor, botId: string) =>
+    db
+      .select({ s: mcpServer, i: botIntegration })
+      .from(botIntegration)
+      .innerJoin(mcpServer, eq(mcpServer.id, botIntegration.serverId))
+      .where(and(eq(botIntegration.botId, botId), eq(botIntegration.ownerUserId, a.userId)));
+
   let core!: McpCore;
   configureWhatsapp({ allowPrivate: opts.allowPrivate }); // same private-address policy as MCP servers
   configureVault({ allowPrivate: Boolean(opts.allowPrivate) }); // 1Password Connect servers follow it too
@@ -213,6 +251,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
             throw e instanceof ComputerError ? new McpError("BLOCKED_URL") : e;
           });
       } else if (
+        !stdioOk(a) ||
         !v.command ||
         !allow.some(
           (e) => e.command === v.command && JSON.stringify(e.args) === JSON.stringify(v.args ?? []),
@@ -245,9 +284,8 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     },
     async removeServer(a: ActiveActor, id: string) {
       await owned(a, id);
-      await db
-        .delete(botIntegration)
-        .where(and(eq(botIntegration.serverId, id), eq(botIntegration.ownerUserId, a.userId)));
+      // Teammates' bindings of a shared server go with it.
+      await db.delete(botIntegration).where(eq(botIntegration.serverId, id));
       await db
         .delete(mcpServer)
         .where(and(eq(mcpServer.id, id), eq(mcpServer.ownerUserId, a.userId)));
@@ -260,7 +298,21 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
         .where(and(eq(bot.id, botId), eq(bot.archived, false)));
       if (!b || (b.ownerUserId !== a.userId && b.visibility !== "team"))
         throw new AccessError("NOT_FOUND");
-      await owned(a, serverId);
+      const server = await visible(a, serverId);
+      // One server per name and bot: an own WhatsApp and a teammate's shared one would otherwise be ambiguous for the bot.
+      const same = await db
+        .select({ id: botIntegration.id })
+        .from(botIntegration)
+        .innerJoin(mcpServer, eq(mcpServer.id, botIntegration.serverId))
+        .where(
+          and(
+            eq(botIntegration.botId, botId),
+            eq(botIntegration.ownerUserId, a.userId),
+            eq(mcpServer.name, server.name),
+            ne(mcpServer.id, serverId),
+          ),
+        );
+      for (const row of same) await db.delete(botIntegration).where(eq(botIntegration.id, row.id));
       await db
         .insert(botIntegration)
         .values({ botId, ownerUserId: a.userId, serverId })
@@ -280,12 +332,105 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       return { botId, serverId };
     },
     async bound(a: ActiveActor, botId: string) {
-      const rows = await db
-        .select({ s: mcpServer })
-        .from(botIntegration)
-        .innerJoin(mcpServer, eq(mcpServer.id, botIntegration.serverId))
-        .where(and(eq(botIntegration.botId, botId), eq(botIntegration.ownerUserId, a.userId)));
-      return rows.map((r) => ({ id: r.s.id, name: r.s.name }));
+      const rows = await boundRows(a, botId);
+      return rows.map((r) => ({
+        id: r.s.id,
+        name: r.s.name,
+        toolsMode: r.i.toolsMode,
+        allowedTools: r.i.allowedTools,
+        tools: r.s.tools,
+        ownerUserId: r.s.ownerUserId,
+        sharing: r.s.sharing,
+      }));
+    },
+    /**
+     * For a Claude Code run: this user's remote (http) servers bound to the bot, as CLI config plus allow rules, and the environment
+     * variables that hold their tokens. A server whose token cannot be read, or that has no allowed tool, is left out (fail closed).
+     * Stdio servers and in-process plugins stay on the zetta:mcp / zetta:plugin path.
+     */
+    async runConfig(
+      a: ActiveActor,
+      botId: string,
+    ): Promise<{ mcp?: McpRun; env: Record<string, string> }> {
+      const servers: McpRun["servers"] = {};
+      const allow: string[] = [];
+      const env: Record<string, string> = {};
+      // DNS check and secret read run for all servers at once; the config is then assembled in bound order so token names stay stable.
+      const ready = await Promise.all(
+        (await boundRows(a, botId)).map(async ({ s, i }) => {
+          if (s.transport !== "http" || !s.url || s.url.startsWith(NATIVE_URL_PREFIX))
+            return undefined;
+          if (i.toolsMode === "selected" && !i.allowedTools.length) return undefined;
+          if (
+            !opts.allowPrivate &&
+            !(await assertPublicUrl(s.url).then(
+              () => true,
+              () => false,
+            ))
+          )
+            return undefined;
+          if (!s.connectionId) return { s, i, url: s.url, secret: undefined };
+          const secret = connections
+            ? await connections.secretFor(a, s.connectionId).catch(() => undefined)
+            : undefined;
+          return secret ? { s, i, url: s.url, secret } : undefined;
+        }),
+      );
+      for (const r of ready) {
+        if (!r) continue;
+        const { s, i, url, secret } = r;
+        let headers: Record<string, string> | undefined;
+        if (secret) {
+          const key = `ZETTA_MCP_TOKEN_${Object.keys(env).length}`;
+          env[key] = secret.toString("utf8");
+          secret.fill(0);
+          headers = { Authorization: `Bearer \${${key}}` };
+        }
+        servers[s.name] = { type: "http", url, ...(headers ? { headers } : {}) };
+        allow.push(
+          ...(i.toolsMode === "all"
+            ? [`mcp__${s.name}`]
+            : i.allowedTools.map((t) => `mcp__${s.name}__${t}`)),
+        );
+      }
+      return Object.keys(servers).length ? { mcp: { servers, allow }, env } : { env };
+    },
+    /** The tools one bound server offers this bot: its catalogue plus the bot's current choice. Native plugins list theirs from the registry. */
+    async toolAccess(a: ActiveActor, botId: string, serverId: string) {
+      const hit = (await this.bound(a, botId)).find((b) => b.id === serverId);
+      if (!hit) throw new McpError("NOT_BOUND");
+      const s = await visible(a, serverId);
+      const catalogue = s.url?.startsWith(NATIVE_URL_PREFIX)
+        ? (getPlugin(s.name)?.tools ?? []).map((t) => ({
+            name: t.name,
+            description: t.description.slice(0, 300),
+          }))
+        : hit.tools.length
+          ? hit.tools
+          : await this.tools(a, serverId);
+      return { tools: catalogue, toolsMode: hit.toolsMode, allowedTools: hit.allowedTools };
+    },
+    /** Switches a bound server between all tools and a chosen list. Chosen names must exist in the catalogue. */
+    async setToolAccess(
+      a: ActiveActor,
+      botId: string,
+      serverId: string,
+      v: { toolsMode: "all" | "selected"; allowedTools: string[] },
+    ) {
+      const known = new Set((await this.toolAccess(a, botId, serverId)).tools.map((t) => t.name));
+      if (v.allowedTools.some((t) => !known.has(t))) throw new McpError("INVALID");
+      const allowedTools = v.toolsMode === "selected" ? [...new Set(v.allowedTools)] : [];
+      await db
+        .update(botIntegration)
+        .set({ toolsMode: v.toolsMode, allowedTools })
+        .where(
+          and(
+            eq(botIntegration.botId, botId),
+            eq(botIntegration.ownerUserId, a.userId),
+            eq(botIntegration.serverId, serverId),
+          ),
+        );
+      return { toolsMode: v.toolsMode, allowedTools };
     },
     /** The access token of the plugin `name` the user bound to the bot, for a CLI run that needs to authenticate as that account. */
     async tokenOf(a: ActiveActor, botId: string, name: string): Promise<string | undefined> {
@@ -330,6 +475,31 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
         .where(and(eq(mcpServer.name, name), eq(mcpServer.ownerUserId, a.userId)));
       return s;
     },
+    /** Internal (plugins): a server row by id, whoever owns it. The caller checks that the user may use it. */
+    async serverById(id: string) {
+      const [s] = await db.select().from(mcpServer).where(eq(mcpServer.id, id));
+      return s;
+    },
+    /** Internal (plugins): who may use the user's server. Going back to private removes every teammate's binding at once. */
+    async setSharing(a: ActiveActor, id: string, sharing: "private" | "team") {
+      await owned(a, id);
+      await db
+        .update(mcpServer)
+        .set({ sharing })
+        .where(and(eq(mcpServer.id, id), eq(mcpServer.ownerUserId, a.userId)));
+      if (sharing === "private")
+        await db
+          .delete(botIntegration)
+          .where(and(eq(botIntegration.serverId, id), ne(botIntegration.ownerUserId, a.userId)));
+    },
+    /** Internal (plugins): servers teammates shared with the team, with their owner's name. */
+    async sharedWithMe(a: ActiveActor) {
+      return db
+        .select({ id: mcpServer.id, name: mcpServer.name, ownerName: user.name })
+        .from(mcpServer)
+        .innerJoin(user, eq(user.id, mcpServer.ownerUserId))
+        .where(and(eq(mcpServer.sharing, "team"), ne(mcpServer.ownerUserId, a.userId)));
+    },
     async setConnection(a: ActiveActor, id: string, connectionId: string | null) {
       await owned(a, id);
       await db
@@ -340,12 +510,17 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     /** Tool catalogue of one of the user's servers (opens and closes a session). */
     async tools(a: ActiveActor, serverId: string) {
       const s = await owned(a, serverId);
-      return withClient(a, s, async (c) =>
+      const tools = await withClient(a, s, async (c) =>
         (await c.listTools()).tools.map((t) => ({
           name: t.name,
           description: (t.description ?? "").slice(0, 300),
         })),
       );
+      await db
+        .update(mcpServer)
+        .set({ tools })
+        .where(and(eq(mcpServer.id, serverId), eq(mcpServer.ownerUserId, a.userId)));
+      return tools;
     },
     /**
      * A scope keeps sessions open across the tool calls of ONE chat turn (stateful servers such as a browser need that), then closes
@@ -363,6 +538,16 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
           const hit = (await this.bound(a, botId)).find((b) => b.name === serverName);
           if (!hit) throw new McpError("NOT_BOUND");
           const srv = await owned(a, hit.id);
+          const trail = {
+            kind: "tool_call",
+            botId,
+            subjectId: srv.id,
+            detail: auditToolDetail("mcp", tool),
+          } as const;
+          if (!toolAllowed(hit, tool)) {
+            await audit(db, a.userId, { ...trail, outcome: "denied" });
+            throw new McpError("TOOL_NOT_ALLOWED");
+          }
           try {
             let sess = sessions.get(srv.id);
             if (!sess) {
@@ -370,14 +555,12 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
               sessions.set(srv.id, sess);
             }
             const out = text(await callWith(sess.client, tool, args));
-            await audit(db, a.userId, { kind: "tool_call", botId, outcome: "ok", detail: "mcp" });
+            await audit(db, a.userId, { ...trail, outcome: "ok" });
             return out;
           } catch (e) {
             await audit(db, a.userId, {
-              kind: "tool_call",
-              botId,
+              ...trail,
               outcome: e instanceof McpError && e.code === "TIMEOUT" ? "timeout" : "failed",
-              detail: "mcp",
             });
             throw e;
           }
@@ -400,18 +583,26 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       const hit = bound.find((b) => b.name === serverName);
       if (!hit) throw new McpError("NOT_BOUND");
       const s = await owned(a, hit.id);
+      const trail = {
+        kind: "tool_call",
+        botId,
+        subjectId: s.id,
+        detail: auditToolDetail("mcp", tool),
+      } as const;
+      if (!toolAllowed(hit, tool)) {
+        await audit(db, a.userId, { ...trail, outcome: "denied" });
+        throw new McpError("TOOL_NOT_ALLOWED");
+      }
       try {
         const out = await withClient(a, s, async (c) =>
           text(await c.callTool({ name: tool, arguments: args })),
         );
-        await audit(db, a.userId, { kind: "tool_call", botId, outcome: "ok", detail: "mcp" });
+        await audit(db, a.userId, { ...trail, outcome: "ok" });
         return out;
       } catch (e) {
         await audit(db, a.userId, {
-          kind: "tool_call",
-          botId,
+          ...trail,
           outcome: e instanceof McpError && e.code === "TIMEOUT" ? "timeout" : "failed",
-          detail: "mcp",
         });
         throw e;
       }

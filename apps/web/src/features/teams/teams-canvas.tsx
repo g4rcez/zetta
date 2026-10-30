@@ -12,7 +12,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useNavigate } from "@tanstack/react-router";
-import { Crown, Plus, Settings2 } from "lucide-react";
+import { CrownIcon, PlusIcon, SlidersHorizontalIcon } from "@phosphor-icons/react";
 import {
   createContext,
   useCallback,
@@ -97,7 +97,7 @@ function TeamGroup({ id, data, selected }: NodeProps<TeamNode>) {
               aria-label={`Configure ${data.name}`}
               onClick={() => actions.configure(id)}
             >
-              <Settings2 className="size-4" aria-hidden="true" />
+              <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
             </button>
           </Tip>
         </div>
@@ -116,7 +116,7 @@ function BotCard({ data, selected }: NodeProps<BotNode>) {
       style={{ width: BOT_SIZE.w, height: BOT_SIZE.h }}
       className={cn(
         "flex items-center rounded-md border bg-card px-2 text-xs shadow",
-        data.kind === "chief" && "border-amber-500",
+        data.kind === "chief" && "border-warn",
         selected && "ring-2 ring-primary",
       )}
     >
@@ -127,7 +127,7 @@ function BotCard({ data, selected }: NodeProps<BotNode>) {
         sub={data.role || (data.kind === "chief" ? "Chief" : "Member")}
         trailing={
           data.kind === "chief" ? (
-            <Crown className="size-3 shrink-0 text-amber-500" aria-label="Chief" />
+            <CrownIcon className="size-3 shrink-0 text-warn" aria-label="Chief" />
           ) : undefined
         }
       />
@@ -290,7 +290,7 @@ function Editor() {
                     })
                   }
                 >
-                  <Plus className="size-4" aria-hidden="true" /> New team
+                  <PlusIcon className="size-4" aria-hidden="true" /> New team
                 </Button>
               </Tip>
             </div>
@@ -422,7 +422,7 @@ function Editor() {
                     {members > TEAM_SIZE_WARNING_AT && (
                       <p
                         role="status"
-                        className="rounded border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm"
+                        className="rounded border border-warn/50 bg-warn/10 px-3 py-2 text-sm"
                       >
                         {TEAM_SIZE_WARNING}
                       </p>
@@ -454,8 +454,8 @@ function Editor() {
                                 sub={m.data.role || (m.data.kind === "chief" ? "Chief" : "Member")}
                                 trailing={
                                   m.data.kind === "chief" ? (
-                                    <Crown
-                                      className="size-3 shrink-0 text-amber-500"
+                                    <CrownIcon
+                                      className="size-3 shrink-0 text-warn"
                                       aria-label="Chief"
                                     />
                                   ) : undefined

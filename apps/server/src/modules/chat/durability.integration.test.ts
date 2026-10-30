@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
 import { membership } from "@zetta/db/schema/identity";
-import { message } from "@zetta/db/schema/chat";
+import { chatQueue, message } from "@zetta/db/schema/chat";
 import { eq } from "@zetta/db/query";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
@@ -49,7 +49,21 @@ suite("durable chat turns against compose postgres", () => {
     }
   };
   const slowRun = createTurnRunner(db, (async () => "x") as never, slowCli as never);
-  const chat = createChatService(db, slowRun);
+  const chat = createChatService(
+    db,
+    slowRun,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { backgroundActor: (id) => access.requireActive(new Headers({ "x-test-user": id })) },
+  );
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: { access, chat },
@@ -305,5 +319,150 @@ suite("durable chat turns against compose postgres", () => {
     });
     expect(r.json.user.mentions.skipped[0].name).toBe("ghost");
     expect(r.json.assistant.content).toContain("was not asked");
+  });
+
+  type Row = {
+    id: string;
+    seq: number;
+    role: string;
+    content: string;
+    status: string;
+    parentMessageId?: string | null;
+    queue?: string;
+  };
+  /** Waits until nothing is queued or running in the conversation, then returns its messages. */
+  const drained = async (c: string): Promise<Row[]> => {
+    for (let i = 0; i < 200; i++) {
+      const msgs = (await call(A, "GET", `/api/conversations/${c}/messages`)).json
+        .messages as Row[];
+      if (
+        !msgs.some((m) => m.queue === "pending" || m.queue === "running" || m.status === "running")
+      )
+        return msgs;
+      await Bun.sleep(50);
+    }
+    throw new Error("the queue did not drain");
+  };
+  const chatReq = (as: string, c: string, body: object) =>
+    req(as, "POST", `/api/conversations/${c}/chat`, body);
+
+  test("messages sent while a turn runs are saved at once and each is answered in its own thread, in order", async () => {
+    const { c } = await setup(A);
+    const first = await chatReq(A, c, { content: "FIRST" });
+    const reader = first.body!.getReader();
+    await reader.read();
+    const queued = await call(A, "POST", `/api/conversations/${c}/queue`, { content: "SECOND" });
+    expect(queued.status).toBe(201);
+    const busy = await chatReq(A, c, { content: "THIRD" });
+    expect(busy.status).toBe(200);
+    expect(await busy.text()).toContain('"type":"data-user-saved"');
+    const pending = (await call(A, "GET", `/api/conversations/${c}/messages`)).json
+      .messages as Row[];
+    expect(
+      pending.filter((m) => m.role === "user").map((m) => [m.content, m.queue ?? null]),
+    ).toEqual([
+      ["FIRST", null],
+      ["SECOND", "pending"],
+      ["THIRD", "pending"],
+    ]);
+    while (!(await reader.read()).done);
+    prompts.length = 0;
+    const msgs = await drained(c);
+    const second = msgs.find((m) => m.content === "SECOND")!;
+    const third = msgs.find((m) => m.content === "THIRD")!;
+    const answerOf = (id: string) =>
+      msgs.find((m) => m.role === "assistant" && m.parentMessageId === id)!;
+    expect(answerOf(second.id).status).toBe("complete");
+    expect(answerOf(third.id).status).toBe("complete");
+    expect(answerOf(second.id).seq).toBeLessThan(answerOf(third.id).seq);
+    expect(msgs.filter((m) => m.role === "assistant" && !m.parentMessageId)).toHaveLength(1);
+    expect(msgs.some((m) => m.queue)).toBe(false);
+    // The answer to SECOND sees what came before it, itself once, and not the message queued after it.
+    expect(prompts[0]!.split("SECOND").length - 1).toBe(1);
+    expect(prompts[0]).toContain("FIRST");
+    expect(prompts[0]).not.toContain("THIRD");
+  });
+
+  test("Stop cancels only the reply in progress; queued messages are still answered", async () => {
+    const { c } = await setup(A);
+    const first = await chatReq(A, c, { content: "slow" });
+    const reader = first.body!.getReader();
+    await reader.read();
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "Q1" });
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "Q2" });
+    expect((await call(A, "POST", `/api/conversations/${c}/cancel`)).json.cancelled).toBe(true);
+    while (!(await reader.read()).done);
+    const msgs = await drained(c);
+    expect(msgs.find((m) => m.role === "assistant" && !m.parentMessageId)!.status).toBe(
+      "cancelled",
+    );
+    for (const q of ["Q1", "Q2"]) {
+      const asked = msgs.find((m) => m.content === q)!;
+      expect(msgs.find((m) => m.parentMessageId === asked.id)!.status).toBe("complete");
+    }
+  });
+
+  test("a queued message can be removed before it starts, and a repeated clientRequestId queues it once", async () => {
+    const { c } = await setup(A);
+    const first = await chatReq(A, c, { content: "slow" });
+    const reader = first.body!.getReader();
+    await reader.read();
+    const body = { content: "DROP-ME", clientRequestId: "req-" + uuidv7() };
+    const a = await call(A, "POST", `/api/conversations/${c}/queue`, body);
+    const b = await call(A, "POST", `/api/conversations/${c}/queue`, body);
+    expect(b.json.message.id).toBe(a.json.message.id);
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "KEEP-ME" });
+    const id = a.json.message.id as string;
+    expect((await call(B, "DELETE", `/api/conversations/${c}/queue/${id}`)).status).toBe(404);
+    expect((await call(A, "DELETE", `/api/conversations/${c}/queue/${id}`)).status).toBe(200);
+    expect((await call(A, "DELETE", `/api/conversations/${c}/queue/${id}`)).status).toBe(404);
+    while (!(await reader.read()).done);
+    const msgs = await drained(c);
+    expect(msgs.some((m) => m.content === "DROP-ME")).toBe(false);
+    const keep = msgs.find((m) => m.content === "KEEP-ME")!;
+    expect(msgs.find((m) => m.parentMessageId === keep.id)!.status).toBe("complete");
+  });
+
+  test("after a restart a queued answer that was running starts again; one that keeps failing stops and can be retried", async () => {
+    const { c } = await setup(A);
+    const [asked] = await db
+      .insert(message)
+      .values({
+        conversationId: c,
+        ownerUserId: A,
+        seq: 1,
+        role: "user",
+        content: "LOST-IN-RESTART",
+      })
+      .returning();
+    await db.insert(chatQueue).values({
+      ownerUserId: A,
+      conversationId: c,
+      messageId: asked!.id,
+      status: "running",
+      attempts: 1,
+    });
+    expect(await chat.recoverQueue()).toBeGreaterThanOrEqual(1);
+    await chat.drainQueues();
+    let msgs = await drained(c);
+    expect(msgs.find((m) => m.parentMessageId === asked!.id)!.status).toBe("complete");
+    expect(msgs.some((m) => m.queue)).toBe(false);
+
+    const [stuck] = await db
+      .insert(message)
+      .values({ conversationId: c, ownerUserId: A, seq: 50, role: "user", content: "CRASHES" })
+      .returning();
+    await db
+      .insert(chatQueue)
+      .values({ ownerUserId: A, conversationId: c, messageId: stuck!.id, attempts: 3 });
+    await chat.drainQueues();
+    msgs = await drained(c);
+    expect(msgs.find((m) => m.id === stuck!.id)!.queue).toBe("failed");
+    expect(msgs.some((m) => m.parentMessageId === stuck!.id)).toBe(false);
+    expect((await call(A, "POST", `/api/conversations/${c}/queue/${stuck!.id}/retry`)).status).toBe(
+      200,
+    );
+    msgs = await drained(c);
+    expect(msgs.find((m) => m.parentMessageId === stuck!.id)!.status).toBe("complete");
   });
 });

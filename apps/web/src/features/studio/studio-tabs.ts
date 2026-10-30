@@ -2,6 +2,8 @@ export const studioTabs = [
   { slug: "routines", label: "Routines" },
   { slug: "attention", label: "Notifications" },
   { slug: "knowledge", label: "Knowledge" },
+  { slug: "wiki", label: "Wiki" },
+  { slug: "instructions", label: "Instructions" },
   { slug: "workflows", label: "Workflows" },
   { slug: "decisions", label: "Decisions" },
   { slug: "accounts", label: "Accounts" },

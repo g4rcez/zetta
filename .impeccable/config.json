@@ -1,0 +1,20 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font",
+        "value": "outfit variable",
+        "createdAt": "2026-10-29T03:50:16.331Z",
+        "reason": "app fonts declared in packages/ui/src/styles/globals.css (--font-heading, --font-mono); artifact CSS mirrors them"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "fira code variable",
+        "createdAt": "2026-10-29T03:50:16.347Z",
+        "reason": "app fonts declared in packages/ui/src/styles/globals.css (--font-heading, --font-mono); artifact CSS mirrors them"
+      }
+    ]
+  }
+}

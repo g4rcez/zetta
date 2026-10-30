@@ -26,5 +26,8 @@ export DBUS_SESSION_BUS_ADDRESS
 
 startxfce4 >/tmp/xfce.log 2>&1 &
 
+# Chromium's DevTools only listen on the container's loopback: relay them on 9222 so the published 127.0.0.1 port reaches them.
+socat TCP-LISTEN:9222,fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:9223 >/tmp/socat.log 2>&1 &
+
 export CUA_ENV_TOKEN_FILE="$TOKEN_FILE"
 exec cua-spacesd

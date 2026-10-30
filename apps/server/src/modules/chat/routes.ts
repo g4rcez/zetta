@@ -178,11 +178,12 @@ export function createChatRoutes(
    * GET /conversations/:id/stream?after=n. Authorization/validation errors are plain JSON before any event. */
   function sse(follow: AsyncGenerator<{ n: number; event: unknown }>, onClose: () => void) {
     const encoder = new TextEncoder();
+    let beat: ReturnType<typeof setInterval> | undefined;
     return new Response(
       new ReadableStream({
         async start(controller) {
           // A bot can work for hours without a word; a comment frame keeps proxies and the server's idle timeout from closing the stream.
-          const beat = setInterval(
+          beat = setInterval(
             () => {
               try {
                 controller.enqueue(encoder.encode(": ping\n\n"));
@@ -210,6 +211,9 @@ export function createChatRoutes(
           }
         },
         cancel() {
+          // The client left: stop the heartbeat and the follower (it ends at its next wake-up, at most 15 s).
+          clearInterval(beat);
+          void follow.return(undefined).catch(() => {});
           onClose();
         }, // dropping the connection never cancels the turn
       }),
@@ -302,8 +306,24 @@ export function createChatRoutes(
           "Open Zetta from its trusted application and try again.",
         );
       const actor = await access.requireActive(request.headers);
-      const turn = await chat.startTurn(actor, parse(uuid, params.id), parse(send, body));
-      return uiStream({ rec: turn.rec, follow: () => turn.follow(0) });
+      const id = parse(uuid, params.id);
+      const input = parse(send, body);
+      // A busy chat queues the message: it is saved now and answered in its thread when the turns before it end.
+      const turn = (await chat.isBusy(actor, id))
+        ? undefined
+        : await chat.startTurn(actor, id, input).catch((e) => {
+            if (e instanceof TurnBusyError) return undefined;
+            throw e;
+          });
+      if (turn) return uiStream({ rec: turn.rec, follow: () => turn.follow(0) });
+      const saved = await chat.enqueue(actor, id, input);
+      return uiStream({
+        rec: {},
+        follow: async function* () {
+          yield { event: { type: "user", message: saved } as const };
+          yield { event: { type: "done" } as const };
+        },
+      });
     } catch (error) {
       return mapError(error);
     }
@@ -392,6 +412,27 @@ export function createChatRoutes(
     .get("/conversations/:id/stream", resumeReply)
     .post("/conversations/:id/chat", chatReply)
     .get("/conversations/:id/chat/stream", resumeChat)
+    .post(
+      "/conversations/:id/queue",
+      guarded(
+        async ({ actor, body, params }) => ({
+          message: await chat.enqueue(actor, parse(uuid, params.id), parse(send, body)),
+        }),
+        201,
+      ),
+    )
+    .delete(
+      "/conversations/:id/queue/:messageId",
+      guarded(async ({ actor, params }) =>
+        chat.removeQueued(actor, parse(uuid, params.id), parse(uuid, params.messageId)),
+      ),
+    )
+    .post(
+      "/conversations/:id/queue/:messageId/retry",
+      guarded(async ({ actor, params }) =>
+        chat.retryQueued(actor, parse(uuid, params.id), parse(uuid, params.messageId)),
+      ),
+    )
     .post(
       "/conversations/:id/cancel",
       guarded(async ({ actor, params }) => ({

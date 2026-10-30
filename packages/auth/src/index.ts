@@ -2,9 +2,41 @@ import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import type { Database } from "@zetta/db";
 import { uuidv7 } from "@zetta/core/uuid";
 import * as schema from "@zetta/db/schema/auth";
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
+import { mcp } from "@better-auth/mcp";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError, isAPIError } from "better-auth/api";
-import { createFirstAccountClaim, createInvitationSignupGate, createInvitationSignupPolicy, type FirstAccountSetup, type InvitationSignupVerifier } from "./invitation-policy";
+import { jwt } from "better-auth/plugins";
+import { CLIENT_IP_HEADER } from "./client-ip-header";
+import {
+  createFirstAccountClaim,
+  createInvitationSignupGate,
+  createInvitationSignupPolicy,
+  type FirstAccountSetup,
+  type InvitationSignupVerifier,
+} from "./invitation-policy";
+
+export { CLIENT_IP_HEADER };
+export { requireMcpAuth } from "@better-auth/mcp";
+export { createInsufficientScopeError } from "better-auth/oauth2";
+
+/** OAuth scopes of Zetta's MCP server: read tools need `mcp:read`, tools that change something need `mcp:write`. */
+export const MCP_SCOPES = { read: "mcp:read", write: "mcp:write" } as const;
+
+/** The protected resource MCP access tokens are bound to (their `aud`). OAuth needs HTTPS here, except on loopback. */
+export function mcpResource(env: Pick<AuthConfig, "BETTER_AUTH_URL">) {
+  return new URL("/api/mcp", env.BETTER_AUTH_URL).toString();
+}
+
+/**
+ * `none` lets the desktop app (a `views://` origin) call the API with the session cookie. A web-only install should set
+ * ZETTA_COOKIE_SAMESITE=lax so other sites cannot make the browser send the session cookie at all.
+ */
+function cookieSameSite(): "none" | "lax" | "strict" {
+  const v = process.env.ZETTA_COOKIE_SAMESITE?.trim().toLowerCase();
+  return v === "lax" || v === "strict" ? v : "none";
+}
 
 export type AuthConfig = {
   BETTER_AUTH_URL: string;
@@ -39,32 +71,66 @@ export function createAuthOptions(
     emailAndPassword: { enabled: true },
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
+    // Sign-in is the password-guessing surface: a longer window than the default (3 per 10 s) that still stops a brute force per client.
+    rateLimit: { customRules: { "/sign-in/email": { window: 15 * 60, max: 20 } } },
     advanced: {
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
       database: { generateId: () => uuidv7() },
       defaultCookieAttributes: {
-        sameSite: "none",
+        sameSite: cookieSameSite(),
         secure: true,
         httpOnly: true,
       },
     },
-    plugins: [],
-    ...(options === undefined ? {} : {
-      onAPIError: {
-        onError(error: unknown) {
-          if (isAPIError(error)) throw error;
-          throw new APIError("INTERNAL_SERVER_ERROR", { code: "AUTHENTICATION_UNAVAILABLE", message: "Authentication unavailable" });
-        },
-      },
-      hooks: { before: createInvitationSignupGate(options?.invitationSignupVerifier, options?.firstAccount) },
-      databaseHooks: {
-        user: {
-          create: {
-            before: createInvitationSignupPolicy(options?.invitationSignupVerifier, options?.firstAccount),
-            ...(options?.firstAccount ? { after: createFirstAccountClaim(options.firstAccount) } : {}),
+    plugins: [
+      // Signs MCP access tokens and serves /jwks, which requireMcpAuth verifies them with.
+      jwt(),
+      mcp({
+        // The sign-in and consent pages are web app routes; the API redirects there with a signed query.
+        loginPage: new URL("/login", env.CORS_ORIGIN).toString(),
+        consentPage: new URL("/oauth/consent", env.CORS_ORIGIN).toString(),
+        resource: mcpResource(env),
+        scopes: ["openid", "profile", "email", "offline_access", MCP_SCOPES.read, MCP_SCOPES.write],
+        // Clients identify themselves through CIMD only. Without this, any member could create or edit OAuth clients through the API and
+        // name one like Zetta itself to phish a teammate's consent.
+        clientPrivileges: () => false,
+      }),
+      // MCP clients identify themselves by a metadata URL instead of registering. The bundled transport resolves the host once, refuses
+      // private and special-use addresses, pins the address and never follows redirects (checked on Bun in oauth-transport.test.ts).
+      cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
+    ],
+    ...(options === undefined
+      ? {}
+      : {
+          onAPIError: {
+            onError(error: unknown) {
+              if (isAPIError(error)) throw error;
+              throw new APIError("INTERNAL_SERVER_ERROR", {
+                code: "AUTHENTICATION_UNAVAILABLE",
+                message: "Authentication unavailable",
+              });
+            },
           },
-        },
-      },
-    }),
+          hooks: {
+            before: createInvitationSignupGate(
+              options?.invitationSignupVerifier,
+              options?.firstAccount,
+            ),
+          },
+          databaseHooks: {
+            user: {
+              create: {
+                before: createInvitationSignupPolicy(
+                  options?.invitationSignupVerifier,
+                  options?.firstAccount,
+                ),
+                ...(options?.firstAccount
+                  ? { after: createFirstAccountClaim(options.firstAccount) }
+                  : {}),
+              },
+            },
+          },
+        }),
   } satisfies BetterAuthOptions;
 }
 

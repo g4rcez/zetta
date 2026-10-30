@@ -1,4 +1,5 @@
 import { uuidv7 } from "@zetta/core/uuid";
+import { Link } from "@tanstack/react-router";
 import {
   useEffect,
   useRef,
@@ -9,20 +10,20 @@ import {
   type KeyboardEvent,
 } from "react";
 import {
-  ArrowUp,
-  AtSign,
-  Bold,
-  BookOpen,
-  Code,
-  Eye,
-  FolderOpen,
-  Italic,
-  Link2,
-  Loader2,
-  Paperclip,
-  Square,
-  X,
-} from "lucide-react";
+  ArrowUpIcon,
+  AtIcon,
+  TextBIcon,
+  BookOpenIcon,
+  CodeIcon,
+  EyeIcon,
+  FolderOpenIcon,
+  TextItalicIcon,
+  LinkIcon,
+  CircleNotchIcon,
+  PaperclipIcon,
+  SquareIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 
 import {
   Attachment,
@@ -46,6 +47,7 @@ import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
 
 import { ImageViewer } from "./attachment-image";
+import { instructionSummary } from "./triggers";
 import {
   IMAGE_MAX_BYTES,
   listFiles,
@@ -64,7 +66,7 @@ export type Outgoing = {
   fileRefs: string[];
   instructionIds?: string[];
 };
-type Instruction = { id: string; title: string; trigger?: string };
+type Instruction = { id: string; title: string; body: string; trigger?: string };
 const mentionKey = (name: string) => name.replace(/\s+/g, "");
 const PICTURES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_ATTACHMENTS = 5;
@@ -175,7 +177,6 @@ export function Composer({
   const canSend =
     (!!value.trim() || attached.length > 0 || pictures.length > 0) &&
     !staged.some((x) => x.uploading) &&
-    !busy &&
     !disabled;
 
   function dropStaged(key: string) {
@@ -259,6 +260,20 @@ export function Composer({
         (r) => setLibrary(r.instructions),
         onError,
       );
+  }
+  function openInstructions() {
+    const el = input.current;
+    if (!el) return;
+    const at = el.selectionStart,
+      pad = at > 0 && !/\s/.test(value[at - 1]!) ? " " : "",
+      next = value.slice(0, at) + pad + "/" + value.slice(el.selectionEnd),
+      caret = at + pad.length + 1;
+    onChange(next);
+    trackMention(next, caret);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(caret, caret);
+    });
   }
   function pickInstruction(i: Instruction) {
     if (!slash) return;
@@ -401,20 +416,47 @@ export function Composer({
           onClose={() => setViewing(undefined)}
         />
       )}
-      {slash && instructionCandidates.length > 0 && (
+      {slash && library && (
         <ul
           role="listbox"
           aria-label="Follow an instruction"
-          className="absolute bottom-full left-0 z-20 mb-1 w-72 overflow-hidden rounded-lg border bg-popover p-1 shadow-md"
+          className="absolute bottom-full left-0 z-20 mb-1 w-80 overflow-hidden rounded-lg border bg-popover p-1 shadow-md"
         >
-          <li className="px-2 py-1 text-xs font-medium text-muted-foreground" role="presentation">
+          <li
+            className="flex items-center justify-between px-2 py-1 text-xs font-medium text-muted-foreground"
+            role="presentation"
+          >
             Instructions
+            <Link
+              to="/studio/$tab"
+              params={{ tab: "instructions" }}
+              onMouseDown={(e) => e.preventDefault()}
+              className="underline hover:text-foreground"
+            >
+              Manage
+            </Link>
           </li>
+          {instructionCandidates.length === 0 && (
+            <li className="px-2 py-1.5 text-sm text-muted-foreground" role="presentation">
+              {library.length === 0 ? "No instructions yet. " : "No match."}
+              {library.length === 0 && (
+                <Link
+                  to="/studio/$tab"
+                  params={{ tab: "instructions" }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  className="underline hover:text-foreground"
+                >
+                  Create one
+                </Link>
+              )}
+            </li>
+          )}
           {instructionCandidates.map((i, k) => (
             <li
               key={i.id}
               role="option"
               aria-selected={k === slash.index}
+              title={instructionSummary(i)}
               onMouseDown={(e) => {
                 e.preventDefault();
                 pickInstruction(i);
@@ -424,8 +466,13 @@ export function Composer({
                 k === slash.index ? "bg-accent text-accent-foreground" : "hover:bg-muted",
               )}
             >
-              <BookOpen className="size-4 shrink-0" />
-              <span className="truncate font-medium">{i.title}</span>
+              <BookOpenIcon className="size-4 shrink-0" />
+              <span className="min-w-0">
+                <span className="block truncate font-medium">{i.title}</span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {instructionSummary(i)}
+                </span>
+              </span>
             </li>
           ))}
         </ul>
@@ -463,16 +510,16 @@ export function Composer({
       <InputGroup className="h-auto rounded-lg bg-card shadow-xs">
         <InputGroupAddon align="block-start" className="gap-0.5 border-b px-1.5 py-1">
           <Tool label="Bold (⌘B)" onClick={() => wrap("**")}>
-            <Bold />
+            <TextBIcon />
           </Tool>
           <Tool label="Italic (⌘I)" onClick={() => wrap("_")}>
-            <Italic />
+            <TextItalicIcon />
           </Tool>
           <Tool label="Code" onClick={() => wrap("`")}>
-            <Code />
+            <CodeIcon />
           </Tool>
           <Tool label="Link" onClick={() => wrap("[", "](https://)")}>
-            <Link2 />
+            <LinkIcon />
           </Tool>
           <Separator orientation="vertical" className="mx-1 h-4" />
           <Tool
@@ -480,7 +527,7 @@ export function Composer({
             pressed={previewing}
             onClick={() => setPreviewing((p) => !p)}
           >
-            <Eye />
+            <EyeIcon />
           </Tool>
         </InputGroupAddon>
         {staged.length > 0 && (
@@ -502,7 +549,7 @@ export function Composer({
                     />
                   </button>
                   {x.uploading && (
-                    <Loader2
+                    <CircleNotchIcon
                       aria-label="Uploading"
                       className="pointer-events-none absolute inset-0 m-auto size-5 animate-spin text-foreground"
                     />
@@ -513,7 +560,7 @@ export function Composer({
                     onClick={() => dropStaged(x.key)}
                     className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-xs hover:text-foreground"
                   >
-                    <X className="size-3" />
+                    <XIcon className="size-3" />
                   </button>
                 </li>
               ))}
@@ -526,7 +573,7 @@ export function Composer({
               {attached.map((a) => (
                 <Attachment key={a.id} size="sm">
                   <AttachmentMedia>
-                    <Paperclip />
+                    <PaperclipIcon />
                   </AttachmentMedia>
                   <AttachmentContent>
                     <AttachmentTitle className="max-w-40 truncate">{a.name}</AttachmentTitle>
@@ -536,15 +583,15 @@ export function Composer({
                       aria-label={`Remove ${a.name}`}
                       onClick={() => setAttached((l) => l.filter((x) => x.id !== a.id))}
                     >
-                      <X />
+                      <XIcon />
                     </AttachmentAction>
                   </AttachmentActions>
                 </Attachment>
               ))}
               {chosen.map((i) => (
-                <Attachment key={i.id} size="sm">
+                <Attachment key={i.id} size="sm" title={instructionSummary(i)}>
                   <AttachmentMedia>
-                    <BookOpen />
+                    <BookOpenIcon />
                   </AttachmentMedia>
                   <AttachmentContent>
                     <AttachmentTitle className="max-w-40 truncate">{i.title}</AttachmentTitle>
@@ -554,7 +601,7 @@ export function Composer({
                       aria-label={`Remove ${i.title}`}
                       onClick={() => setChosen((l) => l.filter((x) => x.id !== i.id))}
                     >
-                      <X />
+                      <XIcon />
                     </AttachmentAction>
                   </AttachmentActions>
                 </Attachment>
@@ -562,7 +609,7 @@ export function Composer({
               {fileRefs.map((f) => (
                 <Attachment key={f} size="sm">
                   <AttachmentMedia>
-                    <FolderOpen />
+                    <FolderOpenIcon />
                   </AttachmentMedia>
                   <AttachmentContent>
                     <AttachmentTitle className="max-w-40 truncate">{f}</AttachmentTitle>
@@ -572,7 +619,7 @@ export function Composer({
                       aria-label={`Remove ${f}`}
                       onClick={() => setFileRefs((l) => l.filter((x) => x !== f))}
                     >
-                      <X />
+                      <XIcon />
                     </AttachmentAction>
                   </AttachmentActions>
                 </Attachment>
@@ -613,7 +660,7 @@ export function Composer({
           {!minimal && (
             <>
               <Tool label="Attach files or images" onClick={() => file.current?.click()}>
-                <Paperclip />
+                <PaperclipIcon />
               </Tool>
               <input
                 ref={file}
@@ -627,6 +674,11 @@ export function Composer({
                   void addFiles(picked);
                 }}
               />
+              {instructions && (
+                <Tool label="Use an instruction (/)" onClick={openInstructions}>
+                  <BookOpenIcon />
+                </Tool>
+              )}
               <Popover
                 open={!!picker}
                 onOpenChange={(open) => {
@@ -647,7 +699,7 @@ export function Composer({
                       />
                     }
                   >
-                    <FolderOpen />
+                    <FolderOpenIcon />
                   </TooltipTrigger>
                   <TooltipContent>Server files</TooltipContent>
                 </Tooltip>
@@ -696,7 +748,7 @@ export function Composer({
                   });
                 }}
               >
-                <AtSign />
+                <AtIcon />
               </Tool>
             </>
           )}
@@ -704,20 +756,22 @@ export function Composer({
           <span className="hidden pr-2 text-[11px] text-muted-foreground sm:inline">
             <kbd className="font-sans font-medium">Shift + Return</kbd> for a new line
           </span>
-          {busy && onStop ? (
+          {busy && onStop && (
             <InputGroupButton size="icon-sm" variant="outline" aria-label="Stop" onClick={onStop}>
-              <Square className="fill-current" />
+              <SquareIcon weight="fill" />
             </InputGroupButton>
-          ) : (
+          )}
+          {/* While the bot works, a message is queued and answered in its own thread. */}
+          {(!busy || !onStop || canSend) && (
             <InputGroupButton
               type="submit"
               size="icon-sm"
               variant="default"
-              aria-label="Send"
+              aria-label={busy ? "Send; it waits until the bot finishes" : "Send"}
               disabled={!canSend}
               className="data-disabled:bg-muted data-disabled:text-muted-foreground"
             >
-              <ArrowUp />
+              <ArrowUpIcon />
             </InputGroupButton>
           )}
         </InputGroupAddon>

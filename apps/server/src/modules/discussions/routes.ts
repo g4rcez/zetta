@@ -125,6 +125,10 @@ export function createDiscussionRoutes(
         discussions: await store.list(c.actor, schemas.status.parse(c.query.status || undefined)),
       })),
     )
+    .get(
+      "/discussions/running",
+      g(async (c) => ({ running: await store.countRunning(c.actor) })),
+    )
     .post(
       "/discussions",
       g(async (c) => {

@@ -160,6 +160,11 @@ export type DockerBrowser = {
   memory: string;
   cpus: string;
   pids: number;
+  /**
+   * Docker network for the container. The DevTools port has no login, and Chromium's bridge (`socat`) listens on every container address, so
+   * any container on the same network can drive the browser and read its cookies. Use a dedicated network with inter-container traffic off.
+   */
+  network?: string | undefined;
 };
 /** `ZETTA_BROWSER_RUNTIME=docker` runs each browser session in its own hardened container instead of on the host. */
 export function dockerBrowserConfig(
@@ -172,7 +177,45 @@ export function dockerBrowserConfig(
     memory: env.ZETTA_BROWSER_MEMORY ?? "1g",
     cpus: env.ZETTA_BROWSER_CPUS ?? "1",
     pids: Number(env.ZETTA_BROWSER_PIDS ?? 512),
+    // Own network by default; ZETTA_BROWSER_NETWORK= (empty) opts out and uses Docker's default bridge.
+    network: env.ZETTA_BROWSER_NETWORK ?? DEFAULT_BROWSER_NETWORK,
   };
+}
+const DEFAULT_BROWSER_NETWORK = "zetta-browser";
+const networkChecks = new Map<string, Promise<string | undefined>>();
+/**
+ * Makes sure the browser network exists and returns its name, or undefined to fall back to the default bridge. A separate network keeps
+ * harness and desktop containers (which run arbitrary commands) away from a browser's DevTools port; with inter-container traffic off,
+ * browsers cannot reach each other either. Engines that refuse that option (Podman) still get their own network.
+ */
+export function ensureBrowserNetwork(d: DockerBrowser): Promise<string | undefined> {
+  const name = d.network;
+  if (!name) return Promise.resolve(undefined);
+  let hit = networkChecks.get(name);
+  if (!hit) {
+    const docker = async (...args: string[]) => {
+      const p = Bun.spawn([d.bin, ...args], {
+        stdout: "ignore",
+        stderr: "ignore",
+        env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
+      });
+      return (await p.exited) === 0;
+    };
+    hit = (async () => {
+      if (await docker("network", "inspect", name)) return name;
+      if (
+        await docker("network", "create", "-o", "com.docker.network.bridge.enable_icc=false", name)
+      )
+        return name;
+      if (await docker("network", "create", name)) return name;
+      console.warn(
+        `Browser network ${name} could not be created: browser containers share Docker's default network.`,
+      );
+      return undefined;
+    })();
+    networkChecks.set(name, hit);
+  }
+  return hit;
 }
 export function browserDockerArgs(d: DockerBrowser, o: { name: string; profileDir: string }) {
   return [
@@ -198,6 +241,7 @@ export function browserDockerArgs(d: DockerBrowser, o: { name: string; profileDi
     `/tmp:rw,size=256m,uid=${containerUser().uid}`,
     "--tmpfs",
     `/home/agent:rw,size=64m,uid=${containerUser().uid}`,
+    ...(d.network ? ["--network", d.network] : []),
     "-p",
     "127.0.0.1::9222",
     "-v",
@@ -289,7 +333,13 @@ export function createComputerService({
         await chmod(dir, 0o700).catch(() => {});
         container = `zetta-browser-${uuidv7()}`;
         const run = Bun.spawn(
-          [docker.bin, ...browserDockerArgs(docker, { name: container, profileDir: dir })],
+          [
+            docker.bin,
+            ...browserDockerArgs(
+              { ...docker, network: await ensureBrowserNetwork(docker) },
+              { name: container, profileDir: dir },
+            ),
+          ],
           {
             stdout: "pipe",
             stderr: "pipe",

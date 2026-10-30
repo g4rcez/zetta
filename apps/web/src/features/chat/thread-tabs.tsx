@@ -1,4 +1,11 @@
-import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArrowUUpLeftIcon,
+  DotsThreeIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { Button } from "@zetta/ui/components/button";
 import {
@@ -87,18 +94,18 @@ export function ThreadTabs({
                 aria-label={`${t.title} menu`}
                 className="mr-0.5 rounded p-1 opacity-60 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
               >
-                <MoreHorizontal className="size-3.5" />
+                <DotsThreeIcon className="size-3.5" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-40">
                 <DropdownMenuItem onClick={() => setRenaming(t.id)}>
-                  <Pencil /> Rename
+                  <PencilSimpleIcon /> Rename
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => onUpdate(t.id, { archived: true })}>
-                  <Archive /> Archive
+                  <ArchiveIcon /> Archive
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={() => onDelete(t.id)}>
-                  <Trash2 /> Delete
+                  <TrashIcon /> Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -112,7 +119,7 @@ export function ThreadTabs({
         title="New thread"
         onClick={onNew}
       >
-        <Plus />
+        <PlusIcon />
       </Button>
       <DropdownMenu open={archiveOpen} onOpenChange={setArchiveOpen}>
         <DropdownMenuTrigger
@@ -120,7 +127,7 @@ export function ThreadTabs({
           title="Archived threads"
           className="ml-auto shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
         >
-          <ArchiveRestore className="size-4" />
+          <ArrowUUpLeftIcon className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           {archived.length === 0 && (

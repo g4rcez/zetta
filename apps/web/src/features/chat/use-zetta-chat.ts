@@ -1,10 +1,11 @@
 import { useChat } from "@ai-sdk/react";
+import { uuidv7 } from "@zetta/core/uuid";
 import { DefaultChatTransport } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ENV } from "../../env";
-import { cancelTurn } from "./chat-client";
-import { liveRows, summaryOf, type ZettaUIMessage } from "./chat-rows";
+import { cancelTurn, chatClient } from "./chat-client";
+import { liveRows, reuseRows, summaryOf, type Row, type ZettaUIMessage } from "./chat-rows";
 
 type Extras = {
   parentMessageId?: string;
@@ -75,6 +76,8 @@ export function useZettaChat({
 
   const chat = useChat<ZettaUIMessage>({
     transport,
+    // One render per ~50ms instead of one per SSE chunk.
+    throttle: 50,
     // The server keeps running a turn when the connection drops, so reattach and refresh instead of leaving the person with a dead reply.
     onError: (e) => {
       if (!isNetworkError(e)) return;
@@ -108,31 +111,48 @@ export function useZettaChat({
   // Switching conversations drops the other conversation's turn and reattaches to one still running on the server.
   const adopted = useRef<string | undefined>(undefined); // a conversation created by our own first message: keep its stream
   useEffect(() => {
+    // The resume GET stays open while the server turn runs: close it when leaving, or each visit leaks a connection and, with the
+    // browser's per-host limit of 6, every later request (messages, polls) sits pending forever.
+    const close = () => {
+      if (live.current === "ready" || live.current === "error") return;
+      // Our own first message moved the URL to the conversation it created: that stream belongs to this chat, keep it.
+      if (adopted.current && adopted.current === conv.current) return;
+      leaving.current = true;
+      void chat.stop().finally(() => {
+        leaving.current = false;
+      });
+    };
     if (conversationId && conversationId === adopted.current) {
       adopted.current = undefined;
-      return;
+      return close;
     }
     chat.setMessages([]);
     if (conversationId && !parentMessageId) {
       origin.current = "resume";
       void chat.resumeStream().catch(() => {});
     }
-    // The resume GET stays open while the server turn runs: close it when leaving, or each visit leaks a connection and, with the
-    // browser's per-host limit of 6, every later request (messages, polls) sits pending forever.
-    return () => {
-      if (live.current === "ready" || live.current === "error") return;
-      leaving.current = true;
-      void chat.stop().finally(() => {
-        leaving.current = false;
-      });
-    };
+    return close;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, parentMessageId, attachKey]);
 
   const busy = chat.status === "submitted" || chat.status === "streaming";
+  // Live rows get one timestamp per turn, and keep their identity while they do not change.
+  const turnStart = useRef("");
+  if (chat.messages.length === 0) turnStart.current = "";
+  else if (!turnStart.current) turnStart.current = new Date().toISOString();
+  const previous = useRef<Row[]>([]);
+  const rows = useMemo(
+    () =>
+      (previous.current = reuseRows(
+        previous.current,
+        liveRows(chat.messages, parentMessageId, turnStart.current || undefined),
+      )),
+    [chat.messages, parentMessageId],
+  );
+  const summary = useMemo(() => summaryOf(chat.messages), [chat.messages]);
   return {
-    rows: liveRows(chat.messages, parentMessageId),
-    summary: summaryOf(chat.messages),
+    rows,
+    summary,
     busy,
     error:
       origin.current === "send" && chat.error
@@ -147,7 +167,24 @@ export function useZettaChat({
       setDropped(false);
       chat.clearError();
     },
-    send: (text: string, extras: Extras & { conversationId?: string } = {}) => {
+    send: async (text: string, extras: Extras & { conversationId?: string } = {}) => {
+      // A second useChat request would run beside the first one and break its status, stop and finish: the server queues this
+      // message instead and answers it in its thread after the current turn.
+      const id = extras.conversationId ?? conv.current;
+      if (busy && id) {
+        await chatClient.enqueue(id, {
+          clientRequestId: uuidv7(),
+          content: text,
+          ...(extras.parentMessageId || parentMessageId
+            ? { parentMessageId: extras.parentMessageId ?? parentMessageId }
+            : {}),
+          ...(extras.attachmentIds?.length ? { attachmentIds: extras.attachmentIds } : {}),
+          ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
+          ...(extras.instructionIds?.length ? { instructionIds: extras.instructionIds } : {}),
+        });
+        await handlers.current.onSettled(id);
+        return;
+      }
       origin.current = "send";
       if (extras.conversationId && extras.conversationId !== conv.current) {
         adopted.current = extras.conversationId;

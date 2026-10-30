@@ -8,6 +8,7 @@ import type { Database } from "@zetta/db";
 import { and, asc, eq, ne } from "@zetta/db/query";
 import { computerVm } from "@zetta/db/schema/features";
 import { assertPublicUrl, assertWebScheme, ComputerError, type Actor } from "./service";
+import { pageLinks, type PageLinks } from "./cdp";
 import type { McpCall } from "./desktop";
 import type { CredentialField } from "../integrations/plugins/registry";
 import { vncPassword } from "./vnc";
@@ -86,8 +87,26 @@ type VSession = {
   labels?: Map<number, string>;
   /** Chromium's window title at the last read, to see when an action changed the page. */
   title?: string | undefined;
+  /** The published DevTools port, looked up at the first read; null when the VM's image has none (started before it was added). */
+  cdp?: number | null;
   row?: VmRow;
 };
+/**
+ * A read as the bot gets it: the window title, the page address, the numbered screen and, for an explicit read, where each link goes
+ * (the accessibility tree has no addresses, so without it a bot cannot cite a permalink). A settle read stays small: no link list.
+ */
+export function formatRead(
+  title: string | undefined,
+  body: string,
+  page: PageLinks | undefined,
+  settle: boolean,
+) {
+  const head = `Window "${title ?? "Chromium"}" (click_element{n} clicks [n]):${page ? `\nURL: ${page.url.slice(0, 400)}` : ""}`;
+  const screen = `${head}\n${body}`.slice(0, settle ? 6000 : 12_000);
+  if (settle || !page?.links.length) return screen;
+  const links = page.links.map((l) => `- ${l.text || "(no text)"} -> ${l.href}`).join("\n");
+  return `${screen}\nLinks on the page (text -> address):\n${links}`.slice(0, screen.length + 6000);
+}
 /** Keyboard layouts a person can pick for their VM (setxkbmap layout[:variant]). */
 export const KEYBOARD_LAYOUTS = [
   "us",
@@ -154,6 +173,9 @@ export function vmDockerArgs(d: VmDocker, o: { id: string; tokenFile: string; vn
     "127.0.0.1::3211",
     "-p",
     "127.0.0.1::5900",
+    // Chromium's DevTools port (socat in the image): the server reads the page address and its links from it (see pageLinks).
+    "-p",
+    "127.0.0.1::9222",
     d.image,
   ];
 }
@@ -292,12 +314,15 @@ export type VmOptions = {
   maxRunning?: number;
   idleMs?: number;
   allowPrivate?: boolean;
+  /** Reads the page address and links over the DevTools port; injectable so tests do not need Chromium. */
+  links?: (port: number) => Promise<PageLinks>;
 };
 export function createVmService({
   store,
   docker,
   exec = createCliExec(docker.bin),
   connect = connectSpacesd,
+  links = pageLinks,
   tokenRoot,
   maxPerUser = 4,
   maxRunningPerUser = 2,
@@ -848,10 +873,10 @@ export function createVmService({
         s.title = title;
         s.labels = new Map();
         const body = compactTree(tree, s.labels);
-        return `Window "${title ?? "Chromium"}" (click_element{n} clicks [n]):\n${body}`.slice(
-          0,
-          opts.settle ? 6000 : 12_000,
-        );
+        // A VM from an older image publishes no DevTools port, and a page may not answer: the read goes on without the address.
+        if (s.cdp === undefined) s.cdp = await portOf(s.id, 9222).catch(() => null);
+        const page = s.cdp === null ? undefined : await links(s.cdp).catch(() => undefined);
+        return formatRead(title, body, page, Boolean(opts.settle));
       });
     },
     takeover(userId: string, id: string, human: boolean, expected?: "agent" | "human") {

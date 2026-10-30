@@ -3,6 +3,7 @@ import { index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
+import { searchVector } from "./search";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
@@ -15,7 +16,9 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const task = pgTable(
   "task",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => user.id, restrict),
@@ -31,5 +34,10 @@ export const task = pgTable(
   (t) => [
     index("task_bot_id_idx").on(t.botId),
     index("task_conversation_id_idx").on(t.conversationId),
-    index("task_message_id_idx").on(t.messageId),index("task_owner_idx").on(t.ownerUserId, t.status, t.updatedAt)],
+    index("task_message_id_idx").on(t.messageId),
+    index("task_owner_idx").on(t.ownerUserId, t.status, t.updatedAt),
+    // wiki jobs scan finished tasks of the last day across owners
+    index("task_status_updated_idx").on(t.status, t.updatedAt),
+    index("task_search_idx").using("gin", searchVector(sql`${t.title} || ' ' || ${t.description}`)),
+  ],
 );

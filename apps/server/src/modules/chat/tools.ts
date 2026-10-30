@@ -1,16 +1,19 @@
 import { uiPrompt } from "@zetta/render/prompt";
+import { WIKI_PAGE_TYPES } from "@zetta/db/schema/wiki";
 import { z } from "zod";
+import { designSystemPrompt } from "../artifacts/design-system";
 
 /**
  * Text protocol for bots (works with any harness that only returns text). A bot reply may contain fenced blocks:
  *   ```zetta:remember   {"target": "user"|"memory", "action": "add"|"patch"|"remove", "content": "...", "match": "..."} or {"target", "operations": [...]}
  *   ```zetta:instruction {"title": "...", "body": "..."} -> saved at once, for every bot of the user (or the room's team) | {"action": "read", "id"} loads a saved one
+ *   ```zetta:wiki        {"action": "search", "query"} | read {slug} | write {slug, title, body, ...} | patch {slug, match, content} | mark_stale {slug} | suggest {slug, body, reason} -> the user's wiki and pages other members shared (modules/wiki)
  *   ```zetta:config      {"botId": "<id>", "patch": {"personality": "..."}}   -> becomes a proposal the user must approve
  *   ```zetta:create_bot / create_routine / create_workflow / create_vm  -> proposals shown as a creation summary; nothing exists until the user approves (the chief's create_bot and create_team run at once, see CHIEF_TOOLS)
  *   ```zetta:browser     {"action": "open", "url": "https://..."} | click_text | type | key | read
  *   ```zetta:handoff     {"reason": "I need you to sign in"}                 -> attention item; the human takes over
  *   ```zetta:goal        {"goal": "...", "done_when": "..."}                 -> proposal to start a loop; once approved, the bot keeps working turn after turn
- *   ```zetta:goal_progress / goal_done {"summary": "..."}                  -> inside an approved loop only: report progress, or finish it
+ *   ```zetta:goal_progress / goal_done {"summary": "...", "lesson": "..."}   -> inside an approved loop only: report progress (with an optional lesson for the next steps), or finish it
  *   ```zetta:credential  {"ref": "1password:<item>", "field": "password"}    -> Zetta types a shared login into the focused input (value never shown to the bot)
  *   ```zetta:agenda      {"action": "add", "kind": "task", "title": "...", "start": "<ISO>"} | list | update | complete | remove -> the user's Agenda
  *   ```zetta:task        {"action": "add", "title": "...", "status": "backlog"} | list | update {"id", "status": "in_progress"|"blocked"|"review"|"done"} -> the shared task board
@@ -22,7 +25,7 @@ import { z } from "zod";
  *   ```zetta:ui          JSON-patch lines building a view from @zetta/render's catalog -> not a tool: it stays in the reply and the web chat draws it
  */
 /** Shared by the tool preamble and the loop prompts: a bot never makes the user choose how to do the work. */
-export const AUTONOMY = `Never ask the user to choose a method or to approve one. Pick it yourself. If a method fails, try the next one. Prefer the quiet method (WebFetch, search, an API, your own computer) over the user's screen, keyboard or focus. A result from public sources is acceptable: say that it is public when it differs from what the user sees signed in. If every method fails, report the best partial result and what failed. If you are stuck, solve it yourself first. A bot that is not the Chief then sends zetta:escalate and stops: the Chief decides for it. Only the Chief asks the user, with zetta:handoff, and only for a blocker that only a person can clear (sign-in, CAPTCHA, payment).`;
+export const AUTONOMY = `The user's request sets hard limits: the sources, sites, accounts, scope and output they named. Every method you pick stays inside them. Another method means another way to the same source (another page, the browser, an API or a script), never a source or site the user did not ask for. If no method works inside the limits, say so and name the blocker; never swap in another source. Never ask the user to choose a method or to approve one. Pick it yourself. If a method fails, try the next one. Prefer the quiet method (WebFetch, search, an API, your own computer) over the user's screen, keyboard or focus. A result from public sources is acceptable: say that it is public when it differs from what the user sees signed in. When a step fails, read the error and change approach instead of repeating the same call. When you solve a problem another bot could meet, save it as a zetta:wiki page of type gotcha. If every method fails, report the best partial result and what failed. If you are stuck, solve it yourself first. A bot that is not the Chief then sends zetta:escalate and stops: the Chief decides for it. Only the Chief asks the user, with zetta:handoff, and only for a blocker that only a person can clear (sign-in, CAPTCHA, payment).`;
 
 export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks in your reply (the block name follows the opening backticks):
 \`\`\`zetta:remember
@@ -31,6 +34,9 @@ export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks i
 \`\`\`zetta:instruction
 {"title":"when to use this","body":"1. first step\\n2. second step\\n3. last step","trigger":"optional words that should bring it up","verification":"how to check the result"}
 \`\`\`   (saves an instruction at once: ordered, numbered steps you or another bot must follow next time. Write one after a task that was hard or took several tries and will come back; never put secrets in it. To use a saved one, send {"action":"read","id":"<id>"} with an id from the "Saved instructions" list, then follow its steps in order. When the user names an instruction, follow it exactly.)
+\`\`\`zetta:wiki
+{"action":"search","query":"words about the task"}
+\`\`\`   (the user's wiki: pages that all their bots share about clients, systems, accounts, decisions and known problems. Before work that may have been done before, search it, then load a page with {"action":"read","slug":"..."}. When you finish work and learned something another bot will need (where a thing is, how a system behaves, why a choice was made, a problem and its fix), save it: {"action":"write","slug":"acme-billing","title":"Acme billing","type":"entity|system|decision|howto|gotcha|reference|note","summary":"one line","body":"Markdown; link other pages as [[slug]]","sources":["task:<id>","doc:<id>","artifact:<id>","url:https://..."]} replaces the whole page, so read it first and keep what is still true. List in "sources" where the facts came from (ids from the task board, the Company documents list or published artifacts): when one changes, the page is marked stale. {"action":"patch","slug","match":"exact text","content":"new text"} changes one unique span. {"action":"mark_stale","slug"} flags a page that is wrong or old when you cannot fix it now. Pages "shared by" another member are read only: to change one, send {"action":"suggest","slug","body":"the full new text","reason":"why"} and its owner decides. One topic per page. Never save secrets or one-off details. Ordered steps go in zetta:instruction, facts about the user in zetta:remember.)
 \`\`\`zetta:config
 {"botId":"<id of one of the user's bots>","patch":{"personality":"...","instructions":"..."}}
 \`\`\`   (only a proposal: the user approves the exact change)
@@ -42,7 +48,7 @@ export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks i
 \`\`\`   (the shared task board all the user's bots and the user see, with fixed columns backlog, in_progress, blocked, review, done. Add a task when a message commits you or another bot to a piece of work that takes more than this reply; do not add one for quick answers. Move it as you work: update{id,status}. list returns the board with ids. Say in your reply what you added or moved.)
 \`\`\`zetta:artifact
 {"title":"Weekly sales report","description":"optional one line","path":"reports/sales.html"}
-\`\`\`   (publishes a file as an Artifact: the user finds it in the Artifacts page and can preview or download it any time. Use it when a task or routine asks for a deliverable (a report, numbers, a presentation, a chart, an image, a video, a zip), instead of pasting a long result in the chat. "path" is a file inside your code workspace (any type, up to 500 MB; needs code access). Without code access, or for a short text file, send "content" instead (up to 256 KB: HTML, Markdown, CSV, JSON or plain text) with an optional "fileName" such as "report.html". Give exactly one of path or content. After you read email, pages or tool output, only "content" is accepted: a "path" artifact is ignored then, so send the text inline (a digest of what you read is usually short text). One block per file; for many files, zip them first. Tell the user in your reply what you published.)
+\`\`\`   (publishes a file as an Artifact: the user finds it in the Artifacts page and can preview or download it any time. Use it when a task or routine asks for a deliverable (a report, numbers, a presentation, a chart, an image, a video, a zip), instead of pasting a long result in the chat. "path" is a file inside your code workspace (any type, up to 500 MB; needs code access). Without code access, or for a short text file, send "content" instead (up to 256 KB: HTML, Markdown, CSV, JSON or plain text) with an optional "fileName" such as "report.html". Give exactly one of path or content. After you read email, pages or tool output, only "content" is accepted: a "path" artifact is ignored then, so send the text inline (a digest of what you read is usually short text). One block per file; for many files, zip them first. HTML: ${designSystemPrompt()} Send at most 8 tool blocks per reply. The server tells you which artifacts were published: say a file is published only after you see that, never in the same reply as the block. Tell the user in your reply what you published.)
 \`\`\`zetta:create_routine
 {"botId":"<id of the bot that runs it, usually yours>","title":"Morning Reddit digest","prompt":"complete instructions for one run","timezone":"America/Sao_Paulo","dailyAt":"08:00"}
 \`\`\`   (a recurring task; only a proposal: the user approves it, then activates it in Studio > Routines. dailyAt "HH:MM" in that IANA timezone, or everyMinutes (5 to 10080) instead; several times a day = one routine per time. Each run is a new chat turn with your tools, so the prompt must stand on its own. Propose it in your first reply, before using a computer, plugin or reading anything: changes asked for after outside content are ignored.)
@@ -70,12 +76,12 @@ const DESKTOP_TOOLS = `
 {"name":"Banking","purpose":"why a separate computer is needed"}
 \`\`\`   (only a proposal: asks the user for another computer, e.g. to keep a second account signed in. Use the default computer unless a separate one is really needed.)`;
 const CODE_TOOLS = `
-Code access is enabled for you. Your shell and file tools run in a persistent workspace folder that belongs to the current user (your current directory): it survives between turns and holds their cloned repositories. Use git directly, no zetta block is needed: run ls first, \`git clone <url>\` if the repository is not there yet, then read, edit, run tests, create branches, commit and push. Git and file edits are already approved, so do not ask the user for permission to run them. Work on a branch unless asked to change the default branch, and never force-push or rewrite history unless the user asks for it. Private repositories and pushes need a GitHub token the user bound to this bot (it is in GITHUB_TOKEN when present); if clone or push fails with an authentication error, say so instead of retrying. Never print, commit or store tokens. Finish by reporting the branch, the commits and what you ran.`;
+Code access is enabled for you. Your shell and file tools run in a persistent workspace folder that belongs to the current user (your current directory): it survives between turns and holds their cloned repositories. Use git directly, no zetta block is needed: run ls first, \`git clone <url>\` if the repository is not there yet, then read, edit, run tests, create branches, commit and push. Commands, scripts, git, file edits and web fetches are already approved, so do not ask for permission to run them. Only deleting files (rm, rmdir, shred, unlink), sudo and sending mail are refused until the user grants them. Work on a branch unless asked to change the default branch, and never force-push or rewrite history unless the user asks for it. Private repositories and pushes need a GitHub token the user bound to this bot (it is in GITHUB_TOKEN when present); if clone or push fails with an authentication error, say so instead of retrying. Never print, commit or store tokens. Finish by reporting the branch, the commits and what you ran.`;
 const CHIEF_TOOLS = `
-You are the user's chief: you may use every tool and run any command, including gh and anything else on this machine, without asking for approval. You also manage what the other bots may do. When a bot says a command needs permission (for example gh pr create), grant it yourself instead of asking the user:
+You are the user's chief: you lead the other bots and manage what they may do. You have the same permissions as they do. Other bots already run commands and use the web without asking; only deletes (rm), sudo and sending mail need a rule. When a bot asks for one, grant it:
 \`\`\`zetta:bot_claude
-{"bot":"components","allow":["Bash(gh pr create:*)"]}
-\`\`\`   (takes effect at that bot's next turn. "bot" is a name or id from the bots list. Optional: "deny" adds deny rules, "revoke" removes rules from both lists, "preset" is auto|read_only|edit|git|full, "appendPrompt" replaces its extra instructions. Rules look like Bash(gh pr create:*) or WebFetch. Grant the narrowest rule that does the job, and tell the user what you granted.)
+{"bot":"components","allow":["Bash(rm:*)"]}
+\`\`\`   (takes effect at that bot's next turn. "bot" is a name or id from the bots list. Optional: "deny" adds deny rules, "revoke" removes rules from both lists, "preset" is auto|read_only|edit|git|full, "appendPrompt" replaces its extra instructions. A refused delete, sudo or mail command is lifted only by exactly one of these rules: Bash(rm:*), Bash(rmdir:*), Bash(shred:*), Bash(unlink:*), Bash(sudo:*), Bash(mail:*), Bash(sendmail:*); a narrower rule such as Bash(rm build:*) has no effect. Tell the user what you granted.)
 When the user asks for a new bot or a team, create it yourself right away, without asking for approval. Derive the details from the conversation; ask only when something essential is missing:
 \`\`\`zetta:create_bot
 {"name":"Researcher","description":"what it is good at","personality":"You are a ...","instructions":"the job, the steps, what it must never do"}
@@ -90,10 +96,10 @@ If you are blocked (a method failed, a tool is refused, a choice has to be made)
 {"problem":"what blocks you","tried":"what you already tried"}
 \`\`\`   (the Chief solves it or decides for you in a help discussion, then you continue by yourself. Stop after you send it. If a person is really needed, the Chief asks them, and the question appears in your chat.)`;
 const PERMISSION_TOOLS = `
-If a command or tool is refused because you lack permission, never edit settings files (.claude/settings*.json) and never ask the user to edit them: ask the chief, who collects every request in one Permissions discussion and asks the user:
+Deleting files (rm, rmdir, shred, unlink), sudo and sending mail are refused until the user grants them. If you really need one, never edit settings files (.claude/settings*.json) and never ask the user to edit them: ask the chief, who collects every request in one Permissions discussion and asks the user:
 \`\`\`zetta:permission
-{"rule":"Bash(pnpm:*)","reason":"run the package tests the routine needs"}
-\`\`\`   (the narrowest rule that does the job, like Bash(pnpm test:*) or WebFetch. Then stop and say you asked; the rule applies at your next turn once the user approves.)`;
+{"rule":"Bash(rm:*)","reason":"clean the build folder the routine writes"}
+\`\`\`   (use exactly one of the refused rules: Bash(rm:*), Bash(rmdir:*), Bash(shred:*), Bash(unlink:*), Bash(sudo:*), Bash(mail:*), Bash(sendmail:*). Then stop and say you asked; the rule applies at your next turn once the user approves.)`;
 /** Tool instructions for one bot: browser and desktop are only described when the owner granted that computer-use mode, code only with code access, bot permissions only for the chief. */
 export function toolPreamble(mode: ComputerMode = "off", code = false, chief = false): string {
   const extra = [
@@ -176,6 +182,36 @@ export const toolSchemas = {
     }),
     z.strictObject({ action: z.literal("read"), id: z.string().uuid() }),
   ]),
+  wiki: z.discriminatedUnion("action", [
+    z.strictObject({ action: z.literal("search"), query: bounded(300) }),
+    z.strictObject({ action: z.literal("read"), slug: bounded(80) }),
+    z.strictObject({
+      action: z.literal("write"),
+      slug: bounded(80),
+      title: bounded(160),
+      type: z.enum(WIKI_PAGE_TYPES).optional(),
+      summary: z.string().trim().max(300).optional(),
+      body: bounded(20_000),
+      version: z.number().int().min(0).optional(),
+      sources: z.array(z.string().trim().min(3).max(2000)).max(12).optional(),
+    }),
+    z.strictObject({
+      action: z.literal("suggest"),
+      slug: bounded(80),
+      body: bounded(20_000),
+      title: bounded(160).optional(),
+      type: z.enum(WIKI_PAGE_TYPES).optional(),
+      summary: z.string().trim().max(300).optional(),
+      reason: z.string().trim().max(500).optional(),
+    }),
+    z.strictObject({
+      action: z.literal("patch"),
+      slug: bounded(80),
+      match: bounded(4000),
+      content: z.string().max(8000),
+    }),
+    z.strictObject({ action: z.literal("mark_stale"), slug: bounded(80) }),
+  ]),
   config: z.strictObject({
     botId: z.string().uuid(),
     patch: z
@@ -227,7 +263,7 @@ export const toolSchemas = {
     }),
   ]),
   goal: z.strictObject({ goal: bounded(500), done_when: bounded(300) }),
-  goal_progress: z.strictObject({ summary: bounded(1500) }),
+  goal_progress: z.strictObject({ summary: bounded(1500), lesson: bounded(300).optional() }),
   goal_done: z.strictObject({ summary: bounded(1500) }),
   create_vm: z.strictObject({
     name: z
@@ -372,26 +408,57 @@ export type ToolCall = {
   [K in keyof typeof toolSchemas]: { kind: K; args: z.infer<(typeof toolSchemas)[K]> };
 }[keyof typeof toolSchemas];
 
-/** Extracts valid tool calls (max 8) and returns the reply with the blocks removed. Invalid blocks are dropped silently. */
-export function parseTools(reply: string): { calls: ToolCall[]; text: string } {
+/** A block that did not become a call, with the reason the bot and the user are told. */
+export type RejectedTool = { kind: string; title?: string; reason: string };
+export const MAX_TOOL_BLOCKS = 8;
+
+/** Extracts valid tool calls (max 8) and returns the reply with the blocks removed. Blocks that are dropped come back in `rejected`. */
+export function parseTools(reply: string): {
+  calls: ToolCall[];
+  text: string;
+  rejected: RejectedTool[];
+} {
   const calls: ToolCall[] = [];
+  const rejected: RejectedTool[] = [];
   const text = reply
     .replace(
-      /```zetta:(remember|instruction|config|browser|handoff|create_bot|create_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal|artifact)\s*\n([\s\S]*?)```/g,
+      /```zetta:(remember|instruction|wiki|config|browser|handoff|create_bot|create_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal|artifact)\s*\n([\s\S]*?)```/g,
       (_, kind: keyof typeof toolSchemas, body: string) => {
-        if (calls.length < 8) {
-          try {
-            const parsed = toolSchemas[kind].safeParse(JSON.parse(body));
-            if (parsed.success) calls.push({ kind, args: parsed.data } as ToolCall);
-          } catch {
-            /* malformed JSON is ignored */
-          }
+        let json: unknown;
+        try {
+          json = JSON.parse(body);
+        } catch {
+          rejected.push({ kind, reason: "the block is not valid JSON" });
+          return "";
+        }
+        const title =
+          typeof (json as { title?: unknown } | null)?.title === "string"
+            ? (json as { title: string }).title.slice(0, 80)
+            : undefined;
+        if (calls.length >= MAX_TOOL_BLOCKS) {
+          rejected.push({
+            kind,
+            ...(title && { title }),
+            reason: `over the ${MAX_TOOL_BLOCKS}-block limit for one reply; send it in your next reply`,
+          });
+          return "";
+        }
+        const parsed = toolSchemas[kind].safeParse(json);
+        if (parsed.success) calls.push({ kind, args: parsed.data } as ToolCall);
+        else {
+          const issue = parsed.error.issues[0];
+          const where = issue?.path.join(".");
+          rejected.push({
+            kind,
+            ...(title && { title }),
+            reason: `${where ? `${where}: ` : ""}${issue?.message ?? "invalid block"}`,
+          });
         }
         return "";
       },
     )
     .trim();
-  return { calls, text };
+  return { calls, text, rejected };
 }
 
 export type WhatsappBody =

@@ -80,7 +80,7 @@ function prompt(input: InterviewInput) {
 }
 
 /** Pulls the first balanced {...} out of free text, since CLIs often wrap JSON in prose or fences. */
-function firstObject(text: string): unknown {
+export function firstObject(text: string): unknown {
   for (let start = text.indexOf("{"); start !== -1; start = text.indexOf("{", start + 1)) {
     let depth = 0;
     let inString = false;

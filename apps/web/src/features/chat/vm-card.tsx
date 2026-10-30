@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Monitor } from "lucide-react";
+import { CircleNotchIcon, MonitorIcon } from "@phosphor-icons/react";
 
 import { Button } from "@zetta/ui/components/button";
 
@@ -57,11 +57,14 @@ function LivePreview({
         <img
           alt="Live view of the computer"
           src={`data:image/png;base64,${png}`}
+          width={640}
+          height={400}
+          decoding="async"
           className="size-full object-cover object-top"
         />
       ) : (
         <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
-          <Loader2
+          <CircleNotchIcon
             aria-hidden="true"
             className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none"
           />
@@ -72,7 +75,7 @@ function LivePreview({
         <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white">
           <span
             aria-hidden="true"
-            className="size-1.5 animate-pulse rounded-full bg-red-500 motion-reduce:animate-none"
+            className="size-1.5 animate-pulse rounded-full bg-destructive motion-reduce:animate-none"
           />
           Live
         </span>
@@ -107,12 +110,13 @@ export function VmCard({
       }
     >
       <div className="flex items-center gap-2">
-        <Monitor aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+        <MonitorIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
         <span className="mr-auto truncate">
-          {working ? "Using" : "Used"} the computer <strong className={working ? undefined : "font-medium text-foreground"}>{vm.name}</strong>
+          {working ? "Using" : "Used"} the computer{" "}
+          <strong className={working ? undefined : "font-medium text-foreground"}>{vm.name}</strong>
           {working && (
             <span
-              className="ml-1 inline-block size-2 animate-pulse rounded-full bg-green-500 align-middle motion-reduce:animate-none"
+              className="ml-1 inline-block size-2 animate-pulse rounded-full bg-success align-middle motion-reduce:animate-none"
               aria-hidden="true"
             />
           )}
@@ -152,7 +156,7 @@ export function VmCard({
                 }
               >
                 {i === 0 && (
-                  <Loader2
+                  <CircleNotchIcon
                     aria-hidden="true"
                     className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
                   />

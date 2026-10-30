@@ -1,4 +1,11 @@
-import { CheckCircle2, ExternalLink, Megaphone, RefreshCw, User, Users } from "lucide-react";
+import {
+  CheckCircleIcon,
+  ArrowSquareOutIcon,
+  MegaphoneIcon,
+  ArrowsClockwiseIcon,
+  UserIcon,
+  UsersIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useState, type ButtonHTMLAttributes, type FormEvent } from "react";
 
 import { BotAvatar } from "@/components/bot-avatar";
@@ -38,7 +45,7 @@ const Link = ({ href, children }: { href: string; children: React.ReactNode }) =
     className="inline-flex items-center gap-0.5 font-medium text-[#229ED9] underline-offset-2 hover:underline"
   >
     {children}
-    <ExternalLink aria-hidden className="size-3" />
+    <ArrowSquareOutIcon aria-hidden className="size-3" />
   </a>
 );
 const FOOTNOTE =
@@ -211,11 +218,11 @@ type Info = {
   webhook: boolean;
   chats: { id: string; type: string; title: string; username?: string }[];
 };
-const TYPE: Record<string, { icon: typeof Users; label: string }> = {
-  private: { icon: User, label: "Private" },
-  group: { icon: Users, label: "Group" },
-  supergroup: { icon: Users, label: "Group" },
-  channel: { icon: Megaphone, label: "Channel" },
+const TYPE: Record<string, { icon: typeof UsersIcon; label: string }> = {
+  private: { icon: UserIcon, label: "Private" },
+  group: { icon: UsersIcon, label: "Group" },
+  supergroup: { icon: UsersIcon, label: "Group" },
+  channel: { icon: MegaphoneIcon, label: "Channel" },
 };
 
 /** Installed-card panel: the bot, the chats and groups it can see, a sync button, and the permissions bots have. */
@@ -309,7 +316,7 @@ export function TelegramConnect({
           <p className="text-xs text-muted-foreground">
             {probe?.status.state === "connected" ? (
               <span className="inline-flex items-center gap-1">
-                <CheckCircle2 aria-hidden className="size-3.5 text-[#229ED9]" />
+                <CheckCircleIcon aria-hidden className="size-3.5 text-[#229ED9]" />
                 Connected. Bots can read your chats{info?.allowSend ? " and send messages" : ""}.
               </span>
             ) : (
@@ -318,7 +325,7 @@ export function TelegramConnect({
           </p>
         </div>
         <TgButton loading={busy === "sync"} onClick={() => void sync()}>
-          <RefreshCw aria-hidden className="size-3.5" />
+          <ArrowsClockwiseIcon aria-hidden className="size-3.5" />
           Sync chats
         </TgButton>
       </div>
@@ -327,7 +334,7 @@ export function TelegramConnect({
         <div
           role="alertdialog"
           aria-label="Remove webhook"
-          className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs"
+          className="space-y-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-xs"
         >
           <p>
             This bot has a webhook set, so Telegram delivers its messages there instead of to Zetta.

@@ -1,5 +1,5 @@
 import { PageCalendar, type CalendarEvent, type CalendarFilter } from "@g4rcez/components";
-import { Check } from "lucide-react";
+import { CheckIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -140,7 +140,7 @@ function AgendaEventLabel({ item }: { item: AgendaItem }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       {item.status === "done" ? (
-        <Check className="size-3.5 shrink-0" aria-label="Done" />
+        <CheckIcon className="size-3.5 shrink-0" aria-label="Done" />
       ) : (
         <Icon className="size-3.5 shrink-0" aria-label={KIND_LABEL[item.kind]} />
       )}

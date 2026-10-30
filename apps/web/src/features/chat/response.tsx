@@ -1,15 +1,23 @@
 import { memo, useMemo } from "react";
 import { Streamdown } from "streamdown";
 
-import { splitReply } from "@zetta/render/reply";
+import { splitReply, UI_FENCE } from "@zetta/render/reply";
 import { cn } from "@zetta/ui/lib/utils";
 
 import { stripToolFences } from "./tool-fences";
 import { UiSkeleton, UiView } from "./ui-registry";
 import { parseWhatsapp, WhatsappView } from "./whatsapp-view";
 
-const BODY =
-  "chat-response min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
+const BODY = "chat-response min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
+
+/**
+ * A reply can carry text from outside (a web page, an email) that makes the bot write `![x](https://host/?d=private)`; drawing the
+ * image would send that request as soon as the reply renders. Show the alt text instead.
+ */
+const NO_REMOTE_IMAGES = {
+  img: ({ alt }: { alt?: string | undefined }) =>
+    alt ? <span className="text-muted-foreground">[{alt}]</span> : null,
+};
 
 const Markdown = memo(function Markdown({
   text,
@@ -26,6 +34,7 @@ const Markdown = memo(function Markdown({
       isAnimating={streaming}
       parseIncompleteMarkdown={streaming}
       className={cn(BODY, className)}
+      components={NO_REMOTE_IMAGES}
     >
       {text}
     </Streamdown>
@@ -48,7 +57,13 @@ export const Response = memo(function Response({
   className?: string;
 }) {
   const text = streaming ? stripToolFences(raw) : raw;
-  if (!streaming && text.includes("```zetta:whatsapp")) {
+  const whatsapp = !streaming && text.includes("```zetta:whatsapp");
+  // Hooks stay above the early return (a reply can flip to the WhatsApp view when it settles). A reply with no ui fence skips the parse on every chunk.
+  const segments = useMemo(
+    () => (whatsapp || !text.includes("```" + UI_FENCE) ? [] : splitReply(text, streaming)),
+    [text, streaming, whatsapp],
+  );
+  if (whatsapp) {
     const parts: { md?: string; wa?: ReturnType<typeof parseWhatsapp>; raw?: string }[] = [];
     let last = 0;
     for (const m of text.matchAll(WA)) {
@@ -73,7 +88,6 @@ export const Response = memo(function Response({
       </div>
     );
   }
-  const segments = useMemo(() => splitReply(text, streaming), [text, streaming]);
   if (segments.every((s) => s.kind === "markdown"))
     return <Markdown text={text} streaming={streaming} className={className} />;
   return (

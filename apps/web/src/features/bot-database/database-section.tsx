@@ -1,11 +1,11 @@
 import {
-  Database,
-  Download,
-  NotebookText,
-  RotateCcw,
-  Settings2,
-  SquareCheckBig,
-} from "lucide-react";
+  DatabaseIcon,
+  DownloadSimpleIcon,
+  NotebookIcon,
+  ArrowCounterClockwiseIcon,
+  SlidersHorizontalIcon,
+  CheckSquareIcon,
+} from "@phosphor-icons/react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { Button, Input } from "@/components/ui";
@@ -25,10 +25,10 @@ import {
 } from "./database-api";
 import { Alert } from "@g4rcez/components/alert";
 
-const TEMPLATE_ICON: Record<string, typeof Database> = {
-  tasks: SquareCheckBig,
-  preferences: Settings2,
-  notes: NotebookText,
+const TEMPLATE_ICON: Record<string, typeof DatabaseIcon> = {
+  tasks: CheckSquareIcon,
+  preferences: SlidersHorizontalIcon,
+  notes: NotebookIcon,
 };
 const PAGE = 25;
 
@@ -85,7 +85,7 @@ export function DatabaseSection({ bot, notify }: { bot: Bot; notify: (m: string)
     <section aria-label="Database" className="space-y-4 text-sm">
       <div className="space-y-1">
         <h3 className="flex items-center gap-2 font-medium">
-          <Database aria-hidden className="size-4" /> {bot.name}'s database
+          <DatabaseIcon aria-hidden className="size-4" /> {bot.name}'s database
         </h3>
         <p className="text-xs text-muted-foreground">
           A private place where {bot.name} keeps what it needs between conversations: to-do lists,
@@ -134,7 +134,7 @@ export function DatabaseSection({ bot, notify }: { bot: Bot; notify: (m: string)
           </div>
 
           <ToggleCard
-            leading={<Database aria-hidden className="size-6" />}
+            leading={<DatabaseIcon aria-hidden className="size-6" />}
             title={`Let ${bot.name} use its database`}
             description={
               data.access
@@ -157,7 +157,7 @@ export function DatabaseSection({ bot, notify }: { bot: Bot; notify: (m: string)
                   loading={busy === "export"}
                   onClick={() => void run("export", () => databaseApi.download(bot.id, "all"))}
                 >
-                  <Download aria-hidden className="size-3.5" /> Download everything
+                  <DownloadSimpleIcon aria-hidden className="size-3.5" /> Download everything
                 </Button>
               )}
             </div>
@@ -204,7 +204,7 @@ export function DatabaseSection({ bot, notify }: { bot: Bot; notify: (m: string)
               </p>
               <ul className="grid gap-2 sm:grid-cols-3">
                 {templates.map((t) => {
-                  const Icon = TEMPLATE_ICON[t.id] ?? Database;
+                  const Icon = TEMPLATE_ICON[t.id] ?? DatabaseIcon;
                   const added = data.templates.includes(t.id);
                   return (
                     <li key={t.id} className="flex flex-col gap-2 rounded-lg border bg-card p-3">
@@ -242,7 +242,7 @@ export function DatabaseSection({ bot, notify }: { bot: Bot; notify: (m: string)
               </span>
             </span>
             <Button size="sm" variant="destructive" onClick={() => setResetting(true)}>
-              <RotateCcw aria-hidden className="size-3.5" /> Start over
+              <ArrowCounterClockwiseIcon aria-hidden className="size-3.5" /> Start over
             </Button>
           </div>
         </>
@@ -375,7 +375,7 @@ function TableViewer({
                 .finally(() => setSaving(false));
             }}
           >
-            <Download aria-hidden className="size-3.5" /> CSV
+            <DownloadSimpleIcon aria-hidden className="size-3.5" /> CSV
           </Button>
         </span>
       </div>

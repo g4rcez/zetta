@@ -160,6 +160,9 @@ async function setup(opts: Partial<Parameters<typeof createVmService>[0]> = {}) 
     connect: m.connect,
     tokenRoot,
     allowPrivate: true,
+    links: async () => {
+      throw new Error("no DevTools in this test");
+    },
     ...opts,
   });
   return { vm, store, d, m, tokenRoot };
@@ -540,5 +543,64 @@ describe("vm service (fake docker + fake spacesd)", () => {
     expect(args).toContain("/t/token:/run/zetta/token:ro");
     expect(args).toContain("/t/vncpass:/run/zetta/vncpass:ro");
     expect(args).toContain("127.0.0.1::5900");
+    expect(args).toContain("127.0.0.1::9222");
+    expect(args).not.toContain("9222:9222");
+  });
+});
+
+describe("page address and links in a read", () => {
+  const tree = ['- [0] frame "r/neovim - Chromium"', '  - [3] link "Inspect your LSP config"'].join(
+    "\n",
+  );
+  const connect = async () => ({
+    call: (async (tool: string) => {
+      if (tool === "list_windows")
+        return { text: 'window_id=42 pid=7 "r/neovim - Chromium" 1280x773+0+27', isError: false };
+      if (tool === "get_window_state") return { text: tree, isError: false };
+      return { text: "ok", isError: false };
+    }) as McpCall,
+    close: async () => {},
+  });
+  const page = {
+    url: "https://www.reddit.com/r/neovim/top/?t=day",
+    links: [
+      {
+        text: "Inspect your LSP config",
+        href: "https://www.reddit.com/r/neovim/comments/1xi0kzm/inspect_debug_optimize_your_lsp_config_using/",
+      },
+      { text: "", href: "https://www.reddit.com/user/someone/" },
+    ],
+  };
+  test("an explicit read shows the address and where each link goes, read from the published DevTools port", async () => {
+    const ports: number[] = [];
+    const { vm } = await setup({
+      connect,
+      links: async (port) => {
+        ports.push(port);
+        return page;
+      },
+    });
+    const { id } = await vm.start("u");
+    expect(await vm.read("u", id)).toBe(
+      'Window "r/neovim - Chromium" (click_element{n} clicks [n]):\nURL: https://www.reddit.com/r/neovim/top/?t=day\nframe "r/neovim - Chromium"\n[3] link "Inspect your LSP config"\nLinks on the page (text -> address):\n- Inspect your LSP config -> https://www.reddit.com/r/neovim/comments/1xi0kzm/inspect_debug_optimize_your_lsp_config_using/\n- (no text) -> https://www.reddit.com/user/someone/',
+    );
+    expect(ports).toEqual([41234]);
+    await vm.closeAll();
+  });
+  test("a read right after an action shows the address but no link list", async () => {
+    const { vm } = await setup({ connect, links: async () => page });
+    const { id } = await vm.start("u");
+    const screen = await vm.read("u", id, { settle: true });
+    expect(screen).toContain("URL: https://www.reddit.com/r/neovim/top/?t=day");
+    expect(screen).not.toContain("Links on the page");
+    await vm.closeAll();
+  });
+  test("a VM without DevTools still reads its screen, without an address", async () => {
+    const { vm } = await setup({ connect });
+    const { id } = await vm.start("u");
+    expect(await vm.read("u", id)).toBe(
+      'Window "r/neovim - Chromium" (click_element{n} clicks [n]):\nframe "r/neovim - Chromium"\n[3] link "Inspect your LSP config"',
+    );
+    await vm.closeAll();
   });
 });

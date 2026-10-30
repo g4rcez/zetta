@@ -4,7 +4,8 @@ import type { Message } from "./chat-client";
 
 /** Data parts the server's UI message stream emits (see apps/server/src/modules/chat/ui-stream.ts). */
 export type ZettaData = {
-  speaker: { messageId: string; botId?: string; botName?: string };
+  /** `parentMessageId`: the thread the reply goes into, which can differ from the chat that follows the turn (a queued message). */
+  speaker: { messageId: string; botId?: string; botName?: string; parentMessageId?: string };
   saved: { message: Message; botName?: string };
   "user-saved": { message: Message };
   proposal: { proposalId?: string; proposal?: unknown };
@@ -37,18 +38,29 @@ export const computersOf = (r: Row) => {
 const textOf = (m: ZettaUIMessage) =>
   m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
 
+type UserSavedPart = Extract<ZettaUIMessage["parts"][number], { type: "data-user-saved" }>;
+
 /**
  * Turns the in-flight turn held by useChat into rows. One assistant message can carry several bots (@mentions):
  * each `data-speaker` part opens a new row, and its `data-saved` part (when it arrives) replaces the live text with the canonical message.
  */
-export function liveRows(messages: ZettaUIMessage[], parentMessageId?: string): Row[] {
-  const rows: Row[] = [],
-    now = new Date().toISOString();
+export function liveRows(
+  messages: ZettaUIMessage[],
+  parentMessageId?: string,
+  now = new Date().toISOString(),
+): Row[] {
+  const rows: Row[] = [];
+  // The server's saved copy of the user message is the same for every user row: find it once.
+  let userSaved: UserSavedPart | undefined;
+  for (const m of messages) {
+    userSaved = m.parts.find((p): p is UserSavedPart => p.type === "data-user-saved");
+    if (userSaved) break;
+  }
   for (const m of messages) {
     if (m.role === "user") {
-      const saved = messages.flatMap((x) => x.parts).find((p) => p.type === "data-user-saved");
+      const saved = userSaved;
       rows.push(
-        saved?.type === "data-user-saved"
+        saved
           ? { ...saved.data.message, createdAt: saved.data.message.createdAt ?? now }
           : {
               id: m.id,
@@ -74,7 +86,7 @@ export function liveRows(messages: ZettaUIMessage[], parentMessageId?: string): 
           status: "running",
           createdAt: now,
           botId: p.data.botId ?? null,
-          parentMessageId: parentMessageId ?? null,
+          parentMessageId: p.data.parentMessageId ?? parentMessageId ?? null,
           streaming: true,
           ...(p.data.botName ? { botName: p.data.botName } : {}),
         };
@@ -171,6 +183,19 @@ export function dayLabel(date: Date, now = new Date()): string {
   });
 }
 
+/** Parsed timestamp and local-day key per `createdAt`: grouping runs on every streamed chunk and the same strings come back each time. */
+const stamps = new Map<string, { ms: number; day: string }>();
+const stampOf = (iso: string) => {
+  let s = stamps.get(iso);
+  if (!s) {
+    if (stamps.size > 5000) stamps.clear();
+    const d = new Date(iso);
+    s = { ms: d.getTime(), day: d.toDateString() };
+    stamps.set(iso, s);
+  }
+  return s;
+};
+
 /** Slack grouping: a row continues the previous one when the same author wrote it within 5 minutes on the same day; a day change starts a divider. */
 export function groupMessages<T extends Pick<Row, "role" | "botId" | "createdAt">>(
   rows: T[],
@@ -179,14 +204,39 @@ export function groupMessages<T extends Pick<Row, "role" | "botId" | "createdAt"
 ): Grouped<T>[] {
   return rows.map((row, i) => {
     const prev = rows[i - 1],
-      at = new Date(row.createdAt),
-      before = prev ? new Date(prev.createdAt) : undefined;
-    const newDay = !before || !sameDay(at, before);
+      at = stampOf(row.createdAt),
+      before = prev ? stampOf(prev.createdAt) : undefined;
+    const newDay = !before || at.day !== before.day;
     const continued =
       !newDay &&
       !!prev &&
       authorOf(prev, fallbackBotId) === authorOf(row, fallbackBotId) &&
-      at.getTime() - before!.getTime() < GROUP_GAP_MS;
-    return { row, continued, ...(newDay ? { day: dayLabel(at, now) } : {}) };
+      at.ms - before!.ms < GROUP_GAP_MS;
+    return { row, continued, ...(newDay ? { day: dayLabel(new Date(row.createdAt), now) } : {}) };
   });
 }
+
+const sameValue = (a: unknown, b: unknown): boolean =>
+  Object.is(a, b) ||
+  (Array.isArray(a) &&
+    Array.isArray(b) &&
+    a.length === b.length &&
+    a.every((x, i) => Object.is(x, b[i]) || sameRow(x, b[i])));
+const sameRow = (a: unknown, b: unknown): boolean => {
+  if (typeof a !== "object" || typeof b !== "object" || !a || !b) return false;
+  const x = a as Record<string, unknown>,
+    y = b as Record<string, unknown>,
+    keys = Object.keys(x);
+  return (
+    keys.length === Object.keys(y).length && keys.every((k) => k in y && sameValue(x[k], y[k]))
+  );
+};
+
+/** Streaming rebuilds every live row each chunk: hand back the previous object for rows that did not change, so memoized rows skip rendering. */
+export const reuseRows = (prev: Row[], next: Row[]): Row[] => {
+  const old = new Map(prev.map((r) => [r.id, r]));
+  return next.map((r) => {
+    const o = old.get(r.id);
+    return o && sameRow(o, r) ? o : r;
+  });
+};

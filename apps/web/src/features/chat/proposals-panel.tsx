@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ShieldQuestion } from "lucide-react";
+import { ShieldWarningIcon } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui";
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@zetta/ui/components/item";
@@ -23,12 +23,17 @@ const KIND_LABEL: Record<ProposalKind, string> = {
   discussion_brief: "Let a code bot act on outside content",
   start_loop: "Start a loop",
   bot_permission: "Change what a bot may do",
+  create_memory: "Save to memory",
+  create_wiki_page: "Save to the wiki",
 };
 const FIELD_LABEL: Record<string, string> = {
   discussion: "Discussion",
   goal: "Goal",
   members: "Bots",
   context: "Shared context",
+  memory: "Memory",
+  instruction: "Instruction",
+  wiki: "Wiki page",
   request: "What it was asked",
   bot: "Bot",
   preset: "Preset",
@@ -119,10 +124,10 @@ export function ProposalsPanel({
             size="sm"
             role="group"
             aria-label={creating ? summarize(p) : "Proposed change"}
-            className="rounded-lg border-amber-500/40 bg-amber-500/5 text-sm"
+            className="rounded-lg border-warn/40 bg-warn/5 text-sm"
           >
             <ItemMedia variant="icon">
-              <ShieldQuestion className="text-amber-600 dark:text-amber-400" />
+              <ShieldWarningIcon className="text-warn" />
             </ItemMedia>
             <ItemContent className="min-w-0">
               <ItemTitle className="text-sm">
@@ -177,11 +182,15 @@ export function ProposalsPanel({
                   ? "Start loop"
                   : p.kind === "discussion_brief"
                     ? "Approve this brief"
-                    : p.kind === "open_discussion"
-                      ? "Approve and open"
-                      : creating
-                        ? "Approve and create"
-                        : "Approve"}
+                    : p.kind === "create_memory" ||
+                        p.kind === "create_wiki_page" ||
+                        p.kind === "create_instruction"
+                      ? "Save it"
+                      : p.kind === "open_discussion"
+                        ? "Approve and open"
+                        : creating
+                          ? "Approve and create"
+                          : "Approve"}
               </Button>
             </ItemActions>
           </Item>

@@ -201,10 +201,18 @@ suite("v1 user journeys", () => {
     const first = await call("POST", `/api/conversations/${conv}/messages`, {
       content: "Summarize this week's metrics",
     });
+    // The bot can run code and the message did not ask to save anything, so the instruction waits for the person's approval.
     expect(first.json.assistant.meta.receipts[0]).toMatchObject({
-      kind: "instruction",
+      kind: "proposal",
       text: "Weekly metrics summary",
     });
+    expect(
+      (
+        await call("POST", `/api/proposals/${first.json.assistant.meta.receipts[0].id}/decision`, {
+          approve: true,
+        })
+      ).json.status,
+    ).toBe("approved");
     const ins = (await call("GET", "/api/instructions")).json.instructions.find(
       (i: { title: string }) => i.title === "Weekly metrics summary",
     );

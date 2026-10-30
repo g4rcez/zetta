@@ -1,7 +1,7 @@
 # Persistent Linux desktop ("VM") for Zetta computer use: one container per VM row (computer_vm), driven by cua-spacesd.
 # Build: docker build -t zetta-desktop:latest docker/desktop
 # Started by apps/server/src/modules/computer/vm.ts with no capabilities, no-new-privileges, memory/cpu/pid limits, ports 3211
-# (spacesd) and 5900 (VNC) published on 127.0.0.1 only, /home/agent on a named volume (zetta-vm-<id>) and the per-start bearer token
+# (spacesd), 5900 (VNC) and 9222 (Chromium DevTools, no auth: any local process can drive this browser) published on 127.0.0.1 only, /home/agent on a named volume (zetta-vm-<id>) and the per-start bearer token
 # and VNC password mounted read-only.
 # Desktop: TigerVNC's X server (the screen people see over VNC is the one bots drive) + XFCE (panel, menu, terminal, file manager),
 # D-Bus + AT-SPI for cua-driver's accessibility reads. There is no root: software is installed per user under /home/agent (e.g.
@@ -17,7 +17,7 @@ ARG SPACESD_SHA256_ARM64=09c8df972551088ac2b08b52ff3d86345e35a13f250681173af798d
 
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=Etc/UTC
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl wget procps less nano chromium fonts-liberation fonts-dejavu-core fonts-noto-color-emoji \
+      ca-certificates curl wget procps less nano socat chromium fonts-liberation fonts-dejavu-core fonts-noto-color-emoji \
       tigervnc-standalone-server tigervnc-tools x11-utils x11-xserver-utils x11-xkb-utils xdotool xclip xdg-utils \
       xfce4-session xfwm4 xfce4-panel xfdesktop4 xfce4-settings xfce4-terminal xfce4-appfinder thunar adwaita-icon-theme \
       dbus dbus-x11 at-spi2-core libatk-adaptor libgail-common \

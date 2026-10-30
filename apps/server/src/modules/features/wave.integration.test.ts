@@ -103,11 +103,7 @@ describe("workflow graph validation", () => {
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [
-  `feat-w-a-${uuidv7()}`,
-  `feat-w-b-${uuidv7()}`,
-  `feat-w-c-${uuidv7()}`,
-];
+const ids = [`feat-w-a-${uuidv7()}`, `feat-w-b-${uuidv7()}`, `feat-w-c-${uuidv7()}`];
 const [A, B, C] = ids as [string, string, string];
 
 suite("feature wave against compose postgres", () => {
@@ -512,7 +508,7 @@ suite("feature wave against compose postgres", () => {
       .id;
     const m = (await call(A, "POST", `/api/conversations/${conv}/messages`, { content: "hi" })).json
       .user.id;
-    expect((await call(A, "POST", `/api/messages/${m}/reactions`, { emoji: "💥" })).status).toBe(
+    expect((await call(A, "POST", `/api/messages/${m}/reactions`, { emoji: "<b>" })).status).toBe(
       400,
     );
     await call(A, "POST", `/api/messages/${m}/reactions`, { emoji: "🎉" });
@@ -735,6 +731,73 @@ suite("feature wave against compose postgres", () => {
       expect(retry).toEqual([{ trigger: "recovery", conversation_id: conv }]);
       expect(await status(rid)).toBe("failed");
       expect(await features.recoverRecent(new Date(), undefined, A)).toBe(0); // one retry per run, and a retry is never retried
+    });
+
+    const cardFor = async (title: string) =>
+      (await call(A, "GET", "/api/attention")).json.items.some(
+        (i: { title: string }) => i.title === `Routine "${title}" failed`,
+      );
+
+    test("a bot run that times out waits and is tried again without a card, and the retry can succeed", async () => {
+      const rid = await create((await newBot(A, "RetryBot")).id, "RetryRoutine");
+      await call(A, "POST", `/api/routines/${rid}/paused`, { paused: false }); // a paused routine is not retried
+      features.routines.useChat(async () => ({
+        ok: false,
+        text: "took too long",
+        error: "timeout",
+      }));
+      try {
+        await call(A, "POST", `/api/routines/${rid}/run`, { requestKey: "retry-run-0001" });
+        expect(
+          (
+            await sql(
+              "select status, attempt, retry_at > now() + interval '20 seconds' as later from routine_run where routine_id=$1",
+              [rid],
+            )
+          ).rows,
+        ).toEqual([{ status: "failed", attempt: 0, later: true }]);
+        expect(await cardFor("RetryRoutine")).toBe(false);
+        expect(await features.recoverRecent(new Date(), undefined, A)).toBe(0); // the wait is not skipped at boot
+
+        await sql(
+          "update routine_run set retry_at = now() - interval '1 second' where routine_id=$1",
+          [rid],
+        );
+        features.routines.useChat(async () => ({ ok: true, text: "done" }));
+        expect(await features.retryDue()).toBe(1);
+      } finally {
+        features.routines.useChat(undefined as never);
+      }
+      expect(
+        (
+          await sql(
+            "select status, attempt, trigger, retry_at from routine_run where routine_id=$1 order by attempt",
+            [rid],
+          )
+        ).rows,
+      ).toEqual([
+        { status: "failed", attempt: 0, trigger: "manual", retry_at: null },
+        { status: "succeeded", attempt: 1, trigger: "recovery", retry_at: null },
+      ]);
+      expect(await features.retryDue()).toBe(0);
+    });
+
+    test("a bot that is not signed in is not retried and the owner gets the card at once", async () => {
+      const rid = await create((await newBot(A, "NoRetryBot")).id, "NoRetryRoutine");
+      features.routines.useChat(async () => ({
+        ok: false,
+        text: "sign in",
+        error: "auth_required",
+      }));
+      try {
+        await call(A, "POST", `/api/routines/${rid}/run`, { requestKey: "retry-run-0002" });
+      } finally {
+        features.routines.useChat(undefined as never);
+      }
+      expect(
+        (await sql("select status, retry_at from routine_run where routine_id=$1", [rid])).rows,
+      ).toEqual([{ status: "failed", retry_at: null }]);
+      expect(await cardFor("NoRetryRoutine")).toBe(true);
     });
 
     test("a restart does not call a routine interrupted when none of its runs was in flight", async () => {

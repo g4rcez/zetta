@@ -1,0 +1,1 @@
+ALTER TABLE "mcp_server" ADD COLUMN "sharing" text DEFAULT 'private' NOT NULL;

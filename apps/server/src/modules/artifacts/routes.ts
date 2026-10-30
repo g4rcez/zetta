@@ -1,8 +1,13 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
+import { ARTIFACT_HTML_CSP, ARTIFACT_HTML_SANDBOX } from "@zetta/core/artifact-csp";
 import { ARTIFACT_KINDS } from "@zetta/db/schema/artifacts";
 import { AccessError, type createIdentityAccess } from "../identity/access";
+import { withDesignSystem } from "./design-system";
 import { ARTIFACT_SORTS, type ArtifactStore } from "./store";
+
+/** Bigger pages are streamed as they are, without the design system. */
+const MAX_HTML_STYLED = 10 * 1024 * 1024;
 
 export type ArtifactServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -27,13 +32,15 @@ const SECURITY: Record<string, string> = {
 };
 const HTML_SECURITY = {
   ...SECURITY,
-  "content-security-policy": "sandbox allow-scripts allow-popups allow-forms",
+  "content-security-policy": `sandbox ${ARTIFACT_HTML_SANDBOX}; ${ARTIFACT_HTML_CSP}`,
 };
 // Chrome's PDF viewer does not start inside a sandboxed document.
 const PDF_SECURITY = {
   ...SECURITY,
   "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
 };
+
+const RANGE_CHUNK = 8 * 1024 * 1024;
 
 /** Parses a single `bytes=a-b` range. Returns undefined for no/unsupported range and null when it cannot be satisfied. */
 function byteRange(header: string | null, size: number) {
@@ -140,11 +147,20 @@ export function createArtifactRoutes(
           row.kind === "audio";
         const headers: Record<string, string> = {
           ...(row.kind === "html" ? HTML_SECURITY : row.kind === "pdf" ? PDF_SECURITY : SECURITY),
-          "content-type": row.kind === "binary" ? "application/octet-stream" : row.mimeType,
+          // The preview CSP for a PDF has no sandbox, so a bot-declared type must not turn it into another document type.
+          "content-type":
+            row.kind === "binary"
+              ? "application/octet-stream"
+              : row.kind === "pdf"
+                ? "application/pdf"
+                : row.mimeType,
           "content-disposition": `${download || !inline ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(row.fileName)}`,
           "cache-control": "private, max-age=31536000, immutable",
           "accept-ranges": "bytes",
         };
+        // A page shown in the preview gets the design system; a download stays byte for byte what the bot wrote.
+        if (row.kind === "html" && !download && file.size <= MAX_HTML_STYLED)
+          return new Response(withDesignSystem(await file.text()), { headers });
         const range = byteRange(request.headers.get("range"), file.size);
         if (range === null)
           return new Response(null, {
@@ -152,12 +168,15 @@ export function createArtifactRoutes(
             headers: { ...headers, "content-range": `bytes */${file.size}` },
           });
         if (!range) return new Response(file, { headers });
-        return new Response(file.slice(range.start, range.end + 1), {
+        // A range answer is at most RANGE_CHUNK bytes (RFC 9110 lets a server send less than asked; players ask for the rest). The bytes are
+        // read here because Bun answers a sliced file in a Response with everything from the start offset on.
+        const end = Math.min(range.end, range.start + RANGE_CHUNK - 1);
+        return new Response(await file.slice(range.start, end + 1).arrayBuffer(), {
           status: 206,
           headers: {
             ...headers,
-            "content-range": `bytes ${range.start}-${range.end}/${file.size}`,
-            "content-length": String(range.end - range.start + 1),
+            "content-range": `bytes ${range.start}-${end}/${file.size}`,
+            "content-length": String(end - range.start + 1),
           },
         });
       } catch (e) {

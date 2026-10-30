@@ -1,4 +1,10 @@
-import { Bot as BotIcon, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
+import {
+  RobotIcon as BotIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  SparkleIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { Button, Input, Select, Textarea } from "@/components/ui";
@@ -233,7 +239,7 @@ function Assets({
         .filter((kind) => kind === "skill" || data.harness !== "hermes")
         .map((kind) => {
           const rows = data.assets.filter((a) => a.kind === kind);
-          const Icon = kind === "skill" ? Sparkles : BotIcon;
+          const Icon = kind === "skill" ? SparkleIcon : BotIcon;
           return (
             <div key={kind} className="space-y-2">
               <div className="flex items-center justify-between gap-2">
@@ -246,7 +252,7 @@ function Assets({
                   type="button"
                   onClick={() => setEditing({ kind })}
                 >
-                  <Plus aria-hidden className="size-3.5" /> Add {kind}
+                  <PlusIcon aria-hidden className="size-3.5" /> Add {kind}
                 </Button>
               </div>
               {rows.length === 0 ? (
@@ -285,7 +291,7 @@ function Assets({
                           aria-label={`Edit ${a.name}`}
                           onClick={() => setEditing({ kind, asset: a })}
                         >
-                          <Pencil aria-hidden className="size-3" />
+                          <PencilSimpleIcon aria-hidden className="size-3" />
                         </Button>
                         <ConfirmButton
                           size="xs"
@@ -306,7 +312,7 @@ function Assets({
           );
         })}
       <p className="text-xs text-muted-foreground">
-        <Trash2 aria-hidden className="mr-1 inline size-3" />
+        <TrashIcon aria-hidden className="mr-1 inline size-3" />
         Installed items belong to this bot only. Up to {data.options.limits.assetsPerKind} of each.
       </p>
       {editing && (

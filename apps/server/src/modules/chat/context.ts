@@ -12,6 +12,8 @@ export const withImageTags = (m: Pick<HistoryMessage, "content" | "images">) =>
     .filter(Boolean)
     .join("\n");
 export const CONTEXT_BYTES = 8000;
+/** Newest rows a turn loads for `buildHistory`. The byte budget keeps only a handful in practice; this is the safe upper bound (a row costs at least 7 bytes). */
+export const HISTORY_ROWS = 400;
 
 /**
  * Pure turn-context policy. Main-line turns see only main-line messages; a thread turn sees its root and that thread's replies,

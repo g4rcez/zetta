@@ -114,7 +114,7 @@ describe("identity client boundary", () => {
     expect(JSON.parse(String(ok.requests[0]?.init.body))).toEqual({ key: "synthetic-key" });
     const bad = fixture({ error: { code: "SETUP_KEY_MISMATCH", message: "unsafe-echo" } }, 403);
     await expect(bad.client.verifySetupKey("wrong")).rejects.toThrow(
-      "does not match this server's ZETTA_CONNECTION_KEY",
+      "does not match this server's setup key",
     );
   });
 

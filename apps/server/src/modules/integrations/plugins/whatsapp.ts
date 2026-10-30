@@ -61,8 +61,13 @@ const base = (c: PluginContext) => {
     throw new PluginError("BAD_URL", "The WAHA address is not a valid http(s) URL.");
   }
 };
-const session = (c: PluginContext) =>
-  encodeURIComponent((c.config.session || "default").trim() || "default");
+// On the administrator's shared WAHA server every user gets a session named after their own user id, whatever the form says: a typed name
+// could otherwise point at another member's paired number (read their chats, send as them). On a server the user brought, the name is theirs.
+const sessionName = (c: PluginContext) =>
+  ownServer(c)
+    ? `u${createHash("sha256").update(c.userId).digest("hex").slice(0, 24)}`
+    : (c.config.session || "default").trim() || "default";
+const session = (c: PluginContext) => encodeURIComponent(sessionName(c));
 
 async function wahaRaw(
   c: PluginContext,
@@ -346,6 +351,8 @@ const timeFormat = (c: PluginContext) =>
 const str = (description: string) => ({ type: "string", description });
 const def: PluginDef = {
   id: "whatsapp",
+  // Shared with the team, teammates can send through this number (the owner's send switch and allowlist still apply) but never read its chats.
+  teamTools: ["status", "send_message"],
   name: "WhatsApp (WAHA)",
   icon: "message-circle",
   category: "messaging",
@@ -471,7 +478,7 @@ const def: PluginDef = {
       async handler(ctx) {
         const s = await sessionStatus(ctx);
         return {
-          session: ctx.config.session || "default",
+          session: sessionName(ctx),
           status: s.status,
           account: s.me ?? null,
           sendingEnabled: ctx.config.allowSend === "yes",

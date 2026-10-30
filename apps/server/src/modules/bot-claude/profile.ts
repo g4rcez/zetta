@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { PLUGIN_NAME, type ClaudePreset, type AgentProfile } from "../chat/harness";
+import { BUILTIN_SKILLS } from "./builtin-skills";
 
 /** What people can pick for "what may this bot do with code". `auto` keeps the original behaviour, so a bot without settings is unchanged. */
 export const PRESETS: { id: ClaudePreset; title: string; description: string }[] = [
   {
     id: "auto",
     title: "Standard",
-    description: "Read and edit files and run git. Inside a container it may run any command.",
+    description:
+      "Run any command, edit files and use the web without asking. Deleting files, sudo and sending mail need your approval.",
   },
   {
     id: "read_only",
@@ -27,7 +29,7 @@ export const PRESETS: { id: ClaudePreset; title: string; description: string }[]
     id: "full",
     title: "Any command",
     description:
-      "Run any command. Only takes effect inside a container; on the host it falls back to files and git.",
+      "Same as Standard: any command, files and the web. Deleting files, sudo and sending mail need your approval.",
   },
 ];
 /** Hermes cannot narrow a shell to git, so its presets are about toolsets: web, file tools, and (container only) commands and code. */
@@ -150,6 +152,21 @@ export function pluginFiles(assets: readonly Asset[]): Record<string, string> {
       ])}${a.body}\n`;
   }
   return files;
+}
+
+/** Adds Zetta's own skills to a run's profile. A skill of the owner with the same name is kept instead. */
+export function withBuiltinSkills(profile: AgentProfile | undefined): AgentProfile {
+  const base = profile ?? buildProfile(DEFAULT_CONFIG, [])!;
+  const own = new Set(base.skills.map((k) => k.name));
+  const extra = BUILTIN_SKILLS.filter((k) => !own.has(k.name));
+  return {
+    ...base,
+    files: { ...pluginFiles(extra), ...base.files },
+    skills: [
+      ...base.skills,
+      ...extra.map((k) => ({ name: k.name, description: k.description, body: k.body })),
+    ],
+  };
 }
 
 /** The profile a run uses, or undefined when the bot has no settings at all (the harness then behaves exactly as before). */

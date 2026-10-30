@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { MessageSquare, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { ChatIcon, DotsThreeIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { useEffect, useState, type DragEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@zetta/ui/components/button";
@@ -64,7 +64,7 @@ export function TasksPage() {
   return (
     <main className="flex h-full min-h-0 flex-col gap-3 p-4">
       <header className="flex flex-wrap items-center gap-2">
-        <h1 className="text-base font-semibold">Tasks</h1>
+        <h1 className="text-xl">Tasks</h1>
         <form
           className="ml-auto flex items-center gap-1"
           onSubmit={(e) => {
@@ -81,7 +81,7 @@ export function TasksPage() {
             className="h-8 w-56 text-sm"
           />
           <Button type="submit" size="sm" aria-label="Add task">
-            <Plus /> Add
+            <PlusIcon /> Add
           </Button>
         </form>
       </header>
@@ -151,7 +151,7 @@ function TaskCard({
             aria-label={`${task.title} menu`}
             className="rounded p-1 text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
           >
-            <MoreHorizontal className="size-4" />
+            <DotsThreeIcon className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
             {TASK_COLUMNS.filter((c) => c.status !== task.status).map((c) => (
@@ -160,7 +160,7 @@ function TaskCard({
               </DropdownMenuItem>
             ))}
             <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              <Trash2 /> Delete
+              <TrashIcon /> Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -181,7 +181,7 @@ function TaskCard({
             params={{ chatId: task.conversationId }}
             className="ml-auto inline-flex items-center gap-1 hover:underline"
           >
-            <MessageSquare className="size-3" /> Thread
+            <ChatIcon className="size-3" /> Thread
           </Link>
         )}
       </div>

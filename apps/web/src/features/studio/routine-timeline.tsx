@@ -8,11 +8,11 @@ const HOUR = 3600_000;
 const WINDOWS = [3, 12, 24] as const;
 const BAR: Record<TimelineRun["status"], string> = {
   running: "bg-primary animate-pulse",
-  succeeded: "bg-green-600",
+  succeeded: "bg-success",
   failed: "bg-destructive",
-  blocked: "bg-yellow-600",
+  blocked: "bg-warn",
   skipped: "bg-muted-foreground/50",
-  interrupted: "bg-yellow-600",
+  interrupted: "bg-warn",
 };
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -62,10 +62,16 @@ export function RoutineTimeline({ refreshKey }: { refreshKey: number }) {
       );
     };
     load();
-    const timer = setInterval(load, 5000);
+    // Hidden tabs skip the refresh and catch up when they become visible.
+    const tick = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    const timer = setInterval(tick, 5000);
+    document.addEventListener("visibilitychange", tick);
     return () => {
       alive = false;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
     };
   }, [hours, refreshKey]);
   const to = now,

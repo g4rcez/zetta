@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { matchTrigger } from "./triggers";
+import { instructionSummary, matchTrigger } from "./triggers";
 
 describe("matchTrigger", () => {
   test("finds the word after the trigger char before the caret", () => {
@@ -15,5 +15,22 @@ describe("matchTrigger", () => {
   });
   test("the other trigger char does not match", () => {
     expect(matchTrigger("run /wee", 8, "@")).toBeUndefined();
+  });
+});
+
+describe("instructionSummary", () => {
+  test("the trigger wins over the body", () => {
+    expect(instructionSummary({ trigger: "Every Monday", body: "1. Open the board" })).toBe(
+      "Every Monday",
+    );
+  });
+  test("uses the first step without its list marker, skipping blank lines", () => {
+    expect(instructionSummary({ body: "\n\n1. Open the board\n2. Post it" })).toBe(
+      "Open the board",
+    );
+    expect(instructionSummary({ trigger: "  ", body: "- Check the logs" })).toBe("Check the logs");
+  });
+  test("empty body gives an empty string", () => {
+    expect(instructionSummary({ body: "  \n " })).toBe("");
   });
 });

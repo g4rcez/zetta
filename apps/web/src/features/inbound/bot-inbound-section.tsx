@@ -12,7 +12,7 @@ const when = (iso: string | null) =>
 
 /**
  * Incoming messages: this bot answers new messages that outside people send through a channel plugin (WhatsApp, Telegram...). Each
- * chat gets its own conversation; the bot can only read, reply to that chat, hand off to you or open a discussion with pre-approved bots.
+ * chat gets its own conversation; the bot can only read, reply to that chat, hand off to you or open a room with pre-approved bots.
  */
 export function BotInboundSection({ bot }: { bot: Bot }) {
   const [options, setOptions] = useState<InboundOption[]>();
@@ -48,7 +48,7 @@ export function BotInboundSection({ bot }: { bot: Bot }) {
       <p className="text-xs text-muted-foreground">
         {bot.name} can answer new messages people send you. It reads them as untrusted text, runs
         without code access, and can only reply to the chat the message came from, hand off to you,
-        or open a discussion with the bots you allowed under Group discussions.
+        or open a room with the bots you allowed under Rooms.
       </p>
       {!options ? (
         <p role="status" className="text-xs text-muted-foreground">

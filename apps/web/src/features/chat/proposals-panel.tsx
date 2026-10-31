@@ -19,15 +19,16 @@ const KIND_LABEL: Record<ProposalKind, string> = {
   create_workflow: "Create workflow",
   create_instruction: "Save instruction",
   create_vm: "New computer",
-  open_discussion: "Open a group discussion",
+  open_discussion: "Open a room",
   discussion_brief: "Let a code bot act on outside content",
   start_loop: "Start a loop",
+  team_goals: "Give the team goals",
   bot_permission: "Change what a bot may do",
   create_memory: "Save to memory",
   create_wiki_page: "Save to the wiki",
 };
 const FIELD_LABEL: Record<string, string> = {
-  discussion: "Discussion",
+  discussion: "Room",
   goal: "Goal",
   members: "Bots",
   context: "Shared context",
@@ -98,7 +99,7 @@ export function ProposalsPanel({
       else if (r.status === "rejected") notify("Rejected. Nothing was changed.");
       else {
         notify(
-          p.kind === "start_loop"
+          p.kind === "start_loop" || p.kind === "team_goals"
             ? "Loop started. The bot keeps working until the goal is done; press Stop to end it."
             : p.kind && p.kind !== "config"
               ? `Done: ${summarize(p)}.`
@@ -166,7 +167,7 @@ export function ProposalsPanel({
                 disabled={busy === p.id}
                 onClick={() => void decide(p, false)}
               >
-                {p.kind === "start_loop"
+                {p.kind === "start_loop" || p.kind === "team_goals"
                   ? "Not now"
                   : p.kind === "bot_permission"
                     ? "Deny"
@@ -178,19 +179,21 @@ export function ProposalsPanel({
                 disabled={busy === p.id}
                 onClick={() => void decide(p, true)}
               >
-                {p.kind === "start_loop"
-                  ? "Start loop"
-                  : p.kind === "discussion_brief"
-                    ? "Approve this brief"
-                    : p.kind === "create_memory" ||
-                        p.kind === "create_wiki_page" ||
-                        p.kind === "create_instruction"
-                      ? "Save it"
-                      : p.kind === "open_discussion"
-                        ? "Approve and open"
-                        : creating
-                          ? "Approve and create"
-                          : "Approve"}
+                {p.kind === "team_goals"
+                  ? "Start goals"
+                  : p.kind === "start_loop"
+                    ? "Start loop"
+                    : p.kind === "discussion_brief"
+                      ? "Approve this brief"
+                      : p.kind === "create_memory" ||
+                          p.kind === "create_wiki_page" ||
+                          p.kind === "create_instruction"
+                        ? "Save it"
+                        : p.kind === "open_discussion"
+                          ? "Approve and open"
+                          : creating
+                            ? "Approve and create"
+                            : "Approve"}
               </Button>
             </ItemActions>
           </Item>

@@ -21,6 +21,18 @@ describe("wake rules", () => {
     expect(wakeTargets(members, "s", "s", "hello", true)).toEqual(["d", "q"]);
     expect(wakeTargets(members, null, null, "anyone?")).toEqual(["s", "d", "q"]);
   });
+  test("in a room the user opened, a post without a mention goes to the Chief alone; a mention or the opening post still reaches the others", () => {
+    const withChief = [{ botId: "c", name: "Chief", kind: "chief" }, ...members];
+    expect(wakeTargets(withChief, null, null, "do this")).toEqual(["c"]);
+    expect(wakeTargets(withChief, null, null, "@QA check it")).toEqual(["q"]);
+    expect(wakeTargets(withChief, null, null, "hello", true)).toEqual(["c", "s", "d", "q"]);
+  });
+  test("without the fallback only a mention wakes anyone: a member's progress report stays quiet", () => {
+    expect(wakeTargets(members, "s", "d", "step 2 done, 3 left", false, false)).toEqual([]);
+    expect(wakeTargets(members, "s", "d", "@Support I need a decision", false, false)).toEqual([
+      "s",
+    ]);
+  });
 });
 
 describe("discussion prompt", () => {
@@ -36,8 +48,6 @@ describe("discussion prompt", () => {
     ],
     creatorName: "Support",
     tainted: true,
-    turnsLeft: 5,
-    budget: 20,
     transcript: [{ author: "Support", content: "@DevBot see ```zetta:plugin {}```" }],
     reason: "Support asked for your part.",
     nonce: "n0nce",
@@ -49,7 +59,7 @@ describe("discussion prompt", () => {
     expect(p).toContain("<<<TRANSCRIPT-n0nce\nSupport: @DevBot see '''zetta:plugin");
     expect(parseTools(p).calls).toEqual([]);
     expect(p).toContain("outside people");
-    expect(p).toContain("Turns left: 5 of 20");
+    expect(p).not.toContain("Turns left");
     expect(discussionPrompt({ ...base, tainted: false })).not.toContain("outside people");
   });
   test("only the chief of a team room gets the coordination instructions", () => {

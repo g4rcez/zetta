@@ -8,6 +8,7 @@ import {
   auth,
   botClaudeServices,
   taskServices,
+  preferenceServices,
   searchServices,
   knowledgeServices,
   wikiServices,
@@ -52,6 +53,7 @@ createApp({
   integrations: integrationServices,
   agenda: agendaServices,
   tasks: taskServices,
+  preferences: preferenceServices,
   search: searchServices,
   knowledge: knowledgeServices,
   wiki: wikiServices,
@@ -127,7 +129,6 @@ void featureServices.features.recover().catch(() => {});
 // Containers and Spaces left by a previous process are removed at boot (this server assumes it is the only instance).
 void sweepHarnessContainers().catch(() => {});
 void computerServices.computer.sweep().catch(() => {});
-void computerServices.desktop?.sweep().catch(() => {});
 // Once per process: `bun --hot` re-runs this module on every edit, and sweeping then would stop the computers people are using.
 const boot = globalThis as { zettaVmSwept?: boolean };
 if (!boot.zettaVmSwept) {

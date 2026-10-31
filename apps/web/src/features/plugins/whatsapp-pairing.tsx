@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui";
 import { errorMessage } from "../chat/chat-client";
-import { pluginsApi, type PluginTest } from "./plugins-api";
+import { usePluginApi, type PluginTest } from "./plugins-api";
 import { Modal } from "../shared/ui";
 import { Alert } from "@g4rcez/components/alert";
 
@@ -17,6 +17,7 @@ export function WhatsappPairing({
   onClose: () => void;
   onPaired: () => void;
 }) {
+  const pluginsApi = usePluginApi();
   const [busy, setBusy] = useState(false);
   const [qr, setQr] = useState<string>();
   const [message, setMessage] = useState<string>();

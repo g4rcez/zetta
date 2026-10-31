@@ -12,7 +12,7 @@ export type ZettaData = {
   summary: { text: string };
   computer: { messageId: string; botId?: string; vm: { id: string; name: string } };
   "computer-step": { messageId: string; vmId: string; step: string; at: number };
-  activity: { messageId: string; label: string };
+  activity: { messageId: string; label: string; at: number };
 };
 export type ZettaUIMessage = UIMessage<unknown, ZettaData>;
 
@@ -24,6 +24,8 @@ export type Row = Message & {
   streaming?: boolean;
   /** What the bot is doing right now between text chunks (a tool call, waiting on the model). */
   activity?: string;
+  /** Every step the bot reported this turn, oldest first. Saved replies keep it in `meta.timeline`. */
+  timeline?: { at: number; label: string }[];
   computers?: { id: string; name: string }[];
   computerSteps?: ComputerStep[];
 };
@@ -112,7 +114,11 @@ export function liveRows(
           target.computers = [...(target.computers ?? []), p.data.vm];
       } else if (p.type === "data-activity") {
         const target = rows.find((r) => r.id === p.data.messageId) ?? current;
-        if (target) target.activity = p.data.label;
+        if (target) {
+          target.activity = p.data.label;
+          if (p.data.label !== "Thinking" && target.timeline?.at(-1)?.label !== p.data.label)
+            target.timeline = [...(target.timeline ?? []), { at: p.data.at, label: p.data.label }];
+        }
       } else if (p.type === "data-computer-step") {
         const target = rows.find((r) => r.id === p.data.messageId) ?? current;
         if (target)

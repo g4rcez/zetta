@@ -3,6 +3,7 @@ import type { Database } from "@zetta/db";
 import { and, asc, eq, ne } from "@zetta/db/query";
 import { bot as botTable, type bot } from "@zetta/db/schema/chat";
 import { computerVm, hook as hooks } from "@zetta/db/schema/features";
+import { team as teamTable, teamRole } from "@zetta/db/schema/teams";
 import { raiseAttention } from "../features/attention";
 import { createKnowledge, renderMemory, type MemorySnapshot } from "../features/knowledge";
 import { applyRedaction, matches, safeRegex } from "../features/safety";
@@ -221,7 +222,7 @@ export function createTurnRunner(
       key: K,
       find: () => NonNullable<TurnRetrieval[K]>,
     ): NonNullable<TurnRetrieval[K]> => (retrieval ? (retrieval[key] ??= find()) : find());
-    const [retrieved, snap, found, pages, bots, vms] = await Promise.all([
+    const [retrieved, snap, found, pages, bots, vms, teams, roles] = await Promise.all([
       knowledge.retrieve(userId, b.id, ev.text),
       memorySnapshot ?? knowledge.snapshot(userId, b.id),
       // The asker's own documents only (userId is the requester). A failure here never blocks the chat.
@@ -245,6 +246,21 @@ export function createTurnRunner(
             .where(and(eq(computerVm.ownerUserId, userId), ne(computerVm.status, "deleted")))
             .orderBy(asc(computerVm.createdAt))
         : [],
+      // The chief needs the existing teams to choose between create_team and add_to_team.
+      !fixture && b.kind === "chief" && !noCode
+        ? db
+            .select({ id: teamTable.id, name: teamTable.name })
+            .from(teamTable)
+            .where(and(eq(teamTable.ownerUserId, userId), eq(teamTable.status, "active")))
+            .orderBy(asc(teamTable.createdAt))
+        : [],
+      !fixture && b.kind === "chief" && !noCode
+        ? db
+            .select({ name: teamRole.name, description: teamRole.description })
+            .from(teamRole)
+            .where(eq(teamRole.ownerUserId, userId))
+            .orderBy(asc(teamRole.createdAt))
+        : [],
     ]);
     const instructions = retrieved.instructions.filter((i) => !referencedIds.includes(i.id));
     const shownIds = [...referencedIds, ...instructions.map((i) => i.id)];
@@ -261,7 +277,7 @@ export function createTurnRunner(
           .map((x) => `${x.name} (${x.id})`)
           .join(
             ", ",
-          )}\nCurrent time: ${new Date().toISOString()} (UTC). Resolve relative dates such as "tomorrow at 9" from it and the user's timezone when you know it.` +
+          )}${teams.length ? `\nThe user's teams: ${teams.map((x) => `${x.name} (${x.id})`).join(", ")}` : ""}${roles.length ? `\nThe team roles: ${roles.map((x) => (x.description ? `${x.name} (${x.description})` : x.name)).join(", ")}` : ""}\nCurrent time: ${new Date().toISOString()} (UTC). Resolve relative dates such as "tomorrow at 9" from it and the user's timezone when you know it.` +
         (b.computerMode === "desktop"
           ? `\nThe user's computers (desktop "vm" ids): ${
               vms

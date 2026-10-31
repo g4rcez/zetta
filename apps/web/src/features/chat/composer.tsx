@@ -1,3 +1,5 @@
+import { Alert } from "@g4rcez/components/alert";
+import { looksSecret } from "@zetta/core/secrets";
 import { uuidv7 } from "@zetta/core/uuid";
 import { Link } from "@tanstack/react-router";
 import {
@@ -44,7 +46,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/po
 import { Separator } from "@zetta/ui/components/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
-import { BotAvatar } from "@/components/bot-avatar";
 
 import { ImageViewer } from "./attachment-image";
 import { instructionSummary } from "./triggers";
@@ -58,6 +59,7 @@ import {
   call,
 } from "./chat-client";
 import { matchTrigger } from "./triggers";
+import { useMention } from "./mention";
 import { Response } from "./response";
 
 export type Outgoing = {
@@ -67,7 +69,6 @@ export type Outgoing = {
   instructionIds?: string[];
 };
 type Instruction = { id: string; title: string; body: string; trigger?: string };
-const mentionKey = (name: string) => name.replace(/\s+/g, "");
 const PICTURES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_ATTACHMENTS = 5;
 const MAX_INSTRUCTIONS = 5;
@@ -142,6 +143,9 @@ export function Composer({
   const [staged, setStaged] = useState<Staged[]>([]);
   const [viewing, setViewing] = useState<number>();
   const [dragging, setDragging] = useState(false);
+  // The text the person was warned about. Sending the same text again goes through, so the warning never blocks, it only asks once.
+  const [flagged, setFlagged] = useState<string>();
+  const secretWarning = flagged !== undefined && flagged === value.trim();
   const previews = useRef(new Set<string>());
   useEffect(() => () => previews.current.forEach((u) => URL.revokeObjectURL(u)), []);
   const [fileRefs, setFileRefs] = useState<string[]>([]);
@@ -150,15 +154,7 @@ export function Composer({
     entries: { name: string; kind: "file" | "dir" }[];
   }>();
   const [previewing, setPreviewing] = useState(false);
-  const [mention, setMention] = useState<{ query: string; at: number; index: number }>();
-  const candidates = mention
-    ? bots
-        .filter(
-          (b) =>
-            b.onboarded && mentionKey(b.name).toLowerCase().startsWith(mention.query.toLowerCase()),
-        )
-        .slice(0, 6)
-    : [];
+  const mention = useMention({ value, onChange, bots, inputRef: input });
   const [slash, setSlash] = useState<{ query: string; at: number; index: number }>();
   const [library, setLibrary] = useState<Instruction[]>();
   const [chosen, setChosen] = useState<Instruction[]>([]);
@@ -251,8 +247,7 @@ export function Composer({
     });
   }
   function trackMention(text: string, caret: number) {
-    const m = matchTrigger(text, caret, "@");
-    setMention(m ? { ...m, index: 0 } : undefined);
+    mention.track(text, caret);
     const s = instructions ? matchTrigger(text, caret, "/") : undefined;
     setSlash(s ? { ...s, index: 0 } : undefined);
     if (s && !library && chosen.length < MAX_INSTRUCTIONS)
@@ -286,21 +281,13 @@ export function Composer({
       input.current?.setSelectionRange(slash.at, slash.at);
     });
   }
-  function pickMention(b: Bot) {
-    if (!mention) return;
-    const end = mention.at + 1 + mention.query.length,
-      insert = `@${mentionKey(b.name)} `;
-    onChange(value.slice(0, mention.at) + insert + value.slice(end));
-    setMention(undefined);
-    requestAnimationFrame(() => {
-      const el = input.current;
-      el?.focus();
-      el?.setSelectionRange(mention.at + insert.length, mention.at + insert.length);
-    });
-  }
   async function submit(e?: FormEvent) {
     e?.preventDefault();
     if (!canSend) return;
+    if (looksSecret(value) && flagged !== value.trim()) {
+      setFlagged(value.trim());
+      return;
+    }
     const ok = await onSubmit({
       text: value.trim(),
       attachmentIds: [...attached.map((a) => a.id), ...pictures.map((x) => x.id!)],
@@ -341,27 +328,7 @@ export function Composer({
         return;
       }
     }
-    if (mention && candidates.length) {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        const d = e.key === "ArrowDown" ? 1 : -1;
-        setMention({
-          ...mention,
-          index: (mention.index + d + candidates.length) % candidates.length,
-        });
-        return;
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        pickMention(candidates[mention.index]!);
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setMention(undefined);
-        return;
-      }
-    }
+    if (mention.onKeyDown(e)) return;
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void submit();
@@ -401,6 +368,15 @@ export function Composer({
         void addFiles(Array.from(e.dataTransfer.files));
       }}
     >
+      {secretWarning && (
+        <Alert theme="warn" className="mb-2 text-xs">
+          This looks like a key or password. The bot reads the chat and the chat is stored. To
+          connect an account, ask the bot to set it up: it shows a private form that skips the chat.{" "}
+          <button type="submit" className="underline">
+            Send anyway
+          </button>
+        </Alert>
+      )}
       {dragging && (
         <div
           aria-hidden="true"
@@ -477,36 +453,7 @@ export function Composer({
           ))}
         </ul>
       )}
-      {mention && candidates.length > 0 && (
-        <ul
-          role="listbox"
-          aria-label="Mention a bot"
-          className="absolute bottom-full left-0 z-20 mb-1 w-72 overflow-hidden rounded-lg border bg-popover p-1 shadow-md"
-        >
-          <li className="px-2 py-1 text-xs font-medium text-muted-foreground" role="presentation">
-            Bots
-          </li>
-          {candidates.map((b, i) => (
-            <li
-              key={b.id}
-              role="option"
-              aria-selected={i === mention.index}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                pickMention(b);
-              }}
-              className={cn(
-                "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                i === mention.index ? "bg-accent text-accent-foreground" : "hover:bg-muted",
-              )}
-            >
-              <BotAvatar bot={b} size={20} square />
-              <span className="font-medium">{b.name}</span>
-              <span className="truncate text-xs text-muted-foreground">@{mentionKey(b.name)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {mention.popup("above")}
       <InputGroup className="h-auto rounded-lg bg-card shadow-xs">
         <InputGroupAddon align="block-start" className="gap-0.5 border-b px-1.5 py-1">
           <Tool label="Bold (⌘B)" onClick={() => wrap("**")}>
@@ -651,7 +598,7 @@ export function Composer({
               trackMention(e.target.value, e.target.selectionStart);
             }}
             onSelect={(e) => trackMention(e.currentTarget.value, e.currentTarget.selectionStart)}
-            onBlur={() => setMention(undefined)}
+            onBlur={mention.close}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
           />

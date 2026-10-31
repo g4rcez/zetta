@@ -1,6 +1,6 @@
-import svg from "../../public/logo.svg?raw";
+import svg from "../assets/logo.svg?raw";
 
-/** The project logo, inlined from public/logo.svg so its colors can be themed: set `--logo-ink`, `--logo-face`, `--logo-eye`, `--logo-shade`, `--logo-metal` or `--logo-lens` on the element or an ancestor. The same robot face is the Chief bot's default avatar. */
+/** The project logo, inlined from src/assets/logo.svg so its colors can be themed: set `--logo-ink`, `--logo-face`, `--logo-eye`, `--logo-shade`, `--logo-metal` or `--logo-lens` on the element or an ancestor. The same robot face is the Chief bot's default avatar. */
 export function Logo({ size = 36, className = "" }: { size?: number; className?: string }) {
   return (
     <span

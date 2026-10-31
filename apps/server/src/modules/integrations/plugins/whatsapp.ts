@@ -351,8 +351,6 @@ const timeFormat = (c: PluginContext) =>
 const str = (description: string) => ({ type: "string", description });
 const def: PluginDef = {
   id: "whatsapp",
-  // Shared with the team, teammates can send through this number (the owner's send switch and allowlist still apply) but never read its chats.
-  teamTools: ["status", "send_message"],
   name: "WhatsApp (WAHA)",
   icon: "message-circle",
   category: "messaging",
@@ -363,6 +361,12 @@ const def: PluginDef = {
     "Read your WhatsApp chats and, if you allow it, send messages through your own WAHA server.",
   notes:
     "Needs a running WAHA server (see docs/operations/whatsapp-waha.md). Pair your phone by scanning the QR code after installing. Sending is OFF unless you set 'Allow sending' to yes. Unofficial API: WhatsApp may restrict accounts that automate messaging.",
+  guide: () => [
+    "Use the WAHA server of this workspace (leave the fields empty) or enter your own WAHA address and API key.",
+    "Press Pair to show the QR code.",
+    "On your phone open WhatsApp > Settings > Linked devices > Link a device, and scan the code. It refreshes about every 20 seconds.",
+    "Sending messages stays off until you set 'Allow sending' to yes.",
+  ],
   fields: [
     {
       key: "baseUrl",

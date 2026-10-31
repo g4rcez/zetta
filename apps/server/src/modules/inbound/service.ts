@@ -65,7 +65,7 @@ You answer outside people on the user's behalf, following your own instructions.
 \`\`\`zetta:plugin
 {"plugin":${JSON.stringify(plugin)},"tool":${JSON.stringify(replyTool)},"args":{${JSON.stringify(replyArg)}:${JSON.stringify(chat)},"text":"..."}}
 \`\`\`
-You can only reply to this chat. If the request needs other bots (for example a developer to fix a bug), open a discussion with them, give them the full context, and tell the person you are working on it. If a person must decide something, use zetta:handoff. Never share secrets or the user's private data.`;
+You can only reply to this chat. If the request needs other bots (for example a developer to fix a bug), open a room with them, give them the full context, and tell the person you are working on it. If a person must decide something, use zetta:handoff. Never share secrets or the user's private data.`;
 }
 
 /**
@@ -439,7 +439,10 @@ export function createInbound(
     async forBot(a: ActiveActor, botId: string) {
       await ownedBot(a, botId);
       const bound = new Set(await plugins.bindings(a, botId));
-      const installed = new Set((await plugins.list(a)).map((p) => p.id));
+      // Incoming messages are polled with the user's own configuration; a team configuration has no inbound routes.
+      const installed = new Set(
+        (await plugins.list(a)).filter((p) => p.sharing !== "team").map((p) => p.id),
+      );
       const routes = await this.listRoutes(a);
       const available = listPlugins()
         .filter((d) => d.inbound && installed.has(d.id))
@@ -465,7 +468,7 @@ export function createInbound(
       const b = await ownedBot(a, botId);
       const def = getPlugin(pluginId);
       if (!def?.inbound) throw new AccessError("NOT_FOUND");
-      if (!(await plugins.list(a)).some((p) => p.id === pluginId))
+      if (!(await plugins.list(a)).some((p) => p.id === pluginId && p.sharing !== "team"))
         throw new AccessError("NOT_FOUND");
       if (v.enabled && !b.onboarded)
         throw new InboundError("INVALID", `${b.name} is not ready yet; finish its setup first.`);

@@ -1,5 +1,11 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
+import { TransportError } from "@zetta/core/sealed-transport";
+import {
+  TransportKeyExpiredError,
+  transportKeyring,
+  type TransportKeyring,
+} from "../connections/transport";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { McpError, type Mcp } from "./mcp";
 import { PluginError } from "./plugins/registry";
@@ -12,6 +18,12 @@ export type IntegrationServices = {
 };
 const uuid = z.string().uuid();
 const pluginId = z.string().regex(/^[a-z0-9_-]{1,32}$/);
+/** Which configuration of a plugin a request is about: the user's own (default) or the workspace's team one. */
+const scopeOf = z.enum(["mine", "team"]);
+/** What a sealed plugin body opens to. Same limits the plaintext body had. */
+const sealedConfig = z.strictObject({
+  config: z.record(z.string().max(40), z.string().max(4000)).default({}),
+});
 const out = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { "cache-control": "no-store" } });
 const fail = (status: number, code: string, message: string) =>
@@ -20,11 +32,13 @@ const fail = (status: number, code: string, message: string) =>
 export function createIntegrationRoutes(
   { access, mcp, sources }: IntegrationServices,
   trustedOrigins: readonly string[],
+  keyring: TransportKeyring = transportKeyring,
 ) {
   type Ctx = {
     actor: Awaited<ReturnType<typeof access.requireActive>>;
     body: unknown;
     params: Record<string, string>;
+    scope: z.infer<typeof scopeOf>;
   };
   function mapError(e: unknown) {
     if (e instanceof AccessError)
@@ -69,7 +83,7 @@ export function createIntegrationRoutes(
       return fail(
         e.code === "NOT_BOUND"
           ? 404
-          : e.code === "TOOL_NOT_ALLOWED"
+          : e.code === "TOOL_NOT_ALLOWED" || e.code === "ADMIN_ONLY"
             ? 403
             : e.code === "TIMEOUT"
               ? 504
@@ -89,7 +103,9 @@ export function createIntegrationRoutes(
         e.code,
         e.code === "BLOCKED" ? "That address is not allowed." : "The source could not be read.",
       );
-    if (e instanceof z.ZodError)
+    if (e instanceof TransportKeyExpiredError)
+      return fail(409, "TRANSPORT_KEY_EXPIRED", "The encryption key rotated. Try again.");
+    if (e instanceof z.ZodError || e instanceof TransportError)
       return fail(400, "INVALID_REQUEST", "Check the details and try again.");
     console.error("integrations: unhandled error", e);
     return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
@@ -116,7 +132,12 @@ export function createIntegrationRoutes(
             );
         }
         return out(
-          await work({ actor: await access.requireActive(request.headers), body, params }),
+          await work({
+            actor: await access.requireActive(request.headers),
+            body,
+            params,
+            scope: scopeOf.catch("mine").parse(new URL(request.url).searchParams.get("scope")),
+          }),
           status,
         );
       } catch (e) {
@@ -208,54 +229,51 @@ export function createIntegrationRoutes(
         "/plugins",
         g(async (c) => ({ plugins: await mcp.plugins.list(c.actor) })),
       )
-      .get(
-        "/plugins/shared",
-        g(async (c) => ({ plugins: await mcp.plugins.shared(c.actor) })),
-      )
-      .put(
-        "/plugins/:id/sharing",
-        g(async (c) => ({
-          plugin: await mcp.plugins.setSharing(
-            c.actor,
-            pluginId.parse(c.params.id),
-            z.strictObject({ sharing: z.enum(["private", "team"]) }).parse(c.body).sharing,
-          ),
-        })),
-      )
       .post(
         "/plugins",
         g(async (c) => {
+          // The config arrives sealed to the server key (see @zetta/core/sealed-transport); a plaintext `config` fails the strict schema.
           const v = z
             .strictObject({
               id: pluginId,
-              config: z.record(z.string().max(40), z.string().max(4000)).default({}),
+              sealed: z.unknown(),
               botIds: z.array(uuid).max(50).default([]),
             })
             .parse(c.body);
-          return { plugin: await mcp.plugins.install(c.actor, v.id, v.config, v.botIds) };
+          const { config } = sealedConfig.parse(
+            await keyring.open(v.sealed, {
+              userId: c.actor.userId,
+              purpose: `plugin.install:${v.id}`,
+            }),
+          );
+          return {
+            plugin: await mcp.plugins.install(c.actor, v.id, config, v.botIds, c.scope),
+          };
         }, 201),
       )
       .delete(
         "/plugins/:id",
         g(async (c) => ({
-          plugin: await mcp.plugins.uninstall(c.actor, pluginId.parse(c.params.id)),
+          plugin: await mcp.plugins.uninstall(c.actor, pluginId.parse(c.params.id), c.scope),
         })),
       )
       .put(
         "/plugins/:id/config",
-        g(async (c) => ({
-          plugin: await mcp.plugins.configure(
-            c.actor,
-            pluginId.parse(c.params.id),
-            z
-              .strictObject({ config: z.record(z.string().max(40), z.string().max(4000)) })
-              .parse(c.body).config,
-          ),
-        })),
+        g(async (c) => {
+          const id = pluginId.parse(c.params.id);
+          const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
+          const { config } = sealedConfig.parse(
+            await keyring.open(sealed, {
+              userId: c.actor.userId,
+              purpose: `plugin.configure:${id}`,
+            }),
+          );
+          return { plugin: await mcp.plugins.configure(c.actor, id, config, c.scope) };
+        }),
       )
       .post(
         "/plugins/:id/test",
-        g(async (c) => mcp.plugins.test(c.actor, pluginId.parse(c.params.id))),
+        g(async (c) => mcp.plugins.test(c.actor, pluginId.parse(c.params.id), c.scope)),
       )
       .post(
         "/plugins/:id/connect",
@@ -266,14 +284,15 @@ export function createIntegrationRoutes(
             z
               .strictObject({ options: z.record(z.string().max(40), z.unknown()).optional() })
               .parse(c.body ?? {}).options,
+            c.scope,
           ),
         ),
       )
       .post(
         "/plugins/:id/disconnect",
-        g(async (c) => mcp.plugins.disconnect(c.actor, pluginId.parse(c.params.id))),
+        g(async (c) => mcp.plugins.disconnect(c.actor, pluginId.parse(c.params.id), c.scope)),
       )
-      // Browser navigation from the plugin's OAuth provider: no JSON, no token in the URL; always ends in a redirect to Studio with a status flag.
+      // Browser navigation from the plugin's OAuth provider: no JSON, no token in the URL; always ends in a redirect to the plugin's page with a status flag.
       .get("/plugins/:id/callback", async ({ request, params }) => {
         const id = pluginId.safeParse(params.id);
         const web = trustedOrigins[0] ?? "";
@@ -281,7 +300,7 @@ export function createIntegrationRoutes(
           new Response(null, {
             status: 303,
             headers: {
-              location: `${web.replace(/\/+$/, "")}/studio?plugin=${id.success ? id.data : "unknown"}&status=${ok ? "ok" : "error"}${reason ? `&reason=${encodeURIComponent(reason)}` : ""}`,
+              location: `${web.replace(/\/+$/, "")}/${id.success ? `plugins/${id.data}` : "studio/plugins"}?plugin=${id.success ? id.data : "unknown"}&status=${ok ? "ok" : "error"}${reason ? `&reason=${encodeURIComponent(reason)}` : ""}`,
               "cache-control": "no-store",
               "referrer-policy": "no-referrer",
             },
@@ -303,7 +322,13 @@ export function createIntegrationRoutes(
       })
       .get(
         "/bots/:id/plugins",
-        g(async (c) => ({ plugins: await mcp.plugins.bindings(c.actor, uuid.parse(c.params.id)) })),
+        g(async (c) => {
+          const botId = uuid.parse(c.params.id);
+          return {
+            plugins: await mcp.plugins.bindings(c.actor, botId),
+            configs: await mcp.plugins.bindingScopes(c.actor, botId),
+          };
+        }),
       )
       .put(
         "/bots/:id/plugins/:pluginId",
@@ -313,6 +338,7 @@ export function createIntegrationRoutes(
             uuid.parse(c.params.id),
             pluginId.parse(c.params.pluginId),
             true,
+            c.scope,
           ),
         })),
       )
@@ -324,6 +350,7 @@ export function createIntegrationRoutes(
             uuid.parse(c.params.id),
             pluginId.parse(c.params.pluginId),
             false,
+            c.scope,
           ),
         })),
       )

@@ -4,6 +4,8 @@ import { Streamdown } from "streamdown";
 import { splitReply, UI_FENCE } from "@zetta/render/reply";
 import { cn } from "@zetta/ui/lib/utils";
 
+import { SetupCard } from "./setup-card";
+import { parseSetupCard } from "./setup-card-data";
 import { stripToolFences } from "./tool-fences";
 import { UiSkeleton, UiView } from "./ui-registry";
 import { parseWhatsapp, WhatsappView } from "./whatsapp-view";
@@ -45,7 +47,7 @@ const Markdown = memo(function Markdown({
  * Message body. Markdown goes through Streamdown, which tolerates half-written syntax while a reply streams; fenced `zetta:ui`
  * blocks are drawn by json-render from the shared catalog (a block that never validates is shown as the code it is).
  */
-const WA = /```zetta:whatsapp\s*\n([\s\S]*?)```/g;
+const CARD = /```zetta:(whatsapp|setup-card)\s*\n([\s\S]*?)```/g;
 
 export const Response = memo(function Response({
   text: raw,
@@ -57,18 +59,27 @@ export const Response = memo(function Response({
   className?: string;
 }) {
   const text = streaming ? stripToolFences(raw) : raw;
-  const whatsapp = !streaming && text.includes("```zetta:whatsapp");
+  const whatsapp = !streaming && /```zetta:(whatsapp|setup-card)/.test(text);
   // Hooks stay above the early return (a reply can flip to the WhatsApp view when it settles). A reply with no ui fence skips the parse on every chunk.
   const segments = useMemo(
     () => (whatsapp || !text.includes("```" + UI_FENCE) ? [] : splitReply(text, streaming)),
     [text, streaming, whatsapp],
   );
   if (whatsapp) {
-    const parts: { md?: string; wa?: ReturnType<typeof parseWhatsapp>; raw?: string }[] = [];
+    const parts: {
+      md?: string;
+      wa?: ReturnType<typeof parseWhatsapp>;
+      setup?: ReturnType<typeof parseSetupCard>;
+      raw?: string;
+    }[] = [];
     let last = 0;
-    for (const m of text.matchAll(WA)) {
+    for (const m of text.matchAll(CARD)) {
       if (m.index! > last) parts.push({ md: text.slice(last, m.index) });
-      parts.push({ wa: parseWhatsapp(m[1]!), raw: m[1]! });
+      parts.push(
+        m[1] === "setup-card"
+          ? { setup: parseSetupCard(m[2]!), raw: m[2]! }
+          : { wa: parseWhatsapp(m[2]!), raw: m[2]! },
+      );
       last = m.index! + m[0].length;
     }
     if (last < text.length) parts.push({ md: text.slice(last) });
@@ -79,6 +90,8 @@ export const Response = memo(function Response({
             p.md.trim() ? (
               <Response key={i} text={p.md} />
             ) : null
+          ) : p.setup ? (
+            <SetupCard key={i} data={p.setup} />
           ) : p.wa ? (
             <WhatsappView key={i} data={p.wa} />
           ) : (

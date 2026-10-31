@@ -350,7 +350,7 @@ suite("inbound channels against compose postgres", () => {
       .select()
       .from(message)
       .where(and(eq(message.conversationId, t!.conversationId), eq(message.role, "assistant")));
-    expect(msgs.at(-1)!.content).toContain('Opened the discussion "Crash on login"');
+    expect(msgs.at(-1)!.content).toContain('Opened the room "Crash on login"');
   });
 
   test("busy chats wait, hourly caps skip with one card, unbinding stops the route, and a restart re-delivers without a second turn", async () => {

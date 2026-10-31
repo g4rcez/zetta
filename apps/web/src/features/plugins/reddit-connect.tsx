@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import { Button, Input } from "@/components/ui";
 import { errorMessage } from "../chat/chat-client";
 import { Check } from "./google-connect";
-import { pluginsApi, type PluginTest } from "./plugins-api";
+import { usePluginApi, type PluginTest } from "./plugins-api";
 import { Alert } from "@g4rcez/components/alert";
 
 /** Reddit orange (brand "OrangeRed"). */
@@ -94,6 +94,7 @@ export function RedditConnect({
   onChanged: () => void;
   onError: (m: string) => void;
 }) {
+  const pluginsApi = usePluginApi();
   const info = probe?.status.info as Info | undefined;
   const connected = probe?.status.state === "connected";
   const [scopes, setScopes] = useState<Set<string>>(new Set());

@@ -5,7 +5,6 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Database } from "@zetta/db";
 import { and, eq, ne } from "@zetta/db/query";
-import { user } from "@zetta/db/schema/auth";
 import { bot } from "@zetta/db/schema/chat";
 import { botIntegration, mcpServer } from "@zetta/db/schema/features";
 import { assertPublicUrl, ComputerError } from "../computer/service";
@@ -20,9 +19,16 @@ import { configureWhatsapp } from "./plugins/whatsapp"; // importing registers t
 import "./plugins/google"; // importing registers the plugin
 import "./plugins/telegram"; // importing registers the plugin
 import "./plugins/reddit"; // importing registers the plugin
+import "./plugins/composio"; // importing registers the plugin
 import "../bot-database/plugin"; // importing registers the built-in bot database
 import { configureVault } from "./plugins/vault"; // importing registers 1Password and Bitwarden
-import { createPlugins, NATIVE_URL_PREFIX, type McpCore } from "./plugins/service";
+import {
+  createPlugins,
+  NATIVE_URL_PREFIX,
+  pickBinding,
+  type McpCore,
+  type Scope,
+} from "./plugins/service";
 
 export class McpError extends Error {
   constructor(
@@ -93,37 +99,37 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
   // address policy. Only the administrator who runs the server may use one, unless they open it to members.
   const memberStdio = opts.memberStdio ?? process.env.ZETTA_MCP_MEMBER_STDIO === "1";
   const stdioOk = (a: ActiveActor) => a.isAdmin || memberStdio;
+  /** A server the user may change: their own, or the team's when they are the administrator. */
   const owned = async (a: ActiveActor, id: string) => {
-    const [s] = await db
-      .select()
-      .from(mcpServer)
-      .where(and(eq(mcpServer.id, id), eq(mcpServer.ownerUserId, a.userId)));
-    if (!s) throw new AccessError("NOT_FOUND");
+    const [s] = await db.select().from(mcpServer).where(eq(mcpServer.id, id));
+    if (!s || !(s.sharing === "team" ? a.isAdmin : s.ownerUserId === a.userId))
+      throw new AccessError("NOT_FOUND");
     return s;
   };
 
-  /** A server the user owns, or one a teammate shared with the team (native plugins that declare team tools only). */
+  /** A server the user may use: their own, or the workspace's team configuration. */
   const visible = async (a: ActiveActor, id: string) => {
     const [s] = await db.select().from(mcpServer).where(eq(mcpServer.id, id));
-    if (!s) throw new AccessError("NOT_FOUND");
-    if (s.ownerUserId === a.userId) return s;
-    if (
-      s.sharing === "team" &&
-      s.url?.startsWith(NATIVE_URL_PREFIX) &&
-      getPlugin(s.name)?.teamTools
-    )
-      return s;
-    throw new AccessError("NOT_FOUND");
+    if (!s || !(s.sharing === "team" || s.ownerUserId === a.userId))
+      throw new AccessError("NOT_FOUND");
+    return s;
   };
+  /** Whose sealed secret a server uses: a team configuration's secret belongs to its owner, whoever calls it. */
+  const secretOwner = (a: ActiveActor, s: Server): ActiveActor =>
+    s.sharing === "team" && s.ownerUserId !== a.userId
+      ? { userId: s.ownerUserId, isAdmin: false }
+      : a;
 
   /** Opens one connected session (credentials resolved now). The caller must close it. */
   async function openSession(a: ActiveActor, s: Server) {
     if (s.url?.startsWith(NATIVE_URL_PREFIX)) throw new McpError("INVALID"); // in-process plugins have no MCP session
-    if (s.transport === "stdio" && !stdioOk(a)) throw new McpError("STDIO_NOT_ALLOWED");
+    // A team server was added by the administrator, who chose to let members use it.
+    if (s.transport === "stdio" && s.sharing !== "team" && !stdioOk(a))
+      throw new McpError("STDIO_NOT_ALLOWED");
     let auth: string | undefined;
     if (s.connectionId) {
       const secret = connections
-        ? await connections.secretFor(a, s.connectionId).catch(() => undefined)
+        ? await connections.secretFor(secretOwner(a, s), s.connectionId).catch(() => undefined)
         : undefined;
       if (!secret) throw new McpError("FAILED");
       auth = `Bearer ${secret.toString("utf8")}`;
@@ -176,12 +182,14 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     work: (c: Client) => Promise<T>,
   ): Promise<T> {
     if (s.url?.startsWith(NATIVE_URL_PREFIX)) throw new McpError("INVALID");
-    if (s.transport === "stdio" && !stdioOk(a)) throw new McpError("STDIO_NOT_ALLOWED");
+    // A team server was added by the administrator, who chose to let members use it.
+    if (s.transport === "stdio" && s.sharing !== "team" && !stdioOk(a))
+      throw new McpError("STDIO_NOT_ALLOWED");
     let auth: string | undefined;
     if (s.connectionId) {
       // Fails closed: a revoked/missing connection means the call does not happen, and no other credential is tried.
       const secret = connections
-        ? await connections.secretFor(a, s.connectionId).catch(() => undefined)
+        ? await connections.secretFor(secretOwner(a, s), s.connectionId).catch(() => undefined)
         : undefined;
       if (!secret) throw new McpError("FAILED");
       auth = `Bearer ${secret.toString("utf8")}`;
@@ -242,6 +250,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
         command?: string;
         args?: string[];
         connectionId?: string;
+        sharing?: Scope;
       },
     ) {
       if (v.transport === "http") {
@@ -268,6 +277,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
           command: v.command ?? null,
           args: v.args ?? [],
           connectionId: v.connectionId ?? null,
+          sharing: v.sharing === "team" ? "team" : "private",
         })
         .returning();
       return { id: row!.id, name: row!.name, transport: row!.transport };
@@ -284,11 +294,9 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     },
     async removeServer(a: ActiveActor, id: string) {
       await owned(a, id);
-      // Teammates' bindings of a shared server go with it.
+      // Members' bindings of a team server go with it.
       await db.delete(botIntegration).where(eq(botIntegration.serverId, id));
-      await db
-        .delete(mcpServer)
-        .where(and(eq(mcpServer.id, id), eq(mcpServer.ownerUserId, a.userId)));
+      await db.delete(mcpServer).where(eq(mcpServer.id, id));
       return { id };
     },
     async bind(a: ActiveActor, botId: string, serverId: string) {
@@ -299,7 +307,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       if (!b || (b.ownerUserId !== a.userId && b.visibility !== "team"))
         throw new AccessError("NOT_FOUND");
       const server = await visible(a, serverId);
-      // One server per name and bot: an own WhatsApp and a teammate's shared one would otherwise be ambiguous for the bot.
+      // One server per name, scope and bot: a bot may hold a private and the team configuration of a plugin, never two of the same kind.
       const same = await db
         .select({ id: botIntegration.id })
         .from(botIntegration)
@@ -309,6 +317,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
             eq(botIntegration.botId, botId),
             eq(botIntegration.ownerUserId, a.userId),
             eq(mcpServer.name, server.name),
+            eq(mcpServer.sharing, server.sharing),
             ne(mcpServer.id, serverId),
           ),
         );
@@ -371,7 +380,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
             return undefined;
           if (!s.connectionId) return { s, i, url: s.url, secret: undefined };
           const secret = connections
-            ? await connections.secretFor(a, s.connectionId).catch(() => undefined)
+            ? await connections.secretFor(secretOwner(a, s), s.connectionId).catch(() => undefined)
             : undefined;
           return secret ? { s, i, url: s.url, secret } : undefined;
         }),
@@ -386,11 +395,13 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
           secret.fill(0);
           headers = { Authorization: `Bearer \${${key}}` };
         }
-        servers[s.name] = { type: "http", url, ...(headers ? { headers } : {}) };
+        // The team configuration of a server gets its own name, so it never collides with the user's private one.
+        const name = s.sharing === "team" ? `${s.name}-team` : s.name;
+        servers[name] = { type: "http", url, ...(headers ? { headers } : {}) };
         allow.push(
           ...(i.toolsMode === "all"
-            ? [`mcp__${s.name}`]
-            : i.allowedTools.map((t) => `mcp__${s.name}__${t}`)),
+            ? [`mcp__${name}`]
+            : i.allowedTools.map((t) => `mcp__${name}__${t}`)),
         );
       }
       return Object.keys(servers).length ? { mcp: { servers, allow }, env } : { env };
@@ -434,8 +445,8 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     },
     /** The access token of the plugin `name` the user bound to the bot, for a CLI run that needs to authenticate as that account. */
     async tokenOf(a: ActiveActor, botId: string, name: string): Promise<string | undefined> {
-      const [row] = await db
-        .select({ c: mcpServer.connectionId })
+      const rows = await db
+        .select({ c: mcpServer.connectionId, s: mcpServer })
         .from(botIntegration)
         .innerJoin(mcpServer, eq(mcpServer.id, botIntegration.serverId))
         .where(
@@ -445,15 +456,19 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
             eq(mcpServer.name, name),
           ),
         );
+      // The user's own configuration wins over the team's.
+      const row = rows.find((r) => r.s.sharing === "private") ?? rows[0];
       if (!row?.c || !connections) return undefined;
-      const secret = await connections.secretFor(a, row.c).catch(() => undefined);
+      const secret = await connections
+        .secretFor(secretOwner(a, row.s), row.c)
+        .catch(() => undefined);
       if (!secret) return undefined;
       const token = secret.toString("utf8");
       secret.fill(0);
       return token;
     },
     /** Internal (plugins): registers an in-process plugin as the user's server row so ownership and bot bindings apply unchanged. */
-    async addNative(a: ActiveActor, id: string, connectionId?: string) {
+    async addNative(a: ActiveActor, id: string, connectionId?: string, sharing: Scope = "mine") {
       const [row] = await db
         .insert(mcpServer)
         .values({
@@ -463,16 +478,25 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
           url: `${NATIVE_URL_PREFIX}${id}`,
           args: [],
           connectionId: connectionId ?? null,
+          sharing: sharing === "team" ? "team" : "private",
         })
         .returning();
       return { id: row!.id, name: row!.name, transport: row!.transport };
     },
-    /** Internal (plugins): the user's own server row by name. */
-    async serverByName(a: ActiveActor, name: string) {
+    /** Internal (plugins): the user's own server row by name (`mine`) or the workspace's team configuration of it (`team`). */
+    async serverByName(a: ActiveActor, name: string, scope: Scope = "mine") {
       const [s] = await db
         .select()
         .from(mcpServer)
-        .where(and(eq(mcpServer.name, name), eq(mcpServer.ownerUserId, a.userId)));
+        .where(
+          scope === "team"
+            ? and(eq(mcpServer.name, name), eq(mcpServer.sharing, "team"))
+            : and(
+                eq(mcpServer.name, name),
+                eq(mcpServer.ownerUserId, a.userId),
+                eq(mcpServer.sharing, "private"),
+              ),
+        );
       return s;
     },
     /** Internal (plugins): a server row by id, whoever owns it. The caller checks that the user may use it. */
@@ -480,46 +504,20 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       const [s] = await db.select().from(mcpServer).where(eq(mcpServer.id, id));
       return s;
     },
-    /** Internal (plugins): who may use the user's server. Going back to private removes every teammate's binding at once. */
-    async setSharing(a: ActiveActor, id: string, sharing: "private" | "team") {
-      await owned(a, id);
-      await db
-        .update(mcpServer)
-        .set({ sharing })
-        .where(and(eq(mcpServer.id, id), eq(mcpServer.ownerUserId, a.userId)));
-      if (sharing === "private")
-        await db
-          .delete(botIntegration)
-          .where(and(eq(botIntegration.serverId, id), ne(botIntegration.ownerUserId, a.userId)));
-    },
-    /** Internal (plugins): servers teammates shared with the team, with their owner's name. */
-    async sharedWithMe(a: ActiveActor) {
-      return db
-        .select({ id: mcpServer.id, name: mcpServer.name, ownerName: user.name })
-        .from(mcpServer)
-        .innerJoin(user, eq(user.id, mcpServer.ownerUserId))
-        .where(and(eq(mcpServer.sharing, "team"), ne(mcpServer.ownerUserId, a.userId)));
-    },
     async setConnection(a: ActiveActor, id: string, connectionId: string | null) {
       await owned(a, id);
-      await db
-        .update(mcpServer)
-        .set({ connectionId })
-        .where(and(eq(mcpServer.id, id), eq(mcpServer.ownerUserId, a.userId)));
+      await db.update(mcpServer).set({ connectionId }).where(eq(mcpServer.id, id));
     },
-    /** Tool catalogue of one of the user's servers (opens and closes a session). */
+    /** Tool catalogue of one server the user may use (opens and closes a session). */
     async tools(a: ActiveActor, serverId: string) {
-      const s = await owned(a, serverId);
+      const s = await visible(a, serverId);
       const tools = await withClient(a, s, async (c) =>
         (await c.listTools()).tools.map((t) => ({
           name: t.name,
           description: (t.description ?? "").slice(0, 300),
         })),
       );
-      await db
-        .update(mcpServer)
-        .set({ tools })
-        .where(and(eq(mcpServer.id, serverId), eq(mcpServer.ownerUserId, a.userId)));
+      await db.update(mcpServer).set({ tools }).where(eq(mcpServer.id, serverId));
       return tools;
     },
     /**
@@ -534,10 +532,11 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
           serverName: string,
           tool: string,
           args: Record<string, unknown>,
+          config?: Scope,
         ) => {
-          const hit = (await this.bound(a, botId)).find((b) => b.name === serverName);
+          const hit = pickBinding(await this.bound(a, botId), serverName, config);
           if (!hit) throw new McpError("NOT_BOUND");
-          const srv = await owned(a, hit.id);
+          const srv = await visible(a, hit.id);
           const trail = {
             kind: "tool_call",
             botId,
@@ -571,18 +570,18 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
         },
       };
     },
-    /** Calls one tool for a bot. Requires the bot↔server binding of THIS user; ownership of the server is re-checked on every call. */
+    /** Calls one tool for a bot. Requires the bot↔server binding of THIS user; access to the server is re-checked on every call. */
     async callTool(
       a: ActiveActor,
       botId: string,
       serverName: string,
       tool: string,
       args: Record<string, unknown>,
+      config?: Scope,
     ) {
-      const bound = await this.bound(a, botId);
-      const hit = bound.find((b) => b.name === serverName);
+      const hit = pickBinding(await this.bound(a, botId), serverName, config);
       if (!hit) throw new McpError("NOT_BOUND");
-      const s = await owned(a, hit.id);
+      const s = await visible(a, hit.id);
       const trail = {
         kind: "tool_call",
         botId,

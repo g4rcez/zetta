@@ -1,3 +1,4 @@
+import { TEAM_ROLE_COLORS, TEAM_ROLE_ICONS } from "@zetta/db/schema/teams";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
@@ -29,11 +30,17 @@ const schemas = {
         z.strictObject({
           botId: uuid,
           kind: z.enum(["chief", "member"]),
-          role: z.string().trim().max(200).default(""),
+          roleId: uuid.nullable().default(null),
           canvas: point,
         }),
       )
       .max(50),
+  }),
+  role: z.strictObject({
+    name: z.string().trim().min(1).max(60),
+    description: z.string().trim().max(200).default(""),
+    color: z.enum(TEAM_ROLE_COLORS).default("slate"),
+    icon: z.enum(TEAM_ROLE_ICONS).default("user"),
   }),
   room: z.strictObject({
     title: z.string().trim().min(1).max(120),
@@ -120,6 +127,27 @@ export function createTeamRoutes(
   const id = (c: Ctx) => uuid.parse(c.params.id);
   return new Elysia({ prefix: "/api", normalize: false })
     .get(
+      "/team-roles",
+      g(async (c) => ({ roles: await store.roles(c.actor) })),
+    )
+    .post(
+      "/team-roles",
+      g(async (c) => ({ role: await store.createRole(c.actor, schemas.role.parse(c.body)) }), 201),
+    )
+    .put(
+      "/team-roles/:id",
+      g(async (c) => ({
+        role: await store.updateRole(c.actor, id(c), schemas.role.parse(c.body)),
+      })),
+    )
+    .delete(
+      "/team-roles/:id",
+      g(async (c) => {
+        await store.deleteRole(c.actor, id(c));
+        return { ok: true };
+      }),
+    )
+    .get(
       "/teams",
       g(async (c) => ({ teams: await store.list(c.actor) })),
     )
@@ -148,5 +176,9 @@ export function createTeamRoutes(
     .post(
       "/teams/:id/rooms",
       g(async (c) => store.startRoom(c.actor, id(c), schemas.room.parse(c.body)), 201),
+    )
+    .post(
+      "/teams/:id/chat",
+      g(async (c) => store.openChat(c.actor, id(c))),
     );
 }

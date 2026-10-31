@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
-import { DiscussionError, type DiscussionStore } from "./store";
+import { DiscussionError, publicRoom, type DiscussionStore } from "./store";
 import type { DiscussionWorker } from "./worker";
 
 export type DiscussionServices = {
@@ -17,9 +17,10 @@ const schemas = {
     context: z.string().max(8000).default(""),
     members: z
       .array(z.strictObject({ bot: uuid, role: z.string().trim().max(200).optional() }))
-      .min(1)
-      .max(5),
-    firstMessage: z.string().trim().min(1).max(4000),
+      .min(1),
+    /** Optional: without it the room opens with its goal (or title), so the bots have something to start on. */
+    firstMessage: z.string().trim().min(1).max(4000).optional(),
+    /** Rooms have no turn limit; older clients still send this, so it is accepted and ignored. */
     turnBudget: z.number().int().min(1).max(50).optional(),
   }),
   update: z.strictObject({
@@ -132,9 +133,14 @@ export function createDiscussionRoutes(
     .post(
       "/discussions",
       g(async (c) => {
-        const v = schemas.create.parse(c.body);
-        const r = await store.open(c.actor, { ...v, createdBy: null, tainted: false });
-        return { discussion: { ...r.discussion, openKey: undefined }, created: r.created };
+        const { turnBudget: _ignored, ...v } = schemas.create.parse(c.body);
+        const r = await store.open(c.actor, {
+          ...v,
+          firstMessage: v.firstMessage ?? (v.goal || v.title),
+          createdBy: null,
+          tainted: false,
+        });
+        return { discussion: publicRoom(r.discussion), created: r.created };
       }, 201),
     )
     .get(
@@ -157,10 +163,7 @@ export function createDiscussionRoutes(
       g(async (c) => {
         const { expectedVersion, ...v } = schemas.update.parse(c.body);
         return {
-          discussion: {
-            ...(await store.updateContext(c.actor, id(c), v, expectedVersion)),
-            openKey: undefined,
-          },
+          discussion: publicRoom(await store.updateContext(c.actor, id(c), v, expectedVersion)),
         };
       }),
     )
@@ -174,28 +177,27 @@ export function createDiscussionRoutes(
     .post(
       "/discussions/:id/pause",
       g(async (c) => ({
-        discussion: { ...(await store.setStatus(c.actor, id(c), "pause")), openKey: undefined },
+        discussion: publicRoom(await store.setStatus(c.actor, id(c), "pause")),
       })),
     )
     .post(
       "/discussions/:id/resume",
       g(async (c) => ({
-        discussion: { ...(await store.setStatus(c.actor, id(c), "resume")), openKey: undefined },
+        discussion: publicRoom(await store.setStatus(c.actor, id(c), "resume")),
       })),
     )
     .post(
       "/discussions/:id/cancel",
       g(async (c) => ({
-        discussion: { ...(await store.setStatus(c.actor, id(c), "cancel")), openKey: undefined },
+        discussion: publicRoom(await store.setStatus(c.actor, id(c), "cancel")),
       })),
     )
     .post(
       "/discussions/:id/resolve",
       g(async (c) => ({
-        discussion: {
-          ...(await store.resolve(c.actor, id(c), null, schemas.resolve.parse(c.body).summary)),
-          openKey: undefined,
-        },
+        discussion: publicRoom(
+          await store.resolve(c.actor, id(c), null, schemas.resolve.parse(c.body).summary),
+        ),
       })),
     )
     .put(

@@ -38,6 +38,7 @@ import { PictureStrip } from "./attachment-image";
 import { CopyButton } from "./chat-copy";
 import { EmojiPicker } from "./emoji-picker";
 import { computersOf, type Row } from "./chat-rows";
+import { friendly, WorkTimeline } from "./work-timeline";
 import { VmCard } from "./vm-card";
 import { Response } from "./response";
 import { splitActionNotes } from "./action-notes";
@@ -280,12 +281,6 @@ function HoverBar({
   );
 }
 
-/** "plugin postgres.db_overview" -> "Running postgres · db_overview"; other labels pass through. */
-const friendly = (activity?: string) => {
-  const m = activity?.match(/^(?:plugin|mcp) ([^.\s]+)\.(\S*)$/);
-  return m ? `Running ${m[1]}${m[2] ? ` · ${m[2]}` : ""}` : activity;
-};
-
 /** Shown while the bot is thinking and no specific step is known, so the wait reads as progress. */
 const THINKING = [
   "Thinking",
@@ -458,6 +453,7 @@ export const MessageRow = memo(function MessageRow({
               ))}
           </ul>
         ) : null}
+        <WorkTimeline row={row} working={working} />
         {working && !visible ? (
           <WorkingStatus
             label={friendly(row.activity) ?? "typing"}
@@ -545,11 +541,11 @@ export const MessageRow = memo(function MessageRow({
         ))}
         {row.meta?.discussion && (
           <Link
-            to="/discussions"
+            to="/rooms"
             search={{ id: row.meta.discussion.id }}
             className="w-fit text-[13px] text-primary hover:underline"
           >
-            Open the discussion “{row.meta.discussion.title}”
+            Open the room “{row.meta.discussion.title}”
           </Link>
         )}
         {made.length > 0 && (
@@ -559,6 +555,7 @@ export const MessageRow = memo(function MessageRow({
                 {r.kind === "bot" ? (
                   <Link
                     to="/chat/{-$chatId}"
+                    params={{ chatId: "new" }}
                     search={{ bot: r.id }}
                     className="flex items-center gap-2.5 rounded-lg border bg-card py-2 pr-3 pl-2 text-[13px] hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
                   >
@@ -578,7 +575,9 @@ export const MessageRow = memo(function MessageRow({
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate font-medium text-foreground">{r.text}</span>
-                      <span className="block text-muted-foreground">New team · open teams</span>
+                      <span className="block text-muted-foreground">
+                        {r.created === false ? "Team updated" : "New team"} · open teams
+                      </span>
                     </span>
                   </Link>
                 )}
@@ -631,7 +630,7 @@ export const MessageRow = memo(function MessageRow({
                   </Link>
                 ) : r.kind === "discussion" ? (
                   <Link
-                    to="/discussions"
+                    to="/rooms"
                     search={{ id: r.id }}
                     className="flex items-center gap-1 hover:text-foreground hover:underline"
                   >

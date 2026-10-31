@@ -5,7 +5,14 @@ import { join } from "node:path";
 import { assertPublicUrl } from "../../../computer/service";
 import { PluginError, registerPlugin, type CredentialField, type PluginContext } from "../registry";
 import { clean, json, run, vaultPolicy } from "./exec";
-import { pickMode, vaultPlugin, type VaultAdapter, type VaultItem } from "./shared";
+import {
+  itemRows,
+  named,
+  pickMode,
+  vaultPlugin,
+  type VaultAdapter,
+  type VaultItem,
+} from "./shared";
 
 /**
  * Bitwarden (and Vaultwarden, through the server URL), two ways (https://bitwarden.com/help):
@@ -64,8 +71,12 @@ function secretsManager(c: PluginContext): VaultAdapter {
       "Check that the server can reach Bitwarden, then try again.",
     );
   }
-  return {
+  const adapter: VaultAdapter = {
     mode: "secrets-manager",
+    cli: {
+      "bws project list": async () => named(json(await bws(["project", "list"]), "Bitwarden")),
+      "bws secret list": () => itemRows(adapter),
+    },
     async probe() {
       await bws(["project", "list"]);
     },
@@ -89,6 +100,7 @@ function secretsManager(c: PluginContext): VaultAdapter {
       return json<{ value?: string }>(await bws(["secret", "get", id]), "Bitwarden").value ?? "";
     },
   };
+  return adapter;
 }
 
 // ---- Personal vault (bw) ---------------------------------------------------------------------------------------------------------------
@@ -179,8 +191,17 @@ function personal(c: PluginContext): VaultAdapter {
     return s;
   }
   const withSession = async (argv: string[]) => bw(argv, { BW_SESSION: await session() });
-  return {
+  const adapter: VaultAdapter = {
     mode: "personal",
+    cli: {
+      ...Object.fromEntries(
+        ["folders", "collections", "organizations"].map((what) => [
+          `bw list ${what}`,
+          async () => named(json(await withSession(["list", what]), "Bitwarden")),
+        ]),
+      ),
+      "bw list items": () => itemRows(adapter),
+    },
     async probe() {
       await session();
     },
@@ -205,6 +226,7 @@ function personal(c: PluginContext): VaultAdapter {
       return (await withSession(["get", field, id])).trim();
     },
   };
+  return adapter;
 }
 
 export const BITWARDEN = registerPlugin({
@@ -258,6 +280,14 @@ export const BITWARDEN = registerPlugin({
         placeholder: "https://vault.example.com",
         help: "Leave empty for bitwarden.com. Set it for Vaultwarden or a self-hosted Bitwarden.",
       },
+    ],
+    cliCommands: [
+      "bw list folders",
+      "bw list collections",
+      "bw list organizations",
+      "bw list items",
+      "bws project list",
+      "bws secret list",
     ],
     adapter: (c) =>
       pickMode("Bitwarden", c.config, {

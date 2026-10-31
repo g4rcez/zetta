@@ -11,9 +11,9 @@ import { useEffect, useState, type ButtonHTMLAttributes, type FormEvent } from "
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Input } from "@/components/ui";
 import { errorCode, errorMessage, type Bot } from "../chat/chat-client";
-import { Modal } from "../shared/ui";
+import { Panel } from "../shared/ui";
 import { Check } from "./google-connect";
-import { pluginsApi, type PluginMeta, type PluginTest } from "./plugins-api";
+import { usePluginApi, type PluginMeta, type PluginTest } from "./plugins-api";
 import { TELEGRAM, TelegramLogo } from "./telegram-logo";
 import { ToggleCard } from "./toggle-card";
 import { Alert } from "@g4rcez/components/alert";
@@ -80,6 +80,7 @@ export function TelegramInstall({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const pluginsApi = usePluginApi();
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [allowSend, setAllowSend] = useState(false);
   const [allowManage, setAllowManage] = useState(false);
@@ -100,7 +101,6 @@ export function TelegramInstall({
       await pluginsApi.install(meta.id, config, [...chosen]);
       await pluginsApi.connect(meta.id).catch(() => undefined); // first sync; a webhook is reported (and can be removed) from the installed card
       onDone();
-      onClose();
     } catch (x) {
       setLocal(errorMessage(x));
     } finally {
@@ -108,7 +108,7 @@ export function TelegramInstall({
     }
   }
   return (
-    <Modal title="Connect Telegram" onClose={onClose}>
+    <Panel title="Connect Telegram">
       <form onSubmit={(e) => void submit(e)} className="space-y-4" aria-label="Connect Telegram">
         <Header
           title="Telegram"
@@ -204,7 +204,7 @@ export function TelegramInstall({
         </div>
         <p className="text-[11px] leading-snug text-muted-foreground">{FOOTNOTE}</p>
       </form>
-    </Modal>
+    </Panel>
   );
 }
 
@@ -235,6 +235,7 @@ export function TelegramConnect({
   onChanged: () => void;
   onError: (m: string) => void;
 }) {
+  const pluginsApi = usePluginApi();
   const info = probe?.status.info as Info | undefined;
   const [busy, setBusy] = useState<"sync" | "save">();
   const [notice, setNotice] = useState<string>();

@@ -9,10 +9,21 @@ import { and, asc, eq, ne } from "@zetta/db/query";
 import { computerVm } from "@zetta/db/schema/features";
 import { assertPublicUrl, assertWebScheme, ComputerError, type Actor } from "./service";
 import { pageLinks, type PageLinks } from "./cdp";
-import type { McpCall } from "./desktop";
 import type { CredentialField } from "../integrations/plugins/registry";
 import { vncPassword } from "./vnc";
 import { pickInput, type AxElement } from "../integrations/plugins/credentials";
+
+/** A cua-spacesd MCP tool call. Goes away when the VM driver moves to agent-desktop. */
+export type McpCall = (
+  tool: string,
+  args: Record<string, unknown>,
+  opts?: { signal?: AbortSignal | undefined; timeout?: number },
+) => Promise<{
+  text: string;
+  imageBase64?: string;
+  isError: boolean;
+  /** The tool's structuredContent, when it returns one. */ structured?: unknown;
+}>;
 
 /**
  * Persistent Linux desktops ("VMs") for computer use. Each row in computer_vm is one container from docker/desktop (Debian, TigerVNC,

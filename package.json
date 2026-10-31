@@ -71,5 +71,8 @@
   "overrides": {
     "vite": "npm:@voidzero-dev/vite-plus-core@1.1.0"
   },
-  "packageManager": "bun@1.3.14"
+  "packageManager": "bun@1.3.14",
+  "trustedDependencies": [
+    "agent-browser"
+  ]
 }

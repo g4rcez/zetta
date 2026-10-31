@@ -5,7 +5,7 @@ import { and, eq, inArray } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { bot } from "@zetta/db/schema/chat";
 import { attentionItem } from "@zetta/db/schema/features";
-import { discussion, discussionTurn } from "@zetta/db/schema/discussions";
+import { discussionTurn } from "@zetta/db/schema/discussions";
 import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
 import { createBotClaude } from "../bot-claude/store";
@@ -18,8 +18,14 @@ import { createDiscussionWorker } from "./worker";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const ids = [`disc-a-${uuidv7()}`, `disc-b-${uuidv7()}`, `disc-c-${uuidv7()}`];
-const [A, B, C] = ids as [string, string, string];
+const ids = [
+  `disc-a-${uuidv7()}`,
+  `disc-b-${uuidv7()}`,
+  `disc-c-${uuidv7()}`,
+  `disc-d-${uuidv7()}`,
+  `disc-e-${uuidv7()}`,
+];
+const [A, B, C, D, E] = ids as [string, string, string, string, string];
 
 suite("group discussions against compose postgres", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
@@ -175,9 +181,9 @@ suite("group discussions against compose postgres", () => {
     ];
     replies.Dev = ["Fixed in PR #12. @Support you can tell the customer."];
     const r = await say("A customer says login crashes");
-    expect(r.json.assistant.content).toContain('Opened the discussion "Login crash" with Dev');
+    expect(r.json.assistant.content).toContain('Opened the room "Login crash" with Dev');
     expect(runs.find((x) => x.bot === "Support")!.extraTools).toContain(
-      "Bots you may open a discussion with right away: Dev",
+      "Bots you may open a room with right away: Dev",
     );
     await worker.drain();
     const list = (await call(A, "GET", "/api/discussions")).json.discussions;
@@ -200,7 +206,7 @@ suite("group discussions against compose postgres", () => {
     expect(transcript.map((m) => m.content)).toEqual([
       "@Dev please fix the Android login crash",
       "Fixed in PR #12. @Support you can tell the customer.",
-      expect.stringContaining("Resolved the discussion"),
+      expect.stringContaining("Resolved the room"),
       "✅ Resolved by Support: Fixed in PR #12",
     ]);
     expect(transcript.map((m) => m.role)).toEqual([
@@ -212,7 +218,7 @@ suite("group discussions against compose postgres", () => {
     const origin = await messagesOf(A, c);
     expect(origin.at(-1)).toMatchObject({
       role: "system",
-      content: '👥 Discussion "Login crash" was resolved: Fixed in PR #12',
+      content: '👥 Room "Login crash" was resolved: Fixed in PR #12',
       meta: { discussion: { id: d.id } },
     });
     // The transcript is not an ordinary chat: it is hidden from the chat list and cannot be chatted into.
@@ -274,7 +280,7 @@ suite("group discussions against compose postgres", () => {
     expect(d.status).toBe("open");
     const t = await messagesOf(A, d.conversationId);
     // The refusal is fed back to Qa (it answers again), and no second discussion exists.
-    expect(t.some((m) => m.content.includes("cannot open another discussion"))).toBe(true);
+    expect(t.some((m) => m.content.includes("cannot open another room"))).toBe(true);
     expect(
       (await call(A, "GET", "/api/discussions")).json.discussions.some(
         (x: { title: string }) => x.title === "Nested",
@@ -294,11 +300,12 @@ suite("group discussions against compose postgres", () => {
     expect(again).toMatchObject({ created: false, discussion: { id: d.id } });
   });
 
-  test("a spent turn budget stalls the discussion; a person's post reopens it and wakes the facilitator", async () => {
+  test("a room has no turn limit: bots keep talking until a person pauses it", async () => {
     const x = await makeBot(A, "Ping"),
       y = await makeBot(A, "Pong");
     replies.Ping = Array(5).fill("@Pong your turn");
     replies.Pong = Array(5).fill("@Ping back to you");
+    // An old client may still send turnBudget: it is accepted and ignored.
     const created = await call(A, "POST", "/api/discussions", {
       title: "Loop",
       goal: "never ends",
@@ -309,8 +316,12 @@ suite("group discussions against compose postgres", () => {
     expect(created.status).toBe(201);
     await worker.drain();
     const g = (await call(A, "GET", `/api/discussions/${created.json.discussion.id}`)).json;
-    expect(g.discussion).toMatchObject({ status: "stalled", turnsUsed: 3 });
-    expect(g.turns.some((t: { reasonCode: string }) => t.reasonCode === "budget")).toBe(true);
+    expect(g.discussion.status).toBe("open");
+    expect(g.turns.filter((t: { status: string }) => t.status === "done").length).toBeGreaterThan(
+      3,
+    );
+    expect(g.turns.some((t: { reasonCode: string }) => t.reasonCode === "budget")).toBe(false);
+    expect(g.discussion).not.toHaveProperty("turnBudget");
     replies.Pong = ["Stopping here."];
     expect(
       (
@@ -323,7 +334,10 @@ suite("group discussions against compose postgres", () => {
     const after = (await call(A, "GET", `/api/discussions/${created.json.discussion.id}`)).json
       .discussion;
     expect(after.status).toBe("open");
-    expect(after.turnsUsed).toBe(4);
+    expect(
+      (await call(A, "POST", `/api/discussions/${created.json.discussion.id}/pause`)).json
+        .discussion.status,
+    ).toBe("paused");
     expect(
       (await call(A, "POST", `/api/discussions/${created.json.discussion.id}/cancel`)).json
         .discussion.status,
@@ -498,7 +512,7 @@ suite("group discussions against compose postgres", () => {
     ).toBe(404);
   });
 
-  test("the Discussions badge counts running discussions; resolving or cancelling one closes its notifications", async () => {
+  test("the Rooms badge counts running rooms; resolving or cancelling one closes its notifications", async () => {
     const p = await makeBot(C, "Badge1"),
       q = await makeBot(C, "Badge2");
     expect((await call(C, "GET", "/api/discussions/running")).json).toEqual({ running: 0 });
@@ -533,9 +547,68 @@ suite("group discussions against compose postgres", () => {
         .where(eq(attentionItem.ownerUserId, C))
         .orderBy(attentionItem.title),
     ).toEqual([
-      { title: 'Discussion "Release" is waiting', status: "resolved" },
-      { title: 'Discussion "Rollback" is waiting', status: "cancelled" },
+      { title: 'Room "Release" is waiting', status: "resolved" },
+      { title: 'Room "Rollback" is waiting', status: "cancelled" },
     ]);
+  });
+
+  test("in a room the person opens, the Chief joins and answers a post without a mention alone; a mention reaches only that bot", async () => {
+    const chief = await makeBot(E, "Boss", { kind: "chief" });
+    const dev = await makeBot(E, "Dev1");
+    const qa = await makeBot(E, "QA1");
+    const created = await call(E, "POST", "/api/discussions", {
+      title: "Chief room",
+      goal: "",
+      members: [{ bot: dev.id }, { bot: qa.id }],
+      firstMessage: "Hello all",
+    });
+    expect(created.status).toBe(201);
+    const roomId = created.json.discussion.id as string;
+    await worker.drain();
+    const detail = (await call(E, "GET", `/api/discussions/${roomId}`)).json;
+    expect(detail.members.map((m: { botId: string }) => m.botId).sort()).toEqual(
+      [chief.id, dev.id, qa.id].sort(),
+    );
+    runs.length = 0;
+    await call(E, "POST", `/api/discussions/${roomId}/messages`, { content: "ship the fix" });
+    await worker.drain();
+    expect(runs.map((r) => r.bot)).toEqual(["Boss"]);
+    runs.length = 0;
+    await call(E, "POST", `/api/discussions/${roomId}/messages`, { content: "@QA1 check it" });
+    await worker.drain();
+    expect(runs.map((r) => r.bot)).toEqual(["QA1"]);
+  });
+
+  test("nothing caps how many rooms run or how many bots join: the person decides", async () => {
+    const crew = await Promise.all(
+      ["Crew1", "Crew2", "Crew3", "Crew4", "Crew5", "Crew6", "Crew7", "Crew8"].map((n) =>
+        makeBot(D, n),
+      ),
+    );
+    const everyone = await call(D, "POST", "/api/discussions", {
+      title: "Everyone",
+      goal: "",
+      members: crew.map((b) => ({ bot: b.id })),
+      firstMessage: "Hello all",
+    });
+    expect(everyone.status).toBe(201);
+    const detail = (await call(D, "GET", `/api/discussions/${everyone.json.discussion.id}`)).json;
+    expect(detail.members).toHaveLength(8);
+    const more = await Promise.all(
+      ["Two", "Three", "Four", "Five", "Six", "Seven"].map((t) =>
+        call(D, "POST", "/api/discussions", {
+          title: `Room ${t}`,
+          goal: "",
+          members: [{ bot: crew[0]!.id }],
+          firstMessage: "Hi",
+        }),
+      ),
+    );
+    expect(more.map((r) => r.status)).toEqual([201, 201, 201, 201, 201, 201]);
+    const live = (await call(D, "GET", "/api/discussions")).json.discussions as {
+      status: string;
+    }[];
+    expect(live.filter((d) => d.status === "open")).toHaveLength(7);
   });
 
   test("a restart interrupts running turns and stalls their discussion instead of retrying", async () => {
@@ -596,10 +669,12 @@ suite("group discussions against compose postgres", () => {
       id: string;
       title: string;
       conversationId: string;
+      kind: string;
       members: { name: string }[];
     }[];
     const perms = list.filter((d) => d.title === "Permissions");
     expect(perms).toHaveLength(1);
+    expect(perms[0]!.kind).toBe("permissions");
     expect(perms[0]!.members.map((m) => m.name).sort()).toEqual(["Chief", "Components", "Docs"]);
     const talk = await messagesOf(B, perms[0]!.conversationId);
     const said = talk.map((m) => m.content).join("\n---\n");
@@ -654,22 +729,13 @@ suite("group discussions against compose postgres", () => {
       (b: { kind: string }) => b.kind === "chief",
     ) as { id: string };
     await db.update(bot).set({ onboarded: true }).where(eq(bot.id, chief.id));
-    // Earlier tests leave discussions running; clear them so the limit of 5 open discussions does not block the help request.
-    await db
-      .update(discussion)
-      .set({ status: "cancelled" })
-      .where(
-        and(
-          eq(discussion.ownerUserId, A),
-          inArray(discussion.status, ["open", "paused", "stalled"]),
-        ),
-      );
     const escalate = (problem: string) =>
       `Blocked.\n\`\`\`zetta:escalate\n{"problem":"${problem}","tried":"WebFetch"}\n\`\`\``;
     const helpOf = async (name: string) =>
       (
         (await call(A, "GET", "/api/discussions")).json.discussions as {
           title: string;
+          kind: string;
           status: string;
           summary: string;
         }[]
@@ -696,6 +762,7 @@ suite("group discussions against compose postgres", () => {
     expect(chat.map((m) => m.content)).toContain("Posted the newsletter.");
     expect(chat.filter((m) => m.role === "user")).toHaveLength(1);
     expect(await helpOf("Scout")).toMatchObject({
+      kind: "help",
       status: "resolved",
       summary: "Read the pages with WebFetch and say they are public.",
     });

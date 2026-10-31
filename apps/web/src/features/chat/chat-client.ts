@@ -1,5 +1,6 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { ENV } from "../../env";
+import { createSealedSend, type PublishedTransportKey } from "./sealed-send";
 
 export type BotAvatarValue =
   | { kind: "preset"; preset: string; colors: string[] }
@@ -67,6 +68,7 @@ export type ProposalKind =
   | "open_discussion"
   | "discussion_brief"
   | "start_loop"
+  | "team_goals"
   | "bot_permission"
   | "create_memory"
   | "create_wiki_page";
@@ -125,6 +127,10 @@ export type MessageMeta = {
     }[];
   };
   receipts?: Receipt[];
+  /** What the bot did while it worked, oldest first (`at` is epoch ms). */ timeline?: {
+    at: number;
+    label: string;
+  }[];
   decision?: { action: string; choice?: string; confidence?: number };
   /** Written by outside people through a channel plugin (WhatsApp, Telegram...). */ inbound?: {
     plugin: string;
@@ -298,6 +304,11 @@ export async function call<T>(path: string, method = "GET", body?: object): Prom
   if (!response.ok) throw await toApiError(response);
   return response.json() as Promise<T>;
 }
+
+/** Sends a credential sealed to the server's transport key (see ./sealed-send): the raw secret never appears in a request body. */
+export const sendSealed = createSealedSend(() =>
+  call<PublishedTransportKey>("/api/connections/transport-key"),
+);
 
 export type InterviewInput = {
   harness: string;

@@ -10,13 +10,13 @@ import {
   DevicesIcon,
   TreeStructureIcon,
   PlugIcon,
-  UsersThreeIcon,
+  HashIcon,
 } from "@phosphor-icons/react";
 
 /** Main rail destinations, in rail order (the command palette binds Alt+1… to them in this order). Each `group` is one contiguous run, rendered as a labelled section. */
 export const appLinks = [
   { to: "/chat/{-$chatId}", group: "Work", label: "Chat", icon: ChatsIcon },
-  { to: "/discussions", group: "Work", label: "Discussions", icon: UsersThreeIcon },
+  { to: "/rooms", group: "Work", label: "Rooms", icon: HashIcon },
   { to: "/agenda", group: "Work", label: "Agenda", icon: CalendarIcon },
   {
     to: "/studio/$tab",

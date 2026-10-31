@@ -298,15 +298,15 @@ export const goalLoop = pgTable(
     index("goal_loop_owner_user_id_idx").on(table.ownerUserId),
     index("goal_loop_bot_id_idx").on(table.botId),
     index("goal_loop_conversation_idx").on(table.conversationId, table.status),
-    // One active loop per conversation: a second one would fight over the same turn.
     // The driver polls running loops that are due.
     index("goal_loop_running_retry_idx")
       .on(table.retryAt)
       .where(sql`${table.status} = 'running'`),
     // wiki jobs scan finished loops of the last day across owners
     index("goal_loop_status_updated_idx").on(table.status, table.updatedAt),
+    // One active loop per bot in a conversation: team members each pursue their own goal in the room's conversation.
     uniqueIndex("goal_loop_one_active")
-      .on(table.conversationId)
+      .on(table.conversationId, table.botId)
       .where(sql`${table.status} in ('running', 'paused')`),
   ],
 );

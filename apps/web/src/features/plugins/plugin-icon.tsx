@@ -13,17 +13,22 @@ import {
   ChatCircleIcon,
   NotebookIcon,
   PlugIcon,
+  PlugsConnectedIcon,
 } from "@phosphor-icons/react";
 import type { ComponentType } from "react";
 
+import bitwarden from "./logos/bitwarden.svg";
 import chromeDevtools from "./logos/chrome-devtools.png";
 import cloudflare from "./logos/cloudflare.png";
+import composio from "./logos/composio.png";
 import context7 from "./logos/context7.png";
 import github from "./logos/github.svg";
 import { GoogleLogo } from "./google-connect";
 import linear from "./logos/linear.svg";
 import notion from "./logos/notion.png";
+import onepassword from "./logos/1password.svg";
 import playwright from "./logos/playwright.svg";
+import postgresql from "./logos/postgresql.svg";
 import posthog from "./logos/posthog.svg";
 import sentry from "./logos/sentry.png";
 import { RedditLogo } from "./reddit-connect";
@@ -47,6 +52,7 @@ const ICONS: Record<string, ComponentType<IconProps>> = {
   "message-circle": ChatCircleIcon,
   telegram: TelegramLogo,
   reddit: RedditLogo,
+  composio: PlugsConnectedIcon,
   "key-round": KeyIcon,
   database: DatabaseIcon,
 };
@@ -64,6 +70,10 @@ const LOGOS: Record<string, { src: string; plate?: boolean }> = {
   playwright: { src: playwright },
   "chrome-devtools": { src: chromeDevtools },
   whatsapp: { src: whatsapp },
+  composio: { src: composio },
+  "1password": { src: onepassword },
+  bitwarden: { src: bitwarden },
+  postgres: { src: postgresql },
 };
 
 /** Logo for a plugin: its vendor's brand mark when we have one, else the icon key named by the definition (unknown names fall back to a plug). */

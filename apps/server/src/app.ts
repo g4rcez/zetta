@@ -15,6 +15,7 @@ import { createAgendaRoutes, type AgendaServices } from "./modules/agenda/routes
 import { createKnowledgeRoutes, type KnowledgeServices } from "./modules/knowledge/routes";
 import { createWikiRoutes, type WikiServices } from "./modules/wiki/routes";
 import { createSearchRoutes, type SearchServices } from "./modules/search/routes";
+import { createPreferenceRoutes, type PreferenceServices } from "./modules/preferences/routes";
 import { createTaskRoutes, type TaskServices } from "./modules/tasks/routes";
 import { createArtifactRoutes, type ArtifactServices } from "./modules/artifacts/routes";
 import { createDiscussionRoutes, type DiscussionServices } from "./modules/discussions/routes";
@@ -41,6 +42,7 @@ export type CreateAppOptions = {
   integrations?: IntegrationServices;
   agenda?: AgendaServices;
   tasks?: TaskServices;
+  preferences?: PreferenceServices;
   search?: SearchServices;
   knowledge?: KnowledgeServices;
   wiki?: WikiServices;
@@ -69,6 +71,7 @@ export function createApp({
   integrations,
   agenda,
   tasks,
+  preferences,
   search,
   knowledge,
   wiki,
@@ -154,6 +157,11 @@ export function createApp({
     )
     .use(agenda ? createAgendaRoutes(agenda, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(tasks ? createTaskRoutes(tasks, [webOrigin, ...desktopOrigins]) : new Elysia())
+    .use(
+      preferences
+        ? createPreferenceRoutes(preferences, [webOrigin, ...desktopOrigins])
+        : new Elysia(),
+    )
     .use(search ? createSearchRoutes(search) : new Elysia())
     .use(
       knowledge ? createKnowledgeRoutes(knowledge, [webOrigin, ...desktopOrigins]) : new Elysia(),

@@ -11,8 +11,6 @@ import { createMcp } from "./modules/integrations/mcp";
 import { createSources } from "./modules/integrations/sources";
 import { createConnectionStore } from "./modules/connections/store";
 import { createConnectionsService, PROVIDERS } from "./modules/connections/service";
-import { createCuaCall } from "./modules/computer/desktop";
-import { createDesktopService } from "./modules/computer/desktop";
 import { createComputerService, dockerBrowserConfig } from "./modules/computer/service";
 import { createDbVmStore, createVmService, dockerVmConfig } from "./modules/computer/vm";
 import { createFeaturesService } from "./modules/features/service";
@@ -22,6 +20,7 @@ import { createKnowledge as createCompanyKnowledge } from "./modules/knowledge/s
 import { createWikiJobs } from "./modules/wiki/jobs";
 import { createWiki } from "./modules/wiki/service";
 import { createSearch } from "./modules/search/service";
+import { createPreferenceStore } from "./modules/preferences/store";
 import { createTaskStore } from "./modules/tasks/store";
 import { createArtifactStore } from "./modules/artifacts/store";
 import { createAgendaScheduler } from "./modules/agenda/scheduler";
@@ -98,11 +97,7 @@ import { createFileStore } from "./modules/chat/files";
 // Authorized server files live under ZETTA_FILES_ROOT (me/<userId>/… private, shared/… team-readable).
 const files = createFileStore(process.env.ZETTA_FILES_ROOT ?? `${process.cwd()}/.zetta-files`);
 const decisions = createDecisionService();
-// Desktop control through Cua Spaces: enable with ZETTA_DESKTOP_RUNTIME=cua (needs the `cua` CLI; each user+profile gets its own local Linux container Space).
-const cua =
-  process.env.ZETTA_DESKTOP_RUNTIME === "cua" && Bun.which("cua") ? createCuaCall() : undefined;
-const desktop = cua ? createDesktopService({ call: cua.call, close: cua.close }) : undefined;
-// Persistent per-user VMs (docker/desktop image + cua-spacesd): enable with ZETTA_DESKTOP_RUNTIME=docker. Takes over desktop use from Cua Spaces.
+// Persistent per-user VMs (docker/desktop image): enable with ZETTA_DESKTOP_RUNTIME=docker.
 const vmDocker = dockerVmConfig();
 const num = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
 const vms = vmDocker
@@ -211,7 +206,7 @@ export const chatServices = {
     { routine: features.routines.create as never, workflow: features.workflows.save as never },
     mcp,
     jev,
-    desktop,
+    undefined,
     vms,
     agenda,
     {
@@ -259,7 +254,9 @@ const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKe
   // A loop in a room: the facilitator is woken and the members discuss; the step ends when the room is quiet.
   const room = await discussions.byConversation(loop.conversationId);
   if (room) {
-    const started = await discussions.startLoopStep(room.id, label);
+    // A member's own loop wakes only that member and waits only for its turns; the facilitator's loop runs the whole room.
+    const member = loop.botId !== room.createdByBotId ? loop.botId : undefined;
+    const started = await discussions.startLoopStep(room.id, label, member);
     if (started.state === "paused") {
       await loops.pause(loop.id, "the room is paused");
       return { status: "complete" };
@@ -270,8 +267,12 @@ const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKe
       room.id,
       started.since,
       async () => (await loops.get(loop.id))?.status !== "running",
+      member,
     );
-    if (state === "resolved")
+    // A resolved room ends a member's loop as cancelled: its goal was not checked by the done check.
+    if (state === "resolved" && member)
+      await loops.end(loop.id, "cancelled", "the room was resolved");
+    else if (state === "resolved")
       await loops.report(loop.id, "done", summary || "The room was resolved.");
     if (state === "paused") await loops.pause(loop.id, "the room is paused");
     if (state === "approval")
@@ -354,9 +355,13 @@ export const inboundServices = {
 };
 export const featureServices = { access: identity.access, features };
 export const decisionServices = { access: identity.access, decisions };
-export const computerServices = { access: identity.access, computer, desktop, vms };
+export const computerServices = { access: identity.access, computer, vms };
 export const integrationServices = { access: identity.access, mcp, sources };
 export const taskServices = { access: identity.access, tasks };
+export const preferenceServices = {
+  access: identity.access,
+  preferences: createPreferenceStore(db),
+};
 export const knowledgeServices = { access: identity.access, knowledge: companyKnowledge };
 export const wikiServices = { access: identity.access, wiki, jobs: wikiJobs };
 export const searchServices = { access: identity.access, search: createSearch(db) };

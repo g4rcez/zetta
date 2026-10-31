@@ -1,9 +1,11 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { RoomsSection } from "../discussions/rooms-section";
 import {
   BellIcon,
   RobotIcon as BotIcon,
   CaretDownIcon,
   FolderPlusIcon,
+  HashIcon,
   DotsThreeIcon,
   PencilSimpleIcon,
   PushPinIcon,
@@ -35,6 +37,8 @@ import {
 import { cn } from "@zetta/ui/lib/utils";
 import { Input, Select } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
+import { ResizeHandle } from "@/components/resize-handle";
+import { SIDEBAR_LIMITS, usePreferences } from "../preferences/preferences";
 import { useAttentionSummary, useBotAttention, type BotAttention } from "../attention/summary";
 
 import type { Bot, Conversation, Workspace } from "./chat-client";
@@ -527,6 +531,8 @@ export const ChatSidebar = memo(function ChatSidebar({
   onAddSpace,
   onUpdateChat,
 }: Props) {
+  const navigate = useNavigate();
+  const { preferences, set: setPreferences } = usePreferences();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [mode, setMode] = useState(readMode);
@@ -650,9 +656,15 @@ export const ChatSidebar = memo(function ChatSidebar({
       : !bots.some((b) => chatsOf(b).length > 0) && favorites.length === 0);
   return (
     <aside
-      className="flex h-full min-h-0 w-full min-w-0 flex-col bg-sidebar text-sidebar-foreground md:border-r md:border-sidebar-border"
+      className="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-sidebar text-sidebar-foreground md:border-r md:border-sidebar-border"
       aria-label="Bots and chats"
     >
+      <ResizeHandle
+        label="Resize chat list"
+        value={preferences.listWidth}
+        {...SIDEBAR_LIMITS.listWidth}
+        onChange={(listWidth) => setPreferences({ listWidth })}
+      />
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border px-3">
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -679,6 +691,12 @@ export const ChatSidebar = memo(function ChatSidebar({
             <DropdownMenuItem onClick={() => setAdding(true)}>
               <FolderPlusIcon />
               New workspace
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => void navigate({ to: "/rooms", search: { new: true } })}
+            >
+              <HashIcon />
+              New room
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -718,7 +736,7 @@ export const ChatSidebar = memo(function ChatSidebar({
       </div>
       <div className="shrink-0 space-y-2 p-2">
         <Input
-          title="Filter bots and chats"
+          title="Filter rooms, bots and chats"
           hiddenLabel
           type="search"
           value={query}
@@ -779,34 +797,39 @@ export const ChatSidebar = memo(function ChatSidebar({
             </span>
           </Link>
         )}
-        <div
-          role="group"
-          aria-label="Sidebar view"
-          className="grid grid-cols-2 gap-0.5 rounded-lg bg-sidebar-accent/50 p-0.5"
-        >
-          {(["bots", "recent"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={mode === m}
-              onClick={() => setMode(m)}
-              className={cn(
-                "h-7 rounded-md text-sm font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-ring",
-                mode === m
-                  ? "bg-sidebar text-sidebar-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-sidebar-foreground",
-              )}
-            >
-              {m}
-            </button>
-          ))}
-        </div>
       </div>
       <nav
         onKeyDown={walkRows}
         className="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
-        aria-label={mode === "bots" ? "Bots" : "Recent conversations"}
+        aria-label="Rooms and bots"
       >
+        <RoomsSection query={q} />
+        <div className="flex items-center justify-between gap-2 pt-3 pb-1 pl-2">
+          <h3 className="label-mono">Bots</h3>
+          <div role="group" aria-label="Bots view" className="flex gap-0.5">
+            {(
+              [
+                ["bots", "By bot"],
+                ["recent", "Recent"],
+              ] as const
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={mode === m}
+                onClick={() => setMode(m)}
+                className={cn(
+                  "h-6 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+                  mode === m
+                    ? "bg-sidebar-accent text-sidebar-foreground"
+                    : "text-muted-foreground hover:text-sidebar-foreground",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         {mode === "recent" ? (
           recent.map((g) => (
             <section key={g.title}>

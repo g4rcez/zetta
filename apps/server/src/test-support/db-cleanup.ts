@@ -25,6 +25,7 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
     "hook",
     "decision_config",
     "bot_connection",
+    "connection_user_key",
     "browser_profile",
     "computer_vm",
     "source",
@@ -94,6 +95,7 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
     "delete from team_member where team_id in (select id from team where owner_user_id = any($1))",
   );
   await q("delete from team where owner_user_id = any($1)");
+  await q("delete from team_role where owner_user_id = any($1)");
   await q("delete from bot where owner_user_id = any($1)");
   await q("delete from workspace where owner_user_id = any($1)");
   await q("delete from connection where owner_user_id = any($1)");

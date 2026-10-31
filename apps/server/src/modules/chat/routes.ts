@@ -374,7 +374,7 @@ export function createChatRoutes(
       return fail(
         409,
         "DISCUSSION_CONVERSATION",
-        "This is a group discussion between bots. Post in it from the Discussions page.",
+        "This is a room where bots talk. Post in it from the Rooms page.",
       );
     if (error instanceof OnboardingError)
       return fail(

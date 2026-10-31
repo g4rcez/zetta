@@ -21,11 +21,11 @@ export function useGoalLoop(
   onTick: () => void,
   onChanged: () => void,
 ) {
-  const [loop, setLoopState] = useState<GoalLoop>();
+  const [all, setAll] = useState<GoalLoop[]>([]);
   const handlers = useRef({ onTick, onChanged });
   handlers.current = { onTick, onChanged };
   useEffect(() => {
-    setLoopState(undefined);
+    setAll([]);
     if (!conversationId) return;
     let stop = false,
       timer: ReturnType<typeof setTimeout> | undefined,
@@ -34,16 +34,16 @@ export function useGoalLoop(
       clearTimeout(timer);
       // Hidden tab: skip the fetch; the visibilitychange listener below polls again as soon as the tab is back.
       if (document.visibilityState !== "visible") return;
-      const latest = await loopsOf(conversationId)
-        .then((l) => l[0])
-        .catch(() => undefined);
+      const loops = await loopsOf(conversationId).catch(() => undefined);
       if (stop) return;
-      setLoopState(latest);
-      const key = latest ? `${latest.status}:${latest.iterations}:${latest.updatedAt}` : "";
+      setAll(loops ?? []);
+      const key = (loops ?? [])
+        .map((l) => `${l.id}:${l.status}:${l.iterations}:${l.updatedAt}`)
+        .join("|");
       if (last && key !== last) handlers.current.onChanged();
       last = key;
-      if (latest?.status === "running") handlers.current.onTick();
-      const active = latest?.status === "running" || latest?.status === "paused";
+      if (loops?.some((l) => l.status === "running")) handlers.current.onTick();
+      const active = Boolean(loops?.some((l) => l.status === "running" || l.status === "paused"));
       clearTimeout(timer);
       timer = setTimeout(() => void poll(), active ? 3_000 : 20_000);
     };
@@ -56,7 +56,18 @@ export function useGoalLoop(
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [conversationId]);
-  return { loop, update: setLoopState };
+  const update = (next: GoalLoop) =>
+    setAll((cur) =>
+      cur.some((l) => l.id === next.id)
+        ? cur.map((l) => (l.id === next.id ? next : l))
+        : [next, ...cur],
+    );
+  // `loop` is the newest one (a chat has one); `loops` are the active ones (a team room has one per member).
+  return {
+    loop: all[0],
+    loops: all.filter((l) => l.status === "running" || l.status === "paused"),
+    update,
+  };
 }
 
 const LABEL: Record<GoalLoop["status"], string> = {
@@ -70,10 +81,13 @@ const LABEL: Record<GoalLoop["status"], string> = {
 /** Slim bar above the composer: the goal, how many steps ran, and Stop / Resume. Finished loops stay visible until the next one. */
 export function LoopBanner({
   loop,
+  owner,
   onChange,
   onError,
 }: {
   loop: GoalLoop | undefined;
+  /** A team member's name: its loop shares the room with others. */
+  owner?: string | undefined;
   onChange: (loop: GoalLoop) => void;
   onError: (message: string) => void;
 }) {
@@ -117,7 +131,11 @@ export function LoopBanner({
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium">
           {label} · step {Math.max(loop.iterations, running ? loop.iterations + 1 : 0)}
-          <span className="font-normal text-muted-foreground"> · {loop.goal}</span>
+          <span className="font-normal text-muted-foreground">
+            {" "}
+            · {owner ? `${owner}: ` : ""}
+            {loop.goal}
+          </span>
         </p>
         {(loop.reason || loop.progress) && (
           <p className="truncate text-xs text-muted-foreground">

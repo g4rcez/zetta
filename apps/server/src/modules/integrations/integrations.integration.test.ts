@@ -10,6 +10,7 @@ import { membership } from "@zetta/db/schema/identity";
 import { z } from "zod";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
+import { sealedFor } from "../../test-support/sealed";
 import { createChatService } from "../chat/service";
 import { createIdentityAccess } from "../identity/access";
 import { createMcp } from "./mcp";
@@ -237,24 +238,21 @@ suite("MCP integrations and sources against compose postgres", () => {
       ),
     ).toMatchObject({ name: "local-admin" });
   });
-  test("a team-shared plugin can be bound by a teammate; private again, or removal, takes every binding away", async () => {
-    const owner = { userId: A, isAdmin: false },
+  test("a team configuration can be bound by any member and is removed only by the administrator; a private one stays private", async () => {
+    const admin = { userId: A, isAdmin: true },
       mate = { userId: B, isAdmin: false };
-    const srv = await mcp.addNative(owner, "whatsapp");
+    const priv = await mcp.addNative(admin, "whatsapp");
     const botB = (await call(B, "POST", "/api/bots", { name: "Sender" })).json.bot.id as string;
-    await expect(mcp.bind(mate, botB, srv.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
-    await mcp.setSharing(owner, srv.id, "team");
-    expect((await mcp.sharedWithMe(mate)).map((s) => s.name)).toEqual(["whatsapp"]);
-    await mcp.bind(mate, botB, srv.id);
+    await expect(mcp.bind(mate, botB, priv.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const team = await mcp.addNative(admin, "whatsapp", undefined, "team"); // the admin may hold both
+    await mcp.bind(mate, botB, team.id);
     expect((await mcp.bound(mate, botB)).map((b) => [b.name, b.sharing, b.ownerUserId])).toEqual([
       ["whatsapp", "team", A],
     ]);
-    await mcp.setSharing(owner, srv.id, "private");
+    await expect(mcp.removeServer(mate, team.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await mcp.removeServer(admin, team.id);
     expect(await mcp.bound(mate, botB)).toEqual([]);
-    await mcp.setSharing(owner, srv.id, "team");
-    await mcp.bind(mate, botB, srv.id);
-    await mcp.removeServer(owner, srv.id);
-    expect(await mcp.bound(mate, botB)).toEqual([]);
+    expect(await mcp.serverByName(admin, "whatsapp")).toMatchObject({ id: priv.id });
   });
 
   test("servers are per user; tools only through a per-user binding; sessions are always closed; stdio needs the allowlist", async () => {
@@ -404,7 +402,13 @@ suite("MCP integrations and sources against compose postgres", () => {
     const bot = (await call(A, "POST", "/api/bots", { name: "Mailer" })).json.bot.id as string;
     await db.$client.query("update bot set onboarded = true where id = $1", [bot]);
     expect(
-      (await call(A, "POST", "/api/plugins", { id: "google", config: {}, botIds: [bot] })).status,
+      (
+        await call(A, "POST", "/api/plugins", {
+          id: "google",
+          sealed: await sealedFor(A, "plugin.install:google", { config: {} }),
+          botIds: [bot],
+        })
+      ).status,
     ).toBe(201); // installed but never connected
     const conv = (await call(A, "POST", "/api/conversations", { botId: bot })).json.conversation.id;
     const block =
@@ -508,5 +512,31 @@ suite("MCP integrations and sources against compose postgres", () => {
     expect(r.json.run.status).toBe("succeeded");
     expect(prompts.at(-1)).toContain("Item from https://blog.example.test/feed");
     expect(prompts.at(-1)).toContain("could not be read");
+  });
+
+  test("a plugin config is accepted only sealed, for this user and this plugin", async () => {
+    const TOKEN = "tg-test-token-1234567890";
+    expect(
+      (
+        await call(A, "POST", "/api/plugins", {
+          id: "telegram",
+          config: { token: TOKEN },
+          botIds: [],
+        })
+      ).status,
+    ).toBe(400); // plaintext config
+    const wrongPlugin = await sealedFor(A, "plugin.install:google", { config: { token: TOKEN } });
+    expect(
+      (await call(A, "POST", "/api/plugins", { id: "telegram", sealed: wrongPlugin, botIds: [] }))
+        .status,
+    ).toBe(400);
+    const forB = await sealedFor(B, "plugin.install:telegram", { config: { token: TOKEN } });
+    expect(
+      (await call(A, "POST", "/api/plugins", { id: "telegram", sealed: forB, botIds: [] })).status,
+    ).toBe(400);
+    const install = await sealedFor(A, "plugin.install:telegram", { config: { token: TOKEN } });
+    expect((await call(A, "PUT", "/api/plugins/telegram/config", { sealed: install })).status).toBe(
+      400,
+    ); // an install body cannot be replayed as a configure
   });
 });

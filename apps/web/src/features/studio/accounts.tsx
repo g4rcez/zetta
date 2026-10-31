@@ -6,6 +6,7 @@ import {
   chatClient,
   errorMessage,
   PROVIDERS,
+  sendSealed,
   type Connection,
   type ConnectionList,
   type Provider,
@@ -128,11 +129,17 @@ function Connections({ onError }: { onError: (m: string) => void }) {
     setError(undefined);
     setStatus(undefined);
     try {
-      await call("/api/connections", "POST", {
-        provider: String(f.get("provider")),
-        label: String(f.get("label")).trim(),
-        secret: String(f.get("secret")),
-      });
+      const provider = String(f.get("provider"));
+      await sendSealed(
+        `connection.create:${provider}`,
+        { secret: String(f.get("secret")) },
+        (sealed) =>
+          call("/api/connections", "POST", {
+            provider,
+            label: String(f.get("label")).trim(),
+            sealed,
+          }),
+      );
       setStatus("Account saved. The key is stored encrypted and will not be shown again.");
       await load();
     } catch (x) {

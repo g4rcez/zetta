@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui";
 import { errorMessage } from "../chat/chat-client";
-import { pluginsApi, type PluginTest } from "./plugins-api";
+import { usePluginApi, type PluginTest } from "./plugins-api";
 import { Alert } from "@g4rcez/components/alert";
 
 /** Native checkbox: the label stays beside the box and wraps under its own text, never under the box. */
@@ -99,16 +99,23 @@ export function GoogleConnect({
   probe,
   onChanged,
   onError,
+  initialScopes,
+  newTab = false,
 }: {
   probe?: PluginTest;
   onChanged: () => void;
   onError: (m: string) => void;
+  /** Permissions ticked before the account is connected (the chat setup card passes the ones the bot needs). */
+  initialScopes?: string[];
+  /** Open Google's consent screen in a new tab, so the page that asked (a chat) stays where it is. */
+  newTab?: boolean;
 }) {
+  const pluginsApi = usePluginApi();
   const info = probe?.status.info as
     | { email?: string | null; scopes?: string[]; allowSend?: boolean }
     | undefined;
   const connected = probe?.status.state === "connected";
-  const [scopes, setScopes] = useState<Set<string>>(new Set());
+  const [scopes, setScopes] = useState<Set<string>>(new Set(initialScopes));
   const [allowSend, setAllowSend] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
@@ -144,7 +151,10 @@ export function GoogleConnect({
     try {
       const r = await pluginsApi.connect("google", { scopes: [...scopes], allowSend });
       if (r.authorizeUrl) {
-        window.location.assign(r.authorizeUrl);
+        if (newTab) {
+          window.open(r.authorizeUrl, "_blank", "noopener,noreferrer");
+          setNotice("Finish signing in on the Google tab. This page updates by itself.");
+        } else window.location.assign(r.authorizeUrl);
         return;
       }
       setNotice("Saved.");

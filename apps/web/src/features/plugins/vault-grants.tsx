@@ -5,7 +5,7 @@ import { Button, Input } from "@/components/ui";
 import { errorMessage } from "../chat/chat-client";
 import { Badge, ConfirmButton } from "../shared/ui";
 import { Check } from "./google-connect";
-import { pluginsApi, type PluginTest } from "./plugins-api";
+import { usePluginApi, type PluginTest } from "./plugins-api";
 import { Alert } from "@g4rcez/components/alert";
 
 type Field = "username" | "password" | "totp";
@@ -31,6 +31,7 @@ function GrantForm({
   onCancel: () => void;
   onError: (m: string) => void;
 }) {
+  const pluginsApi = usePluginApi();
   const [fields, setFields] = useState<Set<Field>>(
     new Set(item.grant?.fields ?? item.fields.filter((f) => f !== "totp")),
   );
@@ -127,6 +128,7 @@ export function VaultGrants({
   onChanged: () => void;
   onError: (m: string) => void;
 }) {
+  const pluginsApi = usePluginApi();
   const info = probe?.status.info as { mode?: string; grants?: Grant[] } | undefined;
   const grants = info?.grants ?? [];
   const [items, setItems] = useState<Item[]>();

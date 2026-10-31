@@ -130,13 +130,34 @@ describe("liveRows", () => {
           { type: "text", text: "Checking" },
           {
             type: "data-activity",
-            id: "m1:activity",
-            data: { messageId: "m1", label: "plugin postgres.db_overview" },
+            data: { messageId: "m1", label: "plugin postgres.db_overview", at: 1000 },
           },
         ],
       },
     ];
     expect(liveRows(turn)[0]!.activity).toBe("plugin postgres.db_overview");
+  });
+  test("activity parts pile up as a timeline without repeats or generic thinking", () => {
+    const activity = (label: string, at: number) =>
+      ({ type: "data-activity", data: { messageId: "m1", label, at } }) as const;
+    const turn: ZettaUIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { type: "data-speaker", id: "m1", data: { messageId: "m1", botName: "Chief" } },
+          activity("Thinking", 1000),
+          activity("web_search", 2000),
+          activity("web_search", 3000),
+          activity("Thinking", 4000),
+          activity("write_file", 5000),
+        ],
+      },
+    ];
+    expect(liveRows(turn)[0]!.timeline).toEqual([
+      { at: 2000, label: "web_search" },
+      { at: 5000, label: "write_file" },
+    ]);
   });
 });
 

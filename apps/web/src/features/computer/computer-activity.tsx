@@ -3,15 +3,13 @@ import { Button } from "@/components/ui";
 
 import { call, errorMessage } from "../chat/chat-client";
 
-type Kind = "browser" | "desktop";
 type Session = { profile: string; control: "agent" | "human"; url?: string };
-const path = (kind: Kind, profile: string) =>
-  `/api/computer/${kind === "desktop" ? "desktop/" : ""}sessions/${encodeURIComponent(profile)}`;
+const path = (profile: string) => `/api/computer/sessions/${encodeURIComponent(profile)}`;
 
 const IDLE_POLL_MS = 15_000;
 
 /**
- * Shows while a bot has a live browser or desktop session of the signed-in user: who is driving, a Take over / Hand back button
+ * Shows while a bot has a live browser session of the signed-in user: who is driving, a Take over / Hand back button
  * and an optional live view. Render it above the composer of the chat with that bot. Renders nothing when there is no session.
  * Sessions are always the caller's own (the server scopes them by user).
  */
@@ -24,51 +22,27 @@ export function ComputerActivity({
   botName?: string;
   pollMs?: number;
 }) {
-  const [found, setFound] = useState<{ kind: Kind; session: Session }>();
+  const [found, setFound] = useState<{ session: Session }>();
   const [live, setLive] = useState(false);
   const [png, setPng] = useState<string>();
   const [error, setError] = useState<string>();
-  // With the VM backend, desktop use shows as a live card on the bot's message instead (chat/vm-card.tsx): only Cua desktop sessions are polled here.
-  const [cuaDesktop, setCuaDesktop] = useState(false);
-  useEffect(() => {
-    call<{ desktopBackend?: string | null }>("/api/computer/capabilities").then(
-      (c) => setCuaDesktop(c.desktopBackend === "cua-spaces"),
-      () => {},
-    );
-  }, []);
   const has = useRef(false); // a session was found: poll fast; otherwise back off
   const polling = useRef(false); // never stack polls behind a slow one: they would hold browser connections the chat needs
   const find = useCallback(async () => {
     if (polling.current) return;
     polling.current = true;
     try {
-      const [b, d] = await Promise.all([
-        call<{ sessions: Session[] }>("/api/computer/sessions").catch(() => ({
-          sessions: [] as Session[],
-        })),
-        cuaDesktop
-          ? call<{ sessions: Session[] }>("/api/computer/desktop/sessions").catch(() => ({
-              sessions: [] as Session[],
-            }))
-          : { sessions: [] as Session[] },
-      ]);
+      const b = await call<{ sessions: Session[] }>("/api/computer/sessions").catch(() => ({
+        sessions: [] as Session[],
+      }));
       const br = b.sessions.find((s) => s.profile === `b-${botId}`);
-      const de = d.sessions.find((s) => s.profile === `d-${botId}`);
-      // Prefer whichever one a person is controlling, then the browser.
-      const hit =
-        de?.control === "human"
-          ? { kind: "desktop" as const, session: de }
-          : br
-            ? { kind: "browser" as const, session: br }
-            : de
-              ? { kind: "desktop" as const, session: de }
-              : undefined;
+      const hit = br ? { session: br } : undefined;
       has.current = !!hit;
       setFound(hit);
     } finally {
       polling.current = false;
     }
-  }, [botId, cuaDesktop]);
+  }, [botId]);
   // Polls only while the tab is visible, slowly while there is nothing to show, and right away when the tab comes back.
   useEffect(() => {
     setFound(undefined);
@@ -93,13 +67,12 @@ export function ComputerActivity({
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [find, pollMs]);
-  const kind = found?.kind;
   const profile = found?.session.profile;
   useEffect(() => {
-    if (!live || !kind || !profile) return;
+    if (!live || !profile) return;
     let stop = false;
     const shot = () =>
-      call<{ png: string }>(`${path(kind, profile)}/screenshot`).then(
+      call<{ png: string }>(`${path(profile)}/screenshot`).then(
         (r) => {
           if (!stop) {
             setPng(r.png);
@@ -116,13 +89,13 @@ export function ComputerActivity({
       stop = true;
       clearInterval(t);
     };
-  }, [live, kind, profile]);
+  }, [live, profile]);
   if (!found) return null;
   const human = found.session.control === "human";
-  const what = found.kind === "desktop" ? "desktop" : "browser";
+  const what = "browser";
   async function takeover() {
     try {
-      await call(`${path(found!.kind, found!.session.profile)}/takeover`, "POST", {
+      await call(`${path(found!.session.profile)}/takeover`, "POST", {
         human: !human,
         expected: found!.session.control,
       });

@@ -6,22 +6,18 @@ import {
   useState,
   useSyncExternalStore,
   type ComponentProps,
+  type CSSProperties,
   type RefObject,
 } from "react";
-import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ComputerActivity } from "../computer/computer-activity";
 import { DesktopButton } from "../computer/desktop-button";
-import "../code/register";
-import "../computer/register";
-import "../plugins/register";
-import "../discussions/register";
-import "../inbound/register";
 import {
   CaretDownIcon,
-  HashIcon,
   LockIcon,
   ListIcon,
   ShareNetworkIcon,
+  UsersIcon,
 } from "@phosphor-icons/react";
 import { ThreadTabs } from "./thread-tabs";
 import { Skeleton } from "@g4rcez/components";
@@ -33,7 +29,6 @@ import { BotAvatar } from "@/components/bot-avatar";
 import { authClient } from "@/lib/auth-client";
 
 import { refreshAttention } from "../attention/summary";
-import { BotSettingsDrawer } from "./bot-settings";
 import {
   chatClient,
   errorMessage,
@@ -41,17 +36,19 @@ import {
   type Conversation,
   type Message,
   type Proposal,
-  type Workspace,
 } from "./chat-client";
 import { isSavedUserEcho, type Row } from "./chat-rows";
 import { Composer } from "./composer";
 import { MessageList, type RowActions } from "./message-list";
+import { SetupActionsContext, type SetupActions } from "./setup-actions";
 import type { Author } from "./message-row";
 import { ProposalsPanel } from "./proposals-panel";
 import { LoopBanner, useGoalLoop } from "./loop-banner";
 import { PublishDialog } from "./publish-dialog";
 import { toggleReaction } from "./reactions";
 import { ChatSidebar } from "./sidebar";
+import { usePreferences } from "../preferences/preferences";
+import { useSidebarData } from "./sidebar-data";
 import { ThreadPanel } from "./thread-panel";
 import { draftKey, useDraft } from "./use-draft";
 import { useZettaChat } from "./use-zetta-chat";
@@ -123,16 +120,24 @@ export function ChatPage() {
   const params = useParams({ from: "/_auth/chat/{-$chatId}" });
   const navigate = useNavigate();
   const { data: session } = authClient.useSession();
-  const [bots, setBots] = useState<Bot[]>([]);
-  const [chats, setChats] = useState<Conversation[]>([]);
-  const [chatsLoaded, setChatsLoaded] = useState(false);
+  const {
+    bots,
+    setBots,
+    refreshBots,
+    chats,
+    setChats,
+    chatsLoaded,
+    loadChats,
+    updateChat,
+    spaces,
+    addSpace,
+  } = useSidebarData();
+  const { preferences } = usePreferences();
   const [saved, setSaved] = useState<Message[]>([]);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
-  const [spaces, setSpaces] = useState<Workspace[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [publishing, setPublishing] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false); // phones: the bot list replaces the channel while open
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sent, setSent] = useState(0); // bumps on every send so the list jumps to the newest message
@@ -186,26 +191,6 @@ export function ChatPage() {
     }, 5_000);
     return () => clearInterval(t);
   }, [loadProposals]);
-  useEffect(() => {
-    chatClient.workspaces().then(setSpaces).catch(fail);
-  }, []);
-  useEffect(() => {
-    chatClient.bots().then(setBots).catch(fail);
-  }, []);
-  // Every conversation, for the sidebar's per-bot groups.
-  const loadChats = useCallback(
-    () =>
-      chatClient.conversations().then((all) => {
-        setChats(all);
-        return all;
-      }),
-    [],
-  );
-  useEffect(() => {
-    loadChats()
-      .then(() => setChatsLoaded(true))
-      .catch(fail);
-  }, [loadChats]);
   // Remember the open conversation so the rail's Chat item returns to it.
   useEffect(() => {
     if (!openChatRow) return;
@@ -304,11 +289,6 @@ export function ChatPage() {
     setBots((list) =>
       list.map((b) => (b.id === bot.id ? { ...b, ...bot, canEdit: b.canEdit } : b)),
     );
-  const refreshBots = () =>
-    chatClient
-      .bots()
-      .then(setBots)
-      .catch(() => {});
   const meName = session?.user.name ?? "You",
     meImage = session?.user.image;
   // Author objects are cached so memoized rows see the same one on every render; the cache resets when its inputs change.
@@ -384,6 +364,13 @@ export function ChatPage() {
       return false;
     }
   }
+  // A setup card in a reply says "set up" in this chat once the person finishes it. It always calls the latest send.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const setupActions = useMemo<SetupActions>(
+    () => ({ say: (text) => void sendRef.current({ text, attachmentIds: [], fileRefs: [] }) }),
+    [],
+  );
   const hasReply = saved.some((m) => m.role === "assistant" && m.status === "complete");
   async function answer(satisfied: boolean) {
     if (!current || !chatId) return;
@@ -521,31 +508,15 @@ export function ChatPage() {
     setNavOpen(false);
   });
   const onSidebarChat = useEvent(openChat);
-  const onSidebarUpdateChat = useEvent(
-    (id: string, patch: { title?: string; pinned?: boolean; favorite?: boolean }) => {
-      const before = chats;
-      setChats((all) => all.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-      chatClient.updateConversation(id, patch).then(
-        (row) => setChats((all) => all.map((c) => (c.id === id ? { ...c, ...row } : c))),
-        (e) => {
-          setChats(before);
-          fail(e);
-        },
-      );
-    },
-  );
+  const onSidebarUpdateChat = useEvent(updateChat);
   const onSidebarNewChat = useEvent((id: string) => {
     toDraft(id);
     setNavOpen(false);
   });
   const onSidebarNewBot = useEvent(() => void navigate({ to: "/bots/new" }));
-  const onSidebarAddSpace = useEvent(
-    (name: string, parentId?: string) =>
-      void chatClient
-        .createWorkspace(name, parentId)
-        .then((w) => setSpaces((s) => [...s, w]), fail),
-  );
-  const ChannelIcon = current?.visibility === "private" ? LockIcon : HashIcon;
+  const onSidebarAddSpace = useEvent(addSpace);
+  // `#` is for rooms; a bot is a direct message, so a team bot gets a people mark instead.
+  const ChannelIcon = current?.visibility === "private" ? LockIcon : UsersIcon;
   const chatTitle = chats.find((c) => c.id === chatId)?.title;
 
   const threadPane =
@@ -570,9 +541,10 @@ export function ChatPage() {
   return (
     <div
       className={cn(
-        "grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] md:grid-cols-[20rem_minmax(0,1fr)]",
-        threadPane && desktop && "lg:grid-cols-[20rem_minmax(0,1fr)_26rem]",
+        "grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] md:grid-cols-[var(--list-w)_minmax(0,1fr)]",
+        threadPane && desktop && "lg:grid-cols-[var(--list-w)_minmax(0,1fr)_26rem]",
       )}
+      style={{ "--list-w": `${preferences.listWidth}px` } as CSSProperties}
     >
       <div className={`${navOpen ? "flex" : "hidden"} min-h-0 md:flex`}>
         <ChatSidebar
@@ -603,43 +575,56 @@ export function ChatPage() {
           >
             <ListIcon />
           </Button>
-          <button
-            type="button"
-            disabled={!current}
-            aria-expanded={settingsOpen}
-            onClick={() => setSettingsOpen((o) => !o)}
-            aria-label={current ? `${current.name} settings` : "Bot settings"}
-            title={
-              current
-                ? [
-                    current.kind === "chief" ? "Chief" : "Specialist",
-                    current.harness === "fixture"
-                      ? "offline test"
-                      : `${current.harness}${current.model ? ` · ${current.model}` : ""}`,
-                    current.description,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")
-                : undefined
-            }
-            className="flex min-w-0 max-w-[60%] items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            {current ? (
-              <BotAvatar bot={current} size={24} square />
+          {(() => {
+            const content = (
+              <>
+                {current ? (
+                  <BotAvatar bot={current} size={24} square />
+                ) : (
+                  <ChannelIcon
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                )}
+                <h2 className="truncate font-heading text-base font-medium leading-tight">
+                  {current?.name ?? "Chat"}
+                </h2>
+                {current && (
+                  <ChannelIcon
+                    aria-label={current.visibility === "private" ? "Private" : "Team"}
+                    className="size-3.5 shrink-0 text-muted-foreground"
+                  />
+                )}
+                <CaretDownIcon
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                />
+              </>
+            );
+            const className =
+              "flex min-w-0 max-w-[60%] items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring";
+            return current ? (
+              <Link
+                to="/bots/$botId/settings"
+                params={{ botId: current.id }}
+                aria-label={`${current.name} settings`}
+                title={[
+                  current.kind === "chief" ? "Chief" : "Specialist",
+                  current.harness === "fixture"
+                    ? "offline test"
+                    : `${current.harness}${current.model ? ` · ${current.model}` : ""}`,
+                  current.description,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+                className={className}
+              >
+                {content}
+              </Link>
             ) : (
-              <ChannelIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-            )}
-            <h2 className="truncate font-heading text-base font-medium leading-tight">
-              {current?.name ?? "Chat"}
-            </h2>
-            {current && (
-              <ChannelIcon
-                aria-label={current.visibility === "private" ? "Private" : "Team"}
-                className="size-3.5 shrink-0 text-muted-foreground"
-              />
-            )}
-            <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-          </button>
+              <div className={className}>{content}</div>
+            );
+          })()}
           <div className="ml-auto flex min-w-0 items-center gap-1">
             {current?.computerMode === "desktop" && (
               <DesktopButton botName={current.name} onError={fail} />
@@ -687,81 +672,87 @@ export function ChatPage() {
             </Button>
           </div>
         )}
-        <MessageList
-          key={chatId ?? `new:${botId}`}
-          followToken={sent}
-          rows={rows}
-          authorOf={authorOf}
-          fallbackBotId={botId}
-          busy={main.busy || loadingMessages}
-          label="Conversation"
-          actions={actions}
-          intro={
-            <>
-              {loadingMessages && saved.length === 0 && (
-                <div className="space-y-5 px-4 py-4" role="status" aria-label="Loading messages">
-                  {["66%", "45%", "75%"].map((w, i) => (
-                    <div key={i} className="flex gap-2">
-                      <Skeleton className="size-9 rounded-lg" />
-                      <div className="flex-1 space-y-2">
-                        <Skeleton className="h-3 w-24 rounded" />
-                        <Skeleton
-                          className="h-4 rounded"
-                          style={{ display: "block", inlineSize: w }}
-                        />
+        <SetupActionsContext.Provider value={setupActions}>
+          <MessageList
+            key={chatId ?? `new:${botId}`}
+            followToken={sent}
+            rows={rows}
+            authorOf={authorOf}
+            fallbackBotId={botId}
+            busy={main.busy || loadingMessages}
+            label="Conversation"
+            actions={actions}
+            intro={
+              <>
+                {loadingMessages && saved.length === 0 && (
+                  <div className="space-y-5 px-4 py-4" role="status" aria-label="Loading messages">
+                    {["66%", "45%", "75%"].map((w, i) => (
+                      <div key={i} className="flex gap-2">
+                        <Skeleton className="size-9 rounded-lg" />
+                        <div className="flex-1 space-y-2">
+                          <Skeleton className="h-3 w-24 rounded" />
+                          <Skeleton
+                            className="h-4 rounded"
+                            style={{ display: "block", inlineSize: w }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {!loadingMessages && rows.length === 0 && current && (
-                <div className="mt-auto space-y-3 px-4 pt-10 pb-4">
-                  <BotAvatar bot={current} size={64} square />
-                  <h3 className="font-heading text-3xl font-medium tracking-tight text-balance">
-                    <ChannelIcon
-                      aria-hidden="true"
-                      className="mr-1 inline size-5 align-baseline text-muted-foreground"
-                    />
-                    {current.name}
-                  </h3>
-                  <p className="max-w-prose text-muted-foreground">
-                    This is the very beginning of your conversation with{" "}
-                    <strong className="text-foreground">{current.name}</strong>.{" "}
-                    {current.description}
-                  </p>
-                  {current.canEdit && !current.onboarded && (
-                    <p className="max-w-prose text-sm text-muted-foreground">
-                      {current.name} isn't ready yet: send a test message to start setup.
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-2" role="group" aria-label="Suggested prompts">
-                    {SUGGESTIONS.map((q) => (
-                      <Button
-                        key={q}
-                        size="sm"
-                        variant="outline"
-                        className="rounded-full"
-                        onClick={() => void send({ text: q, attachmentIds: [], fileRefs: [] })}
-                      >
-                        {q}
-                      </Button>
                     ))}
                   </div>
-                </div>
-              )}
-            </>
-          }
-          footer={
-            main.summary && !main.busy ? (
-              <p
-                className="px-4 pt-1 pl-15 text-xs text-muted-foreground"
-                aria-label="Delegation summary"
-              >
-                {main.summary}
-              </p>
-            ) : null
-          }
-        />
+                )}
+                {!loadingMessages && rows.length === 0 && current && (
+                  <div className="mt-auto space-y-3 px-4 pt-10 pb-4">
+                    <BotAvatar bot={current} size={64} square />
+                    <h3 className="font-heading text-3xl font-medium tracking-tight text-balance">
+                      <ChannelIcon
+                        aria-hidden="true"
+                        className="mr-1 inline size-5 align-baseline text-muted-foreground"
+                      />
+                      {current.name}
+                    </h3>
+                    <p className="max-w-prose text-muted-foreground">
+                      This is the very beginning of your conversation with{" "}
+                      <strong className="text-foreground">{current.name}</strong>.{" "}
+                      {current.description}
+                    </p>
+                    {current.canEdit && !current.onboarded && (
+                      <p className="max-w-prose text-sm text-muted-foreground">
+                        {current.name} isn't ready yet: send a test message to start setup.
+                      </p>
+                    )}
+                    <div
+                      className="flex flex-wrap gap-2"
+                      role="group"
+                      aria-label="Suggested prompts"
+                    >
+                      {SUGGESTIONS.map((q) => (
+                        <Button
+                          key={q}
+                          size="sm"
+                          variant="outline"
+                          className="rounded-full"
+                          onClick={() => void send({ text: q, attachmentIds: [], fileRefs: [] })}
+                        >
+                          {q}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            }
+            footer={
+              main.summary && !main.busy ? (
+                <p
+                  className="px-4 pt-1 pl-15 text-xs text-muted-foreground"
+                  aria-label="Delegation summary"
+                >
+                  {main.summary}
+                </p>
+              ) : null
+            }
+          />
+        </SetupActionsContext.Provider>
         <div className="shrink-0 space-y-2 px-4 pb-4">
           <ProposalsPanel
             proposals={proposals}
@@ -839,17 +830,6 @@ export function ChatPage() {
             {threadPane}
           </SheetContent>
         </Sheet>
-      )}
-      {current && (
-        <BotSettingsDrawer
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          bot={current}
-          bots={bots}
-          spaces={spaces}
-          onBotChange={replaceBot}
-          notify={setNotice}
-        />
       )}
       {publishing && chatId && (
         <PublishDialog

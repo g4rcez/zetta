@@ -27,7 +27,45 @@ const CREDENTIAL_PROMPT = `Signing in: you never see or type passwords. Get the 
 {"ref":"<ref from list_credentials>","field":"username|password|totp","target":"browser|desktop"}
 \`\`\`   (Zetta only types it on the login's own https sites and into a matching input; you get "filled" back, never the value. Fill one field per block, username first. Then press Return or click the sign-in button yourself.)`;
 
-type ServerRow = { id: string; name: string; url: string | null; connectionId: string | null };
+/** Tells a bot which plugins it could still get and how to start a setup. The card collects every key, so the model never needs one. */
+const setupPrompt = (missing: PluginDef[]) =>
+  missing.length
+    ? [
+        `Plugins not connected to you yet: ${missing.map((d) => `${d.id} (${d.name})`).join(", ")}.`,
+        `When the user wants something one of them does, or a plugin call fails because it is not set up, open a setup card instead of explaining Studio:\n\`\`\`zetta:setup\n{"plugin":"<id>"}\n\`\`\`   (Google also takes "options":{"scopes":["gmail.readonly","calendar.events.readonly","drive.readonly"]}.) The user types the keys and signs in inside the card; you never see them. NEVER ask the user to paste a token, key or password in the chat. After the card, tell the user what it asks for in one or two lines, wait for them to say it is set up, then retry the task.`,
+      ].join("\n")
+    : "";
+
+/** `mine`: the user's own (private) configuration of a plugin. `team`: the workspace's one, edited by the administrator and used by every member. */
+export type Scope = "mine" | "team";
+type ServerRow = {
+  id: string;
+  name: string;
+  url: string | null;
+  connectionId: string | null;
+  ownerUserId?: string;
+  sharing?: "private" | "team";
+};
+
+/**
+ * The binding a call uses. A bot may hold the user's own and the team's configuration of one plugin; the call must then say which, and
+ * the bot is told to ask the user first.
+ */
+export function pickBinding<T extends { name: string; sharing: "private" | "team" }>(
+  bound: T[],
+  name: string,
+  config?: Scope,
+): T | undefined {
+  const hits = bound.filter((b) => b.name === name);
+  if (config) return hits.find((b) => (b.sharing === "team") === (config === "team"));
+  if (hits.length > 1)
+    throw new PluginError(
+      "CHOOSE_CONFIG",
+      `This bot has your own and the team's ${name} configuration, and the call did not say which.`,
+      'Ask the user which one to use, then repeat the call with "config":"mine" or "config":"team".',
+    );
+  return hits[0];
+}
 /** The slice of the MCP service the plugin layer needs. */
 export type McpCore = {
   addServer(
@@ -39,10 +77,16 @@ export type McpCore = {
       command?: string;
       args?: string[];
       connectionId?: string;
+      sharing?: Scope;
     },
   ): Promise<{ id: string }>;
-  addNative(a: ActiveActor, id: string, connectionId?: string): Promise<{ id: string }>;
-  serverByName(a: ActiveActor, name: string): Promise<ServerRow | undefined>;
+  addNative(
+    a: ActiveActor,
+    id: string,
+    connectionId?: string,
+    sharing?: Scope,
+  ): Promise<{ id: string }>;
+  serverByName(a: ActiveActor, name: string, scope?: Scope): Promise<ServerRow | undefined>;
   setConnection(a: ActiveActor, id: string, connectionId: string | null): Promise<void>;
   removeServer(a: ActiveActor, id: string): Promise<unknown>;
   bind(a: ActiveActor, botId: string, serverId: string): Promise<unknown>;
@@ -62,14 +106,12 @@ export type McpCore = {
   serverById(
     id: string,
   ): Promise<(ServerRow & { ownerUserId: string; sharing: "private" | "team" }) | undefined>;
-  setSharing(a: ActiveActor, id: string, sharing: "private" | "team"): Promise<void>;
-  sharedWithMe(a: ActiveActor): Promise<{ id: string; name: string; ownerName: string }[]>;
   tools(a: ActiveActor, serverId: string): Promise<{ name: string; description: string }[]>;
 };
 
 /**
- * Plugin lifecycle and execution for one user at a time. Every method takes the acting user and only ever touches that user's
- * rows, bindings and sealed secret.
+ * Plugin lifecycle and execution for one user at a time. Every method takes the acting user and touches that user's own rows, bindings
+ * and sealed secret, or the workspace's team configuration (changed by the administrator only, used by every member).
  */
 export function createPlugins(
   db: Database,
@@ -93,11 +135,24 @@ export function createPlugins(
     d.kind === "native"
       ? Boolean(s.url?.startsWith(NATIVE_URL_PREFIX))
       : !s.url?.startsWith(NATIVE_URL_PREFIX);
-  async function installed(a: ActiveActor, id: string) {
+  async function installed(a: ActiveActor, id: string, scope: Scope = "mine") {
     const d = def(id);
-    const s = await mcp().serverByName(a, id);
+    const s = await mcp().serverByName(a, id, scope);
     if (!s || !isNative(d, s)) throw new AccessError("NOT_FOUND");
     return { d, s };
+  }
+  const adminOnly = (a: ActiveActor, scope: Scope) => {
+    if (scope === "team" && !a.isAdmin)
+      throw new PluginError(
+        "ADMIN_ONLY",
+        "Only the administrator can change the team configuration.",
+        "Ask the administrator, or install the plugin on your own account.",
+      );
+  };
+  /** Like `installed`, for a change: the team configuration is the administrator's to change. */
+  async function managed(a: ActiveActor, id: string, scope: Scope) {
+    adminOnly(a, scope);
+    return installed(a, id, scope);
   }
   const seal = (d: PluginDef, config: Record<string, string>) => {
     if (d.kind === "mcp") {
@@ -145,10 +200,17 @@ export function createPlugins(
     preset?: Record<string, string>,
     botId?: string,
   ): Promise<PluginContext> {
-    let config = preset ?? (await load(a, d, s));
+    // A team configuration keeps its secret under its owner and acts as its own principal, so its limits, locks and sessions never mix
+    // with the owner's private configuration of the same plugin.
+    const team = s.sharing === "team";
+    const owner: ActiveActor =
+      team && s.ownerUserId && s.ownerUserId !== a.userId
+        ? { userId: s.ownerUserId, isAdmin: false }
+        : a;
+    let config = preset ?? (await load(owner, d, s));
     let connectionId = s.connectionId;
     return {
-      userId: a.userId,
+      userId: team ? `team:${s.id}` : a.userId,
       botId,
       get config() {
         return config;
@@ -157,22 +219,25 @@ export function createPlugins(
         const sealed = seal(d, next);
         const prev = connectionId;
         const created = sealed
-          ? await need().create(a, { provider: PROVIDER, label: `plugin:${d.id}`, secret: sealed })
+          ? await need().create(owner, {
+              provider: PROVIDER,
+              label: `plugin:${d.id}`,
+              secret: sealed,
+            })
           : undefined;
         await mcp().setConnection(a, s.id, created?.id ?? null);
         connectionId = created?.id ?? null;
         config = { ...next };
-        if (prev) await revokeQuietly(a, prev);
+        if (prev) await revokeQuietly(owner, prev);
       },
     } as PluginContext;
   }
-  /** The owner's context for a plugin a teammate shared. The owner's id stays in it, so limits, allowlists and sessions are the owner's. */
-  async function sharedCtx(serverId: string, botId: string): Promise<PluginContext> {
-    const s = await mcp().serverById(serverId);
-    const d = s && getPlugin(s.name);
-    if (!s || !d || s.sharing !== "team")
-      throw new PluginError("NOT_BOUND", "That plugin is not shared any more.");
-    return ctxFor({ userId: s.ownerUserId, isAdmin: false }, d, s, undefined, botId);
+  /** The server row a bot's binding points at, for a user who is allowed to use it (their own, or the team's). */
+  async function boundRow(a: ActiveActor, binding: { id: string }) {
+    const s = await mcp().serverById(binding.id);
+    if (!s || !(s.sharing === "team" || s.ownerUserId === a.userId))
+      throw new PluginError("NOT_BOUND", "That plugin is not connected to this bot any more.");
+    return s;
   }
   const withDeadline = async <T>(work: Promise<T>): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -210,6 +275,8 @@ export function createPlugins(
           throw new PluginError("INVALID_FIELD", `${f.label} must be an http(s) address.`);
         }
       }
+      if (v && f.kind === "select" && !f.options?.some((o) => o.value === v))
+        throw new PluginError("INVALID_FIELD", `${f.label} has an unknown choice.`);
       if (v.length > 4000) throw new PluginError("INVALID_FIELD", `${f.label} is too long.`);
       if (v) clean[f.key] = v;
     }
@@ -225,12 +292,9 @@ export function createPlugins(
     }
     return line;
   };
-  const toolLines = (d: PluginDef, access?: ToolAccess, teamOnly = false) =>
+  const toolLines = (d: PluginDef, access?: ToolAccess[]) =>
     (d.tools ?? [])
-      .filter(
-        (t) =>
-          (!access || toolAllowed(access, t.name)) && (!teamOnly || d.teamTools?.includes(t.name)),
-      )
+      .filter((t) => !access || access.some((x) => toolAllowed(x, t.name)))
       .map(toolLine)
       .join("\n");
   const render = (v: unknown) =>
@@ -239,12 +303,12 @@ export function createPlugins(
   return {
     /** Everything installable (browser-safe: no handlers). */
     catalog: () => listPlugins().map(pluginMeta),
-    /** Internal (server modules such as Agenda sync): the user's own context for an installed native plugin. Never exposed through routes. */
+    /** Internal (server modules such as Agenda sync): the context for an installed native plugin, the user's own first, then the team's. Never exposed through routes. */
     async contextFor(a: ActiveActor, id: string): Promise<PluginContext> {
-      const { d, s } = await installed(a, id);
+      const { d, s } = await installed(a, id).catch(() => installed(a, id, "team"));
       return ctxFor(a, d, s);
     },
-    /** The user's installed plugins. Probing is separate (`test`). */
+    /** The plugins the user may use: their own and the team's. Probing is separate (`test`). */
     async list(a: ActiveActor) {
       const out: {
         id: string;
@@ -252,62 +316,35 @@ export function createPlugins(
         hasSecret: boolean;
         sharing: "private" | "team";
       }[] = [];
-      for (const d of listPlugins()) {
-        const s = await mcp().serverByName(a, d.id);
-        if (s && isNative(d, s))
-          out.push({
-            id: d.id,
-            serverId: s.id,
-            hasSecret: Boolean(s.connectionId),
-            sharing: (await mcp().serverById(s.id))?.sharing ?? "private",
-          });
-      }
+      for (const d of listPlugins())
+        for (const scope of ["mine", "team"] as const) {
+          const s = await mcp().serverByName(a, d.id, scope);
+          if (s && isNative(d, s))
+            out.push({
+              id: d.id,
+              serverId: s.id,
+              hasSecret: Boolean(s.connectionId),
+              sharing: scope === "team" ? "team" : "private",
+            });
+        }
       return out;
-    },
-    /** Plugins teammates shared with the team that the user can bind to a bot (not the ones the user installed too). */
-    async shared(a: ActiveActor) {
-      const mine = new Set((await this.list(a)).map((i) => i.id));
-      return (await mcp().sharedWithMe(a))
-        .filter((s) => getPlugin(s.name)?.teamTools && !mine.has(s.name))
-        .map((s) => ({
-          id: s.name,
-          serverId: s.id,
-          ownerName: s.ownerName,
-          tools: [...getPlugin(s.name)!.teamTools!],
-        }));
-    },
-    /** Who may use the user's own plugin: only them, or their teammates' bots through the plugin's team tools. */
-    async setSharing(a: ActiveActor, id: string, sharing: "private" | "team") {
-      const { d, s } = await installed(a, id);
-      if (sharing === "team" && !d.teamTools)
-        throw new PluginError(
-          "NOT_SHAREABLE",
-          `${d.name} is personal and cannot be shared with the team.`,
-          "Install it on each account that needs it.",
-        );
-      await mcp().setSharing(a, s.id, sharing);
-      await audit(db, a.userId, {
-        kind: "connection",
-        outcome: "ok",
-        subjectId: s.id,
-        detail: sharing === "team" ? "plugin-shared" : "plugin-unshared",
-      });
-      return { id, sharing };
     },
     async install(
       a: ActiveActor,
       id: string,
       config: Record<string, string>,
       botIds: string[] = [],
+      scope: Scope = "mine",
     ) {
       const d = def(id);
+      adminOnly(a, scope);
       if (d.always)
         throw new PluginError(
           "BUILT_IN",
           `${d.name} is built in and already on for every bot.`,
           "Manage it in each bot's settings.",
         );
-      if (await mcp().serverByName(a, id))
+      if (await mcp().serverByName(a, id, scope))
         throw new PluginError("ALREADY_INSTALLED", "That plugin is already installed.");
       const clean = fieldValues(d, config);
       const sealed = seal(d, clean);
@@ -319,12 +356,13 @@ export function createPlugins(
         const t = d.mcp;
         const row =
           d.kind === "native"
-            ? await mcp().addNative(a, d.id, conn?.id)
+            ? await mcp().addNative(a, d.id, conn?.id, scope)
             : t?.transport === "http"
               ? await mcp().addServer(a, {
                   name: d.id,
                   transport: "http",
                   url: t.url,
+                  sharing: scope,
                   ...(conn ? { connectionId: conn.id } : {}),
                 })
               : await mcp().addServer(a, {
@@ -332,6 +370,7 @@ export function createPlugins(
                   transport: "stdio",
                   command: t!.transport === "stdio" ? t!.command : "",
                   args: t!.transport === "stdio" ? t!.args : [],
+                  sharing: scope,
                   ...(conn ? { connectionId: conn.id } : {}),
                 });
         serverId = row.id;
@@ -341,7 +380,14 @@ export function createPlugins(
               await ctxFor(
                 a,
                 d,
-                { id: row.id, name: d.id, url: null, connectionId: conn?.id ?? null },
+                {
+                  id: row.id,
+                  name: d.id,
+                  url: null,
+                  connectionId: conn?.id ?? null,
+                  ownerUserId: a.userId,
+                  sharing: scope === "team" ? "team" : "private",
+                },
                 clean,
               ),
             ),
@@ -359,23 +405,32 @@ export function createPlugins(
         kind: "connection",
         outcome: "ok",
         subjectId: serverId!,
-        detail: "plugin-installed",
+        detail: scope === "team" ? "plugin-installed-team" : "plugin-installed",
       });
       return { id: d.id, serverId: serverId! };
     },
-    async uninstall(a: ActiveActor, id: string) {
-      const { d, s } = await installed(a, id);
+    async uninstall(a: ActiveActor, id: string, scope: Scope = "mine") {
+      const { d, s } = await managed(a, id, scope);
       if (d.disconnect) await withDeadline(d.disconnect(await ctxFor(a, d, s))).catch(() => {}); // remote cleanup is best effort; local removal always proceeds
       await mcp().removeServer(a, s.id);
-      if (s.connectionId) await revokeQuietly(a, s.connectionId);
+      if (s.connectionId)
+        await revokeQuietly(
+          scope === "team" && s.ownerUserId ? { userId: s.ownerUserId, isAdmin: false } : a,
+          s.connectionId,
+        );
       return { id };
     },
     /**
      * Replaces the user's own settings (API keys, OAuth client) of an installed plugin. Blank fields keep their stored value.
      * Changing an OAuth plugin's settings disconnects it first: tokens issued to the old client are useless with the new one.
      */
-    async configure(a: ActiveActor, id: string, config: Record<string, string>) {
-      const { d, s } = await installed(a, id);
+    async configure(
+      a: ActiveActor,
+      id: string,
+      config: Record<string, string>,
+      scope: Scope = "mine",
+    ) {
+      const { d, s } = await managed(a, id, scope);
       if (!d.fields.length) throw new PluginError("NOT_SUPPORTED", "This plugin has no settings.");
       const ctx = await ctxFor(a, d, s);
       const next = fieldValues(d, config, ctx.config);
@@ -397,21 +452,38 @@ export function createPlugins(
       return { id, changed: true };
     },
     /** Starts the plugin's own connect flow (e.g. OAuth). */
-    async connect(a: ActiveActor, id: string, options?: Record<string, unknown>) {
-      const { d, s } = await installed(a, id);
+    async connect(
+      a: ActiveActor,
+      id: string,
+      options?: Record<string, unknown>,
+      scope: Scope = "mine",
+    ) {
+      const { d, s } = await managed(a, id, scope);
       if (!d.connect) throw new PluginError("NOT_SUPPORTED", "This plugin has nothing to connect.");
       return (await withDeadline(d.connect(await ctxFor(a, d, s), options))) ?? {};
     },
     /** OAuth redirect target: completes the flow the signed-in user started. */
     async callback(a: ActiveActor, id: string, params: URLSearchParams) {
-      const { d, s } = await installed(a, id);
-      if (!d.callback)
-        throw new PluginError("NOT_SUPPORTED", "This plugin has no sign-in callback.");
-      await withDeadline(d.callback(await ctxFor(a, d, s), params));
+      // The provider's redirect carries no scope: the configuration that started the sign-in is the one whose pending state matches.
+      let failure: unknown = new AccessError("NOT_FOUND");
+      for (const scope of a.isAdmin ? (["mine", "team"] as const) : (["mine"] as const)) {
+        const found = await installed(a, id, scope).catch(() => undefined);
+        if (!found) continue;
+        const { d, s } = found;
+        if (!d.callback)
+          throw new PluginError("NOT_SUPPORTED", "This plugin has no sign-in callback.");
+        try {
+          await withDeadline(d.callback(await ctxFor(a, d, s), params));
+          return;
+        } catch (e) {
+          failure = e;
+        }
+      }
+      throw failure;
     },
     /** Revokes remote access and wipes the stored credentials, keeping the plugin installed. */
-    async disconnect(a: ActiveActor, id: string) {
-      const { d, s } = await installed(a, id);
+    async disconnect(a: ActiveActor, id: string, scope: Scope = "mine") {
+      const { d, s } = await managed(a, id, scope);
       if (!d.disconnect)
         throw new PluginError("NOT_SUPPORTED", "This plugin has nothing to disconnect.");
       await withDeadline(d.disconnect(await ctxFor(a, d, s)));
@@ -421,8 +493,9 @@ export function createPlugins(
     async test(
       a: ActiveActor,
       id: string,
+      scope: Scope = "mine",
     ): Promise<{ status: PluginStatus; tools: { name: string; description: string }[] }> {
-      const { d, s } = await installed(a, id);
+      const { d, s } = await installed(a, id, scope);
       if (d.kind === "mcp") {
         try {
           const tools = await mcp().tools(a, s.id);
@@ -486,24 +559,69 @@ export function createPlugins(
       };
       return withDeadline(d.inbound.poll(frozen, cursor, o));
     },
-    /** Plugin ids the user has bound to this bot. */
+    /** Plugin ids the user has bound to this bot (once each, even when both configurations are bound). */
     async bindings(a: ActiveActor, botId: string) {
       const names = new Set((await mcp().bound(a, botId)).map((b) => b.name));
       return listPlugins()
         .filter((d) => names.has(d.id))
         .map((d) => d.id);
     },
-    async setBinding(a: ActiveActor, botId: string, id: string, on: boolean) {
-      // The user's own install wins; otherwise a teammate's shared one (the server re-checks that it is shared and shareable).
-      const own = await installed(a, id).then(
-        (x) => x.s,
-        () => undefined,
+    /**
+     * What the bot needs to know to start a setup in the chat: where the plugin stands for this user and bot, plus the field labels and
+     * guide steps. Never values. A team setup that does not exist yet is the administrator's to start.
+     */
+    async setupInfo(a: ActiveActor, botId: string, id: string, scope: Scope = "mine") {
+      const d = getPlugin(id);
+      if (!d || d.always) throw new AccessError("NOT_FOUND");
+      const there = (await this.list(a)).some(
+        (p) => p.id === id && p.sharing === (scope === "team" ? "team" : "private"),
       );
-      const serverId = own?.id ?? (await this.shared(a)).find((x) => x.id === id)?.serverId;
-      if (!serverId) throw new AccessError("NOT_FOUND");
-      if (on) await mcp().bind(a, botId, serverId);
-      else await mcp().unbind(a, botId, serverId);
-      return { botId, id, bound: on };
+      if (!there) adminOnly(a, scope);
+      const probe = there ? (await this.test(a, id, scope)).status : undefined;
+      const state = !probe ? ("not-installed" as const) : probe.state;
+      const bound = (await this.bindingScopes(a, botId)).some(
+        (b) => b.id === id && b.scope === scope,
+      );
+      return {
+        plugin: d.id,
+        name: d.name,
+        state,
+        detail: probe?.detail,
+        bound,
+        auth: d.auth,
+        fields: d.fields.map((f) => ({
+          label: f.label,
+          secret: Boolean(f.secret),
+          optional: Boolean(f.optional),
+        })),
+        guide: d.guide?.() ?? [],
+        notes: d.notes,
+        docsUrl: d.docsUrl,
+      };
+    },
+    /** Which configuration of each plugin the user bound to this bot. */
+    async bindingScopes(a: ActiveActor, botId: string) {
+      const bound = await mcp().bound(a, botId);
+      return listPlugins().flatMap((d) =>
+        bound
+          .filter((b) => b.name === d.id)
+          .map((b) => ({
+            id: d.id,
+            scope: b.sharing === "team" ? ("team" as const) : ("mine" as const),
+          })),
+      );
+    },
+    async setBinding(
+      a: ActiveActor,
+      botId: string,
+      id: string,
+      on: boolean,
+      scope: Scope = "mine",
+    ) {
+      const { s } = await installed(a, id, scope);
+      if (on) await mcp().bind(a, botId, s.id);
+      else await mcp().unbind(a, botId, s.id);
+      return { botId, id, scope, bound: on };
     },
     /** Runs one native tool for a bot. Requires this user's binding; ownership and the stored secret are resolved on every call. */
     async callTool(
@@ -512,6 +630,7 @@ export function createPlugins(
       id: string,
       tool: string,
       args: Record<string, unknown>,
+      config?: Scope,
     ) {
       const outcome = (o: "ok" | "failed" | "timeout" | "denied") =>
         audit(db, a.userId, {
@@ -528,7 +647,7 @@ export function createPlugins(
           `Open the bot's settings and switch ${d.name} back on.`,
         );
       const binding =
-        d && !d.always ? (await mcp().bound(a, botId)).find((b) => b.name === id) : undefined;
+        d && !d.always ? pickBinding(await mcp().bound(a, botId), id, config) : undefined;
       if (!d || d.kind !== "native" || (!d.always && !binding))
         throw new PluginError("NOT_BOUND", "That plugin is not connected to this bot.");
       if (binding && !toolAllowed(binding, tool)) {
@@ -537,16 +656,6 @@ export function createPlugins(
           "TOOL_NOT_ALLOWED",
           "This bot may not use that tool.",
           `Open the bot's settings > Plugins & MCP and allow ${tool.replace(/_/g, " ")}.`,
-        );
-      }
-      // A teammate's plugin runs through the owner's account, so only the tools the plugin lists for teams, and only while it stays shared.
-      const shared = Boolean(binding && binding.ownerUserId !== a.userId);
-      if (shared && (binding!.sharing !== "team" || !d.teamTools?.includes(tool))) {
-        await outcome("denied");
-        throw new PluginError(
-          "TOOL_NOT_ALLOWED",
-          "Teammates may not use that tool of a shared plugin.",
-          "Ask the person who shared it, or install the plugin on your own account.",
         );
       }
       const t = d.tools?.find((x) => x.name === tool);
@@ -561,9 +670,7 @@ export function createPlugins(
               config: {},
               setConfig: () => Promise.reject(new PluginError("FAILED")),
             }
-          : shared
-            ? await sharedCtx(binding!.id, botId)
-            : await ctxFor(a, d, (await installed(a, id)).s, undefined, botId);
+          : await ctxFor(a, d, await boundRow(a, binding!), undefined, botId);
         const out = render(await withDeadline(t.handler(ctx, args)));
         await outcome("ok");
         return out;
@@ -579,7 +686,7 @@ export function createPlugins(
       for (const d of listPlugins()) {
         if (!d.credentials || d.kind !== "native" || !bound.has(d.id)) continue;
         try {
-          const { s } = await installed(a, d.id);
+          const { s } = await installed(a, d.id).catch(() => installed(a, d.id, "team"));
           for (const grant of await d.credentials.grants(await ctxFor(a, d, s)))
             out.push({ plugin: d.id, grant });
         } catch {
@@ -620,7 +727,7 @@ export function createPlugins(
           "That password manager is not connected to this bot.",
           `Open Studio > Plugins > ${d?.name ?? id} > Bots and allow this bot.`,
         );
-      const { s } = await installed(a, id);
+      const { s } = await installed(a, id).catch(() => installed(a, id, "team"));
       const ctx = await ctxFor(a, d, s);
       const grant = (await withDeadline(d.credentials.grants(ctx))).find((g) => g.id === itemId);
       if (!grant)
@@ -675,21 +782,30 @@ export function createPlugins(
               line: `- ${d.id} (${d.name}): ${d.description}${extra ? `\n    ${extra}` : ""}\n${toolLines(d)}`,
             };
           }
-          const b = bound.find((x) => x.name === d.id);
-          if (!b) return undefined;
+          const bs = bound.filter((x) => x.name === d.id);
+          if (!bs.length) return undefined;
           const vault = Boolean(d.credentials);
-          const shared = b.ownerUserId !== a.userId;
+          const both = bs.length > 1;
+          const which = both
+            ? ` You have two configurations of it: "mine" (the user's own account) and "team" (the workspace's shared account). Before you use it in this conversation, ask the user which one to use, then add "config":"mine" or "config":"team" to every call.`
+            : bs[0]!.sharing === "team"
+              ? " (the workspace's shared account)"
+              : "";
           if (d.kind === "native")
             return {
               kind: "native",
               vault,
-              line: `- ${d.id} (${d.name})${shared ? " shared by a teammate, used through their account with a reduced set of tools" : ""}: ${d.description}\n${toolLines(d, b, shared)}`,
+              line: `- ${d.id} (${d.name})${both ? "" : which}: ${d.description}${both ? which : ""}\n${toolLines(d, bs)}`,
             };
-          const names = b.tools.filter((t) => toolAllowed(b, t.name)).map((t) => t.name);
+          const names = [
+            ...new Set(
+              bs.flatMap((b) => b.tools.filter((t) => toolAllowed(b, t.name)).map((t) => t.name)),
+            ),
+          ];
           return {
             kind: "remote",
             vault,
-            line: `- ${d.id} (${d.name}): ${d.description}${names.length ? ` Tools: ${names.slice(0, 40).join(", ")}.` : ""}`,
+            line: `- ${d.id} (${d.name})${both ? "" : which}: ${d.description}${both ? which : ""}${names.length ? ` Tools: ${names.slice(0, 40).join(", ")}.` : ""}`,
           };
         }),
       );
@@ -698,7 +814,10 @@ export function createPlugins(
         native = found.some((x) => x.kind === "native"),
         remote = found.some((x) => x.kind === "remote"),
         vault = found.some((x) => x.vault);
-      if (!lines.length) return "";
+      const setup = setupPrompt(
+        listPlugins().filter((d) => !d.always && !bound.some((b) => b.name === d.id)),
+      );
+      if (!lines.length) return setup;
       return [
         `Plugins connected to you by this user (the user's own accounts; use only when needed):`,
         ...lines,
@@ -709,6 +828,7 @@ export function createPlugins(
           ? 'Call an MCP server tool with:\n```zetta:mcp\n{"server":"<id>","tool":"<tool>","args":{}}\n```'
           : "",
         vault ? CREDENTIAL_PROMPT : "",
+        setup,
       ]
         .filter(Boolean)
         .join("\n");

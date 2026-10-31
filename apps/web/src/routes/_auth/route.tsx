@@ -6,6 +6,7 @@ import { Button } from "@/components/ui";
 import { Logo } from "@/components/logo";
 import { authClient } from "@/lib/auth-client";
 import { cachedAuthGuard } from "@/lib/auth-guard";
+import { SidebarDataProvider } from "@/features/chat/sidebar-data";
 import { IdentityRequestError, getIdentityError, identityClient } from "@/lib/identity-client";
 
 export const Route = createFileRoute("/_auth")({
@@ -105,5 +106,9 @@ function AccessError({ error, reset }: { error: unknown; reset: () => void }) {
 }
 
 function AuthLayout() {
-  return <Outlet />;
+  return (
+    <SidebarDataProvider>
+      <Outlet />
+    </SidebarDataProvider>
+  );
 }

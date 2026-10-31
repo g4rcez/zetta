@@ -1,6 +1,8 @@
 import { call } from "../chat/chat-client";
 
 export type DiscussionStatus = "open" | "paused" | "stalled" | "resolved" | "cancelled";
+/** `room`: a team or user room. `help` and `permissions`: made by the Chief to solve a bot's issue. */
+export type RoomKind = "room" | "help" | "permissions";
 export type Discussion = {
   id: string;
   conversationId: string;
@@ -9,8 +11,8 @@ export type Discussion = {
   context: string;
   contextVersion: number;
   status: DiscussionStatus;
+  kind: RoomKind;
   tainted: boolean;
-  turnBudget: number;
   turnsUsed: number;
   summary: string;
   version: number;
@@ -80,8 +82,7 @@ export type NewDiscussion = {
   goal: string;
   context: string;
   members: { bot: string; role?: string }[];
-  firstMessage: string;
-  turnBudget?: number;
+  firstMessage?: string;
 };
 
 export const discussionsApi = {

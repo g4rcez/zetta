@@ -28,11 +28,11 @@ export type DiscussionTurn = typeof discussionTurn.$inferSelect;
 export type Member = typeof discussionMember.$inferSelect;
 
 export const PERMISSIONS_TITLE = "Permissions";
+/** A room as the API shows it: never the dedupe key. */
+export const publicRoom = (d: Discussion) => ({ ...d, openKey: undefined });
 /** Where a blocked bot stopped, kept on its help request so the answer can resume it (a loop, or the chat turn). */
 export type HelpStop = { conversationId: string; messageId: string | null; loopId?: string };
-export const MAX_MEMBERS = 6,
-  MAX_OPEN = 5,
-  MAX_PENDING_PROPOSALS = 3,
+export const MAX_PENDING_PROPOSALS = 3,
   MAX_PEERS = 20,
   STEP_LIMIT = 200;
 const ACTIVE = ["open", "paused", "stalled"] as const;
@@ -59,7 +59,8 @@ export type OpenInput = {
   tainted: boolean;
   /** Set for a team room: the chief opens it (`createdBy`) and the team's other bots are the members. */
   teamId?: string | undefined;
-  turnBudget?: number | undefined;
+  /** Defaults to a plain room; the Chief's help and permission rooms say what they are. */
+  kind?: Discussion["kind"] | undefined;
   /** false: the opening post wakes nobody (system-made discussions). */
   wake?: boolean | undefined;
 };
@@ -93,7 +94,7 @@ const SETTLE_POLL_MS = 2_000;
 export function createDiscussionStore(
   db: Database,
   files?: Pick<FileStore, "readWithHash">,
-  loops?: Pick<LoopStore, "start" | "active">,
+  loops?: Pick<LoopStore, "start" | "active" | "kick">,
 ) {
   let onEnqueue: (() => void) | undefined;
   const visible = (a: ActiveActor) => or(eq(bot.ownerUserId, a.userId), eq(bot.visibility, "team"));
@@ -167,13 +168,14 @@ export function createDiscussionStore(
     text: string,
     messageId: string,
     opening = false,
+    fallback = true,
   ) {
     const members = await tx
-      .select({ botId: discussionMember.botId, name: bot.name })
+      .select({ botId: discussionMember.botId, name: bot.name, kind: bot.kind })
       .from(discussionMember)
       .innerJoin(bot, eq(bot.id, discussionMember.botId))
       .where(eq(discussionMember.discussionId, d.id));
-    const targets = wakeTargets(members, d.createdByBotId, authorBotId, text, opening);
+    const targets = wakeTargets(members, d.createdByBotId, authorBotId, text, opening, fallback);
     if (!targets.length) return 0;
     const rows = await tx
       .insert(discussionTurn)
@@ -196,16 +198,30 @@ export function createDiscussionStore(
       input.members.map((m) => m.bot),
     );
     const roles = new Map(bots.map((b, i) => [b.id, input.members[i]!.role ?? ""]));
+    // A room the user opens has no facilitator bot: the owner's Chief joins, so a post without a mention reaches it (wakeTargets).
+    const [chief] = input.createdBy
+      ? []
+      : await db
+          .select()
+          .from(bot)
+          .where(
+            and(
+              eq(bot.ownerUserId, a.userId),
+              eq(bot.kind, "chief"),
+              eq(bot.archived, false),
+              eq(bot.onboarded, true),
+            ),
+          );
+    if (chief) roles.set(chief.id, roles.get(chief.id) || "facilitator");
     const all = [
       ...new Map([
         ...(input.createdBy ? [[input.createdBy.id, input.createdBy] as const] : []),
         ...bots.map((b) => [b.id, b] as const),
+        ...(chief ? [[chief.id, chief] as const] : []),
       ]).values(),
     ];
     if (all.length < 2 && input.createdBy)
       throw new DiscussionError("INVALID", "Invite at least one other bot.");
-    if (all.length > MAX_MEMBERS && !input.teamId)
-      throw new DiscussionError("LIMIT", `A discussion has at most ${MAX_MEMBERS} bots.`);
     const openKey = createHash("sha256")
       .update(
         [
@@ -227,15 +243,6 @@ export function createDiscussionStore(
           ),
         );
       if (same) return { discussion: same, created: false };
-      const [{ n } = { n: 0 }] = await tx
-        .select({ n: sql<number>`count(*)::int` })
-        .from(discussion)
-        .where(and(eq(discussion.ownerUserId, a.userId), inArray(discussion.status, [...ACTIVE])));
-      if (n >= MAX_OPEN)
-        throw new DiscussionError(
-          "LIMIT",
-          `You already have ${MAX_OPEN} discussions running. Resolve or cancel one first.`,
-        );
       const [conv] = await tx
         .insert(conversation)
         .values({
@@ -259,7 +266,7 @@ export function createDiscussionStore(
           goal: input.goal.slice(0, 1000),
           context: input.context.slice(0, 8000),
           tainted: input.tainted,
-          turnBudget: Math.min(Math.max(input.turnBudget ?? 20, 1), 50),
+          kind: input.kind ?? "room",
           openKey,
         })
         .returning();
@@ -353,9 +360,9 @@ export function createDiscussionStore(
       botId: c.turn.botId,
       title: `Approve ${botName} acting in "${c.discussion.title}"`,
       detail:
-        "This discussion includes outside content (for example a customer's message) and the bot can change code.",
+        "This room includes outside content (for example a customer's message) and the bot can change code.",
       nextAction: "Review the brief and approve or reject it.",
-      resultLink: `/discussions?id=${c.discussion.id}`,
+      resultLink: `/rooms?id=${c.discussion.id}`,
       source: "bot",
       sourceKey: `proposal:${p!.id}`,
     });
@@ -434,6 +441,7 @@ export function createDiscussionStore(
         createdBy: chief,
         tainted: false,
         wake: false,
+        kind: "permissions",
       });
       let d: Discussion = opened.discussion;
       await db
@@ -443,7 +451,7 @@ export function createDiscussionStore(
       if (d.status === "paused")
         throw new DiscussionError(
           "CLOSED",
-          "The Permissions discussion is paused; ask the user to resume it.",
+          "The Permissions room is paused; ask the user to resume it.",
         );
       if (d.status === "stalled") {
         const [again] = await db
@@ -464,8 +472,8 @@ export function createDiscussionStore(
         botId: requester.id,
         title: `${requester.name} asks for permission: ${rule}`,
         detail: reason.slice(0, 400),
-        nextAction: "Open the Permissions discussion and answer the Chief.",
-        resultLink: `/discussions?id=${d.id}`,
+        nextAction: "Open the Permissions room and answer the Chief.",
+        resultLink: `/rooms?id=${d.id}`,
         source: "bot",
         sourceKey: `permission:${d.id}:${row.id}`,
       });
@@ -494,6 +502,7 @@ export function createDiscussionStore(
         createdBy: chief,
         tainted: false,
         wake: false,
+        kind: "help",
       });
       const row = await post(
         db,
@@ -510,7 +519,7 @@ export function createDiscussionStore(
     /** Where the blocked bot of a help discussion stopped, or undefined for any other discussion. */
     async helpRequestOf(a: ActiveActor, id: string) {
       const d = await loadOwned(a, id);
-      if (!d.title.startsWith(HELP_PREFIX)) return undefined;
+      if (d.kind !== "help") return undefined;
       const [row] = await db
         .select({ meta: message.meta })
         .from(message)
@@ -578,7 +587,7 @@ export function createDiscussionStore(
       if (inbound)
         throw new DiscussionError(
           "NOT_ALLOWED",
-          `${outside.map((b) => b.name).join(", ")} ${outside.length === 1 ? "is" : "are"} not pre-approved for ${input.createdBy.name}, and requests from outside people cannot ask for approval. The user can add them under the bot's settings > Group discussions.`,
+          `${outside.map((b) => b.name).join(", ")} ${outside.length === 1 ? "is" : "are"} not pre-approved for ${input.createdBy.name}, and requests from outside people cannot ask for approval. The user can add them under the bot's settings > Rooms.`,
         );
       const [{ n } = { n: 0 }] = await db
         .select({ n: sql<number>`count(*)::int` })
@@ -593,7 +602,7 @@ export function createDiscussionStore(
       if (n >= MAX_PENDING_PROPOSALS)
         throw new DiscussionError(
           "LIMIT",
-          "There are already discussion requests waiting for the user's approval.",
+          "There are already room requests waiting for the user's approval.",
         );
       const patch = {
         title: input.title,
@@ -629,7 +638,7 @@ export function createDiscussionStore(
         .returning();
       await raiseAttention(db, a.userId, {
         botId: input.createdBy.id,
-        title: `${input.createdBy.name} wants to open a discussion with ${outside.map((b) => b.name).join(", ")}`,
+        title: `${input.createdBy.name} wants to open a room with ${outside.map((b) => b.name).join(", ")}`,
         detail: input.title,
         nextAction: "Open Chat and approve or reject the proposal.",
         resultLink: "/chat",
@@ -664,20 +673,25 @@ export function createDiscussionStore(
         .select()
         .from(discussionMember)
         .where(and(eq(discussionMember.discussionId, d.id), eq(discussionMember.botId, botId)));
-      if (!m) throw new DiscussionError("NOT_FOUND", "You are not a member of that discussion.");
+      if (!m) throw new DiscussionError("NOT_FOUND", "You are not a member of that room.");
       return d;
     },
     async postAsBot(a: ActiveActor, id: string, who: Bot, text: string) {
       const d = await this.forMember(a, id, who.id);
-      if (d.status !== "open")
-        throw new DiscussionError("CLOSED", `That discussion is ${d.status}.`);
+      if (d.status !== "open") throw new DiscussionError("CLOSED", `That room is ${d.status}.`);
       return post(db, d, who, text);
     },
     /** A post that already exists (a member turn's reply): only wakes the next members. */
-    async afterReply(d: Discussion, authorBotId: string, text: string, messageId: string) {
+    async afterReply(
+      d: Discussion,
+      authorBotId: string,
+      text: string,
+      messageId: string,
+      { mentionsOnly = false }: { mentionsOnly?: boolean } = {},
+    ) {
       const [cur] = await db.select().from(discussion).where(eq(discussion.id, d.id));
       if (cur?.status !== "open") return 0;
-      const n = await enqueueWakes(db, cur, authorBotId, text, messageId);
+      const n = await enqueueWakes(db, cur, authorBotId, text, messageId, false, !mentionsOnly);
       if (n) onEnqueue?.();
       return n;
     },
@@ -685,7 +699,7 @@ export function createDiscussionStore(
     async postAsOwner(a: ActiveActor, id: string, text: string, attached: PostFiles = {}) {
       const d = await loadOwned(a, id);
       if (d.status === "resolved" || d.status === "cancelled")
-        throw new DiscussionError("CLOSED", `This discussion is ${d.status}.`);
+        throw new DiscussionError("CLOSED", `This room is ${d.status}.`);
       // Everything the post will carry is checked before anything is written (same rule as a chat message).
       const ids = attached.attachmentIds ?? [],
         refs = attached.fileRefs ?? [];
@@ -746,7 +760,6 @@ export function createDiscussionStore(
                   .update(discussion)
                   .set({
                     status: "open",
-                    turnBudget: sql`least(50, greatest(${discussion.turnBudget}, ${discussion.turnsUsed} + 5))`,
                     updatedAt: new Date(),
                   })
                   .where(eq(discussion.id, d.id))
@@ -797,7 +810,7 @@ export function createDiscussionStore(
       if (expectedVersion !== undefined && d.version !== expectedVersion)
         throw new DiscussionError(
           "CONFLICT",
-          "The discussion changed meanwhile. Reload it and try again.",
+          "The room changed meanwhile. Reload it and try again.",
         );
       const brief =
         (patch.goal !== undefined && patch.goal !== d.goal) ||
@@ -817,7 +830,7 @@ export function createDiscussionStore(
       if (!row)
         throw new DiscussionError(
           "CONFLICT",
-          "The discussion changed meanwhile. Reload it and try again.",
+          "The room changed meanwhile. Reload it and try again.",
         );
       return row;
     },
@@ -825,7 +838,7 @@ export function createDiscussionStore(
     async updateContextAsBot(a: ActiveActor, id: string, who: Bot, text: string) {
       const d = await this.forMember(a, id, who.id);
       if (d.status === "resolved" || d.status === "cancelled")
-        throw new DiscussionError("CLOSED", `That discussion is ${d.status}.`);
+        throw new DiscussionError("CLOSED", `That room is ${d.status}.`);
       const [row] = await db
         .update(discussion)
         .set({
@@ -851,7 +864,7 @@ export function createDiscussionStore(
     async resolve(a: ActiveActor, id: string, by: Bot | null, summary: string) {
       const d = await loadOwned(a, id);
       if (d.status === "resolved" || d.status === "cancelled")
-        throw new DiscussionError("CLOSED", `That discussion is already ${d.status}.`);
+        throw new DiscussionError("CLOSED", `That room is already ${d.status}.`);
       const wrap = d.createdByBotId && by?.id !== d.createdByBotId ? d.createdByBotId : null;
       const row = await db.transaction(async (tx) => {
         const [r] = await tx
@@ -865,7 +878,7 @@ export function createDiscussionStore(
           })
           .where(and(eq(discussion.id, d.id), inArray(discussion.status, [...ACTIVE])))
           .returning();
-        if (!r) throw new DiscussionError("CLOSED", "That discussion is already closed.");
+        if (!r) throw new DiscussionError("CLOSED", "That room is already closed.");
         await tx
           .update(discussionTurn)
           .set({ status: "cancelled", finishedAt: new Date(), reasonCode: "resolved" })
@@ -896,10 +909,10 @@ export function createDiscussionStore(
           await insertMessage(tx, d.originConversationId, {
             ownerUserId: d.ownerUserId,
             role: "system",
-            content: `👥 Discussion "${d.title}" was resolved: ${summary}`,
+            content: `👥 Room "${d.title}" was resolved: ${summary}`,
             meta: { discussion: { id: d.id, title: d.title, status: "resolved" } },
           });
-        await closeAttention(tx, d.ownerUserId, `/discussions?id=${d.id}`, "resolved");
+        await closeAttention(tx, d.ownerUserId, `/rooms?id=${d.id}`, "resolved");
         return r;
       });
       if (wrap) onEnqueue?.();
@@ -912,17 +925,14 @@ export function createDiscussionStore(
     async setStatus(a: ActiveActor, id: string, action: "pause" | "resume" | "cancel") {
       const d = await loadOwned(a, id);
       if (d.status === "resolved" || d.status === "cancelled")
-        throw new DiscussionError("CLOSED", `This discussion is ${d.status}.`);
+        throw new DiscussionError("CLOSED", `This room is ${d.status}.`);
       const row = await db.transaction(async (tx) => {
         const set =
           action === "pause"
             ? { status: "paused" as const }
             : action === "cancel"
               ? { status: "cancelled" as const }
-              : {
-                  status: "open" as const,
-                  turnBudget: sql`least(50, greatest(${discussion.turnBudget}, ${discussion.turnsUsed} + 5))`,
-                };
+              : { status: "open" as const };
         const [r] = await tx
           .update(discussion)
           .set({ ...set, updatedAt: new Date(), version: sql`${discussion.version} + 1` })
@@ -938,7 +948,7 @@ export function createDiscussionStore(
                 inArray(discussionTurn.status, ["queued", "awaiting_approval"]),
               ),
             );
-          await closeAttention(tx, d.ownerUserId, `/discussions?id=${d.id}`, "cancelled");
+          await closeAttention(tx, d.ownerUserId, `/rooms?id=${d.id}`, "cancelled");
         }
         // Resuming retries what a restart interrupted (the owner saw the card and chose to go on).
         if (action === "resume")
@@ -1015,8 +1025,7 @@ export function createDiscussionStore(
             )
         : [];
       return rows.map((d) => ({
-        ...d,
-        openKey: undefined,
+        ...publicRoom(d),
         members: members
           .filter((m) => m.discussionId === d.id)
           .map((m) => ({ botId: m.botId, name: m.name })),
@@ -1039,7 +1048,7 @@ export function createDiscussionStore(
       if (!d.createdByBotId)
         throw new DiscussionError("INVALID", "A loop needs a facilitator bot to lead the room.");
       if (d.status === "resolved" || d.status === "cancelled")
-        throw new DiscussionError("CLOSED", `This discussion is ${d.status}.`);
+        throw new DiscussionError("CLOSED", `This room is ${d.status}.`);
       if ((await membersOf(d)).length < 2)
         throw new DiscussionError("INVALID", "A loop needs at least two bots in the room.");
       const goal = (v.goal || d.goal).trim();
@@ -1057,17 +1066,68 @@ export function createDiscussionStore(
       });
     },
     /**
-     * One loop step: the turn budget counts per step (reset here, a stalled room reopens), and a system post wakes the facilitator.
+     * The owner approved the chief's split of the team goal: one loop per member, started together or not at all.
+     * Everything is checked again here, because the room may have changed since the chief proposed it.
+     */
+    async startMemberLoops(
+      a: ActiveActor,
+      id: string,
+      v: {
+        request: string;
+        goals: readonly { botId: string; goal: string; doneWhen: string }[];
+      },
+    ) {
+      if (!loops) throw new DiscussionError("INVALID", "Loops are not available.");
+      const d = await loadOwned(a, id);
+      if (!d.teamId || !d.createdByBotId)
+        throw new DiscussionError("INVALID", "Member goals belong to a team room.");
+      if (d.status === "resolved" || d.status === "cancelled")
+        throw new DiscussionError("CLOSED", `This room is ${d.status}.`);
+      const members = new Set(
+        (await membersOf(d)).filter((m) => m.m.botId !== d.createdByBotId).map((m) => m.m.botId),
+      );
+      const ids = v.goals.map((g) => g.botId);
+      if (!ids.length || new Set(ids).size !== ids.length || !ids.every((b) => members.has(b)))
+        throw new DiscussionError("INVALID", "Each goal needs a different member of the team.");
+      if (await loops.active(d.conversationId))
+        throw new DiscussionError(
+          "CONFLICT",
+          "This room already has a loop. Stop it before starting another.",
+        );
+      const started = await db.transaction((tx) =>
+        Promise.all(
+          v.goals.map((g) =>
+            loops.start(
+              a.userId,
+              {
+                conversationId: d.conversationId,
+                botId: g.botId,
+                goal: g.goal.slice(0, 500),
+                doneWhen: g.doneWhen,
+                request: v.request,
+              },
+              tx,
+            ),
+          ),
+        ),
+      );
+      for (const l of started) loops.kick(l.id);
+      return started;
+    },
+    /**
+     * One loop step: a stalled room reopens, and a system post wakes the facilitator.
      * Returns why no step started when the room is paused or closed.
      */
     async startLoopStep(
       id: string,
       label: string,
+      /** A member's own loop: only that member is woken, not the facilitator. */
+      memberBotId?: string,
     ): Promise<{ state: "started"; since: Date } | { state: "resolved" | "cancelled" | "paused" }> {
       const since = new Date();
       const [d] = await db
         .update(discussion)
-        .set({ status: "open", turnsUsed: 0, updatedAt: since })
+        .set({ status: "open", updatedAt: since })
         .where(and(eq(discussion.id, id), inArray(discussion.status, ["open", "stalled"])))
         .returning();
       if (!d) {
@@ -1091,6 +1151,18 @@ export function createDiscussionStore(
           content: label,
           meta: { discussionEvent: "loop" },
         });
+        if (memberBotId) {
+          await tx
+            .insert(discussionTurn)
+            .values({
+              ownerUserId: d.ownerUserId,
+              discussionId: d.id,
+              botId: memberBotId,
+              triggerMessageId: row.id,
+            })
+            .onConflictDoNothing();
+          return;
+        }
         // No text to scan for mentions: the goal may name a member, but a loop step always goes to the facilitator first.
         await enqueueWakes(tx, d, null, "", row.id);
       });
@@ -1102,7 +1174,12 @@ export function createDiscussionStore(
       id: string,
       since: Date,
       stopped: () => Promise<boolean>,
+      /** A member's loop only waits for, and fails on, that member's own turns. */
+      memberBotId?: string,
     ): Promise<{ state: RoomSettle; summary: string }> {
+      const turnsOf = memberBotId
+        ? and(eq(discussionTurn.discussionId, id), eq(discussionTurn.botId, memberBotId))
+        : eq(discussionTurn.discussionId, id);
       for (;;) {
         if (await stopped()) return { state: "stopped", summary: "" };
         const [d] = await db.select().from(discussion).where(eq(discussion.id, id));
@@ -1115,13 +1192,13 @@ export function createDiscussionStore(
             .from(discussionTurn)
             .where(
               and(
-                eq(discussionTurn.discussionId, id),
+                turnsOf,
                 inArray(discussionTurn.status, ["queued", "running", "awaiting_approval"]),
               ),
             )
         ).map((t) => t.status);
         const running = pending.includes("running");
-        // A stalled room (turn budget spent) keeps its queued turns; the next step reopens it.
+        // A stalled room (restart or idle) keeps its queued turns; the next step reopens it.
         const quiet = !running && (d.status === "stalled" || !pending.includes("queued"));
         if (quiet) {
           if (pending.includes("awaiting_approval")) return { state: "approval", summary: "" };
@@ -1130,7 +1207,7 @@ export function createDiscussionStore(
             .from(discussionTurn)
             .where(
               and(
-                eq(discussionTurn.discussionId, id),
+                turnsOf,
                 eq(discussionTurn.status, "failed"),
                 sql`${discussionTurn.createdAt} >= ${since}`,
               ),
@@ -1202,7 +1279,7 @@ export function createDiscussionStore(
         .where(eq(discussionTurn.discussionId, d.id))
         .orderBy(desc(discussionTurn.createdAt))
         .limit(30);
-      return { discussion: { ...d, openKey: undefined }, members, turns };
+      return { discussion: publicRoom(d), members, turns };
     },
     /** Owner toggle: whether a member must wait for an approved brief while outside content is in play. */
     async setRequireApproval(a: ActiveActor, id: string, botId: string, on: boolean) {
@@ -1293,32 +1370,14 @@ export function createDiscussionStore(
             await gate(tx, c, await names(turn!.botId));
             return "again";
           }
+          // Rooms have no turn limit: the count is a statistic only.
           if (turn!.kind === "reply") {
             const [spent] = await tx
               .update(discussion)
               .set({ turnsUsed: sql`${discussion.turnsUsed} + 1` })
-              .where(and(eq(discussion.id, d!.id), lt(discussion.turnsUsed, discussion.turnBudget)))
+              .where(eq(discussion.id, d!.id))
               .returning();
-            if (!spent) {
-              await tx
-                .update(discussionTurn)
-                .set({ status: "skipped", reasonCode: "budget", finishedAt: new Date() })
-                .where(eq(discussionTurn.id, id));
-              await tx
-                .update(discussion)
-                .set({ status: "stalled", updatedAt: new Date() })
-                .where(eq(discussion.id, d!.id));
-              await raiseAttention(tx, d!.ownerUserId, {
-                title: `Discussion "${d!.title}" used its turn budget`,
-                detail: `The bots took ${d!.turnBudget} turns without resolving it.`,
-                nextAction: "Read the discussion, then post a nudge, resume it, or cancel it.",
-                resultLink: `/discussions?id=${d!.id}`,
-                source: "bot",
-                sourceKey: `discussion:${d!.id}:budget`,
-              });
-              return "again";
-            }
-            c.discussion = spent;
+            c.discussion = spent!;
           }
           const [running] = await tx
             .update(discussionTurn)
@@ -1434,10 +1493,10 @@ export function createDiscussionStore(
           .returning();
         if (d)
           await raiseAttention(db, d.ownerUserId, {
-            title: `Discussion "${d.title}" was interrupted`,
+            title: `Room "${d.title}" was interrupted`,
             detail: "The server restarted while a bot was working on it.",
             nextAction: "Check what was done, then resume or cancel it.",
-            resultLink: `/discussions?id=${d.id}`,
+            resultLink: `/rooms?id=${d.id}`,
             source: "bot",
             sourceKey: `discussion:${d.id}:interrupted`,
           }).catch(() => {});
@@ -1464,10 +1523,10 @@ export function createDiscussionStore(
             .set({ status: "stalled", updatedAt: now })
             .where(eq(discussion.id, d.id));
         await raiseAttention(db, d.ownerUserId, {
-          title: `Discussion "${d.title}" is waiting`,
+          title: `Room "${d.title}" is waiting`,
           detail: "No bot is working on it and it is not resolved.",
           nextAction: "Post a nudge mentioning a bot, or resolve or cancel it.",
-          resultLink: `/discussions?id=${d.id}`,
+          resultLink: `/rooms?id=${d.id}`,
           source: "bot",
           sourceKey: `discussion:${d.id}:idle`,
         }).catch(() => {});

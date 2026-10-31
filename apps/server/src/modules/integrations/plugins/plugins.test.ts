@@ -101,7 +101,10 @@ describe("plugin service", () => {
     expect(prompt).toContain("echo");
     expect(prompt).not.toContain("secret-ab");
     await plugins.setBinding(a, "bot1", "fake-notes", false);
-    expect(await plugins.promptFor(a, "bot1")).toBe("");
+    const unbound = await plugins.promptFor(a, "bot1");
+    expect(unbound).not.toContain("Plugins connected to you");
+    expect(unbound).not.toContain("```zetta:plugin");
+    expect(unbound).toContain("fake-notes");
   });
 
   test("a bot restricted to selected tools cannot call or see the others", async () => {
@@ -159,7 +162,9 @@ describe("plugin service", () => {
     await plugins.setBinding(a, "shared-bot", "fake-notes", true);
     expect(await plugins.list(b)).toEqual([]);
     expect(await plugins.bindings(b, "shared-bot")).toEqual([]);
-    expect(await plugins.promptFor(b, "shared-bot")).toBe("");
+    const others = await plugins.promptFor(b, "shared-bot");
+    expect(others).not.toContain("Plugins connected to you");
+    expect(others).not.toContain("```zetta:plugin");
     await expect(
       plugins.callTool(b, "shared-bot", "fake-notes", "echo", { text: "x" }),
     ).rejects.toMatchObject({ code: "NOT_BOUND" });
@@ -201,12 +206,11 @@ describe("plugin service", () => {
 const line: PluginDef = {
   id: "fake-line",
   name: "Fake line",
-  description: "A shared line.",
+  description: "A line that may be private or the team's.",
   icon: "phone",
   category: "other",
   kind: "native",
   auth: "api-key",
-  teamTools: ["echo"],
   fields: [{ key: "apiKey", label: "API key", secret: true, kind: "password" }],
   tools: [
     {
@@ -230,73 +234,133 @@ const line: PluginDef = {
 };
 registerPlugin(line);
 
-describe("sharing a plugin with the team", () => {
-  test("a plugin stays private until its owner shares it, and a personal plugin cannot be shared at all", async () => {
+describe("private and team configuration", () => {
+  test("only the administrator installs, changes and removes the team configuration; members just use it", async () => {
     const { plugins } = world();
-    const alice = actor("alice"),
+    const admin = actor("admin", true),
       bob = actor("bob");
-    await plugins.install(alice, "fake-line", { apiKey: "alice-key-AA" });
-    expect(await plugins.shared(bob)).toEqual([]);
-    await expect(plugins.setBinding(bob, "bot-b", "fake-line", true)).rejects.toMatchObject({
-      code: "NOT_FOUND",
+    await expect(
+      plugins.install(bob, "fake-line", { apiKey: "bob-key-BB" }, [], "team"),
+    ).rejects.toMatchObject({ code: "ADMIN_ONLY" });
+    await plugins.install(admin, "fake-line", { apiKey: "team-key-TT" }, [], "team");
+    await expect(
+      plugins.configure(bob, "fake-line", { apiKey: "other-key-XX" }, "team"),
+    ).rejects.toMatchObject({ code: "ADMIN_ONLY" });
+    await expect(plugins.uninstall(bob, "fake-line", "team")).rejects.toMatchObject({
+      code: "ADMIN_ONLY",
     });
-    await plugins.install(alice, "fake-notes", { apiKey: "alice-key-AA" });
-    await expect(plugins.setSharing(alice, "fake-notes", "team")).rejects.toMatchObject({
-      code: "NOT_SHAREABLE",
-    });
+    expect((await plugins.list(bob)).map((p) => [p.id, p.sharing])).toEqual([
+      ["fake-line", "team"],
+    ]);
+    expect((await plugins.test(bob, "fake-line", "team")).status.state).toBe("connected");
   });
 
-  test("teammates use a shared plugin through the owner's account, with the team tools only", async () => {
+  test("a member's bot uses every tool of the team configuration through the team's own account", async () => {
     const { plugins } = world();
-    const alice = actor("alice"),
+    const admin = actor("admin", true),
       bob = actor("bob");
-    await plugins.install(alice, "fake-line", { apiKey: "alice-key-AA" });
-    await plugins.setSharing(alice, "fake-line", "team");
-    expect((await plugins.shared(bob)).map((s) => [s.id, s.ownerName, s.tools])).toEqual([
-      ["fake-line", "alice", ["echo"]],
-    ]);
-    await plugins.setBinding(bob, "bot-b", "fake-line", true);
-    expect(await plugins.bindings(bob, "bot-b")).toEqual(["fake-line"]);
+    await plugins.install(admin, "fake-line", { apiKey: "team-key-TT" }, [], "team");
+    await plugins.setBinding(bob, "bot-b", "fake-line", true, "team");
     seen.length = 0;
     expect(
       JSON.parse(await plugins.callTool(bob, "bot-b", "fake-line", "echo", { text: "hi" })),
-    ).toEqual({ text: "hi", key: "…AA" });
-    expect(seen).toEqual(["alice"]);
-    await expect(plugins.callTool(bob, "bot-b", "fake-line", "peek", {})).rejects.toMatchObject({
-      code: "TOOL_NOT_ALLOWED",
-    });
-    const prompt = await plugins.promptFor(bob, "bot-b");
-    expect(prompt).toContain("shared by a teammate");
-    expect(prompt).toContain("    echo:");
-    expect(prompt).not.toContain("    peek:");
+    ).toEqual({ text: "hi", key: "…TT" });
+    expect(await plugins.callTool(bob, "bot-b", "fake-line", "peek", {})).toBe("private history");
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toStartWith("team:");
+    expect(await plugins.promptFor(bob, "bot-b")).toContain("the workspace's shared account");
   });
 
-  test("going back to private cuts every teammate off at once", async () => {
+  test("a user may hold a private and the team configuration; a bot with both must be told which to use", async () => {
     const { plugins } = world();
-    const alice = actor("alice"),
+    const admin = actor("admin", true),
       bob = actor("bob");
-    await plugins.install(alice, "fake-line", { apiKey: "alice-key-AA" });
-    await plugins.setSharing(alice, "fake-line", "team");
-    await plugins.setBinding(bob, "bot-b", "fake-line", true);
-    await plugins.setSharing(alice, "fake-line", "private");
-    expect(await plugins.bindings(bob, "bot-b")).toEqual([]);
-    await expect(
-      plugins.callTool(bob, "bot-b", "fake-line", "echo", { text: "hi" }),
-    ).rejects.toMatchObject({ code: "NOT_BOUND" });
-    expect(await plugins.shared(bob)).toEqual([]);
-  });
-
-  test("a teammate's own install wins over a shared one and is not listed as shared", async () => {
-    const { plugins } = world();
-    const alice = actor("alice"),
-      bob = actor("bob");
-    await plugins.install(alice, "fake-line", { apiKey: "alice-key-AA" });
-    await plugins.setSharing(alice, "fake-line", "team");
+    await plugins.install(admin, "fake-line", { apiKey: "team-key-TT" }, [], "team");
     await plugins.install(bob, "fake-line", { apiKey: "bob-key-BB" });
-    expect(await plugins.shared(bob)).toEqual([]);
     await plugins.setBinding(bob, "bot-b", "fake-line", true);
+    await plugins.setBinding(bob, "bot-b", "fake-line", true, "team");
+    expect(await plugins.bindings(bob, "bot-b")).toEqual(["fake-line"]);
+    expect(await plugins.bindingScopes(bob, "bot-b")).toEqual([
+      { id: "fake-line", scope: "mine" },
+      { id: "fake-line", scope: "team" },
+    ]);
+    await expect(
+      plugins.callTool(bob, "bot-b", "fake-line", "echo", { text: "x" }),
+    ).rejects.toMatchObject({ code: "CHOOSE_CONFIG" });
+    const call = async (config: "mine" | "team") =>
+      JSON.parse(await plugins.callTool(bob, "bot-b", "fake-line", "echo", { text: "x" }, config))
+        .key;
+    expect(await call("mine")).toBe("…BB");
+    expect(await call("team")).toBe("…TT");
+    expect(await plugins.promptFor(bob, "bot-b")).toContain("ask the user which one to use");
+  });
+
+  test("removing the team configuration cuts every member off, and the private one stays", async () => {
+    const { plugins } = world();
+    const admin = actor("admin", true),
+      bob = actor("bob");
+    await plugins.install(admin, "fake-line", { apiKey: "team-key-TT" }, [], "team");
+    await plugins.install(bob, "fake-line", { apiKey: "bob-key-BB" });
+    await plugins.setBinding(bob, "bot-b", "fake-line", true);
+    await plugins.setBinding(bob, "bot-b", "fake-line", true, "team");
+    await plugins.uninstall(admin, "fake-line", "team");
+    expect(await plugins.bindingScopes(bob, "bot-b")).toEqual([{ id: "fake-line", scope: "mine" }]);
     expect(
       JSON.parse(await plugins.callTool(bob, "bot-b", "fake-line", "echo", { text: "x" })).key,
     ).toBe("…BB");
+  });
+});
+
+describe("setupInfo", () => {
+  test("follows the plugin from not installed to connected and switched on for the bot", async () => {
+    const { plugins } = world();
+    const a = actor("u1");
+    const first = await plugins.setupInfo(a, "bot1", "fake-notes");
+    expect(first).toMatchObject({ plugin: "fake-notes", state: "not-installed", bound: false });
+    expect(first.fields).toEqual([
+      { label: "API key", secret: true, optional: false },
+      { label: "Workspace", secret: false, optional: true },
+    ]);
+    await plugins.install(a, "fake-notes", { apiKey: "key-for-u1-ZZ" }, []);
+    expect(await plugins.setupInfo(a, "bot1", "fake-notes")).toMatchObject({
+      state: "connected",
+      bound: false,
+    });
+    await plugins.setBinding(a, "bot1", "fake-notes", true);
+    expect(await plugins.setupInfo(a, "bot1", "fake-notes")).toMatchObject({
+      state: "connected",
+      bound: true,
+    });
+  });
+
+  test("never carries a saved value, only labels", async () => {
+    const { plugins } = world();
+    const a = actor("u1");
+    await plugins.install(a, "fake-notes", { apiKey: "key-for-u1-ZZ" }, []);
+    expect(JSON.stringify(await plugins.setupInfo(a, "bot1", "fake-notes"))).not.toContain(
+      "key-for-u1-ZZ",
+    );
+  });
+
+  test("sees the team configuration only when asked for it, and only the administrator starts one", async () => {
+    const { plugins } = world();
+    const admin = actor("admin", true),
+      bob = actor("bob");
+    await expect(plugins.setupInfo(bob, "bot-b", "fake-notes", "team")).rejects.toMatchObject({
+      code: "ADMIN_ONLY",
+    });
+    expect((await plugins.setupInfo(admin, "bot-a", "fake-notes", "team")).state).toBe(
+      "not-installed",
+    );
+    await plugins.install(admin, "fake-notes", { apiKey: "team-key-TT" }, [], "team");
+    expect((await plugins.setupInfo(bob, "bot-b", "fake-notes", "team")).state).toBe("connected");
+    expect((await plugins.setupInfo(bob, "bot-b", "fake-notes")).state).toBe("not-installed");
+  });
+
+  test("refuses an unknown plugin", async () => {
+    const { plugins } = world();
+    await expect(plugins.setupInfo(actor("u1"), "bot1", "no-such-plugin")).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   });
 });

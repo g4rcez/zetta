@@ -6,10 +6,12 @@ export type TeamData = { teamId: string; name: string; goal: string; version: nu
   string,
   unknown
 >;
-export type BotData = { botId: string; name: string; kind: TeamKind; role: string } & Record<
-  string,
-  unknown
->;
+export type BotData = {
+  botId: string;
+  name: string;
+  kind: TeamKind;
+  roleId: string | null;
+} & Record<string, unknown>;
 export type TeamNode = Node<TeamData, "team">;
 export type BotNode = Node<BotData, "bot">;
 export type TeamsNode = TeamNode | BotNode;
@@ -19,12 +21,15 @@ export const teamNodeId = (teamId: string) => `team:${teamId}`;
 export const botNodeId = (teamId: string, botId: string) => `${teamId}:${botId}`;
 export const BOT_SIZE = { w: 190, h: 56 };
 
-const botNode = (teamId: string, m: TeamMember): BotNode => ({
+const botNode = (
+  teamId: string,
+  m: Pick<TeamMember, "botId" | "name" | "kind" | "roleId" | "canvas">,
+): BotNode => ({
   id: botNodeId(teamId, m.botId),
   type: "bot",
   parentId: teamNodeId(teamId),
   position: m.canvas,
-  data: { botId: m.botId, name: m.name, kind: m.kind, role: m.role },
+  data: { botId: m.botId, name: m.name, kind: m.kind, roleId: m.roleId },
 });
 
 /** Group nodes come first: React Flow needs a parent before its children. */
@@ -64,7 +69,7 @@ export function flowToTeams(nodes: TeamsNode[]): { id: string; save: TeamSave }[
           .map((b) => ({
             botId: b.data.botId,
             kind: b.data.kind,
-            role: b.data.role,
+            roleId: b.data.roleId,
             canvas: { x: Math.round(b.position.x), y: Math.round(b.position.y) },
           })),
       },
@@ -123,7 +128,7 @@ export function addBot(
   teamNode: string,
   bot: { botId: string; name: string },
   position: { x: number; y: number },
-  role = "",
+  roleId: string | null = null,
 ): TeamsNode[] {
   const teamId = (nodes.find((n) => n.id === teamNode) as TeamNode | undefined)?.data.teamId;
   if (!teamId) return nodes;
@@ -131,7 +136,13 @@ export function addBot(
   if (inTeam.some((n) => (n as BotNode).data.botId === bot.botId)) return nodes;
   return normalizeChiefs([
     ...nodes,
-    botNode(teamId, { botId: bot.botId, name: bot.name, kind: "member", role, canvas: position }),
+    botNode(teamId, {
+      botId: bot.botId,
+      name: bot.name,
+      kind: "member",
+      roleId,
+      canvas: position,
+    }),
   ]);
 }
 
@@ -157,6 +168,6 @@ export function dropBot(
     dest.id,
     { botId: node.data.botId, name: node.data.name },
     { x: abs.x - dest.x, y: abs.y - dest.y },
-    node.data.role,
+    node.data.roleId,
   );
 }

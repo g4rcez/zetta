@@ -9,18 +9,19 @@ import { designSystemPrompt } from "../artifacts/design-system";
  *   ```zetta:instruction {"title": "...", "body": "..."} -> saved at once, for every bot of the user (or the room's team) | {"action": "read", "id"} loads a saved one
  *   ```zetta:wiki        {"action": "search", "query"} | read {slug} | write {slug, title, body, ...} | patch {slug, match, content} | mark_stale {slug} | suggest {slug, body, reason} -> the user's wiki and pages other members shared (modules/wiki)
  *   ```zetta:config      {"botId": "<id>", "patch": {"personality": "..."}}   -> becomes a proposal the user must approve
- *   ```zetta:create_bot / create_routine / create_workflow / create_vm  -> proposals shown as a creation summary; nothing exists until the user approves (the chief's create_bot and create_team run at once, see CHIEF_TOOLS)
+ *   ```zetta:create_bot / create_routine / create_workflow / create_vm  -> proposals shown as a creation summary; nothing exists until the user approves (the chief's create_bot, create_team and add_to_team run at once, see CHIEF_TOOLS)
  *   ```zetta:browser     {"action": "open", "url": "https://..."} | click_text | type | key | read
  *   ```zetta:handoff     {"reason": "I need you to sign in"}                 -> attention item; the human takes over
  *   ```zetta:goal        {"goal": "...", "done_when": "..."}                 -> proposal to start a loop; once approved, the bot keeps working turn after turn
+ *   ```zetta:team_goals  {"goals": [{"bot": "Dev", "goal": "...", "done_when": "..."}]} -> team room chief only: proposal to give each member its own goal loop; nothing runs until the user approves
  *   ```zetta:goal_progress / goal_done {"summary": "...", "lesson": "..."}   -> inside an approved loop only: report progress (with an optional lesson for the next steps), or finish it
  *   ```zetta:credential  {"ref": "1password:<item>", "field": "password"}    -> Zetta types a shared login into the focused input (value never shown to the bot)
  *   ```zetta:agenda      {"action": "add", "kind": "task", "title": "...", "start": "<ISO>"} | list | update | complete | remove -> the user's Agenda
  *   ```zetta:task        {"action": "add", "title": "...", "status": "backlog"} | list | update {"id", "status": "in_progress"|"blocked"|"review"|"done"} -> the shared task board
  *   ```zetta:artifact    {"title": "...", "path": "report.html"} | {"title", "content": "<html>…"} -> publishes a file the user opens later in Artifacts
- *   ```zetta:bot_claude  {"bot": "<name or id>", "allow": ["Bash(gh pr create:*)"], "deny": [...], "revoke": [...], "preset": "git"} -> chief only: edits another bot's Claude Code permissions (answering a bot's request in the Permissions discussion shows the user Approve / Deny buttons first)
- *   ```zetta:permission  {"rule": "Bash(pnpm:*)", "reason": "run the tests"}                -> any other bot: asks the chief, in the Permissions discussion, for a rule
- *   ```zetta:escalate    {"problem": "...", "tried": "..."}                              -> any other bot: asks the chief to solve a blocker in a help discussion; the answer resumes the bot, the user is asked only if the chief cannot
+ *   ```zetta:bot_claude  {"bot": "<name or id>", "allow": ["Bash(gh pr create:*)"], "deny": [...], "revoke": [...], "preset": "git"} -> chief only: edits another bot's Claude Code permissions (answering a bot's request in the Permissions room shows the user Approve / Deny buttons first)
+ *   ```zetta:permission  {"rule": "Bash(pnpm:*)", "reason": "run the tests"}                -> any other bot: asks the chief, in the Permissions room, for a rule
+ *   ```zetta:escalate    {"problem": "...", "tried": "..."}                              -> any other bot: asks the chief to solve a blocker in a help room; the answer resumes the bot, the user is asked only if the chief cannot
  *   ```zetta:discussion  {"action": "open", "title", "goal", "context", "members": [{"bot": "Dev"}], "firstMessage"} | post | update_context | resolve -> group of bots (modules/discussions)
  *   ```zetta:ui          JSON-patch lines building a view from @zetta/render's catalog -> not a tool: it stays in the reply and the web chat draws it
  */
@@ -87,16 +88,19 @@ When the user asks for a new bot or a team, create it yourself right away, witho
 {"name":"Researcher","description":"what it is good at","personality":"You are a ...","instructions":"the job, the steps, what it must never do"}
 \`\`\`   (the bot exists at once and is private to the user. It uses your engine unless you add "harness" and "model". Write a real personality and instructions from what the user said.)
 \`\`\`zetta:create_team
-{"name":"Launch team","goal":"what the team is for","members":[{"bot":"Researcher","role":"finds sources"},{"bot":"Writer","role":"drafts the copy"}]}
-\`\`\`   (you lead the team. "bot" is a name or id of an existing bot, so create the bots first, in the same reply when needed. Then tell the user what you created.)
-Other bots ask you for permissions in the "Permissions" discussion. When you are woken there by a bot's request, send the zetta:bot_claude block for the narrowest rule that does the job right away: the user is shown Approve and Deny buttons, so do not ask in text and do not wait for a typed yes. It only applies once they press Approve. After sending it, say in one short line which bot, rule and why you asked, then stop. If a user message later tells you to grant or decline something, do what it says.)`;
+{"name":"Launch team","goal":"what the team is for","members":[{"bot":"Researcher","role":"Researcher"},{"bot":"Writer","role":"Writer"}]}
+\`\`\`   (you lead the team. "bot" is a name or id of an existing bot, so create the bots first, in the same reply when needed. "role" is optional: a name from the team roles list. Then tell the user what you created. If the team already exists (see the user's teams list), use add_to_team instead.)
+\`\`\`zetta:add_to_team
+{"team":"Launch team","members":[{"bot":"Editor","role":"Reviewer"}]}
+\`\`\`   (adds existing bots to an existing team. "team" is a name or id from the teams list. Create the bots first, in the same reply when needed.)
+Other bots ask you for permissions in the "Permissions" room. When you are woken there by a bot's request, send the zetta:bot_claude block for the narrowest rule that does the job right away: the user is shown Approve and Deny buttons, so do not ask in text and do not wait for a typed yes. It only applies once they press Approve. After sending it, say in one short line which bot, rule and why you asked, then stop. If a user message later tells you to grant or decline something, do what it says.)`;
 const ESCALATE_TOOLS = `
 If you are blocked (a method failed, a tool is refused, a choice has to be made), try every other method first. Then ask the Chief, who leads the other bots. Do not ask the user:
 \`\`\`zetta:escalate
 {"problem":"what blocks you","tried":"what you already tried"}
-\`\`\`   (the Chief solves it or decides for you in a help discussion, then you continue by yourself. Stop after you send it. If a person is really needed, the Chief asks them, and the question appears in your chat.)`;
+\`\`\`   (the Chief solves it or decides for you in a help room, then you continue by yourself. Stop after you send it. If a person is really needed, the Chief asks them, and the question appears in your chat.)`;
 const PERMISSION_TOOLS = `
-Deleting files (rm, rmdir, shred, unlink), sudo and sending mail are refused until the user grants them. If you really need one, never edit settings files (.claude/settings*.json) and never ask the user to edit them: ask the chief, who collects every request in one Permissions discussion and asks the user:
+Deleting files (rm, rmdir, shred, unlink), sudo and sending mail are refused until the user grants them. If you really need one, never edit settings files (.claude/settings*.json) and never ask the user to edit them: ask the chief, who collects every request in one Permissions room and asks the user:
 \`\`\`zetta:permission
 {"rule":"Bash(rm:*)","reason":"clean the build folder the routine writes"}
 \`\`\`   (use exactly one of the refused rules: Bash(rm:*), Bash(rmdir:*), Bash(shred:*), Bash(unlink:*), Bash(sudo:*), Bash(mail:*), Bash(sendmail:*). Then stop and say you asked; the rule applies at your next turn once the user approves.)`;
@@ -263,6 +267,12 @@ export const toolSchemas = {
     }),
   ]),
   goal: z.strictObject({ goal: bounded(500), done_when: bounded(300) }),
+  team_goals: z.strictObject({
+    goals: z
+      .array(z.strictObject({ bot: bounded(80), goal: bounded(500), done_when: bounded(300) }))
+      .min(1)
+      .max(12),
+  }),
   goal_progress: z.strictObject({ summary: bounded(1500), lesson: bounded(300).optional() }),
   goal_done: z.strictObject({ summary: bounded(1500) }),
   create_vm: z.strictObject({
@@ -282,11 +292,28 @@ export const toolSchemas = {
     plugin: z.string().regex(/^[a-z0-9_-]{1,32}$/),
     tool: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/),
     args: z.record(z.string(), z.unknown()).default({}),
+    /** Only when the bot has the user's own and the team's configuration of the plugin: which one this call uses. */
+    config: z.enum(["mine", "team"]).optional(),
+  }),
+  /** Opens a setup card in the chat. The bot picks the plugin only: every value is typed by the user in the card, never by the model. */
+  setup: z.strictObject({
+    plugin: z.string().regex(/^[a-z0-9_-]{1,32}$/),
+    /** Google permissions to preselect in the card (for example "gmail.readonly"). */
+    options: z
+      .strictObject({
+        scopes: z
+          .array(z.string().regex(/^[a-z0-9._]{1,40}$/))
+          .max(10)
+          .optional(),
+      })
+      .default({}),
+    config: z.enum(["mine", "team"]).default("mine"),
   }),
   mcp: z.strictObject({
     server: z.string().regex(/^[a-z0-9_-]{1,32}$/),
     tool: bounded(100),
     args: z.record(z.string(), z.unknown()).default({}),
+    config: z.enum(["mine", "team"]).optional(),
   }),
   create_bot: z.strictObject({
     name: bounded(80),
@@ -304,9 +331,17 @@ export const toolSchemas = {
     name: bounded(80),
     goal: z.string().max(2000).default(""),
     members: z
-      .array(z.strictObject({ bot: bounded(80), role: z.string().max(200).default("") }))
+      .array(z.strictObject({ bot: bounded(80), role: z.string().max(60).default("") }))
       .max(12)
       .default([]),
+  }),
+  /** Chief only. Adds bots to a team that already exists; "team" is a name or id. */
+  add_to_team: z.strictObject({
+    team: bounded(80),
+    members: z
+      .array(z.strictObject({ bot: bounded(80), role: z.string().max(60).default("") }))
+      .min(1)
+      .max(12),
   }),
   create_routine: z.strictObject({
     botId: z.string().uuid(),
@@ -328,8 +363,7 @@ export const toolSchemas = {
       context: z.string().max(8000).default(""),
       members: z
         .array(z.strictObject({ bot: bounded(80), role: z.string().trim().max(200).optional() }))
-        .min(1)
-        .max(5),
+        .min(1),
       firstMessage: bounded(4000),
     }),
     z.strictObject({
@@ -422,7 +456,7 @@ export function parseTools(reply: string): {
   const rejected: RejectedTool[] = [];
   const text = reply
     .replace(
-      /```zetta:(remember|instruction|wiki|config|browser|handoff|create_bot|create_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal|artifact)\s*\n([\s\S]*?)```/g,
+      /```zetta:(remember|instruction|wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal|team_goals|artifact|setup)\s*\n([\s\S]*?)```/g,
       (_, kind: keyof typeof toolSchemas, body: string) => {
         let json: unknown;
         try {
@@ -457,6 +491,7 @@ export function parseTools(reply: string): {
         return "";
       },
     )
+    .replace(/```zetta:setup-card[\s\S]*?```/g, "")
     .trim();
   return { calls, text, rejected };
 }
@@ -541,3 +576,38 @@ export function whatsappBlocks(views: WhatsappBody[]): string[] {
     (b) => `\`\`\`zetta:whatsapp\n${JSON.stringify(b).replace(/`/g, "'")}\n\`\`\``,
   );
 }
+
+/** Data for a trusted ```zetta:setup-card block, built by the server only. The card reads the live state itself; nothing secret travels here. */
+export type SetupBody = {
+  plugin: string;
+  botId: string;
+  scope: "mine" | "team";
+  scopes?: string[];
+};
+export const setupBlock = (b: SetupBody) =>
+  `\`\`\`zetta:setup-card\n${JSON.stringify(b).replace(/`/g, "'")}\n\`\`\``;
+
+/** What the bot reads after `zetta:setup`: the plugin's state and the card's steps. Labels and steps only, never values. */
+export const setupText = (i: {
+  name: string;
+  state: string;
+  detail?: string;
+  bound: boolean;
+  fields: { label: string; optional: boolean }[];
+  guide: string[];
+  notes?: string;
+}) =>
+  i.state === "connected" && i.bound
+    ? `${i.name} is already connected and switched on for you. No setup card is needed; use it.`
+    : [
+        `${i.name}: ${i.state}${i.detail ? ` (${i.detail})` : ""}${i.state === "connected" ? ", but not switched on for you yet" : ""}.`,
+        "A setup card is now shown to the user. They fill it in and sign in themselves; you never see or ask for keys. Tell them in one or two lines what it asks for, wait for them to say it is set up, then retry the task.",
+        i.fields.length
+          ? `The card asks for: ${i.fields.map((f) => `${f.label}${f.optional ? " (optional)" : ""}`).join(", ")}.`
+          : "",
+        i.guide.length
+          ? `Steps:\n${i.guide.map((g, n) => `${n + 1}. ${g}`).join("\n")}`
+          : (i.notes ?? ""),
+      ]
+        .filter(Boolean)
+        .join("\n");

@@ -21,9 +21,11 @@ Bots may sign in to websites with logins the user explicitly shares from 1Passwo
   - The title and default sites come from the vault, never from the browser.
   - Sites are exact hosts, or `*.example.com` for subdomains.
 - **Bot surface.** Bots get one read tool, `<plugin>.list_credentials`, which returns refs, titles, sites and fields. To fill a value, a bot writes:
+
   ```
   zetta:credential {"ref":"1password:<item>","field":"username|password|totp","target":"browser|desktop"}
   ```
+
   The chat service checks, in order:
   1. Computer use is enabled for the bot, the bot is onboarded, and the action budget is not used up.
   2. The right input:
@@ -35,7 +37,18 @@ Bots may sign in to websites with logins the user explicitly shares from 1Passwo
   On the desktop, steps 2–4 run as one step in the VM's action queue (`fillCredential` in `vm.ts`), so no other action can slip in between the checks and the typing. The page address comes from Chromium itself: Ctrl+L, Ctrl+C, then the VM's own clipboard is read and restored afterwards.
 
   A refusal is audited as `tool_call` with `outcome: denied` (`credential:<reason>`). A fill is audited as `credential:<field>`. Values are never audited.
+
 - **Sign-in pages.** When a browser page shows a password input and a shared login matches the site, the bot is told which ref to use instead of raising the hand-off card.
+
+## CLI access for bots (opt-in, metadata only)
+
+Each vault plugin has a setting, **Bot access to the CLI** (`cliAccess`: `off` by default, or `metadata`). When it is `metadata`, bots get a `<plugin>.cli` tool that runs the password manager's own read-only listings and returns metadata rows. The rule above still holds: **no secret value reaches the model.**
+
+- Bots name the command by its exact text. Nothing else is run, and no argument reaches argv: `op vault list`, `op item list`; `bw list folders|collections|organizations|items`; `bws project list`, `bws secret list` (what is available depends on the connection style; the 1Password Connect server has no CLI).
+- Output is rebuilt from known keys (`id`, `name`, title, sites, field kinds), never passed through, so `get`, `read`, `--reveal`, `run` and `inject` are not reachable.
+- The tool is not a `read` tool, so bots that answer outside people cannot use it.
+- Off means a refusal that tells the bot to ask the user. The tool is listed either way.
+- It shows the whole vault inventory (titles and sites), not only shared logins. That is why it is a separate switch. Signing in still needs a grant and `zetta:credential`.
 
 ## Threats considered
 

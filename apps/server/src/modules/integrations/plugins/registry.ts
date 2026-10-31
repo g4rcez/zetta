@@ -22,7 +22,7 @@
  * RATE_LIMITED, ...) get a default `fix` from chat/explain.ts when you leave it out. Anything that is not a PluginError is reported as unexpected.
  * Tool results are strings (objects are JSON-stringified) and are truncated to 8000 characters.
  */
-export type PluginFieldKind = "text" | "password" | "url" | "textarea";
+export type PluginFieldKind = "text" | "password" | "url" | "textarea" | "select";
 /** One entry of the config schema. The install dialog in the web app is generated from these. */
 export type PluginField = {
   key: string;
@@ -32,6 +32,8 @@ export type PluginField = {
   kind?: PluginFieldKind;
   placeholder?: string;
   help?: string;
+  /** The allowed values of a "select" field. A blank value keeps the stored one, so the first option is not a default. */
+  options?: { value: string; label: string }[];
 };
 export type PluginCategory =
   | "monitoring"
@@ -143,6 +145,8 @@ export type PluginDef = {
   /** false when the endpoint/command/auth could not be confirmed from official docs. Shown in the UI. */
   verified?: boolean;
   notes?: string;
+  /** Numbered setup steps for a person (no secrets). The setup card in the chat and the bot's `zetta:setup` result show them. Evaluated per call so it can use server values. */
+  guide?(): string[];
   kind: "mcp" | "native";
   mcp?: PluginMcpTarget;
   tools?: PluginTool[];
@@ -171,11 +175,6 @@ export type PluginDef = {
   credentials?: PluginCredentials;
   /** Channel plugins only: lets a bot answer new outside messages (see PluginInbound). */
   inbound?: PluginInbound;
-  /**
-   * Tools a teammate's bot may call when the owner shares this plugin with the team. They run through the owner's account, so the list is
-   * the narrow part (send, status); tools that read the owner's private history are left out. Without it the plugin can never be shared.
-   */
-  teamTools?: readonly string[];
   /** Built in and on for every bot (no install, fields or binding). `available` is checked on every call and prompt. */
   always?: {
     available(botId: string, userId?: string): Promise<boolean>;
@@ -210,19 +209,17 @@ export function registerPlugin(def: PluginDef): PluginDef {
   if (!ID.test(def.id)) throw new Error(`invalid plugin id: ${def.id}`);
   if (def.kind === "mcp" && !def.mcp) throw new Error(`mcp plugin ${def.id} needs "mcp"`);
   if (def.kind === "native" && !def.tools) throw new Error(`native plugin ${def.id} needs "tools"`);
-  if (
-    def.teamTools &&
-    (def.kind !== "native" || def.teamTools.some((n) => !def.tools?.some((t) => t.name === n)))
-  )
-    throw new Error(`plugin ${def.id}: teamTools must name its own native tools`);
   if (def.always && (def.kind !== "native" || def.fields.length))
     throw new Error(`always-on plugin ${def.id} must be native without fields`);
   if (def.inbound && !def.tools?.some((t) => t.name === def.inbound!.reply.tool))
     throw new Error(`inbound plugin ${def.id} needs its reply tool`);
   for (const t of def.tools ?? [])
     if (!TOOL.test(t.name)) throw new Error(`invalid tool name: ${t.name}`);
-  for (const f of def.fields)
+  for (const f of def.fields) {
     if (!/^[a-zA-Z0-9_]{1,40}$/.test(f.key)) throw new Error(`invalid field key: ${f.key}`);
+    if (f.kind === "select" && !f.options?.length)
+      throw new Error(`select field ${f.key} needs options`);
+  }
   const prev = registry.get(def.id);
   if (prev && prev !== def) throw new Error(`plugin already registered: ${def.id}`);
   registry.set(def.id, def);
@@ -247,10 +244,10 @@ export const pluginMeta = (d: PluginDef) => ({
   docsUrl: d.docsUrl ?? null,
   verified: d.verified !== false,
   notes: d.notes ?? null,
+  guide: d.guide?.() ?? [],
   credentials: Boolean(d.credentials),
   always: Boolean(d.always),
   inbound: d.inbound ? { label: d.inbound.label } : null,
-  teamShare: d.teamTools ? ("optional" as const) : ("none" as const),
   tools: (d.tools ?? []).map((t) => ({ name: t.name, description: t.description })),
 });
 export type PluginMeta = ReturnType<typeof pluginMeta>;

@@ -522,8 +522,6 @@ const CHAT_ARG = str(
 const def: PluginDef = {
   id: "telegram",
   name: "Telegram",
-  // A Telegram bot is a shared identity by nature: teammates may read what it received and send as it, but not edit, delete, pin or forward.
-  teamTools: ["status", "list_chats", "read_messages", "get_chat", "send_message"],
   icon: "telegram",
   category: "messaging",
   kind: "native",

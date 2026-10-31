@@ -530,6 +530,50 @@ suite("bot tools against compose postgres", () => {
     ).toBe(false);
   });
 
+  test("the chief adds a new bot to a team that already exists, and create_team does not recreate it", async () => {
+    const found = (
+      (await call(A, "GET", "/api/bots")).json.bots as {
+        id: string;
+        kind: string;
+        version: number;
+      }[]
+    ).find((b) => b.kind === "chief")!;
+    const chief = (
+      await call(A, "PATCH", `/api/bots/${found.id}`, {
+        expectedVersion: found.version,
+        patch: { harness: "codex" },
+      })
+    ).json.bot as { id: string };
+    const c = (await call(A, "POST", "/api/conversations", { botId: chief.id })).json.conversation
+      .id as string;
+    script = ['```zetta:create_team\n{"name":"Devs","goal":"build"}\n```'];
+    await call(A, "POST", `/api/conversations/${c}/messages`, { content: "make a devs team" });
+    script = [
+      '```zetta:create_bot\n{"name":"Coder","personality":"senior"}\n```\n```zetta:create_team\n{"name":"devs"}\n```\n```zetta:add_to_team\n{"team":"devs","members":[{"bot":"Coder","role":"developer"}]}\n```',
+    ];
+    await call(A, "POST", `/api/conversations/${c}/messages`, {
+      content: "create coder and add it to devs",
+    });
+    const replies = (
+      (await call(A, "GET", `/api/conversations/${c}/messages`)).json.messages as {
+        role: string;
+        meta: { receipts?: { kind: string; text: string; created?: boolean }[] } | null;
+      }[]
+    ).filter((m) => m.role === "assistant");
+    expect(replies.at(-1)?.meta?.receipts).toMatchObject([
+      { kind: "bot", text: "Coder" },
+      { kind: "team", text: "Devs", created: false },
+    ]);
+    const teams = (await call(A, "GET", "/api/teams")).json.teams as {
+      name: string;
+      members: { name: string; kind: string; role: string }[];
+    }[];
+    expect(teams.filter((t) => t.name === "Devs")).toHaveLength(1);
+    expect(
+      teams.find((t) => t.name === "Devs")?.members.map((m) => `${m.kind}:${m.name}:${m.role}`),
+    ).toContain("member:Coder:Developer");
+  });
+
   test("bot-proposed creations (bot, routine, workflow) are only summaries until approved, exactly once, and unready bots cannot browse", async () => {
     const { bot, say } = await setup(A, "Builder");
     const chiefish = bot.id;

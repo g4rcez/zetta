@@ -28,6 +28,8 @@ import {
 import { chatQueue, goalLoop } from "@zetta/db/schema/chat";
 import {
   parseTools,
+  setupBlock,
+  setupText,
   whatsappBlocks,
   whatsappView,
   type RejectedTool,
@@ -75,7 +77,6 @@ import type { Mcp } from "../integrations/mcp";
 import { getPlugin, PluginError } from "../integrations/plugins/registry";
 import { fieldFits, originAllowed } from "../integrations/plugins/credentials";
 import { explain, problemBlock, problemForBot } from "./explain";
-import type { DesktopService } from "../computer/desktop";
 import type { VmService } from "../computer/vm";
 import type { JevDecider } from "../decisions/jev";
 import { ConnectionRequiredError, type ConnectionsService } from "../connections/service";
@@ -92,17 +93,25 @@ import type { TeamStore } from "../teams/store";
 import {
   discussionPrompt,
   HELP_CHIEF_TOOLS,
-  HELP_PREFIX,
   MEMBER_TOOLS,
+  mentionKey,
   openToolText,
 } from "../discussions/prompt";
-import { checkDone, roomLoopPrompt, type LoopStore } from "./loops";
+import {
+  checkDone,
+  memberLoopPrompt,
+  roomLoopPrompt,
+  teamGoalsBlock,
+  type LoopStore,
+} from "./loops";
 import type { TaskStore } from "../tasks/store";
 import type { Wiki } from "../wiki/service";
 import { runWikiTool } from "../wiki/tool";
 import { ArtifactFileError, type ArtifactStore } from "../artifacts/store";
 
 /** Why a desktop credential fill typed nothing, for the user and the bot. */
+/** Plugin failures the person can fix in a setup card: not signed in, not configured, or a permission not granted. */
+const SETUP_CODES = new Set(["NEEDS_AUTH", "NOT_CONFIGURED", "SCOPE_MISSING"]);
 const DESKTOP_FILL: Record<string, (field: string) => PluginError> = {
   NO_ADDRESS: () =>
     new PluginError(
@@ -270,7 +279,7 @@ export type ChatEvent =
       step?: string;
     }
   /** What the bot is doing between text chunks (running a tool, waiting on the model), so the chat never looks frozen. */
-  | { type: "activity"; messageId: string; botId: string; label: string }
+  | { type: "activity"; messageId: string; botId: string; label: string; at: number }
   | { type: "done" };
 
 /** Later additions, kept in one object so positional callers stay unchanged. */
@@ -278,7 +287,7 @@ export type ChatDeps = {
   discussions?: DiscussionStore;
   /** Teams (modules/teams): the chief creates them with zetta:create_team. */ teams?: Pick<
     TeamStore,
-    "list" | "create" | "save"
+    "list" | "create" | "save" | "roles"
   >;
   /** The shared task board (modules/tasks): bots add and move tasks with zetta:task. */ tasks?: TaskStore;
   /** Files bots deliver (modules/artifacts): published with zetta:artifact. */ artifacts?: ArtifactStore;
@@ -303,7 +312,7 @@ export function createChatService(
   creators?: Creators,
   mcp?: Mcp,
   jev?: JevDecider,
-  desktop?: DesktopService,
+  _desktop?: undefined,
   vms?: VmService,
   agenda?: AgendaService,
   deps: ChatDeps = {},
@@ -387,6 +396,7 @@ export function createChatService(
         server: string,
         tool: string,
         args: Record<string, unknown>,
+        config?: "mine" | "team",
       ) => Promise<string>;
     },
     signal?: AbortSignal,
@@ -400,6 +410,8 @@ export function createChatService(
     let handoff = false;
     const browserResults: string[] = [];
     const views: WhatsappBody[] = [];
+    /** One setup card per plugin in a round, however often the bot asks. */
+    const cards = new Set<string>();
     const firstProposal = proposals.length;
     /** A failed tool: the user gets an explained callout, the bot gets the same explanation (see explain.ts). */
     const fail = (what: string, e: unknown) => {
@@ -407,6 +419,35 @@ export function createChatService(
       browserResults.push(problemForBot(p));
       notes.push(problemBlock(p, who.name));
     };
+    const normName = (v: string) => v.trim().replace(/^@/, "").replace(/\s+/g, "").toLowerCase();
+    /** Resolves team members (name or id) against the user's own bots. The chief itself is never picked. */
+    const pickBots = async (members: { bot: string; role: string }[]) => {
+      const mine = await db
+        .select()
+        .from(bot)
+        .where(and(eq(bot.ownerUserId, actor.userId), eq(bot.archived, false)));
+      const roles = members.some((m) => m.role) ? await deps.teams?.roles(actor) : [];
+      const picked: { botId: string; roleId: string | null }[] = [];
+      const missing: string[] = [];
+      const unknownRoles: string[] = [];
+      for (const m of members) {
+        const hit = mine.find((x) => x.id === m.bot || normName(x.name) === normName(m.bot));
+        if (!hit) missing.push(m.bot);
+        else if (hit.id !== who.id && !picked.some((p) => p.botId === hit.id)) {
+          const role = m.role
+            ? roles?.find((r) => r.id === m.role || normName(r.name) === normName(m.role))
+            : undefined;
+          if (m.role && !role) unknownRoles.push(m.role);
+          picked.push({ botId: hit.id, roleId: role?.id ?? null });
+        }
+      }
+      return { picked, missing, unknownRoles };
+    };
+    /** Tells the chief which roles do not exist; the members were still added, without a role. */
+    const roleNote = (unknownRoles: string[]) =>
+      unknownRoles.length
+        ? ` No role called ${unknownRoles.map((r) => `"${r}"`).join(", ")}: those members have no role. Use a name from the team roles list.`
+        : "";
     /** A memory, instruction or wiki write the user did not ask for in a turn that may have read outside text: shown as a card, applied on approval. */
     const askBeforeSaving = async (
       kind: "create_memory" | "create_instruction" | "create_wiki_page",
@@ -460,7 +501,7 @@ export function createChatService(
           detail: `inbound:${c.kind}`,
         });
         browserResults.push(
-          `${c.kind}: not allowed while answering outside people. You may read with plugin tools, reply to ${scope.inbound ? `the ${scope.inbound.plugin} chat ${scope.inbound.chat}` : "nobody (no origin chat)"}, hand off to the user, or open a discussion with pre-approved bots.`,
+          `${c.kind}: not allowed while answering outside people. You may read with plugin tools, reply to ${scope.inbound ? `the ${scope.inbound.plugin} chat ${scope.inbound.chat}` : "nobody (no origin chat)"}, hand off to the user, or open a room with pre-approved bots.`,
         );
         notes.push(
           `🛡 ${who.name} tried ${c.kind === "plugin" ? `${c.args.plugin}.${c.args.tool}` : c.kind}, which is not allowed while answering outside people.`,
@@ -704,7 +745,7 @@ export function createChatService(
           );
           receipts.push({ kind: "discussion", id: d.id, text: d.title });
           browserResults.push(
-            `permission: asked ${chief.name} for ${c.args.rule} in the Permissions discussion. Stop now; it applies at your next turn once the user approves.`,
+            `permission: asked ${chief.name} for ${c.args.rule} in the Permissions room. Stop now; it applies at your next turn once the user approves.`,
           );
           notes.push(`🔐 ${who.name} asked ${chief.name} for permission: ${c.args.rule}.`);
         } catch (e) {
@@ -717,7 +758,7 @@ export function createChatService(
             who.kind === "chief"
               ? "escalate: you are the chief; decide it yourself, and use handoff only if a person must act."
               : scope?.discussionId
-                ? "escalate: mention the Chief in this discussion instead."
+                ? "escalate: mention the Chief in this room instead."
                 : "escalate: requests are not available on this server.",
           );
           continue;
@@ -901,19 +942,7 @@ export function createChatService(
           continue;
         }
         try {
-          const mine = await db
-            .select()
-            .from(bot)
-            .where(and(eq(bot.ownerUserId, actor.userId), eq(bot.archived, false)));
-          const norm = (v: string) => v.trim().replace(/^@/, "").replace(/\s+/g, "").toLowerCase();
-          const picked: { botId: string; role: string }[] = [];
-          const missing: string[] = [];
-          for (const m of c.args.members) {
-            const hit = mine.find((x) => x.id === m.bot || norm(x.name) === norm(m.bot));
-            if (!hit) missing.push(m.bot);
-            else if (hit.id !== who.id && !picked.some((p) => p.botId === hit.id))
-              picked.push({ botId: hit.id, role: m.role });
-          }
+          const { picked, missing, unknownRoles } = await pickBots(c.args.members);
           if (missing.length) {
             browserResults.push(
               `create_team: no bot called ${missing.map((m) => `"${m}"`).join(", ")}. Create it first or use a name from the bots list.`,
@@ -921,17 +950,23 @@ export function createChatService(
             continue;
           }
           const existing = await deps.teams.list(actor);
+          if (existing.some((t) => t.name.toLowerCase() === c.args.name.trim().toLowerCase())) {
+            browserResults.push(
+              `create_team: a team called "${c.args.name}" already exists. Use add_to_team to add bots to it.`,
+            );
+            continue;
+          }
           const members = [
             {
               botId: who.id,
               kind: "chief" as const,
-              role: "Leads the team",
+              roleId: null,
               canvas: { x: 20, y: 40 },
             },
             ...picked.map((p, i) => ({
               botId: p.botId,
               kind: "member" as const,
-              role: p.role,
+              roleId: p.roleId,
               canvas: { x: 20 + ((i + 1) % 3) * 110, y: 40 + Math.floor((i + 1) / 3) * 90 },
             })),
           ];
@@ -950,13 +985,86 @@ export function createChatService(
           });
           receipts.push({ kind: "team", id: made.id, text: c.args.name });
           browserResults.push(
-            `create_team: created "${c.args.name}" with ${members.length} members.`,
+            `create_team: created "${c.args.name}" with ${members.length} members.${roleNote(unknownRoles)}`,
           );
         } catch (e) {
           browserResults.push(
             `create_team failed: ${e instanceof Error ? e.message : "unknown error"}`,
           );
           fail(`Create team: ${c.args.name}`, e);
+        }
+      } else if (c.kind === "add_to_team") {
+        if (who.kind !== "chief" || !deps.teams) {
+          browserResults.push("add_to_team: only the chief can change a team.");
+          continue;
+        }
+        try {
+          const wanted = normName(c.args.team);
+          const found = (await deps.teams.list(actor)).find(
+            (t) => t.id === c.args.team || normName(t.name) === wanted,
+          );
+          if (!found) {
+            browserResults.push(
+              `add_to_team: no team called "${c.args.team}". Use a name or id from the teams list, or create_team.`,
+            );
+            continue;
+          }
+          const { picked, missing, unknownRoles } = await pickBots(c.args.members);
+          if (missing.length) {
+            browserResults.push(
+              `add_to_team: no bot called ${missing.map((m) => `"${m}"`).join(", ")}. Create it first or use a name from the bots list.`,
+            );
+            continue;
+          }
+          const fresh = picked.filter((p) => !found.members.some((m) => m.botId === p.botId));
+          if (!fresh.length) {
+            browserResults.push(`add_to_team: those bots are already in "${found.name}".`);
+            continue;
+          }
+          // save() needs exactly one chief; a team without one gets this chief.
+          const lead = found.members.some((m) => m.kind === "chief")
+            ? []
+            : [
+                {
+                  botId: who.id,
+                  kind: "chief" as const,
+                  roleId: null,
+                  canvas: { x: 20, y: 40 },
+                },
+              ];
+          const base = found.members.length + lead.length;
+          const added = fresh.map((p, i) => ({
+            botId: p.botId,
+            kind: "member" as const,
+            roleId: p.roleId,
+            canvas: { x: 20 + ((base + i) % 3) * 110, y: 40 + Math.floor((base + i) / 3) * 90 },
+          }));
+          const members = [
+            ...found.members.map(({ botId, kind, roleId, canvas }) => ({
+              botId,
+              kind,
+              roleId,
+              canvas,
+            })),
+            ...lead,
+            ...added,
+          ];
+          const h = Math.max(found.canvas.h, 80 + (Math.floor(members.length / 3) + 1) * 90);
+          await deps.teams.save(actor, found.id, found.version, {
+            name: found.name,
+            goal: found.goal,
+            canvas: { ...found.canvas, h },
+            members,
+          });
+          receipts.push({ kind: "team", id: found.id, text: found.name, created: false });
+          browserResults.push(
+            `add_to_team: added ${fresh.length} bot${fresh.length === 1 ? "" : "s"} to "${found.name}".${roleNote(unknownRoles)}`,
+          );
+        } catch (e) {
+          browserResults.push(
+            `add_to_team failed: ${e instanceof Error ? e.message : "unknown error"}`,
+          );
+          fail(`Add to team: ${c.args.team}`, e);
         }
       } else if (
         c.kind === "create_bot" ||
@@ -1123,60 +1231,8 @@ export function createChatService(
           else fail(what, e);
         }
       } else if (c.kind === "desktop") {
-        if (!desktop) {
-          browserResults.push("desktop unavailable");
-          continue;
-        }
-        if (who.computerMode !== "desktop") {
-          browserResults.push(
-            "desktop use is not enabled for this bot; ask the user to enable Computer use > Browser + desktop in the bot's settings",
-          );
-          notes.push("🖥 Desktop use is off for this bot. Enable it in the bot's settings.");
-          continue;
-        }
-        if (!who.onboarded) {
-          browserResults.push("desktop is available after onboarding");
-          notes.push("🖥 Desktop use is available after this bot finishes onboarding.");
-          continue;
-        }
-        try {
-          const profile = `d-${who.id}`;
-          const a = c.args; // dedicated desktop per bot and user
-          if (a.action === "navigate" || a.action === "click_element") {
-            browserResults.push(`${a.action} needs the VM desktop runtime`);
-            continue;
-          }
-          await desktop.start(actor.userId, profile);
-          const epoch = desktop.epochOf(actor.userId, profile);
-          if (a.action === "read") browserResults.push(await desktop.read(actor.userId, profile));
-          else {
-            await withTimeout(
-              desktop.act(
-                actor.userId,
-                profile,
-                "agent",
-                a.action === "launch"
-                  ? { type: "launch", app: a.app }
-                  : a.action === "click"
-                    ? { type: "click", x: a.x, y: a.y }
-                    : a.action === "type"
-                      ? { type: "type", text: a.text }
-                      : a.action === "key"
-                        ? { type: "key", key: a.key }
-                        : { type: "scroll", direction: a.direction },
-                { signal, epoch },
-              ),
-            );
-            browserResults.push(`${a.action} ok`);
-            notes.push(`🖥 desktop ${a.action}${a.action === "launch" ? ` ${a.app}` : ""}`);
-          }
-        } catch (e) {
-          const code = (e as { code?: string }).code,
-            what = `Desktop: ${c.args.action}`;
-          if (code === "HUMAN_IN_CONTROL" || code === "STALE_CONTROL")
-            held(what, e, "🙋 A person is controlling the desktop; waiting for hand-back.");
-          else fail(what, e);
-        }
+        browserResults.push("desktop unavailable");
+        continue;
       } else if (c.kind === "agenda") {
         try {
           const r = await runAgenda(actor, who, c.args, receipts, conversationId);
@@ -1269,12 +1325,43 @@ export function createChatService(
         }
         try {
           const out = await (mcpScope
-            ? mcpScope.callTool(who.id, c.args.server, c.args.tool, c.args.args)
-            : mcp.callTool(actor, who.id, c.args.server, c.args.tool, c.args.args));
+            ? mcpScope.callTool(who.id, c.args.server, c.args.tool, c.args.args, c.args.config)
+            : mcp.callTool(actor, who.id, c.args.server, c.args.tool, c.args.args, c.args.config));
           browserResults.push(`${c.args.server}.${c.args.tool}:\n${out}`);
           notes.push(`🔌 Used ${c.args.server}.${c.args.tool}`);
         } catch (e) {
           fail(`${c.args.server}: ${c.args.tool}`, e);
+        }
+      } else if (c.kind === "setup") {
+        const d = getPlugin(c.args.plugin);
+        if (!mcp || !d || d.always) {
+          browserResults.push(
+            mcp ? `setup ${c.args.plugin}: there is no such plugin` : "integrations unavailable",
+          );
+          continue;
+        }
+        if (!who.onboarded) {
+          browserResults.push("setup is available after onboarding");
+          notes.push("🔌 Plugins are available after this bot finishes onboarding.");
+          continue;
+        }
+        try {
+          const info = await mcp.plugins.setupInfo(actor, who.id, d.id, c.args.config);
+          const done = info.state === "connected" && info.bound;
+          if (!done && !cards.has(d.id)) {
+            cards.add(d.id);
+            notes.push(
+              setupBlock({
+                plugin: d.id,
+                botId: who.id,
+                scope: c.args.config,
+                ...(c.args.options.scopes && { scopes: c.args.options.scopes }),
+              }),
+            );
+          }
+          browserResults.push(`setup ${d.id}:\n${setupText(info)}`);
+        } catch (e) {
+          fail(`${d.name}: setup`, e);
         }
       } else if (c.kind === "plugin") {
         if (!mcp) {
@@ -1286,7 +1373,7 @@ export function createChatService(
           notes.push("🔌 Plugins are available after this bot finishes onboarding.");
           continue;
         }
-        const key = JSON.stringify([c.args.plugin, c.args.tool, c.args.args]);
+        const key = JSON.stringify([c.args.plugin, c.args.config, c.args.tool, c.args.args]);
         if (budget.failed?.has(key)) {
           browserResults.push(
             `${c.args.plugin}.${c.args.tool}: this exact call already failed in this turn; do not repeat it. Change the arguments or tell the user what is needed.`,
@@ -1300,6 +1387,7 @@ export function createChatService(
             c.args.plugin,
             c.args.tool,
             c.args.args,
+            c.args.config,
           );
           const view = whatsappView(c.args.plugin, c.args.tool, out);
           if (view) views.push(view);
@@ -1311,6 +1399,21 @@ export function createChatService(
             `${getPlugin(c.args.plugin)?.name ?? c.args.plugin}: ${c.args.tool.replace(/_/g, " ")}`,
             e,
           );
+          // The person can fix a missing sign-in or setup right here: offer the card instead of a trip to Studio. Never for outside people's chats.
+          if (
+            e instanceof PluginError &&
+            SETUP_CODES.has(e.code) &&
+            scope?.policy !== "inbound" &&
+            !cards.has(c.args.plugin)
+          ) {
+            cards.add(c.args.plugin);
+            const used = c.args.config
+              ? c.args.config
+              : ((await mcp.plugins.bindingScopes(actor, who.id)).find(
+                  (b) => b.id === c.args.plugin,
+                )?.scope ?? "mine");
+            notes.push(setupBlock({ plugin: c.args.plugin, botId: who.id, scope: used }));
+          }
         }
       } else if (c.kind === "credential") {
         // The value is revealed and typed server side; the bot only ever learns that the input was filled.
@@ -1459,6 +1562,79 @@ export function createChatService(
         proposals.push(row!.id);
         notes.push(
           `🔁 ${who.name} asks to start a loop: ${c.args.goal}. Approve it below to begin.`,
+        );
+      } else if (c.kind === "team_goals") {
+        // The chief splits the team goal; the user approves the split. Never from inside a loop step.
+        if (scope?.loopId || !scope?.discussionId || !deps.loops || !deps.discussions) {
+          notes.push("👥 Member goals can only be proposed by the chief, in a team room.");
+          continue;
+        }
+        const room = await deps.discussions.get(actor, scope.discussionId).catch(() => undefined);
+        if (!room?.discussion.teamId || room.discussion.createdByBotId !== who.id) {
+          notes.push("👥 Member goals can only be proposed by the chief, in a team room.");
+          continue;
+        }
+        if (await deps.loops.active(room.discussion.conversationId)) {
+          notes.push("👥 This room already has a loop. Stop it before giving member goals.");
+          continue;
+        }
+        const byKey = new Map(
+          room.members.filter((m) => m.botId !== who.id).map((m) => [mentionKey(m.name), m]),
+        );
+        const goals: { botId: string; name: string; goal: string; doneWhen: string }[] = [];
+        const bad = c.args.goals.find((g) => {
+          const m = byKey.get(mentionKey(g.bot));
+          if (!m || goals.some((x) => x.botId === m.botId)) return true;
+          goals.push({ botId: m.botId, name: m.name, goal: g.goal, doneWhen: g.done_when });
+          return false;
+        });
+        if (bad) {
+          browserResults.push(
+            `team_goals refused: "${bad.bot}" is not a member of this team, or has two goals. Members: ${[...byKey.values()].map((m) => m.name).join(", ")}.`,
+          );
+          continue;
+        }
+        const [lastPost] = await db
+          .select({ content: message.content })
+          .from(message)
+          .where(
+            and(
+              eq(message.conversationId, room.discussion.conversationId),
+              eq(message.ownerUserId, actor.userId),
+              eq(message.role, "user"),
+            ),
+          )
+          .orderBy(desc(message.createdAt))
+          .limit(1);
+        const request = [room.discussion.goal, lastPost?.content]
+          .filter(Boolean)
+          .join("\n\n")
+          .slice(0, 4000);
+        const [row] = await db
+          .insert(configProposal)
+          .values({
+            ownerUserId: actor.userId,
+            kind: "team_goals",
+            botId: null,
+            proposedByBotId: who.id,
+            baseVersion: 0,
+            patch: { discussionId: room.discussion.id, request, goals },
+            diff: goals.map((g) => ({ field: g.name, from: null, to: g.goal })),
+          })
+          .returning();
+        await raiseAttention(db, actor.userId, {
+          botId: who.id,
+          title: `${who.name} wants to give the team goals`,
+          detail: goals.map((g) => `${g.name}: ${g.goal}`).join("\n"),
+          nextAction: "Open the room and approve the goals, or say not now.",
+          resultLink: `/rooms?id=${room.discussion.id}`,
+          source: "bot",
+          sourceKey: `proposal:${row!.id}`,
+        });
+        receipts.push({ kind: "proposal", id: row!.id, text: `${goals.length} member goals` });
+        proposals.push(row!.id);
+        notes.push(
+          `👥 ${who.name} proposes goals for ${goals.length} members. Approve them below.`,
         );
       } else if (c.kind === "goal_progress" || c.kind === "goal_done") {
         if (!scope?.loopId || !deps.loops) {
@@ -1655,7 +1831,22 @@ export function createChatService(
       const stale = (l: string[], re: RegExp) => {
         for (let i = l.length - 1; i >= 0; i--) if (re.test(l[i]!)) l.splice(i, 1);
       };
-      const ids = proposals.splice(firstProposal);
+      const fresh = proposals.splice(firstProposal);
+      // Member goals start loops: they always wait for the user, whatever the turn read.
+      const manual = new Set(
+        fresh.length
+          ? (
+              await db
+                .select({ id: configProposal.id })
+                .from(configProposal)
+                .where(
+                  and(inArray(configProposal.id, fresh), eq(configProposal.kind, "team_goals")),
+                )
+            ).map((r) => r.id)
+          : [],
+      );
+      proposals.push(...manual);
+      const ids = fresh.filter((id) => !manual.has(id));
       // The "waiting for approval" lines the tools wrote no longer apply.
       if (ids.length) {
         stale(notes, /approve/i);
@@ -1717,7 +1908,7 @@ export function createChatService(
   ) {
     const store = deps.discussions;
     if (!store) {
-      notes.push("👥 Group discussions are not available on this server.");
+      notes.push("👥 Rooms are not available on this server.");
       return;
     }
     const say = (note: string, result?: string) => {
@@ -1728,11 +1919,11 @@ export function createChatService(
       if (a.action === "open") {
         if (scope?.discussionId)
           return say(
-            "👥 A discussion cannot open another discussion; post here and mention the bots instead.",
-            "discussion.open refused: you are already in a discussion; mention members instead.",
+            "👥 A room cannot open another room; post here and mention the bots instead.",
+            "discussion.open refused: you are already in a room; mention members instead.",
           );
         if (looksSecret(`${a.context} ${a.firstMessage}`))
-          return say("⚠️ The discussion was not opened: it looked like it contained a secret.");
+          return say("⚠️ The room was not opened: it looked like it contained a secret.");
         const r = await store.request(
           actor,
           {
@@ -1751,7 +1942,7 @@ export function createChatService(
         if (r.kind === "proposed") {
           receipts.push({ kind: "proposal", id: r.proposalId, text: a.title.slice(0, 120) });
           proposals.push(r.proposalId);
-          return say(`👥 Asked to open the discussion "${a.title}": review and approve it below.`);
+          return say(`👥 Asked to open the room "${a.title}": review and approve it below.`);
         }
         receipts.push({
           kind: "discussion",
@@ -1761,18 +1952,18 @@ export function createChatService(
         });
         return say(
           r.created
-            ? `👥 Opened the discussion "${r.discussion.title}" with ${r.members
+            ? `👥 Opened the room "${r.discussion.title}" with ${r.members
                 .filter((m) => m.id !== who.id)
                 .map((m) => m.name)
                 .join(", ")}.`
-            : `👥 The discussion "${r.discussion.title}" is already running.`,
+            : `👥 The room "${r.discussion.title}" is already running.`,
         );
       }
       const id = a.discussionId ?? scope?.discussionId;
       if (!id)
         return say(
-          "👥 Name the discussion (discussionId).",
-          "discussion: discussionId is required outside a discussion.",
+          "👥 Name the room (discussionId).",
+          "discussion: discussionId is required outside a room.",
         );
       const tainted = Boolean(scope?.tainted);
       if (a.action === "post") {
@@ -1795,15 +1986,15 @@ export function createChatService(
       const d = await store.resolveAsBot(actor, id, who, a.summary);
       receipts.push({ kind: "discussion", id: d.id, text: d.title });
       if (help) await resumeAfterHelp(actor, d.id, help, a.summary);
-      return say(`✅ Resolved the discussion "${d.title}".`);
+      return say(`✅ Resolved the room "${d.title}".`);
     } catch (e) {
       const msg =
         e instanceof DiscussionError
           ? e.safe
           : e instanceof AccessError
-            ? "That discussion does not exist."
-            : "The discussion could not be changed.";
-      say(`⚠️ Discussion: ${msg}`, `discussion.${a.action} failed: ${msg}`);
+            ? "That room does not exist."
+            : "The room could not be changed.";
+      say(`⚠️ Room: ${msg}`, `discussion.${a.action} failed: ${msg}`);
     }
   }
   /** Tool text for opening discussions in an ordinary turn (lists this bot's pre-approved peers). */
@@ -1999,6 +2190,7 @@ export function createChatService(
     "config",
     "create_bot",
     "create_team",
+    "add_to_team",
     "create_routine",
     "create_workflow",
     "create_vm",
@@ -2147,7 +2339,9 @@ export function createChatService(
         // After a checkpoint only the wrap-up tools run: a loop report, a loop proposal, a hand-off or a deliverable.
         if (checkpointed) {
           const wrapUp = calls.filter((c) =>
-            ["goal", "goal_progress", "goal_done", "handoff", "artifact"].includes(c.kind),
+            ["goal", "team_goals", "goal_progress", "goal_done", "handoff", "artifact"].includes(
+              c.kind,
+            ),
           );
           for (const c of calls.filter((c) => !wrapUp.includes(c)))
             dropped.push({
@@ -2263,6 +2457,8 @@ export function createChatService(
   /** How often the partial reply is saved while it streams. `content` is full-text indexed, so every save rewrites an index entry; the
    * live stream does not read it (clients follow the turn registry), only a reload or a crash does. */
   const FLUSH_MS = 5000;
+  /** Most steps kept in a reply's work timeline; the oldest go first. */
+  const TIMELINE_MAX = 100;
   type AnswerArgs = {
     convId: string;
     who: typeof bot.$inferSelect;
@@ -2437,6 +2633,7 @@ export function createChatService(
             : "The bot could not answer. Try again.");
       }
     }
+    const timeline: { at: number; label: string }[] = [];
     if (status === "complete") {
       // The tool loop runs while this generator keeps yielding: the moment a bot starts using a computer, the chat shows it live.
       const live: ChatEvent[] = [];
@@ -2467,7 +2664,12 @@ export function createChatService(
           wake?.();
         },
         onActivity: (label) => {
-          live.push({ type: "activity", messageId: row.id, botId: who.id, label });
+          const at = Date.now();
+          if (label !== "Thinking" && timeline.at(-1)?.label !== label) {
+            timeline.push({ at, label });
+            if (timeline.length > TIMELINE_MAX) timeline.shift();
+          }
+          live.push({ type: "activity", messageId: row.id, botId: who.id, label, at });
           wake?.();
         },
       }).finally(() => {
@@ -2494,10 +2696,12 @@ export function createChatService(
     reply = clip(reply);
     if (status === "complete" && a.suffixIfComplete) reply += a.suffixIfComplete;
     const meta =
-      used || receipts.length || a.decision || errCode
+      used || receipts.length || a.decision || errCode || timeline.length
         ? {
             used: used ?? { memories: [], instructions: [] },
             receipts,
+            // What the bot did, step by step: shown live while it works and kept after the answer.
+            ...(timeline.length ? { timeline } : {}),
             ...(a.decision ? { decision: a.decision } : {}),
             // Loops and routines read this to decide how long to wait before the next try.
             ...(errCode ? { error: errCode } : {}),
@@ -2589,8 +2793,8 @@ export function createChatService(
 
   /** Ends a conversation's running turn and its active goal loop, so archiving or deleting a thread leaves nothing running behind it. */
   async function stopConversationWork(actor: ActiveActor, id: string) {
-    const loop = await deps.loops?.active(id);
-    if (loop) await deps.loops?.setStatus(actor.userId, loop.id, "cancelled");
+    for (const loop of (await deps.loops?.activeAll(id)) ?? [])
+      await deps.loops?.setStatus(actor.userId, loop.id, "cancelled");
     await db.delete(chatQueue).where(eq(chatQueue.conversationId, id));
     turns.cancel(`${actor.userId}:${id}`);
   }
@@ -3301,6 +3505,14 @@ export function createChatService(
           };
           await loadConversation(actor, l.conversationId);
           await deps.loops.start(actor.userId, l);
+        } else if (res.create.kind === "team_goals") {
+          if (!deps.discussions) throw new Error("discussions unavailable");
+          const t = a as {
+            discussionId: string;
+            request: string;
+            goals: { botId: string; goal: string; doneWhen: string }[];
+          };
+          await deps.discussions.startMemberLoops(actor, t.discussionId, t);
         } else if (res.create.kind === "bot_permission") {
           // The plan is recomputed now so the merge uses the bot's current rules, not the ones from when it was proposed.
           const plan = await planBotPermission(actor, a as BotPermissionArgs);
@@ -4326,7 +4538,7 @@ export function createChatService(
             .where(eq(message.id, t.triggerMessageId))
         : [];
       const from = !trigger
-        ? "the discussion"
+        ? "the room"
         : trigger.role === "user"
           ? "The user"
           : (names.get(trigger.botId ?? "") ?? "A member");
@@ -4342,12 +4554,10 @@ export function createChatService(
         members: promptMembers,
         creatorName: d.createdByBotId ? (names.get(d.createdByBotId) ?? null) : null,
         tainted: d.tainted,
-        turnsLeft: Math.max(0, d.turnBudget - d.turnsUsed),
-        budget: d.turnBudget,
         transcript,
         reason: t.triggerMessageId
           ? `${from} asked for your part. Answer the latest messages addressed to you.`
-          : "Continue the discussion.",
+          : "Continue the conversation.",
         wrapup:
           t.kind === "wrapup"
             ? {
@@ -4362,10 +4572,20 @@ export function createChatService(
             : undefined,
       });
       // The facilitator of a discussion opened by outside people keeps the inbound rules (it may answer only that chat).
-      // A room loop (loops.ts) is led by the facilitator: only its turns may report goal_progress / goal_done.
-      const roomLoop =
-        who.id === d.createdByBotId ? await deps.loops?.active(d.conversationId) : undefined;
+      // A room loop (loops.ts) is led by the facilitator, and a team member may have its own: only the turns of the loop's bot may
+      // report goal_progress / goal_done.
+      const roomLoop = await deps.loops?.activeFor(d.conversationId, who.id);
       const runningLoop = roomLoop?.status === "running" ? roomLoop : undefined;
+      const isMemberLoop = Boolean(runningLoop && who.id !== d.createdByBotId);
+      const memberLoops =
+        who.id === d.createdByBotId && d.teamId && deps.loops
+          ? (await deps.loops.activeAll(d.conversationId)).filter((l) => l.botId !== who.id)
+          : [];
+      const memberNames = new Map(
+        memberLoops.length
+          ? (await store.get(actor, d.id)).members.map((m) => [m.botId, m.name] as const)
+          : [],
+      );
       const scope: ToolScope = {
         policy: d.originInbound && who.id === d.createdByBotId ? "inbound" : "default",
         tainted: d.tainted,
@@ -4395,10 +4615,14 @@ export function createChatService(
             scope,
             extraTools: [
               MEMBER_TOOLS,
-              d.title.startsWith(HELP_PREFIX) && who.id === d.createdByBotId
-                ? HELP_CHIEF_TOOLS
+              d.kind === "help" && who.id === d.createdByBotId ? HELP_CHIEF_TOOLS : "",
+              runningLoop
+                ? (isMemberLoop ? memberLoopPrompt : roomLoopPrompt)(
+                    runningLoop,
+                    runningLoop.iterations + 1,
+                  )
                 : "",
-              runningLoop ? roomLoopPrompt(runningLoop, runningLoop.iterations + 1) : "",
+              teamGoalsBlock(memberLoops, memberNames),
             ]
               .filter(Boolean)
               .join("\n\n"),
@@ -4470,7 +4694,7 @@ export function createChatService(
           title: `A reply from ${who.name} in "${d.title}" was withheld`,
           detail: "It looked like it contained a secret (a token or password).",
           nextAction: "Check the bot and its instructions.",
-          resultLink: `/discussions?id=${d.id}`,
+          resultLink: `/rooms?id=${d.id}`,
           source: "bot",
           sourceKey: `discussion:${d.id}:secret`,
         });
@@ -4488,14 +4712,23 @@ export function createChatService(
           botId: who.id,
           title: `${who.name} could not answer in "${d.title}"`,
           detail: saved.content.slice(0, 500),
-          nextAction: "Check the bot, then post a nudge in the discussion.",
-          resultLink: `/discussions?id=${d.id}`,
+          nextAction: "Check the bot, then post a nudge in the room.",
+          resultLink: `/rooms?id=${d.id}`,
           source: "bot",
           sourceKey: `discussion:${d.id}:failed:${who.id}`,
         });
         return "failed";
       }
-      if (t.kind === "reply") await store.afterReply(d, who.id, saved.content, saved.id);
+      if (t.kind === "reply") {
+        // A member's progress report in its own loop wakes the facilitator only by mention; its goal_done wakes it as any reply does.
+        const stillGoing =
+          isMemberLoop &&
+          runningLoop &&
+          (await deps.loops?.get(runningLoop.id))?.status === "running";
+        await store.afterReply(d, who.id, saved.content, saved.id, {
+          mentionsOnly: Boolean(stillGoing),
+        });
+      }
       await store.finishTurn(t.id, "done", { resultMessageId: saved.id });
       return "done";
     },

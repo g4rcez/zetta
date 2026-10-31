@@ -24,6 +24,32 @@ const created = () => timestamp("created_at", { withTimezone: true }).defaultNow
 
 export const TEAM_KINDS = ["chief", "member"] as const;
 export type TeamKind = (typeof TEAM_KINDS)[number];
+/** Palette names and icon keys for a team role badge. The web app maps them to a Tailwind color and a Phosphor icon. */
+export const TEAM_ROLE_COLORS = [
+  "slate",
+  "red",
+  "orange",
+  "amber",
+  "green",
+  "teal",
+  "blue",
+  "violet",
+  "pink",
+] as const;
+export type TeamRoleColor = (typeof TEAM_ROLE_COLORS)[number];
+export const TEAM_ROLE_ICONS = [
+  "user",
+  "magnifying-glass",
+  "code",
+  "pencil",
+  "check-circle",
+  "palette",
+  "chart-bar",
+  "bug",
+  "compass",
+  "shield",
+] as const;
+export type TeamRoleIcon = (typeof TEAM_ROLE_ICONS)[number];
 export const TEAM_STATUSES = ["active", "archived"] as const;
 export type TeamStatus = (typeof TEAM_STATUSES)[number];
 
@@ -60,7 +86,29 @@ export const team = pgTable(
   ],
 );
 
-/** A bot in a team. Exactly one member is the chief. */
+/** What a bot does in a team. The user edits the catalog; deleting a role leaves its members without one. */
+export const teamRole = pgTable(
+  "team_role",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    ownerUserId: owner(),
+    name: text("name").notNull(),
+    description: text("description").default("").notNull(),
+    color: text("color", { enum: TEAM_ROLE_COLORS }).default("slate").notNull(),
+    icon: text("icon", { enum: TEAM_ROLE_ICONS }).default("user").notNull(),
+    createdAt: created(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("team_role_owner_name_unique").on(t.ownerUserId, sql`lower(${t.name})`),
+    check("team_role_name_check", sql`length(btrim(${t.name})) between 1 and 60`),
+    check("team_role_description_check", sql`length(${t.description}) <= 200`),
+  ],
+);
+
+/** A bot in a team. Exactly one member is the chief. `role` is the old free text: it is kept for one release and no longer read or written. */
 export const teamMember = pgTable(
   "team_member",
   {
@@ -72,6 +120,10 @@ export const teamMember = pgTable(
       .references(() => bot.id, restrict),
     kind: text("kind", { enum: TEAM_KINDS }).default("member").notNull(),
     role: text("role").default("").notNull(),
+    roleId: uuid("role_id").references(() => teamRole.id, {
+      onDelete: "set null",
+      onUpdate: "restrict",
+    }),
     canvas: jsonb("canvas").$type<TeamPoint>().default({ x: 0, y: 0 }).notNull(),
     joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
   },

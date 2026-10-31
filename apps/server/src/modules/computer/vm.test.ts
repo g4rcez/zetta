@@ -3,13 +3,13 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { McpCall } from "./desktop";
 import { ComputerError } from "./service";
 import {
   compactTree,
   createVmService,
   vmDockerArgs,
   type VmDocker,
+  type McpCall,
   type VmExec,
   type VmRow,
   type VmStore,

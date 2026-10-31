@@ -129,6 +129,18 @@ describe("chief creation tools", () => {
     expect(toolPreamble("off", false, true)).toContain("zetta:create_bot");
     expect(toolPreamble("off")).not.toContain("zetta:create_team");
   });
+  test("only the chief is told about add_to_team", () => {
+    expect(toolPreamble("off", false, true)).toContain("zetta:add_to_team");
+    expect(toolPreamble("off")).not.toContain("zetta:add_to_team");
+  });
+  test("add_to_team needs a team and at least one member", () => {
+    expect(
+      parseTools('```zetta:add_to_team\n{"team":"devs","members":[{"bot":"Coder"}]}\n```').calls,
+    ).toEqual([
+      { kind: "add_to_team", args: { team: "devs", members: [{ bot: "Coder", role: "" }] } },
+    ]);
+    expect(parseTools('```zetta:add_to_team\n{"team":"devs","members":[]}\n```').calls).toEqual([]);
+  });
   test("create_team defaults to no goal and no members", () => {
     expect(parseTools('```zetta:create_team\n{"name":"Launch"}\n```').calls).toEqual([
       { kind: "create_team", args: { name: "Launch", goal: "", members: [] } },

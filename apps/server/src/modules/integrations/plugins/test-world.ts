@@ -1,7 +1,7 @@
 import { createPlugins, NATIVE_URL_PREFIX, type McpCore } from "./service";
 
-type Actor = { userId: string };
-export const actor = (userId: string) => ({ userId }) as never;
+type Actor = { userId: string; isAdmin?: boolean };
+export const actor = (userId: string, isAdmin = false) => ({ userId, isAdmin }) as never;
 
 /** In-memory stand-ins for the MCP service (rows + bindings) and the sealed connection store, enforcing per-user isolation like the real ones. */
 export function world() {
@@ -47,8 +47,11 @@ export function world() {
       return Buffer.from(s.secret);
     },
   };
+  // A server one may change: their own, or the team's when they are the administrator.
   const own = (a: Actor, id: string) => {
-    const s = servers.find((x) => x.id === id && x.owner === a.userId);
+    const s = servers.find(
+      (x) => x.id === id && (x.sharing === "team" ? a.isAdmin : x.owner === a.userId),
+    );
     if (!s) throw new Error("NOT_FOUND");
     return s;
   };
@@ -60,29 +63,40 @@ export function world() {
         name: v.name,
         url: v.url ?? null,
         connectionId: v.connectionId ?? null,
-        sharing: "private" as const,
+        sharing: v.sharing === "team" ? ("team" as const) : ("private" as const),
       };
       servers.push(s);
       return s;
     },
-    addNative: async (a, id, connectionId) => {
+    addNative: async (a, id, connectionId, sharing) => {
       const s = {
         id: `s${++n}`,
         owner: a.userId,
         name: id,
         url: `${NATIVE_URL_PREFIX}${id}`,
         connectionId: connectionId ?? null,
-        sharing: "private" as const,
+        sharing: sharing === "team" ? ("team" as const) : ("private" as const),
       };
       servers.push(s);
       return s;
     },
-    serverByName: async (a, name) => servers.find((x) => x.owner === a.userId && x.name === name),
+    serverByName: async (a, name, scope) => {
+      const x = servers.find((y) =>
+        scope === "team"
+          ? y.name === name && y.sharing === "team"
+          : y.name === name && y.owner === a.userId && y.sharing === "private",
+      );
+      return x && { ...x, ownerUserId: x.owner };
+    },
     setConnection: async (a, id, c) => {
-      own(a, id).connectionId = c;
+      const s = servers.find((x) => x.id === id && (x.sharing === "team" || x.owner === a.userId));
+      if (!s) throw new Error("NOT_FOUND");
+      s.connectionId = c;
     },
     removeServer: async (a, id) => {
       own(a, id);
+      for (let i = bindings.length - 1; i >= 0; i--)
+        if (bindings[i]!.serverId === id) bindings.splice(i, 1); // like the real one: every member's binding goes with it
       servers.splice(
         servers.findIndex((x) => x.id === id),
         1,
@@ -95,7 +109,8 @@ export function world() {
         if (
           bindings[i]!.botId === botId &&
           bindings[i]!.owner === a.userId &&
-          servers.find((x) => x.id === bindings[i]!.serverId)!.name === t.name
+          servers.find((x) => x.id === bindings[i]!.serverId)!.name === t.name &&
+          servers.find((x) => x.id === bindings[i]!.serverId)!.sharing === t.sharing
         )
           bindings.splice(i, 1);
       bindings.push({ botId, owner: a.userId, serverId, toolsMode: "all", allowedTools: [] });
@@ -131,17 +146,6 @@ export function world() {
         }
       );
     },
-    setSharing: async (a, id, sharing) => {
-      own(a, id).sharing = sharing;
-      if (sharing === "private")
-        for (let i = bindings.length - 1; i >= 0; i--)
-          if (bindings[i]!.serverId === id && bindings[i]!.owner !== a.userId)
-            bindings.splice(i, 1);
-    },
-    sharedWithMe: async (a) =>
-      servers
-        .filter((s) => s.sharing === "team" && s.owner !== a.userId)
-        .map((s) => ({ id: s.id, name: s.name, ownerName: s.owner })),
     tools: async () => [{ name: "ping", description: "pong" }],
   };
   return {

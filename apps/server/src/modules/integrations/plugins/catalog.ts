@@ -109,6 +109,12 @@ export const CATALOG: PluginDef[] = [
     category: "dev",
     url: "https://api.githubcopilot.com/mcp/",
     docsUrl: "https://github.com/github/github-mcp-server",
+    guide: () => [
+      "Open https://github.com/settings/personal-access-tokens/new to create a fine-grained token.",
+      "Pick only the repositories the bot may touch.",
+      "Grant read access to Contents, Issues and Pull requests (add write access only if the bot must change things).",
+      "Generate the token, copy it, and paste it in the field of the setup card. Do not paste it in the chat.",
+    ],
     fields: token(
       "Personal access token",
       "Use a fine-grained token scoped to the repositories the bot may touch.",

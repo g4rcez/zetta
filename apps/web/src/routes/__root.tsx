@@ -9,7 +9,9 @@ import { Toaster } from "@zetta/ui/components/sonner";
 
 import Header, { AppRail, inApp } from "@/components/header";
 import { ThemeProvider } from "@/components/theme-provider";
+import { PreferencesProvider } from "@/features/preferences/preferences";
 
+import logoUrl from "../assets/logo.svg?url";
 import "../index.css";
 import { Fragment } from "react";
 
@@ -36,7 +38,7 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
       {
         rel: "icon",
         type: "image/svg+xml",
-        href: "/logo.svg",
+        href: logoUrl,
       },
       {
         rel: "apple-touch-icon",
@@ -65,12 +67,14 @@ function RootComponent() {
             <Outlet />
           </main>
         ) : app ? (
-          <div className="flex h-svh flex-col-reverse md:flex-row">
-            <AppRail />
-            <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-              <Outlet />
-            </main>
-          </div>
+          <PreferencesProvider>
+            <div className="flex h-svh flex-col-reverse md:flex-row">
+              <AppRail />
+              <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+                <Outlet />
+              </main>
+            </div>
+          </PreferencesProvider>
         ) : (
           <div className="grid h-svh grid-rows-[auto_1fr]">
             <Header />

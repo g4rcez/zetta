@@ -12,7 +12,7 @@ export type ChatDataParts = {
   summary: { text: string };
   computer: { messageId: string; botId: string; vm: { id: string; name: string } };
   "computer-step": { messageId: string; vmId: string; step: string; at: number };
-  activity: { messageId: string; label: string };
+  activity: { messageId: string; label: string; at: number };
 };
 export type ChatUIMessage = UIMessage<unknown, ChatDataParts>;
 
@@ -73,11 +73,10 @@ export function toUIMessageStream(events: AsyncIterable<ChatEvent>) {
         else if (ev.type === "summary")
           writer.write({ type: "data-summary", data: { text: ev.text } });
         else if (ev.type === "activity")
-          // Fixed id: each label replaces the previous one instead of piling up parts.
+          // No id: every label is its own part, so the client can build the work timeline.
           writer.write({
             type: "data-activity",
-            id: `${ev.messageId}:activity`,
-            data: { messageId: ev.messageId, label: ev.label },
+            data: { messageId: ev.messageId, label: ev.label, at: ev.at },
           });
         else if (ev.type === "computer") {
           writer.write({

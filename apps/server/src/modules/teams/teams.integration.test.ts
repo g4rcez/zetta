@@ -66,12 +66,14 @@ suite("teams against compose postgres", () => {
   // The same room-step runner as services.ts: wake the facilitator, then wait until the room is quiet.
   const driver = createLoopDriver(loops, async (loop, label) => {
     const room = (await discussions.byConversation(loop.conversationId))!;
-    const started = await discussions.startLoopStep(room.id, label);
+    const member = loop.botId !== room.createdByBotId ? loop.botId : undefined;
+    const started = await discussions.startLoopStep(room.id, label, member);
     if (started.state !== "started") return { status: "complete" };
     await discussions.settle(
       room.id,
       started.since,
       async () => (await loops.get(loop.id))?.status !== "running",
+      member,
     );
     return { status: "complete" };
   });
@@ -136,8 +138,8 @@ suite("teams against compose postgres", () => {
       goal: "Ship it",
       canvas: { x: 0, y: 0, w: 400, h: 300 },
       members: [
-        { botId: lead.id, kind: kinds[0], role: "plans", canvas: at },
-        { botId: coder.id, kind: kinds[1], role: "builds", canvas: at },
+        { botId: lead.id, kind: kinds[0], roleId: null, canvas: at },
+        { botId: coder.id, kind: kinds[1], roleId: null, canvas: at },
       ],
     });
     expect((await call("PUT", `/api/teams/${t.id}`, body(["chief", "chief"]))).status).toBe(400);
@@ -155,6 +157,82 @@ suite("teams against compose postgres", () => {
     expect(stale.json.error.code).toBe("STALE_VERSION");
   });
 
+  test("roles: a new user gets the suggested ones, edits them, and a member keeps its team when its role is deleted", async () => {
+    const first = (await call("GET", "/api/team-roles")).json.roles as { name: string }[];
+    expect(first.map((r) => r.name)).toEqual([
+      "Researcher",
+      "Developer",
+      "Writer",
+      "Reviewer",
+      "Designer",
+      "Analyst",
+      "Tester",
+      "Planner",
+    ]);
+    const made = await call("POST", "/api/team-roles", {
+      name: "Release captain",
+      description: "Owns the release",
+      color: "red",
+      icon: "shield",
+    });
+    expect(made.status).toBe(201);
+    expect(made.json.role).toMatchObject({ name: "Release captain", color: "red", icon: "shield" });
+    const dup = await call("POST", "/api/team-roles", { name: "release CAPTAIN" });
+    expect(dup.status).toBe(409);
+    expect((await call("POST", "/api/team-roles", { name: "x", color: "#ff0000" })).status).toBe(
+      400,
+    );
+    const edited = await call("PUT", `/api/team-roles/${made.json.role.id}`, {
+      name: "Release lead",
+      description: "",
+      color: "blue",
+      icon: "compass",
+    });
+    expect(edited.json.role).toMatchObject({
+      name: "Release lead",
+      color: "blue",
+      description: "",
+    });
+
+    const lead = await makeBot("Role Lead"),
+      coder = await makeBot("Role Coder");
+    const t = (await call("POST", "/api/teams", { name: "Role team" })).json.team;
+    const saved = await call("PUT", `/api/teams/${t.id}`, {
+      expectedVersion: 1,
+      name: "Role team",
+      goal: "",
+      canvas: { x: 0, y: 0, w: 400, h: 300 },
+      members: [
+        { botId: lead.id, kind: "chief", roleId: null, canvas: at },
+        { botId: coder.id, kind: "member", roleId: made.json.role.id, canvas: at },
+      ],
+    });
+    expect(
+      saved.json.team.members
+        .map((m: { name: string; role: string }) => `${m.name}:${m.role}`)
+        .sort(),
+    ).toEqual(["Role Coder:Release lead", "Role Lead:"]);
+    expect(
+      (
+        await call("PUT", `/api/teams/${t.id}`, {
+          expectedVersion: 2,
+          name: "Role team",
+          goal: "",
+          canvas: { x: 0, y: 0, w: 400, h: 300 },
+          members: [{ botId: lead.id, kind: "chief", roleId: uuidv7(), canvas: at }],
+        })
+      ).status,
+    ).toBe(404);
+
+    expect((await call("DELETE", `/api/team-roles/${made.json.role.id}`)).status).toBe(200);
+    const after = (await call("GET", `/api/teams/${t.id}`)).json.team.members as {
+      name: string;
+      roleId: string | null;
+    }[];
+    expect(after.find((m) => m.name === "Role Coder")).toMatchObject({ roleId: null });
+    expect((await call("DELETE", `/api/team-roles/${made.json.role.id}`)).status).toBe(404);
+  });
+
   test("a room wakes only the chief, the chief hands work on, and each turn keeps its steps", async () => {
     const lead = await makeBot("Chief Lead"),
       coder = await makeBot("Dev Coder");
@@ -165,8 +243,8 @@ suite("teams against compose postgres", () => {
       goal: "",
       canvas: { x: 0, y: 0, w: 400, h: 300 },
       members: [
-        { botId: lead.id, kind: "chief", role: "plans", canvas: at },
-        { botId: coder.id, kind: "member", role: "builds", canvas: at },
+        { botId: lead.id, kind: "chief", roleId: null, canvas: at },
+        { botId: coder.id, kind: "member", roleId: null, canvas: at },
       ],
     });
     replies["Chief Lead"] = [
@@ -206,7 +284,7 @@ suite("teams against compose postgres", () => {
       members: made.map((b, i) => ({
         botId: b.id,
         kind: i === 0 ? "chief" : "member",
-        role: "",
+        roleId: null,
         canvas: at,
       })),
     });
@@ -277,5 +355,82 @@ suite("teams against compose postgres", () => {
       "Loop Lead",
     ]);
     // The facilitator's loop instructions travel with the tool preamble, which fixture bots do not get; roomLoopPrompt is covered in loops.test.ts.
+  });
+  test("Chat with team opens one room without waking the chief, and reuses it", async () => {
+    const id = await teamOf("Chat team", ["Chat Lead", "Chat Dev"]);
+    runs.length = 0;
+    const first = await call("POST", `/api/teams/${id}/chat`);
+    expect(first.status).toBe(200);
+    await worker.drain();
+    expect(runs).toEqual([]);
+    const again = await call("POST", `/api/teams/${id}/chat`);
+    expect(again.json.discussionId).toBe(first.json.discussionId);
+    expect(
+      (await call("GET", `/api/discussions/${first.json.discussionId}`)).json.discussion,
+    ).toMatchObject({
+      title: "Chat team",
+      status: "open",
+    });
+  });
+
+  test("the chief splits a team goal, nothing runs until the user approves, then each member works on its own goal", async () => {
+    const id = await teamOf("Goal team", ["Goal Lead", "Goal Writer", "Goal Dev"]);
+    runs.length = 0;
+    const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
+    const conversationId = (await call("GET", `/api/discussions/${room}`)).json.discussion
+      .conversationId as string;
+    replies["Goal Lead"] = [
+      'Splitting the goal.\n```zetta:team_goals\n{"goals":[{"bot":"GoalWriter","goal":"Write the FAQ","done_when":"the FAQ exists"}]}\n```',
+    ];
+    replies["Goal Writer"] = [
+      'Draft started.\n```zetta:goal_progress\n{"summary":"Draft started"}\n```',
+      'FAQ ready.\n```zetta:goal_done\n{"summary":"FAQ written"}\n```',
+    ];
+    await call("POST", `/api/discussions/${room}/messages`, { content: "Ship the help center" });
+    await worker.drain();
+    const proposal = (await call("GET", "/api/proposals")).json.proposals.find(
+      (p: { kind: string; patch: { discussionId?: string } }) =>
+        p.kind === "team_goals" && p.patch.discussionId === room,
+    );
+    expect(proposal.diff).toEqual([{ field: "Goal Writer", from: null, to: "Write the FAQ" }]);
+    expect(await loops.activeAll(conversationId)).toEqual([]);
+    expect(runs.map((r) => r.bot)).toEqual(["Goal Lead"]);
+
+    const decided = await call("POST", `/api/proposals/${proposal.id}/decision`, { approve: true });
+    expect(decided.json).toMatchObject({ status: "approved" });
+    const [loop] = await loops.activeAll(conversationId);
+    expect(loop).toMatchObject({ goal: "Write the FAQ", doneWhen: "the FAQ exists" });
+    for (let i = 0; i < 60 && (await loops.get(loop!.id))?.status !== "done"; i++)
+      await Bun.sleep(500);
+    await worker.drain();
+    expect(await loops.get(loop!.id)).toMatchObject({ status: "done", progress: "FAQ written" });
+    // The progress report did not wake the chief; the finished goal did.
+    expect(runs.map((r) => r.bot)).toEqual([
+      "Goal Lead",
+      "Goal Writer",
+      "Goal Writer",
+      "Goal Lead",
+    ]);
+  });
+
+  test("two members can each have an active loop in one room, but a member cannot have two", async () => {
+    const id = await teamOf("Index team", ["Index Lead", "Index A", "Index B"]);
+    const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
+    const d = (await call("GET", `/api/discussions/${room}`)).json;
+    const [a, b] = d.members.filter((m: { name: string }) => m.name !== "Index Lead");
+    const start = (botId: string) =>
+      loops.start(A, {
+        conversationId: d.discussion.conversationId,
+        botId,
+        goal: "g",
+        doneWhen: "d",
+      });
+    loops.onStart = undefined;
+    await start(a.botId);
+    await start(b.botId);
+    expect(start(a.botId)).rejects.toThrow();
+    loops.onStart = driver.kick;
+    for (const l of await loops.activeAll(d.discussion.conversationId))
+      await loops.end(l.id, "cancelled", "test over");
   });
 });

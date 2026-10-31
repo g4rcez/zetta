@@ -404,3 +404,112 @@ describe("grants and the credential gate", () => {
     expect(await plugins.promptFor(a, "bot1")).not.toContain("hunter2");
   });
 });
+
+describe("CLI access for bots", () => {
+  const cli = (p: typeof ONEPASSWORD, c: PluginContext, args: Record<string, unknown>) =>
+    p.tools!.find((t) => t.name === "cli")!.handler(c, args) as Promise<{ rows: unknown[] }>;
+  const opWithSecrets: typeof answer = (argv) =>
+    argv[1] === "vault"
+      ? { stdout: JSON.stringify([{ id: "vlt1", name: "Bots", extra: "hunter2" }]) }
+      : op(argv, {});
+
+  test("is off until the user turns it on", async () => {
+    answer = opWithSecrets;
+    const c = ctx({ serviceAccountToken: SA });
+    await expect(cli(ONEPASSWORD, c, { command: "op vault list" })).rejects.toThrow("CLI_DISABLED");
+    expect(calls).toEqual([]);
+  });
+  test("1Password: runs only listed commands and returns metadata, never values", async () => {
+    answer = opWithSecrets;
+    const c = ctx({ serviceAccountToken: SA, cliAccess: "metadata" });
+    expect((await cli(ONEPASSWORD, c, { command: "op vault list" })).rows).toEqual([
+      { id: "vlt1", name: "Bots" },
+    ]);
+    const items = await cli(ONEPASSWORD, c, { command: "op item list", search: "git" });
+    expect(items.rows).toEqual([
+      {
+        id: "vlt1/itm1",
+        title: "GitHub",
+        urls: ["https://github.com/login"],
+        fields: ["username", "password", "totp"],
+      },
+    ]);
+    await expect(cli(ONEPASSWORD, c, { command: "op item get itm1 --reveal" })).rejects.toThrow(
+      "CLI_COMMAND",
+    );
+    await expect(
+      cli(ONEPASSWORD, c, { command: "op read op://vlt1/itm1/password" }),
+    ).rejects.toThrow("CLI_COMMAND");
+    expect(calls.every((x) => !x.argv.includes("--reveal") && !x.argv.includes("get"))).toBe(true);
+  });
+  test("1Password Connect has no CLI", async () => {
+    const c = ctx({
+      connectUrl: "https://op.example.com",
+      connectToken: "t",
+      cliAccess: "metadata",
+    });
+    await expect(cli(ONEPASSWORD, c, { command: "op vault list" })).rejects.toThrow("CLI_COMMAND");
+  });
+  test("Bitwarden personal vault: lists folders and items without values", async () => {
+    answer = (argv, env) => {
+      const cmd = argv[1];
+      if (cmd === "status") return { stdout: JSON.stringify({ status: "locked" }) };
+      if (cmd === "unlock") return { stdout: "SESSIONKEY" };
+      if (cmd === "sync") return {};
+      if (env.BW_SESSION !== "SESSIONKEY") return { code: 1, stderr: "Vault is locked." };
+      if (argv[2] === "folders")
+        return { stdout: JSON.stringify([{ id: "f1", name: "Work", revisionDate: "x" }]) };
+      if (argv[2] === "items")
+        return {
+          stdout: JSON.stringify([
+            {
+              id: "b1",
+              name: "Bank",
+              type: 1,
+              login: {
+                username: "me",
+                password: "hunter2",
+                uris: [{ uri: "https://bank.example.com" }],
+              },
+            },
+          ]),
+        };
+      return { code: 1, stderr: "unknown" };
+    };
+    const c = ctx({
+      clientId: "user.abc",
+      clientSecret: "cs",
+      masterPassword: "master pw",
+      cliAccess: "metadata",
+    });
+    expect((await cli(BITWARDEN, c, { command: "bw list folders" })).rows).toEqual([
+      { id: "f1", name: "Work" },
+    ]);
+    const items = await cli(BITWARDEN, c, { command: "bw list items" });
+    expect(JSON.stringify(items)).not.toContain("hunter2");
+    expect(items.rows).toEqual([
+      {
+        id: "b1",
+        title: "Bank",
+        urls: ["https://bank.example.com"],
+        fields: ["username", "password"],
+      },
+    ]);
+    await expect(cli(BITWARDEN, c, { command: "bw get password b1" })).rejects.toThrow(
+      "CLI_COMMAND",
+    );
+  });
+  test("Bitwarden Secrets Manager: secret keys only", async () => {
+    answer = (argv) =>
+      argv[1] === "secret" && argv[2] === "list"
+        ? { stdout: JSON.stringify([{ id: "s-1", key: "STRIPE", value: "sekrit" }]) }
+        : { stdout: JSON.stringify([{ id: "p-1", name: "Prod" }]) };
+    const c = ctx({ accessToken: "0.tok", cliAccess: "metadata" });
+    expect((await cli(BITWARDEN, c, { command: "bws project list" })).rows).toEqual([
+      { id: "p-1", name: "Prod" },
+    ]);
+    const secrets = await cli(BITWARDEN, c, { command: "bws secret list" });
+    expect(JSON.stringify(secrets)).not.toContain("sekrit");
+    expect(secrets.rows).toEqual([{ id: "s-1", title: "STRIPE", urls: [], fields: ["password"] }]);
+  });
+});

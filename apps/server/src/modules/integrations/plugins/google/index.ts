@@ -44,6 +44,13 @@ export const googlePlugin: PluginDef = {
   docsUrl: "https://developers.google.com/identity/protocols/oauth2/web-server",
   notes:
     "Uses your own Google Cloud OAuth client, stored encrypted for your account only. You choose the permissions when you connect; writing and sending are off unless you opt in.",
+  guide: () => [
+    "Open https://console.cloud.google.com/ and create a project (or pick one).",
+    "Enable the Gmail, Google Calendar and Google Drive APIs for it (APIs & Services > Library).",
+    "Configure the OAuth consent screen and add your own Google account as a test user.",
+    `Create an OAuth client ID of type "Web application" and add ${redirectUri()} as an authorised redirect URI.`,
+    "Paste the client ID and client secret in the setup card, choose the permissions, then sign in with Google.",
+  ],
   tools: [...gmailTools, ...calendarTools, ...driveTools],
   connect: startConnect,
   callback: finishConnect,

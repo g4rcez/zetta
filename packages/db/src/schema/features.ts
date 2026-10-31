@@ -386,6 +386,7 @@ export const configProposal = pgTable(
         "open_discussion",
         "discussion_brief",
         "start_loop",
+        "team_goals",
         "bot_permission",
         "create_memory",
         "create_wiki_page",
@@ -604,8 +605,8 @@ export const mcpServer = pgTable(
     args: jsonb("args").$type<string[]>().default([]).notNull(),
     connectionId: uuid("connection_id").references(() => connection.id, setNull),
     /**
-     * Who may use this server. `private`: only its owner (default). `team`: the owner's teammates may bind their bots to it and call the
-     * tools the plugin lists as safe for teams, through the owner's account. Only plugins that declare team tools can be shared.
+     * Whose configuration this is. `private`: only its owner uses it. `team`: the workspace's own configuration, created and edited by
+     * the administrator and used with every tool by all members' bots (its secret stays sealed under the owner).
      */
     sharing: text("sharing", { enum: ["private", "team"] })
       .default("private")
@@ -616,7 +617,11 @@ export const mcpServer = pgTable(
   },
   (t) => [
     index("mcp_server_connection_id_idx").on(t.connectionId),
-    unique("mcp_server_owner_name").on(t.ownerUserId, t.name),
+    // A user may hold a private and a team configuration of the same plugin; the workspace has one team configuration per plugin.
+    unique("mcp_server_owner_name").on(t.ownerUserId, t.name, t.sharing),
+    uniqueIndex("mcp_server_team_name")
+      .on(t.name)
+      .where(sql`${t.sharing} = 'team'`),
   ],
 );
 

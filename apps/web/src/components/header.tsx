@@ -8,19 +8,22 @@ import { appLinks } from "@/components/app-links";
 import { useBackgroundNotifications } from "@/features/attention/background-notifications";
 import { useAttentionSummary, useRunningDiscussions } from "@/features/attention/summary";
 import { AppCommandPalette } from "@/features/command-palette/app-command-palette";
+import { SIDEBAR_LIMITS, usePreferences } from "@/features/preferences/preferences";
 import { isRailTab } from "@/features/studio/studio-tabs";
 
 import { railGroupLabel, railLabel, railRow, railRowActive, railRowExpanded } from "./rail-row";
 import { Logo } from "./logo";
 import { ModeToggle } from "./mode-toggle";
+import { ResizeHandle } from "./resize-handle";
 import UserMenu from "./user-menu";
 
 export const APP_PREFIXES = [
   "/chat",
-  "/discussions",
+  "/rooms",
   "/agenda",
   "/tasks",
   "/studio",
+  "/plugins",
   "/dashboard",
   "/teams",
   "/artifacts",
@@ -35,15 +38,6 @@ const Brand = ({ small = false }: { small?: boolean }) => (
     <Logo size={small ? 28 : 36} />
   </Link>
 );
-
-const COLLAPSED_KEY = "zetta:rail-collapsed";
-const readCollapsed = () => {
-  try {
-    return localStorage.getItem(COLLAPSED_KEY) === "1";
-  } catch {
-    return false;
-  }
-};
 
 /** When the rail is collapsed, hovering or focusing the item shows its icon and title beside it. */
 function RailHint({
@@ -74,23 +68,17 @@ export function AppRail() {
   useBackgroundNotifications();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(readCollapsed);
-  const toggle = () =>
-    setCollapsed((current) => {
-      try {
-        localStorage.setItem(COLLAPSED_KEY, current ? "0" : "1");
-      } catch {
-        // storage unavailable: the preference just won't persist
-      }
-      return !current;
-    });
+  const { preferences, set } = usePreferences();
+  const [resizing, setResizing] = useState(false);
+  const collapsed = preferences.railMode === "collapsed";
+  const toggle = () => set({ railMode: collapsed ? "expanded" : "collapsed" });
   const expanded = !collapsed;
   return (
     <motion.header
       initial={false}
-      animate={{ "--rail-w": expanded ? "14rem" : "4rem" }}
-      transition={{ type: "spring", stiffness: 420, damping: 36 }}
-      className={`z-10 flex shrink-0 items-center gap-1 overflow-hidden border-b bg-sidebar p-2 md:w-(--rail-w) md:flex-col md:border-r md:border-b-0 md:py-3 ${expanded ? "md:items-stretch" : ""}`}
+      animate={{ "--rail-w": expanded ? `${preferences.railWidth}px` : "4rem" }}
+      transition={resizing ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 36 }}
+      className={`relative z-10 flex shrink-0 items-center gap-1 overflow-hidden border-b bg-sidebar p-2 md:w-(--rail-w) md:flex-col md:border-r md:border-b-0 md:py-3 ${expanded ? "md:items-stretch" : ""}`}
     >
       <div className={`flex min-w-0 items-center gap-2.5 ${expanded ? "md:pl-0.5" : ""}`}>
         <Brand />
@@ -116,7 +104,8 @@ export function AppRail() {
             to === "/studio"
               ? pathname.startsWith("/studio") && !railTab
               : params
-                ? pathname === target
+                ? pathname === target ||
+                  (params.tab === "plugins" && pathname.startsWith("/plugins/"))
                 : pathname === base || pathname.startsWith(`${base}/`);
           return (
             <Fragment key={target}>
@@ -159,10 +148,10 @@ export function AppRail() {
                       {attention.unread}
                     </span>
                   ) : null}
-                  {to === "/discussions" && running > 0 ? (
+                  {to === "/rooms" && running > 0 ? (
                     <span
                       className="absolute top-0.5 left-6 grid min-w-4 place-items-center rounded-full bg-primary px-1 font-mono text-[10px] font-semibold leading-4 text-primary-foreground"
-                      aria-label={`${running} running discussions`}
+                      aria-label={`${running} running rooms`}
                     >
                       {running > 99 ? "99+" : running}
                     </span>
@@ -227,6 +216,15 @@ export function AppRail() {
         <UserMenu rail={expanded ? "expanded" : "collapsed"} />
       </div>
       <AppCommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      {expanded ? (
+        <ResizeHandle
+          label="Resize navigation"
+          value={preferences.railWidth}
+          {...SIDEBAR_LIMITS.railWidth}
+          onChange={(railWidth) => set({ railWidth })}
+          onDragging={setResizing}
+        />
+      ) : null}
     </motion.header>
   );
 }

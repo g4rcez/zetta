@@ -4,8 +4,8 @@ import { Alert } from "@g4rcez/components/alert";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Input } from "@/components/ui";
 import { errorMessage, type Bot } from "../chat/chat-client";
-import { Modal } from "../shared/ui";
-import { pluginsApi, type PluginMeta } from "./plugins-api";
+import { Panel } from "../shared/ui";
+import { usePluginApi, type PluginMeta } from "./plugins-api";
 import { ToggleCard } from "./toggle-card";
 
 type SendMode = "read" | "send";
@@ -29,6 +29,7 @@ export function WhatsappInstall({
   /** The plugin is stored; the caller opens the QR pairing next. */
   onInstalled: () => void;
 }) {
+  const pluginsApi = usePluginApi();
   const [mode, setMode] = useState<SendMode>("read");
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -50,7 +51,6 @@ export function WhatsappInstall({
     try {
       await pluginsApi.install(meta.id, config, [...chosen]);
       onInstalled();
-      onClose();
     } catch (x) {
       setLocal(errorMessage(x));
     } finally {
@@ -58,7 +58,7 @@ export function WhatsappInstall({
     }
   }
   return (
-    <Modal title="Connect WhatsApp" onClose={onClose}>
+    <Panel title="Connect WhatsApp">
       <form onSubmit={(e) => void submit(e)} className="space-y-4" aria-label="Connect WhatsApp">
         <p className="text-muted-foreground">
           Link your phone by scanning a QR code. Choose what bots may do, then scan on the next
@@ -147,6 +147,6 @@ export function WhatsappInstall({
           </Button>
         </div>
       </form>
-    </Modal>
+    </Panel>
   );
 }

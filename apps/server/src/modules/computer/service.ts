@@ -2,15 +2,23 @@ import { uuidv7 } from "@zetta/core/uuid";
 import { containerUser } from "../container-user";
 import { createSerializer } from "./serial";
 import { lookup } from "node:dns/promises";
-import { mkdir } from "node:fs/promises";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { BlockList, isIP } from "node:net";
 import { join } from "node:path";
-import { chmod, rm } from "node:fs/promises";
-import { connectCdp, FOCUSED_JS, type FocusedInput, type PageLike } from "./cdp";
-import { chromium, type BrowserContext } from "playwright-core";
 import type { Database } from "@zetta/db";
 import { and, eq } from "@zetta/db/query";
 import { browserProfile } from "@zetta/db/schema/features";
+import {
+  abBin,
+  dockerRunner,
+  firstError,
+  hostRunner,
+  sessionName,
+  type AbResult,
+  type AbRun,
+} from "./agent-browser";
+import { createEgressProxy } from "./egress";
+import { FOCUSED_JS, type FocusedInput } from "./page-scripts";
 
 export class ComputerError extends Error {
   constructor(
@@ -41,16 +49,18 @@ export type Action =
   | { type: "type"; text: string }
   | { type: "key"; key: string }
   | { type: "scroll"; dy: number }
-  | { type: "click_text"; text: string };
+  | { type: "click_text"; text: string }
+  /** A ref from the last `snapshot` (`@e3` or `e3`). */
+  | { type: "click_ref"; ref: string }
+  | { type: "fill"; ref: string; text: string };
 
 type Session = {
   container?: string;
-  browserHandle?: { close(): Promise<void> };
+  run: AbRun;
   id: string;
   userId: string;
   profile: string;
-  context?: BrowserContext;
-  page: PageLike;
+  url: string;
   control: "agent" | "human";
   epoch: number;
   lastUsed: number;
@@ -160,11 +170,6 @@ export type DockerBrowser = {
   memory: string;
   cpus: string;
   pids: number;
-  /**
-   * Docker network for the container. The DevTools port has no login, and Chromium's bridge (`socat`) listens on every container address, so
-   * any container on the same network can drive the browser and read its cookies. Use a dedicated network with inter-container traffic off.
-   */
-  network?: string | undefined;
 };
 /** `ZETTA_BROWSER_RUNTIME=docker` runs each browser session in its own hardened container instead of on the host. */
 export function dockerBrowserConfig(
@@ -177,51 +182,22 @@ export function dockerBrowserConfig(
     memory: env.ZETTA_BROWSER_MEMORY ?? "1g",
     cpus: env.ZETTA_BROWSER_CPUS ?? "1",
     pids: Number(env.ZETTA_BROWSER_PIDS ?? 512),
-    // Own network by default; ZETTA_BROWSER_NETWORK= (empty) opts out and uses Docker's default bridge.
-    network: env.ZETTA_BROWSER_NETWORK ?? DEFAULT_BROWSER_NETWORK,
   };
 }
-const DEFAULT_BROWSER_NETWORK = "zetta-browser";
-const networkChecks = new Map<string, Promise<string | undefined>>();
 /**
- * Makes sure the browser network exists and returns its name, or undefined to fall back to the default bridge. A separate network keeps
- * harness and desktop containers (which run arbitrary commands) away from a browser's DevTools port; with inter-container traffic off,
- * browsers cannot reach each other either. Engines that refuse that option (Podman) still get their own network.
+ * The container has no network (`--network none`). Its only way out is the egress proxy: the server listens on a unix socket in
+ * `egressDir`, which is mounted read-only, and the image bridges it to 127.0.0.1:3128 for Chromium. With `isolated: false` (private
+ * addresses allowed by the operator) the container gets Docker's default network and no proxy.
  */
-export function ensureBrowserNetwork(d: DockerBrowser): Promise<string | undefined> {
-  const name = d.network;
-  if (!name) return Promise.resolve(undefined);
-  let hit = networkChecks.get(name);
-  if (!hit) {
-    const docker = async (...args: string[]) => {
-      const p = Bun.spawn([d.bin, ...args], {
-        stdout: "ignore",
-        stderr: "ignore",
-        env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
-      });
-      return (await p.exited) === 0;
-    };
-    hit = (async () => {
-      if (await docker("network", "inspect", name)) return name;
-      if (
-        await docker("network", "create", "-o", "com.docker.network.bridge.enable_icc=false", name)
-      )
-        return name;
-      if (await docker("network", "create", name)) return name;
-      console.warn(
-        `Browser network ${name} could not be created: browser containers share Docker's default network.`,
-      );
-      return undefined;
-    })();
-    networkChecks.set(name, hit);
-  }
-  return hit;
-}
-export function browserDockerArgs(d: DockerBrowser, o: { name: string; profileDir: string }) {
+export function browserDockerArgs(
+  d: DockerBrowser,
+  o: { name: string; profileDir: string; egressDir: string; isolated: boolean },
+) {
   return [
     "run",
     "-d",
     "--rm",
+    "--init",
     "--name",
     o.name,
     "--cap-drop=ALL",
@@ -241,14 +217,48 @@ export function browserDockerArgs(d: DockerBrowser, o: { name: string; profileDi
     `/tmp:rw,size=256m,uid=${containerUser().uid}`,
     "--tmpfs",
     `/home/agent:rw,size=64m,uid=${containerUser().uid}`,
-    ...(d.network ? ["--network", d.network] : []),
-    "-p",
-    "127.0.0.1::9222",
+    ...(o.isolated ? ["--network", "none"] : []),
     "-v",
     `${o.profileDir}:/profile:rw`,
+    ...(o.isolated ? ["-v", `${o.egressDir}:/run/zetta/egress:ro`] : []),
     d.image,
   ];
 }
+/** Where agent-browser finds its config inside the container image. */
+const CONTAINER_CONFIG = "/etc/zetta/agent-browser.json";
+const EGRESS_PORT = 3128;
+const CHROMIUM_IN_IMAGE = "/usr/bin/chromium";
+
+/**
+ * Launch options of one session. agent-browser relaunches the browser when they change, so the same list is sent with every call.
+ * The proxy applies to loopback names too (`<-loopback>`), and WebRTC cannot send UDP around it.
+ */
+export function launchFlags(o: {
+  profileDir: string;
+  executablePath?: string | undefined;
+  proxy?: string | undefined;
+  sandbox: boolean;
+  idleMs: number;
+}): string[] {
+  const args = [
+    "--disable-dev-shm-usage",
+    "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+  ];
+  if (!o.sandbox) args.push("--no-sandbox");
+  if (o.proxy) args.push("--proxy-bypass-list=<-loopback>");
+  return [
+    "--profile",
+    o.profileDir,
+    ...(o.executablePath ? ["--executable-path", o.executablePath] : []),
+    ...(o.proxy ? ["--proxy", o.proxy] : []),
+    "--args",
+    args.join(","),
+    // A backstop if this server dies: the daemon stops itself after the sessions' own idle time plus a margin.
+    "--idle-timeout",
+    String(o.idleMs + 300_000),
+  ];
+}
+
 export type ComputerOptions = {
   docker?: DockerBrowser;
   db?: Pick<Database, "select" | "insert" | "update">;
@@ -260,10 +270,48 @@ export type ComputerOptions = {
   executablePath?: string;
 };
 
+const PASSWORD_INPUTS = "input[type=password]";
+const REF = /^@?e\d{1,5}$/;
+const refOf = (r: string) => {
+  if (!REF.test(r)) throw new ComputerError("INVALID");
+  return r.startsWith("@") ? r : `@${r}`;
+};
+/** The agent-browser commands of one action. Text goes through stdin with the rest, never on argv. */
+function commandsOf(action: Action): string[][] {
+  switch (action.type) {
+    case "open":
+      return [["open", action.url]];
+    case "click":
+      return [
+        ["mouse", "move", String(action.x), String(action.y)],
+        ["mouse", "down"],
+        ["mouse", "up"],
+      ];
+    case "type":
+      return [["keyboard", "type", action.text.slice(0, 2000)]];
+    case "key":
+      return [["press", action.key.slice(0, 30)]];
+    case "click_text":
+      return [["find", "text", action.text.slice(0, 200), "click"]];
+    case "click_ref":
+      return [["click", refOf(action.ref)]];
+    case "fill":
+      return [["fill", refOf(action.ref), action.text.slice(0, 2000)]];
+    case "scroll": {
+      const dy = Math.max(-2000, Math.min(2000, action.dy));
+      return [["scroll", dy < 0 ? "up" : "down", String(Math.abs(Math.round(dy)))]];
+    }
+  }
+}
+/** A command failed because the page changed or the target is not there: the bot should read the page again. */
+const missingTarget = (e: string | undefined) =>
+  /unknown ref|no element|not found|detached/i.test(e ?? "");
+
 /**
- * Isolated browser sessions for computer use. One persistent Chromium profile per (user, profile name) under
- * `<root>/profiles/<userId>/<profile>`: never shared across users or implicitly across bots. A human can take over a session
- * (agent actions are refused) and hand it back. Sessions are addressed only through the owner's userId.
+ * Isolated browser sessions for computer use, driven through agent-browser. One persistent Chromium profile per (user, profile name)
+ * under `<root>/profiles/<userId>/<profile>`: never shared across users or implicitly across bots. A human can take over a session
+ * (agent actions are refused) and hand it back. Sessions are addressed only through the owner's userId. Every request of the browser
+ * goes through the egress proxy, so the address policy holds for redirects and sub-resources too.
  */
 export function createComputerService({
   docker,
@@ -292,6 +340,15 @@ export function createComputerService({
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(p)) throw new ComputerError("INVALID");
     return p;
   };
+  const profileDir = (userId: string, profile: string) =>
+    join(root, "profiles", userId.replace(/[^A-Za-z0-9_-]/g, "_"), profile);
+
+  const egress = createEgressProxy({ isBlockedIp });
+  const config = join(root, "agent-browser.json");
+  let configured: Promise<unknown> | undefined;
+  /** An empty config replaces the operator's own ~/.agent-browser/config.json, so nothing there (headed mode, extensions) applies. */
+  const ensureConfig = () =>
+    (configured ??= mkdir(root, { recursive: true }).then(() => writeFile(config, "{}\n")));
 
   const serial = createSerializer();
   /** One start at a time per user: two concurrent calls can no longer both pass the existing/limit checks and launch two browsers. */
@@ -322,23 +379,27 @@ export function createComputerService({
       sessions.size >= maxTotal
     )
       throw new ComputerError("LIMIT");
-    const dir = join(root, "profiles", userId.replace(/[^A-Za-z0-9_-]/g, "_"), profile);
+    const dir = profileDir(userId, profile);
     await mkdir(dir, { recursive: true });
-    let context: BrowserContext | undefined;
-    let cdpPage: PageLike | undefined;
+    const name = sessionName(userId, profile);
     let container: string | undefined;
-    let browserHandle: Session["browserHandle"];
+    let run: AbRun;
     try {
       if (docker) {
         await chmod(dir, 0o700).catch(() => {});
+        const egressDir = join(root, "egress");
+        await mkdir(egressDir, { recursive: true });
+        if (!allowPrivate) await egress.listenUnix(join(egressDir, "proxy.sock"));
         container = `zetta-browser-${uuidv7()}`;
-        const run = Bun.spawn(
+        const started = Bun.spawn(
           [
             docker.bin,
-            ...browserDockerArgs(
-              { ...docker, network: await ensureBrowserNetwork(docker) },
-              { name: container, profileDir: dir },
-            ),
+            ...browserDockerArgs(docker, {
+              name: container,
+              profileDir: dir,
+              egressDir,
+              isolated: !allowPrivate,
+            }),
           ],
           {
             stdout: "pipe",
@@ -346,102 +407,53 @@ export function createComputerService({
             env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
           },
         );
-        if ((await run.exited) !== 0) throw new Error("docker run failed");
-        const port = await (async () => {
-          const p = Bun.spawn([docker.bin, "port", container!, "9222/tcp"], {
-            stdout: "pipe",
-            env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
-          });
-          const t = await new Response(p.stdout).text();
-          const m = /:(\d+)\s*$/m.exec(t.trim().split("\n")[0] ?? "");
-          if (!m) throw new Error("no port");
-          return m[1];
-        })();
-        let ready = false;
-        for (let i = 0; i < 60 && !ready; i++) {
-          ready = await fetch(`http://127.0.0.1:${port}/json/version`).then(
-            (r) => r.ok,
-            () => false,
-          );
-          if (!ready) await Bun.sleep(250);
-        }
-        if (!ready) throw new Error("browser not ready");
-        // The DevTools metadata advertises the container-internal address; keep only its path and connect through the published port.
-        const meta = (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()) as {
-          webSocketDebuggerUrl: string;
-        };
-        const cdp = await connectCdp({
-          wsUrl: `ws://127.0.0.1:${port}${new URL(meta.webSocketDebuggerUrl).pathname}`,
-          allow: async (u) => {
-            try {
-              if (u === "about:blank") return true;
-              assertWebScheme(u);
-              if (!allowPrivate) await assertPublicUrl(u);
-              return true;
-            } catch {
-              return false;
-            }
-          },
+        if ((await started.exited) !== 0) throw new Error("docker run failed");
+        run = dockerRunner({
+          docker: docker.bin,
+          container,
+          config: CONTAINER_CONFIG,
+          session: name,
+          launch: launchFlags({
+            profileDir: "/profile",
+            executablePath: CHROMIUM_IN_IMAGE,
+            proxy: allowPrivate ? undefined : `http://127.0.0.1:${EGRESS_PORT}`,
+            sandbox: false,
+            idleMs,
+          }),
         });
-        cdpPage = cdp.page;
-        browserHandle = { close: cdp.close };
       } else {
-        context = await chromium.launchPersistentContext(dir, {
-          headless: true,
-          viewport: { width: 1024, height: 640 },
-          acceptDownloads: false,
-          serviceWorkers: "block",
-          ...(executablePath ? { executablePath } : {}),
+        await ensureConfig();
+        run = hostRunner({
+          bin: await abBin(),
+          config,
+          session: name,
+          namespace: "zetta",
+          launch: launchFlags({
+            profileDir: dir,
+            executablePath,
+            proxy: allowPrivate ? undefined : `http://127.0.0.1:${await egress.listenTcp()}`,
+            sandbox: true,
+            idleMs,
+          }),
         });
       }
+      const boot = await run([
+        ["set", "viewport", "1024", "640"],
+        ["open", "about:blank"],
+      ]);
+      if (firstError(boot)) throw new Error("browser did not start");
     } catch {
       if (docker && container)
         Bun.spawn([docker.bin, "kill", container], { stdout: "ignore", stderr: "ignore" });
       throw new ComputerError("UNAVAILABLE");
     }
-    let page: PageLike;
-    if (cdpPage) page = cdpPage;
-    else {
-      const ctx = context!;
-      if (!allowPrivate)
-        await ctx.route("**/*", async (route) => {
-          try {
-            await assertPublicUrl(route.request().url());
-            await route.continue();
-          } catch {
-            await route.abort("blockedbyclient");
-          }
-        });
-      const pw = ctx.pages()[0] ?? (await ctx.newPage());
-      page = {
-        goto: async (u) => {
-          await pw.goto(u, { waitUntil: "domcontentloaded", timeout: 20_000 });
-        },
-        click: (x, y) => pw.mouse.click(x, y),
-        type: (t) => pw.keyboard.type(t),
-        press: (k) => pw.keyboard.press(k),
-        wheel: (dy) => pw.mouse.wheel(0, dy),
-        clickText: (t) => pw.getByText(t, { exact: false }).first().click({ timeout: 5_000 }),
-        text: async () => pw.innerText("body").catch(() => ""),
-        hasPassword: async () =>
-          (await pw
-            .locator("input[type=password]")
-            .count()
-            .catch(() => 0)) > 0,
-        focused: async () =>
-          (await pw.evaluate(FOCUSED_JS).catch(() => null)) as FocusedInput | null,
-        screenshot: () => pw.screenshot({ type: "png" }),
-        url: () => pw.url(),
-      };
-    }
     const session: Session = {
       container,
-      browserHandle,
+      run: run!,
       id: profile,
       userId,
       profile,
-      ...(context ? { context } : {}),
-      page,
+      url: "about:blank",
       control: "agent",
       epoch: 0,
       lastUsed: Date.now(),
@@ -454,8 +466,32 @@ export function createComputerService({
     profile: s.profile,
     control: s.control,
     epoch: s.epoch,
-    url: s.page.url(),
+    url: s.url,
   });
+  /** Runs commands on a session and keeps its url current. A command that failed becomes an error the caller can act on. */
+  async function exec(
+    s: Session,
+    cmds: string[][],
+    opts: { signal?: AbortSignal | undefined } = {},
+  ): Promise<AbResult[]> {
+    const tail: string[][] = [
+      ["get", "url"],
+      ["get", "count", PASSWORD_INPUTS],
+    ];
+    let res: AbResult[];
+    try {
+      res = await s.run([...cmds, ...tail], { signal: opts.signal });
+    } catch (e) {
+      if (e instanceof ComputerError) throw e;
+      throw new ComputerError("UNAVAILABLE");
+    }
+    const failed = firstError(res);
+    if (failed !== undefined || res.some((r) => !r.success))
+      throw new ComputerError(missingTarget(failed) ? "NO_ELEMENT" : "UNAVAILABLE");
+    const url = res[cmds.length]?.result?.url;
+    if (typeof url === "string") s.url = url;
+    return res;
+  }
 
   /** Actions on one profile are serialized (two bots never interleave on one page). `epoch` guards agents against a takeover that
    * happened after their turn started; `signal` cancels a waiting or running action. */
@@ -472,31 +508,46 @@ export function createComputerService({
       if (by === "agent" && s.control === "human") throw new ComputerError("HUMAN_IN_CONTROL");
       if (by === "agent" && opts.epoch !== undefined && opts.epoch !== s.epoch)
         throw new ComputerError("STALE_CONTROL");
-      const p = s.page;
-      try {
-        if (action.type === "open") {
-          assertWebScheme(action.url);
-          if (!allowPrivate) await assertPublicUrl(action.url);
-          await p.goto(action.url);
-        } else if (action.type === "click") await p.click(action.x, action.y);
-        else if (action.type === "type") await p.type(action.text.slice(0, 2000));
-        else if (action.type === "key") await p.press(action.key.slice(0, 30));
-        else if (action.type === "click_text") await p.clickText(action.text);
-        else if (action.type === "scroll")
-          await p.wheel(Math.max(-2000, Math.min(2000, action.dy)));
-      } catch (e) {
-        if (e instanceof ComputerError) throw e;
-        throw new ComputerError("UNAVAILABLE");
+      if (action.type === "open") {
+        assertWebScheme(action.url);
+        if (!allowPrivate) await assertPublicUrl(action.url);
       }
-      const loginRequired = by === "agent" && (await p.hasPassword().catch(() => false));
+      const cmds = commandsOf(action);
+      const res = await exec(s, cmds, { signal: opts.signal });
+      const loginRequired = by === "agent" && Number(res[cmds.length + 1]?.result?.count ?? 0) > 0;
       return { ...info(s), loginRequired };
     });
     s.queue = run.catch(() => undefined);
     return run;
   }
-  /** Boot-time cleanup: containers from a previous server process (they carry our name prefix) are killed; none can be reachable through this process. */
+  /** Reads through the same queue as actions, so a read never lands in the middle of one. */
+  function queued<T>(s: Session, work: () => Promise<T>): Promise<T> {
+    const run = s.queue.then(work);
+    s.queue = run.catch(() => undefined);
+    return run;
+  }
+  const textOf = (res: AbResult[], at: number) => String(res[at]?.result?.text ?? "");
+  /** Boot-time cleanup: containers from a previous server process (they carry our name prefix) are killed; none can be reachable through this process.
+   * Host mode closes every agent-browser session in the `zetta` namespace. */
   async function sweep() {
-    if (!docker) return 0;
+    if (!docker) {
+      try {
+        await ensureConfig();
+        const p = Bun.spawn([await abBin(), "--config", config, "close", "--all"], {
+          stdout: "ignore",
+          stderr: "ignore",
+          env: {
+            PATH: process.env.PATH ?? "",
+            HOME: process.env.HOME ?? "",
+            AGENT_BROWSER_NAMESPACE: "zetta",
+          },
+        });
+        await p.exited;
+      } catch {
+        /* no agent-browser installed: nothing to sweep */
+      }
+      return 0;
+    }
     try {
       const p = Bun.spawn([docker.bin, "ps", "-q", "--filter", "name=zetta-browser-"], {
         stdout: "pipe",
@@ -524,27 +575,70 @@ export function createComputerService({
     act,
     async screenshot(userId: string, profile: string) {
       const s = get(userId, profile);
-      return (await s.page.screenshot()).toString("base64");
+      return queued(s, async () => {
+        const id = uuidv7();
+        const path = docker ? `/tmp/${id}.png` : join(root, "tmp", `${id}.png`);
+        if (!docker) await mkdir(join(root, "tmp"), { recursive: true });
+        const res = await s.run([["screenshot", path]]);
+        if (firstError(res) !== undefined) throw new ComputerError("UNAVAILABLE");
+        if (!docker || !s.container) {
+          const png = Buffer.from(await Bun.file(path).arrayBuffer());
+          await rm(path, { force: true });
+          return png.toString("base64");
+        }
+        const cat = Bun.spawn([docker.bin, "exec", s.container, "cat", path], {
+          stdout: "pipe",
+          stderr: "ignore",
+          env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
+        });
+        const png = Buffer.from(await new Response(cat.stdout).arrayBuffer());
+        if ((await cat.exited) !== 0 || png.length === 0) throw new ComputerError("UNAVAILABLE");
+        return png.toString("base64");
+      });
     },
     /** Where the session is and which input has focus (no values): what a credential fill is checked against. */
     async focus(userId: string, profile: string) {
       const s = get(userId, profile);
-      return { url: s.page.url(), focused: await s.page.focused().catch(() => null) };
+      return queued(s, async () => {
+        const res = await s
+          .run([
+            ["get", "url"],
+            ["eval", FOCUSED_JS],
+          ])
+          .catch(() => [] as AbResult[]);
+        const url = res[0]?.result?.url;
+        if (typeof url === "string") s.url = url;
+        const focused = res[1]?.result?.result;
+        return { url: s.url, focused: (focused ?? null) as FocusedInput | null };
+      });
     },
     /** Visible page text, bounded, for feeding a bot. */
     async text(userId: string, profile: string) {
       const s = get(userId, profile);
-      return (await s.page.text().catch(() => "")).slice(0, 20_000);
+      return queued(s, async () => {
+        const res = await s.run([["get", "text", "body"]]).catch(() => [] as AbResult[]);
+        return textOf(res, 0).slice(0, 20_000);
+      });
+    },
+    /** The page as the accessibility tree with refs (`@e1`) that `click_ref` and `fill` accept; links carry their addresses. */
+    async snapshot(userId: string, profile: string) {
+      const s = get(userId, profile);
+      return queued(s, async () => {
+        const res = await s.run([
+          ["get", "url"],
+          ["snapshot", "-i", "-c", "-u"],
+        ]);
+        if (firstError(res) !== undefined) throw new ComputerError("UNAVAILABLE");
+        const url = res[0]?.result?.url;
+        if (typeof url === "string") s.url = url;
+        return `url: ${s.url}\n${String(res[1]?.result?.snapshot ?? "")}`.slice(0, 20_000);
+      });
     },
     /** Open a URL and return its text in one step (used by workflows and /browse in chat). */
     async read(userId: string, profile: string, url: string, by: Actor = "agent") {
       await start(userId, profile);
       await act(userId, profile, by, { type: "open", url });
-      return (
-        await get(userId, profile)
-          .page.text()
-          .catch(() => "")
-      ).slice(0, 20_000);
+      return this.text(userId, profile);
     },
     /** Compare-and-swap on control: `expected` is the control state the caller saw; a stale caller gets STALE_CONTROL. Every change bumps the epoch. */
     takeover(userId: string, profile: string, human: boolean, expected?: "agent" | "human") {
@@ -568,10 +662,7 @@ export function createComputerService({
     async reset(userId: string, profile: string) {
       safeProfile(profile);
       await close(userId, profile);
-      await rm(join(root, "profiles", userId.replace(/[^A-Za-z0-9_-]/g, "_"), profile), {
-        recursive: true,
-        force: true,
-      });
+      await rm(profileDir(userId, profile), { recursive: true, force: true });
       if (db)
         await db
           .update(browserProfile)
@@ -600,14 +691,14 @@ export function createComputerService({
     async closeAll() {
       clearInterval(reaper);
       await Promise.all([...sessions.values()].map((s) => close(s.userId, s.profile)));
+      egress.close();
     },
   };
   async function close(userId: string, profile: string) {
     const s = sessions.get(key(userId, profile));
     if (!s) return;
     sessions.delete(key(userId, profile));
-    if (s.browserHandle) await s.browserHandle.close();
-    else await s.context?.close().catch(() => {});
+    await s.run([["close"]]).catch(() => {});
     if (docker && s.container) {
       try {
         Bun.spawn([docker.bin, "kill", s.container], { stdout: "ignore", stderr: "ignore" });

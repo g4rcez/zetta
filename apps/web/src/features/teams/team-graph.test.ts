@@ -20,7 +20,8 @@ const team = (id: string, x: number, bots: [string, "chief" | "member"][]): Team
     botId,
     name: botId.toUpperCase(),
     kind,
-    role: "does work",
+    roleId: null,
+    role: "",
     canvas: { x: 10, y: 40 + i * 60 },
   })),
 });
@@ -43,7 +44,7 @@ describe("teams canvas model", () => {
         name: t.name,
         goal: "Ship",
         canvas: t.canvas,
-        members: t.members.map(({ name: _n, ...m }) => m),
+        members: t.members.map(({ name: _n, role: _r, ...m }) => m),
       })),
     );
   });

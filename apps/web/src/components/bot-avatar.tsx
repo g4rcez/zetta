@@ -339,8 +339,28 @@ const SHAPES = [
   "35%",
 ];
 
-/** The bot's picture: its chosen shape + color or uploaded image, else a friendly deterministic generated one. */
+/** The bot's picture, with an optional `badge` (for example `BotStatusDot`) pinned to its bottom-right corner. */
 export function BotAvatar({
+  badge,
+  ...props
+}: {
+  bot: { id: string; avatar?: AvatarValue | null; kind?: "chief" | "specialist" };
+  size?: number;
+  className?: string;
+  square?: boolean;
+  badge?: ReactNode;
+}) {
+  if (!badge) return <BotPicture {...props} />;
+  return (
+    <span className="relative inline-flex shrink-0">
+      <BotPicture {...props} />
+      <span className="absolute -right-0.5 -bottom-0.5 flex">{badge}</span>
+    </span>
+  );
+}
+
+/** The bot's picture: its chosen shape + color or uploaded image, else a friendly deterministic generated one. */
+function BotPicture({
   bot,
   size = 40,
   className = "",
@@ -391,7 +411,8 @@ export function BotAvatar({
       </svg>
     );
   }
-  if (!a && bot.kind === "chief") return <Logo size={size} className={className} />;
+  if (!a && bot.kind === "chief")
+    return <Logo size={size} className={className} tile square={square} />;
   const character = a?.kind === "preset" ? characterOf(a.preset) : undefined;
   if (a?.kind === "preset" && character) {
     return (

@@ -1,0 +1,1 @@
+ALTER TABLE "user_preference" ADD COLUMN "bot_order" uuid[] DEFAULT '{}'::uuid[] NOT NULL;

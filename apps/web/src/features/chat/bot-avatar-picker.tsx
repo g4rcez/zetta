@@ -197,6 +197,9 @@ export function BotAvatarPicker({
           type="file"
           accept="image/png,image/jpeg,image/webp,image/gif"
           className="sr-only"
+          // Hidden behind the "Upload picture" button, and out of the tab order so keyboard users meet the button once.
+          tabIndex={-1}
+          aria-label="Upload picture"
           id={`avatar-upload-${botId}`}
           onChange={(e) => void upload(e.target.files?.[0])}
         />

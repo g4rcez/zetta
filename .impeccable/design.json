@@ -1,158 +1,726 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T00:00:00Z",
+  "generatedAt": "2026-10-31T00:00:00Z",
   "title": "Design System: Zetta",
   "extensions": {
     "colorMeta": {
-      "primary": {
-        "role": "primary",
-        "displayName": "Azure Signal",
-        "canonical": "oklch(0.593 0.151 245)",
+      "sidebar": {
+        "role": "neutral",
+        "displayName": "Frame Gray",
+        "canonical": "#F3F3F5",
         "tonalRamp": [
-          "oklch(0.2 0.04 180)",
-          "oklch(0.3 0.065 180)",
-          "oklch(0.4 0.085 180)",
-          "oklch(0.593 0.151 245)",
-          "oklch(0.62 0.11 180)",
-          "oklch(0.78 0.12 180)",
-          "oklch(0.88 0.06 180)",
-          "oklch(0.95 0.025 180)"
+          "#0B0B0C",
+          "#242425",
+          "#3F3F41",
+          "#5D5D5F",
+          "#808082",
+          "#A4A4A6",
+          "#CACACB",
+          "#EEEEEF"
         ]
       },
       "background": {
         "role": "neutral",
-        "displayName": "Warm Paper",
-        "canonical": "oklch(0.975 0.008 85)",
+        "displayName": "Panel White",
+        "canonical": "#FBFBFC",
         "tonalRamp": [
-          "oklch(0.2 0.015 60)",
-          "oklch(0.35 0.018 65)",
-          "oklch(0.48 0.02 70)",
-          "oklch(0.7 0.016 75)",
-          "oklch(0.83 0.013 80)",
-          "oklch(0.88 0.012 80)",
-          "oklch(0.945 0.01 85)",
-          "oklch(0.975 0.008 85)"
+          "#0B0B0B",
+          "#242424",
+          "#404040",
+          "#5D5D5E",
+          "#808081",
+          "#A4A4A5",
+          "#CACACB",
+          "#EEEEEF"
         ]
       },
-      "destructive": {
-        "role": "secondary",
-        "displayName": "Alarm Red",
-        "canonical": "oklch(0.56 0.21 27)",
+      "card": {
+        "role": "neutral",
+        "displayName": "Card White",
+        "canonical": "#FFFFFF",
         "tonalRamp": [
-          "oklch(0.25 0.08 27)",
-          "oklch(0.35 0.13 27)",
-          "oklch(0.46 0.18 27)",
-          "oklch(0.56 0.21 27)",
-          "oklch(0.7 0.17 27)",
-          "oklch(0.8 0.11 27)",
-          "oklch(0.9 0.05 27)",
-          "oklch(0.96 0.02 27)"
+          "#0B0B0B",
+          "#242424",
+          "#404040",
+          "#5D5D5D",
+          "#808080",
+          "#A4A4A4",
+          "#CACACA",
+          "#EEEEEE"
+        ]
+      },
+      "popover": {
+        "role": "neutral",
+        "displayName": "Float White",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#242424",
+          "#404040",
+          "#5D5D5D",
+          "#808080",
+          "#A4A4A4",
+          "#CACACA",
+          "#EEEEEE"
+        ]
+      },
+      "secondary": {
+        "role": "neutral",
+        "displayName": "Quiet Fill",
+        "canonical": "#F0F0F3",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#242425",
+          "#3F3F41",
+          "#5D5D60",
+          "#808082",
+          "#A4A4A6",
+          "#CACACC",
+          "#EEEEF0"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Quiet Fill",
+        "canonical": "#F0F0F3",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#242425",
+          "#3F3F41",
+          "#5D5D60",
+          "#808082",
+          "#A4A4A6",
+          "#CACACC",
+          "#EEEEF0"
+        ]
+      },
+      "accent": {
+        "role": "neutral",
+        "displayName": "Hover Gray",
+        "canonical": "#EDEDF0",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#242425",
+          "#3F3F41",
+          "#5D5D60",
+          "#808082",
+          "#A4A4A6",
+          "#CACACC",
+          "#EEEEF0"
+        ]
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#18181B",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#242426",
+          "#3F3F42",
+          "#5D5D61",
+          "#808083",
+          "#A4A4A7",
+          "#CACACD",
+          "#EEEEF0"
+        ]
+      },
+      "muted-foreground": {
+        "role": "neutral",
+        "displayName": "Second Ink",
+        "canonical": "#4A4A52",
+        "tonalRamp": [
+          "#0B0B0E",
+          "#232328",
+          "#3F3F45",
+          "#5D5D64",
+          "#7F7F87",
+          "#A4A4AB",
+          "#CACAD0",
+          "#EEEEF3"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#E2E2E6",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#242426",
+          "#3F3F42",
+          "#5D5D60",
+          "#808083",
+          "#A4A4A7",
+          "#CACACD",
+          "#EEEEF0"
+        ]
+      },
+      "input": {
+        "role": "neutral",
+        "displayName": "Control Edge",
+        "canonical": "#8A8A93",
+        "tonalRamp": [
+          "#0B0B0E",
+          "#232328",
+          "#3F3F45",
+          "#5D5D64",
+          "#7F7F88",
+          "#A4A4AB",
+          "#CACAD0",
+          "#EEEEF3"
+        ]
+      },
+      "primary": {
+        "role": "primary",
+        "displayName": "Deep Emerald",
+        "canonical": "#015A45",
+        "tonalRamp": [
+          "#000F09",
+          "#002C20",
+          "#134A3A",
+          "#296B57",
+          "#4D8F79",
+          "#7CB29E",
+          "#AAD6C5",
+          "#D5F8EA"
+        ]
+      },
+      "primary-foreground": {
+        "role": "primary",
+        "displayName": "On Emerald",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#242424",
+          "#404040",
+          "#5D5D5D",
+          "#808080",
+          "#A4A4A4",
+          "#CACACA",
+          "#EEEEEE"
+        ]
+      },
+      "ring": {
+        "role": "primary",
+        "displayName": "Emerald Focus",
+        "canonical": "#015A45",
+        "tonalRamp": [
+          "#000F09",
+          "#002C20",
+          "#134A3A",
+          "#296B57",
+          "#4D8F79",
+          "#7CB29E",
+          "#AAD6C5",
+          "#D5F8EA"
         ]
       },
       "attention": {
         "role": "secondary",
         "displayName": "Attention Amber",
-        "canonical": "oklch(0.72 0.16 70)",
+        "canonical": "#F0A63A",
         "tonalRamp": [
-          "oklch(0.25 0.06 70)",
-          "oklch(0.35 0.09 70)",
-          "oklch(0.45 0.11 70)",
-          "oklch(0.55 0.13 70)",
-          "oklch(0.72 0.16 70)",
-          "oklch(0.8 0.13 70)",
-          "oklch(0.9 0.07 70)",
-          "oklch(0.96 0.03 70)"
+          "#130900",
+          "#341F00",
+          "#583807",
+          "#7E5311",
+          "#AE7209",
+          "#D1984D",
+          "#F0C187",
+          "#FEEBD4"
+        ]
+      },
+      "attention-foreground": {
+        "role": "secondary",
+        "displayName": "On Amber",
+        "canonical": "#2B1A00",
+        "tonalRamp": [
+          "#110A02",
+          "#2D2212",
+          "#4B3D29",
+          "#6C5A41",
+          "#907D62",
+          "#B3A28A",
+          "#D7C8B5",
+          "#F8EDDD"
+        ]
+      },
+      "warn": {
+        "role": "secondary",
+        "displayName": "Warn Brown",
+        "canonical": "#6A4100",
+        "tonalRamp": [
+          "#130800",
+          "#351E00",
+          "#573810",
+          "#7B5524",
+          "#A17746",
+          "#C29D74",
+          "#E3C5A3",
+          "#FEEBD6"
         ]
       },
       "success": {
         "role": "secondary",
-        "displayName": "Success",
-        "canonical": "oklch(0.5 0.11 155)",
+        "displayName": "Leaf Green",
+        "canonical": "#1A4F18",
         "tonalRamp": [
-          "oklch(0.25 0.055 155)",
-          "oklch(0.35 0.083 155)",
-          "oklch(0.5 0.11 155)",
-          "oklch(0.62 0.11 155)",
-          "oklch(0.78 0.132 155)",
-          "oklch(0.86 0.088 155)",
-          "oklch(0.93 0.044 155)",
-          "oklch(0.97 0.017 155)"
+          "#001000",
+          "#0E2C0D",
+          "#244A22",
+          "#3C6B39",
+          "#5D8F59",
+          "#87B284",
+          "#B3D6B0",
+          "#DCF8D9"
         ]
       },
       "info": {
         "role": "secondary",
-        "displayName": "Info",
-        "canonical": "oklch(0.5 0.11 245)",
+        "displayName": "Info Blue",
+        "canonical": "#16457E",
         "tonalRamp": [
-          "oklch(0.25 0.055 245)",
-          "oklch(0.35 0.083 245)",
-          "oklch(0.5 0.11 245)",
-          "oklch(0.62 0.11 245)",
-          "oklch(0.78 0.132 245)",
-          "oklch(0.86 0.088 245)",
-          "oklch(0.93 0.044 245)",
-          "oklch(0.97 0.017 245)"
+          "#000B1F",
+          "#0A2444",
+          "#1F406B",
+          "#355F94",
+          "#5682BC",
+          "#81A7DA",
+          "#ADCDF7",
+          "#E5F0FE"
+        ]
+      },
+      "destructive": {
+        "role": "secondary",
+        "displayName": "Alarm Red",
+        "canonical": "#8A1818",
+        "tonalRamp": [
+          "#1F0001",
+          "#470808",
+          "#701F1C",
+          "#9C3731",
+          "#C65A51",
+          "#E5877D",
+          "#FEB5AC",
+          "#FFE9E6"
+        ]
+      },
+      "status-foreground": {
+        "role": "secondary",
+        "displayName": "On Status",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#242424",
+          "#404040",
+          "#5D5D5D",
+          "#808080",
+          "#A4A4A4",
+          "#CACACA",
+          "#EEEEEE"
+        ]
+      },
+      "sidebar-dark": {
+        "role": "neutral",
+        "displayName": "Frame Gray (dark)",
+        "canonical": "#09090B",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#242425",
+          "#3F3F41",
+          "#5D5D60",
+          "#808083",
+          "#A4A4A7",
+          "#CACACC",
+          "#EEEEF0"
+        ]
+      },
+      "background-dark": {
+        "role": "neutral",
+        "displayName": "Panel White (dark)",
+        "canonical": "#0F0F11",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#242425",
+          "#3F3F41",
+          "#5D5D60",
+          "#808082",
+          "#A4A4A6",
+          "#CACACC",
+          "#EEEEF0"
+        ]
+      },
+      "card-dark": {
+        "role": "neutral",
+        "displayName": "Card White (dark)",
+        "canonical": "#141417",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#242426",
+          "#3F3F42",
+          "#5D5D61",
+          "#808083",
+          "#A4A4A7",
+          "#CACACD",
+          "#EEEEF0"
+        ]
+      },
+      "popover-dark": {
+        "role": "neutral",
+        "displayName": "Float White (dark)",
+        "canonical": "#1A1A1E",
+        "tonalRamp": [
+          "#0B0B0D",
+          "#242426",
+          "#3F3F43",
+          "#5D5D61",
+          "#808084",
+          "#A4A4A8",
+          "#CACACE",
+          "#EEEEF1"
+        ]
+      },
+      "secondary-dark": {
+        "role": "neutral",
+        "displayName": "Quiet Fill (dark)",
+        "canonical": "#1C1C20",
+        "tonalRamp": [
+          "#0B0B0D",
+          "#242426",
+          "#3F3F43",
+          "#5D5D61",
+          "#808084",
+          "#A4A4A8",
+          "#CACACE",
+          "#EEEEF1"
+        ]
+      },
+      "muted-dark": {
+        "role": "neutral",
+        "displayName": "Quiet Fill (dark)",
+        "canonical": "#1C1C20",
+        "tonalRamp": [
+          "#0B0B0D",
+          "#242426",
+          "#3F3F43",
+          "#5D5D61",
+          "#808084",
+          "#A4A4A8",
+          "#CACACE",
+          "#EEEEF1"
+        ]
+      },
+      "accent-dark": {
+        "role": "neutral",
+        "displayName": "Hover Gray (dark)",
+        "canonical": "#26262B",
+        "tonalRamp": [
+          "#0B0B0D",
+          "#242427",
+          "#3F3F43",
+          "#5D5D62",
+          "#7F7F85",
+          "#A4A4A9",
+          "#CACACE",
+          "#EEEEF1"
+        ]
+      },
+      "foreground-dark": {
+        "role": "neutral",
+        "displayName": "Ink (dark)",
+        "canonical": "#EDEDF0",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#242425",
+          "#3F3F41",
+          "#5D5D60",
+          "#808082",
+          "#A4A4A6",
+          "#CACACC",
+          "#EEEEF0"
+        ]
+      },
+      "muted-foreground-dark": {
+        "role": "neutral",
+        "displayName": "Second Ink (dark)",
+        "canonical": "#B4B4BC",
+        "tonalRamp": [
+          "#0B0B0D",
+          "#242427",
+          "#3F3F44",
+          "#5D5D63",
+          "#7F7F86",
+          "#A4A4AA",
+          "#CACACF",
+          "#EEEEF2"
+        ]
+      },
+      "border-dark": {
+        "role": "neutral",
+        "displayName": "Hairline (dark)",
+        "canonical": "#26262B",
+        "tonalRamp": [
+          "#0B0B0D",
+          "#242427",
+          "#3F3F43",
+          "#5D5D62",
+          "#7F7F85",
+          "#A4A4A9",
+          "#CACACE",
+          "#EEEEF1"
+        ]
+      },
+      "input-dark": {
+        "role": "neutral",
+        "displayName": "Control Edge (dark)",
+        "canonical": "#6E6E78",
+        "tonalRamp": [
+          "#0B0B0E",
+          "#232329",
+          "#3F3F46",
+          "#5D5D65",
+          "#7F7F89",
+          "#A4A4AC",
+          "#CACAD1",
+          "#EEEEF3"
+        ]
+      },
+      "primary-dark": {
+        "role": "primary",
+        "displayName": "Deep Emerald (dark)",
+        "canonical": "#47C7A1",
+        "tonalRamp": [
+          "#000F09",
+          "#042B20",
+          "#094B3A",
+          "#146D55",
+          "#0A9675",
+          "#5EB99B",
+          "#96DCC2",
+          "#C6FDE8"
+        ]
+      },
+      "primary-foreground-dark": {
+        "role": "primary",
+        "displayName": "On Emerald (dark)",
+        "canonical": "#09090B",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#242425",
+          "#3F3F41",
+          "#5D5D60",
+          "#808083",
+          "#A4A4A7",
+          "#CACACC",
+          "#EEEEF0"
+        ]
+      },
+      "ring-dark": {
+        "role": "primary",
+        "displayName": "Emerald Focus (dark)",
+        "canonical": "#47C7A1",
+        "tonalRamp": [
+          "#000F09",
+          "#042B20",
+          "#094B3A",
+          "#146D55",
+          "#0A9675",
+          "#5EB99B",
+          "#96DCC2",
+          "#C6FDE8"
+        ]
+      },
+      "attention-dark": {
+        "role": "secondary",
+        "displayName": "Attention Amber (dark)",
+        "canonical": "#F5B455",
+        "tonalRamp": [
+          "#130900",
+          "#332003",
+          "#573907",
+          "#7D5410",
+          "#AC7307",
+          "#CC9A55",
+          "#ECC38C",
+          "#FEEBD4"
+        ]
+      },
+      "attention-foreground-dark": {
+        "role": "secondary",
+        "displayName": "On Amber (dark)",
+        "canonical": "#1F1300",
+        "tonalRamp": [
+          "#100A03",
+          "#2B2316",
+          "#493E2D",
+          "#695C46",
+          "#8C7E67",
+          "#AFA38E",
+          "#D3C9B8",
+          "#F6EDE0"
+        ]
+      },
+      "warn-dark": {
+        "role": "secondary",
+        "displayName": "Warn Brown (dark)",
+        "canonical": "#F5B455",
+        "tonalRamp": [
+          "#130900",
+          "#332003",
+          "#573907",
+          "#7D5410",
+          "#AC7307",
+          "#CC9A55",
+          "#ECC38C",
+          "#FEEBD4"
+        ]
+      },
+      "success-dark": {
+        "role": "secondary",
+        "displayName": "Leaf Green (dark)",
+        "canonical": "#8FD98A",
+        "tonalRamp": [
+          "#001000",
+          "#032D03",
+          "#184C16",
+          "#2E6E2B",
+          "#50934D",
+          "#7EB57A",
+          "#ABD9A8",
+          "#D6FAD3"
+        ]
+      },
+      "info-dark": {
+        "role": "secondary",
+        "displayName": "Info Blue (dark)",
+        "canonical": "#8DB8F2",
+        "tonalRamp": [
+          "#010B1E",
+          "#0F2441",
+          "#244066",
+          "#3B5F8E",
+          "#5C82B5",
+          "#86A7D3",
+          "#B1CDF2",
+          "#E4F0FF"
+        ]
+      },
+      "destructive-dark": {
+        "role": "secondary",
+        "displayName": "Alarm Red (dark)",
+        "canonical": "#FF9C94",
+        "tonalRamp": [
+          "#1E0001",
+          "#421110",
+          "#682826",
+          "#91413D",
+          "#BA635D",
+          "#D98D87",
+          "#F8B8B2",
+          "#FEE9E7"
+        ]
+      },
+      "status-foreground-dark": {
+        "role": "secondary",
+        "displayName": "On Status (dark)",
+        "canonical": "#09090B",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#242425",
+          "#3F3F41",
+          "#5D5D60",
+          "#808083",
+          "#A4A4A7",
+          "#CACACC",
+          "#EEEEF0"
         ]
       }
     },
     "typographyMeta": {
       "headline": {
         "displayName": "Headline",
-        "purpose": "Page titles (h1), Geist sans."
+        "purpose": "Page title (h1), one per page."
       },
       "title": {
         "displayName": "Title",
-        "purpose": "Section headings (h2), Geist sans."
+        "purpose": "Section title (h2), chat title, dialog title."
       },
       "body": {
         "displayName": "Body",
-        "purpose": "Default UI and chat text, Geist."
+        "purpose": "Default UI text and chat messages; the 14px base. Weight 500 for sidebar rows, author names and buttons."
       },
       "label": {
         "displayName": "Label",
-        "purpose": "Buttons, badges, field labels, Geist."
+        "purpose": "Group labels (sentence case, sans), badges, timestamps, helper text. The smallest size."
       },
-      "meta": {
-        "displayName": "Meta",
-        "purpose": "Sidebar groups, list group headings, day separators, Geist Mono uppercase (.label-mono); timestamps in mono."
+      "code": {
+        "displayName": "Code",
+        "purpose": "Code blocks, inline code, keycaps and identifiers; Geist Mono only."
       }
     },
     "shadows": [
       {
         "name": "float",
         "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
-        "purpose": "Menus and popovers."
+        "purpose": "Menus, popovers, command palette and the dragged row, always with a 1px --border."
       },
       {
         "name": "sheet",
         "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
-        "purpose": "Side and bottom sheets."
+        "purpose": "Sheets and dialogs."
+      },
+      {
+        "name": "overlay",
+        "value": "oklch(0 0 0 / 60%)",
+        "purpose": "Scrim behind sheets and dialogs (a background, not a box-shadow)."
       }
     ],
     "motion": [
       {
+        "name": "feedback",
+        "value": "150ms",
+        "purpose": "Hover and press color feedback (CSS transitions, the Tailwind default)."
+      },
+      {
         "name": "overlay-in",
-        "value": "100ms fade + zoom-95",
-        "purpose": "Menus and popovers opening."
+        "value": "100ms fade + zoom-95, 8px slide from the trigger side",
+        "purpose": "Popovers and menus opening."
+      },
+      {
+        "name": "expand",
+        "value": "160ms easeOut, opacity + 4px y",
+        "purpose": "A bot's chats entering when the row expands; rows below move with layout."
+      },
+      {
+        "name": "panel",
+        "value": "200ms easeOut, opacity + 8px x",
+        "purpose": "The 360px context panel arriving."
       },
       {
         "name": "sheet-slide",
-        "value": "200ms ease-in-out, 2.5rem offset",
+        "value": "200ms ease-in-out, 2.5rem offset; overlay 150ms fade",
         "purpose": "Sheets entering and leaving."
+      },
+      {
+        "name": "reorder-spring",
+        "value": "spring stiffness 600, damping 40",
+        "purpose": "Bot rows moving aside during drag reorder (motion Reorder, layout)."
+      },
+      {
+        "name": "reduced",
+        "value": "duration 0; opacity only",
+        "purpose": "prefers-reduced-motion: layout changes are instant."
       }
     ],
     "breakpoints": [
       {
-        "name": "sm",
-        "value": "640px"
-      },
-      {
         "name": "md",
-        "value": "768px"
+        "value": "768px",
+        "purpose": "Below: the panel fills the screen and the sidebar is a sheet from a 48px top bar."
       },
       {
         "name": "lg",
-        "value": "1024px"
+        "value": "1024px",
+        "purpose": "Below: the context panel is a sheet."
       }
     ]
   },
@@ -161,101 +729,123 @@
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "Main action on a surface.",
-      "html": "<button class=\"ds-btn-primary\">Run routine</button>",
-      "css": ".ds-btn-primary{height:36px;padding:0 14px;border:1px solid transparent;border-radius:4px;background:oklch(0.593 0.151 245);color:oklch(0.985 0.005 85);font:500 14px 'Geist Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-primary:hover{background:oklch(0.5 0.1 180 / .8)}.ds-btn-primary:focus-visible{outline:none;border-color:oklch(0.64 0.15 245);box-shadow:0 0 0 1px oklch(0.55 0.1 180 / .5)}.ds-btn-primary:active{transform:translateY(1px)}"
+      "description": "The one main action of a view.",
+      "html": "<button class=\"ds-btn-primary\">Create bot</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:1px solid transparent;border-radius:6px;font:500 14px/20px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color .15s,color .15s;background:var(--primary,#015A45);color:var(--primary-foreground,#FFFFFF)}.ds-btn-primary:hover{background:color-mix(in oklch,var(--primary,#015A45),var(--foreground,#18181B) 12%)}.ds-btn-primary:focus-visible{outline:2px solid var(--ring,#015A45);outline-offset:2px}.ds-btn-primary:disabled{opacity:.5;cursor:not-allowed}"
     },
     {
-      "name": "Outline Button",
+      "name": "Secondary Button",
       "kind": "button",
-      "refersTo": "button-outline",
-      "description": "Secondary action.",
-      "html": "<button class=\"ds-btn-outline\">Cancel</button>",
-      "css": ".ds-btn-outline{height:36px;padding:0 14px;border:1px solid oklch(0.88 0.012 80);border-radius:4px;background:oklch(0.992 0.005 85);color:oklch(0.2 0.015 60);font:500 14px 'Geist Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-outline:hover{background:oklch(0.945 0.01 85)}.ds-btn-outline:focus-visible{outline:none;border-color:oklch(0.64 0.15 245);box-shadow:0 0 0 1px oklch(0.55 0.1 180 / .5)}"
+      "refersTo": "button-secondary",
+      "description": "Card fill with a 3:1 control edge; the default for non-primary actions.",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:1px solid transparent;border-radius:6px;font:500 14px/20px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color .15s,color .15s;background:var(--card,#FFFFFF);border-color:var(--input,#8A8A93);color:var(--foreground,#18181B)}.ds-btn-secondary:hover{background:var(--muted,#F0F0F3)}.ds-btn-secondary:focus-visible{outline:2px solid var(--ring,#015A45);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "No fill at rest; a quiet fill on hover.",
+      "html": "<button class=\"ds-btn-ghost\">Show 4 more</button>",
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:1px solid transparent;border-radius:6px;font:500 14px/20px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color .15s,color .15s;padding:0 8px;background:transparent;color:var(--foreground,#18181B)}.ds-btn-ghost:hover{background:var(--accent,#EDEDF0)}.ds-btn-ghost:focus-visible{outline:2px solid var(--ring,#015A45);outline-offset:2px}"
     },
     {
       "name": "Destructive Button",
       "kind": "button",
       "refersTo": "button-destructive",
-      "description": "Tinted danger action.",
-      "html": "<button class=\"ds-btn-danger\">Delete bot</button>",
-      "css": ".ds-btn-danger{height:36px;padding:0 14px;border:1px solid transparent;border-radius:4px;background:oklch(0.56 0.21 27 / .1);color:oklch(0.56 0.21 27);font:500 14px 'Geist Variable',sans-serif;cursor:pointer;transition:all .15s}.ds-btn-danger:hover{background:oklch(0.56 0.21 27 / .2)}.ds-btn-danger:focus-visible{outline:none;box-shadow:0 0 0 1px oklch(0.56 0.21 27 / .4)}"
+      "description": "A 10% tint with destructive text, never a solid fill.",
+      "html": "<button class=\"ds-btn-danger\">Delete chat</button>",
+      "css": ".ds-btn-danger{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:1px solid transparent;border-radius:6px;font:500 14px/20px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color .15s,color .15s;background:color-mix(in srgb,var(--destructive,#8A1818) 10%,transparent);color:var(--destructive,#8A1818)}.ds-btn-danger:hover{background:color-mix(in srgb,var(--destructive,#8A1818) 20%,transparent)}.ds-btn-danger:focus-visible{outline:2px solid var(--ring,#015A45);outline-offset:2px}"
     },
     {
       "name": "Text Input",
       "kind": "input",
       "refersTo": "input",
-      "description": "Standard single-line field.",
-      "html": "<input class=\"ds-input\" placeholder=\"Name this bot\">",
-      "css": ".ds-input{height:40px;width:240px;padding:0 12px;border:1px solid oklch(0.86 0.012 80);border-radius:4px;background:oklch(0.945 0.01 85 / .4);color:oklch(0.2 0.015 60);font:14px 'Geist Variable',sans-serif;transition:colors .15s}.ds-input::placeholder{color:oklch(0.48 0.02 70)}.ds-input:focus-visible{outline:none;border-color:oklch(0.64 0.15 245);box-shadow:0 0 0 1px oklch(0.55 0.1 180 / .5)}"
+      "description": "32px field on the card fill with a 3:1 edge.",
+      "html": "<input class=\"ds-input\" placeholder=\"Filter rooms, bots and chats\" aria-label=\"Filter\">",
+      "css": ".ds-input{height:32px;width:240px;padding:0 12px;border:1px solid var(--input,#8A8A93);border-radius:6px;background:var(--card,#FFFFFF);color:var(--foreground,#18181B);font:400 14px/20px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;outline:none;transition:border-color .15s,box-shadow .15s}.ds-input::placeholder{color:var(--muted-foreground,#4A4A52)}.ds-input:focus-visible{border-color:var(--ring,#015A45);box-shadow:0 0 0 1px var(--ring,#015A45)}"
     },
     {
-      "name": "Badge",
+      "name": "Badges",
       "kind": "chip",
       "refersTo": "badge",
-      "description": "Compact status label.",
-      "html": "<span class=\"ds-badge\">Needs input</span>",
-      "css": ".ds-badge{display:inline-flex;align-items:center;height:20px;padding:2px 8px;background:oklch(0.593 0.151 245);color:oklch(0.985 0.005 85);font:500 12px 'Geist Variable',sans-serif;white-space:nowrap}"
+      "description": "Neutral, attention and status badges; status pairs a tint with an icon.",
+      "html": "<span class=\"ds-badges\"><span class=\"ds-badge\">Draft</span><span class=\"ds-badge ds-badge-att\">3</span><span class=\"ds-badge ds-badge-fail\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 8v5M12 16h.01\"/></svg>Blocked</span></span>",
+      "css": ".ds-badges{display:inline-flex;gap:8px}.ds-badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;border-radius:4px;background:var(--muted,#F0F0F3);color:var(--foreground,#18181B);font:500 12px/16px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;white-space:nowrap}.ds-badge-att{padding:0 6px;background:var(--attention,#F0A63A);color:var(--attention-foreground,#2B1A00);font-variant-numeric:tabular-nums}.ds-badge-fail{background:color-mix(in srgb,var(--destructive,#8A1818) 10%,transparent);color:var(--destructive,#8A1818)}"
     },
     {
-      "name": "Card",
-      "kind": "card",
-      "refersTo": "card",
-      "description": "Flat container with a hairline ring.",
-      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Daily briefing</div><div class=\"ds-card-desc\">Runs weekdays at 07:30 with your chief.</div></div>",
-      "css": ".ds-card{display:flex;flex-direction:column;gap:4px;width:280px;padding:16px;border-radius:6px;background:oklch(0.992 0.005 85);color:oklch(0.2 0.015 60);box-shadow:0 0 0 1px oklch(0.2 0.015 60 / .1);font-family:'Geist Variable',sans-serif}.ds-card-title{font-size:14px;font-weight:500}.ds-card-desc{font-size:14px;color:oklch(0.48 0.02 70)}"
+      "name": "Sidebar Rows",
+      "kind": "nav",
+      "refersTo": "sidebar-row",
+      "description": "28px rows; selected is the hover fill plus an emerald icon, no side stripe.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Workspace\"><div class=\"ds-nav-label\">Bots</div><a class=\"ds-row\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"4\"/></svg><span class=\"ds-row-label\">Chief</span><span class=\"ds-row-meta\">1d</span></a><a class=\"ds-row ds-row-active\" href=\"#\" aria-current=\"page\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M4 6h16M4 12h16M4 18h10\"/></svg><span class=\"ds-row-label\">Inbox</span><span class=\"ds-badge-att\">3</span></a></nav>",
+      "css": ".ds-nav{display:flex;flex-direction:column;width:224px;padding:8px;background:var(--sidebar,#F3F3F5);font-family:'Geist Variable',ui-sans-serif,system-ui,sans-serif}.ds-nav-label{padding:16px 8px 4px;font:500 12px/16px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;color:var(--muted-foreground,#4A4A52)}.ds-row{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;color:var(--foreground,#18181B);font:500 14px/20px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;text-decoration:none;transition:background-color .15s}.ds-row svg{color:var(--muted-foreground,#4A4A52);flex-shrink:0}.ds-row:hover{background:var(--accent,#EDEDF0)}.ds-row:focus-visible{outline:2px solid var(--ring,#015A45)}.ds-row-active{background:var(--accent,#EDEDF0)}.ds-row-active svg{color:var(--primary,#015A45)}.ds-row-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ds-row-meta{font-size:12px;color:var(--muted-foreground,#4A4A52);font-variant-numeric:tabular-nums}.ds-badge-att{border-radius:4px;padding:0 6px;background:var(--attention,#F0A63A);color:var(--attention-foreground,#2B1A00);font:500 12px/20px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums}"
+    },
+    {
+      "name": "Composer",
+      "kind": "custom",
+      "refersTo": "composer",
+      "description": "Card fill, 12px radius, hairline edge; the send button is a 28px emerald circle.",
+      "html": "<div class=\"ds-composer\"><textarea class=\"ds-composer-text\" rows=\"2\" placeholder=\"Message Writer…\" aria-label=\"Message\"></textarea><div class=\"ds-composer-bar\"><button class=\"ds-composer-tool\" aria-label=\"Attach\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M21 12.5 12.5 21a5 5 0 0 1-7-7L14 5.5a3.5 3.5 0 0 1 5 5L10.5 19a2 2 0 0 1-3-3L15 8.5\"/></svg></button><button class=\"ds-composer-send\" aria-label=\"Send\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M12 19V5M5 12l7-7 7 7\"/></svg></button></div></div>",
+      "css": ".ds-composer{width:480px;border:1px solid var(--border,#E2E2E6);border-radius:12px;background:var(--card,#FFFFFF);font-family:'Geist Variable',ui-sans-serif,system-ui,sans-serif}.ds-composer:focus-within{border-color:var(--ring,#015A45)}.ds-composer-text{display:block;width:100%;min-height:40px;padding:8px 12px;border:0;background:transparent;color:var(--foreground,#18181B);font:400 14px/20px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;resize:none;outline:none}.ds-composer-text::placeholder{color:var(--muted-foreground,#4A4A52)}.ds-composer-bar{display:flex;justify-content:space-between;align-items:center;padding:4px 8px 8px}.ds-composer-tool{display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:6px;background:transparent;color:var(--muted-foreground,#4A4A52);cursor:pointer}.ds-composer-tool:hover{background:var(--accent,#EDEDF0);color:var(--foreground,#18181B)}.ds-composer-send{display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:999px;background:var(--primary,#015A45);color:var(--primary-foreground,#FFFFFF);cursor:pointer}.ds-composer-send:hover{background:color-mix(in oklch,var(--primary,#015A45),var(--foreground,#18181B) 12%)}.ds-composer-tool:focus-visible,.ds-composer-send:focus-visible{outline:2px solid var(--ring,#015A45);outline-offset:2px}"
+    },
+    {
+      "name": "Message Row",
+      "kind": "custom",
+      "description": "Flat message row, not a bubble: 32px avatar, name and time on one line, then the body.",
+      "html": "<article class=\"ds-msg\"><span class=\"ds-msg-avatar\" aria-hidden=\"true\">A</span><div><div class=\"ds-msg-head\"><span class=\"ds-msg-name\">Ana</span><time class=\"ds-msg-time\">09:41</time></div><p class=\"ds-msg-body\">Draft the weekly brief from yesterday's notes. Use <code class=\"ds-code\">notes.md</code>.</p></div></article>",
+      "css": ".ds-msg{display:flex;gap:12px;max-width:768px;padding:8px 16px;background:var(--background,#FBFBFC);color:var(--foreground,#18181B);font-family:'Geist Variable',ui-sans-serif,system-ui,sans-serif}.ds-msg:hover{background:color-mix(in oklch,var(--muted,#F0F0F3) 50%,var(--background,#FBFBFC))}.ds-msg-avatar{display:grid;place-items:center;flex-shrink:0;width:32px;height:32px;border-radius:999px;background:var(--muted,#F0F0F3);font:600 12px 'Geist Variable',ui-sans-serif,system-ui,sans-serif}.ds-msg-head{display:flex;align-items:baseline;gap:8px}.ds-msg-name{font:500 14px/20px 'Geist Variable',ui-sans-serif,system-ui,sans-serif}.ds-msg-time{font:500 12px/16px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;color:var(--muted-foreground,#4A4A52);font-variant-numeric:tabular-nums}.ds-msg-body{margin:0;font:400 14px/20px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;text-wrap:pretty}.ds-code{padding:0 4px;border:1px solid var(--border,#E2E2E6);border-radius:4px;background:color-mix(in oklch,var(--foreground,#18181B) 6%,transparent);font:400 12px 'Geist Mono Variable',ui-monospace,monospace}"
     }
   ],
   "narrative": {
-    "northStar": "The Quiet Dispatcher",
-    "overview": "Work happens on the server; the interface stays still until something needs the user. Zetta reads as an editorial control room: warm paper and ink neutrals, one azure signal, hairline structure, and no decoration competing with bot output or attention states. When a bot is working, nothing should shout; when a person is needed, that is the loudest thing on screen.",
+    "northStar": "Talk to the right bot, in the right chat.",
+    "overview": "**Creative North Star: \"Talk to the right bot, in the right chat.\"**\n\nZetta is a chat workspace for bots. It works like Slack, with one change: each bot has many chats. A user starts a new chat for each intention, so the bot keeps a clean context and the user can find the work again. The chief is the first bot; the other bots follow in the order that the user sets.\n\nThe visual reference is Linear: a quiet gray ground, one content panel, dense rows, fast keyboard paths, and no decoration. The interface stays still while bots work. Two colors speak: emerald marks what the user can act on or has selected, and amber marks the places where a person is needed.",
     "keyCharacteristics": [
-      "Warm paper and ink neutrals (hue 60 to 85) with a single azure signal (hue 245); amber (--attention) is the only other loud color.",
-      "Flat, tonal layering; depth from 1px rings and surface tint, not shadows.",
-      "Light and dark themes with equal standing (class-based .dark).",
-      "Dense, scannable app chrome at 14px body.",
-      "WCAG 2.2 AA is a requirement; focus rings are always visible."
+      "Cool, low-chroma neutrals in light and dark themes. One emerald signal. Amber only for attention.",
+      "WCAG 2.2 AA, with AAA color contrast: every text and background pair is 7:1 or more (PRODUCT.md). Non-text indicators (input borders, focus rings, icons that carry meaning) are 3:1 or more. Focus rings are always visible.",
+      "All sizes and spaces are even pixel values on a 4px grid. Base text is 14px.",
+      "Flat at rest. Depth comes from surface tone and 1px borders; only floating layers have shadows.",
+      "Every color comes from a semantic token. A new color scheme is a new set of values for the same tokens."
     ],
     "rules": [
       {
-        "name": "The One Voice Rule",
-        "body": "Azure marks the thing you can act on or that is selected. It never decorates.",
+        "name": "The One Signal Rule",
+        "body": "Emerald marks the thing to act on or the selected thing. It never decorates, and it never means \"success\".",
         "section": "colors"
       },
       {
         "name": "The Attention Rule",
-        "body": "Amber is spent only on \"a person is needed\". Not for decoration or ordinary warnings.",
+        "body": "Amber means \"a person is needed\" and nothing else. It is the loudest thing on screen.",
         "section": "colors"
       },
       {
         "name": "The Tint Not Fill Rule",
-        "body": "Danger and attention states use a low-opacity tint with colored text, never a saturated fill.",
+        "body": "Failed and blocked states are a 10% tint with colored text and an icon, never a solid fill, so a failure does not out-shout a request for the user.",
         "section": "colors"
       },
       {
-        "name": "The Three Voices Rule",
-        "body": "Serif speaks (headings), sans works (UI), mono annotates (metadata). Do not set body copy in serif or headings in mono.",
-        "section": "typography"
-      },
-      {
         "name": "The Flat-At-Rest Rule",
-        "body": "Cards, lists and panels carry no shadow. If something needs lifting, it should be a floating layer.",
+        "body": "Cards, lists, rows and panels have no shadow.",
         "section": "elevation"
       }
     ],
     "dos": [
-      "Do use the token variables (--primary, --border, etc.) rather than raw colors so both themes stay in step.",
-      "Do keep azure to actionable and selected elements, and amber to attention.",
-      "Do give every interactive element a visible focus treatment (azure border plus 1px ring).",
-      "Do express danger as a tint plus colored text.",
-      "Do use the shared @zetta/ui components before building new primitives."
+      "**Do** use only the semantic tokens; change token values, never add tokens.",
+      "**Do** check every new theme or color change against the contrast table (7:1 text, 3:1 non-text).",
+      "**Do** use even pixel values on the 4px grid, with 14px base text.",
+      "**Do** keep emerald for actions and selection, and amber for \"a person is needed\".",
+      "**Do** give every drag a keyboard alternative and every icon-only button an `aria-label`.",
+      "**Do** use TanStack Router `<Link>` for in-app navigation (see CLAUDE.md).",
+      "**Do** use the shared `@zetta/ui` and `@g4rcez/components` primitives before you build new ones."
     ],
     "donts": [
-      "Don't add shadows to cards, lists or panels.",
-      "Don't introduce a fourth typeface or a second accent hue; status colors are the success, warn, info and destructive tokens.",
-      "Don't use raw hex or Tailwind palette colors (amber-500, emerald-600); use the tokens.",
-      "Don't surface technical vocabulary (harness, MCP, hook) in default-visible UI.",
-      "Don't let status color alone carry meaning; pair it with text or an icon."
+      "**Don't** use raw hex, Tailwind palette colors or `--var-*` tokens in components.",
+      "**Don't** add a lighter third text gray, a second accent hue, or a gradient.",
+      "**Don't** put shadows on cards, lists or panels, or side stripes on rows.",
+      "**Don't** use uppercase mono labels, text below 12px, or odd pixel values.",
+      "**Don't** copy Linear's or any competitor's logo, text, illustrations or exact layouts.",
+      "**Don't** show technical words (harness, MCP, hook) in default views.",
+      "**Don't** let color alone carry a state; add an icon or a word."
     ]
   }
 }

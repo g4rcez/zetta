@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { readUIMessageStream, type UIMessageChunk } from "ai";
 
 import {
   dayLabel,
   groupMessages,
   liveRows,
   reuseRows,
+  shouldAutoOpen,
   type Row,
   type ZettaUIMessage,
 } from "./chat-rows";
@@ -158,6 +160,110 @@ describe("liveRows", () => {
       { at: 2000, label: "web_search" },
       { at: 5000, label: "write_file" },
     ]);
+  });
+});
+
+describe("live artifact receipt", () => {
+  test("a published artifact shows as a receipt on its row, once", () => {
+    const artifact = {
+      type: "data-artifact",
+      id: "m1:a1",
+      data: { messageId: "m1", id: "a1", title: "Report", at: 1000 },
+    } as const;
+    const turn: ZettaUIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { type: "data-speaker", id: "m1", data: { messageId: "m1", botName: "Chief" } },
+          artifact,
+          artifact,
+        ],
+      },
+    ];
+    expect(liveRows(turn)[0]!.meta?.receipts).toEqual([
+      { kind: "artifact", id: "a1", text: "Report", created: true },
+    ]);
+  });
+});
+
+describe("two bots answering at once", () => {
+  test("interleaved text parts of one turn become one row per bot with its own text", async () => {
+    const chunks = [
+      { type: "start" },
+      { type: "data-speaker", id: "m1", data: { messageId: "m1", botId: "a", botName: "A" } },
+      { type: "text-start", id: "m1" },
+      { type: "data-speaker", id: "m2", data: { messageId: "m2", botId: "b", botName: "B" } },
+      { type: "text-start", id: "m2" },
+      { type: "text-delta", id: "m1", delta: "Alpha " },
+      { type: "text-delta", id: "m2", delta: "Beta " },
+      { type: "text-delta", id: "m1", delta: "one" },
+      { type: "text-delta", id: "m2", delta: "two" },
+      { type: "text-end", id: "m2" },
+      { type: "text-end", id: "m1" },
+      { type: "finish" },
+    ] as unknown as UIMessageChunk[];
+    const stream = new ReadableStream<UIMessageChunk>({
+      start(c) {
+        for (const x of chunks) c.enqueue(x);
+        c.close();
+      },
+    });
+    let last: ZettaUIMessage | undefined;
+    for await (const m of readUIMessageStream<ZettaUIMessage>({ stream })) last = m;
+    const rows = liveRows([last!]);
+    expect(rows.map((r) => [r.id, r.content])).toEqual([
+      ["m1", "Alpha one"],
+      ["m2", "Beta two"],
+    ]);
+  });
+});
+
+describe("live plan", () => {
+  test("the latest plan part of a row replaces the earlier one", () => {
+    const plan = (status: "active" | "done"): ZettaUIMessage["parts"][number] => ({
+      type: "data-plan",
+      id: "m1:plan",
+      data: { messageId: "m1", steps: [{ id: "1", title: "Write", status }] },
+    });
+    const turn: ZettaUIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { type: "data-speaker", id: "m1", data: { messageId: "m1", botName: "Chief" } },
+          plan("active"),
+          plan("done"),
+        ],
+      },
+    ];
+    expect(liveRows(turn)[0]!.plan).toEqual([{ id: "1", title: "Write", status: "done" }]);
+  });
+});
+
+describe("shouldAutoOpen", () => {
+  const base = {
+    desktop: true,
+    paneOpen: false,
+    seen: new Set<string>(),
+    id: "a1",
+    at: 100_000,
+    now: 105_000,
+  };
+  test("opens a fresh artifact when nothing else is open", () => {
+    expect(shouldAutoOpen(base)).toBe(true);
+  });
+  test("never on a narrow screen, where the pane would cover the chat", () => {
+    expect(shouldAutoOpen({ ...base, desktop: false })).toBe(false);
+  });
+  test("never over a pane that is already open", () => {
+    expect(shouldAutoOpen({ ...base, paneOpen: true })).toBe(false);
+  });
+  test("only once per artifact", () => {
+    expect(shouldAutoOpen({ ...base, seen: new Set(["a1"]) })).toBe(false);
+  });
+  test("not for a replayed stream with an old time", () => {
+    expect(shouldAutoOpen({ ...base, now: 111_000 })).toBe(false);
   });
 });
 

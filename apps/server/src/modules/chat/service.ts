@@ -32,6 +32,7 @@ import {
   setupText,
   whatsappBlocks,
   whatsappView,
+  type PlanStep,
   type RejectedTool,
   type ToolCall,
   type WhatsappBody,
@@ -67,10 +68,11 @@ import {
   type MemorySnapshot,
 } from "../features/knowledge";
 import { configHash, looksSecret } from "../features/safety";
-import { createTurnRegistry, TurnBusyError } from "./turns";
+import { createLiveBots, loadBotStatus, phaseAfterRound, type RunPhase } from "./bot-status";
+import { createTurnRegistry, mergeAll, TurnBusyError } from "./turns";
 import { createRouting, type Route } from "./routing";
 import { clip, insertMessage } from "./messages";
-import { harnessReadiness } from "./harnesses";
+import { HARNESS_LABELS, harnessReadiness } from "./harnesses";
 import { audit, outcomeOf } from "../features/audit";
 import type { DecisionService } from "../decisions/service";
 import type { Mcp } from "../integrations/mcp";
@@ -266,7 +268,8 @@ export type ChatEvent =
       /** Set when the reply goes into a thread (a thread turn, or the answer to a queued message). */
       parentMessageId?: string | null;
     }
-  | { type: "delta"; botId: string; text: string }
+  /** `messageId` names the reply the text belongs to, because several bots may answer at once. */
+  | { type: "delta"; messageId: string; botId: string; text: string }
   | { type: "message"; message: typeof message.$inferSelect; botName: string }
   | { type: "proposal"; proposalId: string }
   | { type: "summary"; text: string }
@@ -280,6 +283,12 @@ export type ChatEvent =
     }
   /** What the bot is doing between text chunks (running a tool, waiting on the model), so the chat never looks frozen. */
   | { type: "activity"; messageId: string; botId: string; label: string; at: number }
+  /** A file the bot just published, announced while the turn still runs so the chat can show it (and open it) at once. */
+  | { type: "artifact"; messageId: string; botId: string; id: string; title: string; at: number }
+  /** Messages the person sent while the bot worked were handed to its next step: the chat reloads them (they are no longer queued). */
+  | { type: "steer"; messageId: string; botId: string; noteIds: string[] }
+  /** The checklist the bot announced with zetta:plan; each event carries the whole list, so the last one wins. */
+  | { type: "plan"; messageId: string; botId: string; steps: PlanStep[] }
   | { type: "done" };
 
 /** Later additions, kept in one object so positional callers stay unchanged. */
@@ -320,6 +329,7 @@ export function createChatService(
   const routing = createRouting(db, decisions, jev);
   const runCheck = deps.checkCli ?? runCli;
   const turns = createTurnRegistry<ChatEvent>();
+  const liveBots = createLiveBots();
   const resumable: {
     messageId: string;
     conversationId: string;
@@ -2225,7 +2235,11 @@ export function createChatService(
     untrusted: boolean;
     signal?: AbortSignal | undefined;
     onComputer?: (vm: { id: string; name: string }, step?: string) => void;
-    onActivity?: (label: string) => void;
+    onActivity?: (label: string, phase?: RunPhase) => void;
+    onArtifact?: (artifact: { id: string; title: string }) => void;
+    onPlan?: (steps: PlanStep[]) => void;
+    /** Takes the messages the person sent since the last round (each one once), as plain text for the next prompt. */
+    takeNotes?: () => Promise<string[]>;
     conversationId?: string;
     scope?: ToolScope | undefined;
     noCode?: boolean | undefined;
@@ -2291,8 +2305,14 @@ export function createChatService(
       lastPrompt = "";
     const seen = new Map<string, number>();
     const log: string[] = [];
-    const rerun = async (prompt: string) => {
+    // What the person said while the bot worked: every later prompt carries all of it, because loops rebuild the prompt each round.
+    const notes: string[] = [];
+    const rerun = async (basePrompt: string) => {
       ctx.onActivity?.("Thinking");
+      if (ctx.takeNotes && !ctx.signal?.aborted) notes.push(...(await ctx.takeNotes()));
+      const prompt = notes.length
+        ? `${basePrompt}\n\nThe user sent this while you worked. Follow it; it may change the task:\n${notes.map((n) => `- ${n}`).join("\n")}`
+        : basePrompt;
       const pluginTools = await mcp?.plugins.promptFor(actor, who.id).catch(() => "");
       return (
         await withRetry(
@@ -2320,6 +2340,7 @@ export function createChatService(
     try {
       for (let round = 0; ; round++) {
         const parsed = parseTools(current);
+        if (parsed.plan) ctx.onPlan?.(parsed.plan);
         let calls = untrusted ? parsed.calls.filter((c) => !writes(c)) : parsed.calls;
         // A block that does not run is never silent: the user gets a note and the bot is told, so it cannot claim the work was done.
         const dropped: RejectedTool[] = [...parsed.rejected];
@@ -2391,7 +2412,8 @@ export function createChatService(
         }
         if (!calls.length)
           return done([parsed.text, ...allNotes].filter(Boolean).join("\n\n") || current);
-        ctx.onActivity?.(calls.map(describeCall).join(", "));
+        ctx.onActivity?.(calls.map(describeCall).join(", "), phaseAfterRound(calls));
+        const receiptsBefore = receipts.length;
         const r = await runTools(
           actor,
           who,
@@ -2416,6 +2438,8 @@ export function createChatService(
             ? "ask"
             : "apply",
         );
+        for (const x of receipts.slice(receiptsBefore))
+          if (x.kind === "artifact") ctx.onArtifact?.({ id: x.id, title: x.text });
         allNotes.push(...r.notes);
         allViews.push(...r.views);
         r.browserResults.push(...dropLines);
@@ -2488,12 +2512,34 @@ export function createChatService(
       | undefined;
     /** Instructions the user picked for this turn. */
     referenced?: Turn["referenced"];
+    /** Hands the bot the messages sent while it works, at its next tool round (see `claimNotes`); `replyId` is the row this answer saves into. */
+    takeNotes?: (replyId: string) => Promise<{ id: string; content: string }[]>;
   };
   /**
    * One bot's answer in a conversation: a running row first (flushed while streaming so a disconnect or crash never loses output), the
    * user's per-run env, the tool loop, then the saved row and its audit. Shared by chat turns and group discussion turns.
    */
-  async function* answerAs(
+  /** Runs one bot answer and keeps `liveBots` in step with it: it starts planning, turns to working at the first text, and ends with the answer. */
+  async function* answerAs(actor: ActiveActor, a: AnswerArgs): ReturnType<typeof runAnswer> {
+    const run = runAnswer(actor, a);
+    let id: string | undefined;
+    try {
+      for (;;) {
+        const step = await run.next();
+        if (step.done) return step.value;
+        const ev = step.value;
+        if (ev.type === "start") {
+          id = ev.messageId;
+          liveBots.begin(id, ev.botId, actor.userId);
+        } else if (ev.type === "delta" && id) liveBots.update(id, { phase: "working" });
+        yield ev;
+      }
+    } finally {
+      if (id) liveBots.end(id);
+      void run.return(undefined as never);
+    }
+  }
+  async function* runAnswer(
     actor: ActiveActor,
     a: AnswerArgs,
   ): AsyncGenerator<ChatEvent, { saved: Msg; status: "complete" | "failed" | "cancelled" }> {
@@ -2562,7 +2608,7 @@ export function createChatService(
       }
       if (a.canned !== undefined) {
         reply = a.canned;
-        yield { type: "delta", botId: who.id, text: a.canned };
+        yield { type: "delta", messageId: row.id, botId: who.id, text: a.canned };
       } else {
         // A failed start is tried again after a short wait, but never once text has reached the user (a retry would repeat it).
         for (let attempt = 0; ; attempt++) {
@@ -2597,7 +2643,7 @@ export function createChatService(
               },
             })) {
               reply += chunk;
-              yield { type: "delta", botId: who.id, text: chunk };
+              yield { type: "delta", messageId: row.id, botId: who.id, text: chunk };
               if (Date.now() - lastFlush > FLUSH_MS) {
                 lastFlush = Date.now();
                 await db.update(message).set({ content: reply }).where(eq(message.id, row.id));
@@ -2634,6 +2680,7 @@ export function createChatService(
       }
     }
     const timeline: { at: number; label: string }[] = [];
+    let plan: PlanStep[] | undefined;
     if (status === "complete") {
       // The tool loop runs while this generator keeps yielding: the moment a bot starts using a computer, the chat shows it live.
       const live: ChatEvent[] = [];
@@ -2663,13 +2710,45 @@ export function createChatService(
           });
           wake?.();
         },
-        onActivity: (label) => {
+        onActivity: (label, phase) => {
           const at = Date.now();
+          liveBots.update(row.id, { label, phase });
           if (label !== "Thinking" && timeline.at(-1)?.label !== label) {
             timeline.push({ at, label });
             if (timeline.length > TIMELINE_MAX) timeline.shift();
           }
           live.push({ type: "activity", messageId: row.id, botId: who.id, label, at });
+          wake?.();
+        },
+        ...(a.takeNotes && {
+          takeNotes: async () => {
+            const taken = await a.takeNotes!(row.id);
+            if (taken.length) {
+              live.push({
+                type: "steer",
+                messageId: row.id,
+                botId: who.id,
+                noteIds: taken.map((n) => n.id),
+              });
+              wake?.();
+            }
+            return taken.map((n) => n.content);
+          },
+        }),
+        onPlan: (steps) => {
+          plan = steps;
+          live.push({ type: "plan", messageId: row.id, botId: who.id, steps });
+          wake?.();
+        },
+        onArtifact: ({ id, title }) => {
+          live.push({
+            type: "artifact",
+            messageId: row.id,
+            botId: who.id,
+            id,
+            title,
+            at: Date.now(),
+          });
           wake?.();
         },
       }).finally(() => {
@@ -2696,12 +2775,14 @@ export function createChatService(
     reply = clip(reply);
     if (status === "complete" && a.suffixIfComplete) reply += a.suffixIfComplete;
     const meta =
-      used || receipts.length || a.decision || errCode || timeline.length
+      used || receipts.length || a.decision || errCode || timeline.length || plan
         ? {
             used: used ?? { memories: [], instructions: [] },
             receipts,
             // What the bot did, step by step: shown live while it works and kept after the answer.
             ...(timeline.length ? { timeline } : {}),
+            // The checklist as the bot last announced it, kept after the answer.
+            ...(plan ? { plan } : {}),
             ...(a.decision ? { decision: a.decision } : {}),
             // Loops and routines read this to decide how long to wait before the next try.
             ...(errCode ? { error: errCode } : {}),
@@ -2867,6 +2948,90 @@ export function createChatService(
     } finally {
       draining.delete(key);
     }
+  }
+
+  /**
+   * Takes the messages the person sent while a bot works (queued, same thread, plain text) so the bot reads them at its next step instead
+   * of after the whole turn. A message with files, pictures or picked instructions keeps waiting: it needs a turn of its own. A taken
+   * message leaves the queue (nothing answers it separately) and is marked with the reply that used it. If the turn ends first, nothing
+   * is taken and the queue answers it as before.
+   */
+  async function claimNotes(
+    actor: ActiveActor,
+    conversationId: string,
+    thread: string | null,
+    replyId: string,
+  ): Promise<{ id: string; content: string }[]> {
+    return db.transaction(async (tx) => {
+      const pending = await tx
+        .select({
+          id: chatQueue.id,
+          messageId: chatQueue.messageId,
+          content: message.content,
+          input: chatQueue.input,
+        })
+        .from(chatQueue)
+        .innerJoin(message, eq(message.id, chatQueue.messageId))
+        .where(
+          and(
+            eq(chatQueue.conversationId, conversationId),
+            eq(chatQueue.ownerUserId, actor.userId),
+            eq(chatQueue.status, "pending"),
+            thread ? eq(message.parentMessageId, thread) : isNull(message.parentMessageId),
+          ),
+        )
+        .orderBy(asc(chatQueue.createdAt));
+      if (!pending.length) return [];
+      const withFiles = new Set(
+        (
+          await tx
+            .select({ id: attachment.messageId })
+            .from(attachment)
+            .where(
+              inArray(
+                attachment.messageId,
+                pending.map((p) => p.messageId),
+              ),
+            )
+        ).map((r) => r.id),
+      );
+      const plain = pending.filter((p) => {
+        const o = (p.input ?? {}) as { fileRefs?: unknown[]; instructionIds?: unknown[] };
+        return !withFiles.has(p.messageId) && !o.fileRefs?.length && !o.instructionIds?.length;
+      });
+      if (!plain.length) return [];
+      // The delete decides who gets a note when two runs ask at once: a row it did not return belongs to someone else.
+      const gone = new Set(
+        (
+          await tx
+            .delete(chatQueue)
+            .where(
+              and(
+                inArray(
+                  chatQueue.id,
+                  plain.map((p) => p.id),
+                ),
+                eq(chatQueue.status, "pending"),
+              ),
+            )
+            .returning({ id: chatQueue.id })
+        ).map((r) => r.id),
+      );
+      const notes = plain.filter((p) => gone.has(p.id));
+      if (notes.length)
+        await tx
+          .update(message)
+          .set({
+            meta: sql`coalesce(${message.meta}, '{}'::jsonb) || ${JSON.stringify({ steer: { replyId, at: Date.now() } })}::jsonb`,
+          })
+          .where(
+            inArray(
+              message.id,
+              notes.map((n) => n.messageId),
+            ),
+          );
+      return notes.map((n) => ({ id: n.messageId, content: n.content }));
+    });
   }
 
   let self:
@@ -3063,7 +3228,8 @@ export function createChatService(
                   ownerUserId: actor.userId,
                   kind: "chief",
                   visibility: "private",
-                  name: "Chief",
+                  // The chief is Zetta by default (one name for the app and the bot people talk to); the user can rename it.
+                  name: "Zetta",
                   slug,
                   description: "Your personal chief of staff.",
                 })
@@ -3077,6 +3243,11 @@ export function createChatService(
         if (isUniqueViolation(e, "bot_one_chief_per_owner")) return chief();
         throw e;
       } // a concurrent request created it
+    },
+    /** Status of every bot the person can see, from the person's own rows only. `fixture` has no label: it never fails to sign in. */
+    async botStatus(actor: ActiveActor) {
+      const bots = await this.listBots(actor);
+      return loadBotStatus(db, actor.userId, bots, liveBots, HARNESS_LABELS);
     },
     /** Owners get their full configuration; other members only see the public card of team bots (no prompts, instructions or ownership). */
     async listBots(actor: ActiveActor) {
@@ -4130,7 +4301,14 @@ export function createChatService(
             origin: { conversationId: conv.id, messageId: input.retry?.requestId ?? userMsg.id },
             ...(input.loop ? { loopId: input.loop.id } : {}),
           };
-      for (const { bot: who, delegated } of queue) {
+      type Where = { parentMessageId: string | null; historyRoot?: string | null };
+      // One bot's answer: its delegation row, the reply, and the events that follow it. `where` says which thread the reply lands in.
+      const answerOne = async function* (
+        who: typeof bot.$inferSelect,
+        delegated: boolean,
+        botHist: HistRow[],
+        where: Where,
+      ) {
         const [deleg] = delegated
           ? await db
               .insert(delegation)
@@ -4146,10 +4324,9 @@ export function createChatService(
         const { saved, status } = yield* answerAs(actor, {
           convId: conv.id,
           who,
-          hist,
+          hist: botHist,
           prompt,
-          parentMessageId: thread ?? null,
-          ...(asked ? { historyRoot: asked.parentMessageId } : {}),
+          ...where,
           untrusted: untrustedConv || files.length > 0,
           images,
           referenced,
@@ -4168,6 +4345,12 @@ export function createChatService(
           noCode: untrustedConv,
           extraTools: await discussionToolsFor(actor, who, scope),
           resumeSession: input.resume?.sessionId,
+          // Only a person's own chat turn takes notes: not inbound messages, loop steps, resumed runs or retries.
+          ...(!input.external && !input.loop && !input.resume && !input.retry
+            ? {
+                takeNotes: (replyId: string) => claimNotes(actor, conv.id, thread ?? null, replyId),
+              }
+            : {}),
         });
         if (deleg)
           await db
@@ -4178,7 +4361,7 @@ export function createChatService(
               reasonCode: status === "failed" ? "bot_failed" : null,
             })
             .where(eq(delegation.id, deleg.id));
-        hist.push(saved);
+        botHist.push(saved);
         // A failed delegated answer is partial work: surface one attention card naming the responsible bot.
         if (delegated && status === "failed")
           await raiseAttention(db, actor.userId, {
@@ -4190,10 +4373,39 @@ export function createChatService(
             source: "bot",
             sourceKey: `delegation:${who.id}:${conv.id}`,
           });
-        yield { type: "message", message: saved, botName: who.name };
-        while (newProposals.length) yield { type: "proposal", proposalId: newProposals.shift()! };
-        if (status === "cancelled") break;
-      }
+        yield { type: "message", message: saved, botName: who.name } as const;
+        while (newProposals.length)
+          yield { type: "proposal", proposalId: newProposals.shift()! } as const;
+        return status;
+      };
+      const mainWhere: Where = {
+        parentMessageId: thread ?? null,
+        ...(asked ? { historyRoot: asked.parentMessageId } : {}),
+      };
+      const [lead, ...rest] = queue;
+      let cancelled =
+        (yield* answerOne(lead!.bot, lead!.delegated, hist, mainWhere)) === "cancelled";
+      // Several @mentions: a decision model says whether they are independent. A chain ("@A draft it, then @B review it") and any doubt run
+      // one after another below, each bot seeing every earlier reply, so a later bot answers only after all the others are done.
+      if (
+        !cancelled &&
+        rest.length > 1 &&
+        (await routing.mentionMode(b, input.content, actor)) === "parallel"
+      ) {
+        // Independent bots work at the same time. Each reads the conversation up to the first answer, none sees another's reply, and
+        // each answers in the thread of the message (the main line keeps the one reply), so no answer breaks another's context.
+        const where: Where = thread
+          ? mainWhere
+          : { parentMessageId: userMsg.id, historyRoot: null };
+        const statuses = yield* mergeAll(
+          rest.map((r) => answerOne(r.bot, r.delegated, [...hist], where)),
+        );
+        cancelled = statuses.includes("cancelled");
+      } else
+        for (const r of rest) {
+          if (cancelled) break;
+          cancelled = (yield* answerOne(r.bot, r.delegated, hist, mainWhere)) === "cancelled";
+        }
       if (mentioned.length) {
         // Deterministic consolidation of delegated work: who answered, who failed, what was not asked.
         const rows = await db

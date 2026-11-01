@@ -247,32 +247,24 @@ suite("group discussions against compose postgres", () => {
     ).toEqual(["Dev"]);
   });
 
-  test("a bot outside the allowlist needs approval (exactly once); duplicates and nesting are refused", async () => {
+  // The owner's own bot asking for a room is applied at once (only rm, sudo and mail wait for the user); the room still opens
+  // exactly once, and a room can never open another room.
+  test("a bot outside the allowlist opens the room at once (exactly once); duplicates and nesting are refused", async () => {
     const lead = await makeBot(A, "Lead");
     await makeBot(A, "Qa");
     const { say } = await chatWith(A, lead.id);
-    replies.Lead = [open("Release check", ["Qa"], "@Qa run the suite")];
-    expect((await say("check the release")).json.assistant.content).toContain(
-      "review and approve it below",
-    );
-    expect(
-      (await call(A, "GET", "/api/discussions")).json.discussions.some(
-        (x: { title: string }) => x.title === "Release check",
-      ),
-    ).toBe(false);
-    const p = (await call(A, "GET", "/api/proposals")).json.proposals.find(
-      (x: { kind: string }) => x.kind === "open_discussion",
-    );
+    replies.Lead = [open("Release check", ["Qa"], "@Qa run the suite"), "noted"];
     replies.Qa = [
       'All green.\n```zetta:discussion\n{"action":"open","title":"Nested","goal":"x","members":[{"bot":"Lead"}],"firstMessage":"hi"}\n```',
     ];
-    replies.Lead = ["noted"];
+    expect((await say("check the release")).json.assistant.content).toContain(
+      "✅ Done: Release check.",
+    );
     expect(
-      (await call(A, "POST", `/api/proposals/${p.id}/decision`, { approve: true })).json.status,
-    ).toBe("approved");
-    expect(
-      (await call(A, "POST", `/api/proposals/${p.id}/decision`, { approve: true })).status,
-    ).toBe(404);
+      (await call(A, "GET", "/api/discussions")).json.discussions.filter(
+        (x: { title: string }) => x.title === "Release check",
+      ),
+    ).toHaveLength(1);
     await worker.drain();
     const d = (await call(A, "GET", "/api/discussions")).json.discussions.find(
       (x: { title: string }) => x.title === "Release check",
@@ -553,7 +545,7 @@ suite("group discussions against compose postgres", () => {
   });
 
   test("in a room the person opens, the Chief joins and answers a post without a mention alone; a mention reaches only that bot", async () => {
-    const chief = await makeBot(E, "Boss", { kind: "chief" });
+    const chief = await makeBot(E, "Boss", { kind: "chief", visibility: "private" });
     const dev = await makeBot(E, "Dev1");
     const qa = await makeBot(E, "QA1");
     const created = await call(E, "POST", "/api/discussions", {
@@ -653,7 +645,7 @@ suite("group discussions against compose postgres", () => {
     replies.Components = [ask("Bash(pnpm:*)")];
     replies.Docs = [ask("WebFetch")];
     // The chief answers each bot's post with the grant it would make: the user is shown Approve / Deny instead of a typed question.
-    replies.Chief = [
+    replies.Zetta = [
       'Asking.\n```zetta:bot_claude\n{"bot":"Components","allow":["Bash(pnpm:*)"]}\n```',
       "Asked the user about Components.",
       'Asking.\n```zetta:bot_claude\n{"bot":"Docs","allow":["WebFetch"]}\n```',
@@ -675,13 +667,13 @@ suite("group discussions against compose postgres", () => {
     const perms = list.filter((d) => d.title === "Permissions");
     expect(perms).toHaveLength(1);
     expect(perms[0]!.kind).toBe("permissions");
-    expect(perms[0]!.members.map((m) => m.name).sort()).toEqual(["Chief", "Components", "Docs"]);
+    expect(perms[0]!.members.map((m) => m.name).sort()).toEqual(["Components", "Docs", "Zetta"]);
     const talk = await messagesOf(B, perms[0]!.conversationId);
     const said = talk.map((m) => m.content).join("\n---\n");
     expect(said).toContain(
-      "@Chief Components asks to be allowed: Bash(pnpm:*)\nWhy: run the routine",
+      "@Zetta Components asks to be allowed: Bash(pnpm:*)\nWhy: run the routine",
     );
-    expect(said).toContain("@Chief Docs asks to be allowed: WebFetch\nWhy: run the routine");
+    expect(said).toContain("@Zetta Docs asks to be allowed: WebFetch\nWhy: run the routine");
     expect(await rulesOf(comps.id)).toEqual([]);
     expect(await rulesOf(other.id)).toEqual([]);
     const pending = (await call(B, "GET", "/api/proposals")).json.proposals as {
@@ -748,7 +740,7 @@ suite("group discussions against compose postgres", () => {
       "I wait for the Chief.",
       "Posted the newsletter.",
     ];
-    replies.Chief = [
+    replies.Zetta = [
       'Decided.\n```zetta:discussion\n{"action":"resolve","summary":"Read the pages with WebFetch and say they are public."}\n```',
     ];
     const scoutChat = await chatWith(A, scout.id);
@@ -768,7 +760,7 @@ suite("group discussions against compose postgres", () => {
     });
     // The Chief sees the user's own words as binding; the rerun puts them first and the Chief's answer after, as advice.
     expect(
-      runs.find((r) => r.bot === "Chief" && r.prompt.includes("Reddit blocks fetches"))?.prompt,
+      runs.find((r) => r.bot === "Zetta" && r.prompt.includes("Reddit blocks fetches"))?.prompt,
     ).toContain(
       "User's request (binding; keep its sources, sites, scope and output):\npost the newsletter",
     );
@@ -787,7 +779,7 @@ suite("group discussions against compose postgres", () => {
       "I wait again.",
       "Posted the r/neovim digest.",
     ];
-    replies.Chief = [
+    replies.Zetta = [
       'Decided.\n```zetta:discussion\n{"action":"resolve","summary":"Wait 10 seconds between requests."}\n```',
       'Decided.\n```zetta:discussion\n{"action":"resolve","summary":"Use old.reddit.com pages."}\n```',
     ];
@@ -809,7 +801,7 @@ suite("group discussions against compose postgres", () => {
     // The Chief needs a person: the question is on the blocked bot's chat and card, and the user is asked nothing on the Chief's behalf.
     const rider = await makeBot(A, "Rider");
     replies.Rider = [escalate("Reddit needs a sign-in"), "I wait."];
-    replies.Chief = [
+    replies.Zetta = [
       'Only a person can sign in.\n```zetta:handoff\n{"reason":"Sign in to Reddit on the desktop"}\n```',
     ];
     const riderChat = await chatWith(A, rider.id);

@@ -7,6 +7,7 @@ export type Preferences = {
   railMode: RailMode;
   railWidth: number;
   listWidth: number;
+  botOrder: string[];
 };
 export type PreferencesPatch = Partial<Preferences>;
 
@@ -15,6 +16,7 @@ export function createPreferenceStore(db: Database) {
     railMode: r.railMode,
     railWidth: r.railWidth,
     listWidth: r.listWidth,
+    botOrder: r.botOrder,
   });
   return {
     /** No row yet means a person who never changed anything: the column defaults. */
@@ -29,6 +31,7 @@ export function createPreferenceStore(db: Database) {
             railMode: "expanded",
             railWidth: SIDEBAR_LIMITS.railWidth.fallback,
             listWidth: SIDEBAR_LIMITS.listWidth.fallback,
+            botOrder: [],
           };
     },
     async update(a: ActiveActor, patch: PreferencesPatch): Promise<Preferences> {

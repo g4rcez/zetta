@@ -336,7 +336,7 @@ function SettingsBody({ bot, bots, spaces, onBotChange, notify }: Common) {
                     href={`#${e.id}`}
                     onClick={jump(e.id)}
                     aria-current={active === e.id ? "true" : undefined}
-                    className={`relative flex shrink-0 touch-manipulation items-center whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${active === e.id ? "bg-accent font-medium text-accent-foreground md:before:absolute md:before:inset-y-2 md:before:-left-px md:before:w-0.5 md:before:rounded-full md:before:bg-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                    className={`relative flex shrink-0 touch-manipulation items-center whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${active === e.id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                   >
                     {e.title}
                   </a>

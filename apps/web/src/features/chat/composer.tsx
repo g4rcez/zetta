@@ -380,7 +380,7 @@ export function Composer({
       {dragging && (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-background/80 text-sm font-medium text-primary"
+          className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-background/80 text-sm font-medium text-primary"
         >
           Drop to attach
         </div>
@@ -454,7 +454,7 @@ export function Composer({
         </ul>
       )}
       {mention.popup("above")}
-      <InputGroup className="h-auto rounded-lg bg-card shadow-xs">
+      <InputGroup className="h-auto rounded-xl border-border bg-card">
         <InputGroupAddon align="block-start" className="gap-0.5 border-b px-1.5 py-1">
           <Tool label="Bold (⌘B)" onClick={() => wrap("**")}>
             <TextBIcon />
@@ -592,7 +592,7 @@ export function Composer({
             placeholder={placeholder}
             rows={1}
             disabled={disabled}
-            className="field-sizing-content max-h-[40dvh] min-h-10 px-3 py-2 text-[15px]"
+            className="field-sizing-content max-h-[40dvh] min-h-10 px-3 py-2 text-sm"
             onChange={(e) => {
               onChange(e.target.value);
               trackMention(e.target.value, e.target.selectionStart);
@@ -700,7 +700,7 @@ export function Composer({
             </>
           )}
           <span className="flex-1" />
-          <span className="hidden pr-2 text-[11px] text-muted-foreground sm:inline">
+          <span className="hidden pr-2 text-xs text-muted-foreground sm:inline">
             <kbd className="font-sans font-medium">Shift + Return</kbd> for a new line
           </span>
           {busy && onStop && (
@@ -716,7 +716,7 @@ export function Composer({
               variant="default"
               aria-label={busy ? "Send; it waits until the bot finishes" : "Send"}
               disabled={!canSend}
-              className="data-disabled:bg-muted data-disabled:text-muted-foreground"
+              className="size-7 rounded-full data-disabled:bg-muted data-disabled:text-muted-foreground"
             >
               <ArrowUpIcon />
             </InputGroupButton>

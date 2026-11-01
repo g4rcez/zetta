@@ -1,9 +1,12 @@
-import { memo, useMemo } from "react";
-import { Streamdown } from "streamdown";
+import { createElement, memo, useContext, useMemo, type ReactNode } from "react";
+import { defaultRehypePlugins, Streamdown } from "streamdown";
 
 import { splitReply, UI_FENCE } from "@zetta/render/reply";
 import { cn } from "@zetta/ui/lib/utils";
+import { BotsContext } from "@/components/bot-identity";
+import { BotTag } from "@/components/bot-tag";
 
+import { rehypeBotTags } from "./bot-tags";
 import { SetupCard } from "./setup-card";
 import { parseSetupCard } from "./setup-card-data";
 import { stripToolFences } from "./tool-fences";
@@ -30,13 +33,34 @@ const Markdown = memo(function Markdown({
   streaming: boolean;
   className?: string | undefined;
 }) {
+  const bots = useContext(BotsContext);
+  // Bot names in the text become `BotTag`s. Our plugin runs after the default ones (sanitize included), so its `bot-tag` elements are not stripped.
+  const { rehypePlugins, components } = useMemo(() => {
+    const list = [...bots.values()];
+    if (!list.length) return { rehypePlugins: undefined, components: NO_REMOTE_IMAGES };
+    return {
+      rehypePlugins: [...Object.values(defaultRehypePlugins), rehypeBotTags(list)],
+      components: {
+        ...NO_REMOTE_IMAGES,
+        "bot-tag": ({ children, ...props }: { children?: ReactNode }) => {
+          const bot = bots.get(String((props as Record<string, unknown>)["data-bot-id"]));
+          return bot ? (
+            <BotTag bot={bot}>{children}</BotTag>
+          ) : (
+            createElement("span", null, children)
+          );
+        },
+      },
+    };
+  }, [bots]);
   return (
     <Streamdown
       mode={streaming ? "streaming" : "static"}
+      rehypePlugins={rehypePlugins}
       isAnimating={streaming}
       parseIncompleteMarkdown={streaming}
       className={cn(BODY, className)}
-      components={NO_REMOTE_IMAGES}
+      components={components}
     >
       {text}
     </Streamdown>

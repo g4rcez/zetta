@@ -14,6 +14,19 @@
         "value": "fira code variable",
         "createdAt": "2026-10-29T03:50:16.347Z",
         "reason": "app fonts declared in packages/ui/src/styles/globals.css (--font-heading, --font-mono); artifact CSS mirrors them"
+      },
+      {
+        "rule": "design-system-font",
+        "value": ")/1.5 \"geist variable\", geist, ui-sans-serif, system-ui, -apple-system, \"segoe ui\", roboto, sans-serif",
+        "createdAt": "2026-10-31T07:57:04.186Z",
+        "reason": "Agent triage: stack leads with DESIGN.md's Geist Variable; the system fonts are fallbacks for static explorations that cannot load the app's bundled webfont. Not confirmed by the user."
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": ["experimental/layouts/shared/fonts/fonts.css"],
+        "createdAt": "2026-10-31T08:23:16.600Z",
+        "reason": "Agent triage: Geist is the product's own typeface declared in DESIGN.md, held constant on purpose so the five layout explorations differ in structure, not type. Not confirmed by the user."
       }
     ]
   }

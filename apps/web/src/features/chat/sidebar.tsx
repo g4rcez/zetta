@@ -1,28 +1,32 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { RoomsSection } from "../discussions/rooms-section";
 import {
-  BellIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
   RobotIcon as BotIcon,
-  CaretDownIcon,
-  FolderPlusIcon,
-  HashIcon,
+  CaretRightIcon,
+  ChatCircleIcon,
+  ClockCounterClockwiseIcon,
   DotsThreeIcon,
+  FolderPlusIcon,
+  GearSixIcon,
+  MagnifyingGlassIcon,
   PencilSimpleIcon,
+  PlusIcon,
   PushPinIcon,
   PushPinSlashIcon,
-  PlusIcon,
-  MagnifyingGlassIcon,
   StarIcon,
 } from "@phosphor-icons/react";
-import { Reorder, useDragControls } from "motion/react";
+import { Reorder, motion, useDragControls, useReducedMotion } from "motion/react";
 import {
-  memo,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
   type RefObject,
 } from "react";
 
@@ -37,11 +41,15 @@ import {
 import { cn } from "@zetta/ui/lib/utils";
 import { Input, Select } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
-import { ResizeHandle } from "@/components/resize-handle";
-import { SIDEBAR_LIMITS, usePreferences } from "../preferences/preferences";
-import { useAttentionSummary, useBotAttention, type BotAttention } from "../attention/summary";
+import { BotStatusDot } from "@/components/bot-status";
+import { usePreferences } from "../preferences/preferences";
+import { useBotAttention, type BotAttention } from "../attention/summary";
 
 import type { Bot, Conversation, Workspace } from "./chat-client";
+import { ORDER_LIMIT, moveInGroup, orderBots, placeGroup } from "./bot-order";
+import { useSidebarData } from "./sidebar-data";
+
+export { orderBots };
 
 function depthOf(spaces: Workspace[], id: string | null) {
   let d = 0,
@@ -53,22 +61,34 @@ function depthOf(spaces: Workspace[], id: string | null) {
   return d;
 }
 
-const ORDER_KEY = "zetta.bot-order";
+/** Before the order moved to the account it was kept per browser under this key; it is moved over once, then removed. */
+const LEGACY_ORDER_KEY = "zetta.bot-order";
 const OPEN_KEY = "zetta.sidebar-open";
+const BOTS_OPEN_KEY = "zetta.sidebar-bots";
 // Conversations listed per bot before "Show more"; a search lists every match.
 const PER_BOT = 5;
 const MODE_KEY = "zetta.sidebar-mode";
 type Mode = "bots" | "recent";
 
-/** The user's manual bot order is a per-browser preference: ids in sidebar order, unknown bots fall to the end. */
-function readOrder(): string[] {
+const readJson = <T,>(key: string, fallback: T, valid: (v: unknown) => v is T): T => {
   try {
-    const raw = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]");
-    return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+    const raw: unknown = JSON.parse(localStorage.getItem(key) ?? "null");
+    return valid(raw) ? raw : fallback;
   } catch {
-    return [];
+    return fallback;
   }
-}
+};
+const persist = (key: string, value: unknown) => {
+  try {
+    localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+  } catch {
+    // Storage unavailable (private mode): the preference just lasts for this session.
+  }
+};
+const isIdList = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((id) => typeof id === "string");
+const isOpenMap = (v: unknown): v is Record<string, boolean> =>
+  !!v && typeof v === "object" && !Array.isArray(v);
 
 /** The sidebar mode is a per-browser preference. */
 function readMode(): Mode {
@@ -101,41 +121,6 @@ function bucketByDay(chats: Conversation[]) {
 
 const NO_CHATS: Conversation[] = [];
 
-/** Which bot sections the user opened (true) or closed (false); a bot with no entry follows the default. */
-function readOpen(): Record<string, boolean> {
-  try {
-    const raw = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "{}");
-    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  } catch {
-    return {};
-  }
-}
-
-type Props = {
-  bots: Bot[];
-  spaces: Workspace[];
-  chats: Conversation[];
-  botId?: string | undefined;
-  chatId?: string | undefined;
-  onBot: (id: string) => void;
-  onChat: (id: string) => void;
-  onNewChat: (botId: string) => void;
-  onNewBot: () => void;
-  onAddSpace: (name: string, parentId?: string) => void;
-  onUpdateChat: (
-    id: string,
-    patch: { title?: string; pinned?: boolean; favorite?: boolean },
-  ) => void;
-};
-
-const subtitle = (b: Bot) =>
-  b.description ||
-  (b.kind === "chief"
-    ? "Your chief of staff"
-    : b.harness === "fixture"
-      ? "Offline test bot"
-      : `${b.harness}${b.model ? ` · ${b.model}` : ""}`);
-
 /** Short relative time for a row: "now", "5m", "3h", "2d", then a calendar date. */
 function ago(iso: string) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -156,6 +141,52 @@ function walkRows(e: KeyboardEvent<HTMLElement>) {
   rows[at + (e.key === "ArrowUp" ? -1 : 1)]?.focus();
 }
 
+/** Which bot and chat the URL has open, so every page's sidebar marks the same row. */
+export function useSidebarLocation() {
+  const { bots, chats } = useSidebarData();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const draftBot = useRouterState({
+    select: (s) => (s.location.search as { bot?: string }).bot,
+  });
+  const open = /^\/chat\/([^/]+)$/.exec(pathname)?.[1];
+  const chatId = open && open !== "new" ? open : undefined;
+  const onChatPage = pathname === "/chat" || pathname.startsWith("/chat/");
+  const botId = chatId
+    ? chats.find((c) => c.id === chatId)?.botId
+    : onChatPage
+      ? (draftBot ?? bots.find((b) => b.kind === "chief")?.id)
+      : undefined;
+  return { botId, chatId };
+}
+
+/** Navigation shared by every sidebar entry point. */
+export function useSidebarNavigation() {
+  const navigate = useNavigate();
+  const { chats } = useSidebarData();
+  const toChat = useCallback(
+    (chatId: string) => void navigate({ to: "/chat/{-$chatId}", params: { chatId }, search: {} }),
+    [navigate],
+  );
+  const toDraft = useCallback(
+    (bot: string) =>
+      void navigate({ to: "/chat/{-$chatId}", params: { chatId: "new" }, search: { bot } }),
+    [navigate],
+  );
+  // Picking a bot opens its latest conversation, or an empty draft when it has none.
+  const toBot = useCallback(
+    (bot: string) => {
+      const latest = chats.find((c) => c.botId === bot);
+      if (latest) toChat(latest.id);
+      else toDraft(bot);
+    },
+    [chats, toChat, toDraft],
+  );
+  const toNewBot = useCallback(() => void navigate({ to: "/bots/new" }), [navigate]);
+  return { toChat, toDraft, toBot, toNewBot };
+}
+
+type UpdateChat = ReturnType<typeof useSidebarData>["updateChat"];
+
 /** A conversation row. With `bot` it is the two-line form (avatar, title, bot name) for lists that mix bots; without it, the one-line form nested under its bot. The hover menu renames (inline), pins and favorites. */
 function ChatRow({
   c,
@@ -171,7 +202,7 @@ function ChatRow({
   alert?: boolean;
   current: boolean;
   onOpen: (id: string) => void;
-  onUpdate: Props["onUpdateChat"];
+  onUpdate: UpdateChat;
 }) {
   const [editing, setEditing] = useState(false);
   const commit = (value: string) => {
@@ -179,13 +210,15 @@ function ChatRow({
     const title = value.trim();
     if (title && title !== c.title) onUpdate(c.id, { title });
   };
-  const indent = bot ? "pl-2" : "pl-[3.125rem]";
+  const indent = bot ? "pl-2" : "pl-7";
   if (editing) {
     return (
       <li className={cn("py-0.5 pr-1", indent)}>
-        <input
+        <Input
           autoFocus
-          aria-label="Rename chat"
+          size="small"
+          title="Rename chat"
+          hiddenLabel
           defaultValue={c.title}
           maxLength={120}
           onFocus={(e) => e.currentTarget.select()}
@@ -197,7 +230,6 @@ function ChatRow({
               e.currentTarget.blur();
             }
           }}
-          className="h-7 w-full rounded-md border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </li>
     );
@@ -207,45 +239,46 @@ function ChatRow({
       <button
         type="button"
         data-chat-row
-        aria-current={current}
+        aria-current={current ? "page" : undefined}
         title={c.title}
         onClick={() => onOpen(c.id)}
         onDoubleClick={() => setEditing(true)}
         className={cn(
-          "flex w-full items-center gap-2.5 rounded-lg pr-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring",
-          bot ? "py-1.5" : "h-8",
+          "flex w-full items-center gap-2 rounded-md pr-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+          bot ? "py-1" : "h-7",
           indent,
           current
-            ? "bg-sidebar-accent"
-            : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+            ? "bg-sidebar-accent font-medium"
+            : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
         )}
       >
         {bot && (
           <span className="relative shrink-0">
-            <BotAvatar bot={bot} size={28} />
+            <BotAvatar bot={bot} size={24} />
             {alert && (
               <span
                 role="img"
                 aria-label="Needs you"
-                className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full border-2 border-sidebar bg-destructive"
+                className="absolute -top-0.5 -right-0.5 size-2 rounded-full border border-sidebar bg-attention"
               />
             )}
           </span>
         )}
         <span className="min-w-0 flex-1">
-          <span className={cn("block truncate", current && "font-medium")}>{c.title}</span>
+          <span className="block truncate">{c.title}</span>
           {bot && <span className="block truncate text-xs text-muted-foreground">{bot.name}</span>}
         </span>
-        {c.pinned && <PushPinIcon aria-label="Pinned" className="size-3 shrink-0 opacity-60" />}
-        {c.favorite && (
-          <StarIcon aria-label="Favorite" className="size-3 shrink-0 fill-warn text-warn" />
+        {c.pinned && <PushPinIcon aria-label="Pinned" className="size-3 shrink-0" />}
+        {c.favorite && <StarIcon aria-label="Favorite" className="size-3 shrink-0" />}
+        {/* Nested rows give the title the whole width; the bot row carries the latest time. */}
+        {bot && (
+          <time
+            dateTime={c.updatedAt}
+            className="w-8 shrink-0 text-right text-xs text-muted-foreground tabular-nums group-focus-within/chat:opacity-0 group-hover/chat:opacity-0"
+          >
+            {ago(c.updatedAt)}
+          </time>
         )}
-        <time
-          dateTime={c.updatedAt}
-          className="w-8 shrink-0 text-right text-xs text-muted-foreground tabular-nums group-focus-within/chat:opacity-0 group-hover/chat:opacity-0"
-        >
-          {ago(c.updatedAt)}
-        </time>
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -282,11 +315,32 @@ function ChatRow({
 type Reordering = {
   ids: string[];
   dragging: RefObject<boolean>;
-  onReorder: (ids: string[]) => void;
+  /** Moves this bot one place up (-1) or down (+1) inside its group. */
+  onMove: (delta: -1 | 1) => void;
 };
 
+/** The attention count of a bot. Unread (not seen yet) is filled amber; seen but still open is a quiet count. */
+function AttentionCount({ attention }: { attention: BotAttention }) {
+  const unread = attention.unread > 0;
+  return (
+    <span
+      className={cn(
+        "min-w-5 shrink-0 rounded-sm px-1.5 text-center text-xs leading-5 font-medium tabular-nums",
+        unread ? "bg-attention text-attention-foreground" : "bg-muted text-foreground",
+      )}
+    >
+      <span className="sr-only">
+        {unread
+          ? `${attention.unread} unread, ${attention.open} open needing you`
+          : `${attention.open} open needing you`}
+      </span>
+      <span aria-hidden="true">{unread ? attention.unread : attention.open}</span>
+    </span>
+  );
+}
+
 /**
- * Bots mode: one two-line row per bot (avatar, name, last conversation, time, attention) that unfolds its conversations.
+ * Bots mode: one 28px row per bot that unfolds its conversations.
  * Rule: owners see their own unready bots with a setup hint and can still open them to finish setup; nobody else can
  * chat with an unready team bot.
  */
@@ -320,9 +374,13 @@ function BotSection({
   onBot: (id: string) => void;
   onChat: (id: string) => void;
   onNewChat: (id: string) => void;
-  onUpdateChat: Props["onUpdateChat"];
+  onUpdateChat: UpdateChat;
 }) {
   const controls = useDragControls();
+  const reduce = useReducedMotion();
+  const listId = useId();
+  // The open page is one row: the chat when one is open, the bot only on its empty draft.
+  const page = current && !chats.some((c) => c.id === chatId);
   const blocked = !bot.canEdit && !bot.onboarded;
   const setup = bot.canEdit && !bot.onboarded;
   // The list is newest first, but pinned chats float up, so the latest activity is the max, not the first.
@@ -331,11 +389,7 @@ function BotSection({
     undefined,
   );
   const shown = expanded ? chats : chats.slice(0, PER_BOT);
-  const second = blocked
-    ? "Not ready · owner is setting it up"
-    : setup
-      ? "Not ready yet · finish setup"
-      : (latest?.title ?? subtitle(bot));
+  const at = reordering ? reordering.ids.indexOf(bot.id) : -1;
   const tag =
     bot.kind === "chief" ? (
       <span className="sr-only"> (your chief)</span>
@@ -344,119 +398,157 @@ function BotSection({
     ) : null;
   const header = (
     <div
-      className="flex items-center gap-2 rounded-lg hover:bg-sidebar-accent/60"
+      className={cn(
+        "flex h-7 items-center rounded-md",
+        page ? "bg-sidebar-accent" : "hover:bg-sidebar-accent",
+      )}
       onPointerDown={reordering ? (e) => controls.start(e) : undefined}
       onKeyDown={(e) => {
         if (!reordering || !e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
-        const i = reordering.ids.indexOf(bot.id);
-        const j = e.key === "ArrowUp" ? i - 1 : i + 1;
-        if (j < 0 || j >= reordering.ids.length) return;
         e.preventDefault();
-        const next = [...reordering.ids];
-        next.splice(j, 0, ...next.splice(i, 1));
-        reordering.onReorder(next);
+        reordering.onMove(e.key === "ArrowUp" ? -1 : 1);
       }}
     >
       <button
         type="button"
-        aria-current={current}
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-label={`${open ? "Hide" : "Show"} conversations of ${bot.name}`}
+        onClick={onToggle}
+        className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <CaretRightIcon
+          aria-hidden="true"
+          className={cn(
+            "size-3 transition-transform duration-150 motion-reduce:transition-none",
+            open && "rotate-90",
+          )}
+        />
+      </button>
+      <button
+        type="button"
+        data-chat-row
+        aria-current={page ? "page" : current ? "true" : undefined}
         aria-disabled={blocked || undefined}
+        onKeyDown={(e) => {
+          // Tree keys: Right opens the bot's chats, Left closes them.
+          if (e.altKey || e.metaKey || e.ctrlKey) return;
+          if ((e.key === "ArrowRight" && !open) || (e.key === "ArrowLeft" && open)) {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
         title={
           blocked
             ? "Its owner has to finish setting this bot up before you can chat with it."
-            : undefined
+            : setup
+              ? "Not ready yet: finish setup"
+              : undefined
         }
         onClick={() => {
           if (reordering?.dragging.current) return;
           if (!blocked) onBot(bot.id);
         }}
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-1.5 pl-2 text-left focus-visible:outline-2 focus-visible:outline-ring",
+          "flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md pr-2 pl-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-ring",
           blocked && "cursor-not-allowed opacity-50",
         )}
       >
-        <BotAvatar bot={bot} size={32} />
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2">
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate text-sm",
-                current ? "font-semibold" : "font-medium",
-              )}
-            >
-              {bot.name}
-              {tag}
-            </span>
-            {attention ? (
-              // Unread = not seen yet: filled. Seen but still open: outlined.
-              <span
-                className={cn(
-                  "min-w-5 shrink-0 rounded-full px-1.5 text-center text-xs font-medium tabular-nums",
-                  attention.unread > 0
-                    ? "bg-destructive text-white"
-                    : "border border-destructive/60 text-destructive",
-                )}
-              >
-                <span className="sr-only">
-                  {attention.unread > 0
-                    ? `${attention.unread} unread, ${attention.open} open needing you`
-                    : `${attention.open} open needing you`}
-                </span>
-                <span aria-hidden="true">
-                  {attention.unread > 0 ? attention.unread : attention.open}
-                </span>
-              </span>
-            ) : (
-              latest &&
-              !setup && (
-                <time
-                  dateTime={latest.updatedAt}
-                  className="shrink-0 text-xs text-muted-foreground tabular-nums"
-                >
-                  {ago(latest.updatedAt)}
-                </time>
-              )
-            )}
-          </span>
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            {setup && (
-              <span
-                role="img"
-                aria-label="Finish setup"
-                className="size-2 shrink-0 rounded-full bg-warn"
-              />
-            )}
-            <span className="truncate">{second}</span>
-          </span>
+        <BotAvatar bot={bot} size={20} badge={<BotStatusDot botId={bot.id} />} />
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate",
+            current || attention?.unread ? "font-semibold" : "font-medium",
+          )}
+        >
+          {bot.name}
+          {tag}
         </span>
+        {setup && (
+          <span
+            role="img"
+            aria-label="Finish setup"
+            className="size-2 shrink-0 rounded-full bg-attention"
+          />
+        )}
       </button>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-label={`${open ? "Hide" : "Show"} conversations of ${bot.name}`}
-        onClick={onToggle}
-        className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-      >
-        <CaretDownIcon
-          aria-hidden="true"
-          className={cn("transition-all duration-300 ease-liner size-4", !open && "rotate-90")}
-        />
-      </button>
-    </div>
-  );
-  const body = open && (
-    <ul className="space-y-0.5 pb-1.5">
-      <li>
+      <span className="flex h-7 shrink-0 items-center gap-0.5 pr-1">
         <button
           type="button"
           disabled={blocked}
+          aria-label={`New chat with ${bot.name}`}
+          title="New chat"
           onClick={() => onNewChat(bot.id)}
-          className="flex h-8 w-full items-center gap-1.5 rounded-lg pl-[3.125rem] text-left text-sm text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-sidebar hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
         >
           <PlusIcon aria-hidden="true" className="size-3.5" />
-          New chat
         </button>
-      </li>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                aria-label={`Actions for ${bot.name}`}
+                className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-sidebar hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+              />
+            }
+          >
+            <DotsThreeIcon aria-hidden="true" className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48">
+            {reordering && (
+              <>
+                <DropdownMenuItem disabled={at <= 0} onClick={() => reordering.onMove(-1)}>
+                  <ArrowUpIcon />
+                  Move up
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={at < 0 || at >= reordering.ids.length - 1}
+                  onClick={() => reordering.onMove(1)}
+                >
+                  <ArrowDownIcon />
+                  Move down
+                </DropdownMenuItem>
+              </>
+            )}
+            {bot.canEdit && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  render={<Link to="/bots/$botId/settings" params={{ botId: bot.id }} />}
+                >
+                  <GearSixIcon />
+                  Settings
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {attention ? (
+          <AttentionCount attention={attention} />
+        ) : (
+          latest &&
+          !setup && (
+            <time
+              dateTime={latest.updatedAt}
+              className="pl-1 text-xs text-muted-foreground tabular-nums"
+            >
+              {ago(latest.updatedAt)}
+            </time>
+          )
+        )}
+      </span>
+    </div>
+  );
+  // DESIGN.md "Motion": the chats arrive with a fade and a 4px drop (160ms); with reduced motion they just appear.
+  const body = open && (
+    <motion.ul
+      id={listId}
+      initial={reduce ? false : { opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, ease: "easeOut" }}
+      className="space-y-px pb-1"
+    >
       {shown.map((c) => (
         <ChatRow
           key={c.id}
@@ -471,13 +563,13 @@ function BotSection({
           <button
             type="button"
             onClick={onMore}
-            className="h-7 w-full rounded-lg pl-[3.125rem] text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            className="h-7 w-full rounded-md pl-7 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
           >
             Show {chats.length - shown.length} more
           </button>
         </li>
       )}
-    </ul>
+    </motion.ul>
   );
   if (!reordering) {
     return (
@@ -495,8 +587,9 @@ function BotSection({
       dragControls={controls}
       // "position" only: the default layout animation also scales the box and its text when a section folds or grows.
       layout="position"
+      transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 600, damping: 40 }}
       tabIndex={-1}
-      whileDrag={{ boxShadow: "0 4px 16px rgb(0 0 0 / 0.35)" }}
+      whileDrag={{ boxShadow: "0 4px 12px rgb(0 0 0 / 0.24)", zIndex: 1 }}
       onDragStart={() => {
         reordering.dragging.current = true;
       }}
@@ -505,7 +598,7 @@ function BotSection({
           reordering.dragging.current = false;
         }, 0);
       }}
-      className="cursor-grab bg-sidebar active:cursor-grabbing"
+      className="cursor-grab rounded-md bg-sidebar active:cursor-grabbing"
     >
       {header}
       {body}
@@ -517,49 +610,46 @@ function GroupTitle({ children }: { children: string }) {
   return <h3 className="label-mono px-2 pt-3 pb-1">{children}</h3>;
 }
 
-/** Two modes over the same conversations. Bots: the bots come first and the open one unfolds its chats. Recent: every chat by time, each showing its bot. */
-export const ChatSidebar = memo(function ChatSidebar({
-  bots,
-  spaces,
-  chats,
-  botId,
-  chatId,
-  onBot,
-  onChat,
-  onNewChat,
-  onNewBot,
-  onAddSpace,
-  onUpdateChat,
-}: Props) {
+/**
+ * The scrolling part of the app sidebar: a filter, the rooms, and the bots with their chats. Two modes over the same
+ * conversations. Bots: the chief first, then the person's order, and each bot unfolds its chats. Recent: every chat by
+ * time, each showing its bot. `children` (the More group) scroll after the bots.
+ */
+export function SidebarTree({ children }: { children?: ReactNode }) {
+  const { bots, spaces, chats, chatsLoaded, updateChat, addSpace } = useSidebarData();
+  const { botId, chatId } = useSidebarLocation();
+  const { toBot, toChat, toDraft, toNewBot } = useSidebarNavigation();
   const navigate = useNavigate();
   const { preferences, set: setPreferences } = usePreferences();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [mode, setMode] = useState(readMode);
-  const [order, setOrder] = useState(readOrder);
-  const [opened, setOpened] = useState(readOpen);
+  const [botsOpen, setBotsOpen] = useState(() =>
+    readJson(BOTS_OPEN_KEY, true, (v) => typeof v === "boolean"),
+  );
+  const [opened, setOpened] = useState(() => readJson(OPEN_KEY, {}, isOpenMap));
   const [showAll, setShowAll] = useState<Set<string>>(() => new Set());
+  const [announcement, setAnnouncement] = useState("");
   const dragging = useRef(false);
-  const persist = (key: string, value: unknown) => {
-    try {
-      localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
-    } catch {
-      // Storage unavailable (private mode): the preference just lasts for this session.
-    }
-  };
-  useEffect(() => persist(ORDER_KEY, order), [order]);
   useEffect(() => persist(OPEN_KEY, opened), [opened]);
   useEffect(() => persist(MODE_KEY, mode), [mode]);
-  const attention = useAttentionSummary();
+  useEffect(() => persist(BOTS_OPEN_KEY, botsOpen), [botsOpen]);
+  const order = preferences.botOrder;
+  // The order used to live in this browser only: move it to the account once, unless the account already has one.
+  useEffect(() => {
+    const legacy = readJson(LEGACY_ORDER_KEY, [], isIdList);
+    if (!legacy.length) return;
+    if (!order.length) setPreferences({ botOrder: legacy.slice(0, ORDER_LIMIT) });
+    try {
+      localStorage.removeItem(LEGACY_ORDER_KEY);
+    } catch {
+      // Storage unavailable: nothing to clean up.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const botAttention = useBotAttention();
   const q = query.trim().toLowerCase();
-  const chief = bots.find((b) => b.kind === "chief");
-  const rank = (b: Bot) => {
-    const i = order.indexOf(b.id);
-    return i < 0 ? Infinity : i;
-  };
-  // Array.sort is stable, so bots without a saved position keep the server's order after the ranked ones.
-  const rest = bots.filter((b) => b !== chief).sort((a, b) => rank(a) - rank(b));
+  const { chief, rest } = orderBots(bots, order);
   const botById = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
   // A bot whose name matches shows all its chats; otherwise only chats whose title matches.
   const matches = useCallback(
@@ -586,8 +676,15 @@ export const ChatSidebar = memo(function ChatSidebar({
   // Only the open bot is unfolded by default; while searching every match shows.
   const isOpen = (b: Bot) => !!q || (opened[b.id] ?? b.id === botId);
   const toggle = (b: Bot) => setOpened((o) => ({ ...o, [b.id]: !isOpen(b) }));
-  const reorder = (ids: string[]) =>
-    setOrder((prev) => [...prev.filter((id) => !ids.includes(id)), ...ids]);
+  const saveGroup = (ids: string[]) => setPreferences({ botOrder: placeGroup(order, ids) });
+  const move = (ids: string[], id: string, delta: -1 | 1) => {
+    const moved = moveInGroup(ids, id, delta);
+    if (!moved) return;
+    saveGroup(moved.group);
+    setAnnouncement(
+      `${botById.get(id)?.name ?? "Bot"} moved to position ${moved.position} of ${ids.length}`,
+    );
+  };
   const section = (b: Bot, ids?: string[]) => {
     const list = chatsOf(b);
     if (q && list.length === 0) return null;
@@ -601,16 +698,16 @@ export const ChatSidebar = memo(function ChatSidebar({
         current={b.id === botId}
         attention={botAttention.get(b.id)}
         chatId={chatId}
-        reordering={ids ? { ids, dragging, onReorder: reorder } : undefined}
+        reordering={ids ? { ids, dragging, onMove: (delta) => move(ids, b.id, delta) } : undefined}
         onToggle={() => toggle(b)}
         onMore={() => setShowAll((s) => new Set(s).add(b.id))}
         onBot={(id) => {
           setOpened((o) => ({ ...o, [id]: true }));
-          onBot(id);
+          toBot(id);
         }}
-        onChat={onChat}
-        onNewChat={onNewChat}
-        onUpdateChat={onUpdateChat}
+        onChat={toChat}
+        onNewChat={toDraft}
+        onUpdateChat={updateChat}
       />
     );
   };
@@ -643,106 +740,29 @@ export const ChatSidebar = memo(function ChatSidebar({
       bot={botById.get(c.botId)}
       alert={latestOf.get(c.botId)?.id === c.id && !!botAttention.get(c.botId)?.unread}
       current={c.id === chatId}
-      onOpen={onChat}
-      onUpdate={onUpdateChat}
+      onOpen={toChat}
+      onUpdate={updateChat}
     />
   );
-  const newChatBot = botId ?? chief?.id;
-  const newChatName = (newChatBot && botById.get(newChatBot)?.name) || "bot";
+  const loading = !chatsLoaded && bots.length === 0;
   const empty =
     q &&
     (mode === "recent"
       ? recent.length === 0
       : !bots.some((b) => chatsOf(b).length > 0) && favorites.length === 0);
+  const newChatBot = botId ?? chief?.id;
   return (
-    <aside
-      className="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-sidebar text-sidebar-foreground md:border-r md:border-sidebar-border"
-      aria-label="Bots and chats"
-    >
-      <ResizeHandle
-        label="Resize chat list"
-        value={preferences.listWidth}
-        {...SIDEBAR_LIMITS.listWidth}
-        onChange={(listWidth) => setPreferences({ listWidth })}
-      />
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border px-3">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 py-1 text-left text-lg font-bold hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring"
-              />
-            }
-          >
-            <span className="truncate">Chats</span>
-            <CaretDownIcon aria-hidden="true" className="size-4 shrink-0 opacity-70" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            <DropdownMenuItem
-              onClick={() => {
-                setAdding(false);
-                onNewBot();
-              }}
-            >
-              <BotIcon />
-              New bot
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setAdding(true)}>
-              <FolderPlusIcon />
-              New workspace
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => void navigate({ to: "/rooms", search: { new: true } })}
-            >
-              <HashIcon />
-              New room
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          title="New bot"
-          aria-label="New bot"
-          onClick={() => {
-            setAdding(false);
-            onNewBot();
-          }}
-        >
-          <BotIcon />
-        </Button>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          title="New workspace"
-          aria-label="New workspace"
-          aria-expanded={adding}
-          onClick={() => setAdding((a) => !a)}
-        >
-          <FolderPlusIcon />
-        </Button>
-        {newChatBot && (
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            title={`New chat with ${newChatName}`}
-            aria-label={`New chat with ${newChatName}`}
-            onClick={() => onNewChat(newChatBot)}
-          >
-            <PlusIcon />
-          </Button>
-        )}
-      </div>
-      <div className="shrink-0 space-y-2 p-2">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 space-y-2 px-2 pt-2">
         <Input
+          type="search"
+          size="small"
           title="Filter rooms, bots and chats"
           hiddenLabel
-          type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter…"
-          left={<MagnifyingGlassIcon aria-hidden="true" className="size-4 text-muted-foreground" />}
+          left={<MagnifyingGlassIcon aria-hidden="true" className="size-4" />}
         />
         {adding && (
           <form
@@ -751,8 +771,9 @@ export const ChatSidebar = memo(function ChatSidebar({
               const f = new FormData(e.currentTarget);
               const name = String(f.get("space") ?? "").trim();
               if (!name) return;
-              onAddSpace(name, String(f.get("parent") ?? "") || undefined);
+              addSpace(name, String(f.get("parent") ?? "") || undefined);
               e.currentTarget.reset();
+              setAdding(false);
             }}
             className="flex gap-2 rounded-lg border bg-card p-2"
           >
@@ -781,110 +802,147 @@ export const ChatSidebar = memo(function ChatSidebar({
             </Button>
           </form>
         )}
-        {attention && attention.unread > 0 && (
-          <Link
-            to="/studio/$tab"
-            params={{ tab: "attention" }}
-            className="flex h-8 items-center gap-2 rounded-md px-2.5 text-sm transition-colors hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <BellIcon aria-hidden="true" className="size-4 text-muted-foreground" />
-            <span className="flex-1">Notifications</span>
-            <span
-              className="rounded-full bg-destructive px-2 text-xs font-medium text-white"
-              aria-label={`${attention.unread} unread, ${attention.open} open`}
-            >
-              {attention.unread}
-            </span>
-          </Link>
-        )}
       </div>
       <nav
         onKeyDown={walkRows}
-        className="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3"
         aria-label="Rooms and bots"
       >
         <RoomsSection query={q} />
-        <div className="flex items-center justify-between gap-2 pt-3 pb-1 pl-2">
-          <h3 className="label-mono">Bots</h3>
-          <div role="group" aria-label="Bots view" className="flex gap-0.5">
-            {(
-              [
-                ["bots", "By bot"],
-                ["recent", "Recent"],
-              ] as const
-            ).map(([m, label]) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={mode === m}
-                onClick={() => setMode(m)}
-                className={cn(
-                  "h-6 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring",
-                  mode === m
-                    ? "bg-sidebar-accent text-sidebar-foreground"
-                    : "text-muted-foreground hover:text-sidebar-foreground",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {mode === "recent" ? (
-          recent.map((g) => (
-            <section key={g.title}>
-              <GroupTitle>{g.title}</GroupTitle>
-              <ul className="space-y-0.5">{g.list.map(rowOf)}</ul>
-            </section>
-          ))
-        ) : (
-          <>
-            {favorites.length > 0 && (
-              <section aria-label="Favorites">
-                <GroupTitle>Favorites</GroupTitle>
-                <ul className="space-y-0.5">{favorites.map(rowOf)}</ul>
-              </section>
+        <div className="flex items-center gap-1 pt-3 pb-1 pl-1">
+          <button
+            type="button"
+            aria-expanded={botsOpen || !!q}
+            onClick={() => setBotsOpen((o) => !o)}
+            className="label-mono flex shrink-0 items-center gap-1 rounded-md px-1 py-0.5 text-left hover:text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <CaretRightIcon
+              aria-hidden="true"
+              className={cn(
+                "size-3 shrink-0 transition-transform motion-reduce:transition-none",
+                (botsOpen || q) && "rotate-90",
+              )}
+            />
+            Bots
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === "recent"}
+            aria-label="Show chats by time"
+            title={mode === "recent" ? "Showing chats by time" : "Show chats by time"}
+            onClick={() => setMode((m) => (m === "recent" ? "bots" : "recent"))}
+            className={cn(
+              "ml-auto flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
+              mode === "recent" && "bg-sidebar-accent text-foreground",
             )}
-            <ul className="space-y-0.5 pt-1">
-              {chief && section(chief)}
-              {spaceGroups.map((group) => {
-                const members = rest.filter((b) => (b.workspaceId ?? null) === group.id);
-                if (!members.length) return null;
-                const ids = members.map((b) => b.id);
-                return (
-                  <li key={group.id ?? "none"} role="group" aria-label={group.name}>
-                    {spaces.length > 0 && (
-                      <h3
-                        className="mt-2 mb-1 text-xs text-muted-foreground"
-                        style={{ paddingLeft: `${0.5 + depthOf(spaces, group.id) * 0.75}rem` }}
-                      >
-                        {group.name}
-                      </h3>
-                    )}
-                    {!q && members.length > 1 ? (
-                      <Reorder.Group
-                        axis="y"
-                        as="ul"
-                        values={ids}
-                        onReorder={reorder}
-                        className="space-y-0.5"
-                      >
-                        {members.map((b) => section(b, ids))}
-                      </Reorder.Group>
-                    ) : (
-                      <ul className="space-y-0.5">{members.map((b) => section(b))}</ul>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </>
+          >
+            <ClockCounterClockwiseIcon aria-hidden="true" className="size-4" />
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Add a chat, bot or workspace"
+                  title="Add"
+                  className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                />
+              }
+            >
+              <PlusIcon aria-hidden="true" className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52">
+              {newChatBot && (
+                <DropdownMenuItem onClick={() => toDraft(newChatBot)}>
+                  <ChatCircleIcon />
+                  New chat
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={toNewBot}>
+                <BotIcon />
+                New bot
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setAdding(true)}>
+                <FolderPlusIcon />
+                New workspace
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => void navigate({ to: "/rooms", search: { new: true } })}
+              >
+                New room
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        {loading && (
+          <ul role="status" aria-label="Loading bots" className="space-y-1">
+            {[0, 1, 2].map((i) => (
+              <li key={i} className="h-7 animate-pulse rounded-md bg-sidebar-accent" />
+            ))}
+          </ul>
         )}
-        {empty && <p className="px-2.5 pt-2 text-xs text-muted-foreground">No chats match.</p>}
+        {(botsOpen || q) &&
+          (mode === "recent" ? (
+            recent.map((g) => (
+              <section key={g.title}>
+                <GroupTitle>{g.title}</GroupTitle>
+                <ul className="space-y-px">{g.list.map(rowOf)}</ul>
+              </section>
+            ))
+          ) : (
+            <>
+              {favorites.length > 0 && (
+                <section aria-label="Favorites">
+                  <GroupTitle>Favorites</GroupTitle>
+                  <ul className="space-y-px">{favorites.map(rowOf)}</ul>
+                </section>
+              )}
+              <ul className="space-y-px">
+                {chief && section(chief)}
+                {spaceGroups.map((group) => {
+                  const members = rest.filter((b) => (b.workspaceId ?? null) === group.id);
+                  if (!members.length) return null;
+                  const ids = members.map((b) => b.id);
+                  return (
+                    <li key={group.id ?? "none"}>
+                      <div role="group" aria-label={group.name}>
+                        {spaces.length > 0 && (
+                          <h3
+                            className="mt-2 mb-1 text-xs text-muted-foreground"
+                            style={{ paddingLeft: `${0.5 + depthOf(spaces, group.id) * 0.75}rem` }}
+                          >
+                            {group.name}
+                          </h3>
+                        )}
+                        {!q && members.length > 1 ? (
+                          <Reorder.Group
+                            axis="y"
+                            as="ul"
+                            values={ids}
+                            onReorder={saveGroup}
+                            className="space-y-px"
+                          >
+                            {members.map((b) => section(b, ids))}
+                          </Reorder.Group>
+                        ) : (
+                          <ul className="space-y-px">{members.map((b) => section(b))}</ul>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          ))}
+        {empty && <p className="px-2 pt-2 text-xs text-muted-foreground">No chats match.</p>}
         {!q && mode === "recent" && recent.length === 0 && (
-          <p className="px-2.5 pt-2 text-xs text-muted-foreground">No conversations yet.</p>
+          <p className="px-2 pt-2 text-xs text-muted-foreground">No conversations yet.</p>
         )}
+        {children}
+        <p role="status" aria-live="polite" className="sr-only">
+          {announcement}
+        </p>
       </nav>
-    </aside>
+    </div>
   );
-});
+}

@@ -493,6 +493,10 @@ export function createChatRoutes(
         };
       }),
     )
+    .get(
+      "/bots/status",
+      guarded(async ({ actor }) => ({ statuses: await chat.botStatus(actor) })),
+    )
     .post(
       "/bots",
       guarded(

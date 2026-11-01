@@ -1,6 +1,6 @@
 export const studioTabs = [
   { slug: "routines", label: "Routines" },
-  { slug: "attention", label: "Notifications" },
+  { slug: "attention", label: "Inbox" },
   { slug: "knowledge", label: "Knowledge" },
   { slug: "wiki", label: "Wiki" },
   { slug: "instructions", label: "Instructions" },

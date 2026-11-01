@@ -4,6 +4,7 @@ import { DefaultChatTransport } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ENV } from "../../env";
+import { refreshBotStatus } from "../bots/status";
 import { cancelTurn, chatClient } from "./chat-client";
 import { liveRows, reuseRows, summaryOf, type Row, type ZettaUIMessage } from "./chat-rows";
 
@@ -31,17 +32,23 @@ export function useZettaChat({
   attachKey,
   onSettled,
   onProposal,
+  onArtifact,
+  onSteer,
 }: {
   conversationId?: string;
   parentMessageId?: string;
   /** Changes when another turn starts in the same conversation (group discussions), so the stream reattaches to it. */ attachKey?: string;
   onSettled: (conversationId: string) => Promise<void> | void;
   onProposal?: () => void;
+  /** The bot published a file during this turn. */
+  onArtifact?: (artifact: { id: string; title: string; at: number }) => void;
+  /** The bot took messages sent while it worked: they are no longer queued. */
+  onSteer?: () => void;
 }) {
   const conv = useRef(conversationId);
   conv.current = conversationId;
-  const handlers = useRef({ onSettled, onProposal });
-  handlers.current = { onSettled, onProposal };
+  const handlers = useRef({ onSettled, onProposal, onArtifact, onSteer });
+  handlers.current = { onSettled, onProposal, onArtifact, onSteer };
   const leaving = useRef(false); // a stop() we issued while switching away from a chat: not a user abort, nothing to settle
   const [dropped, setDropped] = useState(false);
   const origin = useRef<"send" | "resume" | undefined>(undefined); // only surface errors from turns the person started (a missing resume is not an error)
@@ -94,6 +101,8 @@ export function useZettaChat({
     },
     onData: (part) => {
       if (part.type === "data-proposal") handlers.current.onProposal?.();
+      else if (part.type === "data-artifact") handlers.current.onArtifact?.(part.data);
+      else if (part.type === "data-steer") handlers.current.onSteer?.();
     },
     onFinish: async ({ isAbort }) => {
       if (leaving.current) {
@@ -136,6 +145,10 @@ export function useZettaChat({
   }, [conversationId, parentMessageId, attachKey]);
 
   const busy = chat.status === "submitted" || chat.status === "streaming";
+  // The bot's status changes when its answer starts and ends: do not wait for the next poll.
+  useEffect(() => {
+    void refreshBotStatus();
+  }, [busy]);
   // Live rows get one timestamp per turn, and keep their identity while they do not change.
   const turnStart = useRef("");
   if (chat.messages.length === 0) turnStart.current = "";

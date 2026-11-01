@@ -18,7 +18,8 @@ import { TELEGRAM, TelegramLogo } from "./telegram-logo";
 import { ToggleCard } from "./toggle-card";
 import { Alert } from "@g4rcez/components/alert";
 
-/** Telegram-blue call to action (white label on #229ED9, as on telegram.org). */
+/** The page's call to action. It uses the app's primary colors: white on Telegram blue (#229ED9) is 2.9:1, below the 7:1 the
+ * app requires; the Telegram logo carries the brand. */
 function TgButton({
   loading,
   children,
@@ -31,7 +32,7 @@ function TgButton({
       {...props}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-[#229ED9] px-3 text-sm font-semibold text-white transition-colors hover:bg-[#1C8BC0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#229ED9] disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
+      className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-(--var-color-primary-hover) focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
     >
       {children}
     </button>
@@ -42,7 +43,7 @@ const Link = ({ href, children }: { href: string; children: React.ReactNode }) =
     href={href}
     target="_blank"
     rel="noreferrer noopener"
-    className="inline-flex items-center gap-0.5 font-medium text-[#229ED9] underline-offset-2 hover:underline"
+    className="inline-flex items-center gap-0.5 font-medium text-primary underline-offset-2 hover:underline"
   >
     {children}
     <ArrowSquareOutIcon aria-hidden className="size-3" />
@@ -127,7 +128,7 @@ export function TelegramInstall({
             <li key={i} className="flex items-start gap-2">
               <span
                 aria-hidden
-                className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-[#229ED9] text-xs font-semibold text-white"
+                className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground"
               >
                 {i + 1}
               </span>
@@ -144,7 +145,7 @@ export function TelegramInstall({
           info="Stored encrypted for your account only. It is never shown again."
           autoComplete="off"
         />
-        <fieldset className="space-y-2 rounded-lg border p-3 accent-[#229ED9]">
+        <fieldset className="space-y-2 rounded-lg border p-3 accent-primary">
           <legend className="px-1 text-xs font-medium">
             What bots may do (you can change this later)
           </legend>
@@ -202,7 +203,7 @@ export function TelegramInstall({
             </TgButton>
           </span>
         </div>
-        <p className="text-[11px] leading-snug text-muted-foreground">{FOOTNOTE}</p>
+        <p className="text-xs leading-snug text-muted-foreground">{FOOTNOTE}</p>
       </form>
     </Panel>
   );
@@ -317,7 +318,7 @@ export function TelegramConnect({
           <p className="text-xs text-muted-foreground">
             {probe?.status.state === "connected" ? (
               <span className="inline-flex items-center gap-1">
-                <CheckCircleIcon aria-hidden className="size-3.5 text-[#229ED9]" />
+                <CheckCircleIcon aria-hidden className="size-3.5 text-primary" />
                 Connected. Bots can read your chats{info?.allowSend ? " and send messages" : ""}.
               </span>
             ) : (
@@ -369,7 +370,7 @@ export function TelegramConnect({
               const t = TYPE[c.type] ?? TYPE.group!;
               return (
                 <li key={c.id} className="flex items-center gap-2.5 px-3 py-2">
-                  <t.icon aria-hidden className="size-4 shrink-0 text-[#229ED9]" />
+                  <t.icon aria-hidden className="size-4 shrink-0 text-primary" />
                   <span className="min-w-0 flex-1 truncate">
                     {c.title || c.id}
                     {c.username && <span className="text-muted-foreground"> @{c.username}</span>}
@@ -395,7 +396,7 @@ export function TelegramConnect({
         )}
       </section>
 
-      <fieldset className="space-y-2 rounded-lg border p-3 accent-[#229ED9]" disabled={!info}>
+      <fieldset className="space-y-2 rounded-lg border p-3 accent-primary" disabled={!info}>
         <legend className="px-1 text-xs font-medium">What bots may do</legend>
         <Check checked={allowSend} onChange={setAllowSend}>
           Send, edit and forward messages and send files
@@ -418,7 +419,7 @@ export function TelegramConnect({
           {!dirty && info && <span className="text-xs text-muted-foreground">Saved</span>}
         </div>
       </fieldset>
-      <p className="text-[11px] leading-snug text-muted-foreground">{FOOTNOTE}</p>
+      <p className="text-xs leading-snug text-muted-foreground">{FOOTNOTE}</p>
     </div>
   );
 }

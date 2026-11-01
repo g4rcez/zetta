@@ -72,7 +72,7 @@ function LivePreview({
         </span>
       )}
       {active && (
-        <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white">
+        <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-white">
           <span
             aria-hidden="true"
             className="size-1.5 animate-pulse rounded-full bg-destructive motion-reduce:animate-none"

@@ -39,7 +39,7 @@ const tabs = studioTabs.filter((t) => !isRailTab(t.slug)).map((t) => t.label);
 type Tab = (typeof studioTabs)[number]["label"];
 const ICON: Record<Tab, Icon> = {
   Routines: CalendarDotsIcon,
-  Notifications: TrayIcon,
+  Inbox: TrayIcon,
   Knowledge: BookOpenIcon,
   Wiki: BooksIcon,
   Instructions: ListChecksIcon,
@@ -54,7 +54,7 @@ const ICON: Record<Tab, Icon> = {
 const BLURB: Record<Tab, string> = {
   Plugins: "Connect tools and MCP servers, then choose which bots may use them.",
   Routines: "Schedule bots to work for you.",
-  Notifications: "Things that need you, with the actions to deal with them.",
+  Inbox: "Things that need you, with the actions to deal with them.",
   Knowledge: "What your bots remember and the sources they can read.",
   Wiki: "Pages your bots share about what they learned, so no bot does the same work twice.",
   Instructions: "Saved steps your bots follow. Type / in a chat to use one.",
@@ -137,7 +137,7 @@ export function StudioPage() {
                   tabIndex={active || (i === 0 && !tabs.includes(tab)) ? 0 : -1}
                   onKeyDown={(e) => onKey(e, i)}
                   onClick={() => select(t)}
-                  className={`relative flex shrink-0 touch-manipulation items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${active ? "bg-accent font-medium text-accent-foreground md:before:absolute md:before:inset-y-2 md:before:-left-px md:before:w-0.5 md:before:rounded-full md:before:bg-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                  className={`relative flex shrink-0 touch-manipulation items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${active ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                 >
                   <Icon aria-hidden="true" className={`size-4 ${active ? "text-primary" : ""}`} />
                   {t}
@@ -169,7 +169,7 @@ export function StudioPage() {
           >
             <Suspense fallback={<Loading />}>
               {tab === "Routines" && <Routines bots={bots} onError={setError} />}
-              {tab === "Notifications" && <Attention bots={bots} onError={setError} />}
+              {tab === "Inbox" && <Attention bots={bots} onError={setError} />}
               {tab === "Knowledge" && <Knowledge onError={setError} />}
               {tab === "Wiki" && <Wiki onError={setError} />}
               {tab === "Instructions" && <Instructions onError={setError} />}

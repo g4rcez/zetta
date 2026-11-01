@@ -28,10 +28,11 @@ export const listItem = "min-w-0 px-4 py-3 text-sm";
 
 const TONE = {
   neutral: "bg-muted text-muted-foreground",
-  success: "bg-success/15 text-success",
-  warning: "bg-warn/15 text-warn",
-  danger: "bg-destructive/15 text-destructive",
-  info: "bg-primary/15 text-primary",
+  // 10% tints with the status text: the pairs the contrast guard (tokens.test.ts) holds at 7:1.
+  success: "bg-success/10 text-success",
+  warning: "bg-warn/10 text-warn",
+  danger: "bg-destructive/10 text-destructive",
+  info: "bg-info/10 text-info",
 } as const;
 export const Badge = ({
   tone = "neutral",

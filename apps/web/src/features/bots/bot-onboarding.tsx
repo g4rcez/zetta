@@ -445,7 +445,7 @@ function StepGroup({
               >
                 <span
                   aria-hidden="true"
-                  className={`grid size-5 shrink-0 place-items-center rounded-full text-[11px] tabular-nums ${done ? "bg-primary text-primary-foreground" : active ? "ring-1 ring-primary text-primary" : "ring-1 ring-border"}`}
+                  className={`grid size-5 shrink-0 place-items-center rounded-full text-xs tabular-nums ${done ? "bg-primary text-primary-foreground" : active ? "ring-1 ring-primary text-primary" : "ring-1 ring-border"}`}
                 >
                   {done ? <CheckIcon className="size-3" /> : i + 1}
                 </span>
@@ -466,7 +466,7 @@ function Guided({ good, bad, children }: { good: string[]; bad: string[]; childr
       <div className="min-w-0 space-y-8 text-sm">{children}</div>
       <aside
         aria-label="Tips"
-        className="space-y-5 border-t pt-6 text-[13px] leading-relaxed lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+        className="space-y-5 border-t pt-6 text-sm leading-relaxed lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
       >
         <TipList title="What works" tone="text-success" items={good} />
         <TipList title="What to avoid" tone="text-warn" items={bad} />
@@ -546,9 +546,7 @@ function Choice({
           </span>
         </span>
         {children && (
-          <span className="text-[13px] leading-snug text-pretty text-muted-foreground">
-            {children}
-          </span>
+          <span className="text-sm leading-snug text-pretty text-muted-foreground">{children}</span>
         )}
       </span>
     </label>
@@ -734,7 +732,7 @@ export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draf
                 <span className="flex items-center gap-2">
                   {h.name}
                   {h.badge && (
-                    <span className="rounded-full bg-success/15 px-1.5 py-0.5 text-[11px] font-medium text-success">
+                    <span className="rounded-full bg-success/15 px-1.5 py-0.5 text-xs font-medium text-success">
                       {h.badge}
                     </span>
                   )}
@@ -1191,7 +1189,7 @@ function DoneStep({
           <li key={t.title} className="flex gap-3 py-3">
             <span
               aria-hidden="true"
-              className="grid size-5 shrink-0 place-items-center rounded-full text-[11px] tabular-nums ring-1 ring-border"
+              className="grid size-5 shrink-0 place-items-center rounded-full text-xs tabular-nums ring-1 ring-border"
             >
               {i + 1}
             </span>

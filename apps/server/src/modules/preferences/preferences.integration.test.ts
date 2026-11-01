@@ -70,20 +70,45 @@ suite("layout preferences against compose postgres", () => {
   });
 
   test("a person who never changed anything gets the defaults", async () => {
-    expect(await read(ids[0]!)).toEqual({ railMode: "expanded", railWidth: 224, listWidth: 320 });
+    expect(await read(ids[0]!)).toEqual({
+      railMode: "expanded",
+      railWidth: 224,
+      listWidth: 320,
+      botOrder: [],
+    });
   });
   test("a change is kept for that person only, and a later change keeps the rest", async () => {
     const first = await call(ids[0]!, "PATCH", { railMode: "collapsed", listWidth: 400 });
     expect(first.status).toBe(200);
     await call(ids[0]!, "PATCH", { railWidth: 260 });
-    expect(await read(ids[0]!)).toEqual({ railMode: "collapsed", railWidth: 260, listWidth: 400 });
-    expect(await read(ids[1]!)).toEqual({ railMode: "expanded", railWidth: 224, listWidth: 320 });
+    expect(await read(ids[0]!)).toEqual({
+      railMode: "collapsed",
+      railWidth: 260,
+      listWidth: 400,
+      botOrder: [],
+    });
+    expect(await read(ids[1]!)).toEqual({
+      railMode: "expanded",
+      railWidth: 224,
+      listWidth: 320,
+      botOrder: [],
+    });
+  });
+  test("a bot order is kept for that person only, in the order sent", async () => {
+    const order = ["00000000-0000-7000-8000-000000000002", "00000000-0000-7000-8000-000000000001"];
+    expect((await call(ids[0]!, "PATCH", { botOrder: order })).status).toBe(200);
+    expect(await read(ids[0]!)).toMatchObject({ railWidth: 260, botOrder: order });
+    expect(await read(ids[1]!)).toMatchObject({ botOrder: [] });
   });
   test("widths outside the limits and unknown fields are refused", async () => {
     expect((await call(ids[1]!, "PATCH", { listWidth: 5000 })).status).toBe(400);
     expect((await call(ids[1]!, "PATCH", { railWidth: 100 })).status).toBe(400);
     expect((await call(ids[1]!, "PATCH", { railMode: "hidden" })).status).toBe(400);
     expect((await call(ids[1]!, "PATCH", { theme: "dark" })).status).toBe(400);
+    expect((await call(ids[1]!, "PATCH", { botOrder: ["not-a-bot"] })).status).toBe(400);
+    expect(
+      (await call(ids[1]!, "PATCH", { botOrder: "00000000-0000-7000-8000-000000000001" })).status,
+    ).toBe(400);
   });
   test("saving needs a trusted origin and a signed-in person", async () => {
     const foreign = await app.handle(

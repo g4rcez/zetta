@@ -2,6 +2,7 @@ import { cn } from "@zetta/ui/lib/utils";
 import { useRef, useState, type ComponentProps, type KeyboardEvent, type RefObject } from "react";
 
 import { BotAvatar } from "@/components/bot-avatar";
+import { BotStatusDot } from "@/components/bot-status";
 import { Textarea } from "@/components/ui";
 
 import type { Bot } from "./chat-client";
@@ -125,7 +126,12 @@ export function useMention({
               i === state.index ? "bg-accent text-accent-foreground" : "hover:bg-muted",
             )}
           >
-            <BotAvatar bot={b} size={20} square />
+            <BotAvatar
+              bot={b}
+              size={20}
+              square
+              badge={<BotStatusDot botId={b.id} className="size-2 border-popover" />}
+            />
             <span className="font-medium">{b.name}</span>
             <span className="truncate text-xs text-muted-foreground">@{mentionKey(b.name)}</span>
           </li>

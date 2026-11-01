@@ -26,6 +26,8 @@ export type Bot = {
   requiredConnections?: RequiredConnection[];
 };
 export type ComputerMode = "off" | "browser" | "desktop";
+export type BotStatus = "available" | "working" | "planning" | "pending" | "error" | "offline";
+export type BotStatusEntry = { botId: string; status: BotStatus; reason: string };
 export type Provider = "anthropic" | "openai" | "google" | "openrouter" | "github";
 export const PROVIDERS: readonly Provider[] = [
   "anthropic",
@@ -117,6 +119,8 @@ export type Receipt = {
   created?: boolean;
   avatar?: BotAvatarValue | null;
 };
+/** The checklist a bot announced with zetta:plan; each update carries the whole list. */
+export type PlanStep = { id: string; title: string; status: "pending" | "active" | "done" };
 export type MessageMeta = {
   used?: {
     memories?: string[];
@@ -127,6 +131,9 @@ export type MessageMeta = {
     }[];
   };
   receipts?: Receipt[];
+  plan?: PlanStep[];
+  /** A message sent while a bot worked, read by that bot at its next step (`replyId` is the reply that used it) instead of getting its own answer. */
+  steer?: { replyId: string; at: number };
   /** What the bot did while it worked, oldest first (`at` is epoch ms). */ timeline?: {
     at: number;
     label: string;
@@ -325,6 +332,8 @@ export type InterviewResult =
 
 export const chatClient = {
   bots: () => call<{ bots: Bot[] }>("/api/bots").then((r) => r.bots),
+  botStatuses: () =>
+    call<{ statuses: BotStatusEntry[] }>("/api/bots/status").then((r) => r.statuses),
   createBot: (input: {
     avatar?: BotAvatarValue | null;
     name: string;

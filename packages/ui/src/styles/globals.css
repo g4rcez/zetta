@@ -6,78 +6,65 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* DESIGN.md: cool neutrals, one emerald signal, amber only for attention. Values are #rrggbb so tokens.test.ts can
+   measure them: every text pair is 7:1 or more, every non-text indicator 3:1 or more. A new color scheme sets these
+   same tokens under its own selector. */
 :root {
-  /* Editorial control room: warm paper, ink text, one verdigris signal. Attention (amber) is the only other loud color. */
-  --background: oklch(0.975 0.008 85);
-  --foreground: oklch(0.2 0.015 60);
-  --card: oklch(0.992 0.005 85);
-  --card-foreground: oklch(0.2 0.015 60);
-  --popover: oklch(0.992 0.005 85);
-  --popover-foreground: oklch(0.2 0.015 60);
-  --primary: oklch(0.593 0.151 245);
-  --primary-foreground: oklch(0.985 0.005 85);
-  --secondary: oklch(0.945 0.01 85);
-  --secondary-foreground: oklch(0.25 0.015 60);
-  --muted: oklch(0.945 0.01 85);
-  --muted-foreground: oklch(0.48 0.02 70);
-  --accent: oklch(0.93 0.03 245);
-  --accent-foreground: oklch(0.28 0.06 245);
-  --attention: oklch(0.72 0.16 70);
-  --attention-foreground: oklch(0.25 0.06 70);
-  --destructive: oklch(0.56 0.21 27);
-  --border: oklch(0.88 0.012 80);
-  --input: oklch(0.86 0.012 80);
-  --ring: oklch(0.64 0.15 245);
-  --chart-1: oklch(0.593 0.151 245);
-  --chart-2: oklch(0.72 0.16 70);
-  --chart-3: oklch(0.56 0.15 25);
-  --chart-4: oklch(0.45 0.08 260);
-  --chart-5: oklch(0.6 0.04 80);
-  --radius: 0.375rem;
-  --sidebar: oklch(0.955 0.012 85);
-  --sidebar-foreground: oklch(0.2 0.015 60);
-  --sidebar-primary: oklch(0.593 0.151 245);
-  --sidebar-primary-foreground: oklch(0.985 0.005 85);
-  --sidebar-accent: oklch(0.925 0.025 170);
-  --sidebar-accent-foreground: oklch(0.26 0.06 245);
-  --sidebar-border: oklch(0.88 0.012 80);
-  --sidebar-ring: oklch(0.64 0.15 245);
+  --background: #fbfbfc;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --primary: #015a45;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f3;
+  --secondary-foreground: var(--foreground);
+  --muted: #f0f0f3;
+  --muted-foreground: #4a4a52;
+  --accent: #ededf0;
+  --accent-foreground: var(--foreground);
+  --attention: #f0a63a;
+  --attention-foreground: #2b1a00;
+  --destructive: #8a1818;
+  --border: #e2e2e6;
+  --input: #8a8a93;
+  --ring: var(--primary);
+  --chart-1: var(--primary);
+  --chart-2: #16457e;
+  --chart-3: #6a4100;
+  --chart-4: var(--destructive);
+  --chart-5: var(--muted-foreground);
+  --radius: 0.5rem;
+  --sidebar: #f3f3f5;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--primary);
 }
 
 .dark {
-  --background: oklch(0.17 0.008 70);
-  --foreground: oklch(0.955 0.01 85);
-  --card: oklch(0.205 0.009 70);
-  --card-foreground: oklch(0.955 0.01 85);
-  --popover: oklch(0.23 0.01 70);
-  --popover-foreground: oklch(0.955 0.01 85);
-  --primary: oklch(0.75 0.13 245);
-  --primary-foreground: oklch(0.2 0.04 245);
-  --secondary: oklch(0.255 0.01 70);
-  --secondary-foreground: oklch(0.955 0.01 85);
-  --muted: oklch(0.24 0.01 70);
-  --muted-foreground: oklch(0.72 0.015 80);
-  --accent: oklch(0.3 0.04 245);
-  --accent-foreground: oklch(0.955 0.01 85);
-  --attention: oklch(0.8 0.15 75);
-  --attention-foreground: oklch(0.22 0.05 70);
-  --destructive: oklch(0.72 0.18 25);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 13%);
-  --ring: oklch(0.7 0.13 245);
-  --chart-1: oklch(0.75 0.13 245);
-  --chart-2: oklch(0.8 0.15 75);
-  --chart-3: oklch(0.72 0.16 25);
-  --chart-4: oklch(0.7 0.09 260);
-  --chart-5: oklch(0.7 0.04 80);
-  --sidebar: oklch(0.145 0.008 70);
-  --sidebar-foreground: oklch(0.955 0.01 85);
-  --sidebar-primary: oklch(0.75 0.13 245);
-  --sidebar-primary-foreground: oklch(0.2 0.04 245);
-  --sidebar-accent: oklch(0.25 0.02 245);
-  --sidebar-accent-foreground: oklch(0.955 0.01 85);
-  --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.7 0.13 245);
+  --background: #0f0f11;
+  --foreground: #ededf0;
+  --card: #141417;
+  --popover: #1a1a1e;
+  --primary: #47c7a1;
+  --primary-foreground: #09090b;
+  --secondary: #1c1c20;
+  --muted: #1c1c20;
+  --muted-foreground: #b4b4bc;
+  --accent: #26262b;
+  --attention: #f5b455;
+  --attention-foreground: #1f1300;
+  --destructive: #ff9c94;
+  --border: #212121;
+  --input: #6e6e78;
+  --chart-2: #8db8f2;
+  --chart-3: #f5b455;
+  --sidebar: #09090b;
 }
 
 @theme inline {
@@ -132,7 +119,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
   body {
     @apply font-sans bg-background text-foreground text-sm antialiased;
@@ -142,15 +129,17 @@
   h3,
   h4 {
     font-family: var(--font-heading);
+    text-wrap: balance;
   }
   h1 {
-    @apply text-3xl font-medium tracking-tight;
+    @apply text-2xl font-semibold tracking-tight;
   }
   h2 {
-    @apply text-lg font-medium tracking-tight;
+    @apply text-base font-medium;
   }
+  /* Group labels: sentence case, sans, 12px. Kept as a class until its callers move to the new sidebar (RFC-084). */
   .label-mono {
-    @apply font-mono text-[11px] font-medium tracking-[0.08em] uppercase text-muted-foreground;
+    @apply text-xs font-medium text-muted-foreground;
   }
   ::selection {
     background: color-mix(in oklch, var(--primary) 35%, transparent);
@@ -162,7 +151,7 @@
   ::-webkit-scrollbar-thumb {
     background: color-mix(in oklch, var(--foreground) 18%, transparent);
     border-radius: 999px;
-    border: 3px solid transparent;
+    border: 2px solid transparent;
     background-clip: content-box;
   }
   html {

@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import {
   BookmarkSimpleIcon,
+  CaretRightIcon,
   CalendarPlusIcon,
   FileArchiveIcon,
   BooksIcon,
@@ -38,7 +39,7 @@ import { PictureStrip } from "./attachment-image";
 import { CopyButton } from "./chat-copy";
 import { EmojiPicker } from "./emoji-picker";
 import { computersOf, type Row } from "./chat-rows";
-import { friendly, WorkTimeline } from "./work-timeline";
+import { elapsed, friendly, useNow, WorkTimeline } from "./work-timeline";
 import { VmCard } from "./vm-card";
 import { Response } from "./response";
 import { splitActionNotes } from "./action-notes";
@@ -66,7 +67,7 @@ function UsedNotes({ row }: { row: Row }) {
   if (n === 0) return null;
   return (
     <details
-      className="text-[13px] text-muted-foreground"
+      className="text-xs text-muted-foreground"
       onToggle={(e) => {
         if ((e.currentTarget as HTMLDetailsElement).open && !data)
           chatClient.usedKnowledge(row.id).then(setData, (x) => setError(errorMessage(x)));
@@ -128,7 +129,7 @@ function Sources({ row }: { row: Row }) {
   if (n === 0) return null;
   return (
     <details
-      className="text-[13px] text-muted-foreground"
+      className="text-xs text-muted-foreground"
       onToggle={(e) => {
         if ((e.currentTarget as HTMLDetailsElement).open && !list)
           chatClient.sources(row.id).then(setList, (x) => setError(errorMessage(x)));
@@ -281,42 +282,31 @@ function HoverBar({
   );
 }
 
-/** Shown while the bot is thinking and no specific step is known, so the wait reads as progress. */
-const THINKING = [
-  "Thinking",
-  "Reading the request",
-  "Connecting the dots",
-  "Weighing the options",
-  "Checking what I know",
-  "Putting it together",
-  "Double-checking",
-  "Almost there",
-];
-const ROTATE_MS = 2800;
-
-/** A concrete step ("Running postgres · db_overview") is shown as is; with none, a thinking phrase rotates. */
+/** A concrete step ("Running postgres · db_overview") is shown as is; with none, the label is "Thinking" and a real timer runs. */
 const isGeneric = (activity?: string) => !activity || activity === "Thinking";
 
-/** Live feedback line for a reply that is not ready yet: a label (or rotating thinking phrases) plus bouncing dots. */
-function WorkingStatus({ label, rotate = false }: { label: string; rotate?: boolean }) {
-  const [i, setI] = useState(() => Math.floor(Math.random() * THINKING.length));
-  useEffect(() => {
-    if (!rotate) return;
-    const t = setInterval(() => setI((n) => (n + 1) % THINKING.length), ROTATE_MS);
-    return () => clearInterval(t);
-  }, [rotate]);
+/** Live feedback line for a reply that is not ready yet: the label, plus the time since `since` (when known) and bouncing dots. */
+function WorkingStatus({ label, since }: { label: string; since?: string }) {
+  const now = useNow(!!since);
+  const secs = since ? now - new Date(since).getTime() : undefined;
   return (
     <p
       role="status"
-      aria-live={rotate ? "off" : "polite"}
-      className="flex items-center gap-1 text-[14px] text-muted-foreground"
+      aria-live="polite"
+      className="flex items-center gap-1 text-sm text-muted-foreground"
     >
-      {rotate ? THINKING[i] : label}
+      {label}
+      {secs !== undefined && (
+        // Hidden from screen readers: a per-second change would be announced every second.
+        <span aria-hidden="true" className="tabular-nums">
+          · {elapsed(secs)}
+        </span>
+      )}
       <span className="inline-flex gap-0.5" aria-hidden="true">
         {[0, 1, 2].map((i) => (
           <i
             key={i}
-            className="size-1 animate-bounce rounded-full bg-muted-foreground motion-reduce:animate-none"
+            className="size-1 animate-pulse rounded-full bg-muted-foreground motion-reduce:animate-none"
             style={{ animationDelay: `${i * 120}ms` }}
           />
         ))}
@@ -336,6 +326,7 @@ export const MessageRow = memo(function MessageRow({
   onReply,
   onSaveInstruction,
   onQueue,
+  onOpenArtifact,
 }: {
   row: Row;
   author: Author;
@@ -347,6 +338,8 @@ export const MessageRow = memo(function MessageRow({
   onSaveInstruction: (row: Row) => void;
   /** A queued message: drop it before it is answered, or put a failed one back in line. */
   onQueue?: (row: Row, action: "remove" | "retry") => void;
+  /** Open a published file beside the chat instead of leaving it. */
+  onOpenArtifact?: (id: string) => void;
 }) {
   const saved = !row.streaming && !readOnly;
   // The toolbar (tooltips, popover, menu) mounts on first hover or keyboard focus, not for every row of a long history.
@@ -369,7 +362,7 @@ export const MessageRow = memo(function MessageRow({
     <Message
       aria-label={`${author.name} at ${time(row.createdAt)}`}
       className={cn(
-        "gap-3 px-4 py-0.5 text-[15px] hover:bg-foreground/[0.03] has-aria-expanded:bg-foreground/[0.03]",
+        "gap-3 px-4 py-0.5 text-sm hover:bg-accent/60 has-aria-expanded:bg-accent/60",
         !continued && "mt-3 pt-1.5",
       )}
       onPointerEnter={
@@ -403,7 +396,7 @@ export const MessageRow = memo(function MessageRow({
         <time
           dateTime={row.createdAt}
           title={fullDate(row.createdAt)}
-          className="w-8 shrink-0 pt-0.5 text-right font-mono text-[10px] leading-5 text-muted-foreground opacity-0 group-hover/message:opacity-100"
+          className="w-8 shrink-0 pt-0.5 text-right text-xs leading-5 text-muted-foreground tabular-nums opacity-0 group-hover/message:opacity-100"
         >
           {time(row.createdAt)}
         </time>
@@ -412,9 +405,9 @@ export const MessageRow = memo(function MessageRow({
           {author.bot ? (
             <BotAvatar bot={author.bot} size={32} square />
           ) : (
-            <Avatar className="size-8 rounded-lg after:rounded-lg">
-              {author.image && <AvatarImage src={author.image} alt="" className="rounded-lg" />}
-              <AvatarFallback className="rounded-lg bg-primary/15 text-[13px] font-semibold text-primary">
+            <Avatar className="size-8 rounded-full after:rounded-full">
+              {author.image && <AvatarImage src={author.image} alt="" className="rounded-full" />}
+              <AvatarFallback className="rounded-full bg-muted text-xs font-semibold text-foreground">
                 {initials(author.name)}
               </AvatarFallback>
             </Avatar>
@@ -423,15 +416,13 @@ export const MessageRow = memo(function MessageRow({
       )}
       <MessageContent className="gap-1">
         {!continued && (
-          <MessageHeader className="gap-2 px-0 text-[14px] leading-5">
+          <MessageHeader className="gap-2 px-0 text-sm leading-5">
             <span className="truncate font-semibold text-foreground">{author.name}</span>
-            {author.bot && (
-              <span className="text-[12px] font-medium text-muted-foreground">App</span>
-            )}
+            {author.bot && <span className="text-xs font-medium text-muted-foreground">App</span>}
             <time
               dateTime={row.createdAt}
               title={fullDate(row.createdAt)}
-              className="font-mono text-[11px] font-normal text-muted-foreground hover:underline"
+              className="text-xs font-normal text-muted-foreground tabular-nums hover:underline"
             >
               {time(row.createdAt)}
             </time>
@@ -445,7 +436,7 @@ export const MessageRow = memo(function MessageRow({
               .map((a) => (
                 <li
                   key={a.id}
-                  className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-[13px]"
+                  className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs"
                 >
                   <PaperclipIcon aria-hidden="true" className="size-3 text-muted-foreground" />
                   {a.name}
@@ -456,46 +447,62 @@ export const MessageRow = memo(function MessageRow({
         <WorkTimeline row={row} working={working} />
         {working && !visible ? (
           <WorkingStatus
-            label={friendly(row.activity) ?? "typing"}
-            rotate={isGeneric(row.activity)}
+            label={friendly(row.activity) ?? "Thinking"}
+            since={isGeneric(row.activity) ? row.createdAt : undefined}
           />
         ) : (
           <>
             <Response text={body} streaming={working} />
             {notes.length > 0 && (
-              <ul
-                aria-label="Actions"
-                className="list-disc space-y-0.5 pl-5 text-[13px] text-muted-foreground marker:text-muted-foreground/60"
-              >
-                {notes.map((n, i) => (
-                  <li key={i}>{n}</li>
-                ))}
-              </ul>
+              // DESIGN.md "Bot work": the run's actions fold into one summary line under the reply.
+              <details className="group/notes text-xs text-muted-foreground">
+                <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md py-0.5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                  <CaretRightIcon
+                    aria-hidden="true"
+                    className="size-3 transition-transform group-open/notes:rotate-90 motion-reduce:transition-none"
+                  />
+                  {notes.length} {notes.length === 1 ? "action" : "actions"}
+                </summary>
+                <ul
+                  aria-label="Actions"
+                  className="mt-1 list-disc space-y-0.5 pl-5 marker:text-muted-foreground"
+                >
+                  {notes.map((n, i) => (
+                    <li key={i}>{n}</li>
+                  ))}
+                </ul>
+              </details>
             )}
             {working && (
               <WorkingStatus
                 label={friendly(row.activity) ?? "Working"}
-                rotate={isGeneric(row.activity)}
+                since={isGeneric(row.activity) ? row.createdAt : undefined}
               />
             )}
           </>
         )}
         {row.status === "failed" && (
-          <p role="alert" className="text-[13px] font-medium text-destructive">
+          <p role="alert" className="text-xs font-medium text-destructive">
             This reply failed.
           </p>
         )}
         {row.status === "interrupted" && (
-          <p role="alert" className="text-[13px] font-medium text-destructive">
+          <p role="alert" className="text-xs font-medium text-destructive">
             Interrupted: the server restarted while answering.
           </p>
         )}
         {row.status === "cancelled" && (
-          <p className="text-[13px] italic text-muted-foreground">Stopped.</p>
+          <p className="text-xs italic text-muted-foreground">Stopped.</p>
+        )}
+        {row.meta?.steer && (
+          <p className="text-xs text-muted-foreground">Used by the bot at its next step.</p>
         )}
         {row.queue === "pending" && (
-          <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
-            <span>Queued: the bot answers it in its thread after the current reply.</span>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>
+              Queued: the bot reads it at its next step, or answers it in its thread after the
+              current reply.
+            </span>
             {onQueue && !readOnly && (
               <Button size="xs" variant="ghost" onClick={() => onQueue(row, "remove")}>
                 Remove
@@ -514,7 +521,7 @@ export const MessageRow = memo(function MessageRow({
           </div>
         )}
         {row.queue === "failed" && (
-          <div className="flex flex-wrap items-center gap-2 text-[13px]">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <span role="alert" className="font-medium text-destructive">
               Not answered.
             </span>
@@ -543,7 +550,7 @@ export const MessageRow = memo(function MessageRow({
           <Link
             to="/rooms"
             search={{ id: row.meta.discussion.id }}
-            className="w-fit text-[13px] text-primary hover:underline"
+            className="w-fit text-xs text-primary hover:underline"
           >
             Open the room “{row.meta.discussion.title}”
           </Link>
@@ -557,7 +564,7 @@ export const MessageRow = memo(function MessageRow({
                     to="/chat/{-$chatId}"
                     params={{ chatId: "new" }}
                     search={{ bot: r.id }}
-                    className="flex items-center gap-2.5 rounded-lg border bg-card py-2 pr-3 pl-2 text-[13px] hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
+                    className="flex items-center gap-2.5 rounded-lg border bg-card py-2 pr-3 pl-2 text-xs hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
                   >
                     <BotAvatar bot={{ id: r.id, avatar: r.avatar ?? null }} size={32} square />
                     <span className="min-w-0">
@@ -568,7 +575,7 @@ export const MessageRow = memo(function MessageRow({
                 ) : (
                   <Link
                     to="/teams"
-                    className="flex items-center gap-2.5 rounded-lg border bg-card py-2 pr-3 pl-2 text-[13px] hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
+                    className="flex items-center gap-2.5 rounded-lg border bg-card py-2 pr-3 pl-2 text-xs hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
                   >
                     <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
                       <UsersIcon aria-hidden="true" className="size-4" />
@@ -587,7 +594,7 @@ export const MessageRow = memo(function MessageRow({
         )}
         {receipts.length > 0 && (
           <ul
-            className="flex flex-wrap gap-x-3 gap-y-0.5 text-[13px] text-muted-foreground"
+            className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground"
             aria-label="What the bot saved"
           >
             {receipts.map((r) => (
@@ -613,6 +620,20 @@ export const MessageRow = memo(function MessageRow({
                   <Link
                     to="/artifacts/$artifactId"
                     params={{ artifactId: r.id }}
+                    onClick={(e) => {
+                      // A plain click opens the side pane; modified clicks (new tab, new window) keep the link.
+                      if (
+                        !onOpenArtifact ||
+                        e.metaKey ||
+                        e.ctrlKey ||
+                        e.shiftKey ||
+                        e.altKey ||
+                        e.button !== 0
+                      )
+                        return;
+                      e.preventDefault();
+                      onOpenArtifact(r.id);
+                    }}
                     className="flex items-center gap-1 hover:text-foreground hover:underline"
                   >
                     <FileArchiveIcon aria-hidden="true" className="size-3.5" />
@@ -670,9 +691,9 @@ export const MessageRow = memo(function MessageRow({
                   aria-label={`${r.emoji} ${r.count}${r.mine ? ", including you" : ""}`}
                   onClick={() => onReact(row, r.emoji)}
                   className={cn(
-                    "inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+                    "inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ring",
                     r.mine
-                      ? "border-primary/60 bg-primary/10 text-primary"
+                      ? "border-primary bg-accent text-foreground"
                       : "bg-muted/50 hover:border-foreground/30",
                   )}
                 >
@@ -686,7 +707,7 @@ export const MessageRow = memo(function MessageRow({
           <button
             type="button"
             onClick={() => onReply(row)}
-            className="group/thread -ml-1 flex w-fit items-center gap-2 rounded-md border border-transparent px-1 py-0.5 text-[13px] hover:border-border hover:bg-card"
+            className="group/thread -ml-1 flex w-fit items-center gap-2 rounded-md border border-transparent px-1 py-0.5 text-xs hover:border-border hover:bg-card"
           >
             <span className="font-semibold text-primary group-hover/thread:underline">
               {replies} {replies === 1 ? "reply" : "replies"}

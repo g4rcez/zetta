@@ -70,12 +70,15 @@ export default function UserMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={`Account menu for ${session.user.name}`}
+        // With visible text the name starts with it (WCAG 2.5.3); icon-only forms keep a label.
+        aria-label={
+          rail === "expanded" || inline ? undefined : `Account menu for ${session.user.name}`
+        }
         render={
           rail ? (
             <button
               type="button"
-              className={`${railRow} ${rail === "expanded" ? `${railRowExpanded} h-12` : ""}`}
+              className={`${railRow} ${rail === "expanded" ? `${railRowExpanded} h-10` : ""}`}
             />
           ) : inline ? (
             <button
@@ -97,13 +100,13 @@ export default function UserMenu({
           <>
             <span
               aria-hidden="true"
-              className="grid size-6 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground"
+              className="grid size-5 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground"
             >
               {session.user.name.slice(0, 1).toUpperCase()}
             </span>
             {rail === "expanded" ? (
               <>
-                <span className="hidden min-w-0 flex-1 flex-col text-left leading-tight md:flex">
+                <span className="flex min-w-0 flex-1 flex-col text-left leading-tight">
                   <span className="truncate text-sm font-medium text-foreground">
                     {session.user.name}
                   </span>
@@ -111,7 +114,8 @@ export default function UserMenu({
                     {session.user.email}
                   </span>
                 </span>
-                <CaretUpDownIcon aria-hidden="true" className="hidden size-4 shrink-0 md:block" />
+                <span className="sr-only">, account menu</span>
+                <CaretUpDownIcon aria-hidden="true" className="size-4 shrink-0" />
               </>
             ) : null}
           </>
@@ -124,6 +128,7 @@ export default function UserMenu({
               {session.user.name.slice(0, 1).toUpperCase()}
             </span>
             <span className="hidden min-w-0 truncate sm:block">{session.user.name}</span>
+            <span className="sr-only">, account menu</span>
           </>
         ) : compact ? (
           <span aria-hidden="true">{session.user.name.slice(0, 1).toUpperCase()}</span>

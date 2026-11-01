@@ -13,7 +13,13 @@ import { toast } from "sonner";
 import { call } from "../chat/chat-client";
 
 export type RailMode = "expanded" | "collapsed";
-export type Preferences = { railMode: RailMode; railWidth: number; listWidth: number };
+/** `botOrder`: the person's sidebar order of bots (ids, first on top); the chief is always first and never listed. */
+export type Preferences = {
+  railMode: RailMode;
+  railWidth: number;
+  listWidth: number;
+  botOrder: string[];
+};
 
 /** Same limits as the server (packages/db/src/schema/preferences.ts), which rejects anything outside them. */
 export const SIDEBAR_LIMITS = {
@@ -25,6 +31,7 @@ const DEFAULTS: Preferences = {
   railMode: "expanded",
   railWidth: SIDEBAR_LIMITS.railWidth.fallback,
   listWidth: SIDEBAR_LIMITS.listWidth.fallback,
+  botOrder: [],
 };
 // The server is the source of truth. This copy only stops the layout from jumping while the first request is in flight.
 const CACHE_KEY = "zetta:preferences";

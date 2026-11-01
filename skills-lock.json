@@ -38,6 +38,12 @@
       "skillPath": "better-auth/emailAndPassword/SKILL.md",
       "computedHash": "863886759f729081e265941f4f72c503835d55a1f34f6d63cebe6571159fff4a"
     },
+    "linear-ui-skills": {
+      "source": "ihlamury/design-skills",
+      "sourceType": "github",
+      "skillPath": "skills/linear/SKILL.md",
+      "computedHash": "90c9a6ba781cd83c22943718259ef0bd8704c9de0e0a3e42ed2914322bc88c05"
+    },
     "review-logging-patterns": {
       "source": "evlog.dev",
       "sourceUrl": "https://www.evlog.dev",

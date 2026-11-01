@@ -71,7 +71,7 @@ function ZettaNode({ data, selected }: NodeProps<FlowNode>) {
         </p>
       )}
       {handles.map((h, i) => (
-        <div key={h} className="relative mt-1 flex justify-end text-[10px] text-muted-foreground">
+        <div key={h} className="relative mt-1 flex justify-end text-xs text-muted-foreground">
           {handles.length > 1 && <span className="pr-2">{h.replace("choice:", "")}</span>}
           <Handle
             type="source"

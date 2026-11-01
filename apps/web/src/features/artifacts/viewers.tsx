@@ -111,6 +111,13 @@ function CsvViewer({ a }: { a: Artifact }) {
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 bg-muted">
             <tr>
+              <th
+                scope="col"
+                className="w-10 px-3 py-2 text-right font-normal text-muted-foreground"
+              >
+                <span className="sr-only">Row</span>
+                <span aria-hidden="true">#</span>
+              </th>
               {head.map((h, i) => (
                 <th
                   key={i}
@@ -125,8 +132,11 @@ function CsvViewer({ a }: { a: Artifact }) {
           <tbody className="divide-y">
             {body.map((r, i) => (
               <tr key={i}>
+                <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                  {i + 1}
+                </td>
                 {r.map((c, j) => (
-                  <td key={j} className="whitespace-nowrap px-3 py-1.5">
+                  <td key={j} className="whitespace-nowrap px-3 py-1.5 tabular-nums">
                     {c}
                   </td>
                 ))}
@@ -135,11 +145,11 @@ function CsvViewer({ a }: { a: Artifact }) {
           </tbody>
         </table>
       </div>
-      {parsed.truncated && (
-        <p className="text-xs text-muted-foreground">
-          Showing the first 1000 rows. Download the file for the rest.
-        </p>
-      )}
+      <p className="text-xs text-muted-foreground">
+        {body.length} {body.length === 1 ? "row" : "rows"} · {head.length}{" "}
+        {head.length === 1 ? "column" : "columns"}
+        {parsed.truncated && ". Showing the first 1000 rows. Download the file for the rest."}
+      </p>
     </div>
   );
 }

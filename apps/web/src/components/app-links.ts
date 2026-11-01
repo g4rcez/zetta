@@ -22,7 +22,7 @@ export const appLinks = [
     to: "/studio/$tab",
     params: { tab: "attention" },
     group: "Work",
-    label: "Notifications",
+    label: "Inbox",
     icon: BellIcon,
   },
   { to: "/studio", group: "Build", label: "Studio", icon: SquaresFourIcon },

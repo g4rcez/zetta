@@ -23,6 +23,7 @@ import { designSystemPrompt } from "../artifacts/design-system";
  *   ```zetta:permission  {"rule": "Bash(pnpm:*)", "reason": "run the tests"}                -> any other bot: asks the chief, in the Permissions room, for a rule
  *   ```zetta:escalate    {"problem": "...", "tried": "..."}                              -> any other bot: asks the chief to solve a blocker in a help room; the answer resumes the bot, the user is asked only if the chief cannot
  *   ```zetta:discussion  {"action": "open", "title", "goal", "context", "members": [{"bot": "Dev"}], "firstMessage"} | post | update_context | resolve -> group of bots (modules/discussions)
+ *   ```zetta:plan        {"steps": [{"id": "1", "title": "Read the sheet", "status": "active"}, ...]} -> not a tool: nothing runs and it never causes a rerun. The web chat shows it as a checklist; each block replaces the whole list
  *   ```zetta:ui          JSON-patch lines building a view from @zetta/render's catalog -> not a tool: it stays in the reply and the web chat draws it
  */
 /** Shared by the tool preamble and the loop prompts: a bot never makes the user choose how to do the work. */
@@ -53,6 +54,9 @@ export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks i
 \`\`\`zetta:create_routine
 {"botId":"<id of the bot that runs it, usually yours>","title":"Morning Reddit digest","prompt":"complete instructions for one run","timezone":"America/Sao_Paulo","dailyAt":"08:00"}
 \`\`\`   (a recurring task; only a proposal: the user approves it, then activates it in Studio > Routines. dailyAt "HH:MM" in that IANA timezone, or everyMinutes (5 to 10080) instead; several times a day = one routine per time. Each run is a new chat turn with your tools, so the prompt must stand on its own. Propose it in your first reply, before using a computer, plugin or reading anything: changes asked for after outside content are ignored.)
+\`\`\`zetta:plan
+{"steps":[{"id":"1","title":"Read the sheet","status":"active"},{"id":"2","title":"Draw the chart"},{"id":"3","title":"Write the summary"}]}
+\`\`\`   (not a tool: nothing runs. It shows the user your steps as a checklist while you work. Use it only for work of 3 or more steps, in the reply where you start. status is pending (default), active or done. Each block replaces the whole list, so send the full list again with the new statuses in the reply that starts or finishes a step, together with that step's tool blocks. At most 12 steps, titles under 120 characters.)
 ${uiPrompt()}
 ${AUTONOMY}
 Only use a tool when it is needed.`;
@@ -442,6 +446,21 @@ export type ToolCall = {
   [K in keyof typeof toolSchemas]: { kind: K; args: z.infer<(typeof toolSchemas)[K]> };
 }[keyof typeof toolSchemas];
 
+/** The checklist a bot announces with `zetta:plan`. It is a status signal, not a call: it never runs, never counts toward the block limit and never causes a rerun. */
+export const planSchema = z.strictObject({
+  steps: z
+    .array(
+      z.strictObject({
+        id: bounded(40),
+        title: bounded(120),
+        status: z.enum(["pending", "active", "done"]).default("pending"),
+      }),
+    )
+    .min(1)
+    .max(12),
+});
+export type PlanStep = z.infer<typeof planSchema>["steps"][number];
+
 /** A block that did not become a call, with the reason the bot and the user are told. */
 export type RejectedTool = { kind: string; title?: string; reason: string };
 export const MAX_TOOL_BLOCKS = 8;
@@ -451,9 +470,12 @@ export function parseTools(reply: string): {
   calls: ToolCall[];
   text: string;
   rejected: RejectedTool[];
+  /** The last valid `zetta:plan` block of the reply, if any. A malformed one is dropped without a word: it only drives a display. */
+  plan?: PlanStep[] | undefined;
 } {
   const calls: ToolCall[] = [];
   const rejected: RejectedTool[] = [];
+  let plan: PlanStep[] | undefined;
   const text = reply
     .replace(
       /```zetta:(remember|instruction|wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal|team_goals|artifact|setup)\s*\n([\s\S]*?)```/g,
@@ -491,9 +513,18 @@ export function parseTools(reply: string): {
         return "";
       },
     )
+    .replace(/```zetta:plan\s*\n([\s\S]*?)```/g, (_, body: string) => {
+      try {
+        const parsed = planSchema.safeParse(JSON.parse(body));
+        if (parsed.success) plan = parsed.data.steps;
+      } catch {
+        // Not JSON: nothing to show.
+      }
+      return "";
+    })
     .replace(/```zetta:setup-card[\s\S]*?```/g, "")
     .trim();
-  return { calls, text, rejected };
+  return { calls, text, rejected, plan };
 }
 
 export type WhatsappBody =

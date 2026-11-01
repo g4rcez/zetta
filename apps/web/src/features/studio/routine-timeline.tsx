@@ -132,7 +132,7 @@ export function RoutineTimeline({ refreshKey }: { refreshKey: number }) {
       ) : (
         <div className="space-y-1">
           <div
-            className="relative ml-0 h-4 whitespace-nowrap text-[10px] tabular-nums text-muted-foreground sm:ml-48"
+            className="relative ml-0 h-4 whitespace-nowrap text-xs tabular-nums text-muted-foreground sm:ml-48"
             aria-hidden
           >
             {ticks.map((t, i) => (

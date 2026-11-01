@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 
-import type { Message } from "./chat-client";
+import type { Message, PlanStep } from "./chat-client";
 
 /** Data parts the server's UI message stream emits (see apps/server/src/modules/chat/ui-stream.ts). */
 export type ZettaData = {
@@ -13,6 +13,9 @@ export type ZettaData = {
   computer: { messageId: string; botId?: string; vm: { id: string; name: string } };
   "computer-step": { messageId: string; vmId: string; step: string; at: number };
   activity: { messageId: string; label: string; at: number };
+  artifact: { messageId: string; id: string; title: string; at: number };
+  plan: { messageId: string; steps: PlanStep[] };
+  steer: { messageId: string; noteIds: string[] };
 };
 export type ZettaUIMessage = UIMessage<unknown, ZettaData>;
 
@@ -26,6 +29,8 @@ export type Row = Message & {
   activity?: string;
   /** Every step the bot reported this turn, oldest first. Saved replies keep it in `meta.timeline`. */
   timeline?: { at: number; label: string }[];
+  /** The checklist the bot announced this turn. Saved replies keep it in `meta.plan`. */
+  plan?: PlanStep[];
   computers?: { id: string; name: string }[];
   computerSteps?: ComputerStep[];
 };
@@ -119,6 +124,23 @@ export function liveRows(
           if (p.data.label !== "Thinking" && target.timeline?.at(-1)?.label !== p.data.label)
             target.timeline = [...(target.timeline ?? []), { at: p.data.at, label: p.data.label }];
         }
+      } else if (p.type === "data-plan") {
+        const target = rows.find((r) => r.id === p.data.messageId) ?? current;
+        if (target) target.plan = p.data.steps;
+      } else if (p.type === "data-artifact") {
+        // A file the bot just published: its receipt shows now, not only once the reply is saved.
+        const target = rows.find((r) => r.id === p.data.messageId) ?? current;
+        if (
+          target &&
+          !target.meta?.receipts?.some((x) => x.kind === "artifact" && x.id === p.data.id)
+        )
+          target.meta = {
+            ...target.meta,
+            receipts: [
+              ...(target.meta?.receipts ?? []),
+              { kind: "artifact", id: p.data.id, text: p.data.title, created: true },
+            ],
+          };
       } else if (p.type === "data-computer-step") {
         const target = rows.find((r) => r.id === p.data.messageId) ?? current;
         if (target)
@@ -145,6 +167,19 @@ export function liveRows(
   }
   return rows;
 }
+
+/** An artifact the bot just published opens in the side pane by itself, but only when that cannot cover or replace something else. */
+export const shouldAutoOpen = (a: {
+  desktop: boolean;
+  /** A thread, an artifact or the details pane is already open. */
+  paneOpen: boolean;
+  /** Artifacts this page already opened (or tried to). */
+  seen: ReadonlySet<string>;
+  id: string;
+  /** When the server published it; a stream replayed on resume carries old times. */
+  at: number;
+  now?: number;
+}) => a.desktop && !a.paneOpen && !a.seen.has(a.id) && (a.now ?? Date.now()) - a.at < 10_000;
 
 /**
  * A live user row keeps the client's id until the server's `user-saved` part arrives. If history reloads first, the saved copy

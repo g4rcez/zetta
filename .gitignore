@@ -70,3 +70,6 @@ temp
 
 # Local TLS certificates (scripts/dev-certs.sh)
 .certs/
+
+# Local design-review screenshots (hold personal data)
+.impeccable/review/

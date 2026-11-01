@@ -26,6 +26,8 @@ Self-hosted, one admin per installation. The server runs six harnesses (Pi, Code
 
 - Bot configuration via guided forms or conversation; onboarding completes only after a verified real conversation and explicit positive confirmation.
 - Chat: multiple private conversations per bot, markdown, mentions, attachments, threads, reactions, durable multi-turn context, immutable read-only conversation snapshots, group discussions.
+- The chief is named "Zetta" by default, so the app and the bot people talk to share one name; the user can rename it. "Chief" stays the name of the role.
+- Chat-first shell: one sidebar with the chief first and the other bots in the order each user sets (drag or keyboard, saved per user); each bot lists its own chats. See docs/intent/redesign.md.
 - Attention model shared by sidebar, activity and task kanban: working/queued, needs input, blocked, new results; kept separate from execution status.
 - Routines, agenda, studio, computer (VM) use, workspaces as visual teams of bots.
 - Bots are team-visible by default, may be private; sharing a bot never shares conversations, credentials, files or memories.
@@ -51,4 +53,4 @@ Product definition in README.md, docs/intent/zetta-v1.md and docs/wiki/. No cust
 
 ## Accessibility & Inclusion
 
-WCAG 2.2 AA required.
+WCAG 2.2 AA required, with AAA color contrast: every text and background pair is 7:1 or more.

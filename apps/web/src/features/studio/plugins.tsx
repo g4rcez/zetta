@@ -118,13 +118,13 @@ export function Plugins({ onError }: { onError: (m: string) => void }) {
                   <span className="min-w-0 flex-1 truncate font-medium">{m.name}</span>
                   <div className="flex shrink-0 items-center gap-1.5">
                     {m.always ? (
-                      <span className="rounded bg-primary/15 px-1.5 py-0.5 text-xs text-primary">
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
                         Built in
                       </span>
                     ) : done ? (
                       <>
                         {hasMine && (
-                          <span className="rounded bg-primary/15 px-1.5 py-0.5 text-xs text-primary">
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
                             Installed
                           </span>
                         )}

@@ -1,5 +1,8 @@
+import { CheckIcon, CircleIcon, CircleNotchIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@zetta/ui/lib/utils";
 
+import type { Message, PlanStep } from "./chat-client";
 import type { Row } from "./chat-rows";
 
 /** "plugin postgres.db_overview" -> "Running postgres · db_overview"; other labels pass through. */
@@ -8,52 +11,197 @@ export const friendly = (activity?: string) => {
   return m ? `Running ${m[1]}${m[2] ? ` · ${m[2]}` : ""}` : activity;
 };
 
-const elapsed = (ms: number) => {
+export const elapsed = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 };
 
+/** Current time, refreshed every second while `active`; the interval stops when it turns false or on unmount. */
+export const useNow = (active: boolean) => {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [active]);
+  return now;
+};
+
+export type StepState = "done" | "running" | "failed" | "pending";
+
+/** Every step before the last one is done. The last one runs while the bot works, fails when the reply failed or stopped, else is done. */
+export const stepStates = (
+  count: number,
+  working: boolean,
+  status?: Message["status"],
+): StepState[] =>
+  Array.from({ length: count }, (_, i) =>
+    i < count - 1
+      ? "done"
+      : working
+        ? "running"
+        : status === "failed" || status === "interrupted"
+          ? "failed"
+          : "done",
+  );
+
 /**
- * Status layout, not a message: what the bot did while it worked, as a mono rail with the time since the first step. Open while the
- * bot still works; once the answer is saved it folds into a one-line summary that stays in the chat.
+ * States for a plan the bot announced. `active` runs while the bot works; after the turn it is done (the bot may forget the last
+ * update), failed when the reply failed, and still open when the user stopped it. `pending` stays pending.
+ */
+export const planStates = (
+  steps: PlanStep[],
+  working: boolean,
+  status?: Message["status"],
+): StepState[] =>
+  steps.map((s) =>
+    s.status !== "active"
+      ? s.status
+      : working
+        ? "running"
+        : status === "failed" || status === "interrupted"
+          ? "failed"
+          : status === "cancelled"
+            ? "pending"
+            : "done",
+  );
+
+/** "Step 2 of 3": the first step that is not done, or the last one when all are. */
+export const planProgress = (steps: PlanStep[]) => {
+  const next = steps.findIndex((s) => s.status !== "done");
+  return `Step ${next < 0 ? steps.length : next + 1} of ${steps.length}`;
+};
+
+const STATE_NAME: Record<StepState, string> = {
+  done: "Done",
+  running: "Running",
+  failed: "Failed",
+  pending: "Not started",
+};
+
+function StepIcon({ state }: { state: StepState }) {
+  const base = "size-3.5";
+  return (
+    <span className="flex size-4 items-center justify-center">
+      {state === "done" && (
+        <CheckIcon aria-hidden="true" weight="bold" className={cn(base, "text-primary")} />
+      )}
+      {state === "running" && (
+        <CircleNotchIcon
+          aria-hidden="true"
+          className={cn(base, "animate-spin text-primary motion-reduce:animate-none")}
+        />
+      )}
+      {state === "pending" && (
+        <CircleIcon aria-hidden="true" className={cn(base, "text-muted-foreground/60")} />
+      )}
+      {state === "failed" && (
+        <WarningCircleIcon
+          aria-hidden="true"
+          weight="fill"
+          className={cn(base, "text-destructive")}
+        />
+      )}
+      <span className="sr-only">{STATE_NAME[state]}: </span>
+    </span>
+  );
+}
+
+type Item = {
+  key: string;
+  label: string;
+  state: StepState;
+  detail?: string | undefined;
+  time?: string | undefined;
+};
+
+/**
+ * Status layout, not a message: what the bot did while it worked, as a rail of steps with a status icon. Open while the bot still works,
+ * with a live clock; once the answer is saved it folds into a one-line summary that stays in the chat. When the bot announced a plan
+ * (zetta:plan) the rail is that checklist, with the live activity under the running step; otherwise it is the steps it reported, with
+ * the time since the first one.
  */
 export function WorkTimeline({ row, working }: { row: Row; working: boolean }) {
   const steps = row.timeline ?? row.meta?.timeline ?? [];
-  if (steps.length < 2 && !(working && steps.length)) return null;
-  const first = steps[0]!.at;
-  const total = steps.at(-1)!.at - first;
+  const plan = row.plan ?? row.meta?.plan;
+  const now = useNow(working);
+  // Step times come from the server clock, so the live clock adds only the client time since the last step arrived.
+  const seenAt = useRef(Date.now());
+  useEffect(() => {
+    seenAt.current = Date.now();
+  }, [steps.length]);
+  if (!plan && steps.length < 2 && !(working && steps.length)) return null;
+  const first = steps[0]?.at ?? 0;
+  const span = steps.length ? steps.at(-1)!.at - first : undefined;
+  const total =
+    span !== undefined
+      ? working
+        ? span + Math.max(0, now - seenAt.current)
+        : span
+      : working
+        ? now - new Date(row.createdAt).getTime()
+        : undefined;
+  const live = row.activity && row.activity !== "Thinking" ? friendly(row.activity) : undefined;
+  const items: Item[] = plan
+    ? planStates(plan, working, row.status).map((state, i) => ({
+        key: plan[i]!.id,
+        label: plan[i]!.title,
+        state,
+        detail: working && state === "running" ? live : undefined,
+      }))
+    : stepStates(steps.length, working, row.status).map((state, i) => ({
+        key: `${steps[i]!.at}:${i}`,
+        label: friendly(steps[i]!.label) ?? "",
+        state,
+        time: `+${elapsed(steps[i]!.at - first)}`,
+      }));
+  const count = plan
+    ? working
+      ? planProgress(plan)
+      : `${plan.length} steps`
+    : `${steps.length} steps`;
   return (
     <details
       open={working}
       className="group/timeline w-full max-w-prose rounded-md border border-dashed bg-muted/30 text-xs text-muted-foreground"
     >
-      <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-1.5 font-mono">
+      <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-1.5">
         <span
           aria-hidden="true"
           className={cn(
             "size-1.5 rounded-full bg-muted-foreground/50",
-            working && "animate-pulse bg-primary",
+            working && "animate-pulse bg-primary motion-reduce:animate-none",
           )}
         />
-        {working ? "Working" : "Worked"} · {steps.length} steps{!working && ` · ${elapsed(total)}`}
+        {working ? "Working" : "Worked"} · {count}
+        {total !== undefined && (
+          <>
+            {" "}
+            · <span className="tabular-nums">{elapsed(total)}</span>
+          </>
+        )}
       </summary>
-      <ol
-        aria-label="Work timeline"
-        className="space-y-0.5 border-t border-dashed px-3 py-2 font-mono"
-      >
-        {steps.map((s, i) => (
-          <li key={`${s.at}:${i}`} className="flex gap-3">
-            <span className="w-12 shrink-0 text-right tabular-nums text-muted-foreground/60">
-              +{elapsed(s.at - first)}
+      <ol aria-label={plan ? "Plan" : "Work timeline"} className="border-t border-dashed px-3 py-2">
+        {items.map((it, i) => (
+          <li key={it.key} className="flex gap-2">
+            <span className="flex flex-col items-center">
+              <StepIcon state={it.state} />
+              {i < items.length - 1 && <span aria-hidden="true" className="w-px grow bg-border" />}
             </span>
             <span
               className={cn(
-                "min-w-0 break-words",
-                working && i === steps.length - 1 && "text-foreground",
+                "min-w-0 flex-1 break-words pb-1.5",
+                it.state === "running" && "text-foreground",
+                it.state === "failed" && "text-destructive",
               )}
             >
-              {friendly(s.label)}
+              {it.label}
+              {it.detail && <span className="block text-muted-foreground">{it.detail}</span>}
             </span>
+            {it.time && (
+              <span className="shrink-0 tabular-nums text-muted-foreground/60">{it.time}</span>
+            )}
           </li>
         ))}
       </ol>

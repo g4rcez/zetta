@@ -6,7 +6,6 @@ import {
   HashIcon,
   InfoIcon,
   LifebuoyIcon,
-  ListIcon,
   LockKeyIcon,
   MagnifyingGlassIcon,
   PauseIcon,
@@ -19,14 +18,7 @@ import {
   XCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@zetta/ui/components/badge";
@@ -52,9 +44,7 @@ import {
 import type { Row } from "../chat/chat-rows";
 import { Composer, type Outgoing } from "../chat/composer";
 import { LoopBanner, useGoalLoop } from "../chat/loop-banner";
-import { ChatSidebar } from "../chat/sidebar";
 import { useRooms, useSidebarData } from "../chat/sidebar-data";
-import { usePreferences } from "../preferences/preferences";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Drawer } from "@/components/drawer";
 import { ComputerActivity } from "../computer/computer-activity";
@@ -107,15 +97,13 @@ function KindIcon({ kind, className }: { kind: RoomKind; className?: string }) {
   );
 }
 
-/** The 48px bar every room page shares. On phones its menu button opens the sidebar. */
+/** The 48px bar every room page shares. */
 function PageHeader({
-  onNav,
   title,
   icon,
   team,
   children,
 }: {
-  onNav: () => void;
   title: string;
   icon: ReactNode;
   /** A team room: the title becomes the link to the team settings page, like a bot's header. */
@@ -124,15 +112,6 @@ function PageHeader({
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
-      <IconButton
-        size="icon-sm"
-        variant="ghost"
-        aria-label="Rooms and bots"
-        className="md:hidden"
-        onClick={onNav}
-      >
-        <ListIcon />
-      </IconButton>
       {team ? (
         <Link
           to="/teams/$teamId/settings"
@@ -194,57 +173,15 @@ export function RoomsPage({
   creating?: boolean;
 }) {
   const navigate = useNavigate();
-  const { bots, chats, spaces, updateChat, addSpace } = useSidebarData();
+  const { bots } = useSidebarData();
   const { reload } = useRooms();
-  const { preferences } = usePreferences();
-  const [navOpen, setNavOpen] = useState(false); // phones: the sidebar replaces the page while open
-  useEffect(() => setNavOpen(false), [selectedId, creating]);
-  const toChat = useCallback(
-    (chatId: string) => void navigate({ to: "/chat/{-$chatId}", params: { chatId }, search: {} }),
-    [navigate],
-  );
-  const toDraft = useCallback(
-    (bot: string) =>
-      void navigate({ to: "/chat/{-$chatId}", params: { chatId: "new" }, search: { bot } }),
-    [navigate],
-  );
-  // Picking a bot opens its latest conversation, or an empty draft when it has none (as on the chat page).
-  const toBot = useCallback(
-    (bot: string) => {
-      const latest = chats.find((c) => c.botId === bot);
-      if (latest) toChat(latest.id);
-      else toDraft(bot);
-    },
-    [chats, toChat, toDraft],
-  );
-  const toNewBot = useCallback(() => void navigate({ to: "/bots/new" }), [navigate]);
-  const nav = useCallback(() => setNavOpen(true), []);
 
   return (
-    <div
-      className="grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] md:grid-cols-[var(--list-w)_minmax(0,1fr)]"
-      style={{ "--list-w": `${preferences.listWidth}px` } as CSSProperties}
-    >
-      <div className={`${navOpen ? "flex" : "hidden"} min-h-0 md:flex`}>
-        <ChatSidebar
-          bots={bots}
-          spaces={spaces}
-          chats={chats}
-          onBot={toBot}
-          onChat={toChat}
-          onNewChat={toDraft}
-          onNewBot={toNewBot}
-          onAddSpace={addSpace}
-          onUpdateChat={updateChat}
-        />
-      </div>
-      <main
-        className={`${navOpen ? "hidden md:flex" : "flex"} min-h-0 min-w-0 flex-col bg-background`}
-      >
+    <div className="flex h-full min-h-0 flex-col">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
         {creating ? (
           <NewRoom
             bots={bots}
-            onNav={nav}
             onCancel={() => void navigate({ to: "/rooms", search: {} })}
             onCreated={(id) => {
               void reload();
@@ -263,13 +200,12 @@ export function RoomsPage({
               })
             }
             bots={bots}
-            onNav={nav}
             onChanged={() => void reload()}
           />
         ) : (
-          <RoomBrowser bots={bots} onNav={nav} />
+          <RoomBrowser bots={bots} />
         )}
-      </main>
+      </section>
     </div>
   );
 }
@@ -289,7 +225,7 @@ const EMPTY: Record<BrowserTab, string> = {
 };
 
 /** The room list for /rooms with no room open: find any room, including closed ones and the Chief's bot issues. */
-function RoomBrowser({ bots, onNav }: { bots: Bot[]; onNav: () => void }) {
+function RoomBrowser({ bots }: { bots: Bot[] }) {
   const navigate = useNavigate();
   const { rooms } = useRooms();
   const [tab, setTab] = useState<BrowserTab>("active");
@@ -309,7 +245,6 @@ function RoomBrowser({ bots, onNav }: { bots: Bot[]; onNav: () => void }) {
   return (
     <>
       <PageHeader
-        onNav={onNav}
         title="Rooms"
         icon={<HashIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
       >
@@ -432,14 +367,12 @@ function RoomView({
   view,
   onView,
   bots,
-  onNav,
   onChanged,
 }: {
   id: string;
   view: "chat" | "canvas";
   onView: (v: "chat" | "canvas") => void;
   bots: Bot[];
-  onNav: () => void;
   onChanged: () => void;
 }) {
   const { data: session } = authClient.useSession();
@@ -576,7 +509,6 @@ function RoomView({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
       <section aria-label="Transcript" className="flex min-h-0 min-w-0 flex-1 flex-col">
         <PageHeader
-          onNav={onNav}
           title={roomLabel(d)}
           icon={
             d.teamId ? (
@@ -981,12 +913,12 @@ function RoomView({
                     <BotAvatar bot={botOf(bots, m.botId)} size={20} />
                     <span className="min-w-0 truncate font-medium">{m.name}</span>
                     {m.botId === d.createdByBotId && (
-                      <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                      <Badge variant="secondary" className="h-4 px-1 text-xs">
                         Facilitator
                       </Badge>
                     )}
                     {m.code && (
-                      <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                      <Badge variant="outline" className="h-4 px-1 text-xs">
                         Code
                       </Badge>
                     )}
@@ -1026,12 +958,10 @@ function RoomView({
 
 function NewRoom({
   bots,
-  onNav,
   onCancel,
   onCreated,
 }: {
   bots: Bot[];
-  onNav: () => void;
   onCancel: () => void;
   onCreated: (id: string) => void;
 }) {
@@ -1059,7 +989,6 @@ function NewRoom({
   return (
     <>
       <PageHeader
-        onNav={onNav}
         title="New room"
         icon={<HashIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
       />

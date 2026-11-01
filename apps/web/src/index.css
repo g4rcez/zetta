@@ -4,7 +4,10 @@
 @import "@g4rcez/components/index.css";
 @source "../node_modules/streamdown/dist/*.js";
 
-/* Native selects: consistent chevron and no platform chrome. */
+.link {
+  @apply ease-in duration-300 transition-all;
+}
+
 select {
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 256 256' fill='%23888'%3E%3Cpath d='M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z'/%3E%3C/svg%3E");
@@ -12,6 +15,7 @@ select {
   background-position: right 0.75rem center;
   padding-right: 2.25rem !important;
 }
+
 input[type="checkbox"],
 input[type="radio"] {
   accent-color: var(--primary);
@@ -20,9 +24,18 @@ input[type="radio"] {
 /* @g4rcez/components theme bridge: the library reads --var-* tokens; point them at the app palette and keep corners tight. */
 :root,
 html.dark {
-  --var-radius-base: 0.375rem;
-  --var-spacing-base: 0.95rem;
-  --var-fontsize: 0.9375rem;
+  --var-radius-base: 0.5rem;
+  --var-spacing-base: 1rem;
+  --var-fontsize: 0.875rem;
+  /* DESIGN.md "Sizes": 32px controls; the library would derive 40px from the spacing base. */
+  --var-button-height: 2rem;
+  --var-button-big-height: 2.5rem;
+  --var-button-small-height: 1.75rem;
+  --var-button-tiny-height: 1.5rem;
+  --var-free-text-control-height: 2rem;
+  --var-free-text-big-control-height: 2.5rem;
+  --var-free-text-small-control-height: 1.75rem;
+  --var-free-text-tiny-control-height: 1.5rem;
   --var-color-background: var(--background);
   --var-color-foreground: var(--foreground);
   --var-color-border: var(--border);
@@ -31,11 +44,13 @@ html.dark {
   --var-color-muted-foreground: var(--muted-foreground);
   --var-color-primary: var(--primary);
   --var-color-primary-foreground: var(--primary-foreground);
-  --var-color-primary-hover: color-mix(in oklch, var(--primary), black 12%);
+  /* Toward the text color: darker in light, lighter in dark, so hover never lowers the 7:1 of the label. */
+  --var-color-primary-hover: color-mix(in oklch, var(--primary), var(--foreground) 12%);
   --var-color-danger: var(--destructive);
   --var-card-background: var(--card);
   --var-card-border: var(--border);
   --var-card-muted: var(--muted);
+  --var-alert-surface-radius: var(--radius);
   --var-dropdown-surface-background: var(--popover);
   --var-menu-surface-background: var(--popover);
   --var-tooltip-surface-background: var(--popover);
@@ -44,23 +59,170 @@ html.dark {
   --var-modal-overlay-background: oklch(0 0 0 / 60%);
 }
 
-/* Status tokens of @g4rcez/components (also Tailwind's success, warn and info colors); dark warn is the app's attention amber. */
+/* Status tokens of @g4rcez/components (also Tailwind's success, warn and info colors); dark warn is the app's attention amber.
+   Success is a yellow-green so it never reads as the emerald primary. */
 :root {
-  --var-color-success: oklch(0.5 0.11 155);
-  --var-color-info: oklch(0.5 0.11 245);
-  --var-color-warn: oklch(0.55 0.13 70);
-  --var-color-warn-foreground: oklch(0.985 0.005 85);
+  --var-color-success: #1a4f18;
+  --var-color-info: #16457e;
+  --var-color-warn: #6a4100;
+  --var-color-warn-foreground: #ffffff;
 }
+
 html.dark {
-  --var-color-success: oklch(0.78 0.14 155);
-  --var-color-info: oklch(0.76 0.1 245);
+  --var-color-success: #8fd98a;
+  --var-color-info: #8db8f2;
   --var-color-warn: var(--attention);
   --var-color-warn-foreground: var(--attention-foreground);
 }
+
+/* Every remaining library color follows the app tokens, so no library default leaks in. Subtle = the color at 10% over
+   the ground (DESIGN.md "Tint Not Fill"); hover moves toward the text color so labels keep 7:1. */
 :root,
 html.dark {
   --var-color-success-foreground: var(--primary-foreground);
   --var-color-info-foreground: var(--primary-foreground);
+  --var-color-danger-foreground: var(--primary-foreground);
+  --var-color-secondary: var(--secondary);
+  --var-color-secondary-foreground: var(--secondary-foreground);
+  --var-color-secondary-hover: var(--accent);
+  --var-color-secondary-subtle: var(--muted);
+  --var-color-disabled: var(--muted);
+  /* Neutral on purpose: emerald marks actions, it is never a wash (DESIGN.md "One Signal"). */
+  --var-color-primary-subtle: var(--accent);
+  --var-color-success-subtle: color-mix(in srgb, var(--var-color-success) 10%, var(--background));
+  --var-color-info-subtle: color-mix(in srgb, var(--var-color-info) 10%, var(--background));
+  --var-color-warn-subtle: color-mix(in srgb, var(--var-color-warn) 10%, var(--background));
+  --var-color-danger-subtle: color-mix(in srgb, var(--var-color-danger) 10%, var(--background));
+  --var-color-success-hover: color-mix(in oklch, var(--var-color-success), var(--foreground) 12%);
+  --var-color-info-hover: color-mix(in oklch, var(--var-color-info), var(--foreground) 12%);
+  --var-color-warn-hover: color-mix(in oklch, var(--var-color-warn), var(--foreground) 12%);
+  --var-color-danger-hover: color-mix(in oklch, var(--var-color-danger), var(--foreground) 12%);
+}
+
+/* Component tokens of @g4rcez/components ship fixed hex defaults (including its own blue); map every color one to the
+   app tokens so each theme is complete. Overlay scrims keep the library defaults. */
+:root,
+html.dark {
+  --var-alert-primary-background: var(--accent);
+  --var-alert-primary-border: var(--border);
+  --var-alert-primary-foreground: var(--foreground);
+  --var-alert-info-background: var(--var-color-info-subtle);
+  --var-alert-info-border: color-mix(in srgb, var(--var-color-info) 40%, var(--background));
+  --var-alert-info-foreground: var(--var-color-info);
+  --var-alert-success-background: var(--var-color-success-subtle);
+  --var-alert-success-border: color-mix(in srgb, var(--var-color-success) 40%, var(--background));
+  --var-alert-success-foreground: var(--var-color-success);
+  --var-alert-warn-background: var(--var-color-warn-subtle);
+  --var-alert-warn-border: color-mix(in srgb, var(--var-color-warn) 40%, var(--background));
+  --var-alert-warn-foreground: var(--var-color-warn);
+  --var-alert-danger-background: var(--var-color-danger-subtle);
+  --var-alert-danger-border: color-mix(in srgb, var(--var-color-danger) 40%, var(--background));
+  --var-alert-danger-foreground: var(--var-color-danger);
+
+  --var-tag-primary-background: var(--primary);
+  --var-tag-primary-foreground: var(--primary-foreground);
+  --var-tag-secondary-background: var(--secondary);
+  --var-tag-secondary-foreground: var(--secondary-foreground);
+  --var-tag-muted-background: var(--muted);
+  --var-tag-muted-foreground: var(--muted-foreground);
+  --var-tag-disabled-background: var(--muted);
+  --var-tag-disabled-foreground: var(--muted-foreground);
+  --var-tag-neutral-border: var(--border);
+  --var-tag-neutral-foreground: var(--foreground);
+  --var-tag-info-background: var(--var-color-info-subtle);
+  --var-tag-info-foreground: var(--var-color-info);
+  --var-tag-success-background: var(--var-color-success-subtle);
+  --var-tag-success-foreground: var(--var-color-success);
+  --var-tag-warn-background: var(--var-color-warn-subtle);
+  --var-tag-warn-foreground: var(--var-color-warn);
+  --var-tag-danger-background: var(--var-color-danger-subtle);
+  --var-tag-danger-foreground: var(--var-color-danger);
+
+  --var-button-secondary-background: var(--card);
+  --var-button-secondary-foreground: var(--foreground);
+  --var-button-ghost-primary-background-hover: var(--accent);
+  --var-button-ghost-secondary-background-hover: var(--accent);
+  --var-button-ghost-muted-background-hover: var(--accent);
+  --var-button-ghost-info-background-hover: var(--var-color-info-subtle);
+  --var-button-ghost-success-background-hover: var(--var-color-success-subtle);
+  --var-button-ghost-warn-background-hover: var(--var-color-warn-subtle);
+  --var-button-ghost-danger-background-hover: var(--var-color-danger-subtle);
+
+  --var-checkbox-control-background: var(--card);
+  --var-checkbox-control-border: var(--input);
+  --var-checkbox-control-foreground: var(--foreground);
+  --var-checkbox-focus-ring: var(--ring);
+  --var-checkbox-mark-foreground: var(--primary-foreground);
+  --var-radiobox-control-background: var(--card);
+  --var-radiobox-control-border: var(--input);
+  --var-radiobox-control-foreground: var(--foreground);
+  --var-radiobox-focus-ring: var(--ring);
+  --var-radiobox-mark-foreground: var(--primary-foreground);
+  --var-switch-track-background: var(--input);
+  --var-switch-track-checked-background: var(--primary);
+  --var-switch-thumb-background: var(--card);
+  --var-switch-thumb-checked-background: var(--primary-foreground);
+  --var-slider-thumb-background: var(--card);
+  --var-free-text-placeholder-foreground: var(--muted-foreground);
+  --var-free-text-error-placeholder-foreground: var(--var-color-danger);
+
+  --var-dropdown-surface-border: var(--border);
+  --var-dropdown-surface-foreground: var(--popover-foreground);
+  --var-menu-surface-border: var(--border);
+  --var-menu-surface-foreground: var(--popover-foreground);
+  --var-menu-item-active-background: var(--accent);
+  --var-menu-item-active-foreground: var(--foreground);
+  --var-command-surface-background: var(--popover);
+  --var-command-surface-border: var(--border);
+  --var-command-surface-foreground: var(--popover-foreground);
+  --var-command-item-background-hover: var(--accent);
+  --var-command-empty-foreground: var(--muted-foreground);
+  --var-command-group-label-foreground: var(--muted-foreground);
+  --var-autocomplete-panel-background: var(--popover);
+  --var-autocomplete-panel-border: var(--border);
+  --var-autocomplete-panel-foreground: var(--popover-foreground);
+  --var-autocomplete-option-background-hover: var(--accent);
+  --var-autocomplete-option-active-background: var(--accent);
+  --var-autocomplete-option-active-foreground: var(--foreground);
+  --var-autocomplete-option-selected-background: var(--accent);
+  --var-autocomplete-option-selected-foreground: var(--foreground);
+  --var-autocomplete-empty-border: var(--border);
+  --var-autocomplete-empty-foreground: var(--muted-foreground);
+  --var-multi-select-option-background-hover: var(--accent);
+  --var-multi-select-option-selected-background: var(--accent);
+  --var-multi-select-option-selected-foreground: var(--foreground);
+  --var-wizard-surface-background: var(--popover);
+  --var-wizard-surface-border: var(--border);
+  --var-wizard-surface-foreground: var(--popover-foreground);
+  --var-wizard-label-foreground: var(--muted-foreground);
+  --var-wizard-label-foreground-hover: var(--foreground);
+  --var-notification-badge-background: var(--popover);
+  --var-notification-badge-foreground: var(--muted-foreground);
+  --var-notification-badge-foreground-hover: var(--foreground);
+  --var-notification-close-background-hover: var(--accent);
+  --var-notification-close-foreground: var(--muted-foreground);
+
+  --var-card-stats-panel-background-hover: var(--accent);
+  --var-table-background: var(--card);
+  --var-table-header-background: var(--card);
+  --var-table-border: var(--border);
+  --var-table-inline-placeholder-color: var(--muted-foreground);
+  --var-calendar-day-button-background-hover: var(--accent);
+  --var-calendar-nav-button-background-hover: var(--accent);
+  --var-calendar-nav-button-border-hover: var(--input);
+  --var-calendar-select-background-hover: var(--accent);
+  --var-calendar-selected-background-hover: var(--var-color-primary-hover);
+  --var-calendar-selected-ring: var(--ring);
+  --var-calendar-focus-border: var(--ring);
+  --var-calendar-focus-ring: var(--ring);
+  --var-calendar-today-border: var(--input);
+  --var-calendar-outside-month-foreground: var(--muted-foreground);
+  --var-calendar-range-background: var(--accent);
+  --var-calendar-range-border: var(--border);
+  --var-page-calendar-cell-background-hover: var(--accent);
+  --var-page-calendar-slot-background-hover: var(--accent);
+  --var-page-calendar-slot-border: var(--border);
+  --var-page-calendar-today-background-hover: var(--accent);
 }
 
 /* Chat (features/chat): all rules are prefixed .chat- */
@@ -70,19 +232,22 @@ html.dark {
   border-radius: 0.5rem;
   background: color-mix(in oklch, var(--foreground) 8%, transparent);
 }
+
 .chat-code pre {
   max-width: 100%;
   overflow-x: auto;
   padding: 0.75rem 2.75rem 0.75rem 0.75rem;
-  font-size: 0.875rem;
-  line-height: 1.5;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
   tab-size: 2;
 }
+
 .chat-code pre:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
   border-radius: 0.5rem;
 }
+
 .chat-code-copy {
   position: absolute !important;
   background: var(--card) !important;
@@ -94,16 +259,19 @@ html.dark {
   right: 0.25rem;
   opacity: 0.85;
 }
+
 .chat-code:hover .chat-code-copy,
 .chat-code-copy:focus-visible {
   opacity: 1;
 }
+
 .chat-inline-code {
   border-radius: 0.25rem;
-  padding: 0.05rem 0.3rem;
-  font-size: 0.875em;
+  padding: 0 0.25rem;
+  font-size: 0.75rem;
   background: color-mix(in oklch, currentColor 14%, transparent);
 }
+
 .chat-code-copy svg {
   width: 0.875rem;
   height: 0.875rem;
@@ -111,94 +279,110 @@ html.dark {
 
 /* Chat message body (Response -> Streamdown). Unlayered, so these beat Streamdown's utility classes (list-inside, space-y-4, mt-6). */
 .chat-response {
-  font-size: 0.9375rem;
-  line-height: 1.5;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   overflow-wrap: anywhere;
 }
+
 .chat-response > * {
   margin-block: 0;
 }
+
 .chat-response > * + * {
   margin-top: 0.5rem;
 }
+
 .chat-response [data-streamdown^="heading-"] {
   font-family: var(--font-heading);
   margin-top: 0.75rem;
   margin-bottom: 0;
   font-size: 1rem;
   font-weight: 600;
-  line-height: 1.35;
-  letter-spacing: -0.01em;
+  line-height: 1.5rem;
 }
-.chat-response [data-streamdown="heading-1"],
-.chat-response [data-streamdown="heading-2"] {
-  font-size: 1.0625rem;
-}
+
 .chat-response [data-streamdown="unordered-list"],
 .chat-response [data-streamdown="ordered-list"] {
   list-style-position: outside;
   padding-left: 1.25rem;
 }
+
 .chat-response [data-streamdown="unordered-list"] {
   list-style-type: disc;
 }
+
 .chat-response [data-streamdown="ordered-list"] {
   list-style-type: decimal;
 }
+
 .chat-response li > :is(ul, ol) {
   margin-top: 0.125rem;
   padding-left: 1.125rem;
 }
+
 .chat-response [data-streamdown="list-item"] {
   padding-left: 0.125rem;
 }
+
 .chat-response [data-streamdown="list-item"] + [data-streamdown="list-item"] {
   margin-top: 0.125rem;
 }
+
 .chat-response li > p {
   margin: 0;
 }
+
 .chat-response li::marker {
   color: var(--muted-foreground);
 }
+
 .chat-response [data-streamdown="strong"] {
   font-weight: 600;
 }
+
 .chat-response [data-streamdown="link"] {
   color: var(--primary);
   text-decoration: none;
 }
+
 .chat-response [data-streamdown="link"]:hover {
   text-decoration: underline;
 }
+
 .chat-response [data-streamdown="inline-code"] {
   border: 1px solid var(--border);
   border-radius: 0.25rem;
-  padding: 0.0625rem 0.3125rem;
-  font-size: 0.875rem;
+  padding: 0 0.25rem;
+  font-size: 0.75rem;
   background: color-mix(in oklch, var(--foreground) 6%, transparent);
 }
+
 .chat-response [data-streamdown="blockquote"] {
   margin-block: 0;
-  border-left: 3px solid var(--border);
+  border-left: 2px solid var(--border);
   padding-left: 0.75rem;
   font-style: normal;
   color: var(--foreground);
 }
+
 .chat-response [data-streamdown="horizontal-rule"] {
   margin-block: 0.75rem;
 }
+
 .chat-response [data-streamdown="code-block"] {
   margin-block: 0;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
 }
+
 .chat-response [data-streamdown="table-wrapper"] {
   margin-block: 0;
   font-size: 0.875rem;
 }
+
 .chat-response :is([data-streamdown="table-cell"], [data-streamdown="table-header-cell"]) {
   padding: 0.25rem 0.5rem;
 }
+
 .chat-code pre,
 .chat-inline-code,
 .chat-response [data-streamdown="inline-code"] {

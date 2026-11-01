@@ -6,19 +6,23 @@ import {
   useState,
   useSyncExternalStore,
   type ComponentProps,
-  type CSSProperties,
   type RefObject,
 } from "react";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ComputerActivity } from "../computer/computer-activity";
 import { DesktopButton } from "../computer/desktop-button";
 import {
-  CaretDownIcon,
+  CaretRightIcon,
   LockIcon,
-  ListIcon,
   ShareNetworkIcon,
+  SidebarSimpleIcon,
   UsersIcon,
 } from "@phosphor-icons/react";
+import { BotsContext } from "@/components/bot-identity";
+import { LatestChatsContext } from "@/components/bot-tag";
+import { motion, useReducedMotion } from "motion/react";
+import { ChatDetails } from "./chat-details";
+import { ArtifactPanel } from "./artifact-panel";
 import { ThreadTabs } from "./thread-tabs";
 import { Skeleton } from "@g4rcez/components";
 
@@ -26,6 +30,7 @@ import { Button } from "@zetta/ui/components/button";
 import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
+import { BotStatusDot, BotStatusLabel } from "@/components/bot-status";
 import { authClient } from "@/lib/auth-client";
 
 import { refreshAttention } from "../attention/summary";
@@ -37,7 +42,7 @@ import {
   type Message,
   type Proposal,
 } from "./chat-client";
-import { isSavedUserEcho, type Row } from "./chat-rows";
+import { isSavedUserEcho, shouldAutoOpen, type Row } from "./chat-rows";
 import { Composer } from "./composer";
 import { MessageList, type RowActions } from "./message-list";
 import { SetupActionsContext, type SetupActions } from "./setup-actions";
@@ -46,8 +51,6 @@ import { ProposalsPanel } from "./proposals-panel";
 import { LoopBanner, useGoalLoop } from "./loop-banner";
 import { PublishDialog } from "./publish-dialog";
 import { toggleReaction } from "./reactions";
-import { ChatSidebar } from "./sidebar";
-import { usePreferences } from "../preferences/preferences";
 import { useSidebarData } from "./sidebar-data";
 import { ThreadPanel } from "./thread-panel";
 import { draftKey, useDraft } from "./use-draft";
@@ -81,13 +84,6 @@ const asRow = (m: Message): Row => {
   return row;
 };
 
-/** A callback with a fixed identity that always runs the latest closure: lets memoized children skip renders. */
-function useEvent<A extends unknown[], R>(fn: (...args: A) => R) {
-  const ref = useRef(fn);
-  ref.current = fn;
-  return useCallback((...args: A) => ref.current(...args), []);
-}
-
 type DraftHandle = ReturnType<typeof useDraft>;
 /** The composer owns its draft text, so each keystroke renders this component and not the whole page. `handle` gives the page adopt/clear. */
 function DraftComposer({
@@ -112,7 +108,11 @@ const readLastChat = () => {
     return undefined;
   }
 };
-type ChatSearchState = { thread?: string | undefined; bot?: string | undefined };
+type ChatSearchState = {
+  thread?: string | undefined;
+  bot?: string | undefined;
+  artifact?: string | undefined;
+};
 
 export function ChatPage() {
   // The URL owns which chat is open: /chat/<conversationId>, /chat/new?bot=<botId> (empty draft) or a bare /chat (resolved below). Nothing else decides it.
@@ -120,25 +120,14 @@ export function ChatPage() {
   const params = useParams({ from: "/_auth/chat/{-$chatId}" });
   const navigate = useNavigate();
   const { data: session } = authClient.useSession();
-  const {
-    bots,
-    setBots,
-    refreshBots,
-    chats,
-    setChats,
-    chatsLoaded,
-    loadChats,
-    updateChat,
-    spaces,
-    addSpace,
-  } = useSidebarData();
-  const { preferences } = usePreferences();
+  const { bots, setBots, refreshBots, chats, setChats, chatsLoaded, loadChats } = useSidebarData();
   const [saved, setSaved] = useState<Message[]>([]);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [publishing, setPublishing] = useState(false);
-  const [navOpen, setNavOpen] = useState(false); // phones: the bot list replaces the channel while open
+  const [details, setDetails] = useState(false); // the context panel's bot and files view
+  const reduceMotion = useReducedMotion();
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sent, setSent] = useState(0); // bumps on every send so the list jumps to the newest message
   const desktop = useMedia("(min-width: 1024px)");
@@ -168,10 +157,25 @@ export function ChatPage() {
     if (latest) toChat(latest.id, replace);
     else toDraft(bot, replace);
   };
+  // The side pane holds one thing at a time: opening a thread closes the artifact and the other way round.
   const setThread = (id?: string) =>
     void navigate({
       to: ".",
-      search: (s: ChatSearchState) => ({ ...s, thread: id }),
+      search: (s: ChatSearchState) => ({
+        ...s,
+        thread: id,
+        ...(id ? { artifact: undefined } : {}),
+      }),
+      replace: true,
+    });
+  const setArtifact = (id?: string) =>
+    void navigate({
+      to: ".",
+      search: (s: ChatSearchState) => ({
+        ...s,
+        artifact: id,
+        ...(id ? { thread: undefined } : {}),
+      }),
       replace: true,
     });
 
@@ -256,10 +260,25 @@ export function ChatPage() {
     },
     [reload, loadChats, loadProposals],
   );
+  // Artifacts this page already tried to open: a stream replayed on resume must not reopen the pane.
+  const autoOpened = useRef(new Set<string>());
   const main = useZettaChat({
     conversationId: chatId,
     onSettled: settle,
     onProposal: () => void loadProposals(),
+    // The history poll pauses while the chat is busy, so the notes the bot just took are reloaded here.
+    onSteer: () => void (chatId && reload(chatId)),
+    onArtifact: ({ id, at }) => {
+      const open = shouldAutoOpen({
+        desktop,
+        paneOpen: !!(search.thread || search.artifact || details),
+        seen: autoOpened.current,
+        id,
+        at,
+      });
+      autoOpened.current.add(id);
+      if (open) setArtifact(id);
+    },
   });
   // A running goal loop starts each step on the server: follow it live, and reload when it moves on.
   // The server answers queued messages one after another, each in its thread: follow each answer live and refresh until none waits.
@@ -367,6 +386,14 @@ export function ChatPage() {
   // A setup card in a reply says "set up" in this chat once the person finishes it. It always calls the latest send.
   const sendRef = useRef(send);
   sendRef.current = send;
+  // Bots by id: `Response` draws the bot names of a message as tags.
+  const botsById = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
+  // `chats` is newest first, so the first chat of a bot is its latest.
+  const latestChats = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of chats) if (c.botId && !map.has(c.botId)) map.set(c.botId, c.id);
+    return map;
+  }, [chats]);
   const setupActions = useMemo<SetupActions>(
     () => ({ say: (text) => void sendRef.current({ text, attachmentIds: [], fileRefs: [] }) }),
     [],
@@ -412,6 +439,7 @@ export function ChatPage() {
   latestActions.current = {
     onReact: (row, emoji) => void toggleReact(row, emoji),
     onReply: (row) => setThread(row.id),
+    onOpenArtifact: (id) => setArtifact(id),
     onSaveInstruction: (row) =>
       void chatClient
         .saveInstruction(`From chat: ${row.content.slice(0, 40)}`, row.content)
@@ -431,12 +459,12 @@ export function ChatPage() {
       onReply: (row) => latestActions.current.onReply(row),
       onSaveInstruction: (row) => latestActions.current.onSaveInstruction(row),
       onQueue: (row, action) => latestActions.current.onQueue?.(row, action),
+      onOpenArtifact: (id) => latestActions.current.onOpenArtifact?.(id),
     }),
     [],
   );
   function openChat(id: string) {
     toChat(id);
-    setNavOpen(false);
   }
   // Threads: a delete waits a few seconds so Undo can bring the thread back untouched.
   const [undoDelete, setUndoDelete] = useState<Conversation>();
@@ -474,7 +502,10 @@ export function ChatPage() {
     setUndoDelete(undefined);
     toChat(back.id);
   }
-  function updateThread(id: string, patch: { title?: string; archived?: boolean }) {
+  function updateThread(
+    id: string,
+    patch: { title?: string; archived?: boolean; favorite?: boolean },
+  ) {
     const before = chats;
     const row = chats.find((c) => c.id === id);
     setChats((all) =>
@@ -502,22 +533,8 @@ export function ChatPage() {
       },
     );
   }
-  // Stable handlers for the memoized sidebar.
-  const onSidebarBot = useEvent((id: string) => {
-    toBot(id);
-    setNavOpen(false);
-  });
-  const onSidebarChat = useEvent(openChat);
-  const onSidebarUpdateChat = useEvent(updateChat);
-  const onSidebarNewChat = useEvent((id: string) => {
-    toDraft(id);
-    setNavOpen(false);
-  });
-  const onSidebarNewBot = useEvent(() => void navigate({ to: "/bots/new" }));
-  const onSidebarAddSpace = useEvent(addSpace);
   // `#` is for rooms; a bot is a direct message, so a team bot gets a people mark instead.
   const ChannelIcon = current?.visibility === "private" ? LockIcon : UsersIcon;
-  const chatTitle = chats.find((c) => c.id === chatId)?.title;
 
   const threadPane =
     thread && chatId ? (
@@ -537,310 +554,358 @@ export function ChatPage() {
         onError={fail}
       />
     ) : null;
+  const artifactPane = search.artifact ? (
+    <ArtifactPanel
+      key={search.artifact}
+      id={search.artifact}
+      onClose={() => setArtifact(undefined)}
+    />
+  ) : null;
+  // DESIGN.md "Shell": one context panel on demand: an open artifact or thread takes it, otherwise the details view.
+  const sidePane =
+    artifactPane ??
+    threadPane ??
+    (details ? (
+      <ChatDetails
+        bot={current}
+        files={rows.flatMap((r) => r.attachments ?? [])}
+        onClose={() => setDetails(false)}
+      />
+    ) : null);
 
   return (
-    <div
-      className={cn(
-        "grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] md:grid-cols-[var(--list-w)_minmax(0,1fr)]",
-        threadPane && desktop && "lg:grid-cols-[var(--list-w)_minmax(0,1fr)_26rem]",
-      )}
-      style={{ "--list-w": `${preferences.listWidth}px` } as CSSProperties}
-    >
-      <div className={`${navOpen ? "flex" : "hidden"} min-h-0 md:flex`}>
-        <ChatSidebar
-          bots={bots}
-          spaces={spaces}
-          chats={chats}
-          botId={botId}
-          chatId={chatId}
-          onBot={onSidebarBot}
-          onChat={onSidebarChat}
-          onUpdateChat={onSidebarUpdateChat}
-          onNewChat={onSidebarNewChat}
-          onNewBot={onSidebarNewBot}
-          onAddSpace={onSidebarAddSpace}
-        />
-      </div>
-      <section
-        className={`${navOpen ? "hidden md:flex" : "flex"} min-h-0 min-w-0 flex-col bg-background`}
-        aria-label={current ? `Channel ${current.name}` : "Chat"}
-      >
-        <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Bots"
-            className="md:hidden"
-            onClick={() => setNavOpen(true)}
+    <BotsContext.Provider value={botsById}>
+      <LatestChatsContext.Provider value={latestChats}>
+        <div
+          className={cn(
+            "grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)]",
+            sidePane &&
+              desktop &&
+              (artifactPane
+                ? // A file needs room: half the page, never under 28rem or over 45rem.
+                  "lg:grid-cols-[minmax(0,1fr)_clamp(28rem,45%,45rem)]"
+                : "lg:grid-cols-[minmax(0,1fr)_22.5rem]"),
+          )}
+        >
+          <section
+            className="flex min-h-0 min-w-0 flex-col bg-background"
+            aria-label={current ? `Channel ${current.name}` : "Chat"}
           >
-            <ListIcon />
-          </Button>
-          {(() => {
-            const content = (
-              <>
-                {current ? (
-                  <BotAvatar bot={current} size={24} square />
-                ) : (
-                  <ChannelIcon
-                    aria-hidden="true"
-                    className="size-4 shrink-0 text-muted-foreground"
-                  />
-                )}
-                <h2 className="truncate font-heading text-base font-medium leading-tight">
-                  {current?.name ?? "Chat"}
-                </h2>
-                {current && (
-                  <ChannelIcon
-                    aria-label={current.visibility === "private" ? "Private" : "Team"}
-                    className="size-3.5 shrink-0 text-muted-foreground"
-                  />
-                )}
-                <CaretDownIcon
-                  aria-hidden="true"
-                  className="size-3.5 shrink-0 text-muted-foreground"
-                />
-              </>
-            );
-            const className =
-              "flex min-w-0 max-w-[60%] items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring";
-            return current ? (
-              <Link
-                to="/bots/$botId/settings"
-                params={{ botId: current.id }}
-                aria-label={`${current.name} settings`}
-                title={[
-                  current.kind === "chief" ? "Chief" : "Specialist",
-                  current.harness === "fixture"
-                    ? "offline test"
-                    : `${current.harness}${current.model ? ` · ${current.model}` : ""}`,
-                  current.description,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-                className={className}
-              >
-                {content}
-              </Link>
-            ) : (
-              <div className={className}>{content}</div>
-            );
-          })()}
-          <div className="ml-auto flex min-w-0 items-center gap-1">
-            {current?.computerMode === "desktop" && (
-              <DesktopButton botName={current.name} onError={fail} />
-            )}
-            {chatTitle && (
-              <span
-                className="hidden min-w-0 max-w-48 truncate px-2 text-xs text-muted-foreground xl:inline"
-                title={chatTitle}
-              >
-                {chatTitle}
-              </span>
-            )}
-            {chatId && saved.length > 0 && (
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                title="Publish snapshot to team"
-                onClick={() => setPublishing(true)}
-                aria-label="Publish snapshot to team"
-              >
-                <ShareNetworkIcon />
-              </Button>
-            )}
-          </div>
-        </header>
-        {botId && (
-          <ThreadTabs
-            threads={chats.filter((c) => c.botId === botId && (c.kind ?? "chat") === "chat")}
-            botId={botId}
-            chatId={chatId}
-            onOpen={openChat}
-            onNew={() => toDraft(botId)}
-            onUpdate={updateThread}
-            onDelete={deleteThread}
-          />
-        )}
-        {undoDelete && (
-          <div
-            role="status"
-            className="flex items-center gap-2 border-b bg-muted px-3 py-1.5 text-xs"
-          >
-            <span className="truncate">Deleted “{undoDelete.title}”</span>
-            <Button size="sm" variant="ghost" className="ml-auto" onClick={undoDeleteThread}>
-              Undo
-            </Button>
-          </div>
-        )}
-        <SetupActionsContext.Provider value={setupActions}>
-          <MessageList
-            key={chatId ?? `new:${botId}`}
-            followToken={sent}
-            rows={rows}
-            authorOf={authorOf}
-            fallbackBotId={botId}
-            busy={main.busy || loadingMessages}
-            label="Conversation"
-            actions={actions}
-            intro={
-              <>
-                {loadingMessages && saved.length === 0 && (
-                  <div className="space-y-5 px-4 py-4" role="status" aria-label="Loading messages">
-                    {["66%", "45%", "75%"].map((w, i) => (
-                      <div key={i} className="flex gap-2">
-                        <Skeleton className="size-9 rounded-lg" />
-                        <div className="flex-1 space-y-2">
-                          <Skeleton className="h-3 w-24 rounded" />
-                          <Skeleton
-                            className="h-4 rounded"
-                            style={{ display: "block", inlineSize: w }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {!loadingMessages && rows.length === 0 && current && (
-                  <div className="mt-auto space-y-3 px-4 pt-10 pb-4">
-                    <BotAvatar bot={current} size={64} square />
-                    <h3 className="font-heading text-3xl font-medium tracking-tight text-balance">
+            <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
+              {(() => {
+                const content = (
+                  <>
+                    {current ? (
+                      <BotAvatar
+                        bot={current}
+                        size={24}
+                        square
+                        badge={<BotStatusDot botId={current.id} className="border-background" />}
+                      />
+                    ) : (
                       <ChannelIcon
                         aria-hidden="true"
-                        className="mr-1 inline size-5 align-baseline text-muted-foreground"
+                        className="size-4 shrink-0 text-muted-foreground"
                       />
-                      {current.name}
-                    </h3>
-                    <p className="max-w-prose text-muted-foreground">
-                      This is the very beginning of your conversation with{" "}
-                      <strong className="text-foreground">{current.name}</strong>.{" "}
-                      {current.description}
-                    </p>
-                    {current.canEdit && !current.onboarded && (
-                      <p className="max-w-prose text-sm text-muted-foreground">
-                        {current.name} isn't ready yet: send a test message to start setup.
-                      </p>
                     )}
-                    <div
-                      className="flex flex-wrap gap-2"
-                      role="group"
-                      aria-label="Suggested prompts"
-                    >
-                      {SUGGESTIONS.map((q) => (
-                        <Button
-                          key={q}
-                          size="sm"
-                          variant="outline"
-                          className="rounded-full"
-                          onClick={() => void send({ text: q, attachmentIds: [], fileRefs: [] })}
-                        >
-                          {q}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
+                    <h2 className="truncate text-sm font-medium text-muted-foreground">
+                      {current?.name ?? "Chat"}
+                    </h2>
+                    {current && (
+                      <ChannelIcon
+                        aria-label={current.visibility === "private" ? "Private" : "Team"}
+                        className="size-3.5 shrink-0 text-muted-foreground"
+                      />
+                    )}
+                    {current && <BotStatusLabel botId={current.id} />}
+                    {/* The link's name keeps its visible text first (WCAG 2.5.3), then says where it goes. */}
+                    {current && <span className="sr-only">, settings</span>}
+                  </>
+                );
+                const className =
+                  "flex min-w-0 max-w-[45%] shrink-0 items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring";
+                return current ? (
+                  <Link
+                    to="/bots/$botId/settings"
+                    params={{ botId: current.id }}
+                    // Plain words only: harness and model stay in the bot's settings (DESIGN.md "Don't").
+                    title={[
+                      current.kind === "chief" ? "Your chief" : "Specialist",
+                      current.description,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                    className={className}
+                  >
+                    {content}
+                  </Link>
+                ) : (
+                  <div className={className}>{content}</div>
+                );
+              })()}
+              {botId && (
+                <>
+                  <CaretRightIcon
+                    aria-hidden="true"
+                    className="size-3 shrink-0 text-muted-foreground"
+                  />
+                  <ThreadTabs
+                    threads={chats.filter(
+                      (c) => c.botId === botId && (c.kind ?? "chat") === "chat",
+                    )}
+                    botId={botId}
+                    chatId={chatId}
+                    onOpen={openChat}
+                    onNew={() => toDraft(botId)}
+                    onUpdate={updateThread}
+                    onDelete={deleteThread}
+                  />
+                </>
+              )}
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                {current?.computerMode === "desktop" && (
+                  <DesktopButton botName={current.name} onError={fail} />
                 )}
-              </>
-            }
-            footer={
-              main.summary && !main.busy ? (
-                <p
-                  className="px-4 pt-1 pl-15 text-xs text-muted-foreground"
-                  aria-label="Delegation summary"
+                {chatId && saved.length > 0 && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    title="Publish snapshot to team"
+                    onClick={() => setPublishing(true)}
+                    aria-label="Publish snapshot to team"
+                  >
+                    <ShareNetworkIcon />
+                  </Button>
+                )}
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  title="Details"
+                  aria-label="Details"
+                  aria-pressed={details && !thread && !search.artifact}
+                  onClick={() => {
+                    const other = thread || search.artifact;
+                    if (search.artifact) setArtifact(undefined);
+                    else if (thread) setThread(undefined);
+                    setDetails((d) => !(d && !other));
+                  }}
                 >
-                  {main.summary}
-                </p>
-              ) : null
-            }
-          />
-        </SetupActionsContext.Provider>
-        <div className="shrink-0 space-y-2 px-4 pb-4">
-          <ProposalsPanel
-            proposals={proposals}
-            bots={bots}
-            notify={setNotice}
-            onResolved={(id) => setProposals((l) => l.filter((x) => x.id !== id))}
-            onBotsChanged={() => void refreshBots()}
-          />
-          {current && current.canEdit && !current.onboarded && hasReply && (
-            <div
-              role="group"
-              aria-label="Onboarding"
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm"
-            >
-              <p>Are you satisfied with how {current.name} answers?</p>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => void answer(true)}>
-                  Yes, I'm satisfied
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => void answer(false)}>
-                  Not yet
+                  <SidebarSimpleIcon className="-scale-x-100" />
                 </Button>
               </div>
+            </header>
+            {undoDelete && (
+              <div
+                role="status"
+                className="flex items-center gap-2 border-b bg-muted px-3 py-1.5 text-xs"
+              >
+                <span className="truncate">Deleted “{undoDelete.title}”</span>
+                <Button size="sm" variant="ghost" className="ml-auto" onClick={undoDeleteThread}>
+                  Undo
+                </Button>
+              </div>
+            )}
+            <SetupActionsContext.Provider value={setupActions}>
+              <MessageList
+                key={chatId ?? `new:${botId}`}
+                followToken={sent}
+                rows={rows}
+                authorOf={authorOf}
+                fallbackBotId={botId}
+                busy={main.busy || loadingMessages}
+                label="Conversation"
+                actions={actions}
+                intro={
+                  <>
+                    {loadingMessages && saved.length === 0 && (
+                      <div
+                        className="space-y-5 px-4 py-4"
+                        role="status"
+                        aria-label="Loading messages"
+                      >
+                        {["66%", "45%", "75%"].map((w, i) => (
+                          <div key={i} className="flex gap-2">
+                            <Skeleton className="size-9 rounded-lg" />
+                            <div className="flex-1 space-y-2">
+                              <Skeleton className="h-3 w-24 rounded" />
+                              <Skeleton
+                                className="h-4 rounded"
+                                style={{ display: "block", inlineSize: w }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {!loadingMessages && rows.length === 0 && current && (
+                      <div className="mt-auto space-y-3 px-4 pt-10 pb-4">
+                        <BotAvatar bot={current} size={64} square />
+                        <h3 className="font-heading text-3xl font-medium tracking-tight text-balance">
+                          <ChannelIcon
+                            aria-hidden="true"
+                            className="mr-1 inline size-5 align-baseline text-muted-foreground"
+                          />
+                          {current.name}
+                        </h3>
+                        <p className="max-w-prose text-muted-foreground">
+                          This is the very beginning of your conversation with{" "}
+                          <strong className="text-foreground">{current.name}</strong>.{" "}
+                          {current.description}
+                        </p>
+                        {current.canEdit && !current.onboarded && (
+                          <p className="max-w-prose text-sm text-muted-foreground">
+                            {current.name} isn't ready yet: send a test message to start setup.
+                          </p>
+                        )}
+                        <div
+                          className="flex flex-wrap gap-2"
+                          role="group"
+                          aria-label="Suggested prompts"
+                        >
+                          {SUGGESTIONS.map((q) => (
+                            <Button
+                              key={q}
+                              size="sm"
+                              variant="outline"
+                              className="rounded-full"
+                              onClick={() =>
+                                void send({ text: q, attachmentIds: [], fileRefs: [] })
+                              }
+                            >
+                              {q}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                }
+                footer={
+                  main.summary && !main.busy ? (
+                    <p
+                      className="px-4 pt-1 pl-15 text-xs text-muted-foreground"
+                      aria-label="Delegation summary"
+                    >
+                      {main.summary}
+                    </p>
+                  ) : null
+                }
+              />
+            </SetupActionsContext.Provider>
+            <div className="w-full shrink-0 space-y-2 px-4 pb-4">
+              <ProposalsPanel
+                proposals={proposals}
+                bots={bots}
+                notify={setNotice}
+                onResolved={(id) => setProposals((l) => l.filter((x) => x.id !== id))}
+                onBotsChanged={() => void refreshBots()}
+              />
+              {current && current.canEdit && !current.onboarded && hasReply && (
+                <div
+                  role="group"
+                  aria-label="Onboarding"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm"
+                >
+                  <p>Are you satisfied with how {current.name} answers?</p>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => void answer(true)}>
+                      Yes, I'm satisfied
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => void answer(false)}>
+                      Not yet
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {notice && (
+                <Alert theme="info" onClose={() => setNotice(undefined)}>
+                  {notice}
+                </Alert>
+              )}
+              {(error || main.error) && (
+                <Alert
+                  theme="danger"
+                  onClose={() => {
+                    setError(undefined);
+                    main.clearError();
+                  }}
+                >
+                  <p className="break-words">{error ?? errorMessage(main.error)}</p>
+                </Alert>
+              )}
+              <LoopBanner loop={goal.loop} onChange={goal.update} onError={setError} />
+              {botId && <ComputerActivity botId={botId} botName={current?.name} />}
+              <DraftComposer
+                instructions
+                storageKey={draftKey(botId, chatId)}
+                handle={draft}
+                placeholder={
+                  main.busy
+                    ? "Queue a follow-up…"
+                    : current
+                      ? `Message ${current.visibility === "private" ? "" : "#"}${current.name}`
+                      : "Message your bot"
+                }
+                bots={bots}
+                busy={main.busy}
+                disabled={!botId}
+                conversationId={chatId}
+                onSubmit={send}
+                onStop={() => void main.stop()}
+                onError={fail}
+              />
             </div>
+          </section>
+          {sidePane && desktop && (
+            <aside className="hidden min-h-0 border-l lg:flex lg:flex-col">
+              {/* DESIGN.md "Motion": panels arrive in 200ms; with reduced motion they just appear. */}
+              <motion.div
+                key={artifactPane ? "artifact" : threadPane ? "thread" : "details"}
+                initial={reduceMotion ? false : { opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="flex min-h-0 flex-1 flex-col"
+              >
+                {sidePane}
+              </motion.div>
+            </aside>
           )}
-          {notice && (
-            <Alert theme="info" onClose={() => setNotice(undefined)}>
-              {notice}
-            </Alert>
-          )}
-          {(error || main.error) && (
-            <Alert
-              theme="danger"
-              onClose={() => {
-                setError(undefined);
-                main.clearError();
+          {!desktop && (
+            <Sheet
+              open={!!sidePane}
+              onOpenChange={(open) => {
+                if (open) return;
+                if (search.artifact) setArtifact(undefined);
+                else setThread(undefined);
+                setDetails(false);
               }}
             >
-              <p className="break-words">{error ?? errorMessage(main.error)}</p>
-            </Alert>
+              <SheetContent
+                side="right"
+                showCloseButton={false}
+                className={cn("w-full p-0", artifactPane ? "sm:max-w-2xl" : "sm:max-w-sm")}
+              >
+                <SheetTitle className="sr-only">
+                  {artifactPane ? "Artifact" : threadPane ? "Thread" : "Details"}
+                </SheetTitle>
+                {sidePane}
+              </SheetContent>
+            </Sheet>
           )}
-          <LoopBanner loop={goal.loop} onChange={goal.update} onError={setError} />
-          {botId && <ComputerActivity botId={botId} botName={current?.name} />}
-          <DraftComposer
-            instructions
-            storageKey={draftKey(botId, chatId)}
-            handle={draft}
-            placeholder={
-              current
-                ? `Message ${current.visibility === "private" ? "" : "#"}${current.name}`
-                : "Message your bot"
-            }
-            bots={bots}
-            busy={main.busy}
-            disabled={!botId}
-            conversationId={chatId}
-            onSubmit={send}
-            onStop={() => void main.stop()}
-            onError={fail}
-          />
+          {publishing && chatId && (
+            <PublishDialog
+              conversationId={chatId}
+              onClose={() => setPublishing(false)}
+              onPublished={() => {
+                setPublishing(false);
+                setNotice(
+                  "Published a read-only copy for your team. Later messages are not included.",
+                );
+              }}
+            />
+          )}
         </div>
-      </section>
-      {threadPane && desktop && (
-        <aside className="hidden min-h-0 border-l lg:flex lg:flex-col">{threadPane}</aside>
-      )}
-      {!desktop && (
-        <Sheet
-          open={!!threadPane}
-          onOpenChange={(open) => {
-            if (!open) setThread(undefined);
-          }}
-        >
-          <SheetContent side="right" showCloseButton={false} className="w-full p-0 sm:max-w-md">
-            <SheetTitle className="sr-only">Thread</SheetTitle>
-            {threadPane}
-          </SheetContent>
-        </Sheet>
-      )}
-      {publishing && chatId && (
-        <PublishDialog
-          conversationId={chatId}
-          onClose={() => setPublishing(false)}
-          onPublished={() => {
-            setPublishing(false);
-            setNotice("Published a read-only copy for your team. Later messages are not included.");
-          }}
-        />
-      )}
-    </div>
+      </LatestChatsContext.Provider>
+    </BotsContext.Provider>
   );
 }

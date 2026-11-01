@@ -22,6 +22,51 @@ describe("toolPreamble", () => {
   });
 });
 
+describe("zetta:plan", () => {
+  const fence = (body: string) => "```zetta:plan\n" + body + "\n```";
+  test("every bot is told how to announce a checklist", () => {
+    expect(toolPreamble("off")).toContain("zetta:plan");
+  });
+  test("a plan is not a call: it is removed from the text and defaults each status to pending", () => {
+    const r = parseTools(
+      "Starting.\n" +
+        fence('{"steps":[{"id":"1","title":"Read","status":"active"},{"id":"2","title":"Chart"}]}'),
+    );
+    expect(r.calls).toEqual([]);
+    expect(r.rejected).toEqual([]);
+    expect(r.text).toBe("Starting.");
+    expect(r.plan).toEqual([
+      { id: "1", title: "Read", status: "active" },
+      { id: "2", title: "Chart", status: "pending" },
+    ]);
+  });
+  test("the last plan block of a reply wins", () => {
+    const r = parseTools(
+      fence('{"steps":[{"id":"1","title":"Old"}]}') +
+        "\n" +
+        fence('{"steps":[{"id":"1","title":"New","status":"done"}]}'),
+    );
+    expect(r.plan).toEqual([{ id: "1", title: "New", status: "done" }]);
+  });
+  test.each([
+    ["empty", '{"steps":[]}'],
+    ["not JSON", "not json"],
+    ["unknown status", '{"steps":[{"id":"1","title":"X","status":"started"}]}'],
+  ])("a %s plan is dropped without a rejection", (_name, body) => {
+    const r = parseTools("Hi\n" + fence(body));
+    expect(r.plan).toBeUndefined();
+    expect(r.rejected).toEqual([]);
+    expect(r.text).toBe("Hi");
+  });
+  test("a plan does not count toward the eight-block limit", () => {
+    const remember = '```zetta:remember\n{"content":"x"}\n```\n';
+    const r = parseTools(remember.repeat(8) + fence('{"steps":[{"id":"1","title":"Only"}]}'));
+    expect(r.calls).toHaveLength(8);
+    expect(r.rejected).toEqual([]);
+    expect(r.plan).toEqual([{ id: "1", title: "Only", status: "pending" }]);
+  });
+});
+
 describe("escalation", () => {
   test("a bot that is not the chief is taught to escalate instead of asking the user", () => {
     expect(toolPreamble("off")).toContain("what blocks you");

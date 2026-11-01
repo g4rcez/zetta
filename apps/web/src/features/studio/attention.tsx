@@ -34,14 +34,15 @@ const COLUMNS: {
   dot: string;
 }[] = [
   {
+    // DESIGN.md "The Attention Rule": amber means a person is needed; seen items are neutral.
     status: "open",
-    dot: "bg-destructive",
+    dot: "bg-attention",
     label: "Needs you",
     hint: "Something is waiting for you. It stays here until you act on it.",
   },
   {
     status: "acknowledged",
-    dot: "bg-warn",
+    dot: "bg-muted-foreground",
     label: "Seen",
     hint: "You have seen it. It is still not fixed.",
   },
@@ -74,7 +75,7 @@ function Card({
       <p className={unread ? "font-bold" : "font-medium"}>
         {unread && (
           <span
-            className="mr-1 inline-block size-2 rounded-full bg-destructive align-middle"
+            className="mr-1 inline-block size-2 rounded-full bg-attention align-middle"
             aria-hidden
           />
         )}
@@ -155,7 +156,7 @@ export function Attention({ bots, onError }: { bots: Bot[]; onError: (m: string)
   }
   const nameOf = (id: string | null) => (id ? bots.find((b) => b.id === id)?.name : undefined);
   return (
-    <section aria-label="Notifications" className="space-y-4">
+    <section aria-label="Inbox" className="space-y-4">
       <p className="text-sm text-muted-foreground">
         Things bots and routines want you to look at. Open the result, then resolve or dismiss it.
         Seeing something does not fix it.

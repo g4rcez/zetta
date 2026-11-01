@@ -1,7 +1,9 @@
 import { useRef, type KeyboardEvent, type PointerEvent } from "react";
 
 const STEP = 16;
-const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+/** Whole pixels inside the limits: pointer positions can be fractions, and the server rejects those. */
+export const toWidth = (n: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, Math.round(n)));
 
 /**
  * A draggable divider on the right edge of a sidebar. The parent must be `relative`.
@@ -27,7 +29,7 @@ export function ResizeHandle({
   const start = useRef<{ x: number; width: number }>(undefined);
   const move = (event: PointerEvent<HTMLDivElement>) => {
     if (!start.current) return;
-    onChange(clamp(start.current.width + event.clientX - start.current.x, min, max));
+    onChange(toWidth(start.current.width + event.clientX - start.current.x, min, max));
   };
   const end = () => {
     start.current = undefined;
@@ -47,7 +49,7 @@ export function ResizeHandle({
               : undefined;
     if (next === undefined) return;
     event.preventDefault();
-    onChange(clamp(next, min, max));
+    onChange(toWidth(next, min, max));
   };
   return (
     <div

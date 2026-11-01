@@ -479,7 +479,7 @@ export function PluginPage({ pluginId, isAdmin }: { pluginId: string; isAdmin: b
                     {CATEGORY_LABEL[meta.category] ?? meta.category}
                   </span>
                   {meta.always && (
-                    <span className="rounded bg-primary/15 px-1.5 py-0.5 text-xs font-normal text-primary">
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-foreground">
                       Built in
                     </span>
                   )}

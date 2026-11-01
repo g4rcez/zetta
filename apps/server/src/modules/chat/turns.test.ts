@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TurnBusyError, createTurnRegistry } from "./turns";
+import { TurnBusyError, createTurnRegistry, mergeAll } from "./turns";
 
 async function* gen(items: string[], delay = 5): AsyncGenerator<string> {
   for (const i of items) {
@@ -95,5 +95,83 @@ describe("turn registry", () => {
       { type: "message", text: "abcde" },
       { type: "done" },
     ]);
+  });
+});
+
+describe("mergeAll", () => {
+  const timed = async function* (items: [number, string][], result: string) {
+    for (const [wait, item] of items) {
+      await Bun.sleep(wait);
+      yield item;
+    }
+    return result;
+  };
+  const drain = async <T, R>(g: AsyncGenerator<T, R[]>) => {
+    const seen: T[] = [];
+    for (;;) {
+      const x = await g.next();
+      if (x.done) return { seen, results: x.value };
+      seen.push(x.value);
+    }
+  };
+
+  test("yields events as they arrive and returns each result in input order", async () => {
+    const { seen, results } = await drain(
+      mergeAll([
+        timed(
+          [
+            [10, "a1"],
+            [60, "a2"],
+          ],
+          "ra",
+        ),
+        timed([[35, "b1"]], "rb"),
+      ]),
+    );
+    expect(seen).toEqual(["a1", "b1", "a2"]);
+    expect(results).toEqual(["ra", "rb"]);
+  });
+
+  test("closing it early runs every generator's finally", async () => {
+    const closed: string[] = [];
+    const endless = async function* (name: string) {
+      try {
+        for (;;) {
+          await Bun.sleep(5);
+          yield name;
+        }
+      } finally {
+        closed.push(name);
+      }
+    };
+    const g = mergeAll([endless("a"), endless("b")]);
+    await g.next();
+    await g.return([]);
+    expect(closed.sort()).toEqual(["a", "b"]);
+  });
+
+  test("a generator that throws closes the others and rethrows", async () => {
+    const closed: string[] = [];
+    const slow = async function* () {
+      try {
+        for (;;) {
+          await Bun.sleep(5);
+          yield "slow";
+        }
+      } finally {
+        closed.push("slow");
+      }
+    };
+    const broken = async function* (): AsyncGenerator<string, string> {
+      await Bun.sleep(20);
+      yield "tick";
+      throw new Error("boom");
+    };
+    await expect(drain(mergeAll([slow(), broken()]))).rejects.toThrow("boom");
+    expect(closed).toEqual(["slow"]);
+  });
+
+  test("no generators finishes at once with no results", async () => {
+    expect(await drain(mergeAll([]))).toEqual({ seen: [], results: [] });
   });
 });

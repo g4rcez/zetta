@@ -106,3 +106,32 @@ export function createTurnRegistry<E>(
     },
   };
 }
+
+/**
+ * Runs async generators side by side and yields their events as they arrive. Each generator keeps its own order (one `next()` is in
+ * flight per generator), and the return value holds every generator's result, in input order. If the consumer stops early, or one
+ * generator throws, the rest are closed (each runs its own `finally`) before this one ends.
+ */
+export async function* mergeAll<T, R>(gens: AsyncGenerator<T, R>[]): AsyncGenerator<T, R[]> {
+  const results = Array.from({ length: gens.length }) as R[];
+  const inFlight = new Map<number, Promise<{ i: number; r: IteratorResult<T, R> }>>();
+  const step = (i: number) => gens[i]!.next().then((r) => ({ i, r }));
+  gens.forEach((_, i) => inFlight.set(i, step(i)));
+  try {
+    while (inFlight.size) {
+      const { i, r } = await Promise.race(inFlight.values());
+      if (r.done) {
+        results[i] = r.value;
+        inFlight.delete(i);
+      } else {
+        inFlight.set(i, step(i));
+        yield r.value;
+      }
+    }
+    return results;
+  } finally {
+    // A step still in flight settles on its own; swallow it here so a late failure is not an unhandled rejection.
+    for (const p of inFlight.values()) p.catch(() => {});
+    await Promise.allSettled([...inFlight.keys()].map((i) => gens[i]!.return(undefined as never)));
+  }
+}

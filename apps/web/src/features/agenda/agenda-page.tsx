@@ -149,10 +149,7 @@ function AgendaEventLabel({ item }: { item: AgendaItem }) {
         {item.title}
       </span>
       {item.googleEventId && (
-        <span
-          className="ml-auto shrink-0 rounded bg-muted px-1 text-[10px]"
-          title="On Google Calendar"
-        >
+        <span className="ml-auto shrink-0 rounded bg-muted px-1 text-xs" title="On Google Calendar">
           G
         </span>
       )}

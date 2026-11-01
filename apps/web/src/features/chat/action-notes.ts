@@ -1,5 +1,5 @@
 /** Server action notes ("🔓 Chief updated the permissions of x.") end a bot reply as one-line paragraphs led by an emoji. */
-const NOTE = /^(?:🔐|🔓|💾|📘|📝|🖥|🔌|🔑|🔁|✅|🙋|⚠️)️?\s+(\S[^\n]*)$/u;
+const NOTE = /^(?:🔐|🔓|💾|📘|📝|📎|📋|🖥|🔌|🔑|🔁|✅|🙋|⚠️)️?\s+(\S[^\n]*)$/u;
 
 /** Splits trailing action-note paragraphs off a reply: the prose stays markdown, the notes lose their emoji. */
 export function splitActionNotes(text: string): { body: string; notes: string[] } {

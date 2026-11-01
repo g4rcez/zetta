@@ -52,7 +52,7 @@ export function WhatsappView({ data }: { data: WhatsappData }) {
       aria-label="WhatsApp"
       className="w-full max-w-md overflow-hidden rounded-xl border bg-card text-sm shadow-sm"
     >
-      <figcaption className="flex items-center gap-2 bg-[#008069] px-3 py-2 font-medium text-white">
+      <figcaption className="flex items-center gap-2 bg-[#005c4b] px-3 py-2 font-medium text-white">
         <ChatCircleIcon aria-hidden className="size-4" />
         {data.kind === "chats" ? "WhatsApp" : data.name || who(data.chat)}
       </figcaption>
@@ -83,7 +83,11 @@ export function WhatsappView({ data }: { data: WhatsappData }) {
           </ul>
         )
       ) : (
-        <ol className="flex max-h-96 flex-col gap-1 overflow-y-auto bg-[#efeae2] p-3 dark:bg-[#0b141a]">
+        <ol
+          tabIndex={0}
+          aria-label="Messages"
+          className="flex max-h-96 flex-col gap-1 overflow-y-auto bg-[#efeae2] p-3 focus-visible:outline-2 focus-visible:outline-ring dark:bg-[#0b141a]"
+        >
           {data.messages.length === 0 && (
             <li className="text-center text-xs text-muted-foreground">No messages.</li>
           )}
@@ -94,7 +98,7 @@ export function WhatsappView({ data }: { data: WhatsappData }) {
             return (
               <li key={i} className="contents">
                 {newDay && (
-                  <span className="mx-auto my-1 rounded-md bg-background/80 px-2 py-0.5 text-[11px] text-muted-foreground shadow-sm">
+                  <span className="mx-auto my-1 rounded-md bg-background/80 px-2 py-0.5 text-xs text-muted-foreground shadow-sm">
                     {day(m.at)}
                   </span>
                 )}
@@ -115,9 +119,9 @@ export function WhatsappView({ data }: { data: WhatsappData }) {
                   {m.text ? (
                     <p className="whitespace-pre-wrap break-words">{m.text}</p>
                   ) : (
-                    !m.media && <p className="text-xs italic opacity-70">Message without text</p>
+                    !m.media && <p className="text-xs italic">Message without text</p>
                   )}
-                  <p className="mt-0.5 flex items-center justify-end gap-1 text-[10px] opacity-60">
+                  <p className="mt-0.5 flex items-center justify-end gap-1 text-xs">
                     {time(m.at, Boolean(data.hour12))}
                     {mine && <ChecksIcon aria-hidden className="size-3 text-info" />}
                   </p>

@@ -20,6 +20,8 @@ export type RowActions = {
   onReply: (row: Row) => void;
   onSaveInstruction: (row: Row) => void;
   onQueue?: (row: Row, action: "remove" | "retry") => void;
+  /** Open a published file beside the chat. Without it, an artifact receipt is a plain link to the artifact page. */
+  onOpenArtifact?: (id: string) => void;
 };
 
 /** Sending always brings you back to the newest message, even after reading history. */
@@ -133,7 +135,8 @@ export function MessageList({
         <MessageScrollerViewport role="log" aria-label={label} aria-live="polite" tabIndex={0}>
           <MessageScrollerContent
             aria-busy={busy}
-            className={cn("gap-0 pb-4", inThread ? "justify-start" : "justify-end")}
+            // DESIGN.md "Sizes": the chat and a thread fill the panel's width.
+            className={cn("gap-0 pb-4", inThread ? "justify-start" : "w-full justify-end")}
           >
             {intro}
             {grouped.map(({ row, continued, day }, i) => (

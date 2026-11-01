@@ -13,6 +13,8 @@ const patch = z.strictObject({
   railMode: z.enum(RAIL_MODES).optional(),
   railWidth: width(SIDEBAR_LIMITS.railWidth).optional(),
   listWidth: width(SIDEBAR_LIMITS.listWidth).optional(),
+  // Ids only, never names: a stale or foreign id is harmless because only this person reads the list.
+  botOrder: z.array(z.uuid()).max(500).optional(),
 });
 const out = (body: unknown, code = 200) =>
   Response.json(body, { status: code, headers: { "cache-control": "no-store" } });

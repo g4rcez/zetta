@@ -7,7 +7,8 @@ import {
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { Toaster } from "@zetta/ui/components/sonner";
 
-import Header, { AppRail, inApp } from "@/components/header";
+import Header, { inApp } from "@/components/header";
+import { KeyboardHints } from "@/components/keyboard-hints";
 import { ThemeProvider } from "@/components/theme-provider";
 import { PreferencesProvider } from "@/features/preferences/preferences";
 
@@ -67,13 +68,9 @@ function RootComponent() {
             <Outlet />
           </main>
         ) : app ? (
+          // The signed-in layout (routes/_auth) draws the app shell around these pages.
           <PreferencesProvider>
-            <div className="flex h-svh flex-col-reverse md:flex-row">
-              <AppRail />
-              <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-                <Outlet />
-              </main>
-            </div>
+            <Outlet />
           </PreferencesProvider>
         ) : (
           <div className="grid h-svh grid-rows-[auto_1fr]">
@@ -84,6 +81,7 @@ function RootComponent() {
           </div>
         )}
         <Toaster richColors />
+        <KeyboardHints />
       </ThemeProvider>
       {import.meta.env.DEV && !import.meta.env.VITE_HIDE_DEVTOOLS ? (
         <TanStackRouterDevtools position="bottom-right" />

@@ -24,6 +24,11 @@ if (!rootElement) {
   throw new Error("Root element not found");
 }
 
+// Accessibility audit in development only: open any page with `?axe` (the import is dropped from production builds).
+if (import.meta.env.DEV && new URLSearchParams(location.search).has("axe")) {
+  void import("./dev/axe-report").then((m) => m.runAxeReport());
+}
+
 if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement);
   root.render(<RouterProvider router={router} />);

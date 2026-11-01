@@ -41,17 +41,18 @@ const ICONS: Record<TeamRoleIcon, Icon> = {
   compass: CompassIcon,
   shield: ShieldIcon,
 };
-// Literal class names, so Tailwind sees them.
+// Literal class names, so Tailwind sees them. A role's color is the user's own label choice, so it colors only the icon;
+// the name stays in --foreground on --muted to keep 7:1 text contrast (DESIGN.md "Contrast table").
 const COLORS: Record<TeamRoleColor, string> = {
-  slate: "bg-slate-500/15 text-slate-600 dark:text-slate-300",
-  red: "bg-red-500/15 text-red-600 dark:text-red-300",
-  orange: "bg-orange-500/15 text-orange-600 dark:text-orange-300",
-  amber: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
-  green: "bg-green-500/15 text-green-600 dark:text-green-300",
-  teal: "bg-teal-500/15 text-teal-600 dark:text-teal-300",
-  blue: "bg-blue-500/15 text-blue-600 dark:text-blue-300",
-  violet: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
-  pink: "bg-pink-500/15 text-pink-600 dark:text-pink-300",
+  slate: "text-slate-700 dark:text-slate-400",
+  red: "text-red-700 dark:text-red-400",
+  orange: "text-orange-700 dark:text-orange-400",
+  amber: "text-amber-700 dark:text-amber-400",
+  green: "text-green-700 dark:text-green-400",
+  teal: "text-teal-700 dark:text-teal-400",
+  blue: "text-blue-700 dark:text-blue-400",
+  violet: "text-violet-700 dark:text-violet-400",
+  pink: "text-pink-700 dark:text-pink-400",
 };
 const label = (v: string) => v.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
 
@@ -90,12 +91,11 @@ export function RoleBadge({
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
-        COLORS[role.color],
+        "inline-flex max-w-full items-center gap-1 rounded-sm bg-muted px-2 py-0.5 text-xs font-medium text-foreground",
         className,
       )}
     >
-      <IconOf className="size-3 shrink-0" aria-hidden="true" />
+      <IconOf className={cn("size-3 shrink-0", COLORS[role.color])} aria-hidden="true" />
       <span className="truncate">{role.name}</span>
     </span>
   );

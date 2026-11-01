@@ -313,7 +313,10 @@ export function createTeamStore(
       if (v.firstMessage) await discussions.postAsOwner(a, opened.discussion.id, v.firstMessage);
       return { discussionId: opened.discussion.id };
     },
-    /** The team's chat: its newest live room, or a new one named after the team. Opening it does not wake the chief. */
+    /**
+     * The team's chat: its newest live room, else the room named after the team (a closed one is reopened), else a new one.
+     * Room names are unique, so the chat never gets a second room with a time suffix. Opening it does not wake the chief.
+     */
     async openChat(a: ActiveActor, id: string) {
       const t = await loadOwned(a, id);
       const [live] = await db
@@ -330,12 +333,25 @@ export function createTeamStore(
         .limit(1);
       if (live) return { discussionId: live.id };
       const name = t.name.slice(0, 100);
-      // Room names stay unique even after a room closes, so a second chat gets a time suffix.
-      return this.startRoom(a, id, { title: name, goal: "" }).catch((e) => {
-        if (!(e instanceof TeamError) || e.code !== "NAME_TAKEN") throw e;
-        const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
-        return this.startRoom(a, id, { title: `${name} ${stamp}`, goal: "" });
-      });
+      const [closed] = await db
+        .update(discussion)
+        .set({
+          status: "open",
+          resolvedAt: null,
+          updatedAt: new Date(),
+          version: sql`${discussion.version} + 1`,
+        })
+        .where(
+          and(
+            eq(discussion.teamId, t.id),
+            eq(discussion.ownerUserId, a.userId),
+            sql`lower(${discussion.title}) = lower(${name})`,
+            inArray(discussion.status, ["resolved", "cancelled"]),
+          ),
+        )
+        .returning({ id: discussion.id });
+      if (closed) return { discussionId: closed.id };
+      return this.startRoom(a, id, { title: name, goal: "" });
     },
   };
 }

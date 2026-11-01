@@ -372,6 +372,20 @@ suite("teams against compose postgres", () => {
       status: "open",
     });
   });
+  test("Chat with team after the room was cancelled reopens it under the team name, with no time suffix", async () => {
+    const id = await teamOf("Cancel chat team", ["Cancel Lead", "Cancel Dev"]);
+    const first = await call("POST", `/api/teams/${id}/chat`);
+    await worker.drain();
+    expect((await call("POST", `/api/discussions/${first.json.discussionId}/cancel`)).status).toBe(
+      200,
+    );
+    const again = await call("POST", `/api/teams/${id}/chat`);
+    expect(again.status).toBe(200);
+    expect(again.json.discussionId).toBe(first.json.discussionId);
+    expect(
+      (await call("GET", `/api/discussions/${first.json.discussionId}`)).json.discussion,
+    ).toMatchObject({ title: "Cancel chat team", status: "open" });
+  });
 
   test("the chief splits a team goal, nothing runs until the user approves, then each member works on its own goal", async () => {
     const id = await teamOf("Goal team", ["Goal Lead", "Goal Writer", "Goal Dev"]);

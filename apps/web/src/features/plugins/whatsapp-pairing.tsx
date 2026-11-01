@@ -83,7 +83,7 @@ export function WhatsappPairing({
             <li
               key={s}
               aria-current={i === step ? "step" : undefined}
-              className={`flex-1 rounded-md border px-2 py-1 text-center ${i < step ? "border-primary/40 bg-primary/10 text-primary" : i === step ? (phase === "error" ? "border-destructive text-destructive" : "border-primary font-medium") : "text-muted-foreground"}`}
+              className={`flex-1 rounded-md border px-2 py-1 text-center ${i < step ? "border-primary bg-accent text-foreground" : i === step ? (phase === "error" ? "border-destructive text-destructive" : "border-primary font-medium") : "text-muted-foreground"}`}
             >
               {i < step ? "✓ " : ""}
               {s}

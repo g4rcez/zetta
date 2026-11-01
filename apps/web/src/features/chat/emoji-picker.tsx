@@ -176,7 +176,7 @@ export function EmojiPicker({
         )}
         {sections.map((s) => (
           <section key={s.key} data-section={s.key} aria-label={s.label}>
-            <h3 className="sticky top-0 z-10 bg-popover py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <h3 className="sticky top-0 z-10 bg-popover py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {s.label}
             </h3>
             <div className="grid grid-cols-8">
@@ -200,7 +200,7 @@ export function EmojiPicker({
         ))}
       </div>
       <p
-        className="flex h-5 items-center gap-1.5 truncate border-t pt-1.5 text-[11px] text-muted-foreground"
+        className="flex h-5 items-center gap-1.5 truncate border-t pt-1.5 text-xs text-muted-foreground"
         aria-live="polite"
       >
         {hover ? (

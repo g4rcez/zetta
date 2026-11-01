@@ -56,15 +56,33 @@ suite("bot tools against compose postgres", () => {
   );
   let script: string[] = [];
   const prompts: string[] = [];
+  // A test sets it to hold every model call until it resolves (to act while the bot works).
+  let gate: Promise<void> | undefined;
+  // What each streamed model call could read of the conversation before it (to see which replies a bot knew about).
+  const histories: string[] = [];
+  // How long each streamed model call takes, and how many were running together at most (to see bots answer side by side).
+  let hold = 0;
+  let active = 0;
+  let maxActive = 0;
   const fakeRun = Object.assign(
     async (t: { prompt: string }) => {
+      await gate;
       prompts.push(t.prompt);
       return { text: script.shift() ?? "done", stopped: false };
     },
     {
-      stream: async function* (t: { prompt: string }) {
+      stream: async function* (t: { prompt: string; history?: { content: string }[] }) {
+        await gate;
         prompts.push(t.prompt);
-        yield script.shift() ?? "done";
+        histories.push((t.history ?? []).map((h) => h.content).join("\n"));
+        active++;
+        maxActive = Math.max(maxActive, active);
+        try {
+          if (hold) await Bun.sleep(hold);
+          yield script.shift() ?? "done";
+        } finally {
+          active--;
+        }
       },
     },
   );
@@ -100,6 +118,28 @@ suite("bot tools against compose postgres", () => {
       close: async () => {},
     }),
   });
+  // The decision model that says whether @mentioned bots work side by side (`parallel`) or one after another (`chain`).
+  let mentionChoice: string | null = "parallel";
+  const fakeDecisions = {
+    status: () => ({ state: "ready", model: "laya" }),
+    warm: async () => {},
+    close: async () => {},
+    choose: async () => ({
+      choice: mentionChoice,
+      uncertain: mentionChoice === null,
+      probabilities: {},
+      confidence: 0.9,
+      provenance: { model: "laya", at: "", ms: 1 },
+    }),
+  };
+  // Publishing is not under test here: the stub only has to return the row a real store would.
+  const fakeArtifacts = {
+    publish: async (_actor: unknown, input: { title: string }) => ({
+      id: "018f0000-0000-7000-8000-000000000001",
+      title: input.title,
+      kind: "html",
+    }),
+  } as never;
   const loops = createLoopStore(db);
   const teamStore = createTeamStore(db, {} as never);
   const chatSvc = createChatService(
@@ -107,7 +147,7 @@ suite("bot tools against compose postgres", () => {
     fakeRun as never,
     undefined,
     fakeComputer as never,
-    undefined,
+    fakeDecisions as never,
     undefined,
     { routine: features.routines.create as never, workflow: features.workflows.save as never },
     undefined,
@@ -115,7 +155,7 @@ suite("bot tools against compose postgres", () => {
     undefined,
     vms,
     undefined,
-    { loops, teams: teamStore },
+    { loops, teams: teamStore, artifacts: fakeArtifacts },
   );
   // Same wiring as services.ts: each loop step is a chat turn as the loop's owner.
   const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKey) => {
@@ -189,6 +229,19 @@ suite("bot tools against compose postgres", () => {
     };
   };
 
+  /** Waits until nothing is queued or running in the conversation, so no background answer outlives the test and races the cleanup. */
+  const settled = async (c: string) => {
+    for (let i = 0; i < 200; i++) {
+      const { rows } = await db.$client.query(
+        "select (select count(*) from chat_queue where conversation_id = $1 and status in ('pending','running'))::int as q, (select count(*) from message where conversation_id = $1 and status = 'running')::int as r",
+        [c],
+      );
+      if (rows[0].q === 0 && rows[0].r === 0) return;
+      await Bun.sleep(50);
+    }
+    throw new Error("the conversation did not settle");
+  };
+
   test("a bot that can run code saves what the person asked for at once, and asks before saving what it chose on its own", async () => {
     const { bot, say } = await setup(A, "Coder");
     await db.$client.query(
@@ -230,7 +283,9 @@ suite("bot tools against compose postgres", () => {
     ).not.toContain("House rule");
   });
 
-  test("remember and instruction blocks self-teach at once; config blocks only propose, applied on approval with version check", async () => {
+  // Since 412b187 a bot's own change from a turn that read no outside text applies at once (nothing here deletes data);
+  // proposals that wait for the user are covered where outside text is in play.
+  test("remember, instruction and config blocks from a clean turn all apply at once", async () => {
     const { bot, say } = await setup(A, "Learner");
     script = [
       'Done.\n```zetta:remember\n{"content":"prefers metric units"}\n```\n```zetta:instruction\n{"title":"Expense report","body":"Sum by category."}\n```',
@@ -249,36 +304,12 @@ suite("bot tools against compose postgres", () => {
     script = [
       `I suggest a tweak.\n\`\`\`zetta:config\n{"botId":"${bot.id}","patch":{"personality":"concise"}}\n\`\`\``,
     ];
-    await say("improve yourself");
-    const props = (await call(A, "GET", "/api/proposals")).json.proposals;
-    expect(props).toHaveLength(1);
-    expect(props[0].diff[0]).toMatchObject({ field: "personality", to: "concise" });
-    expect(
-      (await call(A, "GET", "/api/bots")).json.bots.find((b: { id: string }) => b.id === bot.id)
-        .personality,
-    ).toBe(""); // not applied yet
-    expect(
-      (await call(B, "POST", `/api/proposals/${props[0].id}/decision`, { approve: true })).status,
-    ).toBe(404);
-    expect(
-      (await call(A, "POST", `/api/proposals/${props[0].id}/decision`, { approve: true })).json
-        .status,
-    ).toBe("approved");
+    expect((await say("improve yourself")).json.assistant.content).toContain("✅ Done");
+    expect((await call(A, "GET", "/api/proposals")).json.proposals).toHaveLength(0);
     expect(
       (await call(A, "GET", "/api/bots")).json.bots.find((b: { id: string }) => b.id === bot.id)
         .personality,
     ).toBe("concise");
-    // a stale proposal (bot edited meanwhile) is not applied
-    script = [`\`\`\`zetta:config\n{"botId":"${bot.id}","patch":{"instructions":"X"}}\n\`\`\``];
-    await say("again");
-    const p2 = (await call(A, "GET", "/api/proposals")).json.proposals[0];
-    await call(A, "PATCH", `/api/bots/${bot.id}`, {
-      expectedVersion: 2,
-      patch: { description: "edit" },
-    });
-    expect(
-      (await call(A, "POST", `/api/proposals/${p2.id}/decision`, { approve: true })).json.status,
-    ).toBe("stale");
   });
 
   test("a bot cannot propose changes to another user's bot", async () => {
@@ -361,7 +392,7 @@ suite("bot tools against compose postgres", () => {
     expect(stuck.json.assistant.content).toContain("the same step kept giving the same result");
   });
 
-  test("goal loops: proposing does nothing until approved; approval runs steps until goal_done; no progress pauses; goal tools need a loop", async () => {
+  test("goal loops: a clean turn starts the loop at once; steps run until goal_done; no progress pauses; goal tools need a loop", async () => {
     const { bot: worker, c, say } = await setup(A, "Looper");
     await db.$client.query(
       "update bot set onboarded = true, computer_mode = 'browser' where id = $1",
@@ -371,24 +402,20 @@ suite("bot tools against compose postgres", () => {
     script = ['```zetta:goal_done\n{"summary":"pretend"}\n```', "ok"];
     await say("finish");
     expect(prompts.at(-1)).toContain("only works inside an approved loop");
-    // the bot proposes a loop: only a proposal
+    // the bot starts a loop: it applies at once. The start is held for this turn so the turn's own follow-up and the loop's
+    // steps do not race for the scripted replies; the test then starts it by hand.
+    const page = (n: number) =>
+      `\`\`\`zetta:browser\n{"action":"open","url":"https://example.com/${n}"}\n\`\`\``;
     script = [
       'I will work through the list.\n```zetta:goal\n{"goal":"Check all 3 pages","done_when":"every page was opened"}\n```',
     ];
+    loops.onStart = () => {};
     const r = await say("check every page, it takes a while");
-    expect(r.json.assistant.content).toContain("asks to start a loop");
-    expect((await call(A, "GET", `/api/conversations/${c}/loops`)).json.loops).toHaveLength(0);
-    const p = (await call(A, "GET", "/api/proposals")).json.proposals.find(
-      (x: { kind: string }) => x.kind === "start_loop",
-    );
-    expect(p.diff[0]).toEqual({ field: "goal", from: null, to: "Check all 3 pages" });
-    // another user cannot start it
-    expect(
-      (await call(B, "POST", `/api/proposals/${p.id}/decision`, { approve: true })).status,
-    ).toBe(404);
-    // approve: each step reports progress, the third finishes
-    const page = (n: number) =>
-      `\`\`\`zetta:browser\n{"action":"open","url":"https://example.com/${n}"}\n\`\`\``;
+    loops.onStart = loopDriver.kick;
+    expect(r.json.assistant.content).toContain("✅ Done: Check all 3 pages.");
+    const started = (await call(A, "GET", `/api/conversations/${c}/loops`)).json.loops[0];
+    expect(started).toMatchObject({ goal: "Check all 3 pages", status: "running" });
+    // each step reports progress; the third finishes
     script = [
       page(1),
       '```zetta:goal_progress\n{"summary":"page 1 done, 2 and 3 left"}\n```',
@@ -398,9 +425,7 @@ suite("bot tools against compose postgres", () => {
       '```zetta:goal_done\n{"summary":"All 3 pages checked."}\n```',
     ];
     calls.length = 0;
-    expect(
-      (await call(A, "POST", `/api/proposals/${p.id}/decision`, { approve: true })).json.status,
-    ).toBe("approved");
+    loopDriver.kick(started.id);
     const until = async (want: string) => {
       for (let i = 0; i < 100; i++) {
         const l = (await call(A, "GET", `/api/conversations/${c}/loops`)).json.loops[0];
@@ -436,38 +461,24 @@ suite("bot tools against compose postgres", () => {
     expect((await call(A, "POST", `/api/loops/${stuckId}/stop`)).json.loop.status).toBe(
       "cancelled",
     );
-  });
+  }, 20_000);
 
-  test("a bot's create_vm is only a proposal: another user cannot approve it, approval creates the computer once, the cap still applies", async () => {
+  test("a bot's create_vm from a clean turn creates the computer at once, once; the cap still applies", async () => {
     const { bot, say } = await setup(A, "Operator");
     script = [
       '```zetta:create_vm\n{"name":"Banking","purpose":"keep the second bank account signed in"}\n```',
     ];
-    await say("I need a separate computer for my other bank");
-    expect(await vmStore.list(A)).toHaveLength(0);
-    const p = (await call(A, "GET", "/api/proposals")).json.proposals.find(
-      (x: { kind: string }) => x.kind === "create_vm",
-    );
-    expect(p).toBeTruthy();
     expect(
-      (await call(B, "POST", `/api/proposals/${p.id}/decision`, { approve: true })).status,
-    ).toBe(404);
-    expect(
-      (await call(A, "POST", `/api/proposals/${p.id}/decision`, { approve: true })).json.status,
-    ).toBe("approved");
+      (await say("I need a separate computer for my other bank")).json.assistant.content,
+    ).toContain("✅ Done");
     const rows = await vmStore.list(A);
     expect(rows.map((r) => [r.kind, r.name, r.createdByBotId]).sort()).toEqual([
       ["default", "Default", null],
       ["extra", "Banking", bot.id],
     ]);
+    // over maxPerUser=2 the change cannot apply: it stays a card for the user, and no computer is made
     script = ['```zetta:create_vm\n{"name":"Third","purpose":"one more"}\n```'];
-    await say("and another one");
-    const p2 = (await call(A, "GET", "/api/proposals")).json.proposals.find(
-      (x: { kind: string }) => x.kind === "create_vm",
-    );
-    expect(
-      (await call(A, "POST", `/api/proposals/${p2.id}/decision`, { approve: true })).json.status,
-    ).toBe("stale"); // over maxPerUser=2
+    expect((await say("and another one")).json.assistant.content).toContain("Could not apply");
     expect(await vmStore.list(A)).toHaveLength(2);
   });
 
@@ -574,7 +585,7 @@ suite("bot tools against compose postgres", () => {
     ).toContain("member:Coder:Developer");
   });
 
-  test("bot-proposed creations (bot, routine, workflow) are only summaries until approved, exactly once, and unready bots cannot browse", async () => {
+  test("bot-proposed creations (bot, routine, workflow) from a clean turn apply at once, exactly once, and unready bots cannot browse", async () => {
     const { bot, say } = await setup(A, "Builder");
     const chiefish = bot.id;
     script = [
@@ -584,35 +595,12 @@ suite("bot tools against compose postgres", () => {
         chiefish +
         '","template":"x","next":"e"},"e":{"type":"end"}}}}\n```',
     ];
-    await say("set things up");
-    const props = (await call(A, "GET", "/api/proposals")).json.proposals.filter(
-      (p: { kind: string }) => p.kind !== "config" && p.kind !== "create_instruction",
-    );
-    expect(props.map((p: { kind: string }) => p.kind).sort()).toEqual([
-      "create_bot",
-      "create_routine",
-      "create_workflow",
-    ]);
+    expect((await say("set things up")).json.assistant.content).toContain("✅ Done");
     expect(
-      (await call(A, "GET", "/api/routines")).json.routines.some(
-        (r: { title: string }) => r.title === "Brief",
+      (await call(A, "GET", "/api/proposals")).json.proposals.filter((p: { kind: string }) =>
+        ["create_bot", "create_routine", "create_workflow"].includes(p.kind),
       ),
-    ).toBe(false); // nothing exists yet
-    expect(
-      (await call(A, "GET", "/api/bots")).json.bots.some(
-        (b: { name: string }) => b.name === "Researcher",
-      ),
-    ).toBe(false);
-    for (const p of props) {
-      expect(
-        (await call(B, "POST", `/api/proposals/${p.id}/decision`, { approve: true })).status,
-      ).toBe(404);
-      const both = await Promise.all([
-        call(A, "POST", `/api/proposals/${p.id}/decision`, { approve: true }),
-        call(A, "POST", `/api/proposals/${p.id}/decision`, { approve: true }),
-      ]);
-      expect(both.map((x) => x.status).sort()).toEqual([200, 404]); // approved exactly once
-    }
+    ).toHaveLength(0);
     expect(
       (await call(A, "GET", "/api/bots")).json.bots.filter(
         (b: { name: string }) => b.name === "Researcher",
@@ -636,5 +624,274 @@ suite("bot tools against compose postgres", () => {
       "after this bot finishes onboarding",
     );
     expect(calls).toHaveLength(0);
+  });
+
+  test("a published artifact is announced while the turn runs, before the reply is saved", async () => {
+    const { c } = await setup(A, "Publisher");
+    const actor = (await issueBackgroundActor(async () => ({ isAdmin: false }) as never, A))!;
+    script = [
+      'Here it is.\n```zetta:artifact\n{"title":"Q3 report","content":"<h1>Q3</h1>"}\n```',
+      "Published.",
+    ];
+    const { follow } = await chatSvc.startTurn(actor, c, { content: "Make a report" });
+    const types: string[] = [];
+    let announced: unknown;
+    for await (const { event } of follow()) {
+      types.push(event.type);
+      if (event.type === "artifact") announced = event;
+    }
+    expect(announced).toMatchObject({
+      type: "artifact",
+      id: "018f0000-0000-7000-8000-000000000001",
+      title: "Q3 report",
+    });
+    expect(types.indexOf("artifact")).toBeGreaterThan(-1);
+    expect(types.indexOf("artifact")).toBeLessThan(types.indexOf("message"));
+  });
+
+  test("a plan is announced on each update, kept in the reply's meta, and never shown in the text", async () => {
+    const { c } = await setup(A, "Planner");
+    const actor = (await issueBackgroundActor(async () => ({ isAdmin: false }) as never, A))!;
+    script = [
+      '```zetta:plan\n{"steps":[{"id":"1","title":"Write","status":"active"},{"id":"2","title":"Check"}]}\n```\n```zetta:artifact\n{"title":"Draft","content":"<p>x</p>"}\n```',
+      '```zetta:plan\n{"steps":[{"id":"1","title":"Write","status":"done"},{"id":"2","title":"Check","status":"done"}]}\n```\nAll done.',
+    ];
+    const { follow } = await chatSvc.startTurn(actor, c, { content: "Draft it" });
+    const plans: unknown[] = [];
+    let saved: { content: string; meta: unknown } | undefined;
+    for await (const { event } of follow()) {
+      if (event.type === "plan") plans.push(event.steps);
+      if (event.type === "message") saved = event.message;
+    }
+    expect(plans).toEqual([
+      [
+        { id: "1", title: "Write", status: "active" },
+        { id: "2", title: "Check", status: "pending" },
+      ],
+      [
+        { id: "1", title: "Write", status: "done" },
+        { id: "2", title: "Check", status: "done" },
+      ],
+    ]);
+    expect(saved?.content).toContain("All done.");
+    expect(saved?.content).not.toContain("zetta:plan");
+    expect(saved?.meta).toMatchObject({
+      plan: [
+        { id: "1", title: "Write", status: "done" },
+        { id: "2", title: "Check", status: "done" },
+      ],
+    });
+  });
+
+  test("a message sent while the bot works is read at its next step and is not answered on its own", async () => {
+    const { c } = await setup(A, "Steered");
+    const actor = (await issueBackgroundActor(async () => ({ isAdmin: false }) as never, A))!;
+    let release!: () => void;
+    gate = new Promise<void>((r) => (release = r));
+    script = ['```zetta:artifact\n{"title":"Draft","content":"<p>x</p>"}\n```', "Made it blue."];
+    prompts.length = 0;
+    const { follow } = await chatSvc.startTurn(actor, c, { content: "Draft it" });
+    const types: string[] = [];
+    let reply: { id: string } | undefined;
+    const done = (async () => {
+      for await (const { event } of follow()) {
+        types.push(event.type);
+        if (event.type === "message" && event.message.role === "assistant") reply = event.message;
+      }
+    })();
+    const queued = await call(A, "POST", `/api/conversations/${c}/queue`, {
+      content: "NOTE make it blue",
+    });
+    expect(queued.status).toBe(201);
+    gate = undefined;
+    release();
+    await done;
+    expect(types).toContain("steer");
+    expect(prompts.at(-1)).toContain("NOTE make it blue");
+    const noteId = queued.json.message.id as string;
+    const { rows: meta } = await db.$client.query("select meta from message where id = $1", [
+      noteId,
+    ]);
+    expect(meta[0].meta.steer.replyId).toBe(reply!.id);
+    const { rows: waiting } = await db.$client.query(
+      "select count(*)::int as n from chat_queue where conversation_id = $1",
+      [c],
+    );
+    expect(waiting[0].n).toBe(0);
+    const { rows: answers } = await db.$client.query(
+      "select count(*)::int as n from message where conversation_id = $1 and role = 'assistant'",
+      [c],
+    );
+    expect(answers[0].n).toBe(1);
+  });
+
+  test("a queued message with a file reference is not taken as a note", async () => {
+    const { c } = await setup(A, "Steered files");
+    const actor = (await issueBackgroundActor(async () => ({ isAdmin: false }) as never, A))!;
+    let release!: () => void;
+    gate = new Promise<void>((r) => (release = r));
+    script = ['```zetta:artifact\n{"title":"Draft","content":"<p>x</p>"}\n```', "Draft ready."];
+    const { follow } = await chatSvc.startTurn(actor, c, { content: "Draft it" });
+    const types: string[] = [];
+    const done = (async () => {
+      for await (const { event } of follow()) types.push(event.type);
+    })();
+    const queued = await call(A, "POST", `/api/conversations/${c}/queue`, {
+      content: "WITH FILE",
+      fileRefs: ["notes.txt"],
+    });
+    expect(queued.status).toBe(201);
+    gate = undefined;
+    release();
+    await done;
+    expect(types).not.toContain("steer");
+    await settled(c);
+    const { rows } = await db.$client.query("select meta from message where id = $1", [
+      queued.json.message.id,
+    ]);
+    expect(rows[0].meta.steer).toBeUndefined();
+  });
+
+  test("a note written in a thread is not taken by a main-line turn", async () => {
+    const { c, say } = await setup(A, "Steered threads");
+    const actor = (await issueBackgroundActor(async () => ({ isAdmin: false }) as never, A))!;
+    script = ["Seeded."];
+    const root = (await say("ROOT")).json.user.id as string;
+    let release!: () => void;
+    gate = new Promise<void>((r) => (release = r));
+    script = ['```zetta:artifact\n{"title":"Draft","content":"<p>x</p>"}\n```', "Draft ready."];
+    const { follow } = await chatSvc.startTurn(actor, c, { content: "Draft it" });
+    const types: string[] = [];
+    const done = (async () => {
+      for await (const { event } of follow()) types.push(event.type);
+    })();
+    const queued = await call(A, "POST", `/api/conversations/${c}/queue`, {
+      content: "THREAD NOTE",
+      parentMessageId: root,
+    });
+    expect(queued.status).toBe(201);
+    gate = undefined;
+    release();
+    await done;
+    expect(types).not.toContain("steer");
+    await settled(c);
+  });
+
+  /** A conversation with a lead bot and two more the lead can @mention. */
+  const withMentionable = async () => {
+    const lead = await setup(A, "Lead");
+    const names = ["Anouk", "Bram"];
+    for (const name of names) {
+      const created = (await call(A, "POST", "/api/bots", { name })).json.bot as { id: string };
+      await db.$client.query("update bot set onboarded = true where id = $1", [created.id]);
+    }
+    return lead;
+  };
+  const replies = async (c: string) =>
+    (
+      await db.$client.query(
+        "select parent_message_id as parent, status from message where conversation_id = $1 and role = 'assistant' order by seq",
+        [c],
+      )
+    ).rows as { parent: string | null; status: string }[];
+
+  test("two @mentions answer at the same time, each in the thread of the message", async () => {
+    const { c, say } = await withMentionable();
+    mentionChoice = "parallel";
+    hold = 150;
+    maxActive = 0;
+    histories.length = 0;
+    script = ["lead reply", "first mention reply", "second mention reply"];
+    const sent = await say("@Anouk @Bram compare the two options");
+    hold = 0;
+    const userId = sent.json.user.id as string;
+    expect(maxActive).toBe(2);
+    // Each reads the lead's reply, none reads another mention's.
+    expect(histories.slice(1).every((h) => h.includes("lead reply"))).toBe(true);
+    expect(histories.some((h) => h.includes("first mention reply"))).toBe(false);
+    expect(histories.some((h) => h.includes("second mention reply"))).toBe(false);
+    const rows = await replies(c);
+    expect(rows).toHaveLength(3);
+    expect(rows.filter((r) => r.parent === null)).toHaveLength(1);
+    expect(rows.filter((r) => r.parent === userId)).toHaveLength(2);
+    const { rows: delegations } = await db.$client.query(
+      "select status from delegation where parent_message_id = $1 order by status",
+      [userId],
+    );
+    expect(delegations).toEqual([{ status: "succeeded" }, { status: "succeeded" }]);
+  });
+
+  test("a chain of @mentions answers one after another in the main line, each bot reading the earlier replies", async () => {
+    const { c, say } = await withMentionable();
+    mentionChoice = "chain";
+    hold = 50;
+    maxActive = 0;
+    histories.length = 0;
+    script = ["lead reply", "ANOUK-DRAFT", "bram review"];
+    await say("@Anouk draft the intro, then @Bram review it");
+    hold = 0;
+    mentionChoice = "parallel";
+    expect(maxActive).toBe(1);
+    expect(await replies(c)).toEqual([
+      { parent: null, status: "complete" },
+      { parent: null, status: "complete" },
+      { parent: null, status: "complete" },
+    ]);
+    // The last bot answers after the others and reads the draft.
+    expect(histories.at(-1)).toContain("ANOUK-DRAFT");
+  });
+
+  test("when the decision model is unsure, mentioned bots still answer one after another", async () => {
+    const { c, say } = await withMentionable();
+    mentionChoice = null;
+    hold = 50;
+    maxActive = 0;
+    script = ["lead reply", "first", "second"];
+    await say("@Anouk @Bram take a look");
+    hold = 0;
+    mentionChoice = "parallel";
+    expect(maxActive).toBe(1);
+    expect(await replies(c)).toHaveLength(3);
+  });
+
+  test("one @mention still answers after the first bot, in the main line", async () => {
+    const { c, say } = await withMentionable();
+    hold = 50;
+    maxActive = 0;
+    script = ["lead reply", "mention reply"];
+    await say("@Anouk what do you think");
+    hold = 0;
+    expect(maxActive).toBe(1);
+    expect(await replies(c)).toEqual([
+      { parent: null, status: "complete" },
+      { parent: null, status: "complete" },
+    ]);
+  });
+
+  test("stopping a turn stops every bot answering side by side", async () => {
+    const { c } = await withMentionable();
+    const actor = (await issueBackgroundActor(async () => ({ isAdmin: false }) as never, A))!;
+    mentionChoice = "parallel";
+    hold = 400;
+    maxActive = 0;
+    script = ["lead reply", "first", "second"];
+    const { rec, follow } = await chatSvc.startTurn(actor, c, { content: "@Anouk @Bram go" });
+    const types: string[] = [];
+    const done = (async () => {
+      for await (const { event } of follow()) types.push(event.type);
+    })();
+    for (let i = 0; i < 200 && maxActive < 1; i++) await Bun.sleep(10);
+    // The lead answers first; stop while the two mentions run together.
+    for (let i = 0; i < 400 && active < 2; i++) await Bun.sleep(10);
+    await chatSvc.cancelTurn(actor, c);
+    await done;
+    await rec.finished;
+    hold = 0;
+    const { rows } = await db.$client.query(
+      "select status from delegation where conversation_id = $1 order by status",
+      [c],
+    );
+    expect(rows).toEqual([{ status: "cancelled" }, { status: "cancelled" }]);
+    await settled(c);
   });
 });

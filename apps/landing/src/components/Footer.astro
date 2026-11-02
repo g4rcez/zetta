@@ -11,11 +11,9 @@ const { locale } = Astro.props;
 const { footer: t, header } = getCopy(locale);
 const external = { target: "_blank", rel: "noopener noreferrer" };
 const nav = [
-  { href: "#how", label: header.nav.how },
+  { href: "#examples", label: header.nav.examples },
   { href: "#features", label: header.nav.features },
-  { href: "#control", label: header.nav.control },
   { href: "#self-host", label: header.nav.selfHost },
-  { href: "#faq", label: header.nav.faq },
 ];
 const languages = [
   { href: "/", label: "English", lang: "en", current: locale === "en" },

@@ -353,7 +353,7 @@ export async function dispatchSchemaTransitions(c: DispatchSchemaContext) {
         await first.query(`create temp table revision_counter_probe(revision integer,updated_at timestamptz) on commit drop;
       insert into revision_counter_probe values(2147483647,'2026-01-01T00:00:00Z');
       create trigger revision_counter_probe_guard before update on revision_counter_probe
-      for each row execute function public.dispatch_guard_revision()`);
+      for each row execute function zetta.dispatch_guard_revision()`);
         await c.reject(
           () =>
             first.query(
@@ -369,7 +369,7 @@ export async function dispatchSchemaTransitions(c: DispatchSchemaContext) {
         assert.equal(
           (
             await first.query<{ count: number }>(
-              "select count(*)::int as count from pg_tables where schemaname='public'",
+              "select count(*)::int as count from pg_tables where schemaname='zetta'",
             )
           ).rows[0]?.count,
           18,

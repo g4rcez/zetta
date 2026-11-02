@@ -5,7 +5,7 @@ export default defineConfig({
   schema: "./src/schema/index.ts",
   out: "./src/migrations",
   dialect: "postgresql",
-  schemaFilter: ["public"],
+  schemaFilter: ["zetta"],
   dbCredentials: {
     url: process.env.DATABASE_URL || "",
   },

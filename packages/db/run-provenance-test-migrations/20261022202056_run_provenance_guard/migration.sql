@@ -1,4 +1,4 @@
-CREATE FUNCTION public.runs_guard_producer() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION zetta.runs_guard_producer() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW.producer_kind IS DISTINCT FROM OLD.producer_kind
      OR NEW.producer_version IS DISTINCT FROM OLD.producer_version
@@ -9,5 +9,5 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE TRIGGER runs_producer_immutable BEFORE UPDATE ON public.runs
-FOR EACH ROW EXECUTE FUNCTION public.runs_guard_producer();
+CREATE TRIGGER runs_producer_immutable BEFORE UPDATE ON zetta.runs
+FOR EACH ROW EXECUTE FUNCTION zetta.runs_guard_producer();

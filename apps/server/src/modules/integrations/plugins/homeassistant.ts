@@ -1,3 +1,4 @@
+import { isLayaTag } from "@zetta/core/laya-languages";
 import { assertPublicUrl } from "../../computer/service";
 import {
   PluginError,
@@ -113,12 +114,24 @@ const compact = (s: State) => ({
 });
 
 export type AssistResult = { type: string; speech: string };
-/**
- * Sends a sentence to Home Assistant's own Assist intent engine (local matching of entities, areas and aliases; no LLM).
- * `type` is HA's `response_type`: "action_done", "query_answer" or "error" (no match, unknown target...).
- */
-export async function assist(c: PluginContext, text: string): Promise<AssistResult> {
-  const language = (c.config.language ?? "").trim();
+
+const MAX_LANGUAGES = 5;
+/** The saved "language" value is a comma separated list ("pt-BR,en"; a single tag from older settings is a list of one). */
+export const assistLanguages = (value: string | undefined): string[] =>
+  [
+    ...new Set(
+      (value ?? "")
+        .split(",")
+        .map((t) => t.trim())
+        .filter(isLayaTag),
+    ),
+  ].slice(0, MAX_LANGUAGES);
+
+async function assistOnce(
+  c: PluginContext,
+  text: string,
+  language?: string,
+): Promise<AssistResult> {
   const r = (await haFetch(c, "/api/conversation/process", {
     method: "POST",
     body: { text, agent_id: ASSIST_AGENT, ...(language ? { language } : {}) },
@@ -128,6 +141,24 @@ export async function assist(c: PluginContext, text: string): Promise<AssistResu
     type: typeof r.response?.response_type === "string" ? r.response.response_type : "error",
     speech: typeof speech === "string" ? speech.slice(0, MAX_TEXT) : "",
   };
+}
+
+/**
+ * Sends a sentence to Home Assistant's own Assist intent engine (local matching of entities, areas and aliases; no LLM).
+ * `type` is HA's `response_type`: "action_done", "query_answer" or "error" (no match, unknown target...).
+ * Assist takes one language per request, so each configured language is tried in order and the first answer that is not an
+ * error wins. When all fail, the answer of the first language is returned. No language: Home Assistant uses its own.
+ */
+export async function assist(c: PluginContext, text: string): Promise<AssistResult> {
+  const languages = assistLanguages(c.config.language);
+  if (languages.length === 0) return assistOnce(c, text);
+  let first: AssistResult | undefined;
+  for (const language of languages) {
+    const answer = await assistOnce(c, text, language);
+    if (answer.type !== "error") return answer;
+    first ??= answer;
+  }
+  return first!;
 }
 
 const def: PluginDef = {
@@ -176,10 +207,10 @@ const def: PluginDef = {
     },
     {
       key: "language",
-      label: "Assist language",
+      label: "Assist languages",
+      kind: "languages",
       optional: true,
-      placeholder: "en",
-      help: "For example en or pt-BR. Empty uses the language of your Home Assistant.",
+      help: "Home Assistant tries them in this order. Empty uses the language of your Home Assistant.",
     },
   ],
   async install(ctx) {

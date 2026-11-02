@@ -14,18 +14,45 @@ import { writeTools } from "./write";
  *     optional subreddit allowlist and are rate limited (votes far more tightly; see write.ts).
  */
 export const redditPlugin: PluginDef = {
-  id: "reddit", name: "Reddit", icon: "reddit", category: "social", kind: "native", auth: "oauth",
+  id: "reddit",
+  name: "Reddit",
+  icon: "reddit",
+  category: "social",
+  kind: "native",
+  auth: "oauth",
   fields: [
-    { key: "clientId", label: "App client id", kind: "text", placeholder: "a1B2c3D4e5F6g7H8i9", help: "reddit.com/prefs/apps > create another app > type \"web app\". The id is the string under the app's name." },
-    { key: "clientSecret", label: "App secret", kind: "password", secret: true, help: `Use ${redirectUri()} as the app's redirect uri.` },
+    {
+      key: "clientId",
+      label: "App client id",
+      kind: "text",
+      placeholder: "a1B2c3D4e5F6g7H8i9",
+      help: 'reddit.com/prefs/apps > create another app > type "web app". The id is the string under the app\'s name.',
+    },
+    {
+      key: "clientSecret",
+      label: "App secret",
+      kind: "password",
+      secret: true,
+      help: `Use ${redirectUri()} as the app's redirect uri.`,
+    },
   ],
-  description: "Let bots read your Reddit feed, saved items, history and inbox and, if you allow it, post, comment, vote and message with your account.",
+  description:
+    "Let bots read your Reddit feed, saved items, history and inbox and, if you allow it, post, comment, vote and message with your account.",
   docsUrl: "https://github.com/reddit-archive/reddit/wiki/OAuth2",
-  notes: "Uses your own Reddit \"web app\", stored encrypted for your account only (Reddit may need to approve new Data API apps before they work). You choose the permissions when you connect; NSFW content and acting on your account are off unless you opt in.",
+  notes:
+    'Uses your own Reddit "web app", stored encrypted for your account only (Reddit may need to approve new Data API apps before they work). You choose the permissions when you connect; NSFW content and acting on your account are off unless you opt in.',
   tools: [...readTools, ...writeTools],
   async install(ctx) {
-    if (!/^[A-Za-z0-9_-]{10,40}$/.test(ctx.config.clientId ?? "")) throw new PluginError("INVALID_FIELD", "That does not look like a Reddit app client id.", "Copy the string shown under the app's name at reddit.com/prefs/apps.");
+    if (!/^[A-Za-z0-9_-]{10,40}$/.test(ctx.config.clientId ?? ""))
+      throw new PluginError(
+        "INVALID_FIELD",
+        "That does not look like a Reddit app client id.",
+        "Copy the string shown under the app's name at reddit.com/prefs/apps.",
+      );
   },
-  connect: startConnect, callback: finishConnect, disconnect, status,
+  connect: startConnect,
+  callback: finishConnect,
+  disconnect,
+  status,
 };
 registerPlugin(redditPlugin);

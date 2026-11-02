@@ -1,4 +1,4 @@
-CREATE TABLE "run_attempts" (
+CREATE TABLE "zetta"."run_attempts" (
 	"id" uuid PRIMARY KEY,
 	"run_id" uuid NOT NULL,
 	"owner_user_id" text NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE "run_attempts" (
       and ("started_at" is null or "stop_confirmed_at" >= "started_at"))))
 );
 --> statement-breakpoint
-CREATE TABLE "runs" (
+CREATE TABLE "zetta"."runs" (
 	"id" uuid PRIMARY KEY,
 	"owner_user_id" text NOT NULL,
 	"request_key" uuid NOT NULL,
@@ -84,6 +84,6 @@ CREATE TABLE "runs" (
       and ("cancel_requested_at" is null or "finished_at" >= "cancel_requested_at"))))
 );
 --> statement-breakpoint
-CREATE INDEX "runs_owner_id_idx" ON "runs" ("owner_user_id","id");--> statement-breakpoint
-ALTER TABLE "run_attempts" ADD CONSTRAINT "run_attempts_owner_fk" FOREIGN KEY ("run_id","owner_user_id") REFERENCES "runs"("id","owner_user_id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "runs" ADD CONSTRAINT "runs_owner_user_id_membership_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "membership"("user_id") ON DELETE RESTRICT ON UPDATE RESTRICT;
+CREATE INDEX "runs_owner_id_idx" ON "zetta"."runs" ("owner_user_id","id");--> statement-breakpoint
+ALTER TABLE "zetta"."run_attempts" ADD CONSTRAINT "run_attempts_owner_fk" FOREIGN KEY ("run_id","owner_user_id") REFERENCES "zetta"."runs"("id","owner_user_id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."runs" ADD CONSTRAINT "runs_owner_user_id_membership_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "zetta"."membership"("user_id") ON DELETE RESTRICT ON UPDATE RESTRICT;

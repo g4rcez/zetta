@@ -143,10 +143,10 @@ describe("identity schema definitions (metadata, not PostgreSQL enforcement)", (
     expect(references(membership)).toEqual([userReference("user_id")]);
     expect(checks(membership)).toEqual({
       membership_activation_revision_check:
-        '"membership"."activation_revision" between 1 and 2147483647',
-      membership_status_check: "\"membership\".\"status\" in ('active', 'removed')",
+        '"zetta"."membership"."activation_revision" between 1 and 2147483647',
+      membership_status_check: '"zetta"."membership"."status" in (\'active\', \'removed\')',
       membership_removal_check:
-        '("membership"."status" = \'active\' and "membership"."removed_at" is null) or ("membership"."status" = \'removed\' and "membership"."removed_at" is not null)',
+        '("zetta"."membership"."status" = \'active\' and "zetta"."membership"."removed_at" is null) or ("zetta"."membership"."status" = \'removed\' and "zetta"."membership"."removed_at" is not null)',
     });
   });
 
@@ -174,9 +174,9 @@ describe("identity schema definitions (metadata, not PostgreSQL enforcement)", (
       "installation_identity_active_admin_fk",
     ]);
     expect(checks(installationIdentity)).toEqual({
-      installation_identity_singleton_check: '"installation_identity"."id" = 1',
+      installation_identity_singleton_check: '"zetta"."installation_identity"."id" = 1',
       installation_identity_admin_active_check:
-        '"installation_identity"."admin_membership_status" = \'active\'',
+        '"zetta"."installation_identity"."admin_membership_status" = \'active\'',
     });
   });
 
@@ -204,10 +204,11 @@ describe("identity schema definitions (metadata, not PostgreSQL enforcement)", (
     ]);
     expect(checks(invitation)).toEqual({
       invitation_email_canonical_check:
-        '"invitation"."intended_email" = lower("invitation"."intended_email")',
-      invitation_expiry_check: '"invitation"."expires_at" > "invitation"."created_at"',
+        '"zetta"."invitation"."intended_email" = lower("zetta"."invitation"."intended_email")',
+      invitation_expiry_check:
+        '"zetta"."invitation"."expires_at" > "zetta"."invitation"."created_at"',
       invitation_consumption_check:
-        '("invitation"."consumed_at" is null) = ("invitation"."consumed_by_user_id" is null)',
+        '("zetta"."invitation"."consumed_at" is null) = ("zetta"."invitation"."consumed_by_user_id" is null)',
     });
   });
 
@@ -245,12 +246,13 @@ describe("identity schema definitions (metadata, not PostgreSQL enforcement)", (
     ]);
     expect(checks(identityAudit)).toEqual({
       identity_audit_event_kind_check:
-        "\"identity_audit\".\"event_kind\" in ('bootstrap', 'admin-replacement', 'invite-issued', 'invite-revoked', 'invite-consumed')",
-      identity_audit_actor_kind_check: "\"identity_audit\".\"actor_kind\" in ('operator', 'user')",
+        "\"zetta\".\"identity_audit\".\"event_kind\" in ('bootstrap', 'admin-replacement', 'invite-issued', 'invite-revoked', 'invite-consumed')",
+      identity_audit_actor_kind_check:
+        '"zetta"."identity_audit"."actor_kind" in (\'operator\', \'user\')',
       identity_audit_actor_check:
-        '("identity_audit"."actor_kind" = \'operator\' and "identity_audit"."actor_user_id" is null) or ("identity_audit"."actor_kind" = \'user\' and "identity_audit"."actor_user_id" is not null)',
+        '("zetta"."identity_audit"."actor_kind" = \'operator\' and "zetta"."identity_audit"."actor_user_id" is null) or ("zetta"."identity_audit"."actor_kind" = \'user\' and "zetta"."identity_audit"."actor_user_id" is not null)',
       identity_audit_replacement_reason_check:
-        '"identity_audit"."event_kind" <> \'admin-replacement\' or ("identity_audit"."actor_kind" = \'operator\' and "identity_audit"."operator_reason" is not null and length(btrim("identity_audit"."operator_reason")) > 0)',
+        '"zetta"."identity_audit"."event_kind" <> \'admin-replacement\' or ("zetta"."identity_audit"."actor_kind" = \'operator\' and "zetta"."identity_audit"."operator_reason" is not null and length(btrim("zetta"."identity_audit"."operator_reason")) > 0)',
     });
   });
 });
@@ -286,7 +288,7 @@ describe("activation feature offline artifacts (not executed PostgreSQL)", () =>
       "membership_activation_transition",
     ]);
     expect([...source.matchAll(/ERRCODE = '23514'/g)]).toHaveLength(5);
-    expect(source).toContain("BEFORE INSERT OR UPDATE ON public.membership");
+    expect(source).toContain("BEFORE INSERT OR UPDATE ON zetta.membership");
     expect(source).not.toMatch(
       /SECURITY DEFINER|\bSELECT\b|\bLOCK\b|\bPERFORM\b|EXECUTE\s+'|NEW\.\w+\s*:=|SET\s+search_path/i,
     );
@@ -322,7 +324,7 @@ describe("activation feature offline artifacts (not executed PostgreSQL)", () =>
     expect(migrations).toHaveLength(2);
     const ddl = migrations[0]?.sql.map((statement) => statement.trim()).join("\n") ?? "";
     expect(ddl.trim()).toBe(
-      'ALTER TABLE "membership" ADD COLUMN "activation_revision" integer DEFAULT 1 NOT NULL;\nALTER TABLE "membership" ADD CONSTRAINT "membership_activation_revision_check" CHECK ("activation_revision" between 1 and 2147483647);',
+      'ALTER TABLE "zetta"."membership" ADD COLUMN "activation_revision" integer DEFAULT 1 NOT NULL;\nALTER TABLE "zetta"."membership" ADD CONSTRAINT "membership_activation_revision_check" CHECK ("activation_revision" between 1 and 2147483647);',
     );
     expect(migrations.flatMap((m) => m.sql).join("\n")).not.toMatch(
       /CREATE TABLE|DROP TABLE|ALTER TABLE "(?:user|runs|run_attempts|connection|invitation|installation_identity)"/,

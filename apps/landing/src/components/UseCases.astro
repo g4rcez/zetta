@@ -10,7 +10,7 @@ interface Props {
 }
 
 const copy = getCopy(Astro.props.locale);
-const d = copy.how.demo;
+const d = copy.demo;
 // Which specialist does the work in each example (the chief's reply names it).
 const worker: Record<string, string> = { briefing: CAST.reviewer.name, review: CAST.reviewer.name, newsletter: CAST.writer.name };
 ---
@@ -41,7 +41,6 @@ const worker: Record<string, string> = { briefing: CAST.reviewer.name, review: C
               </div>
               <h3>{tab.label}</h3>
               <p class="lead">{tab.pitch}</p>
-              <a class="btn btn-primary" href="#self-host">{copy.hero.primary}</a>
             </div>
 
             <div class="chat">

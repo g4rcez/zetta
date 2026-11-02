@@ -16,7 +16,7 @@ const manifest = [
     files: [
       {
         name: "snapshot.json",
-        hash: "888c5ec8ffe5b4389b14a4281cdefcbbd6220493e66647e7f557c471865e7bc5",
+        hash: "3bc93e6146b58b7f01a10c5e8481354991bdd3ca8fdf3a753b093469a05415ef",
       },
     ],
   },
@@ -25,7 +25,7 @@ const manifest = [
     files: [
       {
         name: "snapshot.json",
-        hash: "6c0a17f4c839a2b973f1455917f8a3bea821744356544b18b7fe5970a7e217e1",
+        hash: "2b48aaa1e7ed2585286056d2863e7a3ef46f528703bf7f45702c296ced1ce33a",
       },
     ],
   },
@@ -34,11 +34,11 @@ const manifest = [
     files: [
       {
         name: "migration.sql",
-        hash: "0679d8a29e9f888dd51c9ebb6c971e3ae6e03dc83fbb63349b1c2df6dc49beb5",
+        hash: "957cd2c8c6f1a0b2dbaaac70ecc5b6e843a1c0aa033b12256c492786ccb77482",
       },
       {
         name: "snapshot.json",
-        hash: "10e735fef9149031bf233131ee87ad944043d9a653cdf9fa423a8378d2b0b28b",
+        hash: "1267aa44eb928dfe1ce4a46ad6e3f7f8d019611d55e1117fa6ec0d97f0547670",
       },
     ],
   },
@@ -47,11 +47,11 @@ const manifest = [
     files: [
       {
         name: "migration.sql",
-        hash: "c1426a7537d5b39a28f9e505977ea6bf6f80553182907d46de704adb46586d29",
+        hash: "465e20e56f2d6d35b0bb211e27a370e74c1bba13c8c53c3a43cfcc70c39c1385",
       },
       {
         name: "snapshot.json",
-        hash: "0d8794e0925b2dcbafb50a48bf706911b3bcd822a03415bed9347b15d9f9eced",
+        hash: "44bc50f257c8a754fb98339777324d5b9bc98b34dda290213d4c4e18dce19d3a",
       },
     ],
   },
@@ -59,11 +59,11 @@ const manifest = [
 const legacy = [
   {
     name: "20261022180455_runs_initial",
-    hash: "fe2e46816c2e2fc046cec7eb7e017f30911f1de2fbc3a745eb2417c0e83a372a",
+    hash: "ca730fae8f7e5d5f6917292d6f71b56aa76ef31b5e20c4e826c474e5b05f65cb",
   },
   {
     name: "20261022180711_runs_constraints",
-    hash: "35f95e21e74a777dbe3527ae4d0ae9aa545e2c639ee8a3292ea08d84f8b0d785",
+    hash: "2c9690dd5f978d73253849a2326e81cb45cac377c5f38c379a4f94b7c4f490ee",
   },
 ];
 function check(value: unknown): asserts value {
@@ -197,20 +197,20 @@ export async function inspectRunProvenanceCatalog(client: PoolClient) {
         and a.attidentity='' and a.attgenerated='' and a.atttypid=case a.attname
           when 'producer_kind' then 'text'::regtype else 'integer'::regtype end)
         from pg_attribute a left join pg_attrdef d on d.adrelid=a.attrelid and d.adnum=a.attnum
-        where a.attrelid='public.runs'::regclass and a.attname in ('producer_kind','producer_version','actor_activation_revision')) as columns_ok,
+        where a.attrelid='zetta.runs'::regclass and a.attname in ('producer_kind','producer_version','actor_activation_revision')) as columns_ok,
       (select count(*)=1 and bool_and(c.contype='c' and c.convalidated and c.conenforced and not c.connoinherit
         and not c.condeferrable and not c.condeferred and c.conislocal and c.coninhcount=0 and c.conparentid=0)
-        from pg_constraint c where c.conrelid='public.runs'::regclass and c.conname='runs_producer_check') as check_ok,
+        from pg_constraint c where c.conrelid='zetta.runs'::regclass and c.conname='runs_producer_check') as check_ok,
       (select regexp_replace(pg_get_expr(c.conbin,c.conrelid),'[[:space:]"]','','g')
-        from pg_constraint c where c.conrelid='public.runs'::regclass and c.conname='runs_producer_check') as check_expression,
+        from pg_constraint c where c.conrelid='zetta.runs'::regclass and c.conname='runs_producer_check') as check_expression,
       (select count(*)=1 and bool_and(p.prosrc=$1 and not p.prosecdef and p.proconfig is null and p.pronargs=0
         and p.prorettype='trigger'::regtype and p.prokind='f' and p.provolatile='v' and l.lanname='plpgsql')
         from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang
-        where n.nspname='public' and p.proname='runs_guard_producer') as function_ok,
+        where n.nspname='zetta' and p.proname='runs_guard_producer') as function_ok,
       (select count(*)=1 and bool_and(t.tgtype=19 and t.tgenabled='O' and not t.tgisinternal and t.tgqual is null
         and t.tgnargs=0 and octet_length(t.tgargs)=0 and t.tgattr::text='' and t.tgconstraint=0
-        and t.tgfoid='public.runs_guard_producer()'::regprocedure)
-        from pg_trigger t where t.tgrelid='public.runs'::regclass and t.tgname='runs_producer_immutable') as trigger_ok`,
+        and t.tgfoid='zetta.runs_guard_producer()'::regprocedure)
+        from pg_trigger t where t.tgrelid='zetta.runs'::regclass and t.tgname='runs_producer_immutable') as trigger_ok`,
       [body],
     )
   ).rows;
@@ -283,12 +283,12 @@ async function verifyLegacyRows(client: PoolClient, layered: boolean): Promise<v
       and conversation_id='legacy-conversation' and configuration_id='legacy-configuration' and configuration_version=1
       and input_version=1 and input_snapshot=$1 and created_at=timestamptz '2000-01-01T00:00:00Z'
       and revision=1 and status='queued' and current_generation=1 and cancel_requested_at is null and started_at is null and finished_at is null
-      ${layered ? "and producer_kind is null and producer_version is null and actor_activation_revision is null" : ""}) from public.runs) as run_ok,
+      ${layered ? "and producer_kind is null and producer_version is null and actor_activation_revision is null" : ""}) from zetta.runs) as run_ok,
     (select count(*)=1 and bool_and(id='009d5000-0000-4000-8000-000000000003' and run_id='009d5000-0000-4000-8000-000000000001'
       and owner_user_id='run-legacy-owner' and generation=1 and created_at=timestamptz '2000-01-01T00:00:00Z'
       and status='queued' and effect_state='no_effect' and lease_id is null and lease_expires_at is null and claimed_at is null
       and started_at is null and finished_at is null and stop_confirmed_at is null and result_version is null and result_text is null
-      and result_error_code is null and result_last_sequence is null and cancellation_reason is null) from public.run_attempts) as attempt_ok`,
+      and result_error_code is null and result_last_sequence is null and cancellation_reason is null) from zetta.run_attempts) as attempt_ok`,
       [legacyInput],
     )
   ).rows;
@@ -299,27 +299,27 @@ export async function seedRunLegacyProvenance(client: PoolClient): Promise<void>
     await client.query("begin");
     const [row] = (
       await client.query<{ absent: boolean }>(`select
-      not exists(select 1 from pg_attribute where attrelid='public.runs'::regclass
+      not exists(select 1 from pg_attribute where attrelid='zetta.runs'::regclass
         and attname in ('producer_kind','producer_version','actor_activation_revision') and not attisdropped)
-      and not exists(select 1 from pg_trigger where tgrelid='public.runs'::regclass and tgname='runs_producer_immutable')
-      and not exists(select 1 from pg_constraint where conrelid='public.runs'::regclass and conname='runs_producer_check')
-      and not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='runs_guard_producer')
-      and not exists(select 1 from public.runs) and not exists(select 1 from public.run_attempts)
-      and not exists(select 1 from public."user") and not exists(select 1 from public.membership) as absent`)
+      and not exists(select 1 from pg_trigger where tgrelid='zetta.runs'::regclass and tgname='runs_producer_immutable')
+      and not exists(select 1 from pg_constraint where conrelid='zetta.runs'::regclass and conname='runs_producer_check')
+      and not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='zetta' and p.proname='runs_guard_producer')
+      and not exists(select 1 from zetta.runs) and not exists(select 1 from zetta.run_attempts)
+      and not exists(select 1 from zetta."user") and not exists(select 1 from zetta.membership) as absent`)
     ).rows;
     check(row?.absent === true);
-    await client.query(`insert into public."user"(id,name,email,email_verified,created_at,updated_at) values
+    await client.query(`insert into zetta."user"(id,name,email,email_verified,created_at,updated_at) values
       ('run-legacy-owner','synthetic','run-legacy@invalid.test',false,'2000-01-01T00:00:00Z','2000-01-01T00:00:00Z');
-      insert into public.membership(user_id,activation_revision,status,joined_at,removed_at,updated_at) values
+      insert into zetta.membership(user_id,activation_revision,status,joined_at,removed_at,updated_at) values
       ('run-legacy-owner',1,'active','2000-01-01T00:00:00Z',null,'2000-01-01T00:00:00Z')`);
     await client.query(
-      `insert into public.runs(id,owner_user_id,request_key,origin_kind,bot_id,conversation_id,configuration_id,
+      `insert into zetta.runs(id,owner_user_id,request_key,origin_kind,bot_id,conversation_id,configuration_id,
       configuration_version,input_version,input_snapshot,created_at,revision,status,current_generation) values
       ('009d5000-0000-4000-8000-000000000001','run-legacy-owner','009d5000-0000-4000-8000-000000000002','interactive',
       'legacy-bot','legacy-conversation','legacy-configuration',1,1,$1,'2000-01-01T00:00:00Z',1,'queued',1)`,
       [legacyInput],
     );
-    await client.query(`insert into public.run_attempts(id,run_id,owner_user_id,generation,created_at,status,effect_state) values
+    await client.query(`insert into zetta.run_attempts(id,run_id,owner_user_id,generation,created_at,status,effect_state) values
       ('009d5000-0000-4000-8000-000000000003','009d5000-0000-4000-8000-000000000001','run-legacy-owner',1,'2000-01-01T00:00:00Z','queued','no_effect')`);
     await verifyLegacyRows(client, false);
     await client.query("commit");

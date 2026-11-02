@@ -195,16 +195,20 @@ export function ChatPage() {
       replace: true,
     });
 
+  // A chat shows only what its own bot asked: another bot's request is approved in that bot's chat.
   const loadProposals = useCallback(
     () =>
-      chatClient
-        .proposals()
-        .then(setProposals)
-        .catch(() => {}),
-    [],
+      botId
+        ? chatClient
+            .proposals(botId)
+            .then(setProposals)
+            .catch(() => {})
+        : Promise.resolve(),
+    [botId],
   );
   // Proposals also come from loops, routines and other chats, which send no stream part: poll while the tab is visible.
   useEffect(() => {
+    setProposals([]);
     void loadProposals();
     const t = setInterval(() => {
       if (document.visibilityState === "visible") void loadProposals();
@@ -359,11 +363,13 @@ export function ChatPage() {
     attachmentIds,
     fileRefs,
     wikiIds,
+    skills,
   }: {
     text: string;
     attachmentIds: string[];
     fileRefs: string[];
     wikiIds?: string[] | undefined;
+    skills?: { botId: string; name: string }[] | undefined;
   }) {
     if (!botId) return false;
     setError(undefined);
@@ -378,7 +384,15 @@ export function ChatPage() {
       }
       draft.current?.clear();
       setSent((n) => n + 1);
-      void main.send(text, { conversationId: id, attachmentIds, fileRefs, wikiIds }).catch(fail);
+      void main
+        .send(text, {
+          conversationId: id,
+          attachmentIds,
+          fileRefs,
+          wikiIds,
+          skills: skills?.map((k) => k.name),
+        })
+        .catch(fail);
       return true;
     } catch (e) {
       fail(e);
@@ -800,6 +814,7 @@ export function ChatPage() {
               {botId && <ComputerActivity botId={botId} botName={current?.name} />}
               <DraftComposer
                 wiki
+                skillBots={botId ? [botId] : []}
                 storageKey={draftKey(botId, chatId)}
                 handle={draft}
                 placeholder={

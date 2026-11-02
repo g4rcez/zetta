@@ -54,7 +54,7 @@ function useRoutineRows() {
   useEffect(() => {
     let stopped = false;
     const load = () =>
-      call<{ routines: Row[] }>("/api/routines").then(
+      call<{ routines: Row[] }>("/api/routines?state=active").then(
         (r) => !stopped && setRows(r.routines),
         () => !stopped && setRows((x) => x ?? []),
       );

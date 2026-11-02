@@ -1,10 +1,12 @@
 import type { Database } from "@zetta/db";
 import schedule from "node-schedule";
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from "@zetta/db/query";
-import { bot, conversation, message } from "@zetta/db/schema/chat";
+import { bot, conversation } from "@zetta/db/schema/chat";
 import { routine, routineRun, workflow } from "@zetta/db/schema/features";
+import { discussion } from "@zetta/db/schema/discussions";
 import { membership } from "@zetta/db/schema/identity";
 import { AccessError, type ActiveActor } from "../identity/access";
+import { insertMessage } from "../chat/messages";
 import { failureKind, retryDelayMs } from "../chat/retry";
 import { raiseAttention } from "./attention";
 import { audit } from "./audit";
@@ -35,6 +37,8 @@ export type RoutineInput = {
   onceAt?: string;
   conversationMode?: "new" | "continue";
   workflowId?: string;
+  /** The room whose bot proposed the routine (set by the chat service, never by a client). */
+  originDiscussionId?: string;
 };
 const first = <T>(rows: T[]): T => {
   if (!rows[0]) throw new AccessError("NOT_FOUND");
@@ -223,7 +227,9 @@ export function createRoutines(
       const [last] = await db
         .select({ c: routineRun.conversationId })
         .from(routineRun)
-        .where(and(eq(routineRun.routineId, r.id), sql`${routineRun.conversationId} is not null`))
+        .innerJoin(conversation, eq(conversation.id, routineRun.conversationId))
+        // Only a chat of the routine's current bot: a bot never posts in another bot's chat.
+        .where(and(eq(routineRun.routineId, r.id), eq(conversation.botId, r.botId)))
         .orderBy(desc(routineRun.startedAt))
         .limit(1);
       convId = last?.c ?? undefined;
@@ -278,29 +284,19 @@ export function createRoutines(
         errCode = e instanceof Error ? e.message : undefined;
         output = "The routine could not complete.";
       }
-      const [{ m } = { m: 0 }] = await db
-        .select({ m: sql<number>`coalesce(max(${message.seq}), 0)` })
-        .from(message)
-        .where(eq(message.conversationId, convId));
-      await db.insert(message).values([
-        {
-          conversationId: convId,
-          ownerUserId: r.ownerUserId,
-          seq: Number(m) + 1,
-          role: "user",
-          content: prompt,
-        },
-        {
-          conversationId: convId,
-          ownerUserId: r.ownerUserId,
-          seq: Number(m) + 2,
-          role: "assistant",
-          content: output,
-          status: status === "failed" ? "failed" : "complete",
-          botVersion: b!.version,
-          botId: b!.id,
-        },
-      ]);
+      await insertMessage(db, convId, {
+        ownerUserId: r.ownerUserId,
+        role: "user",
+        content: prompt,
+      });
+      await insertMessage(db, convId, {
+        ownerUserId: r.ownerUserId,
+        role: "assistant",
+        content: output,
+        status: status === "failed" ? "failed" : "complete",
+        botVersion: b!.version,
+        botId: b!.id,
+      });
     }
     await finish(status, output, reason, convId);
     if (status === "failed") {
@@ -539,11 +535,21 @@ export function createRoutines(
             .from(workflow)
             .where(and(eq(workflow.id, v.workflowId), eq(workflow.ownerUserId, a.userId))),
         );
+      // A room the owner does not have is ignored, not an error: the approved routine must still be created.
+      const [origin] = v.originDiscussionId
+        ? await db
+            .select({ id: discussion.id })
+            .from(discussion)
+            .where(
+              and(eq(discussion.id, v.originDiscussionId), eq(discussion.ownerUserId, a.userId)),
+            )
+        : [];
       return first(
         await db
           .insert(routine)
           .values({
             ownerUserId: a.userId,
+            originDiscussionId: origin?.id ?? null,
             botId: v.botId,
             title: v.title,
             prompt: v.prompt,
@@ -794,7 +800,8 @@ export function createRoutines(
       );
     },
     /** Each routine with its one chat: the newest run's conversation (the one `execute` appends to), null before the first run. The outer column is spelled out: Drizzle drops the table name in a one-table select, so `${routine.id}` would read as `rr.id`. */
-    async list(a: ActiveActor) {
+    /** `state: "active"` leaves out the paused routines; the default lists them all. */
+    async list(a: ActiveActor, state: "all" | "active" = "all") {
       const rows = await db
         .select({
           routine,
@@ -803,7 +810,13 @@ export function createRoutines(
           >`(select rr.conversation_id from routine_run rr where rr.routine_id = "routine"."id" and rr.conversation_id is not null order by rr.started_at desc limit 1)`,
         })
         .from(routine)
-        .where(and(eq(routine.ownerUserId, a.userId), eq(routine.archived, false)))
+        .where(
+          and(
+            eq(routine.ownerUserId, a.userId),
+            eq(routine.archived, false),
+            state === "active" ? eq(routine.paused, false) : undefined,
+          ),
+        )
         .orderBy(asc(routine.createdAt));
       return rows.map((r) => ({ ...r.routine, conversationId: r.conversationId }));
     },

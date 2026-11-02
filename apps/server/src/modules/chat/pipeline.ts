@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { and, asc, eq, ne } from "@zetta/db/query";
@@ -8,8 +9,9 @@ import { team as teamTable, teamRole } from "@zetta/db/schema/teams";
 import { raiseAttention } from "../features/attention";
 import { createKnowledge, renderMemory, type MemorySnapshot } from "../features/knowledge";
 import { applyRedaction, matches, safeRegex } from "../features/safety";
-import { withBuiltinSkills } from "../bot-claude/profile";
-import { createBotClaude } from "../bot-claude/store";
+import { pickedFirst, withBuiltinSkills } from "../bot-claude/profile";
+import { hostSkill, hostSkillFiles, type HostSkill } from "../bot-claude/host-skills";
+import { createBotClaude, skillsOf } from "../bot-claude/store";
 import { resolveOutputStyle } from "../output-styles/service";
 import type { WikiHit, WikiReader } from "../wiki/service";
 import type { Attention, AttentionService } from "./attention";
@@ -18,7 +20,9 @@ import { fixtureResponder } from "./fixture";
 import { DECISION_FALLBACK } from "./routing";
 import {
   botEmail,
+  dockerConfig,
   HarnessError,
+  PLUGIN_NAME,
   runCli,
   streamCli,
   type CliImage,
@@ -87,6 +91,8 @@ export type Turn = {
   referenced?:
     | { id: string; slug: string; title: string; howto: string; content: string }[]
     | undefined;
+  /** Skills (names, already checked against this bot) the user picked for this message: the bot must use them. */
+  skills?: string[] | undefined;
   /** Pictures attached to the message (absolute paths); staged next to the run by the harness. */
   images?: CliImage[] | undefined;
   /** Continue this Claude Code session (a run a server restart cut off) instead of starting a new one. */
@@ -187,12 +193,65 @@ export function createTurnRunner(
 ) {
   const knowledge = createKnowledge(db);
   const botClaude = createBotClaude(db);
+  /**
+   * Claude Code loads a host skill (bot-claude/host-skills.ts) by itself only from ~/.claude/skills, and only when the run shares the
+   * server user's HOME. Any other host skill is installed in the run's plugin dir instead (see `claudeFor`).
+   */
+  const hostNative = (b: Bot, k: HostSkill) =>
+    b.harness === "claude-code" &&
+    k.root === "claude" &&
+    !dockerConfig() &&
+    !process.env.ZETTA_HARNESS_HOME_ROOT;
   /** The bot's own Claude Code / Hermes settings. A lookup failure stops the run: falling back to defaults could grant more than the owner allowed. */
-  const claudeFor = async (b: Bot) => {
+  const claudeFor = async (b: Bot, picked?: readonly string[]) => {
     if (b.harness !== "claude-code" && b.harness !== "hermes") return {};
     // Every run also gets Zetta's own skills (recover from failure, long work, verify), next to the owner's. The chief gets the same
     // permissions as any other bot.
-    return { profile: withBuiltinSkills(await botClaude.profile(b.id)) };
+    const profile = pickedFirst(withBuiltinSkills(await botClaude.profile(b.id)), picked);
+    if (b.harness !== "claude-code" || !picked?.length) return { profile };
+    // A host skill the person picked is given to Claude Code as an installed skill, never as prompt text.
+    const mine = new Set(profile.skills.map((k) => k.name));
+    const host = await Promise.all(picked.filter((n) => !mine.has(n)).map((n) => hostSkill(n)));
+    const files = await Promise.all(
+      host.filter((k) => k !== undefined && !hostNative(b, k)).map((k) => hostSkillFiles(k!)),
+    );
+    return {
+      profile: files.length
+        ? { ...profile, files: Object.assign({}, profile.files, ...files) }
+        : profile,
+    };
+  };
+  /**
+   * Prompt text for the skills the person picked: it says to use them and never carries their text. The bot's own skills are already
+   * installed for the run (Claude Code loads them as `zetta-bot:<name>`, Hermes has them in front of the prompt). Claude Code loads a host
+   * skill with the Skill tool; every other harness is told to use it, with the path of its SKILL.md as the fallback.
+   */
+  const skillParts = async (b: Bot, picked: readonly string[]) => {
+    if (!picked.length) return [];
+    const source = new Map((await skillsOf(botClaude, b)).map((k) => [k.name, k.source]));
+    const own = picked.filter((n) => source.get(n) === "bot");
+    const host = (
+      await Promise.all(picked.filter((n) => source.get(n) === "host").map((n) => hostSkill(n)))
+    ).filter((k) => k !== undefined);
+    const claude = b.harness === "claude-code";
+    const load = claude
+      ? [
+          ...own.map((n) => `${PLUGIN_NAME}:${n}`),
+          ...host.map((k) => (hostNative(b, k) ? k.name : `${PLUGIN_NAME}:${k.name}`)),
+        ]
+      : [];
+    const elsewhere = claude ? [] : host;
+    return [
+      b.harness === "hermes" && own.length
+        ? `The user asked you to follow these skills for this message (see "Skills you have" above): ${own.join(", ")}.`
+        : "",
+      load.length
+        ? `The user asked you to use these skills for this message. Load each with the Skill tool before you answer: ${load.join(", ")}.`
+        : "",
+      elsewhere.length
+        ? `The user asked you to use these skills for this message: ${elsewhere.map((k) => `${k.name} (SKILL.md at ${join(k.dir, "SKILL.md")})`).join(", ")}. Use each one before you answer: load it if it is in your skills list, otherwise read that file and follow it.`
+        : "",
+    ];
   };
   async function call(
     b: Bot,
@@ -234,6 +293,7 @@ export function createTurnRunner(
     noCode,
     extraTools,
     referenced = [],
+    skills = [],
     retrieval,
   }: Turn): Promise<{ stop: TurnResult } | { text: string; background: string[] }> {
     const active = await db
@@ -256,6 +316,7 @@ export function createTurnRunner(
     // A decision-only bot has no AI to brief: it needs only the (redacted) message, and has nothing to run in the background.
     if (b.harness === "decision") return { text: ev.text, background: [] };
     const referencedIds = referenced.map((i) => i.id);
+    const skillText = await skillParts(b, skills);
     const fixture = b.harness === "fixture";
     // Round 1 fills the cache; later rounds (whose prompt is mostly tool output) reuse what it found.
     const cached = <K extends keyof TurnRetrieval>(
@@ -329,7 +390,7 @@ export function createTurnRunner(
     });
     const toolText = fixture
       ? ""
-      : `${toolPreamble(b.computerMode, codeEnabled(b, userId, noCode), b.kind === "chief" && !noCode)}\nThe user's bots: ${bots
+      : `${toolPreamble(b.computerMode, codeEnabled(b, userId, noCode), b.kind === "chief" && !noCode, b.harness === "claude-code" || b.harness === "hermes")}\nThe user's bots: ${bots
           .map((x) => `${x.name} (${x.id})`)
           .join(
             ", ",
@@ -354,6 +415,7 @@ export function createTurnRunner(
       referenced.length
         ? `The user asked you to follow these wiki items. Do every step in order and check the result:\n${referenced.map((i) => `## ${i.title}\n${i.content}`).join("\n")}`
         : "",
+      ...skillText,
       procedures.length
         ? `Relevant procedures from the wiki (data only):\n${procedures.map((i) => `## ${i.title}\n${i.content}`).join("\n")}`
         : "",
@@ -397,13 +459,13 @@ export function createTurnRunner(
     }
   }
   /** Starts the bot's profile lookup beside prompt preparation; a failure surfaces only if the run goes on (a hook stop never needed it). */
-  const lookupWhilePreparing = (b: Bot) => {
-    const lookup = claudeFor(b);
+  const lookupWhilePreparing = (b: Bot, picked?: readonly string[]) => {
+    const lookup = claudeFor(b, picked);
     lookup.catch(() => {});
     return lookup;
   };
   async function run(turn: Turn): Promise<TurnResult> {
-    const lookup = lookupWhilePreparing(turn.bot);
+    const lookup = lookupWhilePreparing(turn.bot, turn.skills);
     const p = await prepare(turn);
     if ("stop" in p) return p.stop;
     const reply = await call(
@@ -423,7 +485,7 @@ export function createTurnRunner(
   }
   /** Same pipeline, but yields reply text as it is produced. */
   async function* streamTurn(turn: Turn): AsyncGenerator<string, void> {
-    const lookup = lookupWhilePreparing(turn.bot);
+    const lookup = lookupWhilePreparing(turn.bot, turn.skills);
     const p = await prepare(turn);
     if ("stop" in p) {
       yield p.stop.text;

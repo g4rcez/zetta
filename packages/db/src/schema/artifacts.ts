@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { bigint, check, index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, check, index, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
@@ -30,7 +31,7 @@ export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
  * A file a bot delivered (a report, a deck, a video, a zip). The bytes live on disk at `<artifacts root>/<owner>/<sha256>`;
  * the row holds the metadata. Deleting the bot, the chat or the routine run only unlinks it.
  */
-export const artifact = pgTable(
+export const artifact = zetta.table(
   "artifact",
   {
     id: uuid("id")

@@ -109,8 +109,11 @@ export const CATALOG: PluginDef[] = [
     category: "dev",
     url: "https://api.githubcopilot.com/mcp/",
     docsUrl: "https://github.com/github/github-mcp-server",
+    // Drops the saved token so bots use only the server's gh login (the GitHub tools need a token and go away with it).
+    disconnect: (ctx) => ctx.setConfig({}),
     guide: () => [
-      "If the server has the GitHub CLI logged in (gh auth login), bots use it for git and gh and no token is needed. Add a token for the GitHub tools or when there is no CLI login.",
+      "Prefer the GitHub CLI. If the server has it logged in (run gh auth login on the server), pick the GitHub CLI box and install: bots use it for git and gh, and no token is needed. Do not ask for a token in that case.",
+      "Pick the Access token box only when the server has no CLI login, or when the bot needs the GitHub tools (search, issues, pull requests). Then:",
       "Open https://github.com/settings/personal-access-tokens/new to create a fine-grained token.",
       "Pick only the repositories the bot may touch.",
       "Grant read access to Contents, Issues and Pull requests (add write access only if the bot must change things).",
@@ -118,7 +121,7 @@ export const CATALOG: PluginDef[] = [
     ],
     fields: token(
       "Personal access token",
-      "Optional when the server has the GitHub CLI logged in. Use a fine-grained token scoped to the repositories the bot may touch.",
+      "Needed only without a GitHub CLI login on the server. Use a fine-grained token scoped to the repositories the bot may touch.",
       "github_pat_...",
       true,
     ),

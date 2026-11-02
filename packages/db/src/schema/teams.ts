@@ -4,13 +4,13 @@ import {
   index,
   integer,
   jsonb,
-  pgTable,
   primaryKey,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { bot } from "./chat";
@@ -62,7 +62,7 @@ export type TeamPoint = { x: number; y: number };
  * A group of bots that work together in rooms (a room is a discussion with a `team_id`). The chief gets the user's prompt and
  * coordinates the others. `goal` is the standing goal; without one, the chief pursues the latest prompt.
  */
-export const team = pgTable(
+export const team = zetta.table(
   "team",
   {
     id: uuid("id")
@@ -90,7 +90,7 @@ export const team = pgTable(
 );
 
 /** What a bot does in a team. The user edits the catalog; deleting a role leaves its members without one. */
-export const teamRole = pgTable(
+export const teamRole = zetta.table(
   "team_role",
   {
     id: uuid("id")
@@ -112,7 +112,7 @@ export const teamRole = pgTable(
 );
 
 /** A bot in a team. Exactly one member is the chief. `role` is the old free text: it is kept for one release and no longer read or written. */
-export const teamMember = pgTable(
+export const teamMember = zetta.table(
   "team_member",
   {
     teamId: uuid("team_id")

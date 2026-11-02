@@ -1,5 +1,6 @@
 ---
 import Logo from "./Logo.astro";
+import GithubMark from "./GithubMark.astro";
 import { getCopy, type Locale } from "../i18n";
 import { REPO } from "../links";
 
@@ -12,11 +13,9 @@ const { header: t } = getCopy(locale);
 const home = locale === "pt-br" ? "/pt-br/" : "/";
 const other = locale === "pt-br" ? "en" : "pt-BR";
 const links = [
-  { href: "#how", label: t.nav.how },
+  { href: "#examples", label: t.nav.examples },
   { href: "#features", label: t.nav.features },
-  { href: "#control", label: t.nav.control },
   { href: "#self-host", label: t.nav.selfHost },
-  { href: "#faq", label: t.nav.faq },
 ];
 ---
 
@@ -33,7 +32,7 @@ const links = [
     </nav>
     <div class="actions">
       <a class="lang" href={t.switchHref} hreflang={other} lang={other} title={t.switchName}>{t.switchLabel}</a>
-      <a class="btn btn-ghost btn-sm github" href={REPO} target="_blank" rel="noopener noreferrer">{t.github}</a>
+      <a class="btn btn-ghost btn-sm github" href={REPO} target="_blank" rel="noopener noreferrer"><GithubMark />{t.github}</a>
       <a class="btn btn-primary btn-sm" href="#self-host">{t.cta}</a>
     </div>
   </div>

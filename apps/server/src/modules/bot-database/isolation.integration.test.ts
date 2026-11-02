@@ -108,8 +108,8 @@ suite("bot database isolation against compose postgres", () => {
   test("everything outside its own schema is refused by Postgres", async () => {
     await svc.execute(b, "create table secrets (v text); insert into secrets values ('b only')");
     const forbidden: [string, () => Promise<unknown>][] = [
-      ['select * from public."user"', () => svc.query(a, 'select * from public."user"')],
-      ["select * from public.bot", () => svc.query(a, "select * from public.bot")],
+      ['select * from zetta."user"', () => svc.query(a, 'select * from zetta."user"')],
+      ["select * from zetta.bot", () => svc.query(a, "select * from zetta.bot")],
       [
         `select * from "${schemaB}".secrets`,
         () => svc.query(a, `select * from "${schemaB}".secrets`),

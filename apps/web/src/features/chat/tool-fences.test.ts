@@ -30,6 +30,12 @@ describe("stripToolFences", () => {
     const t = 'Hi\n```zetta:setup-card\n{"a":1}';
     expect(stripToolFences(t)).toBe(t);
   });
+  it("removes an inbound request but keeps the server-built inbound card", () => {
+    expect(stripToolFences('Done.\n```zetta:inbound\n{"action":"status"}\n```')).toBe("Done.");
+    expect(stripToolFences('Done.\n```zetta:inbound\n{"act')).toBe("Done.");
+    const t = 'Hi\n```zetta:inbound-card\n{"a":1}';
+    expect(stripToolFences(t)).toBe(t);
+  });
   it("keeps zetta:ui and zetta:whatsapp blocks", () => {
     const t = "```zetta:ui\n{}\n```\n```zetta:whatsapp\n{}\n```";
     expect(stripToolFences(t)).toBe(t);

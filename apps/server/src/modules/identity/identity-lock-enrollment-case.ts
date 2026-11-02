@@ -36,14 +36,14 @@ export async function enrollmentDirections(c: PositiveContext) {
       await c.proof.first.query("begin");
       for (const id of ["lock-a", "lock-b"]) {
         const result = await c.proof.first.query(
-          'select id from "user" where id=$1 for key share',
+          'select id from "zetta"."user" where id=$1 for key share',
           [id],
         );
         assert.equal(result.rowCount, 1);
       }
       for (const id of ["lock-a", "lock-b"]) {
         const result = await c.proof.first.query(
-          'select user_id from "membership" where user_id=$1 for update',
+          'select user_id from "zetta"."membership" where user_id=$1 for update',
           [id],
         );
         assert.equal(result.rowCount, 1);
@@ -71,7 +71,7 @@ export async function enrollmentDirections(c: PositiveContext) {
         ]);
         accepted = denyActive();
         void accepted.catch(() => undefined);
-        await observeWait(c, c.pids[2], c.pids[1], 'from "user"');
+        await observeWait(c, c.pids[2], c.pids[1], 'from "zetta"."user"');
         assert.deepEqual(second.stages, ["installation"]);
         first.release();
       } else {
@@ -86,7 +86,7 @@ export async function enrollmentDirections(c: PositiveContext) {
         ]);
         synthetic = sortedSynthetic();
         void synthetic.catch(() => undefined);
-        await observeWait(c, c.pids[1], c.pids[2], 'from "user"');
+        await observeWait(c, c.pids[1], c.pids[2], 'from "zetta"."user"');
         assert.deepEqual(first.stages, []);
         second.release();
       }

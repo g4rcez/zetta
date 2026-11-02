@@ -58,6 +58,8 @@ export type DiscussionDetail = {
   discussion: Discussion;
   members: DiscussionMember[];
   turns: DiscussionTurn[];
+  /** Routines made in this room: their work runs in their own chat, not in the room. */
+  routines: { id: string; title: string; status: string }[];
 };
 export type TurnStep = {
   at: string;
@@ -114,13 +116,19 @@ export const discussionsApi = {
   post: (
     id: string,
     content: string,
-    files: { attachmentIds?: string[]; fileRefs?: string[]; wikiIds?: string[] } = {},
+    files: {
+      attachmentIds?: string[];
+      fileRefs?: string[];
+      wikiIds?: string[];
+      skills?: { botId: string; name: string }[];
+    } = {},
   ) =>
     call(`/api/discussions/${id}/messages`, "POST", {
       content,
       ...(files.attachmentIds?.length ? { attachmentIds: files.attachmentIds } : {}),
       ...(files.fileRefs?.length ? { fileRefs: files.fileRefs } : {}),
       ...(files.wikiIds?.length ? { wikiIds: files.wikiIds } : {}),
+      ...(files.skills?.length ? { skills: files.skills } : {}),
     }),
   act: (id: string, action: "pause" | "resume" | "cancel") =>
     call<{ discussion: Discussion }>(`/api/discussions/${id}/${action}`, "POST", {}).then(

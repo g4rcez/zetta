@@ -1,13 +1,23 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { ShieldWarningIcon } from "@phosphor-icons/react";
 
+import { BotIdentity } from "@/components/bot-identity";
 import { Button } from "@/components/ui";
+import { FAILURE_TEXT } from "../skills/skills-api";
+import {
+  SkillsInstallCard,
+  type SkillsChoice,
+  type SkillsOffer,
+} from "../skills/skills-install-card";
+import { draftFromProposal } from "../wiki/draft";
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@zetta/ui/components/item";
 
 import {
   chatClient,
   errorMessage,
   type Bot,
+  type DecisionResult,
   type Proposal,
   type ProposalKind,
 } from "./chat-client";
@@ -24,6 +34,7 @@ const KIND_LABEL: Record<ProposalKind, string> = {
   team_goals: "Give the team goals",
   bot_permission: "Change what a bot may do",
   create_wiki_page: "Save to the wiki",
+  install_skills: "Install skills",
 };
 const FIELD_LABEL: Record<string, string> = {
   outputStyle: "Output style",
@@ -68,6 +79,43 @@ export function summarize(p: Proposal): string {
   )?.to;
   return `${KIND_LABEL[p.kind ?? "config"]}${name ? `: ${showValue(name, 80)}` : ""}`;
 }
+/** What the person is told once the skills they chose were installed. */
+function skillsResult(r: NonNullable<DecisionResult["skills"]>): string {
+  const n = r.installed.length;
+  const m = r.attached.length;
+  return [
+    n ? `Installed ${n} ${n === 1 ? "skill" : "skills"} (${r.installed.join(", ")}).` : "",
+    m
+      ? `Gave ${m} ${m === 1 ? "skill" : "skills"} you already had to more bots (${r.attached.join(", ")}).`
+      : "",
+    !n && !m ? "Nothing was installed." : "",
+    (n || m) && r.bots
+      ? `${r.bots} ${r.bots === 1 ? "bot loads" : "bots load"} them at the next run.`
+      : "",
+    n && !r.bots ? "They are in your library: attach them to a bot from Skills." : "",
+    r.skippedBots
+      ? `${r.skippedBots} ${r.skippedBots === 1 ? "bot is" : "bots are"} full and did not get them.`
+      : "",
+    r.attachError ? `The bots could not take them (${r.attachError}).` : "",
+    r.failed.length
+      ? `Not installed: ${r.failed.map((f) => `${f.path.split("/").slice(-2, -1)[0] ?? f.path} ${FAILURE_TEXT[f.code] ?? f.code}`).join("; ")}.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+/** A bot named in a card: its avatar and name, never the name alone. A name no known bot has stays text. */
+function BotNames({ names, bots }: { names: string[]; bots: Bot[] }) {
+  const found = names.map((n) => bots.find((b) => b.name === n));
+  if (found.some((b) => !b)) return <span>{names.join(", ")}</span>;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 align-middle">
+      {found.map((b) => (
+        <BotIdentity key={b!.id} bot={b!} size={16} className="w-auto flex-none" />
+      ))}
+    </span>
+  );
+}
 const STALE =
   "This proposal is out of date because the bot changed after it was made. Nothing was applied; ask the bot for a new proposal.";
 
@@ -86,14 +134,18 @@ export function ProposalsPanel({
 }) {
   const [busy, setBusy] = useState<string>();
   const [errors, setErrors] = useState<Record<string, string>>({});
-  async function decide(p: Proposal, approve: boolean) {
+  async function decide(p: Proposal, approve: boolean, choice?: SkillsChoice) {
     setBusy(p.id);
     setErrors((m) => Object.fromEntries(Object.entries(m).filter(([id]) => id !== p.id)));
     try {
-      const r = await chatClient.decide(p.id, approve);
+      const r = await chatClient.decide(p.id, approve, choice);
       onResolved(p.id);
       if (r.status === "stale") notify(STALE);
-      else if (r.status === "rejected") notify("Rejected. Nothing was changed.");
+      else if (r.status === "rejected")
+        notify(
+          p.kind === "install_skills" ? "Nothing was installed." : "Rejected. Nothing was changed.",
+        );
+      else if (r.skills) notify(skillsResult(r.skills));
       else {
         notify(
           p.kind === "start_loop" || p.kind === "team_goals"
@@ -114,7 +166,25 @@ export function ProposalsPanel({
   return (
     <>
       {proposals.map((p) => {
+        const askerId = p.proposedByBotId ?? p.botId;
+        const asker =
+          bots.find((b) => b.id === askerId) ??
+          (askerId ? { id: askerId, name: "A bot" } : undefined);
+        const target = bots.find((b) => b.id === p.botId);
+        if (p.kind === "install_skills" && p.patch)
+          return (
+            <div key={p.id} className="space-y-2">
+              {asker && <BotIdentity bot={asker} size={24} sub="asks to install skills" />}
+              <SkillsInstallCard
+                offer={p.patch as unknown as SkillsOffer}
+                busy={busy === p.id}
+                error={errors[p.id]}
+                onDecide={(approve, choice) => void decide(p, approve, choice)}
+              />
+            </div>
+          );
         const creating = p.kind && p.kind !== "config";
+        const draft = p.kind === "create_wiki_page" ? draftFromProposal(p.patch) : undefined;
         return (
           <Item
             key={p.id}
@@ -128,10 +198,20 @@ export function ProposalsPanel({
               <ShieldWarningIcon className="text-warn" />
             </ItemMedia>
             <ItemContent className="min-w-0">
-              <ItemTitle className="text-sm">
-                {creating
-                  ? `A bot suggests: ${summarize(p)}`
-                  : `A bot proposed a change to ${bots.find((b) => b.id === p.botId)?.name ?? "a bot"}`}
+              <ItemTitle className="flex-wrap gap-x-2 text-sm">
+                {asker && <BotIdentity bot={asker} size={24} className="w-auto flex-none" />}
+                {creating ? (
+                  <span>suggests: {summarize(p)}</span>
+                ) : (
+                  <>
+                    <span>proposed a change to</span>
+                    {target ? (
+                      <BotIdentity bot={target} size={20} className="w-auto flex-none" />
+                    ) : (
+                      <span>a bot</span>
+                    )}
+                  </>
+                )}
               </ItemTitle>
               <ul className="space-y-0.5 text-xs text-muted-foreground">
                 {p.diff.map((d) => (
@@ -140,7 +220,11 @@ export function ProposalsPanel({
                       {FIELD_LABEL[d.field] ?? d.field}
                     </span>
                     :{" "}
-                    {creating ? (
+                    {creating &&
+                    (d.field === "bot" || d.field === "members") &&
+                    typeof d.to === "string" ? (
+                      <BotNames names={d.to.split(", ")} bots={bots} />
+                    ) : creating ? (
                       <span>{showValue(d.to)}</span>
                     ) : (
                       <>
@@ -151,6 +235,15 @@ export function ProposalsPanel({
                   </li>
                 ))}
               </ul>
+              {draft && (
+                <Link
+                  to="/wiki-draft"
+                  search={{ d: draft }}
+                  className="text-xs underline underline-offset-2"
+                >
+                  Preview the change (nothing is saved)
+                </Link>
+              )}
               {errors[p.id] && (
                 <p role="alert" className="text-xs text-destructive">
                   {errors[p.id]}

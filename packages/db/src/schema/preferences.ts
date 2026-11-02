@@ -1,4 +1,5 @@
-import { integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { integer, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 
@@ -15,7 +16,7 @@ export const SIDEBAR_LIMITS = {
 } as const;
 
 /** How one person arranges the workspace. One row per user; no row means every default. */
-export const userPreference = pgTable("user_preference", {
+export const userPreference = zetta.table("user_preference", {
   ownerUserId: text("owner_user_id")
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade", onUpdate: "restrict" }),

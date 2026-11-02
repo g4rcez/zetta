@@ -15,6 +15,7 @@ import { createAgendaRoutes, type AgendaServices } from "./modules/agenda/routes
 import { createKnowledgeRoutes, type KnowledgeServices } from "./modules/knowledge/routes";
 import { createWikiRoutes, type WikiServices } from "./modules/wiki/routes";
 import { createOutputStyleRoutes, type OutputStyleServices } from "./modules/output-styles/routes";
+import { createSkillRoutes, type SkillServices } from "./modules/skills/routes";
 import { createSearchRoutes, type SearchServices } from "./modules/search/routes";
 import { createPreferenceRoutes, type PreferenceServices } from "./modules/preferences/routes";
 import { createTaskRoutes, type TaskServices } from "./modules/tasks/routes";
@@ -48,6 +49,7 @@ export type CreateAppOptions = {
   knowledge?: KnowledgeServices;
   wiki?: WikiServices;
   outputStyles?: OutputStyleServices;
+  skills?: SkillServices;
   artifacts?: ArtifactServices;
   discussions?: DiscussionServices;
   teams?: TeamServices;
@@ -78,6 +80,7 @@ export function createApp({
   knowledge,
   wiki,
   outputStyles,
+  skills,
   artifacts,
   discussions,
   teams,
@@ -175,6 +178,7 @@ export function createApp({
         ? createOutputStyleRoutes(outputStyles, [webOrigin, ...desktopOrigins])
         : new Elysia(),
     )
+    .use(skills ? createSkillRoutes(skills, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(artifacts ? createArtifactRoutes(artifacts, [webOrigin, ...desktopOrigins]) : new Elysia())
     .use(
       discussions

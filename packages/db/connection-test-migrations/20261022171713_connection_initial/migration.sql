@@ -1,4 +1,4 @@
-CREATE TABLE "connection" (
+CREATE TABLE "zetta"."connection" (
 	"id" uuid PRIMARY KEY,
 	"owner_user_id" text NOT NULL,
 	"kind" text NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE "connection" (
 	CONSTRAINT "connection_version_check" CHECK ("current_credential_version" between 1 and 2147483647)
 );
 --> statement-breakpoint
-CREATE TABLE "connection_credential" (
+CREATE TABLE "zetta"."connection_credential" (
 	"connection_id" uuid,
 	"credential_version" integer,
 	"owner_user_id" text NOT NULL,
@@ -43,7 +43,7 @@ CREATE TABLE "connection_credential" (
 	CONSTRAINT "connection_credential_ciphertext_check" CHECK (octet_length("ciphertext") between 1 and 16384)
 );
 --> statement-breakpoint
-CREATE TABLE "connection_key_check" (
+CREATE TABLE "zetta"."connection_key_check" (
 	"id" integer PRIMARY KEY,
 	"envelope_version" integer NOT NULL,
 	"algorithm" text NOT NULL,
@@ -64,7 +64,7 @@ CREATE TABLE "connection_key_check" (
 	CONSTRAINT "connection_key_check_ciphertext_check" CHECK (octet_length("ciphertext") between 1 and 16384)
 );
 --> statement-breakpoint
-CREATE TABLE "connection_mutation_receipt" (
+CREATE TABLE "zetta"."connection_mutation_receipt" (
 	"owner_user_id" text,
 	"operation_id" uuid,
 	"operation" text NOT NULL,
@@ -96,7 +96,7 @@ CREATE TABLE "connection_mutation_receipt" (
   )
 );
 --> statement-breakpoint
-CREATE TABLE "connection_nonce" (
+CREATE TABLE "zetta"."connection_nonce" (
 	"key_id" text,
 	"nonce" bytea,
 	"purpose" text NOT NULL,
@@ -114,9 +114,9 @@ CREATE TABLE "connection_nonce" (
   )
 );
 --> statement-breakpoint
-CREATE INDEX "connection_owner_id_idx" ON "connection" ("owner_user_id","id");--> statement-breakpoint
-ALTER TABLE "connection" ADD CONSTRAINT "connection_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "connection_credential" ADD CONSTRAINT "connection_credential_owner_fk" FOREIGN KEY ("connection_id","owner_user_id","kind") REFERENCES "connection"("id","owner_user_id","kind") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "connection_credential" ADD CONSTRAINT "connection_credential_nonce_fk" FOREIGN KEY ("key_id","nonce","connection_id","credential_version") REFERENCES "connection_nonce"("key_id","nonce","connection_id","credential_version") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "connection_key_check" ADD CONSTRAINT "connection_key_check_nonce_fk" FOREIGN KEY ("key_id","nonce","nonce_purpose") REFERENCES "connection_nonce"("key_id","nonce","purpose") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "connection_mutation_receipt" ADD CONSTRAINT "connection_receipt_owner_fk" FOREIGN KEY ("connection_id","owner_user_id","kind") REFERENCES "connection"("id","owner_user_id","kind") ON DELETE RESTRICT ON UPDATE RESTRICT;
+CREATE INDEX "connection_owner_id_idx" ON "zetta"."connection" ("owner_user_id","id");--> statement-breakpoint
+ALTER TABLE "zetta"."connection" ADD CONSTRAINT "connection_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "zetta"."user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."connection_credential" ADD CONSTRAINT "connection_credential_owner_fk" FOREIGN KEY ("connection_id","owner_user_id","kind") REFERENCES "zetta"."connection"("id","owner_user_id","kind") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."connection_credential" ADD CONSTRAINT "connection_credential_nonce_fk" FOREIGN KEY ("key_id","nonce","connection_id","credential_version") REFERENCES "zetta"."connection_nonce"("key_id","nonce","connection_id","credential_version") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."connection_key_check" ADD CONSTRAINT "connection_key_check_nonce_fk" FOREIGN KEY ("key_id","nonce","nonce_purpose") REFERENCES "zetta"."connection_nonce"("key_id","nonce","purpose") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."connection_mutation_receipt" ADD CONSTRAINT "connection_receipt_owner_fk" FOREIGN KEY ("connection_id","owner_user_id","kind") REFERENCES "zetta"."connection"("id","owner_user_id","kind") ON DELETE RESTRICT ON UPDATE RESTRICT;

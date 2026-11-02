@@ -90,15 +90,31 @@ export type ProposalKind =
   | "start_loop"
   | "team_goals"
   | "bot_permission"
-  | "create_wiki_page";
+  | "create_wiki_page"
+  | "install_skills";
 export type Proposal = {
   id: string;
+  /** The bot the change is about. */
   botId: string | null;
+  /** The bot that asked; the card shows it. Absent on old rows: then the card is the target bot's. */
+  proposedByBotId?: string | null;
   kind?: ProposalKind;
   diff: { field: string; from: unknown; to: unknown }[];
   patch?: Record<string, unknown>;
 };
-export type DecisionResult = { status: "approved" | "rejected" | "stale" };
+export type DecisionResult = {
+  status: "approved" | "rejected" | "stale";
+  /** Only for a proposal to install skills: what was installed and where. */
+  skills?: {
+    installed: string[];
+    /** Skills that were already installed and were given to more bots. */
+    attached: string[];
+    failed: { path: string; code: string }[];
+    attachError: string | null;
+    bots: number;
+    skippedBots: number;
+  };
+};
 export type Hook = {
   id: string;
   kind: "add_context" | "redact" | "stop" | "background";
@@ -361,6 +377,11 @@ export type InterviewResult =
 
 export const chatClient = {
   bots: () => call<{ bots: Bot[] }>("/api/bots").then((r) => r.bots),
+  /** What the person can pick for this bot with `/`: names and descriptions, no instructions. */
+  botSkills: (id: string) =>
+    call<{ skills: { name: string; description: string }[] }>(`/api/bots/${id}/skills`).then(
+      (r) => r.skills,
+    ),
   botStatuses: () =>
     call<{ statuses: BotStatusEntry[] }>("/api/bots/status").then((r) => r.statuses),
   createBot: (input: {
@@ -411,6 +432,7 @@ export const chatClient = {
       attachmentIds?: string[];
       fileRefs?: string[];
       wikiIds?: string[];
+      skills?: string[];
     },
   ) =>
     call<{ message: Message }>(`/api/conversations/${id}/queue`, "POST", body).then(
@@ -426,9 +448,16 @@ export const chatClient = {
       name,
       ...(parentId ? { parentId } : {}),
     }).then((r) => r.workspace),
-  proposals: () => call<{ proposals: Proposal[] }>("/api/proposals").then((r) => r.proposals),
-  decide: (id: string, approve: boolean) =>
-    call<DecisionResult>(`/api/proposals/${id}/decision`, "POST", { approve }),
+  /** With `botId`, only what that bot asked: a chat shows the proposals of its own bot. */
+  proposals: (botId?: string) =>
+    call<{ proposals: Proposal[] }>(
+      botId ? `/api/proposals?botId=${encodeURIComponent(botId)}` : "/api/proposals",
+    ).then((r) => r.proposals),
+  decide: (id: string, approve: boolean, selection?: { paths: string[]; target: "bot" | "all" }) =>
+    call<DecisionResult>(`/api/proposals/${id}/decision`, "POST", {
+      approve,
+      ...(selection ? { selection } : {}),
+    }),
   moveBot: (id: string, workspaceId: string | null) =>
     call<{ bot: Bot }>(`/api/bots/${id}/workspace`, "POST", { workspaceId }).then((r) => r.bot),
   hooks: (id: string) => call<{ hooks: Hook[] }>(`/api/bots/${id}/hooks`).then((r) => r.hooks),

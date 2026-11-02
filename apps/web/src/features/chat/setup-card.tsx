@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 
 import { Button } from "@/components/ui";
 import { ComposioConnect } from "../plugins/composio-connect";
+import { GithubAuth, type GithubMethod } from "../plugins/github-auth";
 import { GoogleConnect } from "../plugins/google-connect";
 import { PluginIcon } from "../plugins/plugin-icon";
 import { FieldInput, StatusBadge } from "../plugins/plugin-parts";
@@ -74,13 +75,20 @@ function Fields({
   const api = useMemo(() => pluginsApiFor(data.scope), [data.scope]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [method, setMethod] = useState<GithubMethod>("cli");
+  // GitHub installs without a token when the server has a CLI login; the token field shows only for the token method.
+  const github = meta.id === "github" && mode === "install";
   // An OAuth plugin cannot connect without its client keys, so the card asks for them even though the schema allows blanks.
   const fields = useMemo(
     () =>
-      meta.fields.map((f) =>
-        meta.auth === "oauth" && f.kind !== "select" ? { ...f, optional: false } : f,
-      ),
-    [meta],
+      github && method === "cli"
+        ? []
+        : meta.fields.map((f) =>
+            (meta.auth === "oauth" && f.kind !== "select") || github
+              ? { ...f, optional: false }
+              : f,
+          ),
+    [meta, github, method],
   );
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -101,6 +109,7 @@ function Fields({
   }
   return (
     <form onSubmit={(e) => void submit(e)} className="space-y-3" aria-label={`${meta.name} keys`}>
+      {github && <GithubAuth method={method} onChange={setMethod} />}
       {fields.map((f) => (
         <FieldInput key={f.key} field={f} editing={mode === "edit"} />
       ))}
@@ -239,7 +248,7 @@ export function SetupCard({ data }: { data: SetupCardData }) {
           </p>
         ) : (
           <>
-            {meta.guide.length > 0 ? (
+            {meta.id === "github" ? null : meta.guide.length > 0 ? (
               <ol className="list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
                 {meta.guide.map((g, i) => (
                   <Step key={i} text={g} />

@@ -4,12 +4,12 @@ import {
   index,
   integer,
   jsonb,
-  pgTable,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
@@ -25,7 +25,7 @@ const created = () => timestamp("created_at", { withTimezone: true }).defaultNow
  * The user's Agenda: tasks, reminders, events and notes added by the user, by their bots or pulled from Google Calendar.
  * `syncState` drives the two-way Google sync: local edits are `pending_push` until the pusher writes them, and win over pulls meanwhile.
  */
-export const agendaItem = pgTable(
+export const agendaItem = zetta.table(
   "agenda_item",
   {
     id: uuid("id")
@@ -87,7 +87,7 @@ export const agendaItem = pgTable(
 );
 
 /** Per-user Google Calendar sync settings and cursors. One cursor per connected Google account (`syncTokens`, keyed by email). */
-export const agendaSync = pgTable(
+export const agendaSync = zetta.table(
   "agenda_sync",
   {
     id: uuid("id")

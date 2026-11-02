@@ -324,21 +324,22 @@ suite("chat experience against compose postgres", () => {
     ).toContain("team.md");
   });
 
-  test("@mentions delegate to visible bots (bounded) and failures raise attention", async () => {
+  test("@mentions of visible bots never add an answer from them in the chat", async () => {
     const chief = await newBot(A, "Lead", false);
     const spec = await newBot(A, "Analyst");
     const c = await conv(A, chief.id);
     const r = await call(A, "POST", `/api/conversations/${c}/messages`, {
       content: "@Analyst @Nobody please look",
     });
-    expect(r.json.replies).toHaveLength(2); // chat bot + Analyst only
-    expect(r.json.replies[1].botId).toBe(spec.id);
+    expect(r.json.replies).toHaveLength(1); // the chat's bot only: Analyst answers in a room
+    expect(r.json.replies[0].botId).toBe(chief.id);
+    expect(r.json.replies.some((x: { botId: string }) => x.botId === spec.id)).toBe(false);
     // B cannot be reached through A's private bots; team bots owned by A are visible to B
     const cb = await conv(B, (await newBot(B, "Mine", false)).id);
     const viaTeam = await call(B, "POST", `/api/conversations/${cb}/messages`, {
       content: "@Analyst hi",
     });
-    expect(viaTeam.json.replies).toHaveLength(2);
+    expect(viaTeam.json.replies).toHaveLength(1);
   });
 
   test("attachments can be deleted before sending; file refs deny credential files and record a content hash", async () => {

@@ -43,6 +43,7 @@
     "db:watch": "docker compose up postgres",
     "db:stop": "docker compose stop postgres",
     "db:down": "docker compose down postgres",
+    "db:nuke": "docker compose down postgres --volumes",
     "deploy:infra": "vp run --filter @zetta/infra deploy",
     "destroy": "vp run --filter @zetta/infra destroy",
     "docker:build": "docker compose build",

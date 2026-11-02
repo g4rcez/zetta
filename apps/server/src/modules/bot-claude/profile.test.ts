@@ -15,6 +15,7 @@ import {
   buildProfile,
   configInput,
   DEFAULT_CONFIG,
+  pickedFirst,
   pluginFiles,
   withBuiltinSkills,
   type Asset,
@@ -347,5 +348,28 @@ describe("hermes", () => {
     const out = hermesPrompt("p", { ...base, skills: [big("a"), big("b")] });
     expect(out).toContain("## Skill: a");
     expect(out).not.toContain("## Skill: b");
+  });
+  test("a skill the person picked stays in the prompt when the budget would drop it", () => {
+    const big = (n: string) => ({ name: n, description: "d", body: "x".repeat(30_000) });
+    const profile = { ...base, skills: [big("a"), big("b")] };
+    const out = hermesPrompt("p", pickedFirst(profile, ["b"]));
+    expect(out).toContain("## Skill: b");
+    expect(out).not.toContain("## Skill: a");
+  });
+});
+
+describe("pickedFirst", () => {
+  const skills = ["a", "b", "c"].map((name) => ({ name, description: "d", body: "x" }));
+  test("moves the picked skills to the front and keeps the rest in order", () => {
+    expect(pickedFirst({ ...base, skills }, ["c"]).skills.map((k) => k.name)).toEqual([
+      "c",
+      "a",
+      "b",
+    ]);
+  });
+  test("without picks the profile is returned as it is", () => {
+    const profile = { ...base, skills };
+    expect(pickedFirst(profile, undefined)).toBe(profile);
+    expect(pickedFirst(profile, [])).toBe(profile);
   });
 });

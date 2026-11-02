@@ -1,6 +1,8 @@
 import { useCallback, useState } from "react";
 
 import { Input, Select, Textarea } from "@/components/ui";
+import { ASSIST_LOCALES } from "../studio/laya-locales";
+import { LanguagePicker } from "../studio/language-picker";
 import { errorMessage } from "../chat/chat-client";
 import { pluginsApiFor, type PluginField, type PluginScope, type PluginTest } from "./plugins-api";
 
@@ -69,6 +71,7 @@ export function FieldInput({
   editing?: boolean;
 }) {
   const required = !editing && !f.optional;
+  if (f.kind === "languages") return <LanguagesField field={f} />;
   if (f.kind === "textarea")
     return (
       // Plain on purpose: plugin setup values (lists, keys, JSON), not text for people or bots.
@@ -103,5 +106,18 @@ export function FieldInput({
       type={f.secret || f.kind === "password" ? "password" : f.kind === "url" ? "url" : "text"}
       autoComplete="off"
     />
+  );
+}
+
+/** A list of languages, sent as one comma separated value ("pt-BR,en"); the order is the order they are tried. */
+function LanguagesField({ field: f }: { field: PluginField }) {
+  const [tags, setTags] = useState<string[]>([]);
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium">{f.label}</p>
+      <input type="hidden" name={f.key} value={tags.join(",")} />
+      <LanguagePicker value={tags} onChange={setTags} locales={ASSIST_LOCALES} />
+      {f.help && <p className="text-xs text-muted-foreground">{f.help}</p>}
+    </div>
   );
 }

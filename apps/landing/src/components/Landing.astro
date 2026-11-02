@@ -2,14 +2,9 @@
 import Layout from "../layouts/Layout.astro";
 import Header from "./Header.astro";
 import Hero from "./Hero.astro";
-import Strip from "./Strip.astro";
 import UseCases from "./UseCases.astro";
-import HowItWorks from "./HowItWorks.astro";
-import Control from "./Control.astro";
 import Features from "./Features.astro";
-import Teams from "./Teams.astro";
 import SelfHost from "./SelfHost.astro";
-import Faq from "./Faq.astro";
 import Cta from "./Cta.astro";
 import Footer from "./Footer.astro";
 import { getCopy, type Locale } from "../i18n";
@@ -26,14 +21,9 @@ const { meta } = getCopy(locale);
   <Header locale={locale} />
   <main>
     <Hero locale={locale} />
-    <Strip locale={locale} />
     <UseCases locale={locale} />
-    <HowItWorks locale={locale} />
-    <Control locale={locale} />
     <Features locale={locale} />
-    <Teams locale={locale} />
     <SelfHost locale={locale} />
-    <Faq locale={locale} />
     <Cta locale={locale} />
   </main>
   <Footer locale={locale} />

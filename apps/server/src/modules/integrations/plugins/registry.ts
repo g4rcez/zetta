@@ -22,7 +22,7 @@
  * RATE_LIMITED, ...) get a default `fix` from chat/explain.ts when you leave it out. Anything that is not a PluginError is reported as unexpected.
  * Tool results are strings (objects are JSON-stringified) and are truncated to 8000 characters.
  */
-export type PluginFieldKind = "text" | "password" | "url" | "textarea" | "select";
+export type PluginFieldKind = "text" | "password" | "url" | "textarea" | "select" | "languages";
 /** One entry of the config schema. The install dialog in the web app is generated from these. */
 export type PluginField = {
   key: string;
@@ -32,6 +32,11 @@ export type PluginField = {
   kind?: PluginFieldKind;
   placeholder?: string;
   help?: string;
+  /**
+   * A bot may read this setting and propose a new value (the user applies it in a card, see zetta:inbound). Never for secrets, and never for
+   * a setting that opens a risk by itself (an address Zetta calls, a switch that lets bots send). Default: only the user changes it.
+   */
+  botEditable?: boolean;
   /** The allowed values of a "select" field. A blank value keeps the stored one, so the first option is not a default. */
   options?: { value: string; label: string }[];
 };
@@ -125,7 +130,26 @@ export type PluginInbound = {
     ctx: PluginContext,
     cursor: unknown,
     o: { filter: InboundFilter; maxEvents: number },
-  ): Promise<{ events: InboundEvent[]; cursor: unknown; warning?: string }>;
+  ): Promise<{
+    events: InboundEvent[];
+    cursor: unknown;
+    warning?: string;
+    /** Push is set up for this user, so the next poll is only a safety net: wait at least this long (never shorter than the route's interval). */
+    nextPollSeconds?: number;
+  }>;
+  /**
+   * Push setup, per user and kept in the user's own plugin config (never an environment variable). Called with a context that can save
+   * settings, when the user turns incoming messages on and after they change the plugin's settings. Best effort: a failure only means
+   * polling stays at its normal speed, and `poll` finishes the setup later when it can.
+   */
+  enable?(ctx: PluginContext): Promise<void>;
+  /**
+   * Push: the platform calls this with the raw body of a request from the channel's server (public route, no session), and the config of
+   * the user named in the address. "invalid" = the signature does not prove the request came from the channel for this user (answered 401).
+   * "ignore" = genuine but not news (for example our own message; answered 200 so the channel does not retry). "wake" = genuine news. The
+   * body is never used as message data: "wake" only makes the platform poll that user's route now.
+   */
+  verifyPush?(ctx: PluginContext, headers: Headers, raw: string): "wake" | "ignore" | "invalid";
   reply: { tool: string; chatArg: string; normalize(chat: string): string };
 };
 export type PluginMcpTarget =

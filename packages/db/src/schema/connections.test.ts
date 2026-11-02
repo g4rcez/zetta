@@ -3,9 +3,21 @@ import { getTableName } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { getTableConfig, PgDialect, type PgTable } from "drizzle-orm/pg-core";
 
-import { connection, connectionCredential, connectionKeyCheck, connectionMutationReceipt, connectionNonce } from "./connections";
+import {
+  connection,
+  connectionCredential,
+  connectionKeyCheck,
+  connectionMutationReceipt,
+  connectionNonce,
+} from "./connections";
 
-const tables = [connection, connectionCredential, connectionKeyCheck, connectionMutationReceipt, connectionNonce];
+const tables = [
+  connection,
+  connectionCredential,
+  connectionKeyCheck,
+  connectionMutationReceipt,
+  connectionNonce,
+];
 const dialect = new PgDialect();
 const db = drizzle.mock();
 
@@ -23,11 +35,13 @@ function references(table: PgTable) {
 }
 
 function constraints(table: PgTable) {
-  return Object.fromEntries(getTableConfig(table).checks.map(({ name, value }) => {
-    const query = dialect.sqlToQuery(value);
-    expect(query.params).toEqual([]);
-    return [name, query.sql.replace(/\s+/g, " ").trim()];
-  }));
+  return Object.fromEntries(
+    getTableConfig(table).checks.map(({ name, value }) => {
+      const query = dialect.sqlToQuery(value);
+      expect(query.params).toEqual([]);
+      return [name, query.sql.replace(/\s+/g, " ").trim()];
+    }),
+  );
 }
 
 describe("connection schema offline contract (not PostgreSQL execution)", () => {
@@ -44,44 +58,108 @@ describe("connection schema offline contract (not PostgreSQL execution)", () => 
       console.log('offline import PASS');
     `;
     // When the real module is imported in an isolated child.
-    const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { env: {}, stdout: "pipe", stderr: "pipe" });
-    const result = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], {
+      env: {},
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const result = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
     // Then importing it requires no environment, connection or server.
     expect(result).toEqual([0, "offline import PASS\n", ""]);
   });
 
   test("builds credential inserts with exact binary parameters instead of SQL literals", () => {
     // Given a synthetic envelope with binary values that cannot be text-normalized.
-    const nonce = Buffer.alloc(12, 255), tag = Buffer.alloc(16, 128), ciphertext = Buffer.from([0, 255, 39, 92]);
+    const nonce = Buffer.alloc(12, 255),
+      tag = Buffer.alloc(16, 128),
+      ciphertext = Buffer.from([0, 255, 39, 92]);
     // When Drizzle builds the actual parameterized insertion.
-    const query = db.insert(connectionCredential).values({ connectionId: "00000000-0000-4000-8000-000000000001", credentialVersion: 1,
-      ownerUserId: "owner", kind: "api-key", envelopeVersion: 1, algorithm: "aes-256-gcm", keyId: "test", nonce, tag, ciphertext, createdAt: new Date(0) }).toSQL();
+    const query = db
+      .insert(connectionCredential)
+      .values({
+        connectionId: "00000000-0000-4000-8000-000000000001",
+        credentialVersion: 1,
+        ownerUserId: "owner",
+        kind: "api-key",
+        envelopeVersion: 1,
+        algorithm: "aes-256-gcm",
+        keyId: "test",
+        nonce,
+        tag,
+        ciphertext,
+        createdAt: new Date(0),
+      })
+      .toSQL();
     // Then binary values are preserved in separate parameters.
     expect(query.params.filter(Buffer.isBuffer)).toEqual([nonce, tag, ciphertext]);
     expect(query.sql).not.toContain(ciphertext.toString("hex"));
-    expect([connectionCredential.nonce, connectionCredential.tag, connectionCredential.ciphertext].map((column) => column.getSQLType())).toEqual(["bytea", "bytea", "bytea"]);
+    expect(
+      [connectionCredential.nonce, connectionCredential.tag, connectionCredential.ciphertext].map(
+        (column) => column.getSQLType(),
+      ),
+    ).toEqual(["bytea", "bytea", "bytea"]);
   });
 
   test("binds credential and receipt ownership to the connection identity", () => {
     // Given both owner-scoped child tables.
     // When their FK graph is compiled.
-    const ownership = [connectionCredential, connectionMutationReceipt].map((table) => references(table).filter((fk) => fk.target === "connection"));
+    const ownership = [connectionCredential, connectionMutationReceipt].map((table) =>
+      references(table).filter((fk) => fk.target === "connection"),
+    );
     // Then every owner/kind mismatch must cross a restrictive composite FK.
-    expect(ownership).toEqual([0, 1].map(() => [{ columns: ["connection_id", "owner_user_id", "kind"], target: "connection", targetColumns: ["id", "owner_user_id", "kind"], onDelete: "restrict", onUpdate: "restrict" }]));
-    expect(references(connection)).toEqual([{ columns: ["owner_user_id"], target: "user", targetColumns: ["id"], onDelete: "restrict", onUpdate: "restrict" }]);
+    expect(ownership).toEqual(
+      [0, 1].map(() => [
+        {
+          columns: ["connection_id", "owner_user_id", "kind"],
+          target: "connection",
+          targetColumns: ["id", "owner_user_id", "kind"],
+          onDelete: "restrict",
+          onUpdate: "restrict",
+        },
+      ]),
+    );
+    expect(references(connection)).toEqual([
+      {
+        columns: ["owner_user_id"],
+        target: "user",
+        targetColumns: ["id"],
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      },
+    ]);
   });
 
   test("keeps lifetime nonce identities independent of ciphertext deletion", () => {
     // Given the nonce ledger and both envelope consumers.
     // When inspecting the FK and primary-key graph.
     const ledger = getTableConfig(connectionNonce);
-    const consumers = [connectionCredential, connectionKeyCheck].flatMap(references).filter((fk) => fk.target === "connection_nonce");
+    const consumers = [connectionCredential, connectionKeyCheck]
+      .flatMap(references)
+      .filter((fk) => fk.target === "connection_nonce");
     // Then ledger rows have no parent cascade, and envelope deletion cannot remove them.
     expect(ledger.foreignKeys).toEqual([]);
-    expect(ledger.primaryKeys.map((key) => key.columns.map((column) => column.name))).toEqual([["key_id", "nonce"]]);
+    expect(ledger.primaryKeys.map((key) => key.columns.map((column) => column.name))).toEqual([
+      ["key_id", "nonce"],
+    ]);
     expect(consumers).toEqual([
-      { columns: ["key_id", "nonce", "connection_id", "credential_version"], target: "connection_nonce", targetColumns: ["key_id", "nonce", "connection_id", "credential_version"], onDelete: "restrict", onUpdate: "restrict" },
-      { columns: ["key_id", "nonce", "nonce_purpose"], target: "connection_nonce", targetColumns: ["key_id", "nonce", "purpose"], onDelete: "restrict", onUpdate: "restrict" },
+      {
+        columns: ["key_id", "nonce", "connection_id", "credential_version"],
+        target: "connection_nonce",
+        targetColumns: ["key_id", "nonce", "connection_id", "credential_version"],
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      },
+      {
+        columns: ["key_id", "nonce", "nonce_purpose"],
+        target: "connection_nonce",
+        targetColumns: ["key_id", "nonce", "purpose"],
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      },
     ]);
   });
 
@@ -92,13 +170,23 @@ describe("connection schema offline contract (not PostgreSQL execution)", () => 
     // Then both bound their exact version, algorithm and binary sizes.
     for (const [position, prefix] of ["connection_credential", "connection_key_check"].entries()) {
       const checks = compiled[position];
-      expect(checks?.[`${prefix}_envelope_check`]).toBe(`"${prefix}"."envelope_version" = 1 and "${prefix}"."algorithm" = 'aes-256-gcm'`);
-      expect(checks?.[`${prefix}_nonce_check`]).toBe(`octet_length("${prefix}"."nonce") = 12`);
-      expect(checks?.[`${prefix}_tag_check`]).toBe(`octet_length("${prefix}"."tag") = 16`);
-      expect(checks?.[`${prefix}_ciphertext_check`]).toBe(`octet_length("${prefix}"."ciphertext") between 1 and 16384`);
+      expect(checks?.[`${prefix}_envelope_check`]).toBe(
+        `"zetta"."${prefix}"."envelope_version" = 1 and "zetta"."${prefix}"."algorithm" = 'aes-256-gcm'`,
+      );
+      expect(checks?.[`${prefix}_nonce_check`]).toBe(
+        `octet_length("zetta"."${prefix}"."nonce") = 12`,
+      );
+      expect(checks?.[`${prefix}_tag_check`]).toBe(`octet_length("zetta"."${prefix}"."tag") = 16`);
+      expect(checks?.[`${prefix}_ciphertext_check`]).toBe(
+        `octet_length("zetta"."${prefix}"."ciphertext") between 1 and 16384`,
+      );
     }
-    expect(compiled[1]?.["connection_key_check_singleton_check"]).toBe('"connection_key_check"."id" = 1');
-    expect(compiled[1]?.["connection_key_check_count_check"]).toBe('"connection_key_check"."encryption_count" between 1 and 1000000');
+    expect(compiled[1]?.["connection_key_check_singleton_check"]).toBe(
+      '"zetta"."connection_key_check"."id" = 1',
+    );
+    expect(compiled[1]?.["connection_key_check_count_check"]).toBe(
+      '"zetta"."connection_key_check"."encryption_count" between 1 and 1000000',
+    );
   });
 
   test("retains the original bounded metadata result separately from current state", () => {
@@ -106,24 +194,60 @@ describe("connection schema offline contract (not PostgreSQL execution)", () => 
     // When inspecting its persisted fields and owner-scoped identity.
     const receipt = getTableConfig(connectionMutationReceipt);
     // Then the safe DTO survives later mutations, with only a fixed-size MAC for request comparison.
-    expect(receipt.primaryKeys.map((key) => key.columns.map((column) => column.name))).toEqual([["owner_user_id", "operation_id"]]);
-    expect(receipt.columns.map((column) => column.name)).toEqual(["owner_user_id", "operation_id", "operation", "connection_id", "expected_revision", "request_mac", "kind", "provider", "label", "state", "revision", "created_at", "updated_at", "expires_at", "revoked_at", "credential_version"]);
-    expect(constraints(connectionMutationReceipt)["connection_receipt_mac_check"]).toBe('octet_length("connection_mutation_receipt"."request_mac") = 32');
-    expect(tables.flatMap((table) => getTableConfig(table).columns).some((column) => ["json", "jsonb"].includes(column.getSQLType()))).toBe(false);
+    expect(receipt.primaryKeys.map((key) => key.columns.map((column) => column.name))).toEqual([
+      ["owner_user_id", "operation_id"],
+    ]);
+    expect(receipt.columns.map((column) => column.name)).toEqual([
+      "owner_user_id",
+      "operation_id",
+      "operation",
+      "connection_id",
+      "expected_revision",
+      "request_mac",
+      "kind",
+      "provider",
+      "label",
+      "state",
+      "revision",
+      "created_at",
+      "updated_at",
+      "expires_at",
+      "revoked_at",
+      "credential_version",
+    ]);
+    expect(constraints(connectionMutationReceipt)["connection_receipt_mac_check"]).toBe(
+      'octet_length("zetta"."connection_mutation_receipt"."request_mac") = 32',
+    );
+    expect(
+      tables
+        .flatMap((table) => getTableConfig(table).columns)
+        .some((column) => ["json", "jsonb"].includes(column.getSQLType())),
+    ).toBe(false);
   });
 
   test("generates only the feature delta and references the pre-existing user table", async () => {
     // Given the retained generator output.
     const glob = new Bun.Glob("*/migration.sql");
-    const files = await Array.fromAsync(glob.scan({ cwd: new URL("../../connection-test-migrations/", import.meta.url).pathname, absolute: true }));
+    const files = await Array.fromAsync(
+      glob.scan({
+        cwd: new URL("../../connection-test-migrations/", import.meta.url).pathname,
+        absolute: true,
+      }),
+    );
     expect(files).toHaveLength(1);
     const path = files[0];
     if (!path) throw new Error("missing migration");
     // When reading the actual generated DDL.
     const migration = await Bun.file(path).text();
     // Then only the five feature tables are created; auth remains an external FK target.
-    expect([...migration.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]).sort()).toEqual(tables.map(getTableName).sort());
-    expect(migration).toMatch(/REFERENCES "user"\("id"\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
-    expect(migration).not.toMatch(/DROP |ALTER TABLE "(?:user|account|session|membership|invitation|installation_identity|identity_audit)"/);
+    expect(
+      [...migration.matchAll(/CREATE TABLE "zetta"\."([^"]+)"/g)].map((match) => match[1]).sort(),
+    ).toEqual(tables.map(getTableName).sort());
+    expect(migration).toMatch(
+      /REFERENCES "zetta"."user"\("id"\) ON DELETE RESTRICT ON UPDATE RESTRICT/,
+    );
+    expect(migration).not.toMatch(
+      /DROP |ALTER TABLE "(?:user|account|session|membership|invitation|installation_identity|identity_audit)"/,
+    );
   });
 });

@@ -13,6 +13,7 @@ type Extras = {
   attachmentIds?: string[];
   fileRefs?: string[];
   wikiIds?: string[];
+  skills?: string[];
 };
 const url = (path: string) => new URL(path, ENV.VITE_SERVER_URL).toString();
 
@@ -71,6 +72,7 @@ export function useZettaChat({
               ...(extras.attachmentIds?.length ? { attachmentIds: extras.attachmentIds } : {}),
               ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
               ...(extras.wikiIds?.length ? { wikiIds: extras.wikiIds } : {}),
+              ...(extras.skills?.length ? { skills: extras.skills } : {}),
             },
           };
         },
@@ -194,6 +196,7 @@ export function useZettaChat({
           ...(extras.attachmentIds?.length ? { attachmentIds: extras.attachmentIds } : {}),
           ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
           ...(extras.wikiIds?.length ? { wikiIds: extras.wikiIds } : {}),
+          ...(extras.skills?.length ? { skills: extras.skills } : {}),
         });
         await handlers.current.onSettled(id);
         return;

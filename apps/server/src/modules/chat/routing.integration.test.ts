@@ -143,7 +143,9 @@ suite("decision routing against compose postgres", () => {
 
     next = { choice: "billing" };
     const d = await say("refund please");
-    expect(d.json.assistant.botId).toBe(billing);
+    // The target never answers in this chat: the front bot says it passed the work on (the target answers in a room).
+    expect(d.json.assistant.botId).toBe(front);
+    expect(d.json.assistant.content).toContain("Billing");
     expect(d.json.assistant.meta.decision.action).toBe("delegate");
     next = { choice: "unclear" };
     expect((await say("help")).json.assistant.content).toBe("Which invoice?");
@@ -247,36 +249,6 @@ suite("decision routing against compose postgres", () => {
     expect(await run({ userId: A, bot: row!, history: [], prompt: "when do you open?" })).toEqual({
       text: "We open at 9.",
       stopped: false,
-    });
-  });
-
-  describe("mentionMode: do the bots mentioned together work side by side or one after another", () => {
-    const text = "@Anouk draft the intro, then @Bram review it";
-    const lead = { id: uuidv7() };
-    const mode = (decider: object | undefined, guardMs?: number) =>
-      createRouting(db, decider as never).mentionMode(lead, text, undefined, guardMs);
-
-    test("parallel only when the model picks parallel", async () => {
-      next = { choice: "parallel", confidence: 0.9 };
-      expect(await mode(decisions)).toBe("parallel");
-    });
-    test("a chain stays a chain", async () => {
-      next = { choice: "chain", confidence: 0.9 };
-      expect(await mode(decisions)).toBe("chain");
-    });
-    test("an unsure model means chain", async () => {
-      next = { choice: null, uncertain: true, confidence: 0.4 };
-      expect(await mode(decisions)).toBe("chain");
-    });
-    test("a model that fails means chain", async () => {
-      next = new Error("model down");
-      expect(await mode(decisions)).toBe("chain");
-    });
-    test("a model that is too slow means chain", async () => {
-      expect(await mode({ choose: () => new Promise(() => {}) }, 20)).toBe("chain");
-    });
-    test("no decision service means chain", async () => {
-      expect(await mode(undefined)).toBe("chain");
     });
   });
 });

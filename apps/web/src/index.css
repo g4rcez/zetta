@@ -4,6 +4,22 @@
 @import "@g4rcez/components/index.css";
 @source "../node_modules/streamdown/dist/*.js";
 
+/* The shell owns every scroll: the page itself never scrolls, only panels inside the shell do. */
+html,
+body,
+#app {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+/* `clip`, not `hidden`: scrollIntoView() and focus() can still scroll a `hidden` box, which pushes the shell up and leaves a gap below it. `position: relative` makes absolute portals clip here instead of growing the page. */
+html,
+body,
+#app {
+  overflow: clip;
+  position: relative;
+}
+
 .link {
   @apply ease-in duration-300 transition-all;
 }

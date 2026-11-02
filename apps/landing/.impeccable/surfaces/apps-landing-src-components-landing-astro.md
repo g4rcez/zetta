@@ -11,7 +11,7 @@ Mode: Persuade. Visitor: a team lead or self-hoster deciding whether to run Zett
 
 ## Direction contract
 
-THESIS: The page is a product site in the CopilotKit composition: sticky header, centered hero over one diagram, a strip of what it works with, a rotating tabbed showcase, bordered feature cards, zigzag steps, a self-host panel, and a centered close. It refuses the old emerald band and run receipt, and refuses invented proof.
+THESIS: The page is a product site in the CopilotKit composition with four sections and a close: sticky header, centered hero over one diagram (what Zetta is), a rotating tabbed showcase of example runs, bordered feature cards (three scenes, six text cards), a self-host panel, and a centered call to star the repository on GitHub (no star count). It refuses the old emerald band and run receipt, and refuses invented proof.
 
 OWN-WORLD: Light airy ground (--background) alternating with --sidebar bands. Bordered --card panels with 16px radius and 1px --border, no shadows, no gradients. Emerald only on actions and the hub's center. Amber only on the one "Needs you" node and row. Geist 600 at tight tracking for centered headings, Geist Mono only for code and times. Illustration is the product's own art, never invented: the bot characters from the app (src/cast.ts, one character per named bot) and the vendor marks from the plugin catalog. They are the only color besides emerald and amber, and every face or mark sits next to its written name.
 

@@ -6,13 +6,13 @@ import {
   foreignKey,
   index,
   integer,
-  pgTable,
   primaryKey,
   text,
   timestamp,
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 
@@ -76,7 +76,7 @@ function envelopeChecks(
 }
 
 // The service owns immutable identity, forward-only transitions and atomic current-version existence.
-export const connection = pgTable(
+export const connection = zetta.table(
   "connection",
   {
     id: uuid("id").primaryKey(),
@@ -99,7 +99,7 @@ export const connection = pgTable(
 );
 
 // No cascading or reverse FK: tombstones survive deletion of ciphertext or connection rows.
-export const connectionNonce = pgTable(
+export const connectionNonce = zetta.table(
   "connection_nonce",
   {
     keyId: text("key_id").notNull(),
@@ -130,7 +130,7 @@ export const connectionNonce = pgTable(
   ],
 );
 
-export const connectionCredential = pgTable(
+export const connectionCredential = zetta.table(
   "connection_credential",
   {
     connectionId: uuid("connection_id").notNull(),
@@ -183,7 +183,7 @@ export const connectionCredential = pgTable(
 
 // One random 256-bit key per user, wrapped by the deployment key. Credentials are sealed under it with key id `u<keyVersion>`,
 // so deleting this row makes that user's credentials unrecoverable and rotating the deployment key only rewraps these rows.
-export const connectionUserKey = pgTable(
+export const connectionUserKey = zetta.table(
   "connection_user_key",
   {
     ownerUserId: text("owner_user_id")
@@ -219,7 +219,7 @@ export const connectionUserKey = pgTable(
   ],
 );
 
-export const connectionKeyCheck = pgTable(
+export const connectionKeyCheck = zetta.table(
   "connection_key_check",
   {
     id: integer("id").primaryKey(),
@@ -249,7 +249,7 @@ export const connectionKeyCheck = pgTable(
 );
 
 // These metadata fields are the original committed result, not a join to today's connection state.
-export const connectionMutationReceipt = pgTable(
+export const connectionMutationReceipt = zetta.table(
   "connection_mutation_receipt",
   {
     ownerUserId: text("owner_user_id").notNull(),

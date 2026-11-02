@@ -1,4 +1,5 @@
-CREATE TABLE "account" (
+CREATE SCHEMA IF NOT EXISTS "zetta";--> statement-breakpoint
+CREATE TABLE "zetta"."account" (
 	"id" text PRIMARY KEY,
 	"account_id" text NOT NULL,
 	"provider_id" text NOT NULL,
@@ -14,7 +15,7 @@ CREATE TABLE "account" (
 	"updated_at" timestamp NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "identity_audit" (
+CREATE TABLE "zetta"."identity_audit" (
 	"id" text PRIMARY KEY,
 	"event_kind" text NOT NULL,
 	"actor_kind" text NOT NULL,
@@ -35,7 +36,7 @@ CREATE TABLE "identity_audit" (
     )
 );
 --> statement-breakpoint
-CREATE TABLE "installation_identity" (
+CREATE TABLE "zetta"."installation_identity" (
 	"id" integer PRIMARY KEY,
 	"admin_user_id" text NOT NULL,
 	"admin_membership_status" text DEFAULT 'active' NOT NULL,
@@ -44,7 +45,7 @@ CREATE TABLE "installation_identity" (
 	CONSTRAINT "installation_identity_admin_active_check" CHECK ("admin_membership_status" = 'active')
 );
 --> statement-breakpoint
-CREATE TABLE "invitation" (
+CREATE TABLE "zetta"."invitation" (
 	"id" text PRIMARY KEY,
 	"token_hash" text NOT NULL CONSTRAINT "invitation_token_hash_unique" UNIQUE,
 	"intended_email" text NOT NULL,
@@ -60,7 +61,7 @@ CREATE TABLE "invitation" (
 	CONSTRAINT "invitation_consumption_check" CHECK (("consumed_at" is null) = ("consumed_by_user_id" is null))
 );
 --> statement-breakpoint
-CREATE TABLE "membership" (
+CREATE TABLE "zetta"."membership" (
 	"user_id" text PRIMARY KEY,
 	"status" text NOT NULL,
 	"joined_at" timestamp with time zone NOT NULL,
@@ -74,7 +75,7 @@ CREATE TABLE "membership" (
     )
 );
 --> statement-breakpoint
-CREATE TABLE "session" (
+CREATE TABLE "zetta"."session" (
 	"id" text PRIMARY KEY,
 	"expires_at" timestamp NOT NULL,
 	"token" text NOT NULL UNIQUE,
@@ -85,7 +86,7 @@ CREATE TABLE "session" (
 	"user_id" text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "user" (
+CREATE TABLE "zetta"."user" (
 	"id" text PRIMARY KEY,
 	"name" text NOT NULL,
 	"email" text NOT NULL UNIQUE,
@@ -95,7 +96,7 @@ CREATE TABLE "user" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "verification" (
+CREATE TABLE "zetta"."verification" (
 	"id" text PRIMARY KEY,
 	"identifier" text NOT NULL,
 	"value" text NOT NULL,
@@ -104,16 +105,16 @@ CREATE TABLE "verification" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX "account_userId_idx" ON "account" ("user_id");--> statement-breakpoint
-CREATE INDEX "session_userId_idx" ON "session" ("user_id");--> statement-breakpoint
-CREATE INDEX "verification_identifier_idx" ON "verification" ("identifier");--> statement-breakpoint
-ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "identity_audit" ADD CONSTRAINT "identity_audit_actor_user_id_user_id_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "identity_audit" ADD CONSTRAINT "identity_audit_subject_user_id_user_id_fkey" FOREIGN KEY ("subject_user_id") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "identity_audit" ADD CONSTRAINT "identity_audit_invitation_id_invitation_id_fkey" FOREIGN KEY ("invitation_id") REFERENCES "invitation"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "installation_identity" ADD CONSTRAINT "installation_identity_active_admin_fk" FOREIGN KEY ("admin_user_id","admin_membership_status") REFERENCES "membership"("user_id","status") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "invitation" ADD CONSTRAINT "invitation_intended_user_id_user_id_fkey" FOREIGN KEY ("intended_user_id") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "invitation" ADD CONSTRAINT "invitation_issued_by_user_id_user_id_fkey" FOREIGN KEY ("issued_by_user_id") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "invitation" ADD CONSTRAINT "invitation_consumed_by_user_id_user_id_fkey" FOREIGN KEY ("consumed_by_user_id") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "membership" ADD CONSTRAINT "membership_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id") ON DELETE CASCADE;
+CREATE INDEX "account_userId_idx" ON "zetta"."account" ("user_id");--> statement-breakpoint
+CREATE INDEX "session_userId_idx" ON "zetta"."session" ("user_id");--> statement-breakpoint
+CREATE INDEX "verification_identifier_idx" ON "zetta"."verification" ("identifier");--> statement-breakpoint
+ALTER TABLE "zetta"."account" ADD CONSTRAINT "account_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "zetta"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "zetta"."identity_audit" ADD CONSTRAINT "identity_audit_actor_user_id_user_id_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "zetta"."user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."identity_audit" ADD CONSTRAINT "identity_audit_subject_user_id_user_id_fkey" FOREIGN KEY ("subject_user_id") REFERENCES "zetta"."user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."identity_audit" ADD CONSTRAINT "identity_audit_invitation_id_invitation_id_fkey" FOREIGN KEY ("invitation_id") REFERENCES "zetta"."invitation"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."installation_identity" ADD CONSTRAINT "installation_identity_active_admin_fk" FOREIGN KEY ("admin_user_id","admin_membership_status") REFERENCES "zetta"."membership"("user_id","status") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."invitation" ADD CONSTRAINT "invitation_intended_user_id_user_id_fkey" FOREIGN KEY ("intended_user_id") REFERENCES "zetta"."user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."invitation" ADD CONSTRAINT "invitation_issued_by_user_id_user_id_fkey" FOREIGN KEY ("issued_by_user_id") REFERENCES "zetta"."user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."invitation" ADD CONSTRAINT "invitation_consumed_by_user_id_user_id_fkey" FOREIGN KEY ("consumed_by_user_id") REFERENCES "zetta"."user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."membership" ADD CONSTRAINT "membership_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "zetta"."user"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."session" ADD CONSTRAINT "session_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "zetta"."user"("id") ON DELETE CASCADE;

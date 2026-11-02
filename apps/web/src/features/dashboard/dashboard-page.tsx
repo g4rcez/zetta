@@ -120,7 +120,9 @@ export function DashboardPage() {
     }
   };
 
-  const approvalsChat = chats.find((c) => c.botId === proposals[0]?.botId)?.id;
+  const approvalsChat = chats.find(
+    (c) => c.botId === (proposals[0]?.proposedByBotId ?? proposals[0]?.botId),
+  )?.id;
   const pill =
     "flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-sm transition-colors hover:bg-muted";
   const unread = attention?.unread ?? 0;

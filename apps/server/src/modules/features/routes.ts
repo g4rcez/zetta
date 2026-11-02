@@ -224,7 +224,9 @@ export function createFeatureRoutes(
     )
     .get(
       "/routines",
-      g(async ({ actor }) => ({ routines: await f.routines.list(actor) })),
+      g(async ({ actor, query }) => ({
+        routines: await f.routines.list(actor, query.state === "active" ? "active" : "all"),
+      })),
     )
     .post(
       "/routines",

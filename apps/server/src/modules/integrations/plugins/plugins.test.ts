@@ -213,6 +213,45 @@ describe("github plugin", () => {
     expect(await plugins.bindings(a, "bot1")).toEqual(["github"]);
     expect((await plugins.test(a, "github")).tools).toEqual([]);
   });
+
+  test("with no token and the gh CLI logged in, the prompt points the bot to gh and a GitHub tool call says so", async () => {
+    const { plugins } = world({ ghLoggedIn: true });
+    const a = actor("u1");
+    await plugins.install(a, "github", {}, ["bot1"]);
+    const prompt = await plugins.promptFor(a, "bot1");
+    expect(prompt).toContain("gh pr list -R owner/repo");
+    expect(prompt).not.toContain("zetta:mcp\n");
+    await expect(plugins.callTool(a, "bot1", "github", "list_issues", {})).rejects.toMatchObject({
+      code: "USE_GH",
+    });
+  });
+
+  test("with no token and no gh login, the prompt tells the bot to ask for a token or gh auth login", async () => {
+    const { plugins } = world({ ghLoggedIn: false });
+    const a = actor("u1");
+    await plugins.install(a, "github", {}, ["bot1"]);
+    const prompt = await plugins.promptFor(a, "bot1");
+    expect(prompt).toContain("gh auth login");
+    expect(prompt).toContain("Do not call GitHub tools.");
+  });
+
+  test("with a token, GitHub stays an MCP server in the prompt", async () => {
+    const { plugins } = world({ ghLoggedIn: true });
+    const a = actor("u1");
+    await plugins.install(a, "github", { token: "github_pat_example" }, ["bot1"]);
+    expect(await plugins.promptFor(a, "bot1")).toContain("zetta:mcp");
+  });
+
+  test("disconnect removes the saved token and keeps the plugin installed", async () => {
+    const { plugins, secrets, servers } = world();
+    const a = actor("u1");
+    await plugins.install(a, "github", { token: "github_pat_example" }, ["bot1"]);
+    expect([...secrets.values()].map((s) => s.revoked)).toEqual([false]);
+    await plugins.disconnect(a, "github");
+    expect([...secrets.values()].map((s) => s.revoked)).toEqual([true]);
+    expect(servers).toHaveLength(1);
+    expect(await plugins.bindings(a, "bot1")).toEqual(["github"]);
+  });
 });
 
 const line: PluginDef = {

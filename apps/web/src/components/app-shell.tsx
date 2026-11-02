@@ -35,7 +35,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     setPaletteOpen(true);
   }, []);
   return (
-    <div className="flex h-svh flex-col bg-sidebar text-sidebar-foreground md:flex-row">
+    <div className="flex h-svh flex-col overflow-clip bg-sidebar text-sidebar-foreground md:flex-row">
       {desktop ? (
         <AppSidebar onSearch={search} />
       ) : (

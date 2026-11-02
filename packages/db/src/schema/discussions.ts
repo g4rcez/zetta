@@ -5,7 +5,6 @@ import {
   index,
   integer,
   jsonb,
-  pgTable,
   primaryKey,
   text,
   timestamp,
@@ -13,6 +12,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
@@ -27,7 +27,7 @@ const owner = () =>
 const created = () => timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
 
 /** Which bots a bot may open a group discussion with without asking (per user: sharing a bot never shares this list). */
-export const botPeer = pgTable(
+export const botPeer = zetta.table(
   "bot_peer",
   {
     id: uuid("id")
@@ -54,7 +54,7 @@ export const botPeer = pgTable(
  * A group of bots working on one task. The transcript lives in its own conversation (kind "discussion"); `context` is the shared task
  * brief every member sees. `tainted` = outside content (customers, pages) is in play: code-capable members then need an approved brief.
  */
-export const discussion = pgTable(
+export const discussion = zetta.table(
   "discussion",
   {
     id: uuid("id")
@@ -129,7 +129,7 @@ export const discussion = pgTable(
 );
 
 /** A bot in a discussion. `requireApproval`: while tainted, this member only runs after the owner approved the current brief. */
-export const discussionMember = pgTable(
+export const discussionMember = zetta.table(
   "discussion_member",
   {
     discussionId: uuid("discussion_id")
@@ -151,7 +151,7 @@ export const discussionMember = pgTable(
 );
 
 /** Durable queue of member turns: claimed one at a time per owner, recovered (never silently retried) after a restart. */
-export const discussionTurn = pgTable(
+export const discussionTurn = zetta.table(
   "discussion_turn",
   {
     id: uuid("id")
@@ -216,7 +216,7 @@ export type TurnStep = {
   detail?: string;
 };
 /** The steps of one member turn, for the room drawer. Always an object (`{ steps: [...] }`), never a bare array; it only holds data and timestamps. */
-export const turnStep = pgTable(
+export const turnStep = zetta.table(
   "turn_step",
   {
     id: uuid("id")

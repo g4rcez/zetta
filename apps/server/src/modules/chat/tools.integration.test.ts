@@ -57,12 +57,6 @@ suite("bot tools against compose postgres", () => {
   const prompts: string[] = [];
   // A test sets it to hold every model call until it resolves (to act while the bot works).
   let gate: Promise<void> | undefined;
-  // What each streamed model call could read of the conversation before it (to see which replies a bot knew about).
-  const histories: string[] = [];
-  // How long each streamed model call takes, and how many were running together at most (to see bots answer side by side).
-  let hold = 0;
-  let active = 0;
-  let maxActive = 0;
   const fakeRun = Object.assign(
     async (t: { prompt: string }) => {
       await gate;
@@ -70,18 +64,10 @@ suite("bot tools against compose postgres", () => {
       return { text: script.shift() ?? "done", stopped: false };
     },
     {
-      stream: async function* (t: { prompt: string; history?: { content: string }[] }) {
+      stream: async function* (t: { prompt: string }) {
         await gate;
         prompts.push(t.prompt);
-        histories.push((t.history ?? []).map((h) => h.content).join("\n"));
-        active++;
-        maxActive = Math.max(maxActive, active);
-        try {
-          if (hold) await Bun.sleep(hold);
-          yield script.shift() ?? "done";
-        } finally {
-          active--;
-        }
+        yield script.shift() ?? "done";
       },
     },
   );
@@ -117,15 +103,13 @@ suite("bot tools against compose postgres", () => {
       close: async () => {},
     }),
   });
-  // The decision model that says whether @mentioned bots work side by side (`parallel`) or one after another (`chain`).
-  let mentionChoice: string | null = "parallel";
   const fakeDecisions = {
     status: () => ({ state: "ready", model: "laya" }),
     warm: async () => {},
     close: async () => {},
     choose: async () => ({
-      choice: mentionChoice,
-      uncertain: mentionChoice === null,
+      choice: null,
+      uncertain: true,
       probabilities: {},
       confidence: 0.9,
       provenance: { model: "laya", at: "", ms: 1 },
@@ -300,6 +284,38 @@ suite("bot tools against compose postgres", () => {
     const rejected = await pending("Card rejected");
     await call(A, "POST", `/api/proposals/${rejected}/decision`, { approve: false });
     expect(await cardStatus(rejected)).toEqual(["cancelled"]);
+  });
+
+  test("a proposal is listed for the bot that asked, never for another bot's chat; its approval link points to that bot's chat", async () => {
+    const asker = await setup(A, "Asker");
+    const other = await setup(A, "Bystander");
+    for (const id of [asker.bot.id, other.bot.id])
+      await db.$client.query(
+        "update bot set harness = 'claude-code', code_access = true where id = $1",
+        [id],
+      );
+    script = [
+      `\`\`\`zetta:create_routine\n{"botId":"${asker.bot.id}","title":"Asked here","prompt":"say hi","timezone":"UTC","dailyAt":"08:00"}\n\`\`\``,
+    ];
+    await asker.say("Summarise the README of the repo");
+    const titles = async (botId: string) =>
+      (
+        (await call(A, "GET", `/api/proposals?botId=${botId}`)).json.proposals as {
+          patch: { title?: string };
+        }[]
+      ).map((p) => p.patch.title);
+    expect(await titles(asker.bot.id)).toEqual(["Asked here"]);
+    expect(await titles(other.bot.id)).toEqual([]);
+    const { rows } = await db.$client.query(
+      "select result_link from attention_item where bot_id = $1 and source_key like 'proposal:%'",
+      [asker.bot.id],
+    );
+    expect(rows).toEqual([{ result_link: `/chat/${asker.c}` }]);
+    // Leave nothing pending for the tests that count the owner's proposals.
+    for (const pending of (await call(A, "GET", "/api/proposals")).json.proposals as {
+      id: string;
+    }[])
+      await call(A, "POST", `/api/proposals/${pending.id}/decision`, { approve: false });
   });
 
   test("a wiki item written to steer the bot is not saved", async () => {
@@ -823,103 +839,16 @@ suite("bot tools against compose postgres", () => {
       )
     ).rows as { parent: string | null; status: string }[];
 
-  test("two @mentions answer at the same time, each in the thread of the message", async () => {
+  test("an @mention never makes the mentioned bot answer in this chat; without rooms the reply says so", async () => {
     const { c, say } = await withMentionable();
-    mentionChoice = "parallel";
-    hold = 150;
-    maxActive = 0;
-    histories.length = 0;
-    script = ["lead reply", "first mention reply", "second mention reply"];
-    const sent = await say("@Anouk @Bram compare the two options");
-    hold = 0;
-    const userId = sent.json.user.id as string;
-    expect(maxActive).toBe(2);
-    // Each reads the lead's reply, none reads another mention's.
-    expect(histories.slice(1).every((h) => h.includes("lead reply"))).toBe(true);
-    expect(histories.some((h) => h.includes("first mention reply"))).toBe(false);
-    expect(histories.some((h) => h.includes("second mention reply"))).toBe(false);
-    const rows = await replies(c);
-    expect(rows).toHaveLength(3);
-    expect(rows.filter((r) => r.parent === null)).toHaveLength(1);
-    expect(rows.filter((r) => r.parent === userId)).toHaveLength(2);
-    const { rows: delegations } = await db.$client.query(
-      "select status from delegation where parent_message_id = $1 order by status",
-      [userId],
-    );
-    expect(delegations).toEqual([{ status: "succeeded" }, { status: "succeeded" }]);
-  });
-
-  test("a chain of @mentions answers one after another in the main line, each bot reading the earlier replies", async () => {
-    const { c, say } = await withMentionable();
-    mentionChoice = "chain";
-    hold = 50;
-    maxActive = 0;
-    histories.length = 0;
-    script = ["lead reply", "ANOUK-DRAFT", "bram review"];
-    await say("@Anouk draft the intro, then @Bram review it");
-    hold = 0;
-    mentionChoice = "parallel";
-    expect(maxActive).toBe(1);
-    expect(await replies(c)).toEqual([
-      { parent: null, status: "complete" },
-      { parent: null, status: "complete" },
-      { parent: null, status: "complete" },
-    ]);
-    // The last bot answers after the others and reads the draft.
-    expect(histories.at(-1)).toContain("ANOUK-DRAFT");
-  });
-
-  test("when the decision model is unsure, mentioned bots still answer one after another", async () => {
-    const { c, say } = await withMentionable();
-    mentionChoice = null;
-    hold = 50;
-    maxActive = 0;
-    script = ["lead reply", "first", "second"];
-    await say("@Anouk @Bram take a look");
-    hold = 0;
-    mentionChoice = "parallel";
-    expect(maxActive).toBe(1);
-    expect(await replies(c)).toHaveLength(3);
-  });
-
-  test("one @mention still answers after the first bot, in the main line", async () => {
-    const { c, say } = await withMentionable();
-    hold = 50;
-    maxActive = 0;
-    script = ["lead reply", "mention reply"];
-    await say("@Anouk what do you think");
-    hold = 0;
-    expect(maxActive).toBe(1);
-    expect(await replies(c)).toEqual([
-      { parent: null, status: "complete" },
-      { parent: null, status: "complete" },
-    ]);
-  });
-
-  test("stopping a turn stops every bot answering side by side", async () => {
-    const { c } = await withMentionable();
-    const actor = (await issueBackgroundActor(async () => ({ isAdmin: false }) as never, A))!;
-    mentionChoice = "parallel";
-    hold = 400;
-    maxActive = 0;
-    script = ["lead reply", "first", "second"];
-    const { rec, follow } = await chatSvc.startTurn(actor, c, { content: "@Anouk @Bram go" });
-    const types: string[] = [];
-    const done = (async () => {
-      for await (const { event } of follow()) types.push(event.type);
-    })();
-    for (let i = 0; i < 200 && maxActive < 1; i++) await Bun.sleep(10);
-    // The lead answers first; stop while the two mentions run together.
-    for (let i = 0; i < 400 && active < 2; i++) await Bun.sleep(10);
-    await chatSvc.cancelTurn(actor, c);
-    await done;
-    await rec.finished;
-    hold = 0;
+    script = ["lead reply", "must not be used"];
+    await say("@Anouk @Bram compare the two options");
+    expect(await replies(c)).toEqual([{ parent: null, status: "complete" }]);
     const { rows } = await db.$client.query(
-      "select status from delegation where conversation_id = $1 order by status",
+      "select content from message where conversation_id = $1 and role = 'system'",
       [c],
     );
-    expect(rows).toEqual([{ status: "cancelled" }, { status: "cancelled" }]);
-    await settled(c);
+    expect(rows[0].content).toContain("Anouk, Bram");
+    expect(rows[0].content).toContain("only in rooms");
   });
 });

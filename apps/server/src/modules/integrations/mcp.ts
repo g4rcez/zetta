@@ -26,6 +26,7 @@ import { configureVault } from "./plugins/vault"; // importing registers 1Passwo
 import {
   createPlugins,
   NATIVE_URL_PREFIX,
+  githubWithoutToken,
   pickBinding,
   type McpCore,
   type Scope,
@@ -37,6 +38,7 @@ export class McpError extends Error {
       | "STDIO_NOT_ALLOWED"
       | "BLOCKED_URL"
       | "NOT_BOUND"
+      | "USE_GH"
       | "TOOL_NOT_ALLOWED"
       | "TIMEOUT"
       | "FAILED"
@@ -352,6 +354,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
         tools: r.s.tools,
         ownerUserId: r.s.ownerUserId,
         sharing: r.s.sharing,
+        hasConnection: Boolean(r.s.connectionId),
       }));
     },
     /**
@@ -544,6 +547,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
         ) => {
           const hit = pickBinding(await this.bound(a, botId), serverName, config);
           if (!hit) throw new McpError("NOT_BOUND");
+          if (githubWithoutToken(hit)) throw new McpError("USE_GH");
           const srv = await visible(a, hit.id);
           const trail = {
             kind: "tool_call",
@@ -589,6 +593,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     ) {
       const hit = pickBinding(await this.bound(a, botId), serverName, config);
       if (!hit) throw new McpError("NOT_BOUND");
+      if (githubWithoutToken(hit)) throw new McpError("USE_GH");
       const s = await visible(a, hit.id);
       const trail = {
         kind: "tool_call",

@@ -287,7 +287,9 @@ export function InstallOnboarding() {
   if (step === null) {
     return (
       <section className="mx-auto mt-16 max-w-md space-y-4 p-8" aria-busy>
-        <Logo size={72} className="mx-auto" />
+        <div className="flex justify-center">
+          <Logo size={72} />
+        </div>
         <p role="status" className="text-center text-muted-foreground">
           Checking your installation…
         </p>

@@ -70,6 +70,9 @@ export const LAYA_LOCALES: readonly string[] = [
   "zh-TW",
 ];
 
+/** What Home Assistant Assist can be asked in: English too, because here it is a choice and not always on. */
+export const ASSIST_LOCALES: readonly string[] = ["en", ...LAYA_LOCALES];
+
 const regions = new Intl.DisplayNames(["en"], { type: "region" });
 const languages = new Intl.DisplayNames(["en"], { type: "language" });
 
@@ -85,10 +88,13 @@ export function localeLabel(tag: string): string {
 }
 
 /** Options for the Autocomplete: the locales that are not added yet. Search matches the code and the label. */
-export const localeOptions = (added: readonly string[]) =>
-  LAYA_LOCALES.filter((tag) => !added.includes(tag)).map((tag) => ({
-    value: tag,
-    label: localeLabel(tag),
-  }));
+export const localeOptions = (added: readonly string[], list: readonly string[] = LAYA_LOCALES) =>
+  list
+    .filter((tag) => !added.includes(tag))
+    .map((tag) => ({
+      value: tag,
+      label: localeLabel(tag),
+    }));
 
-export const isKnownLocale = (tag: string) => isLayaTag(tag) && LAYA_LOCALES.includes(tag);
+export const isKnownLocale = (tag: string, list: readonly string[] = LAYA_LOCALES) =>
+  isLayaTag(tag) && list.includes(tag);

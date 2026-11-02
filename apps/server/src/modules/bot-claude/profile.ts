@@ -79,20 +79,21 @@ export const configInput = z.strictObject({
 export type ConfigInput = z.infer<typeof configInput>;
 
 // Skills and sub-agents are text the owner wrote. Shell injection (!`cmd`) in a skill runs commands while the skill loads, outside the permission rules.
-const noInjection = (s: string) => !/!`|```\s*!/.test(s);
+export const noInjection = (s: string) => !/!`|```\s*!/.test(s);
 const toolName = z
   .string()
   .trim()
   .regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/, "Tools are plain names such as Read or WebFetch.");
+export const skillName = z
+  .string()
+  .trim()
+  .regex(
+    /^[a-z][a-z0-9-]{0,62}$/,
+    "Use lowercase letters, numbers and dashes, starting with a letter.",
+  );
 export const assetInput = z.strictObject({
   kind: z.enum(["skill", "agent"]),
-  name: z
-    .string()
-    .trim()
-    .regex(
-      /^[a-z][a-z0-9-]{0,62}$/,
-      "Use lowercase letters, numbers and dashes, starting with a letter.",
-    ),
+  name: skillName,
   description: z.string().trim().min(1, "Say when this should be used.").max(LIMITS.description),
   body: z
     .string()
@@ -167,6 +168,19 @@ export function withBuiltinSkills(profile: AgentProfile | undefined): AgentProfi
       ...extra.map((k) => ({ name: k.name, description: k.description, body: k.body })),
     ],
   };
+}
+
+/**
+ * Puts the skills the person picked first, so the Hermes size budget (`hermesPrompt`) never drops one of them.
+ * Bodies are capped at LIMITS.body, so two picks always fit; five maximum-size picks can still pass the budget.
+ */
+export function pickedFirst(
+  profile: AgentProfile,
+  names: readonly string[] | undefined,
+): AgentProfile {
+  if (!names?.length) return profile;
+  const rank = (n: string) => (names.includes(n) ? 0 : 1);
+  return { ...profile, skills: [...profile.skills].sort((a, b) => rank(a.name) - rank(b.name)) };
 }
 
 /** The profile a run uses, or undefined when the bot has no settings at all (the harness then behaves exactly as before). */

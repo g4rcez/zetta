@@ -3,11 +3,12 @@ import { Link } from "@tanstack/react-router";
 
 import { layaModelFor } from "@zetta/core/laya-languages";
 
-import { Autocomplete, Button, Checkbox } from "@/components/ui";
+import { Button, Checkbox } from "@/components/ui";
 import { identityClient } from "@/lib/identity-client";
 import { errorMessage } from "../chat/chat-client";
 import { installationApi, type Installation } from "../onboarding/installation-api";
-import { isKnownLocale, localeLabel, localeOptions } from "./laya-locales";
+import { LAYA_LOCALES } from "./laya-locales";
+import { LanguagePicker } from "./language-picker";
 
 /** The builtin Laya model setting of this installation; `undefined` while it loads. */
 export function useLayaMode(): Installation["laya"] | undefined {
@@ -106,9 +107,6 @@ export function LayaSwitch({
     // Turning it off frees the memory and costs nothing, so it is saved at once. Turning it on waits for the button.
     if (!on && isOn) void save({ laya: "off" });
   }
-  function add(tag: string) {
-    if (isKnownLocale(tag) && !languages.includes(tag)) setLanguages([...languages, tag]);
-  }
   const locked = !admin || busy || saved === undefined;
   return (
     <section
@@ -125,40 +123,12 @@ export function LayaSwitch({
       </p>
       {enabled && (
         <div className="space-y-3">
-          <ul aria-label="Languages" className="flex flex-wrap gap-2">
-            <li className="inline-flex items-center rounded-full border bg-muted/40 px-2.5 py-1 text-xs">
-              English
-            </li>
-            {languages
-              .filter((t) => t !== "en")
-              .map((tag) => (
-                <li
-                  key={tag}
-                  className="inline-flex items-center gap-1 rounded-full border bg-muted/40 py-1 pr-1 pl-2.5 text-xs"
-                >
-                  {localeLabel(tag)}
-                  <button
-                    type="button"
-                    aria-label={`Remove ${localeLabel(tag)}`}
-                    disabled={locked}
-                    className="rounded-full px-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
-                    onClick={() => setLanguages(languages.filter((t) => t !== tag))}
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-          </ul>
-          <Autocomplete
-            // A new key after each add clears the search box.
-            key={languages.length}
-            title="Add a language"
-            placeholder="Search a country or a language"
-            emptyMessage="No country or language matches"
-            options={localeOptions(languages)}
-            value=""
+          <LanguagePicker
+            fixed={["en"]}
+            value={languages.filter((t) => t !== "en")}
+            onChange={(tags) => setLanguages(["en", ...tags])}
+            locales={LAYA_LOCALES}
             disabled={locked}
-            onChange={(e) => add(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
             {model === "english"

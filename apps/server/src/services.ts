@@ -22,6 +22,8 @@ import { createLocalEmbedder } from "./modules/knowledge/embed";
 import { createKnowledge as createCompanyKnowledge } from "./modules/knowledge/service";
 import { audit } from "./modules/features/audit";
 import { createOutputStyles } from "./modules/output-styles/service";
+import { createMarket } from "./modules/skills/market";
+import { createSkills } from "./modules/skills/service";
 import { createWikiJobs } from "./modules/wiki/jobs";
 import { createWikiAssist } from "./modules/wiki/assist";
 import { createWikiGraph } from "./modules/wiki/graph";
@@ -223,6 +225,8 @@ const turnRunner = createTurnRunner(
 );
 // Bots learn from finished work and the chief reviews the wiki, through the same turn runner as the chat.
 const wikiJobs = createWikiJobs(db, { wiki, run: turnRunner, lookup: membershipLookup });
+const skillsLibrary = createSkills(db);
+const skillsMarket = createMarket();
 export const chatServices = {
   access: identity.access,
   chat: createChatService(
@@ -246,6 +250,7 @@ export const chatServices = {
       tasks,
       artifacts,
       wiki,
+      skills: { skills: skillsLibrary, market: skillsMarket },
       teams: teamStore,
       backgroundActor: (userId) => issueBackgroundActor(membershipLookup, userId),
     },
@@ -434,6 +439,12 @@ export const searchServices = { access: identity.access, search: createSearch(db
 export const artifactServices = { access: identity.access, artifacts };
 export const teamServices = { access: identity.access, store: teamStore };
 export const outputStyleServices = { access: identity.access, styles: createOutputStyles(db) };
+export const skillServices = {
+  access: identity.access,
+  db,
+  skills: skillsLibrary,
+  market: skillsMarket,
+};
 export const zettaMcpServices = {
   auth,
   resource: mcpResource(ENV),

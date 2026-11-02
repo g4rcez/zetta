@@ -6,13 +6,13 @@ import {
   index,
   integer,
   jsonb,
-  pgTable,
   text,
   timestamp,
   unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { OUTPUT_STYLE_KEYS, outputStyle } from "./output-styles";
@@ -23,7 +23,7 @@ const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
 const cascade = { onDelete: "cascade", onUpdate: "restrict" } as const;
 
 /** Visual grouping of bots. Never an access boundary (RFC-001). */
-export const workspace = pgTable(
+export const workspace = zetta.table(
   "workspace",
   {
     id: uuid("id")
@@ -44,7 +44,7 @@ export const workspace = pgTable(
   ],
 );
 
-export const bot = pgTable(
+export const bot = zetta.table(
   "bot",
   {
     id: uuid("id")
@@ -132,7 +132,7 @@ export const bot = pgTable(
   ],
 );
 
-export const conversation = pgTable(
+export const conversation = zetta.table(
   "conversation",
   {
     id: uuid("id")
@@ -176,7 +176,7 @@ export const conversation = pgTable(
   ],
 );
 
-export const message = pgTable(
+export const message = zetta.table(
   "message",
   {
     id: uuid("id")
@@ -203,7 +203,7 @@ export const message = pgTable(
     botVersion: integer("bot_version"),
     // Thread reply when set; points at a message in the same conversation.
     parentMessageId: uuid("parent_message_id").references((): AnyPgColumn => message.id, setNull),
-    // Author bot for assistant messages (mentions/delegation can come from a bot other than the chat's bot).
+    // Author bot for assistant messages: the conversation's own bot, or a member bot in a room. Never another bot's chat (insertMessage and the message_author_guard trigger refuse it).
     botId: uuid("author_bot_id").references(() => bot.id, setNull),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -222,7 +222,7 @@ export const message = pgTable(
 
 /** A user message sent while its chat was busy: saved at once, answered in its thread when the turn before it ends. The row is deleted
  * when that answer ends, so it only lives while the message waits or is being answered (and survives a restart). */
-export const chatQueue = pgTable(
+export const chatQueue = zetta.table(
   "chat_queue",
   {
     id: uuid("id")
@@ -256,7 +256,7 @@ export const chatQueue = pgTable(
 );
 
 /** Immutable per-version copy of a bot's configuration, so a run or proposal can be tied to the exact settings it used. */
-export const botRevision = pgTable(
+export const botRevision = zetta.table(
   "bot_revision",
   {
     id: uuid("id")
@@ -283,7 +283,7 @@ export const botRevision = pgTable(
  * chat turn in the conversation; the bot ends it with goal_progress (keep going) or goal_done. No fixed turn limit: it pauses when it stops
  * making progress, keeps failing, hands off, or the user presses Stop.
  */
-export const goalLoop = pgTable(
+export const goalLoop = zetta.table(
   "goal_loop",
   {
     id: uuid("id")

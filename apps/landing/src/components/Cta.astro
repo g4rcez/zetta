@@ -1,10 +1,11 @@
 ---
-// The close: the bot cast gathers around the call to action. These are the app's personality presets and the bots from the examples,
+// The close: the bot cast gathers around the call to star the repository. These are the app's personality presets and the bots from the examples,
 // each with its own character art. Decorative, so hidden from assistive tech.
 import BotArt from "./BotArt.astro";
+import GithubMark from "./GithubMark.astro";
 import { CAST } from "../cast";
 import { getCopy, type Locale } from "../i18n";
-import { DOCS } from "../links";
+import { ISSUES, REPO } from "../links";
 
 interface Props {
   locale: Locale;
@@ -28,9 +29,10 @@ const right = [CAST.coder, CAST.concierge, CAST.researcher];
       <h2>{t.title}</h2>
       <p class="lead">{t.lead}</p>
       <div class="row">
-        <a class="btn btn-primary" href="#self-host">{t.primary}</a>
-        <a class="btn" href={DOCS} target="_blank" rel="noopener noreferrer">{t.secondary}</a>
+        <a class="btn btn-primary" href={REPO} target="_blank" rel="noopener noreferrer"><GithubMark size={18} />{t.primary}</a>
+        <a class="btn" href={ISSUES} target="_blank" rel="noopener noreferrer">{t.secondary}</a>
       </div>
+      <p class="repo">{t.repo}</p>
     </div>
 
     <ul class="cast right" aria-hidden="true">
@@ -58,6 +60,12 @@ const right = [CAST.coder, CAST.concierge, CAST.researcher];
   }
   .mid .row {
     margin-top: 12px;
+  }
+  .repo {
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 20px;
   }
   .cast {
     display: grid;

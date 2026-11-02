@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { index, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { index, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { wikiPage } from "./wiki";
@@ -14,7 +15,7 @@ export { EMBEDDING_DIMENSIONS } from "./search";
  * One user's connected document store whose files are indexed for the bot to answer from. The index is per user: it is built with that
  * user's own token and only that user's turns can read it, so a document can never reach someone who could not open it.
  */
-export const knowledgeSource = pgTable(
+export const knowledgeSource = zetta.table(
   "knowledge_source",
   {
     id: uuid("id")
@@ -45,7 +46,7 @@ export const knowledgeSource = pgTable(
   ],
 );
 
-export const knowledgeDoc = pgTable(
+export const knowledgeDoc = zetta.table(
   "knowledge_doc",
   {
     id: uuid("id")

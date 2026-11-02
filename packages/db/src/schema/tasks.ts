@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
@@ -16,7 +17,7 @@ export const TASK_PRIORITIES = ["none", "low", "medium", "high", "urgent"] as co
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 
 /** A unit of work a bot (or the user) put on the board. It links back to the thread and message it came from; deleting those only unlinks it. */
-export const task = pgTable(
+export const task = zetta.table(
   "task",
   {
     id: uuid("id")

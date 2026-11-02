@@ -18,6 +18,7 @@ export const APP_PREFIXES = [
   "/team-roles",
   "/artifacts",
   "/wiki",
+  "/skills",
   "/search",
 ];
 export const inApp = (pathname: string) =>

@@ -1,15 +1,6 @@
 import { sql } from "drizzle-orm";
-import {
-  boolean,
-  check,
-  integer,
-  jsonb,
-  pgTable,
-  text,
-  timestamp,
-  unique,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { boolean, check, integer, jsonb, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { bot } from "./chat";
 
@@ -19,7 +10,7 @@ const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
  * How one bot runs Claude Code (modules/bot-claude): permission preset, extra allow/deny rules, an appended system prompt, effort and a
  * per-run budget. One row per bot; no row means the defaults, so existing bots keep behaving as before.
  */
-export const botClaudeConfig = pgTable("bot_claude_config", {
+export const botClaudeConfig = zetta.table("bot_claude_config", {
   botId: uuid("bot_id")
     .primaryKey()
     .references(() => bot.id, restrict),
@@ -36,10 +27,12 @@ export const botClaudeConfig = pgTable("bot_claude_config", {
 });
 
 /** A skill or sub-agent installed for exactly one bot. Written to a throwaway plugin directory for each run; never shared between bots. */
-export const botClaudeAsset = pgTable(
+export const botClaudeAsset = zetta.table(
   "bot_claude_asset",
   {
-    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
     botId: uuid("bot_id")
       .notNull()
       .references(() => bot.id, restrict),

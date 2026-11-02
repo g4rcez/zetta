@@ -8,7 +8,15 @@ import { chatClient, errorMessage, type Bot, type OutputStyleKey } from "../chat
 import type { Row } from "../chat/chat-rows";
 import { Composer } from "../chat/composer";
 import { MessageList } from "../chat/message-list";
-import { FRESH_INTERVIEW, nextTemplateStep, type InterviewState } from "./interview-flow";
+import {
+  FRESH_INTERVIEW,
+  interviewLines,
+  isFinished,
+  nextTemplateStep,
+  turnsForTemplate,
+  UPDATED,
+  type InterviewState,
+} from "./interview-flow";
 
 type Engine = {
   harness: string;
@@ -41,11 +49,6 @@ const OPENING = {
   question: "What is this bot for? Describe its job in a sentence or two.",
   suggestions: ["Turn merged pull requests into customer-facing release notes"],
 };
-
-const READY_ENGINE =
-  "Your draft is ready. Read it below. Tell me anything you'd like changed, or continue.";
-const READY_BASIC =
-  "Your basic draft is ready. It was filled from a template, not written by the engine. Read it below and edit the text there.";
 
 /** The setup interview, drawn with the same list, rows and composer as a chat: the engine asks, the person answers, then it writes the draft. */
 export function InstructionsInterview({
@@ -116,7 +119,7 @@ export function InstructionsInterview({
       if (id !== latest.current) return;
       if (r.kind === "unavailable") {
         if (refine) return patch({ status: "idle", error: r.reason });
-        return basic([], r.reason);
+        return basic(turnsForTemplate(turns), r.reason);
       }
       if (r.kind === "question")
         return setState((s) => ({
@@ -137,6 +140,9 @@ export function InstructionsInterview({
         status: "idle",
         drafted: true,
         summary: r.summary,
+        changes: refine
+          ? s.changes.map((c, i) => (i === s.changes.length - 1 ? { ...c, reply: UPDATED } : c))
+          : s.changes,
       }));
     } catch (e) {
       if (id !== latest.current) return;
@@ -164,7 +170,7 @@ export function InstructionsInterview({
     if (state.status === "thinking") return false;
     if (state.drafted || (hasDraft && !state.current)) {
       if (state.source === "template") return false;
-      patch({ changes: [...state.changes, text] });
+      patch({ changes: [...state.changes, { ask: text, reply: null }] });
       void ask(state.turns, { change: text });
       return true;
     }
@@ -183,7 +189,7 @@ export function InstructionsInterview({
   }
 
   const thinking = state.status === "thinking";
-  const finished = state.drafted || (hasDraft && !state.current && !thinking);
+  const finished = isFinished(state, hasDraft);
   const refining = finished && state.source === "engine";
   const asker = useMemo(
     () =>
@@ -196,30 +202,20 @@ export function InstructionsInterview({
     [interviewer, engine.name, engine.avatar],
   );
 
-  const rows = useMemo(() => {
-    const out: Row[] = [];
-    const add = (role: "assistant" | "user", content: string, more: Partial<Row> = {}) =>
-      out.push({
-        id: `i${out.length}`,
-        seq: out.length,
+  const rows = useMemo(
+    () =>
+      interviewLines(state, hasDraft).map(({ role, content, streaming }, i): Row => ({
+        id: `i${i}`,
+        seq: i,
         role,
         content,
         status: "complete",
         botId: role === "assistant" ? asker.id : null,
-        createdAt: new Date(t0.current + out.length * 1000).toISOString(),
-        ...more,
-      });
-    state.turns.forEach((t) => {
-      add("assistant", t.question);
-      add("user", t.answer);
-    });
-    if (finished) {
-      add("assistant", state.source === "template" ? READY_BASIC : READY_ENGINE);
-      state.changes.forEach((c) => add("user", c));
-    } else if (state.current && !thinking) add("assistant", state.current.question);
-    if (thinking) add("assistant", "", { streaming: true });
-    return out;
-  }, [state.turns, state.current, state.changes, state.source, finished, thinking, asker.id]);
+        createdAt: new Date(t0.current + i * 1000).toISOString(),
+        ...(streaming ? { streaming } : {}),
+      })),
+    [state, hasDraft, asker.id],
+  );
 
   const authorOf = (r: Row) =>
     r.role === "assistant" ? { name: asker.name, bot: asker } : { name: "You" };
@@ -237,20 +233,20 @@ export function InstructionsInterview({
   const placeholder = finished
     ? refining
       ? "Ask for a change, e.g. make it more formal"
-      : "Edit a basic draft in the text below"
+      : "Edit the basic draft in the preview"
     : "Type your answer";
   const suggestions = !finished && !thinking ? (state.current?.suggestions ?? []) : [];
   const error = state.error ?? composerError;
 
   return (
-    <section aria-label="Setup interview" className="space-y-3">
+    <section aria-label="Setup interview" className="flex h-full min-h-0 flex-col gap-3">
       {state.notice && (
         <Alert theme="warn">
           <strong>Basic draft.</strong> {state.notice} We'll ask five quick questions and fill in a
           template instead.
         </Alert>
       )}
-      <div className="flex h-[min(32rem,62dvh)] flex-col overflow-hidden rounded-lg border bg-background">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-background">
         <div className="flex items-center justify-between gap-3 border-b px-4 py-2 text-xs text-muted-foreground">
           <span>
             {finished

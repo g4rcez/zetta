@@ -18,6 +18,10 @@ const BY_CODE: Record<string, Entry> = {
     why: "This bot is not allowed to use it.",
     fix: "Open the bot's settings, switch it on under Plugins & MCP, then try again.",
   },
+  USE_GH: {
+    why: "GitHub has no token here, so its tools are off.",
+    fix: "The bot should run the gh command instead (for example gh pr list -R owner/repo). To use the GitHub tools, add a token in the plugin settings.",
+  },
   TOOL_NOT_ALLOWED: {
     why: "This bot may not use that tool.",
     fix: "Open the bot's settings > Plugins & MCP and allow the tool, then ask again.",

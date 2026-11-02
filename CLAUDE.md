@@ -19,6 +19,18 @@ Every free-text input is the chat's text box, so `@bot` and `#team`/`#room` ment
 - Keep a plain `Textarea` where a picker would get in the way: patterns and config (tool allow lists, plugin values), pasted external content, files for other tools (SKILL.md, agent files), templates shared with other users (output styles) and Markdown with its own link picker (wiki content). Put `Plain on purpose: <why>` in a comment right above it.
 - `src/free-text.test.ts` fails for a plain `<Textarea>` or `<textarea>` without that comment. `src/features/chat/mention-typing.test.ts` types `@` and picks a bot in both components.
 
+## Filters live in the URL (`apps/web`)
+
+Every filter of a page lives in the address, because the URL is the real state: a reload, Back/Forward and a shared link must show the same view. Never keep a filter only in component state.
+
+- A filter is anything that changes what a page lists or shows: search text, tab, category, status, sort, scope (mine / all), date range, the chosen repository or page.
+- Put it in the route's search params with `validateSearch` and a pure parser, as in `features/wiki/wiki-filters.ts` and `features/skills/skills-search.ts`. Use string enums (not booleans), leave defaults out of the address, and drop what is not understood.
+- The page component does not read the router: the route passes `search` and `setSearch` as props. Typing in a filter navigates with `replace: true`; choosing a tab or submitting a search adds a history entry.
+- The input shows the value from the URL, or a draft that is written to the URL on submit. Results load from the URL (an effect on the search param), never from a click handler, so Back and a pasted link work.
+- These stay local: ticked rows, an expanded row, open menus and dialogs, and a filter inside a transient card that is not a page view (the chat's "Install skills?" card).
+- Test it by mounting the page with a search value and no clicks (see `features/skills/skills-page.test.tsx`).
+- Not moved yet, so do it when you touch them: the filters in `features/studio/plugins.tsx`, `features/discussions/discussions-page.tsx` and the sidebar search.
+
 ## Public-repo hygiene
 
 This repository is public. Never commit personal data, secrets, or machine-specific data.

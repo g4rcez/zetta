@@ -105,7 +105,7 @@ describe("workflow graph validation", () => {
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 const ids = [`feat-w-a-${uuidv7()}`, `feat-w-b-${uuidv7()}`, `feat-w-c-${uuidv7()}`];
-const [A, B, C] = ids as [string, string, string];
+const [A, B] = ids as [string, string, string];
 
 suite("feature wave against compose postgres", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
@@ -535,20 +535,17 @@ suite("feature wave against compose postgres", () => {
     );
   });
 
-  test("delegations are recorded per mention and summarized", async () => {
-    const lead = await newBot(A, "Captain", false),
-      helper = await newBot(A, "Mate");
+  test("an @mention records no delegation: the mentioned bot answers in a room, not in the chat", async () => {
+    const lead = await newBot(A, "Captain", false);
+    await newBot(A, "Mate");
     const conv = (await call(A, "POST", "/api/conversations", { botId: lead.id })).json.conversation
       .id;
     const r = await call(A, "POST", `/api/conversations/${conv}/messages`, {
       content: "@Mate please check",
     });
-    expect(r.json.replies).toHaveLength(2);
-    const d = (await call(A, "GET", `/api/conversations/${conv}/delegations`)).json.delegations;
-    expect(d).toHaveLength(1);
-    expect(d[0]).toMatchObject({ botId: helper.id, status: "succeeded" });
+    expect(r.json.replies).toHaveLength(1);
     expect(
-      (await call(C, "GET", `/api/conversations/${conv}/delegations`)).json.delegations,
+      (await call(A, "GET", `/api/conversations/${conv}/delegations`)).json.delegations,
     ).toHaveLength(0);
   });
 

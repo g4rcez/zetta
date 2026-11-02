@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { errorMessage } from "../chat/chat-client";
@@ -79,7 +80,15 @@ export function BotPluginsSection({
       <div>
         <h3 className="text-sm font-medium">Plugins and MCP servers</h3>
         <p className="text-xs text-muted-foreground">
-          Choose what this bot may use on your behalf. Install more in Studio &gt; Plugins.
+          Choose what this bot may use on your behalf. Install more in{" "}
+          <Link
+            to="/studio/$tab"
+            params={{ tab: "plugins" }}
+            className="underline underline-offset-2"
+          >
+            Studio › Plugins
+          </Link>
+          .
         </p>
       </div>
       {error && <Alert theme="danger">{error}</Alert>}

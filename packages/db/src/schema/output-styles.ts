@@ -1,14 +1,6 @@
 import { sql } from "drizzle-orm";
-import {
-  boolean,
-  check,
-  index,
-  integer,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 
@@ -28,7 +20,7 @@ export const OUTPUT_STYLE_SCOPES = ["private", "installation"] as const;
 export type OutputStyleScope = (typeof OUTPUT_STYLE_SCOPES)[number];
 
 /** A tone-of-voice template. Bots keep a live reference, so an edit reaches every bot that uses it. Delete = archive. */
-export const outputStyle = pgTable(
+export const outputStyle = zetta.table(
   "output_style",
   {
     id: uuid("id")

@@ -1,5 +1,6 @@
 ---
 import Hub from "./Hub.astro";
+import GithubMark from "./GithubMark.astro";
 import { getCopy, type Locale } from "../i18n";
 import { REPO } from "../links";
 
@@ -26,7 +27,7 @@ const t = getCopy(locale).hero;
       <p class="lead">{t.lead}</p>
       <div class="row">
         <a class="btn btn-primary" href="#self-host">{t.primary}</a>
-        <a class="btn" href={REPO} target="_blank" rel="noopener noreferrer">{t.secondary}</a>
+        <a class="btn" href={REPO} target="_blank" rel="noopener noreferrer"><GithubMark />{t.secondary}</a>
       </div>
       <p class="note">{t.note}</p>
     </div>

@@ -4,17 +4,18 @@ import {
   index,
   integer,
   jsonb,
-  pgTable,
   text,
   timestamp,
   unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
 import { connection } from "./connections";
+import { discussion } from "./discussions";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
@@ -25,7 +26,7 @@ const owner = () =>
 const created = () => timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
 
 /** Pre-model hooks: add_context | redact | stop | background (start an owned background chat task). */
-export const hook = pgTable(
+export const hook = zetta.table(
   "hook",
   {
     id: uuid("id")
@@ -45,7 +46,7 @@ export const hook = pgTable(
   (t) => [index("hook_owner_user_id_idx").on(t.ownerUserId), index("hook_bot_idx").on(t.botId)],
 );
 
-export const routine = pgTable(
+export const routine = zetta.table(
   "routine",
   {
     id: uuid("id")
@@ -82,9 +83,12 @@ export const routine = pgTable(
       .notNull(),
     statusReason: text("status_reason"),
     statusAt: timestamp("status_at", { withTimezone: true }).defaultNow().notNull(),
+    /** The room whose bot proposed this routine. While the routine is active, the room is not idle: its work happens in the routine's chat. */
+    originDiscussionId: uuid("origin_discussion_id").references(() => discussion.id, setNull),
     createdAt: created(),
   },
   (t) => [
+    index("routine_origin_discussion_id_idx").on(t.originDiscussionId),
     index("routine_workflow_id_idx").on(t.workflowId),
     index("routine_owner_user_id_idx").on(t.ownerUserId),
     index("routine_bot_id_idx").on(t.botId),
@@ -92,7 +96,7 @@ export const routine = pgTable(
   ],
 );
 
-export const routineRun = pgTable(
+export const routineRun = zetta.table(
   "routine_run",
   {
     id: uuid("id")
@@ -140,7 +144,7 @@ export const routineRun = pgTable(
 );
 
 /** Attention is separate from execution state: acknowledging never marks a run successful. */
-export const attentionItem = pgTable(
+export const attentionItem = zetta.table(
   "attention_item",
   {
     id: uuid("id")
@@ -176,7 +180,7 @@ export const attentionItem = pgTable(
   ],
 );
 
-export const workflow = pgTable(
+export const workflow = zetta.table(
   "workflow",
   {
     id: uuid("id")
@@ -192,7 +196,7 @@ export const workflow = pgTable(
 );
 
 /** Immutable published versions: a run always points at the exact graph it executed. */
-export const workflowVersion = pgTable(
+export const workflowVersion = zetta.table(
   "workflow_version",
   {
     id: uuid("id")
@@ -208,7 +212,7 @@ export const workflowVersion = pgTable(
   (t) => [unique("workflow_version_unique").on(t.workflowId, t.version)],
 );
 
-export const workflowRun = pgTable(
+export const workflowRun = zetta.table(
   "workflow_run",
   {
     id: uuid("id")
@@ -237,7 +241,7 @@ export const workflowRun = pgTable(
 );
 
 /** Immutable, team-readable copy of a conversation at publication time. */
-export const snapshot = pgTable(
+export const snapshot = zetta.table(
   "snapshot",
   {
     id: uuid("id")
@@ -261,7 +265,7 @@ export const snapshot = pgTable(
   ],
 );
 
-export const reaction = pgTable(
+export const reaction = zetta.table(
   "reaction",
   {
     id: uuid("id")
@@ -281,7 +285,7 @@ export const reaction = pgTable(
 );
 
 /** Attachments owned by one user; linked to a message when sent. Text (<=256KB) lives in `content`; images (<=10MB) live on disk under `path` (relative to the attachments root) and are never deleted. */
-export const attachment = pgTable(
+export const attachment = zetta.table(
   "attachment",
   {
     id: uuid("id")
@@ -305,7 +309,7 @@ export const attachment = pgTable(
 );
 
 /** Bot-proposed configuration changes. Nothing is applied until the owner approves the exact diff. */
-export const configProposal = pgTable(
+export const configProposal = zetta.table(
   "config_proposal",
   {
     id: uuid("id")
@@ -325,6 +329,7 @@ export const configProposal = pgTable(
         "team_goals",
         "bot_permission",
         "create_wiki_page",
+        "install_skills",
       ],
     })
       .default("config")
@@ -349,7 +354,7 @@ export const configProposal = pgTable(
 );
 
 /** One delegated bot answer inside a user turn (mention-based specialist dispatch) with its outcome. */
-export const delegation = pgTable(
+export const delegation = zetta.table(
   "delegation",
   {
     id: uuid("id")
@@ -380,7 +385,7 @@ export const delegation = pgTable(
 );
 
 /** Per-bot decision routing with the builtin Laya model: the options map to bounded actions. */
-export const decisionConfig = pgTable(
+export const decisionConfig = zetta.table(
   "decision_config",
   {
     botId: uuid("bot_id")
@@ -411,7 +416,7 @@ export const decisionConfig = pgTable(
 );
 
 /** Which of the user's connections a bot uses for each required key. References only; secrets stay in the sealed connection store. */
-export const botConnection = pgTable(
+export const botConnection = zetta.table(
   "bot_connection",
   {
     id: uuid("id")
@@ -435,7 +440,7 @@ export const botConnection = pgTable(
 );
 
 /** Isolated browser profiles per user: dedicated to one bot or explicitly shared among the same user's bots. */
-export const browserProfile = pgTable(
+export const browserProfile = zetta.table(
   "browser_profile",
   {
     id: uuid("id")
@@ -458,7 +463,7 @@ export const browserProfile = pgTable(
 );
 
 /** Persistent Linux desktops ("VMs"): one default per user, plus extras a bot proposed and the user approved. Home lives on volume `zetta-vm-<id>`. */
-export const computerVm = pgTable(
+export const computerVm = zetta.table(
   "computer_vm",
   {
     id: uuid("id")
@@ -486,7 +491,7 @@ export const computerVm = pgTable(
 );
 
 /** Privacy-safe activity trail: closed reason codes, ids and counts only. No prompts, outputs, URLs, secrets or provider errors. */
-export const auditEvent = pgTable(
+export const auditEvent = zetta.table(
   "audit_event",
   {
     id: uuid("id")
@@ -526,7 +531,7 @@ export const auditEvent = pgTable(
 );
 
 /** User-owned MCP servers (http, or allowlisted local stdio commands). Secrets never live here: an optional connection id references the sealed store. */
-export const mcpServer = pgTable(
+export const mcpServer = zetta.table(
   "mcp_server",
   {
     id: uuid("id")
@@ -561,7 +566,7 @@ export const mcpServer = pgTable(
 );
 
 /** Which of a user's MCP servers a bot may use (per user: sharing a bot never shares servers). */
-export const botIntegration = pgTable(
+export const botIntegration = zetta.table(
   "bot_integration",
   {
     id: uuid("id")
@@ -589,7 +594,7 @@ export const botIntegration = pgTable(
 );
 
 /** Public web/RSS sources a user follows for briefings (read through the SSRF-guarded fetcher or the isolated browser). */
-export const source = pgTable(
+export const source = zetta.table(
   "source",
   {
     id: uuid("id")

@@ -242,8 +242,8 @@ async function guardFixture(account: boolean, membership: "active" | "removed" |
           text.includes("pg_advisory_xact_lock")
         )
           rows = [];
-        else if (text.startsWith('select "id" from "connection_key_check"')) rows = [[1]];
-        else if (text.includes('from "connection_key_check"'))
+        else if (text.startsWith('select "id" from "zetta"."connection_key_check"')) rows = [[1]];
+        else if (text.includes('from "zetta"."connection_key_check"'))
           rows = [
             [
               1,
@@ -258,14 +258,15 @@ async function guardFixture(account: boolean, membership: "active" | "removed" |
               "2030-01-01T00:00:00Z",
             ],
           ];
-        else if (text.includes('from "connection_nonce"'))
+        else if (text.includes('from "zetta"."connection_nonce"'))
           rows = text.includes("count(*)") ? [["1", "0"]] : [["key-check"]];
-        else if (text.includes('from "connection_credential"')) rows = [];
-        else if (text.includes('from "user"')) rows = account ? [["owner"]] : [];
-        else if (text.includes('from "membership"')) rows = membership ? [[membership]] : [];
-        else if (text.includes('from "connection_mutation_receipt"'))
+        else if (text.includes('from "zetta"."connection_credential"')) rows = [];
+        else if (text.includes('from "zetta"."user"')) rows = account ? [["owner"]] : [];
+        else if (text.includes('from "zetta"."membership"'))
+          rows = membership ? [[membership]] : [];
+        else if (text.includes('from "zetta"."connection_mutation_receipt"'))
           throw new Error("synthetic stop after identity guard");
-        else if (text.includes('from "connection"')) rows = [];
+        else if (text.includes('from "zetta"."connection"')) rows = [];
         else throw new Error("Unexpected fixture query");
         return { rows };
       },
@@ -313,7 +314,7 @@ for (const operation of ["list", "create", "replace", "revoke"] as const) {
     const locks = f.calls.filter((call) => / for (key share|update)$/.test(call.text));
     expect(
       locks.map((call) => [
-        call.text.match(/from "(user|membership)"/)?.[1],
+        call.text.match(/from "zetta"\."(user|membership)"/)?.[1],
         call.text.endsWith(" for key share"),
         call.params,
       ]),
@@ -322,7 +323,7 @@ for (const operation of ["list", "create", "replace", "revoke"] as const) {
       ["membership", false, ["owner"]],
     ]);
     expect(f.calls.indexOf(locks[1] ?? { text: "", params: [] })).toBeLessThan(
-      f.calls.findIndex((call) => call.text.includes('from "connection')),
+      f.calls.findIndex((call) => call.text.includes('from "zetta"."connection')),
     );
   });
   for (const [account, member] of [
@@ -333,8 +334,8 @@ for (const operation of ["list", "create", "replace", "revoke"] as const) {
     test(`${operation} denies stale issued actor when account=${account} and membership=${member}`, async () => {
       const f = await guardFixture(account, member);
       await expect(f.operations[operation]()).rejects.toMatchObject({ code: "ACCESS_DENIED" });
-      expect(f.calls.some((call) => call.text.includes('from "connection'))).toBe(false);
-      expect(f.calls.some((call) => call.text.includes('from "membership"'))).toBe(account);
+      expect(f.calls.some((call) => call.text.includes('from "zetta"."connection'))).toBe(false);
+      expect(f.calls.some((call) => call.text.includes('from "zetta"."membership"'))).toBe(account);
       expect(f.calls.at(-1)?.text).toBe("rollback");
     });
   }

@@ -42,6 +42,7 @@ export function WhatsappInstall({
       baseUrl: text("baseUrl"),
       apiKey: text("apiKey"),
       session: text("session"),
+      hookUrl: text("hookUrl"),
       timeFormat: text("timeFormat"),
       allowSend: mode === "send" ? "yes" : "no",
       sendAllowlist: mode === "send" ? text("sendAllowlist") : "",
@@ -126,6 +127,14 @@ export function WhatsappInstall({
               autoComplete="off"
             />
             <Input title="Session name" name="session" placeholder="default" />
+            <Input
+              title="Zetta address for WAHA (instant messages)"
+              name="hookUrl"
+              type="url"
+              placeholder="http://host.docker.internal:3000"
+              info="Where your WAHA server reaches Zetta (plain http, no path). When set, bots get new WhatsApp messages at once instead of every few minutes."
+              autoComplete="off"
+            />
             <Input title="Time format (24h/12h)" name="timeFormat" placeholder="24h" />
             {mode === "send" && (
               <Input

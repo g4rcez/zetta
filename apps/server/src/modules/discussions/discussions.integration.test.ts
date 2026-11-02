@@ -51,6 +51,7 @@ suite("group discussions against compose postgres", () => {
     extraTools?: string;
     noCode?: boolean;
     referenced?: { title: string; body: string }[];
+    skills?: string[];
   }[] = [];
   const reply = (t: {
     bot: { name: string };
@@ -58,6 +59,7 @@ suite("group discussions against compose postgres", () => {
     extraTools?: string;
     noCode?: boolean;
     referenced?: { title: string; body: string }[];
+    skills?: string[];
   }) => {
     runs.push({
       bot: t.bot.name,
@@ -65,6 +67,7 @@ suite("group discussions against compose postgres", () => {
       extraTools: t.extraTools,
       noCode: t.noCode,
       referenced: t.referenced,
+      skills: t.skills,
     });
     return replies[t.bot.name]?.shift() ?? "ok";
   };
@@ -512,6 +515,47 @@ suite("group discussions against compose postgres", () => {
     ).toBe(404);
   });
 
+  test("a skill picked on a post wakes the bot that owns it and reaches only that bot; a skill that bot lacks is refused", async () => {
+    const p = await makeBot(D, "Skill1", { harness: "claude-code" }),
+      q = await makeBot(D, "Skill2", { harness: "claude-code" }),
+      outsider = await makeBot(D, "Skill3", { harness: "claude-code" });
+    await createBotClaude(db).addAsset(p.id, {
+      kind: "skill",
+      name: "release-notes",
+      description: "Write release notes",
+      body: "1) list the merged pull requests",
+      tools: [],
+      model: null,
+      enabled: true,
+    });
+    const d = (
+      await call(D, "POST", "/api/discussions", {
+        title: "Skills",
+        goal: "x",
+        members: [{ bot: p.id }, { bot: q.id }],
+        firstMessage: "@Skill2 start",
+      })
+    ).json.discussion;
+    await worker.drain();
+    const before = runs.length;
+    const posted = await call(D, "POST", `/api/discussions/${d.id}/messages`, {
+      content: "write the notes",
+      skills: [{ botId: p.id, name: "release-notes" }],
+    });
+    expect(posted.status).toBe(201);
+    await worker.drain();
+    expect(runs.slice(before).map((r) => [r.bot, r.skills])).toEqual([
+      ["Skill1", ["release-notes"]],
+    ]);
+    const post = (skills: { botId: string; name: string }[]) =>
+      call(D, "POST", `/api/discussions/${d.id}/messages`, { content: "again", skills });
+    // The skill belongs to Skill1, not Skill2; a bot outside the room cannot be used either, even with a built-in skill.
+    expect((await post([{ botId: q.id, name: "release-notes" }])).status).toBe(404);
+    expect((await post([{ botId: outsider.id, name: "zetta-verify-before-done" }])).status).toBe(
+      404,
+    );
+  });
+
   test("the Rooms badge counts running rooms; resolving or cancelling one closes its notifications", async () => {
     const p = await makeBot(C, "Badge1"),
       q = await makeBot(C, "Badge2");
@@ -550,6 +594,50 @@ suite("group discussions against compose postgres", () => {
       { title: 'Room "Release" is waiting', status: "resolved" },
       { title: 'Room "Rollback" is waiting', status: "cancelled" },
     ]);
+  });
+
+  test("a room with an active routine made in it is not waiting; pausing the routine brings the card back", async () => {
+    const p = await makeBot(E, "Watch1"),
+      q = await makeBot(E, "Watch2");
+    const roomId = (
+      await call(E, "POST", "/api/discussions", {
+        title: "Watch room",
+        goal: "x",
+        members: [{ bot: p.id }, { bot: q.id }],
+        firstMessage: "@Watch1 watch the repo every 30 minutes",
+      })
+    ).json.discussion.id as string;
+    replies.Watch1 = [
+      `Done.\n\`\`\`zetta:create_routine\n{"botId":"${p.id}","title":"Repo watch","prompt":"check the repo","timezone":"UTC","everyMinutes":30}\n\`\`\``,
+    ];
+    await worker.drain();
+    const routines = (await call(E, "GET", `/api/discussions/${roomId}`)).json.routines;
+    expect(routines).toEqual([{ id: expect.any(String), title: "Repo watch", status: "paused" }]);
+    const routineId = routines[0].id as string;
+    const idleCards = () =>
+      db
+        .select({ title: attentionItem.title })
+        .from(attentionItem)
+        .where(
+          and(
+            eq(attentionItem.ownerUserId, E),
+            eq(attentionItem.sourceKey, `discussion:${roomId}:idle`),
+          ),
+        );
+    const later = () => new Date(Date.now() + 31 * 60_000);
+
+    // A routine that is not active does not hide the idle room.
+    await store.sweepIdle(later());
+    expect(await idleCards()).toEqual([{ title: 'Room "Watch room" is waiting' }]);
+    await db.delete(attentionItem).where(eq(attentionItem.sourceKey, `discussion:${roomId}:idle`));
+
+    await call(E, "POST", `/api/routines/${routineId}/paused`, { paused: false });
+    await store.sweepIdle(later());
+    expect(await idleCards()).toEqual([]);
+
+    await call(E, "POST", `/api/routines/${routineId}/paused`, { paused: true });
+    await store.sweepIdle(later());
+    expect(await idleCards()).toEqual([{ title: 'Room "Watch room" is waiting' }]);
   });
 
   test("opening a room closes its 'is waiting' card, and the next sweeps do not bring it back for one idle period", async () => {
@@ -1035,6 +1123,105 @@ suite("group discussions against compose postgres", () => {
       expect((await call(B, "POST", `/api/discussions/${d.id}/delete`)).status).toBe(404);
       expect((await call(A, "POST", `/api/discussions/${d.id}/delete`)).status).toBe(200);
       expect(await roomTitled("Api room")).toBeUndefined();
+    });
+  });
+
+  describe("@mentions in a chat", () => {
+    test("a request still waiting for approval counts as the room, so the mentioned bot is not sent to another one", async () => {
+      const lead = await makeBot(A, "Maestro4"),
+        coach = await makeBot(A, "Treinador4");
+      const { c } = await chatWith(A, lead.id);
+      const actor = (await issueBackgroundActor(async () => ({ isAdmin: false }) as never, A))!;
+      const [asker] = await db.select().from(bot).where(eq(bot.id, lead.id));
+      const [target] = await db.select().from(bot).where(eq(bot.id, coach.id));
+      const messageId = uuidv7();
+      const asked = await store.request(
+        actor,
+        {
+          title: "Wizdaa",
+          goal: "start",
+          context: "",
+          members: [{ bot: target!.id }],
+          firstMessage: "@Treinador4 start",
+          createdBy: asker!,
+          origin: { conversationId: c, messageId },
+          tainted: true,
+        },
+        false,
+      );
+      expect(asked.kind).toBe("proposed");
+      const room = await store.redirectMention(actor, {
+        conversationId: c,
+        conversationTitle: "Chat",
+        messageId,
+        chatBot: asker!,
+        bots: [target!],
+        text: "@Treinador4 start",
+        leadReply: "ok",
+        tainted: true,
+      });
+      expect(room).toBeNull();
+    });
+
+    const roomsOf = async (conv: string) =>
+      ((await call(A, "GET", "/api/discussions")).json.discussions as any[]).filter(
+        (d) => d.originConversationId === conv,
+      );
+
+    test("the mentioned bot answers in a room linked from the chat, never in the chat", async () => {
+      const lead = await makeBot(A, "Maestro"),
+        coach = await makeBot(A, "Treinador");
+      const { c, say } = await chatWith(A, lead.id);
+      replies.Maestro = ["Sure, I asked for it."];
+      replies.Treinador = ["Hello from the room."];
+      await say("@Treinador prepare me for the interview");
+      await worker.drain();
+      const inChat = await messagesOf(A, c);
+      expect(inChat.filter((m) => m.botId && m.botId !== lead.id)).toEqual([]);
+      const rooms = await roomsOf(c);
+      expect(rooms).toHaveLength(1);
+      const link = inChat.find((m) => m.meta?.discussion);
+      expect(link).toMatchObject({ role: "system", meta: { discussion: { id: rooms[0].id } } });
+      expect(link!.content).toContain("Treinador");
+      const inRoom = await messagesOf(A, rooms[0].conversationId);
+      expect(inRoom[0]).toMatchObject({
+        role: "user",
+        content: "@Treinador prepare me for the interview",
+      });
+      expect(inRoom.some((m) => m.botId === coach.id && m.content === "Hello from the room.")).toBe(
+        true,
+      );
+    });
+
+    test("when the chat's bot already asked for a room with the mentioned bot, nobody else answers in the chat and no second room opens", async () => {
+      const lead = await makeBot(A, "Maestro2");
+      await makeBot(A, "Treinador2");
+      const { c, say } = await chatWith(A, lead.id);
+      replies.Maestro2 = [open("Wizdaa", ["Treinador2"], "@Treinador2 start in English")];
+      const before = runs.length;
+      await say("Ask @Treinador2 to start the conversation with me");
+      await worker.drain();
+      expect((await messagesOf(A, c)).filter((m) => m.botId && m.botId !== lead.id)).toEqual([]);
+      expect((await roomsOf(c)).map((d) => d.title)).toEqual(["Wizdaa"]);
+      // It runs once, in the room the lead opened, not a second time in a room of its own.
+      expect(runs.slice(before).filter((r) => r.bot === "Treinador2")).toHaveLength(1);
+    });
+
+    test("a second @mention of the same bot goes to the room that is already open", async () => {
+      const lead = await makeBot(A, "Maestro3");
+      await makeBot(A, "Treinador3");
+      const { c, say } = await chatWith(A, lead.id);
+      await say("@Treinador3 first question");
+      await worker.drain();
+      await say("@Treinador3 second question");
+      await worker.drain();
+      const rooms = await roomsOf(c);
+      expect(rooms).toHaveLength(1);
+      expect(
+        (await messagesOf(A, rooms[0].conversationId))
+          .filter((m) => m.role === "user")
+          .map((m) => m.content),
+      ).toEqual(["@Treinador3 first question", "@Treinador3 second question"]);
     });
   });
 });

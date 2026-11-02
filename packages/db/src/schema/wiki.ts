@@ -3,7 +3,6 @@ import {
   check,
   index,
   integer,
-  pgTable,
   primaryKey,
   text,
   timestamp,
@@ -12,6 +11,7 @@ import {
   uuid,
   vector,
 } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
@@ -47,7 +47,7 @@ export const WIKI_SCORE_DEFAULT = 50;
  * content. Bots search it and read only what they need, instead of receiving all of it in every prompt. Every write keeps the previous
  * text in `wiki_revision`.
  */
-export const wikiPage = pgTable(
+export const wikiPage = zetta.table(
   "wiki_page",
   {
     id: uuid("id")
@@ -97,7 +97,7 @@ export const wikiPage = pgTable(
 );
 
 /** The teams of an item with type `teams`: only bots that are members of one of them read it. */
-export const wikiPageTeam = pgTable(
+export const wikiPageTeam = zetta.table(
   "wiki_page_team",
   {
     pageId: uuid("page_id")
@@ -117,7 +117,7 @@ export const wikiPageTeam = pgTable(
  * An edge of the knowledge graph, rebuilt from the content on every save. The target is a slug, not an id: it resolves against the
  * reader's visible items, so a link never shows an item the reader cannot read, and it can point to an item written later.
  */
-export const wikiLink = pgTable(
+export const wikiLink = zetta.table(
   "wiki_link",
   {
     fromPageId: uuid("from_page_id")
@@ -137,7 +137,7 @@ export const wikiLink = pgTable(
  * null embedding is still found by keywords on the item and is embedded on a later run. The embedded text also carries the item's title,
  * howto and tags, which are not stored here.
  */
-export const wikiChunk = pgTable(
+export const wikiChunk = zetta.table(
   "wiki_chunk",
   {
     id: uuid("id")
@@ -165,7 +165,7 @@ export const wikiChunk = pgTable(
 );
 
 /** Each saved version of a page, written in the same transaction as the page. A restore writes a new version with old text. */
-export const wikiRevision = pgTable(
+export const wikiRevision = zetta.table(
   "wiki_revision",
   {
     id: uuid("id")
@@ -215,7 +215,7 @@ export const WIKI_JOB_STATUSES = ["pending", "running", "done", "failed", "skipp
  * Background wiki work. learn: after a task or goal loop of a chat finished, its bot reads the chat once and saves what other bots will
  * need. review: the chief reads the wiki checks and fixes contradictions and duplicates. One learn job per task or loop.
  */
-export const wikiJob = pgTable(
+export const wikiJob = zetta.table(
   "wiki_job",
   {
     id: uuid("id")
@@ -259,7 +259,7 @@ export const WIKI_SUGGESTION_STATUSES = [
 ] as const;
 
 /** A change another member (or their bot) proposes to a shared page. Only the page owner applies it; it never edits the page by itself. */
-export const wikiSuggestion = pgTable(
+export const wikiSuggestion = zetta.table(
   "wiki_suggestion",
   {
     id: uuid("id")
@@ -306,7 +306,7 @@ export const WIKI_SOURCE_STATUSES = ["current", "changed", "gone"] as const;
  * Evidence for a page: the task, company document (knowledge_doc), artifact or web address its facts came from, with the version seen when
  * the page was last saved in full. When a task, document or artifact changes or goes away, the page is marked stale. URLs are only kept.
  */
-export const wikiSource = pgTable(
+export const wikiSource = zetta.table(
   "wiki_source",
   {
     id: uuid("id")

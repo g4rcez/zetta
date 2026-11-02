@@ -1,35 +1,35 @@
 -- Custom guard SQL authored after the installed generator created this migration.
-CREATE FUNCTION public.dispatch_reject_capacity_change() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION zetta.dispatch_reject_capacity_change() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION USING ERRCODE = '23514', CONSTRAINT = 'dispatch_capacity_frozen', MESSAGE = 'Dispatch policy is immutable';
 END;
 $$;
 --> statement-breakpoint
-CREATE TRIGGER dispatch_capacity_frozen BEFORE UPDATE OR DELETE ON public.dispatch_capacity
-FOR EACH ROW EXECUTE FUNCTION public.dispatch_reject_capacity_change();
+CREATE TRIGGER dispatch_capacity_frozen BEFORE UPDATE OR DELETE ON zetta.dispatch_capacity
+FOR EACH ROW EXECUTE FUNCTION zetta.dispatch_reject_capacity_change();
 --> statement-breakpoint
-CREATE TRIGGER dispatch_capacity_no_truncate BEFORE TRUNCATE ON public.dispatch_capacity
-FOR EACH STATEMENT EXECUTE FUNCTION public.dispatch_reject_capacity_change();
+CREATE TRIGGER dispatch_capacity_no_truncate BEFORE TRUNCATE ON zetta.dispatch_capacity
+FOR EACH STATEMENT EXECUTE FUNCTION zetta.dispatch_reject_capacity_change();
 --> statement-breakpoint
-CREATE FUNCTION public.dispatch_retain_tombstones() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION zetta.dispatch_retain_tombstones() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION USING ERRCODE = '23514', CONSTRAINT = 'dispatch_tombstones_retained', MESSAGE = 'Dispatch history is retained';
 END;
 $$;
 --> statement-breakpoint
-CREATE TRIGGER dispatch_claims_no_delete BEFORE DELETE ON public.dispatch_claims
-FOR EACH ROW EXECUTE FUNCTION public.dispatch_retain_tombstones();
+CREATE TRIGGER dispatch_claims_no_delete BEFORE DELETE ON zetta.dispatch_claims
+FOR EACH ROW EXECUTE FUNCTION zetta.dispatch_retain_tombstones();
 --> statement-breakpoint
-CREATE TRIGGER dispatch_claims_no_truncate BEFORE TRUNCATE ON public.dispatch_claims
-FOR EACH STATEMENT EXECUTE FUNCTION public.dispatch_retain_tombstones();
+CREATE TRIGGER dispatch_claims_no_truncate BEFORE TRUNCATE ON zetta.dispatch_claims
+FOR EACH STATEMENT EXECUTE FUNCTION zetta.dispatch_retain_tombstones();
 --> statement-breakpoint
-CREATE TRIGGER dispatch_grants_no_delete BEFORE DELETE ON public.dispatch_grants
-FOR EACH ROW EXECUTE FUNCTION public.dispatch_retain_tombstones();
+CREATE TRIGGER dispatch_grants_no_delete BEFORE DELETE ON zetta.dispatch_grants
+FOR EACH ROW EXECUTE FUNCTION zetta.dispatch_retain_tombstones();
 --> statement-breakpoint
-CREATE TRIGGER dispatch_grants_no_truncate BEFORE TRUNCATE ON public.dispatch_grants
-FOR EACH STATEMENT EXECUTE FUNCTION public.dispatch_retain_tombstones();
+CREATE TRIGGER dispatch_grants_no_truncate BEFORE TRUNCATE ON zetta.dispatch_grants
+FOR EACH STATEMENT EXECUTE FUNCTION zetta.dispatch_retain_tombstones();
 --> statement-breakpoint
-CREATE FUNCTION public.dispatch_guard_revision() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION zetta.dispatch_guard_revision() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW IS NOT DISTINCT FROM OLD THEN RETURN NEW; END IF;
   IF OLD.revision = 2147483647 OR NEW.revision::bigint <> OLD.revision::bigint + 1 OR NEW.updated_at < OLD.updated_at THEN
@@ -39,13 +39,13 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE TRIGGER dispatch_claims_revision BEFORE UPDATE ON public.dispatch_claims
-FOR EACH ROW EXECUTE FUNCTION public.dispatch_guard_revision();
+CREATE TRIGGER dispatch_claims_revision BEFORE UPDATE ON zetta.dispatch_claims
+FOR EACH ROW EXECUTE FUNCTION zetta.dispatch_guard_revision();
 --> statement-breakpoint
-CREATE TRIGGER dispatch_grants_revision BEFORE UPDATE ON public.dispatch_grants
-FOR EACH ROW EXECUTE FUNCTION public.dispatch_guard_revision();
+CREATE TRIGGER dispatch_grants_revision BEFORE UPDATE ON zetta.dispatch_grants
+FOR EACH ROW EXECUTE FUNCTION zetta.dispatch_guard_revision();
 --> statement-breakpoint
-CREATE FUNCTION public.dispatch_guard_claim() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION zetta.dispatch_guard_claim() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
     IF NEW.revision <> 1 OR NEW.updated_at <> NEW.created_at OR NEW.resource_state <> 'not_submitted'
@@ -81,10 +81,10 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE TRIGGER dispatch_claims_guard BEFORE INSERT OR UPDATE ON public.dispatch_claims
-FOR EACH ROW EXECUTE FUNCTION public.dispatch_guard_claim();
+CREATE TRIGGER dispatch_claims_guard BEFORE INSERT OR UPDATE ON zetta.dispatch_claims
+FOR EACH ROW EXECUTE FUNCTION zetta.dispatch_guard_claim();
 --> statement-breakpoint
-CREATE FUNCTION public.dispatch_guard_grant() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION zetta.dispatch_guard_grant() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
     IF NEW.revision <> 1 OR NEW.updated_at <> NEW.created_at OR NEW.state <> 'pending'
@@ -115,5 +115,5 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE TRIGGER dispatch_grants_guard BEFORE INSERT OR UPDATE ON public.dispatch_grants
-FOR EACH ROW EXECUTE FUNCTION public.dispatch_guard_grant();
+CREATE TRIGGER dispatch_grants_guard BEFORE INSERT OR UPDATE ON zetta.dispatch_grants
+FOR EACH ROW EXECUTE FUNCTION zetta.dispatch_guard_grant();

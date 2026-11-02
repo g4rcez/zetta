@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { isLayaTag } from "@zetta/core/laya-languages";
-import { flagOf, isKnownLocale, LAYA_LOCALES, localeLabel, localeOptions } from "./laya-locales";
+import {
+  ASSIST_LOCALES,
+  flagOf,
+  isKnownLocale,
+  LAYA_LOCALES,
+  localeLabel,
+  localeOptions,
+} from "./laya-locales";
 
 describe("Laya locales", () => {
   test("each option shows country and language", () => {
@@ -33,5 +40,10 @@ describe("Laya locales", () => {
     expect(isKnownLocale("pt-BR")).toBe(true);
     expect(isKnownLocale("xx-YY")).toBe(false);
     expect(isKnownLocale("")).toBe(false);
+  });
+  test("Home Assistant can also be asked in English", () => {
+    expect(localeOptions([], ASSIST_LOCALES)[0]).toEqual({ value: "en", label: "English" });
+    expect(isKnownLocale("en", ASSIST_LOCALES)).toBe(true);
+    expect(isKnownLocale("en")).toBe(false);
   });
 });

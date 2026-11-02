@@ -1,2 +1,2 @@
-ALTER TABLE "membership" ADD COLUMN "activation_revision" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
-ALTER TABLE "membership" ADD CONSTRAINT "membership_activation_revision_check" CHECK ("activation_revision" between 1 and 2147483647);
+ALTER TABLE "zetta"."membership" ADD COLUMN "activation_revision" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
+ALTER TABLE "zetta"."membership" ADD CONSTRAINT "membership_activation_revision_check" CHECK ("activation_revision" between 1 and 2147483647);

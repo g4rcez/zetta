@@ -2,39 +2,41 @@
   "version": "8",
   "dialect": "postgres",
   "id": "9c431173-4622-4959-b167-3e69e8a426e7",
-  "prevIds": [
-    "00000000-0000-0000-0000-000000000000"
-  ],
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "ddl": [
+    {
+      "name": "zetta",
+      "entityType": "schemas"
+    },
     {
       "isRlsEnabled": false,
       "name": "connection",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "zetta"
     },
     {
       "isRlsEnabled": false,
       "name": "connection_credential",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "zetta"
     },
     {
       "isRlsEnabled": false,
       "name": "connection_key_check",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "zetta"
     },
     {
       "isRlsEnabled": false,
       "name": "connection_mutation_receipt",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "zetta"
     },
     {
       "isRlsEnabled": false,
       "name": "connection_nonce",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "zetta"
     },
     {
       "type": "uuid",
@@ -46,7 +48,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -59,7 +61,7 @@
       "identity": null,
       "name": "owner_user_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -72,7 +74,7 @@
       "identity": null,
       "name": "kind",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -85,7 +87,7 @@
       "identity": null,
       "name": "provider",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -98,7 +100,7 @@
       "identity": null,
       "name": "label",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -111,7 +113,7 @@
       "identity": null,
       "name": "state",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -124,7 +126,7 @@
       "identity": null,
       "name": "revision",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -137,7 +139,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -150,7 +152,7 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -163,7 +165,7 @@
       "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -176,7 +178,7 @@
       "identity": null,
       "name": "revoked_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -189,7 +191,7 @@
       "identity": null,
       "name": "current_credential_version",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
@@ -202,7 +204,7 @@
       "identity": null,
       "name": "connection_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
@@ -215,7 +217,7 @@
       "identity": null,
       "name": "credential_version",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
@@ -228,7 +230,7 @@
       "identity": null,
       "name": "owner_user_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
@@ -241,7 +243,7 @@
       "identity": null,
       "name": "kind",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
@@ -254,7 +256,7 @@
       "identity": null,
       "name": "envelope_version",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
@@ -267,7 +269,7 @@
       "identity": null,
       "name": "algorithm",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
@@ -280,7 +282,7 @@
       "identity": null,
       "name": "key_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
@@ -293,7 +295,7 @@
       "identity": null,
       "name": "nonce",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
@@ -306,7 +308,7 @@
       "identity": null,
       "name": "tag",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
@@ -319,7 +321,7 @@
       "identity": null,
       "name": "ciphertext",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
@@ -332,7 +334,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
@@ -345,7 +347,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
@@ -358,7 +360,7 @@
       "identity": null,
       "name": "envelope_version",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
@@ -371,7 +373,7 @@
       "identity": null,
       "name": "algorithm",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
@@ -384,7 +386,7 @@
       "identity": null,
       "name": "key_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
@@ -397,7 +399,7 @@
       "identity": null,
       "name": "nonce",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
@@ -410,7 +412,7 @@
       "identity": null,
       "name": "tag",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
@@ -423,7 +425,7 @@
       "identity": null,
       "name": "ciphertext",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
@@ -436,7 +438,7 @@
       "identity": null,
       "name": "nonce_purpose",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
@@ -449,7 +451,7 @@
       "identity": null,
       "name": "encryption_count",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
@@ -462,7 +464,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
@@ -475,7 +477,7 @@
       "identity": null,
       "name": "owner_user_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -488,7 +490,7 @@
       "identity": null,
       "name": "operation_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -501,7 +503,7 @@
       "identity": null,
       "name": "operation",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -514,7 +516,7 @@
       "identity": null,
       "name": "connection_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -527,7 +529,7 @@
       "identity": null,
       "name": "expected_revision",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -540,7 +542,7 @@
       "identity": null,
       "name": "request_mac",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -553,7 +555,7 @@
       "identity": null,
       "name": "kind",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -566,7 +568,7 @@
       "identity": null,
       "name": "provider",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -579,7 +581,7 @@
       "identity": null,
       "name": "label",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -592,7 +594,7 @@
       "identity": null,
       "name": "state",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -605,7 +607,7 @@
       "identity": null,
       "name": "revision",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -618,7 +620,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -631,7 +633,7 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -644,7 +646,7 @@
       "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -657,7 +659,7 @@
       "identity": null,
       "name": "revoked_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -670,7 +672,7 @@
       "identity": null,
       "name": "credential_version",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
@@ -683,7 +685,7 @@
       "identity": null,
       "name": "key_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     },
     {
@@ -696,7 +698,7 @@
       "identity": null,
       "name": "nonce",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     },
     {
@@ -709,7 +711,7 @@
       "identity": null,
       "name": "purpose",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     },
     {
@@ -722,7 +724,7 @@
       "identity": null,
       "name": "connection_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     },
     {
@@ -735,7 +737,7 @@
       "identity": null,
       "name": "credential_version",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     },
     {
@@ -748,7 +750,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     },
     {
@@ -776,434 +778,370 @@
       "concurrently": false,
       "name": "connection_owner_id_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
       "nameExplicit": false,
-      "columns": [
-        "owner_user_id"
-      ],
+      "columns": ["owner_user_id"],
       "schemaTo": "public",
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "RESTRICT",
       "onDelete": "RESTRICT",
       "name": "connection_owner_user_id_user_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "connection_id",
-        "owner_user_id",
-        "kind"
-      ],
+      "columns": ["connection_id", "owner_user_id", "kind"],
       "schemaTo": "public",
       "tableTo": "connection",
-      "columnsTo": [
-        "id",
-        "owner_user_id",
-        "kind"
-      ],
+      "columnsTo": ["id", "owner_user_id", "kind"],
       "onUpdate": "RESTRICT",
       "onDelete": "RESTRICT",
       "name": "connection_credential_owner_fk",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "key_id",
-        "nonce",
-        "connection_id",
-        "credential_version"
-      ],
+      "columns": ["key_id", "nonce", "connection_id", "credential_version"],
       "schemaTo": "public",
       "tableTo": "connection_nonce",
-      "columnsTo": [
-        "key_id",
-        "nonce",
-        "connection_id",
-        "credential_version"
-      ],
+      "columnsTo": ["key_id", "nonce", "connection_id", "credential_version"],
       "onUpdate": "RESTRICT",
       "onDelete": "RESTRICT",
       "name": "connection_credential_nonce_fk",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "key_id",
-        "nonce",
-        "nonce_purpose"
-      ],
+      "columns": ["key_id", "nonce", "nonce_purpose"],
       "schemaTo": "public",
       "tableTo": "connection_nonce",
-      "columnsTo": [
-        "key_id",
-        "nonce",
-        "purpose"
-      ],
+      "columnsTo": ["key_id", "nonce", "purpose"],
       "onUpdate": "RESTRICT",
       "onDelete": "RESTRICT",
       "name": "connection_key_check_nonce_fk",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "connection_id",
-        "owner_user_id",
-        "kind"
-      ],
+      "columns": ["connection_id", "owner_user_id", "kind"],
       "schemaTo": "public",
       "tableTo": "connection",
-      "columnsTo": [
-        "id",
-        "owner_user_id",
-        "kind"
-      ],
+      "columnsTo": ["id", "owner_user_id", "kind"],
       "onUpdate": "RESTRICT",
       "onDelete": "RESTRICT",
       "name": "connection_receipt_owner_fk",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
-      "columns": [
-        "connection_id",
-        "credential_version"
-      ],
+      "columns": ["connection_id", "credential_version"],
       "nameExplicit": false,
       "name": "connection_credential_pkey",
       "entityType": "pks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
-      "columns": [
-        "owner_user_id",
-        "operation_id"
-      ],
+      "columns": ["owner_user_id", "operation_id"],
       "nameExplicit": false,
       "name": "connection_mutation_receipt_pkey",
       "entityType": "pks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
-      "columns": [
-        "key_id",
-        "nonce"
-      ],
+      "columns": ["key_id", "nonce"],
       "nameExplicit": false,
       "name": "connection_nonce_pkey",
       "entityType": "pks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "connection_pkey",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "connection_key_check_pkey",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check",
       "entityType": "pks"
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "id",
-        "owner_user_id",
-        "kind"
-      ],
+      "columns": ["id", "owner_user_id", "kind"],
       "nullsNotDistinct": false,
       "name": "connection_owner_kind_unique",
       "entityType": "uniques",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "key_id",
-        "nonce",
-        "connection_id",
-        "credential_version"
-      ],
+      "columns": ["key_id", "nonce", "connection_id", "credential_version"],
       "nullsNotDistinct": false,
       "name": "connection_nonce_credential_unique",
       "entityType": "uniques",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "key_id",
-        "nonce",
-        "purpose"
-      ],
+      "columns": ["key_id", "nonce", "purpose"],
       "nullsNotDistinct": false,
       "name": "connection_nonce_purpose_unique",
       "entityType": "uniques",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     },
     {
       "value": "\"kind\" = 'api-key'",
       "name": "connection_kind_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
       "value": "\"provider\" collate \"C\" ~ '^[a-z0-9][a-z0-9_-]{0,63}$'",
       "name": "connection_provider_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
       "value": "char_length(\"label\") between 1 and 100 and octet_length(\"label\") <= 400",
       "name": "connection_label_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
       "value": "\"revision\" between 1 and 2147483647",
       "name": "connection_revision_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
       "value": "(\"state\" = 'active' and \"revoked_at\" is null) or (\"state\" = 'revoked' and \"revoked_at\" is not null)",
       "name": "connection_state_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
       "value": "octet_length(\"owner_user_id\") between 1 and 256",
       "name": "connection_owner_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
       "value": "\"current_credential_version\" between 1 and 2147483647",
       "name": "connection_version_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection"
     },
     {
       "value": "\"kind\" = 'api-key'",
       "name": "connection_credential_kind_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
       "value": "\"credential_version\" between 1 and 2147483647",
       "name": "connection_credential_version_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
       "value": "\"envelope_version\" = 1 and \"algorithm\" = 'aes-256-gcm'",
       "name": "connection_credential_envelope_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
       "value": "\"key_id\" collate \"C\" ~ '^[a-z0-9_-]{1,32}$'",
       "name": "connection_credential_key_id_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
       "value": "octet_length(\"nonce\") = 12",
       "name": "connection_credential_nonce_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
       "value": "octet_length(\"tag\") = 16",
       "name": "connection_credential_tag_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
       "value": "octet_length(\"ciphertext\") between 1 and 16384",
       "name": "connection_credential_ciphertext_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_credential"
     },
     {
       "value": "\"id\" = 1",
       "name": "connection_key_check_singleton_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
       "value": "\"nonce_purpose\" = 'key-check'",
       "name": "connection_key_check_purpose_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
       "value": "\"encryption_count\" between 1 and 1000000",
       "name": "connection_key_check_count_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
       "value": "\"envelope_version\" = 1 and \"algorithm\" = 'aes-256-gcm'",
       "name": "connection_key_check_envelope_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
       "value": "\"key_id\" collate \"C\" ~ '^[a-z0-9_-]{1,32}$'",
       "name": "connection_key_check_key_id_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
       "value": "octet_length(\"nonce\") = 12",
       "name": "connection_key_check_nonce_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
       "value": "octet_length(\"tag\") = 16",
       "name": "connection_key_check_tag_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
       "value": "octet_length(\"ciphertext\") between 1 and 16384",
       "name": "connection_key_check_ciphertext_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_key_check"
     },
     {
       "value": "\"kind\" = 'api-key'",
       "name": "connection_receipt_kind_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
       "value": "\"provider\" collate \"C\" ~ '^[a-z0-9][a-z0-9_-]{0,63}$'",
       "name": "connection_receipt_provider_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
       "value": "char_length(\"label\") between 1 and 100 and octet_length(\"label\") <= 400",
       "name": "connection_receipt_label_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
       "value": "\"revision\" between 1 and 2147483647",
       "name": "connection_receipt_revision_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
       "value": "(\"state\" = 'active' and \"revoked_at\" is null) or (\"state\" = 'revoked' and \"revoked_at\" is not null)",
       "name": "connection_receipt_state_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
       "value": "octet_length(\"request_mac\") = 32",
       "name": "connection_receipt_mac_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
       "value": "\"credential_version\" between 1 and 2147483647",
       "name": "connection_receipt_version_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
       "value": "\n    (\"operation\" = 'create-api-key' and \"expected_revision\" is null and \"revision\" = 1 and \"credential_version\" = 1 and \"state\" = 'active')\n    or (\"operation\" in ('replace-api-key', 'revoke') and \"expected_revision\" is not null and \"expected_revision\" between 1 and 2147483646 and \"revision\" = \"expected_revision\" + 1\n      and ((\"operation\" = 'replace-api-key' and \"state\" = 'active') or (\"operation\" = 'revoke' and \"state\" = 'revoked')))\n  ",
       "name": "connection_receipt_operation_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_mutation_receipt"
     },
     {
       "value": "\"key_id\" collate \"C\" ~ '^[a-z0-9_-]{1,32}$'",
       "name": "connection_nonce_key_id_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     },
     {
       "value": "octet_length(\"nonce\") = 12",
       "name": "connection_nonce_length_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     },
     {
       "value": "\n    (\"purpose\" = 'key-check' and \"connection_id\" is null and \"credential_version\" is null)\n    or (\"purpose\" = 'credential' and \"connection_id\" is not null and \"credential_version\" is not null and \"credential_version\" between 1 and 2147483647)\n  ",
       "name": "connection_nonce_identity_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "zetta",
       "table": "connection_nonce"
     }
   ],

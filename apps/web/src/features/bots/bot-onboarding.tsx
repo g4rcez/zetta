@@ -764,6 +764,64 @@ export function InstructionsStep({
   checks: ReturnType<typeof reviewInstructions>;
 }) {
   const { bots } = useSidebarData();
+  return (
+    <div className="@container text-sm">
+      <div className="grid gap-4 @3xl:grid-cols-2">
+        <div className="h-[min(40rem,72dvh)] min-h-0">
+          <InstructionsInterview
+            interviewer={
+              draft.harness === "decision" ? bots.find((b) => b.kind === "chief") : undefined
+            }
+            engine={{
+              harness: draft.harness,
+              model: draft.model || null,
+              name: draft.name,
+              description: draft.description,
+              avatar,
+            }}
+            state={interview}
+            setState={setInterview}
+            draft={{
+              personality: draft.personality,
+              instructions: draft.instructions,
+              outputStyle: draft.outputStyle,
+            }}
+            onDraft={(d) =>
+              set({
+                instructions: d.instructions,
+                ...(d.personality !== undefined ? { personality: d.personality } : {}),
+                ...(d.outputStyle ? { outputStyle: d.outputStyle, outputStyleId: null } : {}),
+              })
+            }
+          />
+        </div>
+        <ConfigPreview
+          draft={draft}
+          set={set}
+          avatar={avatar}
+          interview={interview}
+          checks={checks}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** The bot's configuration as it stands, beside the setup chat: it updates while the person talks. */
+function ConfigPreview({
+  draft,
+  set,
+  avatar,
+  interview,
+  checks,
+}: {
+  draft: Draft;
+  set: (p: Partial<Draft>) => void;
+  avatar: AvatarValue | null;
+  interview: InterviewState;
+  checks: ReturnType<typeof reviewInstructions>;
+}) {
+  const { bots } = useSidebarData();
   const [editing, setEditing] = useState(false);
   const [details, setDetails] = useState(false);
   const actions = useMemo(
@@ -775,139 +833,137 @@ export function InstructionsStep({
   const score = reviewScore(checks);
   const todo = checks.filter((c) => !c.ok);
   return (
-    <div className="max-w-3xl space-y-8 text-sm">
-      <InstructionsInterview
-        interviewer={
-          draft.harness === "decision" ? bots.find((b) => b.kind === "chief") : undefined
-        }
-        engine={{
-          harness: draft.harness,
-          model: draft.model || null,
-          name: draft.name,
-          description: draft.description,
-          avatar,
-        }}
-        state={interview}
-        setState={setInterview}
-        draft={{
-          personality: draft.personality,
-          instructions: draft.instructions,
-          outputStyle: draft.outputStyle,
-        }}
-        onDraft={(d) =>
-          set({
-            instructions: d.instructions,
-            ...(d.personality !== undefined ? { personality: d.personality } : {}),
-            ...(d.outputStyle ? { outputStyle: d.outputStyle, outputStyleId: null } : {}),
-          })
-        }
-      />
-      {(hasDraft || interview.manual) && (
-        <section aria-label="The draft" className="space-y-6">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-base font-semibold">What your bot will do</h2>
-            <Button type="button" size="sm" variant="outline" onClick={() => setEditing((e) => !e)}>
-              <PencilLineIcon className="size-4" aria-hidden="true" />
-              {edit ? "Done editing" : "Edit the text"}
-            </Button>
-          </div>
-          {actions.length > 0 && (
-            <ul className="grid gap-2 sm:grid-cols-2">
-              {actions.map((a, i) => (
-                <li key={i} className="flex gap-2 rounded-lg border bg-card p-3 text-pretty">
-                  <CheckIcon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-                  <span>{a}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {edit ? (
-            <div className="space-y-6">
-              <MentionTextarea
-                title="Personality"
-                required={false}
-                bots={bots}
-                value={draft.personality}
-                onChange={(personality) => set({ personality })}
-                rows={4}
-                maxLength={4096}
-                placeholder="You are a precise, friendly … who …"
-              />
-              <MentionTextarea
-                title="Instructions"
-                required={false}
-                bots={bots}
-                value={draft.instructions}
-                onChange={(instructions) => set({ instructions })}
-                rows={16}
-                maxLength={16384}
-                placeholder="Start by … then … Answer with … Never …"
-              />
-            </div>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-              <article aria-label="Personality" className="rounded-lg border bg-card p-4">
-                <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Personality
-                </h3>
-                {draft.personality.trim() ? (
-                  <Response text={draft.personality} />
-                ) : (
-                  <p className="text-muted-foreground">Not set yet.</p>
-                )}
-              </article>
-              <article aria-label="Instructions" className="rounded-lg border bg-card p-4">
-                <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Instructions
-                </h3>
-                {draft.instructions.trim() ? (
-                  <Response text={draft.instructions} />
-                ) : (
-                  <p className="text-muted-foreground">Not set yet.</p>
-                )}
-              </article>
-            </div>
-          )}
-          <div className="text-xs text-muted-foreground">
-            <p className="flex flex-wrap items-center gap-x-2">
-              <span>
-                Quality check: {checks.length - todo.length} of {checks.length} good ({score}%).
-              </span>
-              <button
-                type="button"
-                aria-expanded={details}
-                onClick={() => setDetails((d) => !d)}
-                className="underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                {details
-                  ? "Hide details"
-                  : todo.length
-                    ? `See ${todo.length} to improve`
-                    : "See details"}
-              </button>
-            </p>
-            {details && (
-              <div className="mt-3 max-w-md text-sm">
-                <ReviewCard checks={checks} />
+    <section
+      aria-label="Preview"
+      className="flex h-[min(40rem,72dvh)] min-h-0 flex-col overflow-hidden rounded-lg border bg-background"
+    >
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+        <BotAvatar bot={{ id: "new-bot", avatar }} size={24} square className="shrink-0" />
+        <h2 className="min-w-0 flex-1 truncate text-base font-bold leading-tight">
+          {draft.name.trim() || "New bot"}
+          <span className="ml-2 text-xs font-normal text-muted-foreground">Preview</span>
+        </h2>
+        {interview.status === "thinking" && (
+          <span role="status" className="text-xs text-muted-foreground">
+            Updating…
+          </span>
+        )}
+        {(hasDraft || interview.manual) && (
+          <Button type="button" size="sm" variant="outline" onClick={() => setEditing((e) => !e)}>
+            <PencilLineIcon className="size-4" aria-hidden="true" />
+            {edit ? "Done editing" : "Edit the text"}
+          </Button>
+        )}
+      </header>
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+        {hasDraft || interview.manual ? (
+          <>
+            {actions.length > 0 && (
+              <section aria-label="What it will do" className="space-y-2">
+                <h3 className="text-base font-semibold">What your bot will do</h3>
+                <ul className="grid gap-2">
+                  {actions.map((a, i) => (
+                    <li key={i} className="flex gap-2 rounded-lg border bg-card p-3 text-pretty">
+                      <CheckIcon
+                        className="mt-0.5 size-4 shrink-0 text-primary"
+                        aria-hidden="true"
+                      />
+                      <span>{a}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {edit ? (
+              <div className="space-y-6">
+                <MentionTextarea
+                  title="Personality"
+                  required={false}
+                  bots={bots}
+                  value={draft.personality}
+                  onChange={(personality) => set({ personality })}
+                  rows={4}
+                  maxLength={4096}
+                  placeholder="You are a precise, friendly … who …"
+                />
+                <MentionTextarea
+                  title="Instructions"
+                  required={false}
+                  bots={bots}
+                  value={draft.instructions}
+                  onChange={(instructions) => set({ instructions })}
+                  rows={14}
+                  maxLength={16384}
+                  placeholder="Start by … then … Answer with … Never …"
+                />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <article aria-label="Personality" className="rounded-lg border bg-card p-4">
+                  <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Personality
+                  </h3>
+                  {draft.personality.trim() ? (
+                    <Response text={draft.personality} />
+                  ) : (
+                    <p className="text-muted-foreground">Not set yet.</p>
+                  )}
+                </article>
+                <article aria-label="Instructions" className="rounded-lg border bg-card p-4">
+                  <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Instructions
+                  </h3>
+                  {draft.instructions.trim() ? (
+                    <Response text={draft.instructions} />
+                  ) : (
+                    <p className="text-muted-foreground">Not set yet.</p>
+                  )}
+                </article>
               </div>
             )}
+            <div className="text-xs text-muted-foreground">
+              <p className="flex flex-wrap items-center gap-x-2">
+                <span>
+                  Quality check: {checks.length - todo.length} of {checks.length} good ({score}%).
+                </span>
+                <button
+                  type="button"
+                  aria-expanded={details}
+                  onClick={() => setDetails((d) => !d)}
+                  className="underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  {details
+                    ? "Hide details"
+                    : todo.length
+                      ? `See ${todo.length} to improve`
+                      : "See details"}
+                </button>
+              </p>
+              {details && (
+                <div className="mt-3 max-w-md text-sm">
+                  <ReviewCard checks={checks} />
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="text-muted-foreground">Your answers turn into the configuration here.</p>
+        )}
+        <section aria-label="Output style" className="space-y-3">
+          <div>
+            <h3 className="text-base font-semibold">Output style</h3>
+            <p className="text-muted-foreground">
+              How the bot writes its answers. You can change it later in its settings.
+            </p>
           </div>
+          <OutputStylePicker
+            name="output-style-new-bot"
+            value={{ outputStyle: draft.outputStyle, outputStyleId: draft.outputStyleId }}
+            onChange={set}
+          />
         </section>
-      )}
-      <section aria-label="Output style" className="space-y-3">
-        <div>
-          <h2 className="text-base font-semibold">Output style</h2>
-          <p className="text-muted-foreground">
-            How the bot writes its answers. You can change it later in its settings.
-          </p>
-        </div>
-        <OutputStylePicker
-          name="output-style-new-bot"
-          value={{ outputStyle: draft.outputStyle, outputStyleId: draft.outputStyleId }}
-          onChange={set}
-        />
-      </section>
-    </div>
+      </div>
+    </section>
   );
 }
 

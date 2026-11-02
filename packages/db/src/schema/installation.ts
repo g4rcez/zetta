@@ -1,8 +1,9 @@
 import { sql } from "drizzle-orm";
-import { check, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { check, integer, jsonb, text, timestamp } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
 /** Singleton (id = 1). A missing row means the defaults: local network mode, onboarding pending. */
-export const installationSettings = pgTable(
+export const installationSettings = zetta.table(
   "installation_settings",
   {
     id: integer("id").primaryKey(),

@@ -3,7 +3,8 @@
 # Usage: scripts/restore-drill.sh   (needs docker, bun; env DOCKER_BIN to override the docker CLI)
 set -euo pipefail
 D="${DOCKER_BIN:-docker}"; C="${PG_CONTAINER:-zetta-postgres}"; SRC="${SRC_DB:-zetta}"; DST="${DST_DB:-zetta_restore}"; PW="${POSTGRES_PASSWORD:-password}"
-psql() { $D exec -i "$C" psql -U postgres -v ON_ERROR_STOP=1 -At "$@"; }
+# pg_restore into a fresh database does not carry the database-level search_path, so bare table names need it here.
+psql() { $D exec -i -e PGOPTIONS="-c search_path=zetta" "$C" psql -U postgres -v ON_ERROR_STOP=1 -At "$@"; }
 counts() { psql -d "$1" -c "select 'users='||(select count(*) from \"user\")||' bots='||(select count(*) from bot)||' messages='||(select count(*) from message)||' memories='||(select count(*) from memory)||' conversations='||(select count(*) from conversation)||' sources='||(select count(*) from source)||' migrations='||(select count(*) from drizzle.__drizzle_migrations)"; }
 echo "== 1. dump $SRC"; $D exec "$C" pg_dump -U postgres -Fc "$SRC" > /tmp/zetta-drill.dump
 echo "== 2. restore into $DST"; psql -d postgres -c "drop database if exists $DST" -c "create database $DST" >/dev/null

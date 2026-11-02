@@ -1,5 +1,5 @@
 import { assertPublicUrl } from "../../computer/service";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   PluginError,
   registerPlugin,
@@ -168,6 +168,74 @@ async function waha(
   }
 }
 
+/**
+ * Push, per user, kept in the user's own plugin config (no environment variable). `hookUrl` is the address at which WAHA reaches Zetta,
+ * typed by the user in the plugin settings; `hookKey` is a random signing key that only the server writes (see `enable`). With both set,
+ * the user's WAHA session gets a webhook that calls Zetta when a message arrives. The webhook is a doorbell: its body is never read as
+ * message data. A call with a valid signature only makes Zetta poll that user's route now (modules/inbound `wake`), so de-duplication,
+ * filters, caps and the untrusted-data wrapping stay in the one poll path. Polling then only runs as a slow safety net.
+ * Each user has a key of their own, so one user's key opens no other user's route.
+ */
+const SAFETY_POLL_SECONDS = 900;
+const hookKey = (c: PluginContext) => c.config.hookKey ?? "";
+const hookUrl = (c: PluginContext) => {
+  try {
+    const u = new URL((c.config.hookUrl ?? "").trim());
+    if (!/^https?:$/.test(u.protocol)) return "";
+    return `${u.origin}${u.pathname.replace(/\/+$/, "")}/api/inbound/whatsapp/hook/${encodeURIComponent(c.userId)}`;
+  } catch {
+    return "";
+  }
+};
+type WahaHook = { url?: unknown; events?: unknown; hmac?: { key?: unknown } | null };
+const withoutNulls = <T extends object>(o: T) =>
+  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null));
+/** True when WAHA sends this user's new messages to Zetta. Never throws: a failure leaves polling at its normal speed and is retried on the next poll. */
+async function registerHook(c: PluginContext, url: string): Promise<boolean> {
+  try {
+    const s = (await waha(c, `/api/sessions/${session(c)}`)) as {
+      status?: string;
+      config?: { webhooks?: WahaHook[] } & Record<string, unknown>;
+    };
+    // The update restarts the session: never while it waits for the QR code or is starting.
+    if (s.status !== "WORKING") return false;
+    const key = hookKey(c),
+      config = s.config ?? {},
+      hooks = Array.isArray(config.webhooks) ? config.webhooks : [];
+    const has = hooks.some(
+      (w) =>
+        w.url === url &&
+        w.hmac?.key === key &&
+        Array.isArray(w.events) &&
+        w.events.includes("message"),
+    );
+    if (!has)
+      await waha(c, `/api/sessions/${session(c)}`, {
+        method: "PUT",
+        body: {
+          name: sessionName(c),
+          config: {
+            ...withoutNulls(config),
+            webhooks: [
+              ...hooks.filter((w) => w.url !== url).map(withoutNulls),
+              {
+                url,
+                events: ["message"],
+                hmac: { key },
+                retries: { policy: "exponential", delaySeconds: 2, attempts: 5 },
+              },
+            ],
+          },
+        },
+      });
+    return true;
+  } catch {
+    return false;
+  }
+}
+const sameHmac = (a: string, b: string) =>
+  a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+
 /** Strip control/bidi characters and cap length. */
 const clean = (v: unknown, max: number) =>
   String(v ?? "")
@@ -214,7 +282,13 @@ const sessionStatus = async (c: PluginContext) => {
  * message ids seen at that second, since WhatsApp timestamps are coarse). The first poll only records "now": nothing old is replayed.
  * Our own messages move the watermark but are never delivered; groups, broadcasts and channels are skipped unless groups are enabled.
  */
-type WaCursor = { v: 1; since: number; chats: Record<string, { ts: number; ids: string[] }> };
+type WaCursor = {
+  v: 1;
+  since: number;
+  chats: Record<string, { ts: number; ids: string[] }>;
+  /** The webhook address WAHA has for this user (see registerHook); a different address means register again. */
+  hook?: string;
+};
 const INBOUND_CHATS = 10,
   INBOUND_PAGE = 20,
   MAX_TRACKED = 500;
@@ -241,7 +315,17 @@ const inbound: PluginInbound = {
     const now = Math.floor(Date.now() / 1000);
     const cur =
       raw && typeof raw === "object" && (raw as WaCursor).v === 1 ? (raw as WaCursor) : undefined;
-    if (!cur) return { events: [], cursor: { v: 1, since: now, chats: {} } satisfies WaCursor };
+    const url = hookUrl(ctx);
+    const pushed =
+      Boolean(url && hookKey(ctx)) && (cur?.hook === url || (await registerHook(ctx, url)));
+    const push = pushed ? { hook: url } : {};
+    const slow = pushed ? { nextPollSeconds: SAFETY_POLL_SECONDS } : {};
+    if (!cur)
+      return {
+        events: [],
+        cursor: { v: 1, since: now, chats: {}, ...push } satisfies WaCursor,
+        ...slow,
+      };
     const rows = (await waha(ctx, `/api/${session(ctx)}/chats/overview?limit=50`)) as {
       id?: unknown;
       name?: unknown;
@@ -335,9 +419,35 @@ const inbound: PluginInbound = {
       .slice(0, MAX_TRACKED);
     return {
       events,
-      cursor: { v: 1, since: cur.since, chats: Object.fromEntries(kept) } satisfies WaCursor,
+      cursor: {
+        v: 1,
+        since: cur.since,
+        chats: Object.fromEntries(kept),
+        ...push,
+      } satisfies WaCursor,
+      ...slow,
       ...(warning ? { warning } : {}),
     };
+  },
+  async enable(ctx) {
+    const url = hookUrl(ctx);
+    if (!url) return;
+    if (!hookKey(ctx))
+      await ctx.setConfig({ ...ctx.config, hookKey: randomBytes(32).toString("hex") });
+    await registerHook(ctx, url);
+  },
+  verifyPush(ctx, headers, raw) {
+    const key = hookKey(ctx),
+      sent = headers.get("x-webhook-hmac") ?? "";
+    // WAHA signs the raw body with HMAC-SHA512 (hex) and the key we registered for this user.
+    if (!key || !sameHmac(sent, createHmac("sha512", key).update(raw).digest("hex")))
+      return "invalid";
+    try {
+      const b = JSON.parse(raw) as { event?: unknown; payload?: { fromMe?: unknown } };
+      return b.event === "message" && b.payload?.fromMe !== true ? "wake" : "ignore";
+    } catch {
+      return "ignore";
+    }
   },
 };
 
@@ -389,8 +499,18 @@ const def: PluginDef = {
       key: "timeFormat",
       label: "Time format (24h/12h)",
       optional: true,
+      botEditable: true,
       placeholder: "24h",
       help: "How message times are shown in the chat. Default 24h.",
+    },
+    {
+      key: "hookUrl",
+      label: "Zetta address for WAHA (instant messages)",
+      kind: "url",
+      optional: true,
+      botEditable: true, // WAHA sends message text to this address, so a bot only proposes it and the user applies it
+      placeholder: "http://host.docker.internal:3000",
+      help: "Where your WAHA server reaches Zetta (plain http, no path). When set, bots get new WhatsApp messages at once instead of every few minutes.",
     },
     {
       key: "allowSend",

@@ -1,4 +1,7 @@
 import { uuidv7 } from "@zetta/core/uuid";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
@@ -6,6 +9,7 @@ import { membership } from "@zetta/db/schema/identity";
 import { team, teamMember } from "@zetta/db/schema/teams";
 import { createApp } from "../app";
 import { cleanupTestUsers } from "../test-support/db-cleanup";
+import { createBotClaude } from "./bot-claude/store";
 import { createChatService } from "./chat/service";
 import { HarnessError } from "./chat/harness";
 import { createTurnRunner } from "./chat/pipeline";
@@ -38,14 +42,19 @@ suite("v1 user journeys", () => {
   );
   const script: string[] = [];
   const prompts: string[] = [];
-  const cli = async (t: { prompt: string; harness: string }) => {
+  /** The skill files installed for the latest run (Claude Code plugin dir). */
+  let installed: Record<string, string> = {};
+  type Run = { prompt: string; harness: string; profile?: { files: Record<string, string> } };
+  const cli = async (t: Run) => {
     if (t.harness === "cursor") throw new HarnessError("not_installed");
     prompts.push(t.prompt);
+    installed = t.profile?.files ?? {};
     return script.shift() ?? "OK";
   };
-  const stream = async function* (t: { prompt: string; harness: string }) {
+  const stream = async function* (t: Run) {
     if (t.harness === "cursor") throw new HarnessError("not_installed");
     prompts.push(t.prompt);
+    installed = t.profile?.files ?? {};
     yield script.shift() ?? "OK";
   };
   const wiki = createWiki(db);
@@ -176,6 +185,135 @@ suite("v1 user journeys", () => {
     expect(prompts.at(-1)).toContain("1) tag the commit 2) push the tag");
     expect(picked.json.assistant.meta.used.instructions).toEqual([{ id }]);
     expect((await say(outside, "Go", [uuidv7()])).status).toBe(404);
+  });
+
+  test("a skill picked with / is named in the prompt of the bot that has it; an unknown one is refused", async () => {
+    const mk = async (name: string, harness: string) => {
+      const b = (await call("POST", "/api/bots", { name, harness })).json.bot;
+      await db.$client.query("update bot set onboarded = true where id = $1", [b.id]);
+      return b;
+    };
+    const addSkill = (botId: string) =>
+      createBotClaude(db).addAsset(botId, {
+        kind: "skill",
+        name: "release-notes",
+        description: "Write release notes",
+        body: "1) list the merged pull requests",
+        tools: [],
+        model: null,
+        enabled: true,
+      });
+    const [claude, hermes, plain] = [
+      await mk("SkillClaude", "claude-code"),
+      await mk("SkillHermes", "hermes"),
+      await mk("SkillPlain", "pi"),
+    ];
+    await addSkill(claude.id);
+    await addSkill(hermes.id);
+
+    // The picker lists the bot's own skills and Zetta's, with no instructions; a harness without skills lists none.
+    expect((await call("GET", `/api/bots/${claude.id}/skills`)).json).toEqual({
+      skills: [
+        { name: "release-notes", description: "Write release notes", source: "bot" },
+        expect.objectContaining({ name: "zetta-recover-from-failure" }),
+        expect.objectContaining({ name: "zetta-long-running-work" }),
+        expect.objectContaining({ name: "zetta-verify-before-done" }),
+      ],
+    });
+    expect((await call("GET", `/api/bots/${plain.id}/skills`)).json).toEqual({ skills: [] });
+    expect((await call("GET", `/api/bots/${uuidv7()}/skills`)).status).toBe(404);
+
+    const say = async (b: { id: string }, skills: string[]) => {
+      const conv = (await call("POST", "/api/conversations", { botId: b.id })).json.conversation.id;
+      prompts.length = 0;
+      return call("POST", `/api/conversations/${conv}/messages`, { content: "Go", skills });
+    };
+    expect((await say(claude, ["release-notes"])).status).toBe(201);
+    expect(prompts.at(-1)).toContain(
+      "Load each with the Skill tool before you answer: zetta-bot:release-notes.",
+    );
+    expect((await say(hermes, ["release-notes"])).status).toBe(201);
+    expect(prompts.at(-1)).toContain(
+      'follow these skills for this message (see "Skills you have" above): release-notes.',
+    );
+    // A built-in skill can be picked too.
+    expect((await say(claude, ["zetta-verify-before-done"])).status).toBe(201);
+    // A name the bot does not have, or a bot whose harness has no skills, is refused.
+    expect((await say(claude, ["nope"])).status).toBe(404);
+    expect((await say(plain, ["release-notes"])).status).toBe(404);
+  });
+
+  test("skills from the server user's home are offered to every harness, and the prompt says to use them without carrying their text", async () => {
+    const home = await mkdtemp(join(tmpdir(), "zetta-v1-home-"));
+    const put = async (dir: string, name: string, text: string) => {
+      await mkdir(join(home, dir, name), { recursive: true });
+      await writeFile(join(home, dir, name, "SKILL.md"), text);
+    };
+    await put(
+      ".claude/skills",
+      "host-native",
+      "---\ndescription: In the Claude folder\n---\nnative steps",
+    );
+    await put(
+      ".agents/skills",
+      "host-shared",
+      "---\ndescription: In the shared folder\n---\nshared steps",
+    );
+    const was = { home: process.env.HOME, on: process.env.ZETTA_HOST_SKILLS };
+    const mk = async (name: string, harness: string) => {
+      const b = (await call("POST", "/api/bots", { name, harness })).json.bot;
+      await db.$client.query("update bot set onboarded = true where id = $1", [b.id]);
+      return b;
+    };
+    const say = async (b: { id: string }, skills: string[]) => {
+      const conv = (await call("POST", "/api/conversations", { botId: b.id })).json.conversation.id;
+      prompts.length = 0;
+      return call("POST", `/api/conversations/${conv}/messages`, { content: "Go", skills });
+    };
+    try {
+      process.env.HOME = home;
+      const [claude, plain] = [await mk("HostClaude", "claude-code"), await mk("HostPlain", "pi")];
+      // Off by default: nothing is listed and a pick is refused.
+      delete process.env.ZETTA_HOST_SKILLS;
+      expect((await call("GET", `/api/bots/${plain.id}/skills`)).json).toEqual({ skills: [] });
+      expect((await say(plain, ["host-native"])).status).toBe(404);
+
+      process.env.ZETTA_HOST_SKILLS = "on";
+      expect((await call("GET", `/api/bots/${plain.id}/skills`)).json).toEqual({
+        skills: [
+          { name: "host-native", description: "In the Claude folder", source: "host" },
+          { name: "host-shared", description: "In the shared folder", source: "host" },
+        ],
+      });
+      // Claude Code reads ~/.claude/skills on its own: it is named, and nothing is installed or sent.
+      expect((await say(claude, ["host-native"])).status).toBe(201);
+      expect(prompts.at(-1)).toContain(
+        "Load each with the Skill tool before you answer: host-native.",
+      );
+      expect(prompts.at(-1)).not.toContain("native steps");
+      expect(installed["skills/host-native/SKILL.md"]).toBeUndefined();
+      // It does not read the shared folder: the skill is installed in the run's plugin dir and loaded with the Skill tool.
+      expect((await say(claude, ["host-shared"])).status).toBe(201);
+      expect(prompts.at(-1)).toContain(
+        "Load each with the Skill tool before you answer: zetta-bot:host-shared.",
+      );
+      expect(prompts.at(-1)).not.toContain("shared steps");
+      expect(installed["skills/host-shared/SKILL.md"]).toContain("shared steps");
+      // A harness with no skill option is told to use them and where their SKILL.md is; the text stays out of the prompt.
+      expect((await say(plain, ["host-native", "host-shared"])).status).toBe(201);
+      expect(prompts.at(-1)).toContain(
+        `host-native (SKILL.md at ${join(home, ".claude/skills/host-native/SKILL.md")}), host-shared (SKILL.md at ${join(home, ".agents/skills/host-shared/SKILL.md")}). Use each one before you answer`,
+      );
+      expect(prompts.at(-1)).not.toContain("native steps");
+      expect(prompts.at(-1)).not.toContain("shared steps");
+      expect(prompts.at(-1)).not.toContain("Skill tool");
+    } finally {
+      if (was.home === undefined) delete process.env.HOME;
+      else process.env.HOME = was.home;
+      if (was.on === undefined) delete process.env.ZETTA_HOST_SKILLS;
+      else process.env.ZETTA_HOST_SKILLS = was.on;
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   test("journey: successful task -> reusable wiki procedure -> routine -> first occurrence -> durable result", async () => {

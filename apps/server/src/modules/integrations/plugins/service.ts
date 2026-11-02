@@ -37,6 +37,25 @@ const setupPrompt = (missing: PluginDef[]) =>
       ].join("\n")
     : "";
 
+/** How a bot manages a channel plugin's incoming messages. It can only read and propose: the user applies the change in a card. */
+const inboundHint = (d: PluginDef) => {
+  if (!d.inbound) return "";
+  const editable = d.fields.filter((f) => f.botEditable && !f.secret);
+  const example = JSON.stringify({
+    action: "propose",
+    plugin: d.id,
+    incoming: "on",
+    who: "direct",
+    settings: Object.fromEntries(editable.slice(0, 1).map((f) => [f.key, "..."])),
+  });
+  return [
+    `\n    Incoming ${d.inbound.label} messages (a bot answers new ones) are managed with a zetta:inbound block, never with Zetta's HTTP API or a browser.`,
+    `{"action":"status","plugin":"${d.id}"} reads the state. ${example} shows the user a card with the exact change and an Apply button; nothing changes until they press it.`,
+    `"incoming" is on or off, "who" is direct, groups or both, "only" lists chat ids. Settings you may propose: ${editable.map((f) => `${f.key} (${f.label})`).join(", ") || "none"}.`,
+    "Keys, the address of the user's own server and sending are changed by the user in Studio.",
+  ].join(" ");
+};
+
 /** `mine`: the user's own (private) configuration of a plugin. `team`: the workspace's one, edited by the administrator and used by every member. */
 export type Scope = "mine" | "team";
 type ServerRow = {
@@ -67,6 +86,9 @@ export function pickBinding<T extends { name: string; sharing: "private" | "team
     );
   return hits[0];
 }
+/** GitHub with no saved token: its MCP tools cannot run; bots use the server's `gh` login instead. */
+export const githubWithoutToken = (b: { name: string; hasConnection: boolean }) =>
+  b.name === "github" && !b.hasConnection;
 /** The slice of the MCP service the plugin layer needs. */
 export type McpCore = {
   addServer(
@@ -102,6 +124,7 @@ export type McpCore = {
       tools: { name: string; description: string }[];
       ownerUserId: string;
       sharing: "private" | "team";
+      hasConnection: boolean;
     } & ToolAccess)[]
   >;
   serverById(
@@ -118,6 +141,8 @@ export function createPlugins(
   db: Database,
   connections: ConnectionsService | undefined,
   mcp: () => McpCore,
+  /** Whether the server's gh CLI is logged in for this HOME; a parameter so tests do not depend on the machine. */
+  gh: (home: string | undefined) => Promise<boolean> = (home) => ghLoggedIn(home),
 ) {
   const need = () => {
     if (!connections?.configured())
@@ -256,6 +281,15 @@ export function createPlugins(
       if (timer) clearTimeout(timer);
     }
   };
+  /** A context that cannot re-seal the config: background work every minute must never churn the stored secret or race a tool call that updates it. */
+  const readOnly = (ctx: PluginContext): PluginContext => ({
+    userId: ctx.userId,
+    config: ctx.config,
+    setConfig: () =>
+      Promise.reject(
+        new PluginError("READ_ONLY", "Background work cannot change plugin settings."),
+      ),
+  });
   /** Validates field values against the plugin's schema. Blank fields fall back to `current` (so an edit can leave a secret untouched). */
   function fieldValues(
     d: PluginDef,
@@ -470,6 +504,9 @@ export function createPlugins(
         subjectId: s.id,
         detail: "plugin-configured",
       });
+      // A channel plugin may now be able to set up push (for example a new address for the channel's server to call).
+      if (scope === "mine" && d.inbound?.enable)
+        await withDeadline(d.inbound.enable(ctx)).catch(() => {});
       return { id, changed: true };
     },
     /** Starts the plugin's own connect flow (e.g. OAuth). */
@@ -524,7 +561,7 @@ export function createPlugins(
       const { d, s } = await installed(a, id, scope);
       // GitHub without a token has no tools (its MCP server needs one), but bots still use the server's gh login for git and gh.
       if (d.id === "github" && !s.connectionId) {
-        const cli = await ghLoggedIn(harnessHome(a.userId, "claude-code"));
+        const cli = await gh(harnessHome(a.userId, "claude-code"));
         return {
           status: cli
             ? { state: "connected", detail: "Uses the GitHub CLI login on the server." }
@@ -589,14 +626,18 @@ export function createPlugins(
       const { d, s } = await installed(a, id);
       if (!d.inbound)
         throw new PluginError("NO_INBOUND", "This plugin cannot deliver incoming messages.");
-      const ctx = await ctxFor(a, d, s);
-      const frozen: PluginContext = {
-        userId: ctx.userId,
-        config: ctx.config,
-        setConfig: () =>
-          Promise.reject(new PluginError("READ_ONLY", "Polling cannot change plugin settings.")),
-      };
-      return withDeadline(d.inbound.poll(frozen, cursor, o));
+      return withDeadline(d.inbound.poll(readOnly(await ctxFor(a, d, s)), cursor, o));
+    },
+    /** Internal (modules/inbound): the user turned incoming messages on, so the channel plugin may set up push (own configuration only). */
+    async prepareInbound(a: ActiveActor, id: string) {
+      const { d, s } = await installed(a, id);
+      if (d.inbound?.enable) await withDeadline(d.inbound.enable(await ctxFor(a, d, s)));
+    },
+    /** Internal (modules/inbound): checks a push from the channel's server against this user's own configuration. Anything unclear is "invalid". */
+    async verifyPush(a: ActiveActor, id: string, headers: Headers, raw: string) {
+      const { d, s } = await installed(a, id).catch(() => ({ d: undefined, s: undefined }));
+      if (!d?.inbound?.verifyPush || !s) return "invalid" as const;
+      return d.inbound.verifyPush(readOnly(await ctxFor(a, d, s)), headers, raw);
     },
     /** Plugin ids the user has bound to this bot (once each, even when both configurations are bound). */
     async bindings(a: ActiveActor, botId: string) {
@@ -636,6 +677,55 @@ export function createPlugins(
         guide: d.guide?.() ?? [],
         notes: d.notes,
         docsUrl: d.docsUrl,
+      };
+    },
+    /**
+     * Internal (chat tools): the settings a bot may read and propose to change, with their saved values. Secrets and anything the plugin
+     * did not mark `botEditable` never appear. Own configuration only.
+     */
+    async botSettings(a: ActiveActor, id: string) {
+      const d = getPlugin(id);
+      if (!d || d.always) throw new AccessError("NOT_FOUND");
+      const own = await installed(a, id).catch(() => undefined);
+      if (!own) return { name: d.name, installed: false as const, settings: [] };
+      const ctx = await ctxFor(a, d, own.s);
+      return {
+        name: d.name,
+        installed: true as const,
+        settings: d.fields
+          .filter((f) => f.botEditable && !f.secret)
+          .map((f) => ({ key: f.key, label: f.label, value: ctx.config[f.key] ?? "" })),
+      };
+    },
+    /**
+     * Internal (chat tools): checks the settings a bot wants to change and returns what would change. Saves nothing: the user applies it
+     * through `configure` in a card. A setting that is not `botEditable` is refused, whatever the plugin's schema says.
+     */
+    async proposeSettings(a: ActiveActor, id: string, settings: Record<string, string>) {
+      const d = getPlugin(id);
+      if (!d || d.always) throw new AccessError("NOT_FOUND");
+      const { s } = await installed(a, id);
+      const editable = new Map(
+        d.fields.filter((f) => f.botEditable && !f.secret).map((f) => [f.key, f]),
+      );
+      for (const key of Object.keys(settings))
+        if (!editable.has(key))
+          throw new PluginError(
+            "NOT_ALLOWED",
+            `A bot cannot change "${key}". Only the user changes it, in Studio > Plugins > ${d.name}.`,
+          );
+      const current = (await ctxFor(a, d, s)).config;
+      const next = fieldValues(d, settings, current);
+      return {
+        name: d.name,
+        changes: Object.keys(settings)
+          .filter((key) => (next[key] ?? "") !== (current[key] ?? ""))
+          .map((key) => ({
+            key,
+            label: editable.get(key)!.label,
+            from: current[key] ?? "",
+            to: next[key] ?? "",
+          })),
       };
     },
     /** Which configuration of each plugin the user bound to this bot. */
@@ -687,6 +777,12 @@ export function createPlugins(
         );
       const binding =
         d && !d.always ? pickBinding(await mcp().bound(a, botId), id, config) : undefined;
+      if (binding && githubWithoutToken(binding))
+        throw new PluginError(
+          "USE_GH",
+          "GitHub has no token here, so its tools are off. Use the gh command instead.",
+          "Run gh in the shell, for example gh pr list -R owner/repo or gh issue list -R owner/repo. Do not call GitHub tools again.",
+        );
       if (!d || d.kind !== "native" || (!d.always && !binding))
         throw new PluginError("NOT_BOUND", "That plugin is not connected to this bot.");
       if (binding && !toolAllowed(binding, tool)) {
@@ -809,7 +905,7 @@ export function createPlugins(
     /** Prompt section describing the plugins THIS user bound to the bot (empty when none). Contains no secrets. */
     async promptFor(a: ActiveActor, botId: string): Promise<string> {
       const bound = await mcp().bound(a, botId);
-      type Section = { line: string; kind: "native" | "remote"; vault: boolean };
+      type Section = { line: string; kind: "native" | "remote" | "cli"; vault: boolean };
       const sections = await Promise.all(
         listPlugins().map(async (d): Promise<Section | undefined> => {
           if (d.always) {
@@ -834,8 +930,19 @@ export function createPlugins(
             return {
               kind: "native",
               vault,
-              line: `- ${d.id} (${d.name})${both ? "" : which}: ${d.description}${both ? which : ""}\n${toolLines(d, bs)}`,
+              line: `- ${d.id} (${d.name})${both ? "" : which}: ${d.description}${both ? which : ""}${inboundHint(d)}\n${toolLines(d, bs)}`,
             };
+          // No token: the GitHub MCP tools are off (see runConfig); bots use the server's gh login, so the cached tool names stay out.
+          if (bs.every(githubWithoutToken)) {
+            const cli = await gh(harnessHome(a.userId, "claude-code")).catch(() => false);
+            return {
+              kind: "cli",
+              vault: false,
+              line: cli
+                ? `- ${d.id} (${d.name}): no token; use the server's gh login. Run the gh command in the shell, for example gh pr list -R owner/repo, gh issue list -R owner/repo or gh api repos/owner/repo/pulls. Do not use zetta:mcp or zetta:plugin for GitHub.`
+                : `- ${d.id} (${d.name}): no token, and the server's gh CLI is not logged in, so GitHub is not usable. Tell the user to add a token in the plugin settings or to run gh auth login on the server. Do not call GitHub tools.`,
+            };
+          }
           const names = [
             ...new Set(
               bs.flatMap((b) => b.tools.filter((t) => toolAllowed(b, t.name)).map((t) => t.name)),

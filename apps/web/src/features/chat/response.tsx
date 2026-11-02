@@ -14,6 +14,8 @@ import { rehypeBotTags } from "./bot-tags";
 import { rehypeGithubRefs } from "./github-refs";
 import { tagPatches } from "./code-fence";
 import { codePlugins } from "./highlighted-code";
+import { InboundCard } from "./inbound-card";
+import { parseInboundCard } from "./inbound-card-data";
 import { SetupCard } from "./setup-card";
 import { parseSetupCard } from "./setup-card-data";
 import { stripToolFences } from "./tool-fences";
@@ -138,7 +140,7 @@ const Markdown = memo(function Markdown({
  * Message body. Markdown goes through Streamdown, which tolerates half-written syntax while a reply streams; fenced `zetta:ui`
  * blocks are drawn by json-render from the shared catalog (a block that never validates is shown as the code it is).
  */
-const CARD = /```zetta:(whatsapp|setup-card)\s*\n([\s\S]*?)```/g;
+const CARD = /```zetta:(whatsapp|setup-card|inbound-card)\s*\n([\s\S]*?)```/g;
 
 export const Response = memo(function Response({
   text: raw,
@@ -156,7 +158,7 @@ export const Response = memo(function Response({
   wikiLinks?: WikiLinkInfo | undefined;
 }) {
   const text = streaming ? stripToolFences(raw) : raw;
-  const whatsapp = !streaming && /```zetta:(whatsapp|setup-card)/.test(text);
+  const whatsapp = !streaming && /```zetta:(whatsapp|setup-card|inbound-card)/.test(text);
   // Hooks stay above the early return (a reply can flip to the WhatsApp view when it settles). A reply with no ui fence skips the parse on every chunk.
   const segments = useMemo(
     () => (whatsapp || !text.includes("```" + UI_FENCE) ? [] : splitReply(text, streaming)),
@@ -167,6 +169,7 @@ export const Response = memo(function Response({
       md?: string;
       wa?: ReturnType<typeof parseWhatsapp>;
       setup?: ReturnType<typeof parseSetupCard>;
+      inbound?: ReturnType<typeof parseInboundCard>;
       raw?: string;
     }[] = [];
     let last = 0;
@@ -175,7 +178,9 @@ export const Response = memo(function Response({
       parts.push(
         m[1] === "setup-card"
           ? { setup: parseSetupCard(m[2]!), raw: m[2]! }
-          : { wa: parseWhatsapp(m[2]!), raw: m[2]! },
+          : m[1] === "inbound-card"
+            ? { inbound: parseInboundCard(m[2]!), raw: m[2]! }
+            : { wa: parseWhatsapp(m[2]!), raw: m[2]! },
       );
       last = m.index! + m[0].length;
     }
@@ -189,6 +194,8 @@ export const Response = memo(function Response({
             ) : null
           ) : p.setup ? (
             <SetupCard key={i} data={p.setup} />
+          ) : p.inbound ? (
+            <InboundCard key={i} data={p.inbound} />
           ) : p.wa ? (
             <WhatsappView key={i} data={p.wa} />
           ) : (

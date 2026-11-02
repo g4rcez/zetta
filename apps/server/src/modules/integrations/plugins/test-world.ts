@@ -3,8 +3,11 @@ import { createPlugins, NATIVE_URL_PREFIX, type McpCore } from "./service";
 type Actor = { userId: string; isAdmin?: boolean };
 export const actor = (userId: string, isAdmin = false) => ({ userId, isAdmin }) as never;
 
-/** In-memory stand-ins for the MCP service (rows + bindings) and the sealed connection store, enforcing per-user isolation like the real ones. */
-export function world() {
+/**
+ * In-memory stand-ins for the MCP service (rows + bindings) and the sealed connection store, enforcing per-user isolation like the real ones.
+ * `ghLoggedIn` is what the fake server-side gh CLI login reports (default: not logged in).
+ */
+export function world(opts: { ghLoggedIn?: boolean } = {}) {
   let n = 0;
   const servers: {
     id: string;
@@ -132,6 +135,7 @@ export function world() {
           tools: [],
           ownerUserId: servers.find((s) => s.id === b.serverId)!.owner,
           sharing: servers.find((s) => s.id === b.serverId)!.sharing,
+          hasConnection: Boolean(servers.find((s) => s.id === b.serverId)!.connectionId),
         })),
     serverById: async (id) => {
       const s = servers.find((x) => x.id === id);
@@ -149,7 +153,12 @@ export function world() {
     tools: async () => [{ name: "ping", description: "pong" }],
   };
   return {
-    plugins: createPlugins({} as never, connections as never, () => mcp),
+    plugins: createPlugins(
+      {} as never,
+      connections as never,
+      () => mcp,
+      async () => opts.ghLoggedIn ?? false,
+    ),
     secrets,
     servers,
     bindings,

@@ -1,10 +1,4 @@
-import {
-  ArrowLeftIcon,
-  ArrowSquareOutIcon,
-  UserIcon,
-  UsersThreeIcon,
-  type Icon,
-} from "@phosphor-icons/react";
+import { ArrowLeftIcon, ArrowSquareOutIcon, UserIcon, UsersThreeIcon } from "@phosphor-icons/react";
 import { Alert } from "@g4rcez/components/alert";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
@@ -13,7 +7,9 @@ import { BotAvatar } from "@/components/bot-avatar";
 import { Button } from "@/components/ui";
 import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
 import { ConfirmButton, Empty, Loading, Panel } from "../shared/ui";
+import { ChoiceBoxes } from "./choice-boxes";
 import { ComposioConnect } from "./composio-connect";
+import { GithubAuth, type GithubMethod } from "./github-auth";
 import { GoogleConnect } from "./google-connect";
 import { FieldInput, probeKey, StatusBadge, useProbes, type Probe } from "./plugin-parts";
 import { PluginIcon } from "./plugin-icon";
@@ -54,6 +50,14 @@ function InstallForm({
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [local, setLocal] = useState<string>();
+  const [method, setMethod] = useState<GithubMethod>("cli");
+  const github = meta.id === "github";
+  // GitHub asks for a token only when the person picks the token method; the CLI method installs without one.
+  const fields = github
+    ? method === "token"
+      ? meta.fields.map((f) => ({ ...f, optional: false }))
+      : []
+    : meta.fields;
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -93,10 +97,11 @@ function InstallForm({
         {meta.verified && meta.notes && (
           <p className="text-xs text-muted-foreground">{meta.notes}</p>
         )}
-        {meta.fields.map((f) => (
+        {github && <GithubAuth method={method} onChange={setMethod} />}
+        {fields.map((f) => (
           <FieldInput key={f.key} field={f} />
         ))}
-        {meta.fields.some((f) => f.secret) && (
+        {fields.some((f) => f.secret) && (
           <p className="text-xs text-muted-foreground">
             Stored encrypted for {scope === "team" ? "the workspace" : "your account only"}. It is
             never shown again.
@@ -140,12 +145,33 @@ function InstallForm({
 }
 
 /** Edits the user's own settings. Stored values are never sent back, so a blank field keeps what is saved. */
-function SettingsForm({ meta, onSaved }: { meta: PluginMeta; onSaved: () => void }) {
+function SettingsForm({
+  meta,
+  hasToken,
+  onSaved,
+}: {
+  meta: PluginMeta;
+  hasToken: boolean;
+  onSaved: () => void;
+}) {
   const pluginsApi = usePluginApi();
   const scope = usePluginScope();
+  const github = meta.id === "github";
+  // Until the person picks a box, it follows what is saved, so it updates after a save or a removal.
+  const [picked, setPicked] = useState<GithubMethod>();
+  const method = picked ?? (hasToken ? "token" : "cli");
+  useEffect(() => setPicked(undefined), [hasToken]);
+  const cli = github && method === "cli";
   const [busy, setBusy] = useState(false);
   const [local, setLocal] = useState<string>();
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<string>();
+  // Picking the CLI while a token is saved asks first: the token is revoked, so the choice is stored by removing it.
+  const [asking, setAsking] = useState(false);
+  function choose(m: GithubMethod) {
+    if (m === "cli" && hasToken) return setAsking(true);
+    setAsking(false);
+    setPicked(m);
+  }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
@@ -154,11 +180,26 @@ function SettingsForm({ meta, onSaved }: { meta: PluginMeta; onSaved: () => void
     for (const field of meta.fields) config[field.key] = String(f.get(field.key) ?? "").trim();
     setBusy(true);
     setLocal(undefined);
-    setSaved(false);
+    setSaved(undefined);
     try {
       await pluginsApi.configure(meta.id, config);
       form.reset();
-      setSaved(true);
+      setSaved("Saved.");
+      onSaved();
+    } catch (x) {
+      setLocal(errorMessage(x));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function useCli() {
+    setBusy(true);
+    setLocal(undefined);
+    setSaved(undefined);
+    try {
+      await pluginsApi.disconnect(meta.id);
+      setAsking(false);
+      setSaved("Saved. Bots use the server's GitHub CLI login.");
       onSaved();
     } catch (x) {
       setLocal(errorMessage(x));
@@ -173,16 +214,44 @@ function SettingsForm({ meta, onSaved }: { meta: PluginMeta; onSaved: () => void
         className="space-y-3 text-sm"
         aria-label={`${meta.name} settings`}
       >
-        {meta.fields.map((f) => (
-          <FieldInput key={f.key} field={f} editing />
-        ))}
+        {github && <GithubAuth method={method} onChange={choose} />}
+        {!cli && meta.fields.map((f) => <FieldInput key={f.key} field={f} editing />)}
         {local && <Alert theme="danger">{local}</Alert>}
-        {saved && <Alert theme="success">Saved.</Alert>}
-        <div className="flex justify-end">
-          <Button type="submit" size="sm" loading={busy} disabled={busy}>
-            Save
-          </Button>
-        </div>
+        {saved && <Alert theme="success">{saved}</Alert>}
+        {asking && (
+          <div
+            role="group"
+            aria-label="Use the GitHub CLI"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/40 p-2 text-xs"
+          >
+            <span>
+              Use the server's GitHub CLI login? The saved token is removed and the GitHub tools
+              stop working.
+            </span>
+            <span className="flex gap-1">
+              <Button
+                type="button"
+                size="xs"
+                variant="destructive"
+                loading={busy}
+                disabled={busy}
+                onClick={() => void useCli()}
+              >
+                Use the CLI
+              </Button>
+              <Button type="button" size="xs" variant="outline" onClick={() => setAsking(false)}>
+                Cancel
+              </Button>
+            </span>
+          </div>
+        )}
+        {!cli && (
+          <div className="flex justify-end">
+            <Button type="submit" size="sm" loading={busy} disabled={busy}>
+              Save
+            </Button>
+          </div>
+        )}
       </form>
     </Panel>
   );
@@ -360,55 +429,28 @@ function ScopeSwitch({
   haveMine: boolean;
   haveTeam: boolean;
 }) {
-  const options: { value: PluginScope; label: string; have: boolean; hint: string; icon: Icon }[] =
-    [
-      {
-        value: "mine",
-        label: "Individual",
-        have: haveMine,
-        icon: UserIcon,
-        hint: "Your own account. Only you and your bots can use it.",
-      },
-      {
-        value: "team",
-        label: "Shared",
-        have: haveTeam,
-        icon: UsersThreeIcon,
-        hint: "One configuration set up by the administrator, used by every member's bots.",
-      },
-    ];
   return (
-    <div role="group" aria-label="Configuration" className="grid gap-2 sm:grid-cols-2">
-      {options.map((o) => {
-        const active = scope === o.value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            aria-pressed={active}
-            onClick={() => onChange(o.value)}
-            className={`flex items-start gap-3 rounded-lg border p-3 text-left transition-colors ${active ? "border-primary bg-primary/10" : "border-border hover:bg-muted/50"}`}
-          >
-            <o.icon
-              size={24}
-              weight={active ? "fill" : "regular"}
-              className={active ? "text-primary" : "text-muted-foreground"}
-            />
-            <span className="min-w-0 flex-1 space-y-0.5">
-              <span className="flex items-center gap-2 font-medium">
-                {o.label}
-                {o.have && (
-                  <span className="rounded bg-success/15 px-1 text-xs font-normal text-success">
-                    Set up
-                  </span>
-                )}
-              </span>
-              <span className="block text-xs text-muted-foreground">{o.hint}</span>
-            </span>
-          </button>
-        );
-      })}
-    </div>
+    <ChoiceBoxes
+      label="Configuration"
+      value={scope}
+      onChange={onChange}
+      options={[
+        {
+          value: "mine",
+          label: "Individual",
+          badge: haveMine ? "Set up" : undefined,
+          icon: UserIcon,
+          hint: "Your own account. Only you and your bots can use it.",
+        },
+        {
+          value: "team",
+          label: "Shared",
+          badge: haveTeam ? "Set up" : undefined,
+          icon: UsersThreeIcon,
+          hint: "One configuration set up by the administrator, used by every member's bots.",
+        },
+      ]}
+    />
   );
 }
 
@@ -531,6 +573,7 @@ export function PluginPage({ pluginId, isAdmin }: { pluginId: string; isAdmin: b
                     />
                   ) : (
                     <InstallForm
+                      key={scope}
                       meta={meta}
                       bots={bots}
                       onCancel={toList}
@@ -554,7 +597,15 @@ export function PluginPage({ pluginId, isAdmin }: { pluginId: string; isAdmin: b
                       onError={setError}
                     />
                     {canManage && meta.fields.length > 0 && (
-                      <SettingsForm meta={meta} onSaved={() => void probe(pluginId, scope)} />
+                      <SettingsForm
+                        key={scope}
+                        meta={meta}
+                        hasToken={Boolean(current.hasSecret)}
+                        onSaved={() => {
+                          void reload();
+                          void probe(pluginId, scope);
+                        }}
+                      />
                     )}
                     <BotsSection meta={meta} bots={bots} onError={setError} />
                     {canManage && (

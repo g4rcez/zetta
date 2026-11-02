@@ -1,6 +1,7 @@
 import { OUTPUT_STYLE_KEYS } from "@zetta/db/schema/output-styles";
 import { Elysia } from "elysia";
 import { z } from "zod";
+import { skillName } from "../bot-claude/profile";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { OutputStyleError } from "../output-styles/service";
 import {
@@ -10,6 +11,7 @@ import {
   ModelError,
   NotReadyError,
   OnboardingError,
+  ProposalSelectionError,
   TurnBusyError,
   type ChatEvent,
   type ChatService,
@@ -95,6 +97,16 @@ const onboarding = z.strictObject({
   expectedVersion: z.number().int().positive(),
   satisfied: z.boolean(),
 });
+const decision = z.strictObject({
+  approve: z.boolean(),
+  /** Only for a proposal to install skills: which of the offered skills, and whose bots get them. */
+  selection: z
+    .strictObject({
+      paths: z.array(z.string().min(1).max(300)).min(1).max(25),
+      target: z.enum(["bot", "all"]),
+    })
+    .optional(),
+});
 const sendBody = z.strictObject({
   clientRequestId: z.string().min(8).max(100).optional(),
   content: z.string().trim().max(32768),
@@ -102,6 +114,7 @@ const sendBody = z.strictObject({
   attachmentIds: z.array(uuid).max(5).optional(),
   fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
   wikiIds: z.array(uuid).max(5).optional(),
+  skills: z.array(skillName).max(5).optional(),
 });
 /** A message may be only pictures or files, but never empty. */
 const hasBody = (v: {
@@ -375,6 +388,8 @@ export function createChatRoutes(
         error.code,
         error.message,
       );
+    if (error instanceof ProposalSelectionError)
+      return fail(400, "CHOOSE_SKILLS", "Choose at least one of the skills the bot offered.");
     if (error instanceof NotReadyError)
       return fail(
         409,
@@ -584,7 +599,12 @@ export function createChatRoutes(
     )
     .get(
       "/proposals",
-      guarded(async ({ actor }) => ({ proposals: await chat.listProposals(actor) })),
+      guarded(async ({ actor, query }) => ({
+        proposals: await chat.listProposals(
+          actor,
+          query.botId ? parse(uuid, query.botId) : undefined,
+        ),
+      })),
     )
     .post(
       "/proposals/:id/decision",
@@ -592,9 +612,15 @@ export function createChatRoutes(
         chat.decideProposal(
           actor,
           parse(uuid, params.id),
-          parse(z.strictObject({ approve: z.boolean() }), body).approve,
+          ...((d) => [d.approve, d.selection] as const)(parse(decision, body)),
         ),
       ),
+    )
+    .get(
+      "/bots/:id/skills",
+      guarded(async ({ actor, params }) => ({
+        skills: await chat.botSkills(actor, parse(uuid, params.id)),
+      })),
     )
     .get(
       "/bots/:id/decision",
@@ -772,6 +798,7 @@ export function createChatRoutes(
           attachmentIds: v.attachmentIds,
           fileRefs: v.fileRefs,
           wikiIds: v.wikiIds,
+          skills: v.skills,
           clientRequestId: v.clientRequestId,
         });
       }, 201),

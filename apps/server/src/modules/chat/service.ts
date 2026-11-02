@@ -17,7 +17,10 @@ import {
 } from "@zetta/db/query";
 import { botClaudeConfig } from "@zetta/db/schema/bot-claude";
 import { configInput, DEFAULT_CONFIG } from "../bot-claude/profile";
-import { createBotClaude } from "../bot-claude/store";
+import { createBotClaude, skillsOf } from "../bot-claude/store";
+import { installSelection } from "../skills/install";
+import { parseSource, type Market } from "../skills/market";
+import type { Skills } from "../skills/service";
 import { bot, botRevision, conversation, message, workspace } from "@zetta/db/schema/chat";
 import {
   attachment,
@@ -33,6 +36,8 @@ import { inboundRoute } from "@zetta/db/schema/inbound";
 import { team as teamTable, teamMember } from "@zetta/db/schema/teams";
 import { chatQueue, goalLoop } from "@zetta/db/schema/chat";
 import {
+  inboundCardBlock,
+  inboundText,
   parseTools,
   setupBlock,
   setupText,
@@ -75,14 +80,14 @@ import { closeAttentionKey, raiseAttention } from "../features/attention";
 import { createKnowledge, type MemorySnapshot } from "../features/knowledge";
 import { configHash, looksSecret } from "../features/safety";
 import { createLiveBots, loadBotStatus, phaseAfterRound, type RunPhase } from "./bot-status";
-import { createTurnRegistry, mergeAll, TurnBusyError } from "./turns";
+import { createTurnRegistry, TurnBusyError } from "./turns";
 import { createRouting, DECISION_FALLBACK, type Route } from "./routing";
 import { clip, insertMessage } from "./messages";
 import { HARNESS_LABELS, harnessReadiness } from "./harnesses";
 import { audit, outcomeOf } from "../features/audit";
 import type { DecisionService } from "../decisions/service";
 import type { Mcp } from "../integrations/mcp";
-import { getPlugin, PluginError } from "../integrations/plugins/registry";
+import { getPlugin, PluginError, type InboundFilter } from "../integrations/plugins/registry";
 import { homeFastPath } from "../integrations/plugins/homeassistant-fast";
 import { fieldFits, originAllowed } from "../integrations/plugins/credentials";
 import { explain, problemBlock, problemForBot } from "./explain";
@@ -155,6 +160,12 @@ export class OnboardingError extends Error {
 export class ForeignKeyHostError extends Error {
   constructor() {
     super("FOREIGN_KEY_HOST");
+  }
+}
+/** The person approved a skills proposal without choosing, or chose a skill the bot did not offer. */
+export class ProposalSelectionError extends Error {
+  constructor() {
+    super("PROPOSAL_SELECTION");
   }
 }
 export class NotReadyError extends Error {
@@ -249,6 +260,8 @@ export type Converse = {
   fileRefs?: string[];
   /** Wiki items (ids) the user picked with `/`; the bot follows them for this turn. */
   wikiIds?: string[];
+  /** Skills (names) the user picked with `/`; the addressed bot uses them for this turn. */
+  skills?: string[];
   external?: External;
   /** Internal only (no HTTP route sets it). "previous_turn": the bot reads just the newest earlier user message and what followed it, not the whole chat. A routine run uses it, so each run sees only the run before. */
   history?: "full" | "previous_turn";
@@ -349,6 +362,10 @@ export type ChatDeps = {
   /** The shared task board (modules/tasks): bots add and move tasks with zetta:task. */ tasks?: TaskStore;
   /** Files bots deliver (modules/artifacts): published with zetta:artifact. */ artifacts?: ArtifactStore;
   /** The user's wiki (modules/wiki): bots search, read and write it with zetta:wiki. */ wiki?: Wiki;
+  /** The skill library and the GitHub marketplace (modules/skills): bots ask to install skills with zetta:skills. */ skills?: {
+    skills: Skills;
+    market: Market;
+  };
   /** Routines (modules/features): a deleted bot's routines are archived and disarmed. */ routines?: {
     removeForBot(botId: string): Promise<void>;
   };
@@ -447,6 +464,11 @@ export function createChatService(
     ]).finally(() => clearTimeout(t));
   };
   /** Executes a bot's tool calls for the requesting user. Returns lines describing what happened and whether a person must take over. */
+  /** Where the person approves what `who` asked: the room it asked in, else the chat it asked in, else its own chat. Never another bot's chat. */
+  const approvalLink = (who: { id: string }, scope?: ToolScope) =>
+    scope?.discussionId
+      ? `/rooms?id=${scope.discussionId}`
+      : `/chat/${scope?.origin?.conversationId ?? `new?bot=${who.id}`}`;
   async function runTools(
     actor: ActiveActor,
     who: typeof bot.$inferSelect,
@@ -640,13 +662,116 @@ export function createChatService(
           title: `Review a proposed change to ${target.name}`,
           detail: diff.map((d) => d.field).join(", "),
           nextAction: "Open Chat and approve or reject the proposal.",
-          resultLink: "/chat",
+          resultLink: approvalLink(who, scope),
           source: "bot",
           sourceKey: `proposal:${row!.id}`,
         });
         receipts.push({ kind: "proposal", id: row!.id, text: target.name });
         proposals.push(row!.id);
         notes.push(`📝 Proposed a change to ${target.name}: review and approve it below.`);
+      } else if (c.kind === "skills") {
+        const lib = deps.skills;
+        if (!lib || (who.harness !== "claude-code" && who.harness !== "hermes")) {
+          browserResults.push("skills: not available for this bot.");
+          continue;
+        }
+        if (c.args.action === "search") {
+          const r = await lib.market.search(c.args.query).catch(() => undefined);
+          browserResults.push(
+            !r
+              ? "skills: search is not available right now."
+              : r.skills.length
+                ? `skills: matches on the trusted list for “${c.args.query}”:\n${r.skills
+                    .slice(0, 8)
+                    .map((k) => `- ${k.repo} · ${k.name}: ${k.description.slice(0, 160)}`)
+                    .join(
+                      "\n",
+                    )}${r.indexing ? "\n(still reading some repositories: more may appear)" : ""}`
+                : `skills: no match for “${c.args.query}” on the trusted list${r.indexing ? " yet (still reading the repositories)" : ""}.`,
+          );
+          continue;
+        }
+        const src = parseSource(c.args.source);
+        if (!src) {
+          browserResults.push("skills: the source must be owner/repo or a GitHub link.");
+          continue;
+        }
+        let found: Awaited<ReturnType<Market["described"]>>;
+        try {
+          found = await lib.market.described(src);
+        } catch {
+          browserResults.push(`skills: could not read ${c.args.source} on GitHub.`);
+          continue;
+        }
+        if (!found.skills.length) {
+          browserResults.push(`skills: ${found.repo} has no skill that can be installed.`);
+          continue;
+        }
+        const [waiting] = await db
+          .select({ id: configProposal.id })
+          .from(configProposal)
+          .where(
+            and(
+              eq(configProposal.ownerUserId, actor.userId),
+              eq(configProposal.kind, "install_skills"),
+              eq(configProposal.status, "pending"),
+              eq(configProposal.botId, who.id),
+              sql`${configProposal.patch}->>'repo' = ${found.repo}`,
+            ),
+          );
+        if (waiting) {
+          browserResults.push(`skills: the user is already asked about ${found.repo}.`);
+          continue;
+        }
+        const have = new Set(
+          (await lib.skills.installedFrom(actor, found.repo)).map((m) => m.path),
+        );
+        const offered = found.skills.map((k) => ({
+          name: k.name,
+          path: k.path,
+          description: k.description.slice(0, 300),
+          warnings: k.warnings,
+          installed: have.has(k.path),
+        }));
+        const wanted = new Set(c.args.names ?? []);
+        const [row] = await db
+          .insert(configProposal)
+          .values({
+            ownerUserId: actor.userId,
+            kind: "install_skills",
+            botId: who.id,
+            proposedByBotId: who.id,
+            baseVersion: 0,
+            patch: {
+              repo: found.repo,
+              ref: found.ref,
+              trust: lib.market.trust(found.repo),
+              skills: offered,
+              preselected: offered
+                .filter((k) => wanted.has(k.name) && !k.installed && !k.warnings.length)
+                .map((k) => k.path),
+            },
+            diff: [
+              { field: "bot", from: null, to: who.name },
+              { field: "repo", from: null, to: found.repo },
+            ],
+          })
+          .returning();
+        await raiseAttention(db, actor.userId, {
+          botId: who.id,
+          title: `Choose skills to install from ${found.repo}`,
+          detail: `${who.name} asks to install skills`,
+          nextAction: "Open Chat and choose the skills to install.",
+          resultLink: approvalLink(who, scope),
+          source: "bot",
+          sourceKey: `proposal:${row!.id}`,
+        });
+        receipts.push({ kind: "proposal", id: row!.id, text: found.repo });
+        proposals.push(row!.id);
+        notes.push(`🧩 ${who.name} asks to install skills from ${found.repo}: choose them below.`);
+        browserResults.push(
+          `skills: the user was asked which skills to install from ${found.repo}. They are NOT installed. Wait for the user and never say they are installed.`,
+        );
       } else if (c.kind === "permission") {
         const store = deps.discussions;
         if (!store || who.kind === "chief") {
@@ -834,7 +959,7 @@ export function createChatService(
             title: `${who.name} asks to change what ${target.name} may do`,
             detail: (c.args.allow ?? []).join(", ") || "permission change",
             nextAction: "Approve or deny the permission change.",
-            resultLink: "/chat",
+            resultLink: approvalLink(who, scope),
             source: "bot",
             sourceKey: `proposal:${row!.id}`,
           });
@@ -876,7 +1001,7 @@ export function createChatService(
           title: `${who.name} asks for another computer`,
           detail: `${c.args.name}: ${c.args.purpose}`,
           nextAction: "Open Chat and approve or reject the proposal.",
-          resultLink: "/chat",
+          resultLink: approvalLink(who, scope),
           source: "bot",
           sourceKey: `proposal:${row!.id}`,
         });
@@ -1086,7 +1211,11 @@ export function createChatService(
             botId: null,
             proposedByBotId: who.id,
             baseVersion: 0,
-            patch: args,
+            // A routine proposed inside a room remembers the room, so the room is not "waiting" while the routine runs.
+            patch:
+              kind === "create_routine" && scope?.discussionId
+                ? { ...args, originDiscussionId: scope.discussionId }
+                : args,
             diff,
           })
           .returning();
@@ -1095,7 +1224,7 @@ export function createChatService(
           title: `Review a proposed ${kind.replace("create_", "")}`,
           detail: String(args.name ?? args.title ?? ""),
           nextAction: "Open Chat and approve or reject the proposal.",
-          resultLink: "/chat",
+          resultLink: approvalLink(who, scope),
           source: "bot",
           sourceKey: `proposal:${row!.id}`,
         });
@@ -1370,6 +1499,128 @@ export function createChatService(
           browserResults.push(`setup ${d.id}:\n${setupText(info)}`);
         } catch (e) {
           fail(`${d.name}: setup`, e);
+        }
+      } else if (c.kind === "inbound") {
+        const d = getPlugin(c.args.plugin);
+        if (!mcp || !d?.inbound) {
+          browserResults.push(
+            mcp
+              ? `inbound ${c.args.plugin}: that plugin has no incoming messages`
+              : "integrations unavailable",
+          );
+          continue;
+        }
+        if (!who.onboarded) {
+          browserResults.push("incoming messages are available after onboarding");
+          continue;
+        }
+        try {
+          const label = d.inbound.label;
+          const [route] = await db
+            .select()
+            .from(inboundRoute)
+            .where(
+              and(eq(inboundRoute.ownerUserId, actor.userId), eq(inboundRoute.pluginId, d.id)),
+            );
+          const holder =
+            route && route.botId !== who.id
+              ? ((await db.select({ name: bot.name }).from(bot).where(eq(bot.id, route.botId)))[0]
+                  ?.name ?? "another bot")
+              : "you";
+          const filter = (route?.filter as InboundFilter | undefined) ?? {
+            direct: true,
+            groups: false,
+            chats: [],
+          };
+          const [info, bound] = await Promise.all([
+            mcp.plugins.botSettings(actor, d.id),
+            mcp.plugins.bindings(actor, who.id).then((ids) => ids.includes(d.id)),
+          ]);
+          if (c.args.action === "status") {
+            browserResults.push(
+              `inbound ${d.id}:\n${inboundText({
+                name: info.name,
+                label,
+                installed: info.installed,
+                bound,
+                settings: info.settings,
+                ...(route && {
+                  route: {
+                    enabled: route.enabled,
+                    bot: holder,
+                    filter,
+                    lastPolledAt: route.lastPolledAt,
+                    lastError: route.lastError,
+                    pushed: Boolean((route.cursor as { hook?: unknown } | null)?.hook),
+                  },
+                }),
+              })}`,
+            );
+            continue;
+          }
+          if (!info.installed) {
+            browserResults.push(
+              `inbound ${d.id}: ${info.name} is not installed. Open a setup card with zetta:setup first.`,
+            );
+            continue;
+          }
+          if (c.args.incoming === "on" && !bound) {
+            browserResults.push(
+              `inbound ${d.id}: ${info.name} is not switched on for you. Open a setup card with zetta:setup first, then propose again.`,
+            );
+            continue;
+          }
+          const { changes } = Object.keys(c.args.settings).length
+            ? await mcp.plugins.proposeSettings(actor, d.id, c.args.settings)
+            : { changes: [] };
+          const { who: reachWho, only } = c.args;
+          const next = {
+            direct: reachWho ? reachWho !== "groups" : filter.direct,
+            groups: reachWho ? reachWho !== "direct" : filter.groups,
+            chats: only ?? (reachWho ? [] : filter.chats),
+          };
+          const mine = Boolean(route?.enabled && route.botId === who.id);
+          const routeChange =
+            c.args.incoming === "off"
+              ? mine
+              : c.args.incoming === "on" &&
+                (!mine || JSON.stringify(next) !== JSON.stringify(filter));
+          if (!changes.length && !routeChange) {
+            browserResults.push(
+              `inbound ${d.id}: nothing to change, it is already set that way. Read it with status.`,
+            );
+            continue;
+          }
+          const key = `inbound:${d.id}`;
+          if (cards.has(key)) {
+            browserResults.push(
+              `inbound ${d.id}: a card for this is already shown. Wait for the user to apply it.`,
+            );
+            continue;
+          }
+          cards.add(key);
+          notes.push(
+            inboundCardBlock({
+              plugin: d.id,
+              pluginName: info.name,
+              botId: who.id,
+              botName: who.name,
+              settings: changes,
+              ...(routeChange && {
+                incoming: {
+                  state: c.args.incoming ?? "on",
+                  filter: next,
+                  // One bot answers a channel: turning it on here moves it from the bot that has it now.
+                  ...(route?.enabled && route.botId !== who.id && { replaces: holder }),
+                },
+              }),
+            }),
+          );
+          browserResults.push(
+            `inbound ${d.id}: a card with the exact change is now shown to the user. Nothing is changed until they press Apply. Tell them in one or two lines what it does, then wait. After they say they applied it, read it with status.`,
+          );
+        } catch (e) {
+          fail(`${getPlugin(c.args.plugin)?.name ?? c.args.plugin}: incoming messages`, e);
         }
       } else if (c.kind === "plugin") {
         if (!mcp) {
@@ -1858,7 +2109,7 @@ export function createChatService(
         for (let i = l.length - 1; i >= 0; i--) if (re.test(l[i]!)) l.splice(i, 1);
       };
       const fresh = proposals.splice(firstProposal);
-      // Member goals start loops: they always wait for the user, whatever the turn read.
+      // Member goals start loops and skills change what a bot follows: they always wait for the user, whatever the turn read.
       const manual = new Set(
         fresh.length
           ? (
@@ -1866,7 +2117,10 @@ export function createChatService(
                 .select({ id: configProposal.id })
                 .from(configProposal)
                 .where(
-                  and(inArray(configProposal.id, fresh), eq(configProposal.kind, "team_goals")),
+                  and(
+                    inArray(configProposal.id, fresh),
+                    inArray(configProposal.kind, ["team_goals", "install_skills"]),
+                  ),
                 )
             ).map((r) => r.id)
           : [],
@@ -2353,6 +2607,7 @@ export function createChatService(
     extraTools?: string | undefined;
     images?: CliImage[] | undefined;
     referenced?: Turn["referenced"];
+    skills?: Turn["skills"];
   };
   /** Rounds in one turn before a checkpoint. Not a limit on the work: in a loop the next step continues, outside one the bot is asked to
    * propose a loop for the rest. */
@@ -2439,6 +2694,7 @@ export function createChatService(
               extraTools: ctx.extraTools,
               images: ctx.images,
               referenced: ctx.referenced,
+              skills: ctx.skills,
             }),
           { delays: TURN_RETRY_MS, signal: ctx.signal },
         )
@@ -2624,6 +2880,8 @@ export function createChatService(
       | undefined;
     /** Instructions the user picked for this turn. */
     referenced?: Turn["referenced"];
+    /** Skills the user picked for this turn (names, checked against `who`). */
+    skills?: Turn["skills"];
     /** Hands the bot the messages sent while it works, at its next tool round (see `claimNotes`); `replyId` is the row this answer saves into. */
     takeNotes?: (replyId: string) => Promise<{ id: string; content: string }[]>;
   };
@@ -2758,6 +3016,7 @@ export function createChatService(
               extraTools: a.extraTools,
               images: a.images,
               referenced: a.referenced,
+              skills: a.skills,
               resumeSession: a.resumeSession,
               // Recorded on the running row: if the process dies, boot finds the session here and resumes it.
               onSession: (id) => {
@@ -2834,6 +3093,7 @@ export function createChatService(
         extraTools: a.extraTools,
         images: a.images,
         referenced: a.referenced,
+        skills: a.skills,
         onComputer: (vm, step) => {
           live.push({
             type: "computer",
@@ -3013,6 +3273,17 @@ export function createChatService(
     if (!row) throw new AccessError("NOT_FOUND");
     return row;
   }
+  /** The picked skill names, once each. A name the bot does not have is NOT_FOUND, so a stale picker cannot ask for a skill that is gone. */
+  async function pickedSkills(
+    b: { id: string; harness: string },
+    names: readonly string[] | undefined,
+  ) {
+    const picked = [...new Set(names ?? [])];
+    if (!picked.length) return picked;
+    const have = new Set((await skillsOf(botClaudeStore, b)).map((k) => k.name));
+    if (picked.some((n) => !have.has(n))) throw new AccessError("NOT_FOUND");
+    return picked;
+  }
   /** Best effort: a failure here is retried by the first database tool call. */
   /** Every bot owns its settings row from the start (modules/bot-claude); existing bots were given one by a migration. */
   const provisionAgentConfig = (botId: string) =>
@@ -3095,7 +3366,7 @@ export function createChatService(
           .select({ content: message.content })
           .from(message)
           .where(eq(message.id, row.messageId));
-        const options = (row.input ?? {}) as Pick<Converse, "fileRefs" | "wikiIds">;
+        const options = (row.input ?? {}) as Pick<Converse, "fileRefs" | "wikiIds" | "skills">;
         try {
           const { rec } = await service.startTurn(actor, conversationId, {
             content: asked?.content ?? "",
@@ -3176,8 +3447,14 @@ export function createChatService(
         const o = (p.input ?? {}) as {
           fileRefs?: unknown[];
           wikiIds?: unknown[];
+          skills?: unknown[];
         };
-        return !withFiles.has(p.messageId) && !o.fileRefs?.length && !o.wikiIds?.length;
+        return (
+          !withFiles.has(p.messageId) &&
+          !o.fileRefs?.length &&
+          !o.wikiIds?.length &&
+          !o.skills?.length
+        );
       });
       if (!plain.length) return [];
       // The delete decides who gets a note when two runs ask at once: a row it did not return belongs to someone else.
@@ -3772,17 +4049,59 @@ export function createChatService(
       if (!row) throw new AccessError("NOT_FOUND");
       return row;
     },
-    listProposals: (actor: ActiveActor) =>
+    /** Pending proposals. With `botId`, only what that bot asked (a proposal with no asking bot belongs to the bot it targets). */
+    listProposals: (actor: ActiveActor, botId?: string) =>
       db
         .select()
         .from(configProposal)
         .where(
-          and(eq(configProposal.ownerUserId, actor.userId), eq(configProposal.status, "pending")),
+          and(
+            eq(configProposal.ownerUserId, actor.userId),
+            eq(configProposal.status, "pending"),
+            botId
+              ? sql`coalesce(${configProposal.proposedByBotId}, ${configProposal.botId}) = ${botId}`
+              : undefined,
+          ),
         )
         .orderBy(asc(configProposal.createdAt)),
     /** Applying is one transaction: the pending proposal is claimed, the bot must still match the version AND content hash the diff was
      * computed against (else stale), the revision is recorded, and a concurrent second approval finds nothing pending. */
-    async decideProposal(actor: ActiveActor, id: string, approve: boolean) {
+    async decideProposal(
+      actor: ActiveActor,
+      id: string,
+      approve: boolean,
+      selection?: { paths: string[]; target: "bot" | "all" },
+    ) {
+      // Skills: the user's choice must be among the skills the bot offered, and is checked before the proposal is claimed.
+      if (approve) {
+        const [peek] = await db
+          .select({ kind: configProposal.kind, patch: configProposal.patch })
+          .from(configProposal)
+          .where(
+            and(
+              eq(configProposal.id, id),
+              eq(configProposal.ownerUserId, actor.userId),
+              eq(configProposal.status, "pending"),
+            ),
+          );
+        if (peek?.kind === "install_skills") {
+          const offered = new Set(
+            (peek.patch as { skills: { path: string }[] }).skills.map((k) => k.path),
+          );
+          if (!selection?.paths.length || !selection.paths.every((p) => offered.has(p)))
+            throw new ProposalSelectionError();
+        }
+      }
+      let installedSkills:
+        | {
+            installed: string[];
+            attached: string[];
+            failed: { path: string; code: string }[];
+            attachError: string | null;
+            bots: number;
+            skippedBots: number;
+          }
+        | undefined;
       const res = await db.transaction(async (tx) => {
         const [p] = await tx
           .update(configProposal)
@@ -3932,6 +4251,36 @@ export function createChatService(
           const plan = await planBotPermission(actor, a as BotPermissionArgs);
           if ("error" in plan) throw new Error(plan.error);
           await applyBotPermission(actor, plan);
+        } else if (res.create.kind === "install_skills") {
+          if (!deps.skills || !selection) throw new Error("skills unavailable");
+          const offer = a as { repo: string; ref: string };
+          const [asked] = await db
+            .select({ by: configProposal.botId })
+            .from(configProposal)
+            .where(eq(configProposal.id, id));
+          const owned = (
+            await db
+              .select({ id: bot.id })
+              .from(bot)
+              .where(and(eq(bot.ownerUserId, actor.userId), eq(bot.archived, false)))
+          ).map((b) => b.id);
+          // "This bot" only when the person owns it (a team bot of someone else gets nothing); "all" is every bot the person owns now.
+          const wanted = selection.target === "all" ? owned : owned.filter((b) => b === asked?.by);
+          const botIds = await deps.skills.skills.withRoom(wanted, selection.paths.length);
+          const r = await installSelection(deps.skills, actor, {
+            repo: offer.repo,
+            ref: offer.ref,
+            paths: selection.paths,
+            botIds,
+          });
+          installedSkills = {
+            installed: r.installed.map((s) => s.name),
+            attached: r.attached.map((s) => s.name),
+            failed: r.failed,
+            attachError: r.attachError,
+            bots: botIds.length,
+            skippedBots: wanted.length - botIds.length,
+          };
         } else if (res.create.kind === "create_vm") {
           if (!vms) throw new Error("vms unavailable");
           const [p] = await db
@@ -3944,7 +4293,10 @@ export function createChatService(
             botId: p?.by ?? null,
           });
         } else await creators!.workflow(actor, a as never);
-        return { status: "approved" as const };
+        return {
+          status: "approved" as const,
+          ...(installedSkills ? { skills: installedSkills } : {}),
+        };
       } catch {
         await db.update(configProposal).set({ status: "stale" }).where(eq(configProposal.id, id));
         return { status: "stale" as const };
@@ -4047,6 +4399,10 @@ export function createChatService(
         await tx.delete(conversation).where(eq(conversation.id, id));
       });
       return { id };
+    },
+    /** The skills the person can pick for this bot with `/`: names and descriptions only, never the instructions. */
+    async botSkills(actor: ActiveActor, botId: string) {
+      return skillsOf(botClaudeStore, await loadVisibleBot(actor, botId));
     },
     async createConversation(actor: ActiveActor, botId: string) {
       await loadVisibleBot(actor, botId);
@@ -4252,7 +4608,7 @@ export function createChatService(
           and(eq(attachment.ownerUserId, actor.userId), inArray(attachment.messageId, messageIds)),
         );
     },
-    /** One user turn: persists it, streams the primary bot's reply, then lets @mentioned ready bots answer (max 3, bounded delegation).
+    /** One user turn: persists it and streams the chat bot's reply. Bots it @mentions (max 3) or hands the work to answer in a room, never in this chat.
      * Assistant rows are written as "running" first and flushed while streaming, so a disconnect or crash never loses partial output. */
     async *converse(
       actor: ActiveActor,
@@ -4414,6 +4770,7 @@ export function createChatService(
         ? ((await deps.wiki?.byIds(actor.userId, pickedIds)) ?? [])
         : [];
       if (referenced.length !== pickedIds.length) throw new AccessError("NOT_FOUND");
+      const skills = await pickedSkills(b, input.skills);
       const fileHashes: { path: string; sha256: string }[] = [];
       for (const ref of input.fileRefs ?? []) {
         try {
@@ -4533,7 +4890,6 @@ export function createChatService(
           : await routing.decide(b, input.content, false, actor);
       if (route.action === "delegate" && (external || step))
         route = { action: "respond", reason: "disabled" };
-      let primary = { bot: b, delegated: false };
       let canned: string | undefined;
       let homeConfidence: number | undefined;
       // Home Assistant fast path: Laya spots a simple home command and Home Assistant's own Assist engine answers it, with no AI call.
@@ -4568,19 +4924,24 @@ export function createChatService(
       if (b.kind === "chief" && b.harness === "fixture" && canned === undefined)
         canned =
           "I am not connected to an AI tool yet. Open Bot settings, choose a harness (Claude Code, Codex, Pi, OMP, OpenCode or Cursor), then check Studio > Accounts to see that it is ready. After that, send me a message and I will answer for real.";
+      // A bot hands work to another only through a room: the other bot never answers in this chat (it is not its own).
+      let routedBot: typeof bot.$inferSelect | undefined;
       if (route.action === "delegate") {
         const [t] = await db
           .select()
           .from(bot)
           .where(and(eq(bot.id, route.targetBotId), eq(bot.archived, false), visibleBot(actor)));
-        if (t && (t.ownerUserId === actor.userId || t.onboarded))
-          primary = { bot: t, delegated: true };
+        if (t && (t.ownerUserId === actor.userId || t.onboarded)) {
+          routedBot = t;
+          canned = `I passed this to ${t.name}; it answers in a room.`;
+        }
       }
-      const queue: { bot: typeof bot.$inferSelect; delegated: boolean }[] = [
-        primary,
-        ...mentioned
-          .filter((m) => m.id !== primary.bot.id)
-          .map((m) => ({ bot: m, delegated: true })),
+      const others = [
+        ...new Map(
+          [...(routedBot ? [routedBot] : []), ...mentioned]
+            .filter((m) => m.id !== b.id)
+            .map((m) => [m.id, m]),
+        ).values(),
       ];
       const newProposals: string[] = [];
       // Earlier pictures are named in the history (the bot sees "[image: shot.png]") but their pixels are not replayed, so a memory saved from them is text only.
@@ -4630,25 +4991,12 @@ export function createChatService(
         parentMessageId: string | null;
         historyRoot?: string | null;
       };
-      // One bot's answer: its delegation row, the reply, and the events that follow it. `where` says which thread the reply lands in.
+      // The chat's own bot answers: the reply and the events that follow it. `where` says which thread the reply lands in.
       const answerOne = async function* (
         who: typeof bot.$inferSelect,
-        delegated: boolean,
         botHist: HistRow[],
         where: Where,
       ) {
-        const [deleg] = delegated
-          ? await db
-              .insert(delegation)
-              .values({
-                ownerUserId: actor.userId,
-                conversationId: conv.id,
-                parentMessageId: userMsg.id,
-                botId: who.id,
-                status: "running",
-              })
-              .returning()
-          : [];
         const { saved, status } = yield* answerAs(actor, {
           convId: conv.id,
           link: `/chat/${conv.id}`,
@@ -4659,13 +5007,14 @@ export function createChatService(
           untrusted: untrustedConv || files.length > 0,
           images,
           referenced,
+          // Only the addressed bot gets the picks; a bot it hands the work to does not own those skills.
+          skills: who.id === b.id ? skills : undefined,
           proposals: newProposals,
           signal,
           canned: who.id === b.id ? canned : undefined,
-          suffixIfComplete:
-            !delegated && skipped.length
-              ? `\n\nℹ️ ${skipped.map((s) => `@${s.name} (${s.reason})`).join(", ")} was not asked.`
-              : undefined,
+          suffixIfComplete: skipped.length
+            ? `\n\nℹ️ ${skipped.map((s) => `@${s.name} (${s.reason})`).join(", ")} was not asked.`
+            : undefined,
           decision:
             route.action !== "respond"
               ? {
@@ -4691,27 +5040,7 @@ export function createChatService(
               }
             : {}),
         });
-        if (deleg)
-          await db
-            .update(delegation)
-            .set({
-              status: status === "complete" ? "succeeded" : status,
-              resultMessageId: saved.id,
-              reasonCode: status === "failed" ? "bot_failed" : null,
-            })
-            .where(eq(delegation.id, deleg.id));
         botHist.push(saved);
-        // A failed delegated answer is partial work: surface one attention card naming the responsible bot.
-        if (delegated && status === "failed")
-          await raiseAttention(db, actor.userId, {
-            botId: who.id,
-            title: `${who.name} could not finish a delegated task`,
-            detail: input.content.slice(0, 500),
-            nextAction: "Check the bot, then ask again.",
-            resultLink: `/chat/${conv.id}`,
-            source: "bot",
-            sourceKey: `delegation:${who.id}:${conv.id}`,
-          });
         yield { type: "message", message: saved, botName: who.name } as const;
         while (newProposals.length)
           yield {
@@ -4724,43 +5053,37 @@ export function createChatService(
         parentMessageId: thread ?? null,
         ...(asked ? { historyRoot: asked.parentMessageId } : {}),
       };
-      const [lead, ...rest] = queue;
-      let cancelled =
-        (yield* answerOne(lead!.bot, lead!.delegated, hist, mainWhere)) === "cancelled";
-      // Several @mentions: a decision model says whether they are independent. A chain ("@A draft it, then @B review it") and any doubt run
-      // one after another below, each bot seeing every earlier reply, so a later bot answers only after all the others are done.
-      if (
-        !cancelled &&
-        rest.length > 1 &&
-        (await routing.mentionMode(b, input.content, actor)) === "parallel"
-      ) {
-        // Independent bots work at the same time. Each reads the conversation up to the first answer, none sees another's reply, and
-        // each answers in the thread of the message (the main line keeps the one reply), so no answer breaks another's context.
-        const where: Where = thread
-          ? mainWhere
-          : { parentMessageId: userMsg.id, historyRoot: null };
-        const statuses = yield* mergeAll(
-          rest.map((r) => answerOne(r.bot, r.delegated, [...hist], where)),
-        );
-        cancelled = statuses.includes("cancelled");
-      } else
-        for (const r of rest) {
-          if (cancelled) break;
-          cancelled = (yield* answerOne(r.bot, r.delegated, hist, mainWhere)) === "cancelled";
-        }
-      if (mentioned.length) {
-        // Deterministic consolidation of delegated work: who answered, who failed, what was not asked.
-        const rows = await db
-          .select()
-          .from(delegation)
-          .where(eq(delegation.parentMessageId, userMsg.id));
-        const names = new Map(mentioned.map((m) => [m.id, m.name]));
-        const line = (d: (typeof rows)[number]) =>
-          `${d.status === "succeeded" ? "✅" : d.status === "cancelled" ? "⏹" : "❌"} ${names.get(d.botId) ?? "bot"}`;
-        yield {
-          type: "summary",
-          text: `Delegation: ${rows.map(line).join(", ")}${skipped.length ? `; not asked: ${skipped.map((x) => x.name).join(", ")}` : ""}`,
+      const status = yield* answerOne(b, hist, mainWhere);
+      // Bots named in this message answer in a room: the chat keeps one line that links to it.
+      if (others.length && status !== "cancelled") {
+        const note = async (content: string, room?: { id: string; title: string }) => {
+          await insertMessage(db, conv.id, {
+            ownerUserId: actor.userId,
+            role: "system",
+            content,
+            meta: room ? { discussion: { id: room.id, title: room.title, status: "open" } } : null,
+          });
+          return { type: "summary", text: content } as const;
         };
+        const who = others.map((o) => o.name).join(", ");
+        try {
+          const room = await deps.discussions?.redirectMention(actor, {
+            conversationId: conv.id,
+            conversationTitle: conv.title,
+            messageId: input.retry?.requestId ?? userMsg.id,
+            chatBot: b,
+            bots: others,
+            text: input.content,
+            leadReply: hist.at(-1)?.content ?? "",
+            tainted: untrustedConv || files.length > 0,
+          });
+          if (room) yield await note(`👥 ${who} will answer in the room "${room.title}".`, room);
+          else if (!deps.discussions)
+            yield await note(`ℹ️ ${who} answers only in rooms, and rooms are not available here.`);
+        } catch (e) {
+          if (!(e instanceof DiscussionError)) throw e;
+          yield await note(`⚠️ ${who} cannot join a room: ${e.safe}`);
+        }
       }
       // The title is decided in SQL, not from `conv.title` read at turn start: a rename during the turn must win.
       const firstTitle = !hasMessages && conv.kind === "chat" && !step;
@@ -4810,7 +5133,13 @@ export function createChatService(
       conversationId: string,
       input: Pick<
         Converse,
-        "content" | "clientRequestId" | "parentMessageId" | "attachmentIds" | "fileRefs" | "wikiIds"
+        | "content"
+        | "clientRequestId"
+        | "parentMessageId"
+        | "attachmentIds"
+        | "fileRefs"
+        | "wikiIds"
+        | "skills"
       >,
     ) {
       const conv = await loadConversation(actor, conversationId);
@@ -4843,6 +5172,7 @@ export function createChatService(
         (await deps.wiki?.byIds(actor.userId, wikiIds))?.length !== wikiIds.length
       )
         throw new AccessError("NOT_FOUND");
+      const skills = await pickedSkills(b, input.skills);
       const attachmentIds = input.attachmentIds ?? [];
       const saved = await db.transaction(async (tx) => {
         if (attachmentIds.length) {
@@ -4875,7 +5205,7 @@ export function createChatService(
           ownerUserId: actor.userId,
           conversationId: conv.id,
           messageId: m.id,
-          input: { fileRefs: input.fileRefs ?? [], wikiIds },
+          input: { fileRefs: input.fileRefs ?? [], wikiIds, skills },
         });
         return m;
       });
@@ -5047,12 +5377,15 @@ export function createChatService(
       };
       const rawTranscript = await store.transcript(d);
       // Instructions on the person's latest post apply to every bot woken until the person posts again.
-      const pickedIds =
-        (
-          rawTranscript.findLast((m) => m.role === "user")?.meta as {
-            wikiIds?: string[];
-          } | null
-        )?.wikiIds ?? [];
+      const latestMeta = rawTranscript.findLast((m) => m.role === "user")?.meta as {
+        wikiIds?: string[];
+        skills?: { botId: string; name: string }[];
+      } | null;
+      const pickedIds = latestMeta?.wikiIds ?? [];
+      // Each bot gets only the skills picked for it.
+      const pickedSkillNames = (latestMeta?.skills ?? [])
+        .filter((k) => k.botId === who.id)
+        .map((k) => k.name);
       const referenced = pickedIds.length
         ? ((await deps.wiki?.byIds(actor.userId, pickedIds)) ?? [])
         : [];
@@ -5190,6 +5523,7 @@ export function createChatService(
             untrusted: d.tainted,
             images: discussionImages,
             referenced,
+            skills: pickedSkillNames,
             proposals,
             signal,
             scope,

@@ -11,7 +11,7 @@ interface Props {
 const copy = getCopy(Astro.props.locale);
 const t = copy.selfHost;
 const hub = copy.hero.hub;
-const demo = copy.how.demo;
+const demo = copy.demo;
 const sample = demo.tabs[2];
 
 // Commands come from docker-compose.yml, apps/server/.env.schema, apps/web/.env.schema and the docker:up script in package.json.
@@ -32,11 +32,12 @@ const commands = [
 ];
 ---
 
-<section class="section band" id="self-host">
+<section class="section" id="self-host">
   <div class="wrap">
     <div class="head">
       <h2>{t.title}</h2>
       <p class="lead">{t.lead}</p>
+      <p class="note">{t.note}</p>
       <a href={DOCS} target="_blank" rel="noopener noreferrer">{t.docs}</a>
     </div>
 
@@ -90,6 +91,12 @@ const commands = [
 <style>
   .head a {
     font-size: 15px;
+  }
+  .note {
+    max-width: 56ch;
+    color: var(--muted-foreground);
+    font-size: 15px;
+    line-height: 22px;
   }
   .panel {
     display: grid;

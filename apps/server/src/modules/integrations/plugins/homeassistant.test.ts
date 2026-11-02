@@ -8,6 +8,8 @@ import { actor, world } from "./test-world";
 type Seen = { method: string; path: string; auth: string | null; body: unknown };
 let seen: Seen[] = [];
 let assistAnswer: unknown = {};
+/** When set, Assist understands only this language and answers "no match" for every other one. */
+let assistOnlyIn: string | undefined;
 const STATES = [
   { entity_id: "light.kitchen", state: "on", attributes: { friendly_name: "Kitchen light" } },
   { entity_id: "light.hall", state: "off", attributes: { friendly_name: "Hall light" } },
@@ -25,7 +27,10 @@ const server = Bun.serve({
     if (url.pathname === "/api/states") return Response.json(STATES);
     if (url.pathname === "/api/services/light/turn_off")
       return Response.json([{ entity_id: "light.kitchen", state: "off", attributes: {} }]);
-    if (url.pathname === "/api/conversation/process") return Response.json(assistAnswer);
+    if (url.pathname === "/api/conversation/process") {
+      const language = (body as { language?: string } | undefined)?.language;
+      return Response.json(assistOnlyIn && language !== assistOnlyIn ? noMatch : assistAnswer);
+    }
     return new Response("nope", { status: 404 });
   },
 });
@@ -83,6 +88,7 @@ afterAll(() => server.stop(true));
 beforeEach(() => {
   seen = [];
   assistAnswer = done;
+  assistOnlyIn = undefined;
 });
 
 describe("homeassistant plugin", () => {
@@ -206,5 +212,47 @@ describe("home fast path", () => {
     const model = await laya("home_control", 0.9);
     expect(await run(w, model)).toBeUndefined();
     expect(seen).toEqual([]);
+  });
+});
+
+describe("home assist languages", () => {
+  const ask = async (language: string) => {
+    const w = await setup({ language });
+    seen = [];
+    const result = await w.plugins.callTool(w.a, "bot1", "homeassistant", "assist", {
+      text: "apaga a luz da cozinha",
+    });
+    const languages = seen
+      .filter((s) => s.path === "/api/conversation/process")
+      .map((s) => (s.body as { language?: string }).language);
+    return { result, languages };
+  };
+
+  test("the next language answers when the first one does not match", async () => {
+    assistOnlyIn = "en";
+    const { result, languages } = await ask("pt-BR,en");
+    expect(languages).toEqual(["pt-BR", "en"]);
+    expect(String(result)).toContain("Turned off the light");
+  });
+
+  test("the first language that matches stops the search", async () => {
+    assistOnlyIn = "en";
+    const { languages } = await ask("en,pt-BR");
+    expect(languages).toEqual(["en"]);
+  });
+
+  test("a single saved language works as before", async () => {
+    const { languages } = await ask("pt-BR");
+    expect(languages).toEqual(["pt-BR"]);
+  });
+
+  test("an empty list sends no language", async () => {
+    const { languages } = await ask("");
+    expect(languages).toEqual([undefined]);
+  });
+
+  test("invalid and repeated tags are dropped", async () => {
+    const { languages } = await ask("pt-BR, ../x ,pt-BR,en");
+    expect(languages).toEqual(["pt-BR"]);
   });
 });

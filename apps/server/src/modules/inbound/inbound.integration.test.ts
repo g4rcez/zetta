@@ -30,6 +30,7 @@ const [A, B] = ids as [string, string];
 
 /** A channel plugin with a scripted inbox: each poll returns what is queued (keys make re-deliveries harmless). */
 let inbox: InboundEvent[] = [];
+let slow: number | undefined; // set when the fake channel has push, so polling is only a safety net
 const polls: unknown[] = [];
 const PLUGIN = "fakechat";
 
@@ -88,6 +89,10 @@ suite("inbound channels against compose postgres", () => {
   const plugins = {
     list: async () => [{ id: PLUGIN, serverId: "s", hasSecret: false }],
     bindings: async () => (bound ? [PLUGIN] : []),
+    prepareInbound: async () => {},
+    // The channel's signature check: a call carrying this header is genuine news for that user.
+    verifyPush: async (_a: unknown, _id: string, headers: Headers) =>
+      headers.get("x-sig") === "ok" ? "wake" : "invalid",
     pollInbound: async (_a: unknown, id: string, cursor: unknown, o: never) =>
       getPlugin(id)!.inbound!.poll(
         { userId: "", config: {}, setConfig: async () => {} },
@@ -200,7 +205,11 @@ suite("inbound channels against compose postgres", () => {
         poll: async (_ctx, cursor, o) => {
           polls.push(cursor);
           const events = inbox.slice(0, o.maxEvents);
-          return { events, cursor: { n: polls.length } };
+          return {
+            events,
+            cursor: { n: polls.length },
+            ...(slow ? { nextPollSeconds: slow } : {}),
+          };
         },
       },
     });
@@ -392,5 +401,40 @@ suite("inbound channels against compose postgres", () => {
     expect(r).toMatchObject({ enabled: false });
     expect(r!.lastError).toContain("not connected");
     bound = true;
+  });
+
+  test("with push, polling is a slow safety net and a wake delivers at once, only for the user's own enabled route", async () => {
+    inbox = [];
+    slow = 900;
+    await call(A, "PUT", `/api/bots/${support.id}/inbound/${PLUGIN}`, { enabled: true, filter });
+    await inbound.tick(new Date()); // the poll that learns push is on
+    const [r] = await db.select().from(inboundRoute).where(eq(inboundRoute.ownerUserId, A));
+    expect(r!.nextPollAt.getTime()).toBeGreaterThan(Date.now() + 800_000);
+    inbox = [ev("k-push", "hello right now", "c3", "Ana")];
+    await inbound.tick(new Date(Date.now() + 120_000)); // not due yet: the message waits
+    expect(
+      await db.select().from(inboundThread).where(eq(inboundThread.chatKey, "c3")),
+    ).toHaveLength(0);
+    const before = polls.length;
+    const genuine = new Headers({ "x-sig": "ok" });
+    expect(await inbound.push(A, PLUGIN, new Headers(), "{}")).toBe("invalid"); // not signed: no poll
+    expect(polls.length).toBe(before);
+    expect(await inbound.push(B, PLUGIN, genuine, "{}")).toBe("wake"); // B has no route: nothing to poll
+    expect(polls.length).toBe(before);
+    expect(await inbound.push(A, PLUGIN, genuine, "{}")).toBe("wake");
+    // The push answers at once and the route is polled in the background: wait until the message is delivered.
+    const delivered = () =>
+      db
+        .select()
+        .from(inboundEvent)
+        .where(and(eq(inboundEvent.key, "k-push"), eq(inboundEvent.status, "delivered")));
+    for (let i = 0; i < 100 && !(await delivered()).length; i++) await Bun.sleep(50);
+    expect(polls.length).toBe(before + 1);
+    const [t] = await db.select().from(inboundThread).where(eq(inboundThread.chatKey, "c3"));
+    expect(await db.select().from(inboundEvent).where(eq(inboundEvent.threadId, t!.id))).toEqual([
+      expect.objectContaining({ key: "k-push", status: "delivered" }),
+    ]);
+    await settle(t!.conversationId);
+    slow = undefined;
   });
 });

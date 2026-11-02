@@ -93,7 +93,11 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
   );
   await q("delete from team where owner_user_id = any($1)");
   await q("delete from team_role where owner_user_id = any($1)");
+  await q(
+    "delete from bot_skill where bot_id in (select id from bot where owner_user_id = any($1)) or skill_id in (select id from skill where owner_user_id = any($1))",
+  );
   await q("delete from bot where owner_user_id = any($1)");
+  await q("delete from skill where owner_user_id = any($1)");
   // After the bots: a bot may point to a style that another test user owns.
   await q("delete from output_style where owner_user_id = any($1)");
   await q("delete from workspace where owner_user_id = any($1)");

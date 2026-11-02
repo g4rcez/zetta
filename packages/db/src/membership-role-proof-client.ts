@@ -89,10 +89,10 @@ export async function verifyMembershipRole(client: PoolClient) {
       and not exists(select 1 from pg_database where datdba=(select oid from pg_roles where rolname=current_user)) as ownership,
     has_database_privilege(current_database(),'CONNECT') and not has_database_privilege(current_database(),'CREATE')
       and not has_database_privilege(current_database(),'TEMP') as database,
-    has_schema_privilege('public','USAGE') and not exists(select 1 from pg_namespace where has_schema_privilege(oid,'CREATE')) as schemas,
-    not exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r'
+    has_schema_privilege('zetta','USAGE') and not exists(select 1 from pg_namespace where has_schema_privilege(oid,'CREATE')) as schemas,
+    not exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='zetta' and c.relkind='r'
       and (has_table_privilege(c.oid,'DELETE') or has_table_privilege(c.oid,'TRUNCATE') or has_table_privilege(c.oid,'TRIGGER') or has_table_privilege(c.oid,'MAINTAIN') or has_table_privilege(c.oid,'REFERENCES'))) as tables,
-    not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege(p.oid,'EXECUTE')) as functions,
+    not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='zetta' and has_function_privilege(p.oid,'EXECUTE')) as functions,
     not has_parameter_privilege('session_replication_role','SET') and not has_parameter_privilege('session_replication_role','ALTER SYSTEM')
       and current_setting('session_replication_role')='origin' as parameters`);
   check(facts.rows.length === 1);
@@ -111,7 +111,7 @@ export async function verifyMembershipRole(client: PoolClient) {
     has_column_privilege(c.oid,a.attnum,'SELECT WITH GRANT OPTION') or has_column_privilege(c.oid,a.attnum,'INSERT WITH GRANT OPTION')
       or has_column_privilege(c.oid,a.attnum,'UPDATE WITH GRANT OPTION') or has_column_privilege(c.oid,a.attnum,'REFERENCES WITH GRANT OPTION') as grantable
     from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid
-    where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped order by c.relname,a.attnum`);
+    where n.nspname='zetta' and c.relkind='r' and a.attnum>0 and not a.attisdropped order by c.relname,a.attnum`);
   assertColumnPrivileges(columns.rows);
 }
 export async function openMembershipRoleProof(connectionString: string) {
@@ -139,10 +139,11 @@ export async function openMembershipRoleProof(connectionString: string) {
     );
     await proof.owner.query(`revoke all on database zetta_identity_test from public;
       revoke all on schema public from public;
-      revoke all on all tables in schema public from public;
-      revoke all on all functions in schema public from public;
-      grant connect on database zetta_identity_test to ${role}; grant usage on schema public to ${role};
-      grant select(id,email),update(updated_at) on public."user" to ${role};
+      revoke all on schema zetta from public;
+      revoke all on all tables in schema zetta from public;
+      revoke all on all functions in schema zetta from public;
+      grant connect on database zetta_identity_test to ${role}; grant usage on schema zetta to ${role};
+      grant select(id,email),update(updated_at) on zetta."user" to ${role};
       grant select on membership,installation_identity,invitation,runs,run_attempts to ${role};
       grant insert on membership,identity_audit,runs,run_attempts to ${role};
       grant update(activation_revision,status,removed_at,updated_at) on membership to ${role};
@@ -158,7 +159,7 @@ export async function openMembershipRoleProof(connectionString: string) {
       ssl: false,
       sslnegotiation: "postgres",
       client_encoding: "UTF8",
-      options: "-c search_path=public",
+      options: "-c search_path=zetta",
       application_name: "zetta-membership-role-proof",
       connectionTimeoutMillis: 3000,
       query_timeout: 5000,

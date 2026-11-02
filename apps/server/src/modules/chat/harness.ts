@@ -147,7 +147,8 @@ export function claudeArgs(
     );
   } else {
     if (deny.length) args.push(`--disallowedTools=${[...new Set(deny)].join(",")}`);
-    const allow = [...pluginTools, ...(mcp?.allow ?? [])];
+    // No workspace, so no git: only gh, for GitHub bound with the server's CLI login (the user's consent, as in code runs).
+    const allow = [...pluginTools, ...(github ? ["Bash(gh:*)"] : []), ...(mcp?.allow ?? [])];
     if (allow.length) args.push(`--allowedTools=${allow.join(",")}`);
   }
   // No --strict-mcp-config: the servers in the CLI's own config keep working next to these.
@@ -815,11 +816,11 @@ export const streamCli: StreamCli = async function* ({
       imagePaths.length ? prompt + imageNote(imagePaths) : prompt,
       model,
       workspace ? (docker ? "full" : "git") : undefined,
-      profile || mcp || (workspace && (baseEnv.GITHUB_TOKEN || viaCli))
+      profile || mcp || viaCli || (workspace && baseEnv.GITHUB_TOKEN)
         ? {
             profile,
             ...(mcp ? { mcp } : {}),
-            ...(workspace && (baseEnv.GITHUB_TOKEN || viaCli) ? { github: true } : {}),
+            ...((workspace && baseEnv.GITHUB_TOKEN) || viaCli ? { github: true } : {}),
             ...(pluginDir ? { pluginDir: docker ? CONTAINER_PLUGIN_DIR : pluginDir } : {}),
             ...(workspace && session ? { session } : {}),
           }

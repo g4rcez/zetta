@@ -7,7 +7,7 @@ export type PluginField = {
   label: string;
   secret?: boolean;
   optional?: boolean;
-  kind?: "text" | "password" | "url" | "textarea" | "select";
+  kind?: "text" | "password" | "url" | "textarea" | "select" | "languages";
   placeholder?: string;
   help?: string;
   options?: { value: string; label: string }[];

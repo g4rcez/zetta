@@ -1,7 +1,8 @@
 import { defineRelationsPart } from "drizzle-orm";
-import { pgTable, text, timestamp, boolean, index, integer, jsonb } from "drizzle-orm/pg-core";
+import { text, timestamp, boolean, index, integer, jsonb } from "drizzle-orm/pg-core";
+import { zetta } from "./pg-schema";
 
-export const user = pgTable("user", {
+export const user = zetta.table("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
@@ -14,7 +15,7 @@ export const user = pgTable("user", {
     .notNull(),
 });
 
-export const session = pgTable(
+export const session = zetta.table(
   "session",
   {
     id: text("id").primaryKey(),
@@ -33,7 +34,7 @@ export const session = pgTable(
   (table) => [index("session_userId_idx").on(table.userId)],
 );
 
-export const account = pgTable(
+export const account = zetta.table(
   "account",
   {
     id: text("id").primaryKey(),
@@ -57,7 +58,7 @@ export const account = pgTable(
   (table) => [index("account_userId_idx").on(table.userId)],
 );
 
-export const verification = pgTable(
+export const verification = zetta.table(
   "verification",
   {
     id: text("id").primaryKey(),
@@ -74,7 +75,7 @@ export const verification = pgTable(
 );
 
 // OAuth 2.1 server for MCP clients (better-auth jwt + @better-auth/mcp 1.7.7). Field names match the plugin schemas; tokens are stored hashed.
-export const jwks = pgTable("jwks", {
+export const jwks = zetta.table("jwks", {
   id: text("id").primaryKey(),
   publicKey: text("public_key").notNull(),
   privateKey: text("private_key").notNull(),
@@ -84,7 +85,7 @@ export const jwks = pgTable("jwks", {
   crv: text("crv"),
 });
 
-export const oauthClient = pgTable(
+export const oauthClient = zetta.table(
   "oauth_client",
   {
     id: text("id").primaryKey(),
@@ -127,7 +128,7 @@ export const oauthClient = pgTable(
   (table) => [index("oauth_client_userId_idx").on(table.userId)],
 );
 
-export const oauthResource = pgTable("oauth_resource", {
+export const oauthResource = zetta.table("oauth_resource", {
   id: text("id").primaryKey(),
   identifier: text("identifier").notNull().unique(),
   name: text("name").notNull(),
@@ -145,7 +146,7 @@ export const oauthResource = pgTable("oauth_resource", {
   metadata: jsonb("metadata"),
 });
 
-export const oauthClientResource = pgTable(
+export const oauthClientResource = zetta.table(
   "oauth_client_resource",
   {
     id: text("id").primaryKey(),
@@ -164,7 +165,7 @@ export const oauthClientResource = pgTable(
   ],
 );
 
-export const oauthRefreshToken = pgTable(
+export const oauthRefreshToken = zetta.table(
   "oauth_refresh_token",
   {
     id: text("id").primaryKey(),
@@ -198,7 +199,7 @@ export const oauthRefreshToken = pgTable(
   ],
 );
 
-export const oauthAccessToken = pgTable(
+export const oauthAccessToken = zetta.table(
   "oauth_access_token",
   {
     id: text("id").primaryKey(),
@@ -228,7 +229,7 @@ export const oauthAccessToken = pgTable(
   ],
 );
 
-export const oauthConsent = pgTable(
+export const oauthConsent = zetta.table(
   "oauth_consent",
   {
     id: text("id").primaryKey(),
@@ -249,7 +250,7 @@ export const oauthConsent = pgTable(
   ],
 );
 
-export const oauthClientAssertion = pgTable("oauth_client_assertion", {
+export const oauthClientAssertion = zetta.table("oauth_client_assertion", {
   id: text("id").primaryKey(),
   expiresAt: timestamp("expires_at").notNull(),
 });

@@ -12,6 +12,7 @@ import {
   PlugIcon,
   HashIcon,
   BooksIcon,
+  LightningIcon,
 } from "@phosphor-icons/react";
 
 /** Main rail destinations, in rail order (the command palette binds Alt+1… to them in this order). Each `group` is one contiguous run, rendered as a labelled section. */
@@ -53,4 +54,6 @@ export const appLinks = [
   { to: "/artifacts", group: "Oversee", label: "Artifacts", icon: FileArchiveIcon },
   // Last, so adding it did not move the Alt+N hotkeys of the pages above. The sidebar shows it in its fixed block.
   { to: "/wiki", group: "Oversee", label: "Wiki", icon: BooksIcon },
+  // Also last, for the same reason. The sidebar shows it under More, next to Plugins.
+  { to: "/skills", group: "Build", label: "Skills", icon: LightningIcon },
 ] as const;

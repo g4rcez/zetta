@@ -148,7 +148,7 @@ export async function roleCases(p: RoleProof) {
       "membership identity update",
       "update membership set user_id=user_id where user_id='role-member'",
     ],
-    ["user identity update", "update public.\"user\" set id=id where id='role-member'"],
+    ["user identity update", "update zetta.\"user\" set id=id where id='role-member'"],
     ["run history delete", "delete from runs where owner_user_id='role-member'"],
     ["attempt history delete", "delete from run_attempts where owner_user_id='role-member'"],
     ["table alter", "alter table membership add column role_fixture_forbidden text"],
@@ -156,10 +156,11 @@ export async function roleCases(p: RoleProof) {
     ["trigger disable", "alter table membership disable trigger all"],
     [
       "function replacement",
-      "create or replace function public.membership_guard_activation_revision() returns trigger language plpgsql as $$ begin return NEW; end $$",
+      "create or replace function zetta.membership_guard_activation_revision() returns trigger language plpgsql as $$ begin return NEW; end $$",
     ],
     ["schema creation", "create schema role_fixture_forbidden"],
     ["public object creation", "create table public.role_fixture_forbidden(id integer)"],
+    ["app schema object creation", "create table zetta.role_fixture_forbidden(id integer)"],
     ["temporary object creation", "create temporary table role_fixture_forbidden(id integer)"],
     ["owner role escalation", "set role zetta_identity_runner"],
     ["owner session authorization", "set session authorization zetta_identity_runner"],
@@ -172,10 +173,10 @@ export async function roleCases(p: RoleProof) {
     await verifyMembershipRole(p.client);
   }
   // Fixed owner-created failure is after the real restricted INSERT into runs.
-  await owner.query(`create function public.membership_role_fail_attempt() returns trigger language plpgsql as $$
+  await owner.query(`create function zetta.membership_role_fail_attempt() returns trigger language plpgsql as $$
     begin raise exception using errcode='23514',constraint='membership_role_attempt_rejected',message='Synthetic failure'; end $$;
-    create trigger membership_role_fail_attempt before insert on run_attempts for each row execute function public.membership_role_fail_attempt();
-    revoke all on function public.membership_role_fail_attempt() from public`);
+    create trigger membership_role_fail_attempt before insert on run_attempts for each row execute function zetta.membership_role_fail_attempt();
+    revoke all on function zetta.membership_role_fail_attempt() from public`);
   const originalQuery = p.client.query;
   let rejectedAtAttempt = false;
   Reflect.set(p.client, "query", async (...args: unknown[]) => {
@@ -203,7 +204,7 @@ export async function roleCases(p: RoleProof) {
   } finally {
     Reflect.set(p.client, "query", originalQuery);
     await owner.query(
-      "drop trigger membership_role_fail_attempt on run_attempts; drop function public.membership_role_fail_attempt()",
+      "drop trigger membership_role_fail_attempt on run_attempts; drop function zetta.membership_role_fail_attempt()",
     );
   }
   const again = await store.submitOwned(actor, input());

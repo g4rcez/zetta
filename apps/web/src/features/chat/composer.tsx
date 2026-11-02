@@ -3,6 +3,7 @@ import { looksSecret } from "@zetta/core/secrets";
 import { uuidv7 } from "@zetta/core/uuid";
 import { Link } from "@tanstack/react-router";
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -20,6 +21,7 @@ import {
   CodeIcon,
   EyeIcon,
   FolderOpenIcon,
+  LightningIcon,
   TextItalicIcon,
   LinkIcon,
   CircleNotchIcon,
@@ -57,10 +59,12 @@ import {
   type Attachment as Attached,
   type Bot,
   call,
+  chatClient,
 } from "./chat-client";
 import { matchTrigger } from "./triggers";
 import { useMention } from "./mention";
-import { BotsContext } from "@/components/bot-identity";
+import { BotAvatar } from "@/components/bot-avatar";
+import { BotIdentity, BotsContext } from "@/components/bot-identity";
 import { Response } from "./response";
 
 export type Outgoing = {
@@ -68,7 +72,18 @@ export type Outgoing = {
   attachmentIds: string[];
   fileRefs: string[];
   wikiIds?: string[];
+  /** Skills picked with `/`; `botId` is the bot that owns the skill (in a room, the one that uses it). */
+  skills?: { botId: string; name: string }[];
 };
+/** A skill of a bot that the person can pick with `/`: the bot uses it for this message. */
+type SkillItem = { botId: string; name: string; description: string };
+/** What `/` picked: a wiki item or a skill. Both count toward MAX_PICKED. */
+type Picked = { kind: "wiki"; item: WikiItem } | ({ kind: "skill" } & SkillItem);
+/** A row of the `/` list, in the order the arrow keys walk it. */
+type Candidate = Picked;
+/** Rows sit in groups under a heading: one group per bot's skills, then the wiki. */
+const groupOf = (c: Candidate) => (c.kind === "wiki" ? "wiki" : c.botId);
+const sameSkill = (a: SkillItem, b: SkillItem) => a.botId === b.botId && a.name === b.name;
 /** A wiki item the person can pick with `/`: the bot follows it for this message. */
 type WikiItem = {
   id: string;
@@ -130,6 +145,7 @@ export function Composer({
   autoFocus,
   minimal,
   wiki,
+  skillBots = [],
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -144,6 +160,8 @@ export function Composer({
   autoFocus?: boolean;
   /** Turn on the `/` picker: only for screens whose submit forwards `wikiIds`. */
   wiki?: boolean;
+  /** Bots whose skills the `/` picker lists (the chat's bot; in a room, its members). Needs `wiki`, since both share the picker. */
+  skillBots?: readonly string[];
   /** Text only: no attachments, server files or @mentions (the setup interview). */ minimal?: boolean;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
@@ -167,17 +185,33 @@ export function Composer({
   const botsById = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
   const [slash, setSlash] = useState<{ query: string; at: number; index: number }>();
   const [library, setLibrary] = useState<WikiItem[]>();
-  const [chosen, setChosen] = useState<WikiItem[]>([]);
-  const wikiCandidates =
+  const [skillLib, setSkillLib] = useState<SkillItem[]>();
+  const skillsAsked = useRef(false);
+  const [chosen, setChosen] = useState<Picked[]>([]);
+  const query = slash?.query.toLowerCase() ?? "";
+  const skillCandidates: Candidate[] =
+    slash && skillLib
+      ? skillLib
+          .filter(
+            (k) =>
+              !chosen.some((c) => c.kind === "skill" && sameSkill(c, k)) &&
+              `${k.name} ${k.description}`.toLowerCase().includes(query),
+          )
+          .slice(0, 6)
+          .map((k) => ({ kind: "skill", ...k }))
+      : [];
+  const wikiCandidates: Candidate[] =
     slash && library
       ? library
           .filter(
             (i) =>
-              !chosen.some((c) => c.id === i.id) &&
-              `${i.title} ${i.tags.join(" ")}`.toLowerCase().includes(slash.query.toLowerCase()),
+              !chosen.some((c) => c.kind === "wiki" && c.item.id === i.id) &&
+              `${i.title} ${i.tags.join(" ")}`.toLowerCase().includes(query),
           )
           .slice(0, 6)
+          .map((item) => ({ kind: "wiki", item }))
       : [];
+  const candidates = [...skillCandidates, ...wikiCandidates];
   const pictures = staged.filter((x) => x.id);
   const total = attached.length + staged.length;
   const canSend =
@@ -260,6 +294,18 @@ export function Composer({
     mention.track(text, caret);
     const s = wiki ? matchTrigger(text, caret, "/") : undefined;
     setSlash(s ? { ...s, index: 0 } : undefined);
+    // A bot that fails to answer (or has no skills) just adds none: the wiki part of the list still works.
+    if (s && !skillsAsked.current && skillBots.length && chosen.length < MAX_PICKED) {
+      skillsAsked.current = true;
+      void Promise.all(
+        skillBots.map((id) =>
+          chatClient
+            .botSkills(id)
+            .then((l) => l.map((k) => ({ botId: id, ...k })))
+            .catch(() => []),
+        ),
+      ).then((l) => setSkillLib(l.flat()));
+    }
     if (s && !library && chosen.length < MAX_PICKED)
       void call<{ pages: WikiItem[]; shared: WikiItem[] }>("/api/wiki").then(
         (r) =>
@@ -290,7 +336,7 @@ export function Composer({
       el.setSelectionRange(caret, caret);
     });
   }
-  function pickItem(i: WikiItem) {
+  function pickItem(i: Candidate) {
     if (!slash) return;
     const end = slash.at + 1 + slash.query.length;
     onChange(value.slice(0, slash.at) + value.slice(end).replace(/^ /, ""));
@@ -301,6 +347,8 @@ export function Composer({
       input.current?.setSelectionRange(slash.at, slash.at);
     });
   }
+  const wikiPicks = chosen.filter((c) => c.kind === "wiki");
+  const skillPicks = chosen.filter((c) => c.kind === "skill");
   async function submit(e?: FormEvent) {
     e?.preventDefault();
     if (!canSend) return;
@@ -312,7 +360,10 @@ export function Composer({
       text: value.trim(),
       attachmentIds: [...attached.map((a) => a.id), ...pictures.map((x) => x.id!)],
       fileRefs,
-      ...(chosen.length ? { wikiIds: chosen.map((i) => i.id) } : {}),
+      ...(wikiPicks.length ? { wikiIds: wikiPicks.map((c) => c.item.id) } : {}),
+      ...(skillPicks.length
+        ? { skills: skillPicks.map((c) => ({ botId: c.botId, name: c.name })) }
+        : {}),
     });
     if (ok) {
       setChosen([]);
@@ -327,19 +378,19 @@ export function Composer({
     }
   }
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (slash && wikiCandidates.length) {
+    if (slash && candidates.length) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const d = e.key === "ArrowDown" ? 1 : -1;
         setSlash({
           ...slash,
-          index: (slash.index + d + wikiCandidates.length) % wikiCandidates.length,
+          index: (slash.index + d + candidates.length) % candidates.length,
         });
         return;
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
-        pickItem(wikiCandidates[slash.index]!);
+        pickItem(candidates[slash.index]!);
         return;
       }
       if (e.key === "Escape") {
@@ -412,60 +463,79 @@ export function Composer({
           onClose={() => setViewing(undefined)}
         />
       )}
-      {slash && library && (
+      {slash && (library || skillLib) && (
         <ul
           role="listbox"
-          aria-label="Follow a wiki item"
+          aria-label="Use a skill or follow a wiki item"
           className="absolute bottom-full left-0 z-20 mb-1 w-80 overflow-hidden rounded-lg border bg-popover p-1 shadow-md"
         >
-          <li
-            className="flex items-center justify-between px-2 py-1 text-xs font-medium text-muted-foreground"
-            role="presentation"
-          >
-            Wiki
-            <Link
-              to="/wiki"
-              onMouseDown={(e) => e.preventDefault()}
-              className="underline hover:text-foreground"
-            >
-              Manage
-            </Link>
-          </li>
-          {wikiCandidates.length === 0 && (
+          {candidates.length === 0 && (
             <li className="px-2 py-1.5 text-sm text-muted-foreground" role="presentation">
-              {library.length === 0 ? "Nothing in the wiki yet. " : "No match."}
-              {library.length === 0 && (
+              {!skillLib?.length && library?.length === 0 ? "Nothing to pick yet. " : "No match."}
+              {!skillLib?.length && library?.length === 0 && (
                 <Link
                   to="/wiki"
                   onMouseDown={(e) => e.preventDefault()}
                   className="underline hover:text-foreground"
                 >
-                  Create one
+                  Create a wiki item
                 </Link>
               )}
             </li>
           )}
-          {wikiCandidates.map((i, k) => (
-            <li
-              key={i.id}
-              role="option"
-              aria-selected={k === slash.index}
-              title={i.howto}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                pickItem(i);
-              }}
-              className={cn(
-                "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                k === slash.index ? "bg-accent text-accent-foreground" : "hover:bg-muted",
+          {candidates.map((c, k) => (
+            <Fragment key={c.kind === "wiki" ? c.item.id : `${c.botId}/${c.name}`}>
+              {(k === 0 || groupOf(c) !== groupOf(candidates[k - 1]!)) && (
+                <li
+                  className="flex items-center justify-between px-2 py-1 text-xs font-medium text-muted-foreground"
+                  role="presentation"
+                >
+                  {c.kind === "wiki" ? (
+                    <>
+                      Wiki
+                      <Link
+                        to="/wiki"
+                        onMouseDown={(e) => e.preventDefault()}
+                        className="underline hover:text-foreground"
+                      >
+                        Manage
+                      </Link>
+                    </>
+                  ) : skillBots.length > 1 && botsById.get(c.botId) ? (
+                    <BotIdentity bot={botsById.get(c.botId)!} size={16} />
+                  ) : (
+                    "Skills"
+                  )}
+                </li>
               )}
-            >
-              <BookOpenIcon className="size-4 shrink-0" />
-              <span className="min-w-0">
-                <span className="block truncate font-medium">{i.title}</span>
-                <span className="block truncate text-xs text-muted-foreground">{i.howto}</span>
-              </span>
-            </li>
+              <li
+                role="option"
+                aria-selected={k === slash.index}
+                title={c.kind === "wiki" ? c.item.howto : c.description}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pickItem(c);
+                }}
+                className={cn(
+                  "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+                  k === slash.index ? "bg-accent text-accent-foreground" : "hover:bg-muted",
+                )}
+              >
+                {c.kind === "wiki" ? (
+                  <BookOpenIcon className="size-4 shrink-0" />
+                ) : (
+                  <LightningIcon className="size-4 shrink-0" />
+                )}
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">
+                    {c.kind === "wiki" ? c.item.title : c.name}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {c.kind === "wiki" ? c.item.howto : c.description}
+                  </span>
+                </span>
+              </li>
+            </Fragment>
           ))}
         </ul>
       )}
@@ -551,24 +621,45 @@ export function Composer({
                   </AttachmentActions>
                 </Attachment>
               ))}
-              {chosen.map((i) => (
-                <Attachment key={i.id} size="sm" title={i.howto}>
-                  <AttachmentMedia>
-                    <BookOpenIcon />
-                  </AttachmentMedia>
-                  <AttachmentContent>
-                    <AttachmentTitle className="max-w-40 truncate">{i.title}</AttachmentTitle>
-                  </AttachmentContent>
-                  <AttachmentActions>
-                    <AttachmentAction
-                      aria-label={`Remove ${i.title}`}
-                      onClick={() => setChosen((l) => l.filter((x) => x.id !== i.id))}
-                    >
-                      <XIcon />
-                    </AttachmentAction>
-                  </AttachmentActions>
-                </Attachment>
-              ))}
+              {chosen.map((c) => {
+                const key = c.kind === "wiki" ? c.item.id : `${c.botId}/${c.name}`;
+                const title = c.kind === "wiki" ? c.item.title : c.name;
+                const owner =
+                  c.kind === "skill" && skillBots.length > 1 ? botsById.get(c.botId) : undefined;
+                return (
+                  <Attachment
+                    key={key}
+                    size="sm"
+                    title={c.kind === "wiki" ? c.item.howto : c.description}
+                  >
+                    <AttachmentMedia>
+                      {c.kind === "wiki" ? <BookOpenIcon /> : <LightningIcon />}
+                    </AttachmentMedia>
+                    <AttachmentContent>
+                      <AttachmentTitle className="flex max-w-40 items-center gap-1 truncate">
+                        {owner && <BotAvatar bot={owner} size={14} />}
+                        {title}
+                      </AttachmentTitle>
+                    </AttachmentContent>
+                    <AttachmentActions>
+                      <AttachmentAction
+                        aria-label={`Remove ${title}`}
+                        onClick={() =>
+                          setChosen((l) =>
+                            l.filter((x) =>
+                              x.kind === "wiki"
+                                ? c.kind !== "wiki" || x.item.id !== c.item.id
+                                : c.kind !== "skill" || !sameSkill(x, c),
+                            ),
+                          )
+                        }
+                      >
+                        <XIcon />
+                      </AttachmentAction>
+                    </AttachmentActions>
+                  </Attachment>
+                );
+              })}
               {fileRefs.map((f) => (
                 <Attachment key={f} size="sm">
                   <AttachmentMedia>

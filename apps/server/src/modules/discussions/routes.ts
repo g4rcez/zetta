@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
+import { skillName } from "../bot-claude/profile";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { DiscussionError, publicRoom, type DiscussionStore } from "./store";
 import type { DiscussionWorker } from "./worker";
@@ -35,6 +36,10 @@ const schemas = {
       attachmentIds: z.array(uuid).max(5).optional(),
       fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
       wikiIds: z.array(uuid).max(5).optional(),
+      skills: z
+        .array(z.strictObject({ botId: uuid, name: skillName }))
+        .max(5)
+        .optional(),
     })
     .refine((v) => v.content || v.attachmentIds?.length || v.fileRefs?.length),
   loop: z.strictObject({

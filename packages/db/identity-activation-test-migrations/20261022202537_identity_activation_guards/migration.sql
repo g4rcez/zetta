@@ -1,4 +1,4 @@
-CREATE FUNCTION public.membership_guard_activation_revision() RETURNS trigger
+CREATE FUNCTION zetta.membership_guard_activation_revision() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
@@ -25,5 +25,5 @@ END;
 $$;
 --> statement-breakpoint
 CREATE TRIGGER membership_activation_revision_guard
-BEFORE INSERT OR UPDATE ON public.membership
-FOR EACH ROW EXECUTE FUNCTION public.membership_guard_activation_revision();
+BEFORE INSERT OR UPDATE ON zetta.membership
+FOR EACH ROW EXECUTE FUNCTION zetta.membership_guard_activation_revision();

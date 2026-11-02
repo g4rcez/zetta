@@ -10,7 +10,7 @@ import {
   turnStep,
   type TurnStep,
 } from "@zetta/db/schema/discussions";
-import { attachment, configProposal } from "@zetta/db/schema/features";
+import { attachment, configProposal, routine } from "@zetta/db/schema/features";
 import { task } from "@zetta/db/schema/tasks";
 import { wikiPage } from "@zetta/db/schema/wiki";
 import { closeAttention, closeAttentionKey, raiseAttention } from "../features/attention";
@@ -20,6 +20,7 @@ import type { FileStore } from "../chat/files";
 import { insertMessage } from "../chat/messages";
 import { codeEnabled } from "../chat/pipeline";
 import type { LoopStore } from "../chat/loops";
+import { createBotClaude, skillsOf } from "../bot-claude/store";
 import { visibleTo } from "../wiki/service";
 import { HELP_PREFIX, mentionKey, wakeTargets } from "./prompt";
 
@@ -79,6 +80,8 @@ export type PostFiles = {
   attachmentIds?: string[] | undefined;
   fileRefs?: string[] | undefined;
   wikiIds?: string[] | undefined;
+  /** Skills picked with `/`; each belongs to one member bot, which is the only one that uses it. */
+  skills?: { botId: string; name: string }[] | undefined;
 };
 const FILE_CLIP = 12_000;
 
@@ -108,6 +111,7 @@ export function createDiscussionStore(
   ) => Promise<string | null>,
 ) {
   let onEnqueue: (() => void) | undefined;
+  const claude = createBotClaude(db);
   const visible = (a: ActiveActor) => or(eq(bot.ownerUserId, a.userId), eq(bot.visibility, "team"));
 
   async function loadOwned(a: ActiveActor, id: string) {
@@ -194,21 +198,28 @@ export function createDiscussionStore(
     opening = false,
     fallback = true,
     picked: string | null = null,
+    /** Bots that own a skill the person picked: they are woken even without a mention, and then the fallback answer is not needed. */
+    skillOwners: readonly string[] = [],
   ) {
     const members = await tx
       .select({ botId: discussionMember.botId, name: bot.name, kind: bot.kind })
       .from(discussionMember)
       .innerJoin(bot, eq(bot.id, discussionMember.botId))
       .where(eq(discussionMember.discussionId, d.id));
-    const targets = wakeTargets(
-      members,
-      d.createdByBotId,
-      authorBotId,
-      text,
-      opening,
-      fallback,
-      picked,
-    );
+    const targets = [
+      ...new Set([
+        ...wakeTargets(
+          members,
+          d.createdByBotId,
+          authorBotId,
+          text,
+          opening,
+          fallback && !skillOwners.length,
+          picked,
+        ),
+        ...skillOwners.filter((id) => id !== authorBotId),
+      ]),
+    ];
     if (!targets.length) return 0;
     const rows = await tx
       .insert(discussionTurn)
@@ -683,7 +694,8 @@ export function createDiscussionStore(
         title: `${input.createdBy.name} wants to open a room with ${outside.map((b) => b.name).join(", ")}`,
         detail: input.title,
         nextAction: "Open Chat and approve or reject the proposal.",
-        resultLink: "/chat",
+        // The asking bot's own chat, where the card is shown.
+        resultLink: `/chat/${input.origin?.conversationId ?? `new?bot=${input.createdBy.id}`}`,
         source: "bot",
         sourceKey: `proposal:${p!.id}`,
       });
@@ -707,6 +719,102 @@ export function createDiscussionStore(
         originInbound: (patch.originInbound as OpenInput["originInbound"]) ?? undefined,
         tainted: Boolean(patch.tainted),
       });
+    },
+    /**
+     * A bot named in a chat that is not its own answers in a room, never in that chat. The bots the chat's own bot already took into a room
+     * (opened, or waiting for approval) for this message are left alone. The rest join an open room from this chat that has them all, or a
+     * new room the person opens (no approval needed). Returns that room, or null when nothing was left to do.
+     */
+    async redirectMention(
+      a: ActiveActor,
+      v: {
+        conversationId: string;
+        conversationTitle: string;
+        messageId: string;
+        chatBot: Bot;
+        bots: Bot[];
+        text: string;
+        leadReply: string;
+        tainted: boolean;
+      },
+    ) {
+      const covered = new Set(
+        (
+          await db
+            .select({ botId: discussionMember.botId })
+            .from(discussionMember)
+            .innerJoin(discussion, eq(discussion.id, discussionMember.discussionId))
+            .where(
+              and(
+                eq(discussion.ownerUserId, a.userId),
+                eq(discussion.originMessageId, v.messageId),
+              ),
+            )
+        ).map((r) => r.botId),
+      );
+      const pending = await db
+        .select({ patch: configProposal.patch })
+        .from(configProposal)
+        .where(
+          and(
+            eq(configProposal.ownerUserId, a.userId),
+            eq(configProposal.kind, "open_discussion"),
+            eq(configProposal.status, "pending"),
+          ),
+        );
+      for (const { patch } of pending) {
+        const p = patch as {
+          origin?: { messageId?: string | null } | null;
+          members?: { bot: string }[];
+        };
+        if (p.origin?.messageId === v.messageId)
+          for (const m of p.members ?? []) covered.add(m.bot);
+      }
+      const targets = v.bots.filter((b) => !covered.has(b.id));
+      if (!targets.length) return null;
+      const names = targets.map((b) => b.name);
+      // The opening post must name the targets, or the Chief (facilitator of a person's room) would answer instead of them.
+      const named = new Set(
+        [...v.text.matchAll(/@([\p{L}\p{N}_-]{1,40})/gu)].map((m) => m[1]!.toLowerCase()),
+      );
+      const tags = targets
+        .filter((b) => !named.has(mentionKey(b.name)))
+        .map((b) => `@${mentionKey(b.name)}`);
+      const firstMessage = (tags.length ? `${tags.join(" ")} ${v.text}` : v.text).slice(0, 8000);
+      const room = async (d: Discussion) => {
+        await this.postAsOwner(a, d.id, firstMessage);
+        return { id: d.id, title: d.title, names };
+      };
+      const open_ = await db
+        .select()
+        .from(discussion)
+        .where(
+          and(
+            eq(discussion.ownerUserId, a.userId),
+            eq(discussion.originConversationId, v.conversationId),
+            eq(discussion.kind, "room"),
+            inArray(discussion.status, ["open", "stalled"]),
+          ),
+        )
+        .orderBy(desc(discussion.updatedAt));
+      for (const d of open_) {
+        const have = new Set((await membersOf(d)).map((m) => m.m.botId));
+        if (targets.every((b) => have.has(b.id))) return room(d);
+      }
+      const firstLine = v.text.trim().split("\n")[0]!;
+      const res = await open(a, {
+        title: `${names.join(", ")}: ${firstLine}`.slice(0, 120),
+        goal: v.text.slice(0, 1000),
+        context: `From the chat "${v.conversationTitle}" with ${v.chatBot.name}.\n\n${v.chatBot.name} replied: ${v.leadReply}`,
+        members: targets.map((b) => ({ bot: b.id })),
+        firstMessage,
+        createdBy: null,
+        origin: { conversationId: v.conversationId, messageId: v.messageId },
+        tainted: v.tainted,
+      });
+      return res.created
+        ? { id: res.discussion.id, title: res.discussion.title, names }
+        : room(res.discussion);
     },
     /** For tool calls: the discussion when `who` is a member of it (else NOT_FOUND, never someone else's). */
     async forMember(a: ActiveActor, id: string, botId: string) {
@@ -794,6 +902,32 @@ export function createDiscussionStore(
         if (readable.length !== wikiIds.length)
           throw new DiscussionError("NOT_FOUND", "A wiki item is no longer available.");
       }
+      // Skills the person picked: each must belong to a bot in this room, so a pick never reaches a bot that does not have the skill.
+      const skills = [
+        ...new Map((attached.skills ?? []).map((k) => [`${k.botId}/${k.name}`, k])).values(),
+      ];
+      const skillOwners = [...new Set(skills.map((k) => k.botId))];
+      if (skills.length) {
+        const owners = await db
+          .select({ id: bot.id, harness: bot.harness })
+          .from(discussionMember)
+          .innerJoin(bot, eq(bot.id, discussionMember.botId))
+          .where(
+            and(
+              eq(discussionMember.discussionId, d.id),
+              inArray(discussionMember.botId, skillOwners),
+            ),
+          );
+        const have = new Map(
+          await Promise.all(
+            owners.map(
+              async (o) => [o.id, new Set((await skillsOf(claude, o)).map((k) => k.name))] as const,
+            ),
+          ),
+        );
+        if (skills.some((k) => !have.get(k.botId)?.has(k.name)))
+          throw new DiscussionError("NOT_FOUND", "A skill is no longer available.");
+      }
       // No mention: a decision model picks the member to answer; without a pick the fallback (facilitator or Chief) answers.
       const roster = await db
         .select({
@@ -807,7 +941,9 @@ export function createDiscussionStore(
         .innerJoin(bot, eq(bot.id, discussionMember.botId))
         .where(eq(discussionMember.discussionId, d.id));
       const routed =
-        pickResponder && !wakeTargets(roster, d.createdByBotId, null, text, false, false).length
+        pickResponder &&
+        !skillOwners.length &&
+        !wakeTargets(roster, d.createdByBotId, null, text, false, false).length
           ? await pickResponder(
               a,
               text,
@@ -833,9 +969,10 @@ export function createDiscussionStore(
           role: "user",
           content: text,
           meta:
-            carried.length || images.length || wikiIds.length
+            carried.length || images.length || wikiIds.length || skills.length
               ? {
                   ...(wikiIds.length ? { wikiIds } : {}),
+                  ...(skills.length ? { skills } : {}),
                   ...(carried.length ? { files: carried } : {}),
                   ...(images.length ? { images } : {}),
                   ...(refs.length ? { fileRefs: refs, fileHashes } : {}),
@@ -854,7 +991,7 @@ export function createDiscussionStore(
             );
         const n =
           cur.status === "open"
-            ? await enqueueWakes(tx, cur, null, text, row.id, false, true, routed)
+            ? await enqueueWakes(tx, cur, null, text, row.id, false, true, routed, skillOwners)
             : 0;
         return { row, n };
       });
@@ -1436,7 +1573,18 @@ export function createDiscussionStore(
         .where(eq(discussionTurn.discussionId, d.id))
         .orderBy(desc(discussionTurn.createdAt))
         .limit(30);
-      return { discussion: publicRoom(d), members, turns };
+      const routines = await db
+        .select({ id: routine.id, title: routine.title, status: routine.status })
+        .from(routine)
+        .where(
+          and(
+            eq(routine.originDiscussionId, d.id),
+            eq(routine.ownerUserId, a.userId),
+            eq(routine.archived, false),
+          ),
+        )
+        .orderBy(asc(routine.createdAt));
+      return { discussion: publicRoom(d), members, turns, routines };
     },
     /** Owner toggle: whether a member must wait for an approved brief while outside content is in play. */
     async setRequireApproval(a: ActiveActor, id: string, botId: string, on: boolean) {
@@ -1681,6 +1829,7 @@ export function createDiscussionStore(
     },
     /**
      * Open discussions with nothing queued: one card after 30 minutes, stalled after a day.
+     * A room with an active routine made in it is skipped: its work runs in the routine's chat.
      * A room whose idle card was closed in the last 30 minutes is skipped, so a visit (or Resolve/Dismiss on the card) is not undone by the next sweep.
      */
     async sweepIdle(now = new Date()) {
@@ -1693,6 +1842,7 @@ export function createDiscussionStore(
             eq(discussion.status, "open"),
             lt(discussion.updatedAt, idleFor),
             sql`not exists (select 1 from discussion_turn t where t.discussion_id = ${discussion.id} and t.status in ('queued', 'running', 'awaiting_approval'))`,
+            sql`not exists (select 1 from routine r where r.origin_discussion_id = ${discussion.id} and r.archived = false and r.status not in ('paused', 'completed'))`,
             sql`not exists (select 1 from attention_item a where a.owner_user_id = ${discussion.ownerUserId} and a.source_key = 'discussion:' || ${discussion.id}::text || ':idle' and a.status in ('resolved', 'cancelled') and a.updated_at > ${idleFor})`,
           ),
         )

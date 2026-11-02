@@ -1,5 +1,5 @@
 ---
-// The four lead features carry a small scene built from the app's own pieces (bot faces, rows, badges) and real copy.
+// The three lead features carry a small scene built from the app's own pieces (bot faces, rows, badges) and real copy.
 // The scenes are illustrations, so each is one image for assistive tech; the card's heading and text carry the meaning.
 import Logo from "./Logo.astro";
 import BotArt from "./BotArt.astro";
@@ -14,9 +14,7 @@ interface Props {
 const copy = getCopy(Astro.props.locale);
 const t = copy.features;
 const sc = t.scenes;
-const illustrated = copy.how.demo.illustrated;
-// Column spans on a 12-column grid. Two uneven cards per row; the last three features share one panel, so the grid never reads as equal tiles.
-const spans = [7, 5, 5, 7, 6, 6];
+const illustrated = copy.demo.illustrated;
 const today = 2;
 ---
 
@@ -26,9 +24,9 @@ const today = 2;
       <h2>{t.title}</h2>
       <p class="lead">{t.lead}</p>
     </div>
-    <ul class="grid">
-      {t.items.slice(0, 6).map((item, i) => (
-        <li style={`--span:${spans[i]}`}>
+    <ul class="grid lead-cards">
+      {t.items.slice(0, 3).map((item, i) => (
+        <li>
           {i === 0 ? (
             <div class="scene" role="img" aria-label={`${item.title}. ${illustrated}.`}>
               <div class="side">
@@ -90,24 +88,16 @@ const today = 2;
             </div>
           ) : null}
 
-          {i === 3 ? (
-            <div class="scene" role="img" aria-label={`${item.title}. ${copy.how.vignettes.server[1]}. ${illustrated}.`}>
-              <div class="browser">
-                <p class="tabs">
-                  {sc.pages.map((page, n) => <span class:list={["tab", { active: n === 0 }]}>{page}</span>)}
-                </p>
-                <div class="page">
-                  <p class="title">{sc.pages[0]}</p>
-                  <p class="links">{sc.pages.slice(1).map((page) => <span>{page}</span>)}</p>
-                  <span class="cursor">
-                    <svg viewBox="0 0 16 16" width="18" height="18"><path d="M2 1.5v12l3.4-3.1 2.2 4.9 2.1-.9-2.2-4.8H12z" fill="var(--foreground)" stroke="var(--card)" stroke-width="1" stroke-linejoin="round" /></svg>
-                    <span class="who"><BotArt name={CAST.researcher.name} size={16} />{CAST.researcher.name}</span>
-                  </span>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
+          <div class="body">
+            <h3>{item.title}</h3>
+            <p>{item.body}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+    <ul class="grid text-cards">
+      {t.items.slice(3).map((item) => (
+        <li>
           <div class="body">
             <h3>{item.title}</h3>
             <p>{item.body}</p>
@@ -119,32 +109,22 @@ const today = 2;
           </div>
         </li>
       ))}
-      <li class="trio">
-        {t.items.slice(6).map((item) => (
-          <div class="body">
-            <h3>{item.title}</h3>
-            <p>{item.body}</p>
-            {item.tags.length > 0 ? (
-              <ul class="tags">
-                {item.tags.map((tag) => <li><Brand name={tag} size={16} />{tag}</li>)}
-              </ul>
-            ) : null}
-          </div>
-        ))}
-      </li>
     </ul>
     <p class="note">{illustrated}</p>
   </div>
 </section>
 
 <style>
+  /* Two rows of equal cards: three scene cards, then six text cards in a 3 x 2 grid. */
   .grid {
     display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 16px;
   }
+  .text-cards {
+    margin-top: 16px;
+  }
   .grid > li {
-    grid-column: span var(--span);
     display: grid;
     grid-template-rows: auto 1fr;
     overflow: hidden;
@@ -152,19 +132,21 @@ const today = 2;
     border-radius: var(--radius-xl);
     background: var(--card);
   }
+  .text-cards > li {
+    grid-template-rows: 1fr;
+  }
   .body {
     display: grid;
     align-content: start;
     gap: 12px;
-    padding: 28px;
+    padding: 24px;
   }
   .body h3 {
-    font-size: 22px;
+    font-size: 20px;
     line-height: 28px;
     letter-spacing: -0.02em;
   }
   .body p {
-    max-width: 56ch;
     color: var(--muted-foreground);
     font-size: 16px;
     line-height: 24px;
@@ -185,16 +167,6 @@ const today = 2;
     background: var(--muted);
     font-size: 14px;
     font-weight: 500;
-  }
-  /* The last three features: one panel, three cells, hairlines between. */
-  .grid > .trio {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: none;
-  }
-  .trio .body + .body {
-    border-left: 1px solid var(--border);
   }
   .note {
     margin-top: 16px;
@@ -268,11 +240,15 @@ const today = 2;
   }
 
   /* Routines and agenda: the same routine every weekday. */
+  /* Three days: a third of the page is too narrow for five columns, and names would break mid-word. */
   .week {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     width: 100%;
+  }
+  .week li:nth-child(-n + 2) {
+    display: none;
   }
   .week li {
     display: grid;
@@ -358,6 +334,7 @@ const today = 2;
   }
   .task {
     display: flex;
+    flex-direction: column;
     align-items: flex-start;
     gap: 8px;
     min-height: 72px;
@@ -389,120 +366,19 @@ const today = 2;
     background: var(--info);
   }
 
-  /* Browser and computer: a browser on the server, driven by a bot. */
-  .browser {
-    width: min(100%, 440px);
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    background: var(--card);
-  }
-  .tabs {
-    display: flex;
-    gap: 4px;
-    padding: 6px 6px 0;
-    border-bottom: 1px solid var(--border);
-    background: var(--muted);
-  }
-  .tab {
-    padding: 4px 12px;
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
-    color: var(--muted-foreground);
-    font-size: 12px;
-    line-height: 16px;
-    white-space: nowrap;
-  }
-  .tab.active {
-    background: var(--card);
-    color: var(--foreground);
-    font-weight: 500;
-  }
-  .page {
-    position: relative;
-    display: grid;
-    gap: 8px;
-    padding: 16px 20px 52px;
-  }
-  .title {
-    font-size: 20px;
-    line-height: 28px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-  }
-  .links {
-    display: flex;
-    gap: 16px;
-  }
-  .links span {
-    color: var(--primary);
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-  /* A named cursor, like a teammate in a shared document. */
-  /* The tip rests on the second link ("Team updates"). */
-  .cursor {
-    position: absolute;
-    left: 170px;
-    top: 60px;
-    display: grid;
-    justify-items: start;
-  }
-  .who {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin: 2px 0 0 12px;
-    padding: 2px 8px 2px 2px;
-    border-radius: var(--radius-md);
-    background: var(--foreground);
-    color: var(--background);
-    font-size: 12px;
-    line-height: 16px;
-    font-weight: 500;
-  }
-
-  @media (prefers-reduced-motion: no-preference) {
-    /* The cursor walks to the link as the card scrolls into view, where scroll timelines exist. */
-    @supports (animation-timeline: view()) {
-      .cursor {
-        animation: walk linear both;
-        animation-timeline: view();
-        animation-range: entry 20% cover 45%;
-      }
-    }
-  }
-  @keyframes walk {
-    from {
-      transform: translate(-120px, 40px);
-    }
-  }
-
   @media (max-width: 960px) {
     .grid {
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    .grid > li {
-      grid-column: span 3;
-    }
-    .grid > li:nth-child(-n + 4),
-    .grid > .trio {
-      grid-column: span 6;
-    }
-    .grid > .trio {
-      grid-template-columns: minmax(0, 1fr);
-    }
-    .trio .body + .body {
-      border-top: 1px solid var(--border);
-      border-left: 0;
+    .lead-cards > li:last-child {
+      grid-column: 1 / -1;
     }
   }
   @media (max-width: 640px) {
     .grid {
       grid-template-columns: minmax(0, 1fr);
     }
-    .grid > li,
-    .grid > li:nth-child(-n + 4),
-    .grid > .trio {
+    .lead-cards > li:last-child {
       grid-column: auto;
     }
     .body {
@@ -516,16 +392,6 @@ const today = 2;
     .slot {
       min-height: 96px;
       padding: 6px;
-    }
-    /* Three days fit a phone; five would break words. */
-    .week {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    .week li:nth-child(-n + 2) {
-      display: none;
-    }
-    .task {
-      flex-direction: column;
     }
   }
 </style>

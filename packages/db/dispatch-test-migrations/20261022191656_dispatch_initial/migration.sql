@@ -1,4 +1,4 @@
-CREATE TABLE "dispatch_capacity" (
+CREATE TABLE "zetta"."dispatch_capacity" (
 	"id" integer PRIMARY KEY,
 	"launcher_installation_id" text NOT NULL,
 	"policy_version" text NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE "dispatch_capacity" (
 	CONSTRAINT "dispatch_capacity_time_check" CHECK (("created_at" is null or (isfinite("created_at") and extract(epoch from "created_at") * 1000 between -8640000000000000 and 8640000000000000)))
 );
 --> statement-breakpoint
-CREATE TABLE "dispatch_claims" (
+CREATE TABLE "zetta"."dispatch_claims" (
 	"attempt_id" uuid PRIMARY KEY,
 	"run_id" uuid NOT NULL,
 	"owner_user_id" text NOT NULL,
@@ -71,7 +71,7 @@ CREATE TABLE "dispatch_claims" (
     and ("prepare_intent_at" is null or ("prepare_intent_at" >= "created_at" and "prepare_intent_at" <= "updated_at")) and ("cleanup_confirmed_at" is null or ("cleanup_confirmed_at" >= "created_at" and "cleanup_confirmed_at" <= "updated_at")) and ("cancel_requested_at" is null or ("cancel_requested_at" >= "created_at" and "cancel_requested_at" <= "updated_at")) and ("released_at" is null or ("released_at" >= "created_at" and "released_at" <= "updated_at")))
 );
 --> statement-breakpoint
-CREATE TABLE "dispatch_grants" (
+CREATE TABLE "zetta"."dispatch_grants" (
 	"id" uuid PRIMARY KEY,
 	"attempt_id" uuid NOT NULL,
 	"run_id" uuid NOT NULL,
@@ -110,9 +110,9 @@ CREATE TABLE "dispatch_grants" (
     and ("issued_at" is null or ("issued_at" < "expires_at" and ("cancelled_at" is null or "cancelled_at" >= "issued_at"))))
 );
 --> statement-breakpoint
-CREATE INDEX "dispatch_claims_occupied_owner_idx" ON "dispatch_claims" ("launcher_installation_id","owner_user_id") WHERE "released_at" is null;--> statement-breakpoint
-CREATE INDEX "dispatch_claims_occupied_attempt_idx" ON "dispatch_claims" ("launcher_installation_id","attempt_id") WHERE "released_at" is null;--> statement-breakpoint
-CREATE INDEX "dispatch_grants_attempt_id_idx" ON "dispatch_grants" ("attempt_id","id");--> statement-breakpoint
-ALTER TABLE "dispatch_claims" ADD CONSTRAINT "dispatch_claims_attempt_fk" FOREIGN KEY ("attempt_id","run_id","owner_user_id") REFERENCES "run_attempts"("id","run_id","owner_user_id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "dispatch_claims" ADD CONSTRAINT "dispatch_claims_policy_fk" FOREIGN KEY ("launcher_installation_id","policy_version") REFERENCES "dispatch_capacity"("launcher_installation_id","policy_version") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
-ALTER TABLE "dispatch_grants" ADD CONSTRAINT "dispatch_grants_claim_fk" FOREIGN KEY ("attempt_id","run_id","owner_user_id") REFERENCES "dispatch_claims"("attempt_id","run_id","owner_user_id") ON DELETE RESTRICT ON UPDATE RESTRICT;
+CREATE INDEX "dispatch_claims_occupied_owner_idx" ON "zetta"."dispatch_claims" ("launcher_installation_id","owner_user_id") WHERE "released_at" is null;--> statement-breakpoint
+CREATE INDEX "dispatch_claims_occupied_attempt_idx" ON "zetta"."dispatch_claims" ("launcher_installation_id","attempt_id") WHERE "released_at" is null;--> statement-breakpoint
+CREATE INDEX "dispatch_grants_attempt_id_idx" ON "zetta"."dispatch_grants" ("attempt_id","id");--> statement-breakpoint
+ALTER TABLE "zetta"."dispatch_claims" ADD CONSTRAINT "dispatch_claims_attempt_fk" FOREIGN KEY ("attempt_id","run_id","owner_user_id") REFERENCES "zetta"."run_attempts"("id","run_id","owner_user_id") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."dispatch_claims" ADD CONSTRAINT "dispatch_claims_policy_fk" FOREIGN KEY ("launcher_installation_id","policy_version") REFERENCES "zetta"."dispatch_capacity"("launcher_installation_id","policy_version") ON DELETE RESTRICT ON UPDATE RESTRICT;--> statement-breakpoint
+ALTER TABLE "zetta"."dispatch_grants" ADD CONSTRAINT "dispatch_grants_claim_fk" FOREIGN KEY ("attempt_id","run_id","owner_user_id") REFERENCES "zetta"."dispatch_claims"("attempt_id","run_id","owner_user_id") ON DELETE RESTRICT ON UPDATE RESTRICT;

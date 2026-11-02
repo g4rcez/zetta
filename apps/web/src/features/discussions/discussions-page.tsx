@@ -407,7 +407,10 @@ function RoomView({
         (await chatClient.proposals()).filter((p) =>
           p.kind === "discussion_brief" || p.kind === "team_goals"
             ? p.patch?.discussionId === id
-            : p.kind !== "open_discussion" && Boolean(p.botId && memberIds.has(p.botId)),
+            : p.kind !== "open_discussion" &&
+              Boolean(
+                (p.proposedByBotId ?? p.botId) && memberIds.has((p.proposedByBotId ?? p.botId)!),
+              ),
         ),
       );
     } catch (e) {
@@ -842,6 +845,7 @@ function RoomView({
                   busy={busy}
                   conversationId={d.conversationId}
                   wiki
+                  skillBots={detail.members.map((m) => m.botId)}
                   onSubmit={send}
                   onError={fail}
                 />
@@ -928,6 +932,25 @@ function RoomView({
                   >
                     Edit in team settings
                   </Link>
+                </div>
+              )}
+              {detail.routines.length > 0 && (
+                <div className="space-y-1">
+                  <h4 className="label-mono">Routines</h4>
+                  <ul className="space-y-1">
+                    {detail.routines.map((r) => (
+                      <li key={r.id}>
+                        <Link
+                          className="text-primary hover:underline"
+                          to="/routines"
+                          search={{ routine: r.id }}
+                        >
+                          {r.title}
+                        </Link>{" "}
+                        <span className="text-xs text-muted-foreground">{r.status}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
               <div className="space-y-1">

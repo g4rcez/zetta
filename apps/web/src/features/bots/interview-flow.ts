@@ -38,8 +38,8 @@ export type InterviewState = {
   manual: boolean;
   /** A draft is in place; the conversation moves on to refining it. */
   drafted: boolean;
-  /** What the person asked to change after the draft, in order. */
-  changes: string[];
+  /** What the person asked to change after the draft, in order. `reply` is null while the engine works or after it failed. */
+  changes: { ask: string; reply: string | null }[];
   /** The engine's plain-language list of what the bot will do. */
   summary: string[];
 };
@@ -73,4 +73,57 @@ export function nextTemplateStep(
   return slot
     ? { done: false, question: slot.question, suggestions: slot.suggestions }
     : { done: true, instructions: composeInstructions(briefFromTurns(turns)) };
+}
+
+/**
+ * When the engine is unavailable, the person's first answer (to "What is this bot for?") still answers the template's job
+ * question, so it is kept. Later answers belong to engine questions the template does not ask, so they are dropped.
+ */
+export function turnsForTemplate(turns: Turn[]): Turn[] {
+  const first = turns[0];
+  return first ? [{ question: TEMPLATE_QUESTIONS[0]!.question, answer: first.answer }] : [];
+}
+
+export const STARTED =
+  "I started from a template. It's in the preview. Describe the bot's job or tell me what to change, and I'll rewrite it.";
+export const READY_ENGINE =
+  "Your draft is ready. It's in the preview. Tell me anything you'd like changed, or continue.";
+export const READY_BASIC =
+  "Your basic draft is ready. It was filled from a template, not written by the engine. Edit the text in the preview.";
+export const UPDATED = "Updated. The preview shows the new draft.";
+
+/** The draft exists and the chat now refines it. A pending change counts, so it stays on screen while the engine works. */
+export function isFinished(state: InterviewState, hasDraft: boolean): boolean {
+  return (
+    state.drafted ||
+    state.changes.length > 0 ||
+    (hasDraft && !state.current && state.status !== "thinking")
+  );
+}
+
+export type Line = { role: "assistant" | "user"; content: string; streaming?: boolean };
+
+/** What the setup chat shows, in order. `hasDraft` is true when instructions are already written (a template or a copy). */
+export function interviewLines(state: InterviewState, hasDraft: boolean): Line[] {
+  const out: Line[] = [];
+  state.turns.forEach((t) => {
+    out.push({ role: "assistant", content: t.question }, { role: "user", content: t.answer });
+  });
+  const thinking = state.status === "thinking";
+  if (isFinished(state, hasDraft)) {
+    const opening =
+      state.source === "template"
+        ? READY_BASIC
+        : state.drafted || state.turns.length
+          ? READY_ENGINE
+          : STARTED;
+    out.push({ role: "assistant", content: opening });
+    state.changes.forEach((c) => {
+      out.push({ role: "user", content: c.ask });
+      if (c.reply) out.push({ role: "assistant", content: c.reply });
+    });
+  } else if (state.current && !thinking)
+    out.push({ role: "assistant", content: state.current.question });
+  if (thinking) out.push({ role: "assistant", content: "", streaming: true });
+  return out;
 }

@@ -1,6 +1,6 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
-import { and, asc, eq, gte, inArray, lt, sql } from "@zetta/db/query";
+import { and, asc, eq, gt, gte, inArray, lt, sql } from "@zetta/db/query";
 import { bot, conversation } from "@zetta/db/schema/chat";
 import { inboundEvent, inboundRoute, inboundThread } from "@zetta/db/schema/inbound";
 import { raiseAttention } from "../features/attention";
@@ -22,7 +22,10 @@ import { TurnBusyError, type ChatService } from "../chat/service";
 
 type Route = typeof inboundRoute.$inferSelect;
 type Event = typeof inboundEvent.$inferSelect;
-export type InboundPlugins = Pick<Plugins, "pollInbound" | "bindings" | "list">;
+export type InboundPlugins = Pick<
+  Plugins,
+  "pollInbound" | "bindings" | "list" | "prepareInbound" | "verifyPush"
+>;
 
 const ROUTES_PER_TICK = 10,
   THREADS_PER_TICK = 5,
@@ -80,6 +83,8 @@ export function createInbound(
   lookup: MembershipLookup,
 ) {
   let busy = false;
+  /** A wake arrived while a pass was running: run one more pass when it ends (the due time is also in the database, so nothing is lost). */
+  let again = false;
 
   async function ownedBot(a: ActiveActor, botId: string) {
     const [b] = await db
@@ -220,6 +225,16 @@ export function createInbound(
           updatedAt: new Date(),
         })
         .where(eq(inboundRoute.id, r.id));
+      // Push is set up: polling is only a safety net. A wake that came in during this poll moved the due time to "now"; leave that alone.
+      if (res.nextPollSeconds)
+        await db
+          .update(inboundRoute)
+          .set({
+            nextPollAt: new Date(
+              Date.now() + Math.max(r.pollEverySeconds, res.nextPollSeconds) * 1000,
+            ),
+          })
+          .where(and(eq(inboundRoute.id, r.id), gt(inboundRoute.nextPollAt, new Date())));
       return added;
     } catch (e) {
       const p =
@@ -425,6 +440,30 @@ export function createInbound(
     }));
   }
 
+  /** Claim due routes, poll them, deliver pending chats, purge old events. */
+  async function pass(now: Date) {
+    const due = await db.execute<{
+      id: string;
+    }>(sql`update inbound_route set next_poll_at = ${now}::timestamptz + make_interval(secs => poll_every_seconds)
+      where id in (select id from inbound_route where enabled and next_poll_at <= ${now} order by next_poll_at limit ${ROUTES_PER_TICK} for update skip locked) returning id`);
+    const ids = (
+      (due as unknown as { rows?: { id: string }[] }).rows ?? (due as unknown as { id: string }[])
+    ).map((r) => r.id);
+    const routes = ids.length
+      ? await db.select().from(inboundRoute).where(inArray(inboundRoute.id, ids))
+      : [];
+    for (const r of routes) await pollRoute(r).catch(() => {});
+    await deliver();
+    await db
+      .delete(inboundEvent)
+      .where(
+        and(
+          inArray(inboundEvent.status, ["delivered", "skipped", "failed"]),
+          lt(inboundEvent.createdAt, new Date(now.getTime() - PURGE_AFTER_MS)),
+        ),
+      );
+  }
+
   return {
     async listRoutes(a: ActiveActor) {
       return view(
@@ -477,6 +516,8 @@ export function createInbound(
           "NOT_BOUND",
           `Connect ${def.name} to ${b.name} first (Studio > Plugins > ${def.name} > Bots).`,
         );
+      // Best effort: the plugin may set up push for this user (see PluginInbound.enable); polling works without it.
+      if (v.enabled) await plugins.prepareInbound(a, pluginId).catch(() => {});
       const every = Math.max(v.pollEverySeconds ?? 60, def.inbound.minIntervalSeconds ?? 20, 20);
       const filter = {
         direct: v.filter.direct,
@@ -539,34 +580,51 @@ export function createInbound(
       const [cur] = await db.select().from(inboundRoute).where(eq(inboundRoute.id, r.id));
       return { added: added ?? 0, route: (await view([cur!]))[0]! };
     },
-    /** One poller pass: claim due routes, poll them, deliver pending chats, purge old events. */
+    /**
+     * A push from a channel's server, with the raw body it sent. The plugin checks the signature against this user's own configuration;
+     * only a genuine call about new messages wakes the route. Returns the verdict for the HTTP answer.
+     */
+    async push(userId: string, pluginId: string, headers: Headers, raw: string) {
+      const a = await issueBackgroundActor(lookup, userId).catch(() => null);
+      const verdict = a
+        ? await plugins.verifyPush(a, pluginId, headers, raw).catch(() => "invalid" as const)
+        : ("invalid" as const);
+      if (verdict === "wake") void this.wake(userId, pluginId).catch(() => {});
+      return verdict;
+    },
+    /**
+     * The channel's server says new messages arrived for this user (push). Makes the user's route due now and runs a pass, so the bot
+     * answers in seconds. Idempotent: a duplicate or replayed push costs one more poll, which finds nothing new.
+     */
+    async wake(userId: string, pluginId: string) {
+      const rows = await db
+        .update(inboundRoute)
+        .set({ nextPollAt: new Date() })
+        .where(
+          and(
+            eq(inboundRoute.ownerUserId, userId),
+            eq(inboundRoute.pluginId, pluginId),
+            eq(inboundRoute.enabled, true),
+          ),
+        )
+        .returning({ id: inboundRoute.id });
+      if (!rows.length) return;
+      if (busy) again = true;
+      else await this.tick();
+    },
+    /** One poller pass: claim due routes, poll them, deliver pending chats, purge old events. A wake during the pass earns up to two more. */
     async tick(now = new Date()) {
       if (busy) return;
       busy = true;
       try {
-        const due = await db.execute<{
-          id: string;
-        }>(sql`update inbound_route set next_poll_at = ${now}::timestamptz + make_interval(secs => poll_every_seconds)
-          where id in (select id from inbound_route where enabled and next_poll_at <= ${now} order by next_poll_at limit ${ROUTES_PER_TICK} for update skip locked) returning id`);
-        const ids = (
-          (due as unknown as { rows?: { id: string }[] }).rows ??
-          (due as unknown as { id: string }[])
-        ).map((r) => r.id);
-        const routes = ids.length
-          ? await db.select().from(inboundRoute).where(inArray(inboundRoute.id, ids))
-          : [];
-        for (const r of routes) await pollRoute(r).catch(() => {});
-        await deliver();
-        await db
-          .delete(inboundEvent)
-          .where(
-            and(
-              inArray(inboundEvent.status, ["delivered", "skipped", "failed"]),
-              lt(inboundEvent.createdAt, new Date(now.getTime() - PURGE_AFTER_MS)),
-            ),
-          );
+        await pass(now);
+        for (let i = 0; again && i < 2; i++) {
+          again = false;
+          await pass(new Date());
+        }
       } finally {
         busy = false;
+        again = false;
       }
     },
     /** Boot: chats that were being delivered when the server stopped are delivered again (the request id prevents a second turn). */

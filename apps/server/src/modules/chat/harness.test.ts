@@ -265,6 +265,13 @@ describe("code access", () => {
     expect(without).not.toContain("Bash(gh:*)");
   });
 
+  test("without a workspace, GitHub through the gh login allows gh and nothing else of the shell", () => {
+    const chat = claudeArgs("go", null, undefined, undefined, undefined, undefined, true).join(" ");
+    expect(chat).toContain("--allowedTools=Bash(gh:*)");
+    expect(chat).not.toContain("Bash(git:*)");
+    expect(claudeArgs("go", null).join(" ")).not.toContain("Bash");
+  });
+
   test("a host run honours granted rules, including interpreters and scripts", () => {
     const profile: AgentProfile = {
       preset: "git",

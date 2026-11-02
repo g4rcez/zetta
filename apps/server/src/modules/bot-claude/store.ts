@@ -1,7 +1,9 @@
 import type { Database } from "@zetta/db";
 import { and, asc, eq } from "@zetta/db/query";
 import { botClaudeAsset, botClaudeConfig } from "@zetta/db/schema/bot-claude";
-import type { AgentProfile } from "../chat/harness";
+import { botSkill, skill } from "@zetta/db/schema/skills";
+import { dockerConfig, type AgentProfile } from "../chat/harness";
+import { hostSkills } from "./host-skills";
 import {
   assetInput,
   buildProfile,
@@ -11,6 +13,7 @@ import {
   type AssetInput,
   type Config,
   type ConfigInput,
+  withBuiltinSkills,
 } from "./profile";
 
 export class ClaudeConfigError extends Error {
@@ -51,6 +54,14 @@ export function createBotClaude(db: Database) {
       .from(botClaudeAsset)
       .where(eq(botClaudeAsset.botId, botId))
       .orderBy(asc(botClaudeAsset.kind), asc(botClaudeAsset.name));
+  /** The active skills of the owner's library that this bot brings to its harness, by name. */
+  const libraryRows = (botId: string) =>
+    db
+      .select({ id: skill.id, name: skill.name, description: skill.description, body: skill.body })
+      .from(botSkill)
+      .innerJoin(skill, eq(skill.id, botSkill.skillId))
+      .where(and(eq(botSkill.botId, botId), eq(skill.status, "active")))
+      .orderBy(asc(skill.name));
   return {
     async get(botId: string) {
       const [c, a] = await Promise.all([configRow(botId), assetRows(botId)]);
@@ -118,12 +129,44 @@ export function createBotClaude(db: Database) {
     },
     /** What a run of this bot uses. Rows are re-validated so a row written by an older version can never reach the command line unchecked. */
     async profile(botId: string): Promise<AgentProfile | undefined> {
-      const [c, a] = await Promise.all([configRow(botId), assetRows(botId)]);
-      const assets = a
-        .map(toAsset)
-        .filter(({ id: _id, ...fields }) => assetInput.safeParse(fields).success);
+      const [c, a, shared] = await Promise.all([
+        configRow(botId),
+        assetRows(botId),
+        libraryRows(botId),
+      ]);
+      const own = new Set(a.filter((r) => r.kind === "skill").map((r) => r.name));
+      // Skills from the owner's library (modules/skills) go through the same checks. A skill written for this bot with the same name wins.
+      const assets = [
+        ...a.map(toAsset),
+        ...shared
+          .filter((r) => !own.has(r.name))
+          .map((r): Asset => ({ ...r, kind: "skill", tools: [], model: null, enabled: true })),
+      ].filter(({ id: _id, ...fields }) => assetInput.safeParse(fields).success);
       return buildProfile(c ? toConfig(c) : undefined, assets);
     },
   };
 }
 export type BotClaude = ReturnType<typeof createBotClaude>;
+
+/**
+ * The skills a person can pick for a bot. Its own (and Zetta's) exist for Claude Code and Hermes only; skills from the server user's
+ * home (see host-skills.ts) are offered to every harness that runs an AI. A bot's own skill hides a host skill with the same name.
+ * In a Docker run only Claude Code gets them (they are installed in its plugin dir); the other harnesses cannot see the host path.
+ */
+export async function skillsOf(claude: BotClaude, bot: { id: string; harness: string }) {
+  const own =
+    bot.harness === "claude-code" || bot.harness === "hermes"
+      ? withBuiltinSkills(await claude.profile(bot.id)).skills.map(({ name, description }) => ({
+          name,
+          description,
+          source: "bot" as const,
+        }))
+      : [];
+  if (bot.harness === "fixture" || bot.harness === "decision") return own;
+  if (bot.harness !== "claude-code" && dockerConfig()) return own;
+  const taken = new Set(own.map((k) => k.name));
+  const host = (await hostSkills())
+    .filter((k) => !taken.has(k.name))
+    .map(({ name, description }) => ({ name, description, source: "host" as const }));
+  return [...own, ...host];
+}

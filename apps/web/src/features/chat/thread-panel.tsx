@@ -99,6 +99,7 @@ export function ThreadPanel({
         )}
         <Composer
           wiki
+          skillBots={bot ? [bot.id] : []}
           value={draft.value}
           onChange={draft.set}
           placeholder="Reply…"
@@ -108,11 +109,16 @@ export function ThreadPanel({
           onError={onError}
           autoFocus
           onStop={() => void chat.stop()}
-          onSubmit={async ({ text, attachmentIds, fileRefs, wikiIds }) => {
+          onSubmit={async ({ text, attachmentIds, fileRefs, wikiIds, skills }) => {
             draft.clear();
             setSent((n) => n + 1);
             try {
-              await chat.send(text, { attachmentIds, fileRefs, wikiIds });
+              await chat.send(text, {
+                attachmentIds,
+                fileRefs,
+                wikiIds,
+                skills: skills?.map((k) => k.name),
+              });
               return true;
             } catch (e) {
               onError(e);

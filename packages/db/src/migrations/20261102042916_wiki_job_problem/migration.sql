@@ -1,0 +1,1 @@
+ALTER TABLE "wiki_job" ADD COLUMN "problem" text DEFAULT 'all' NOT NULL;

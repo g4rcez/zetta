@@ -3,6 +3,7 @@ export * from "./identity";
 export * from "./connections";
 export * from "./runs";
 export * from "./dispatch";
+export * from "./output-styles";
 export * from "./chat";
 export * from "./features";
 export * from "./agenda";

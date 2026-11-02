@@ -11,7 +11,6 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
     "wiki_source",
     "wiki_revision",
     "wiki_page",
-    "knowledge_chunk",
     "knowledge_doc",
     "knowledge_source",
     "audit_event",
@@ -54,8 +53,6 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
     "task",
     "agenda_item",
     "agenda_sync",
-    "memory",
-    "instruction",
     "attention_item",
     "goal_loop",
     "message",
@@ -97,6 +94,8 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
   await q("delete from team where owner_user_id = any($1)");
   await q("delete from team_role where owner_user_id = any($1)");
   await q("delete from bot where owner_user_id = any($1)");
+  // After the bots: a bot may point to a style that another test user owns.
+  await q("delete from output_style where owner_user_id = any($1)");
   await q("delete from workspace where owner_user_id = any($1)");
   await q("delete from connection where owner_user_id = any($1)");
   await q("delete from membership where user_id = any($1)");

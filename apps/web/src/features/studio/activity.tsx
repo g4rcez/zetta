@@ -3,6 +3,7 @@ import { Button } from "@/components/ui";
 
 import { call, errorMessage, type Bot } from "../chat/chat-client";
 import { Empty, list, listItem, when } from "../shared/ui";
+import { useTimeFormat } from "@/features/preferences/preferences";
 
 type Event = {
   id: string;
@@ -38,6 +39,7 @@ export const describeEvent = (e: Pick<Event, "kind" | "outcome">) =>
   `${KIND[e.kind] ?? e.kind.replace(/_/g, " ")} and ${OUTCOME[e.outcome] ?? e.outcome.replace(/_/g, " ")}`;
 
 export function Activity({ bots, onError }: { bots: Bot[]; onError: (m: string) => void }) {
+  const tf = useTimeFormat();
   const [events, setEvents] = useState<Event[]>();
   const [next, setNext] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -86,7 +88,7 @@ export function Activity({ bots, onError }: { bots: Bot[]; onError: (m: string) 
               dateTime={e.createdAt}
               className="shrink-0 text-xs tabular-nums text-muted-foreground"
             >
-              {when(e.createdAt)}
+              {when(e.createdAt, tf)}
             </time>
           </li>
         ))}

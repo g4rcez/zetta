@@ -74,6 +74,7 @@ suite("layout preferences against compose postgres", () => {
       railMode: "expanded",
       railWidth: 224,
       listWidth: 320,
+      timeFormat: "24h",
       botOrder: [],
     });
   });
@@ -85,12 +86,14 @@ suite("layout preferences against compose postgres", () => {
       railMode: "collapsed",
       railWidth: 260,
       listWidth: 400,
+      timeFormat: "24h",
       botOrder: [],
     });
     expect(await read(ids[1]!)).toEqual({
       railMode: "expanded",
       railWidth: 224,
       listWidth: 320,
+      timeFormat: "24h",
       botOrder: [],
     });
   });
@@ -99,6 +102,13 @@ suite("layout preferences against compose postgres", () => {
     expect((await call(ids[0]!, "PATCH", { botOrder: order })).status).toBe(200);
     expect(await read(ids[0]!)).toMatchObject({ railWidth: 260, botOrder: order });
     expect(await read(ids[1]!)).toMatchObject({ botOrder: [] });
+  });
+  test("the hour format defaults to 24h and a change is kept for that person only", async () => {
+    expect(await read(ids[1]!)).toMatchObject({ timeFormat: "24h" });
+    expect((await call(ids[0]!, "PATCH", { timeFormat: "12h" })).status).toBe(200);
+    expect(await read(ids[0]!)).toMatchObject({ timeFormat: "12h", railWidth: 260 });
+    expect(await read(ids[1]!)).toMatchObject({ timeFormat: "24h" });
+    expect((await call(ids[1]!, "PATCH", { timeFormat: "am/pm" })).status).toBe(400);
   });
   test("widths outside the limits and unknown fields are refused", async () => {
     expect((await call(ids[1]!, "PATCH", { listWidth: 5000 })).status).toBe(400);

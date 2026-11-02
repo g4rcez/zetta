@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 883 1046" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <title>Zetta</title>
+  <defs>
+    <linearGradient id="zetta-glass" x1="0" y1="100" x2="0" y2="335" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity=".6"/>
+      <stop offset=".45" stop-color="#fff" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#002d14" stop-opacity=".55"/>
+    </linearGradient>
+  </defs>
+  <g stroke="var(--logo-ink, #2b3440)" stroke-width="15">
+    <!-- ears: gears -->
+    <path d="M145 507 L170 509 L170 541 L145 543 L142 551 L158 570 L135 593 L116 577 L108 580 L106 605 L74 605 L72 580 L64 577 L45 593 L22 570 L38 551 L35 543 L10 541 L10 509 L35 507 L38 499 L22 480 L45 457 L64 473 L72 470 L74 445 L106 445 L108 470 L116 473 L135 457 L158 480 L142 499Z" fill="var(--logo-metal, #c6d0db)"/>
+    <path d="M850 507 L875 509 L875 541 L850 543 L847 551 L863 570 L840 593 L821 577 L813 580 L811 605 L779 605 L777 580 L769 577 L750 593 L727 570 L743 551 L740 543 L715 541 L715 509 L740 507 L743 499 L727 480 L750 457 L769 473 L777 470 L779 445 L811 445 L813 470 L821 473 L840 457 L863 480 L847 499Z" fill="var(--logo-metal, #c6d0db)"/>
+    <circle cx="95" cy="525" r="30" fill="var(--logo-shade, #9db2cc)" stroke="none"/>
+    <circle cx="790" cy="525" r="30" fill="var(--logo-shade, #9db2cc)" stroke="none"/>
+    <!-- strap clips -->
+    <rect x="88" y="195" width="46" height="110" rx="14" fill="var(--logo-ink, #2b3440)"/>
+    <rect x="751" y="195" width="46" height="110" rx="14" fill="var(--logo-ink, #2b3440)"/>
+    <!-- head -->
+    <path d="M300 95 C320 40 380 28 441 28 C505 28 565 40 585 95 L750 300 C768 450 768 600 735 740 C700 860 630 960 545 1010 C490 1036 395 1036 340 1010 C255 960 185 860 150 740 C117 600 117 450 135 300 Z" fill="var(--logo-face, #e6ecf2)"/>
+    <path d="M215 150 C260 75 350 45 441 45 C535 45 625 75 672 150 Z" fill="var(--logo-shade, #b4c4d8)" stroke="none"/>
+    <path d="M325 100 V62 Q325 38 350 38 H532 Q557 38 557 62 V100" fill="var(--logo-face, #e6ecf2)"/>
+    <!-- cheek panels -->
+    <path d="M138 640 C190 690 235 730 242 790 L258 930 C195 880 160 820 148 745 Z" fill="var(--logo-shade, #b4c4d8)"/>
+    <path d="M747 640 C695 690 650 730 643 790 L627 930 C690 880 725 820 737 745 Z" fill="var(--logo-shade, #b4c4d8)"/>
+    <path d="M262 340 V395 M623 340 V395" />
+    <!-- chin vent -->
+    <path d="M345 860 Q345 845 362 845 H523 Q540 845 542 860 L568 1000 H317 Z" fill="var(--logo-metal, #c6d0db)"/>
+    <path d="M395 850 V1010 M441 850 V1015 M487 850 V1010" stroke-width="12"/>
+    <!-- eyes -->
+    <circle cx="285" cy="545" r="92" fill="var(--logo-eye, #eef2f6)"/>
+    <circle cx="598" cy="545" r="92" fill="var(--logo-eye, #eef2f6)"/>
+    <path d="M232 560 Q285 490 338 560 M545 560 Q598 490 651 560" stroke-width="18"/>
+    <path d="M232 470 Q250 448 280 442 M545 470 Q563 448 593 442" stroke="#fff" stroke-opacity=".8" stroke-width="9"/>
+    <!-- brows -->
+    <path d="M172 428 Q250 378 338 402 M547 402 Q635 378 713 428" stroke-width="14"/>
+    <!-- mouth -->
+    <path d="M328 698 Q430 782 568 700 M560 690 L574 706" stroke-width="16"/>
+    <path d="M398 768 Q441 782 486 768" stroke="var(--logo-shade, #9db2cc)" stroke-width="14"/>
+    <!-- screws -->
+    <g stroke-width="9"><circle cx="207" cy="630" r="13" fill="var(--logo-shade, #9db2cc)"/><circle cx="678" cy="630" r="13" fill="var(--logo-shade, #9db2cc)"/><circle cx="300" cy="912" r="13" fill="var(--logo-shade, #9db2cc)"/><circle cx="583" cy="912" r="13" fill="var(--logo-shade, #9db2cc)"/></g>
+    <!-- goggles -->
+    <path d="M360 330 C400 300 420 250 441 250 C462 250 482 300 524 330 C495 372 389 372 360 330 Z" fill="var(--logo-shade, #b4c4d8)"/>
+    <path d="M125 150 Q125 100 190 100 H695 Q760 100 760 150 V295 Q760 335 720 335 H530 Q485 335 441 238 Q397 335 352 335 H165 Q125 335 125 295 Z" fill="var(--logo-lens, #0a9b50)"/>
+    <!-- glass: light edge at the top fading to a deep tint at the bottom, so the lens reads as translucent -->
+    <path d="M125 150 Q125 100 190 100 H695 Q760 100 760 150 V295 Q760 335 720 335 H530 Q485 335 441 238 Q397 335 352 335 H165 Q125 335 125 295 Z" fill="url(#zetta-glass)" stroke="none"/>
+  </g>
+  <g stroke="#fff" stroke-opacity=".38" stroke-width="30" fill="none">
+    <path d="M300 140 L240 300 M470 120 L405 300 M640 130 L585 300"/>
+  </g>
+  <path d="M182 145 Q200 120 235 120" stroke="#fff" stroke-opacity=".7" stroke-width="12"/>
+</svg>

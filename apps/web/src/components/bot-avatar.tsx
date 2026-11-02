@@ -53,9 +53,18 @@ const star = (() => {
   }
   return pts.join(" ");
 })();
+/** Vertices of a regular polygon on the 64x64 canvas; `radius(i)` lets a caller alternate radii for spiky shapes. */
+const polygon = (n: number, radius: (i: number) => number, cy: number, startDeg = -90) =>
+  Array.from({ length: n }, (_, i) => {
+    const a = ((2 * Math.PI) / n) * i + (startDeg * Math.PI) / 180;
+    return `${(32 + radius(i) * Math.cos(a)).toFixed(1)},${(cy + radius(i) * Math.sin(a)).toFixed(1)}`;
+  }).join(" ");
+const pentagon = polygon(5, () => 26, 33);
+const octagon = polygon(8, () => 26, 32, -67.5);
+const burst = polygon(16, (i) => (i % 2 ? 22 : 27), 32);
 const rounded = { strokeWidth: 5, strokeLinejoin: "round" as const };
 
-/** Ten body shapes drawn at the frontend. Each is filled with a gradient of one customizable color and carries a small face. */
+/** Body shapes drawn at the frontend. Each is filled with a gradient of one customizable color and carries a small face. */
 export const AVATAR_SHAPES: AvatarShape[] = [
   {
     id: "arrow",
@@ -150,6 +159,69 @@ export const AVATAR_SHAPES: AvatarShape[] = [
     layout: "spotlight",
     face: [32, 37],
     draw: (f) => <polygon points={star} fill={f} stroke={f} {...rounded} />,
+  },
+  {
+    id: "triangle",
+    label: "Triangle",
+    layout: "card",
+    face: [32, 40],
+    draw: (f) => <polygon points="32,9 56,52 8,52" fill={f} stroke={f} {...rounded} />,
+  },
+  {
+    id: "pentagon",
+    label: "Pentagon",
+    layout: "compact",
+    face: [32, 33],
+    draw: (f) => <polygon points={pentagon} fill={f} stroke={f} {...rounded} />,
+  },
+  {
+    id: "octagon",
+    label: "Octagon",
+    layout: "terminal",
+    face: [32, 32],
+    draw: (f) => <polygon points={octagon} fill={f} stroke={f} {...rounded} />,
+  },
+  {
+    id: "cross",
+    label: "Cross",
+    layout: "banner",
+    face: [32, 32],
+    draw: (f) => (
+      <polygon
+        points="24,8 40,8 40,24 56,24 56,40 40,40 40,56 24,56 24,40 8,40 8,24 24,24"
+        fill={f}
+        stroke={f}
+        {...rounded}
+      />
+    ),
+  },
+  {
+    id: "arch",
+    label: "Arch",
+    layout: "poster",
+    face: [32, 38],
+    draw: (f) => <path d="M10 57V32A22 22 0 0 1 54 32V57Z" fill={f} stroke={f} {...rounded} />,
+  },
+  {
+    id: "parallelogram",
+    label: "Parallelogram",
+    layout: "mail",
+    face: [32, 32],
+    draw: (f) => <polygon points="20,10 58,10 44,54 6,54" fill={f} stroke={f} {...rounded} />,
+  },
+  {
+    id: "kite",
+    label: "Kite",
+    layout: "bubble",
+    face: [32, 30],
+    draw: (f) => <polygon points="32,6 54,28 32,58 10,28" fill={f} stroke={f} {...rounded} />,
+  },
+  {
+    id: "burst",
+    label: "Burst",
+    layout: "tile",
+    face: [32, 32],
+    draw: (f) => <polygon points={burst} fill={f} stroke={f} {...rounded} />,
   },
 ];
 
@@ -297,6 +369,75 @@ export const AVATAR_CHARACTERS: AvatarCharacter[] = [
           fill={body}
         />
         <path d="M50 36c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z" fill={accent} />
+      </>
+    ),
+  },
+  {
+    id: "ghost",
+    label: "Ghost",
+    layout: "spotlight",
+    colors: ["#1e1b4b", "#e0e7ff", "#f9a8d4"],
+    colorLabels: ["Background", "Body", "Cheeks"],
+    art: ([bg, body, accent]) => (
+      <>
+        <rect width="64" height="64" fill={bg} />
+        <path
+          d="M15 56V30C15 18 22 9 32 9S49 18 49 30V56L43 50L37.5 56L32 50L26.5 56L21 50Z"
+          fill={body}
+        />
+        <ellipse cx="26" cy="29" rx="3" ry="4" fill={DARK} />
+        <ellipse cx="38" cy="29" rx="3" ry="4" fill={DARK} />
+        <circle cx="20.5" cy="37" r="3" fill={accent} />
+        <circle cx="43.5" cy="37" r="3" fill={accent} />
+        <ellipse cx="32" cy="38" rx="3" ry="4" fill={DARK} />
+      </>
+    ),
+  },
+  {
+    id: "rocket",
+    label: "Rocket",
+    layout: "outline",
+    colors: ["#0c1a3a", "#e5e7eb", "#f97316"],
+    colorLabels: ["Background", "Hull", "Fins & flame"],
+    art: ([bg, body, accent]) => (
+      <>
+        <rect width="64" height="64" fill={bg} />
+        <circle cx="11" cy="13" r="1.5" fill={body} />
+        <circle cx="53" cy="18" r="1.5" fill={body} />
+        <circle cx="50" cy="55" r="1.5" fill={body} />
+        <path d="M26 46Q32 66 38 46Z" fill={accent} />
+        <path d="M25 34 14 50l12-4zM39 34l11 16-12-4z" fill={accent} />
+        <path d="M32 5C43 14 45 30 42 47H22C19 30 21 14 32 5z" fill={body} />
+        <circle cx="32" cy="26" r="6" fill={bg} stroke={accent} strokeWidth="2.5" />
+      </>
+    ),
+  },
+  {
+    id: "frog",
+    label: "Frog",
+    layout: "bubble",
+    colors: ["#fef9c3", "#4ade80", "#fb7185"],
+    colorLabels: ["Background", "Skin", "Cheeks"],
+    art: ([bg, body, accent]) => (
+      <>
+        <rect width="64" height="64" fill={bg} />
+        <ellipse cx="32" cy="41" rx="23" ry="17" fill={body} />
+        <circle cx="19" cy="23" r="10" fill={body} />
+        <circle cx="45" cy="23" r="10" fill={body} />
+        <circle cx="19" cy="23" r="6.5" fill="#fff" />
+        <circle cx="45" cy="23" r="6.5" fill="#fff" />
+        <circle cx="20" cy="24" r="3.2" fill={DARK} />
+        <circle cx="44" cy="24" r="3.2" fill={DARK} />
+        <circle cx="14" cy="43" r="3.5" fill={accent} />
+        <circle cx="50" cy="43" r="3.5" fill={accent} />
+        <path
+          d="M20 45Q32 54 44 45"
+          fill="none"
+          stroke={DARK}
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+        <path d="M29 36h.1M35 36h.1" stroke={DARK} strokeWidth="2.4" strokeLinecap="round" />
       </>
     ),
   },

@@ -1,9 +1,12 @@
 import {
   CalendarIcon,
   CheckCircleIcon,
-  HardDriveIcon,
   EnvelopeIcon,
+  FileTextIcon,
+  HardDriveIcon,
   ShieldCheckIcon,
+  TableIcon,
+  WarningIcon,
   type Icon,
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
@@ -64,11 +67,40 @@ export function GoogleLogo({ className = "size-5" }: { className?: string }) {
     </svg>
   );
 }
-const GROUPS: Record<string, { icon: Icon; color: string; hint: string }> = {
-  Gmail: { icon: EnvelopeIcon, color: "text-[#EA4335]", hint: "Search and draft mail" },
-  Calendar: { icon: CalendarIcon, color: "text-[#4285F4]", hint: "Check and schedule events" },
-  Drive: { icon: HardDriveIcon, color: "text-[#34A853]", hint: "Read documents and files" },
+/** `api` is the Google Cloud API the service needs enabled in the user's own project (mirrors plugins/google/oauth.ts). */
+const GROUPS: Record<string, { icon: Icon; color: string; hint: string; api: string }> = {
+  Gmail: {
+    icon: EnvelopeIcon,
+    color: "text-[#EA4335]",
+    hint: "Search and draft mail",
+    api: "gmail.googleapis.com",
+  },
+  Calendar: {
+    icon: CalendarIcon,
+    color: "text-[#4285F4]",
+    hint: "Check and schedule events",
+    api: "calendar-json.googleapis.com",
+  },
+  Drive: {
+    icon: HardDriveIcon,
+    color: "text-[#34A853]",
+    hint: "Read documents and files",
+    api: "drive.googleapis.com",
+  },
+  Docs: {
+    icon: FileTextIcon,
+    color: "text-[#4285F4]",
+    hint: "Read and write documents",
+    api: "docs.googleapis.com",
+  },
+  Sheets: {
+    icon: TableIcon,
+    color: "text-[#0F9D58]",
+    hint: "Read and write spreadsheets",
+    api: "sheets.googleapis.com",
+  },
 };
+const GROUP_NAMES = Object.keys(GROUPS);
 
 /** Mirrors the server's scope ids (plugins/google/oauth.ts). Nothing is requested until the user ticks it. */
 const SCOPES: { id: string; label: string; group: string }[] = [
@@ -83,6 +115,10 @@ const SCOPES: { id: string; label: string; group: string }[] = [
   { id: "calendar.events", group: "Calendar", label: "Create and edit events" },
   { id: "drive.readonly", group: "Drive", label: "Read all files" },
   { id: "drive.file", group: "Drive", label: "Only files created or opened with Zetta" },
+  { id: "documents.readonly", group: "Docs", label: "Read documents" },
+  { id: "documents", group: "Docs", label: "Create and edit documents" },
+  { id: "spreadsheets.readonly", group: "Sheets", label: "Read spreadsheets" },
+  { id: "spreadsheets", group: "Sheets", label: "Create and edit spreadsheets" },
 ];
 const REASON: Record<string, string> = {
   ACCESS_DENIED: "Google access was declined.",
@@ -91,10 +127,170 @@ const REASON: Record<string, string> = {
   EXCHANGE_FAILED: "Google rejected the sign-in. Try again.",
   NO_REFRESH_TOKEN:
     "Google did not grant offline access. Remove Zetta from your Google account permissions and try again.",
+  NO_EMAIL: "Google did not say which account signed in. Try again.",
+  TOO_MANY_ACCOUNTS:
+    "That is the most Google accounts that can be connected. Disconnect one first.",
   NOT_CONFIGURED: "Add your Google OAuth client ID and secret in Settings first.",
 };
 
-/** Studio > Plugins > Google: choose permissions, connect through Google's consent screen, see the account, disconnect. Tokens never reach the browser. */
+/** One connected Google account, as the server reports it (never tokens). */
+type GoogleAccountInfo = {
+  email: string;
+  state: "connected" | "needs-auth";
+  scopes: string[];
+  allowSend: boolean;
+};
+/** A connection from before accounts existed has no known email; the server calls it "unknown". */
+const nameOf = (email: string) => (email === "unknown" ? "Your Google account" : email);
+
+/** The permission checkboxes, grouped by Google service. Owns no state. */
+function Permissions({
+  scopes,
+  allowSend,
+  onScopes,
+  onAllowSend,
+}: {
+  scopes: Set<string>;
+  allowSend: boolean;
+  onScopes: (s: Set<string>) => void;
+  onAllowSend: (on: boolean) => void;
+}) {
+  const toggle = (id: string, on: boolean) => {
+    const n = new Set(scopes);
+    if (on) n.add(id);
+    else n.delete(id);
+    onScopes(n);
+    if (id === "gmail.send" && !on) onAllowSend(false);
+  };
+  return (
+    <>
+      <p className="text-xs text-muted-foreground">
+        Each service also needs its API switched on in your Google Cloud project (a link is in each
+        box). If a bot reports “API is not enabled”, enable that API and try again.
+      </p>
+      <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {GROUP_NAMES.map((g) => {
+          const G = GROUPS[g]!;
+          return (
+            <fieldset key={g} className="min-w-0 space-y-2.5 rounded-lg border bg-muted/20 p-3">
+              <legend className="sr-only">{g}</legend>
+              <div className="flex items-center gap-2" aria-hidden>
+                <G.icon className={`size-4 shrink-0 ${G.color}`} />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium leading-none">{g}</p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">{G.hint}</p>
+                </div>
+              </div>
+              {SCOPES.filter((s) => s.group === g).map((s) => (
+                <Check key={s.id} checked={scopes.has(s.id)} onChange={(on) => toggle(s.id, on)}>
+                  {s.label}
+                </Check>
+              ))}
+              <a
+                href={`https://console.cloud.google.com/apis/library/${G.api}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-xs text-muted-foreground underline"
+              >
+                Enable the {g} API
+              </a>
+            </fieldset>
+          );
+        })}
+      </div>
+      <Check checked={allowSend} disabled={!scopes.has("gmail.send")} onChange={onAllowSend}>
+        Allow bots to send email without asking (off by default; drafts are safer)
+      </Check>
+    </>
+  );
+}
+
+/** One account: its email, what it may do, and its own permissions and disconnect. */
+function AccountCard({
+  account,
+  busy,
+  onUpdate,
+  onDisconnect,
+}: {
+  account: GoogleAccountInfo;
+  busy: boolean;
+  onUpdate: (email: string, scopes: Set<string>, allowSend: boolean) => void;
+  onDisconnect: (email: string) => void;
+}) {
+  const [scopes, setScopes] = useState(new Set(account.scopes));
+  const [allowSend, setAllowSend] = useState(account.allowSend);
+  useEffect(() => {
+    setScopes(new Set(account.scopes));
+    setAllowSend(account.allowSend);
+  }, [account.scopes.join(" "), account.allowSend]);
+  const ok = account.state === "connected";
+  const services = GROUP_NAMES.filter((g) =>
+    SCOPES.some((s) => s.group === g && account.scopes.includes(s.id)),
+  );
+  return (
+    <section
+      className="space-y-2 rounded-lg border p-3"
+      aria-label={`Google account ${nameOf(account.email)}`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {ok ? (
+          <CheckCircleIcon aria-hidden className="size-4 shrink-0 text-primary" />
+        ) : (
+          <WarningIcon aria-hidden className="size-4 shrink-0 text-destructive" />
+        )}
+        <strong className="min-w-0 break-all text-sm">{nameOf(account.email)}</strong>
+        <span className="text-xs text-muted-foreground">
+          {ok ? services.join(", ") || "No permissions" : "Reconnect needed"}
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          onClick={() => onDisconnect(account.email)}
+          disabled={busy}
+        >
+          Disconnect
+        </Button>
+      </div>
+      <details>
+        <summary className="cursor-pointer text-xs text-muted-foreground">
+          {ok ? "Change permissions" : "Choose permissions to reconnect"}
+        </summary>
+        <div className="mt-2 space-y-3">
+          <Permissions
+            scopes={scopes}
+            allowSend={allowSend}
+            onScopes={setScopes}
+            onAllowSend={setAllowSend}
+          />
+          <Button
+            size="sm"
+            onClick={() => onUpdate(account.email, scopes, allowSend)}
+            loading={busy}
+            disabled={busy || (!ok && scopes.size === 0)}
+          >
+            {ok ? (
+              <>
+                <ShieldCheckIcon aria-hidden className="size-4" />
+                Update permissions
+              </>
+            ) : (
+              <>
+                <GoogleLogo className="size-4" />
+                Reconnect
+              </>
+            )}
+          </Button>
+        </div>
+      </details>
+    </section>
+  );
+}
+
+/**
+ * Studio > Plugins > Google: the connected Google accounts (each with its own permissions), and a picker to add another one.
+ * Sign-in goes through Google's consent screen; tokens never reach the browser.
+ */
 export function GoogleConnect({
   probe,
   onChanged,
@@ -111,20 +307,12 @@ export function GoogleConnect({
   newTab?: boolean;
 }) {
   const pluginsApi = usePluginApi();
-  const info = probe?.status.info as
-    | { email?: string | null; scopes?: string[]; allowSend?: boolean }
-    | undefined;
-  const connected = probe?.status.state === "connected";
+  const accounts =
+    (probe?.status.info as { accounts?: GoogleAccountInfo[] } | undefined)?.accounts ?? [];
   const [scopes, setScopes] = useState<Set<string>>(new Set(initialScopes));
   const [allowSend, setAllowSend] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
-  useEffect(() => {
-    if (info?.scopes) {
-      setScopes(new Set(info.scopes));
-      setAllowSend(Boolean(info.allowSend));
-    }
-  }, [info?.scopes?.join(" "), info?.allowSend]);
   useEffect(() => {
     // result of the redirect from the server callback: only a flag, never a token
     const q = new URLSearchParams(window.location.search);
@@ -136,20 +324,16 @@ export function GoogleConnect({
     );
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
-  const toggle = (id: string, on: boolean) => {
-    setScopes((s) => {
-      const n = new Set(s);
-      if (on) n.add(id);
-      else n.delete(id);
-      return n;
-    });
-    if (id === "gmail.send" && !on) setAllowSend(false);
-  };
-  async function connect() {
+  /** Starts Google's consent for a new account, or for `account` when it is given. */
+  async function connect(picked: Set<string>, send: boolean, account?: string) {
     setBusy(true);
     setNotice(undefined);
     try {
-      const r = await pluginsApi.connect("google", { scopes: [...scopes], allowSend });
+      const r = await pluginsApi.connect("google", {
+        scopes: [...picked],
+        allowSend: send,
+        ...(account && { account }),
+      });
       if (r.authorizeUrl) {
         if (newTab) {
           window.open(r.authorizeUrl, "_blank", "noopener,noreferrer");
@@ -165,12 +349,10 @@ export function GoogleConnect({
       setBusy(false);
     }
   }
-  async function disconnect() {
+  async function disconnect(account: string) {
     setBusy(true);
     try {
-      await pluginsApi.disconnect("google");
-      setScopes(new Set());
-      setAllowSend(false);
+      await pluginsApi.disconnect("google", { account });
       onChanged();
     } catch (e) {
       onError(errorMessage(e));
@@ -178,74 +360,56 @@ export function GoogleConnect({
       setBusy(false);
     }
   }
+  const picker = (
+    <div className="space-y-3">
+      <Permissions
+        scopes={scopes}
+        allowSend={allowSend}
+        onScopes={setScopes}
+        onAllowSend={setAllowSend}
+      />
+      <Button
+        size="sm"
+        onClick={() => void connect(scopes, allowSend)}
+        loading={busy}
+        disabled={busy || scopes.size === 0}
+      >
+        <GoogleLogo className="size-4" />
+        {accounts.length ? "Connect another account" : "Connect with Google"}
+      </Button>
+    </div>
+  );
   return (
     <div className="mt-3 space-y-3 border-t pt-3 text-sm" aria-label="Google connection">
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {connected ? (
-          <>
-            <CheckCircleIcon aria-hidden className="size-4 text-primary" />
-            Connected as{" "}
-            <strong className="text-foreground">{info?.email ?? "your Google account"}</strong>
-          </>
-        ) : probe?.status.state === "error" ? (
-          probe.status.detail
-        ) : (
-          "Not connected. Choose what bots may do, then connect."
-        )}
+      <p className="text-xs text-muted-foreground">
+        {probe?.status.state === "error"
+          ? probe.status.detail
+          : accounts.length
+            ? "Bots can use any of these accounts. Pick the account in your request when you have several."
+            : "Not connected. Choose what bots may do, then connect."}
       </p>
       {notice && (
         <Alert theme={notice === "Google connected." ? "success" : "info"}>{notice}</Alert>
       )}
-      <div className="grid items-start gap-3 sm:grid-cols-3">
-        {["Gmail", "Calendar", "Drive"].map((g) => (
-          <fieldset key={g} className="min-w-0 space-y-2.5 rounded-lg border bg-muted/20 p-3">
-            <legend className="sr-only">{g}</legend>
-            <div className="flex items-center gap-2" aria-hidden>
-              {(() => {
-                const G = GROUPS[g];
-                return <G.icon className={`size-4 shrink-0 ${G.color}`} />;
-              })()}
-              <div className="min-w-0">
-                <p className="text-xs font-medium leading-none">{g}</p>
-                <p className="mt-1 truncate text-xs text-muted-foreground">{GROUPS[g].hint}</p>
-              </div>
-            </div>
-            {SCOPES.filter((s) => s.group === g).map((s) => (
-              <Check key={s.id} checked={scopes.has(s.id)} onChange={(on) => toggle(s.id, on)}>
-                {s.label}
-              </Check>
-            ))}
-          </fieldset>
-        ))}
-      </div>
-      <Check checked={allowSend} disabled={!scopes.has("gmail.send")} onChange={setAllowSend}>
-        Allow bots to send email without asking (off by default; drafts are safer)
-      </Check>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          onClick={() => void connect()}
-          loading={busy}
-          disabled={busy || (scopes.size === 0 && !connected)}
-        >
-          {connected ? (
-            <>
-              <ShieldCheckIcon aria-hidden className="size-4" />
-              Update permissions
-            </>
-          ) : (
-            <>
-              <GoogleLogo className="size-4" />
-              Connect with Google
-            </>
-          )}
-        </Button>
-        {connected && (
-          <Button size="sm" variant="outline" onClick={() => void disconnect()} disabled={busy}>
-            Disconnect
-          </Button>
-        )}
-      </div>
+      {accounts.map((a) => (
+        <AccountCard
+          key={a.email}
+          account={a}
+          busy={busy}
+          onUpdate={(email, picked, send) => void connect(picked, send, email)}
+          onDisconnect={(email) => void disconnect(email)}
+        />
+      ))}
+      {accounts.length ? (
+        <details>
+          <summary className="cursor-pointer text-xs text-muted-foreground">
+            Add another Google account
+          </summary>
+          <div className="mt-2">{picker}</div>
+        </details>
+      ) : (
+        picker
+      )}
     </div>
   );
 }

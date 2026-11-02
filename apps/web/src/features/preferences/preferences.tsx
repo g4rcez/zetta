@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 
 import { call } from "../chat/chat-client";
+import { DEFAULT_TIME_FORMAT, type TimeFormat } from "./time-format";
 
 export type RailMode = "expanded" | "collapsed";
 /** `botOrder`: the person's sidebar order of bots (ids, first on top); the chief is always first and never listed. */
@@ -18,6 +19,8 @@ export type Preferences = {
   railMode: RailMode;
   railWidth: number;
   listWidth: number;
+  /** How hours show everywhere in the app. */
+  timeFormat: TimeFormat;
   botOrder: string[];
 };
 
@@ -31,6 +34,7 @@ const DEFAULTS: Preferences = {
   railMode: "expanded",
   railWidth: SIDEBAR_LIMITS.railWidth.fallback,
   listWidth: SIDEBAR_LIMITS.listWidth.fallback,
+  timeFormat: DEFAULT_TIME_FORMAT,
   botOrder: [],
 };
 // The server is the source of truth. This copy only stops the layout from jumping while the first request is in flight.
@@ -85,7 +89,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       const body = pending.current;
       pending.current = {};
       call("/api/preferences", "PATCH", body).catch(() =>
-        toast.error("Could not save your layout. It will reset on your next visit."),
+        toast.error("Could not save your preferences. They will reset on your next visit."),
       );
     }, SAVE_DELAY_MS);
   }, []);
@@ -93,6 +97,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({ preferences, set }), [preferences, set]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
+
+/** The chosen hour format. Outside the provider (tests, public pages) it falls back to the default. */
+export const useTimeFormat = (): TimeFormat =>
+  useContext(Ctx)?.preferences.timeFormat ?? DEFAULT_TIME_FORMAT;
 
 export function usePreferences(): Value {
   const value = useContext(Ctx);

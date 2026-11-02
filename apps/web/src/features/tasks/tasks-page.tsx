@@ -1,26 +1,68 @@
 import { Link } from "@tanstack/react-router";
-import { ChatIcon, DotsThreeIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
+import {
+  ChatIcon,
+  DotsThreeIcon,
+  KanbanIcon,
+  ListIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useState, type DragEvent } from "react";
 import { toast } from "sonner";
-import { Button } from "@zetta/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
-import { Input } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
 import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { relativeTime } from "../studio/routine-format";
+import { LabelChips, PriorityIcon } from "./task-badges";
+import { GROUP_OPTIONS, Segmented, TaskFilterBar } from "./task-filter-bar";
+import {
+  activeCount,
+  applyFilters,
+  DEFAULT_STATE,
+  groupTasks,
+  parseTaskSearch,
+  toTaskSearch,
+  type TaskLayout,
+  type TaskSearch,
+  type TaskState,
+} from "./task-filters";
+import { GroupIcon, openOnClick, TaskList, TaskTitleLink } from "./task-list";
+import { TaskPeek } from "./task-peek";
 import { TASK_COLUMNS, tasksApi, type Task, type TaskStatus } from "./tasks-api";
 
+const LAYOUTS: { value: TaskLayout; label: string; icon: React.ReactNode }[] = [
+  { value: "board", label: "Board", icon: <KanbanIcon aria-hidden className="size-4" /> },
+  { value: "list", label: "List", icon: <ListIcon aria-hidden className="size-4" /> },
+];
+
 /** The shared board: one fixed set of columns for every bot of the user. Bots move their own cards; the user can drag or use the card menu. */
-export function TasksPage() {
+export function TasksPage({
+  search,
+  onSearch,
+}: {
+  search: TaskSearch;
+  onSearch: (next: TaskSearch) => void;
+}) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [title, setTitle] = useState("");
   const [over, setOver] = useState<TaskStatus>();
+  const [adding, setAdding] = useState<TaskStatus>();
+  // The router keeps raw URL keys that `validateSearch` leaves out, so read the search through the parser again.
+  const state: TaskState = { ...DEFAULT_STATE, ...parseTaskSearch(search) };
+  const setState = (next: TaskState) => onSearch(toTaskSearch(next));
+  const now = Date.now();
+  const visible = applyFilters(tasks, state, now);
+  const groups = groupTasks(visible, state.groupBy, bots, state.statuses);
+  const byStatus = state.groupBy === "status";
+  const knownLabels = [...new Set(tasks.flatMap((t) => t.labels))].sort();
   const fail = (e: unknown) => toast.error(errorMessage(e));
 
   useEffect(() => {
@@ -48,11 +90,15 @@ export function TasksPage() {
       fail(e);
     });
   };
-  const add = () => {
-    const value = title.trim();
+  const replace = (saved: Task) =>
+    setTasks((all) => all.map((t) => (t.id === saved.id ? saved : t)));
+  const open = (id: string | undefined) => setState({ ...state, task: id });
+  const clear = () =>
+    setState({ ...DEFAULT_STATE, view: state.view, groupBy: state.groupBy, task: state.task });
+  const add = (value: string, status?: TaskStatus) => {
+    value = value.trim();
     if (!value) return;
-    setTitle("");
-    tasksApi.create(value).then((t) => setTasks((all) => [t, ...all]), fail);
+    tasksApi.create(value, status).then((t) => setTasks((all) => [t, ...all]), fail);
   };
   const drop = (e: DragEvent, status: TaskStatus) => {
     e.preventDefault();
@@ -62,94 +108,218 @@ export function TasksPage() {
   };
 
   return (
-    <main className="flex h-full min-h-0 flex-col gap-3 p-4">
-      <header className="flex flex-wrap items-center gap-2">
-        <h1 className="text-xl">Tasks</h1>
-        <form
-          className="ml-auto flex items-center gap-1"
-          onSubmit={(e) => {
-            e.preventDefault();
-            add();
-          }}
-        >
-          <Input
-            aria-label="New task"
-            placeholder="New task"
-            value={title}
-            maxLength={200}
-            onChange={(e) => setTitle(e.target.value)}
-            className="h-8 w-56 text-sm"
+    <div className="flex h-full min-h-0">
+      <main className="flex min-w-0 flex-1 flex-col gap-3 p-4">
+        <header className="flex flex-wrap items-center gap-2">
+          <h1 className="text-xl">Tasks</h1>
+          <Segmented
+            label="View"
+            value={state.view}
+            options={LAYOUTS}
+            onChange={(view) => setState({ ...state, view })}
           />
-          <Button type="submit" size="sm" aria-label="Add task">
-            <PlusIcon /> Add
-          </Button>
-        </form>
-      </header>
-      {loaded && tasks.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          No tasks yet. Add one, or ask a bot to turn a request into a task.
-        </p>
-      )}
-      <div className="grid min-h-0 flex-1 grid-flow-col auto-cols-[minmax(15rem,1fr)] gap-3 overflow-x-auto">
-        {TASK_COLUMNS.map(({ status, label }) => {
-          const cards = tasks.filter((t) => t.status === status);
-          return (
-            <section
-              key={status}
-              aria-label={label}
-              onDragOver={(e) => {
+          <div className="ml-auto flex flex-wrap items-center gap-3">
+            <p aria-live="polite" className="text-sm tabular-nums text-muted-foreground">
+              {visible.length} of {tasks.length} {tasks.length === 1 ? "task" : "tasks"}
+            </p>
+            <Segmented
+              label="Group by"
+              value={state.groupBy}
+              options={GROUP_OPTIONS}
+              onChange={(groupBy) => setState({ ...state, groupBy })}
+            />
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(e) => {
                 e.preventDefault();
-                setOver(status);
+                add(title);
+                setTitle("");
               }}
-              onDragLeave={() => setOver(undefined)}
-              onDrop={(e) => drop(e, status)}
-              className={`flex min-h-0 flex-col gap-2 rounded-lg border bg-muted/30 p-2 ${over === status ? "ring-2 ring-ring" : ""}`}
             >
-              <h2 className="px-1 text-xs font-medium text-muted-foreground">
-                {label} · {cards.length}
-              </h2>
-              <ul className="flex min-h-0 flex-col gap-2 overflow-y-auto">
-                {cards.map((t) => (
-                  <TaskCard
-                    key={t.id}
-                    task={t}
-                    bot={bots.find((b) => b.id === t.botId)}
-                    onMove={(to) => move(t.id, to)}
-                    onDelete={() => remove(t.id)}
-                  />
-                ))}
-              </ul>
-            </section>
-          );
-        })}
-      </div>
-    </main>
+              <Input
+                hiddenLabel
+                title="New task"
+                placeholder="New task"
+                value={title}
+                maxLength={200}
+                container="w-56"
+                onChange={(e) => setTitle(e.target.value)}
+              />
+              <Button type="submit" aria-label="Add task">
+                <PlusIcon /> Add
+              </Button>
+            </form>
+          </div>
+        </header>
+        <TaskFilterBar state={state} onChange={setState} bots={bots} labels={knownLabels} />
+        {loaded && tasks.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No tasks yet. Add one, or ask a bot to turn a request into a task.
+          </p>
+        )}
+        {loaded && tasks.length > 0 && visible.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No tasks match these filters ({activeCount(state)} active).{" "}
+            <button
+              type="button"
+              onClick={clear}
+              className="underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              Clear filters
+            </button>
+          </p>
+        )}
+        {state.view === "list" ? (
+          <TaskList
+            groups={groups}
+            groupBy={state.groupBy}
+            bots={bots}
+            now={now}
+            openId={state.task}
+            onOpen={open}
+          />
+        ) : (
+          <div className="grid min-h-0 flex-1 grid-flow-col auto-cols-[minmax(16rem,1fr)] gap-3 overflow-x-auto">
+            {groups.map((group) => {
+              const status = group.key as TaskStatus;
+              return (
+                <section
+                  key={group.key}
+                  aria-label={group.label}
+                  onDragOver={
+                    byStatus
+                      ? (e) => {
+                          e.preventDefault();
+                          setOver(status);
+                        }
+                      : undefined
+                  }
+                  onDragLeave={
+                    byStatus
+                      ? (e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+                            setOver(undefined);
+                        }
+                      : undefined
+                  }
+                  onDrop={byStatus ? (e) => drop(e, status) : undefined}
+                  className={`flex min-h-0 flex-col gap-2 rounded-xl bg-muted/40 p-2 transition-colors ${byStatus && over === status ? "bg-muted ring-2 ring-ring/60" : ""}`}
+                >
+                  <header className="flex items-center gap-2 px-1 py-1">
+                    <GroupIcon group={group} groupBy={state.groupBy} bots={bots} />
+                    <h2 className="text-sm font-medium">{group.label}</h2>
+                    <span className="text-sm text-muted-foreground tabular-nums">
+                      {group.tasks.length}
+                    </span>
+                    {byStatus && (
+                      <button
+                        type="button"
+                        aria-label={`Add task to ${group.label}`}
+                        onClick={() => setAdding(status)}
+                        className="ml-auto rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                      >
+                        <PlusIcon className="size-4" />
+                      </button>
+                    )}
+                  </header>
+                  {byStatus && adding === status && (
+                    <Input
+                      autoFocus
+                      hiddenLabel
+                      title={`New task in ${group.label}`}
+                      size="small"
+                      placeholder="Task title, Enter to add"
+                      maxLength={200}
+                      container="w-full"
+                      onBlur={() => setAdding(undefined)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") setAdding(undefined);
+                        if (e.key !== "Enter") return;
+                        add(e.currentTarget.value, status);
+                        setAdding(undefined);
+                      }}
+                    />
+                  )}
+                  <ul className="flex min-h-0 flex-col gap-2 overflow-y-auto">
+                    {group.tasks.map((t) => (
+                      <TaskCard
+                        key={t.id}
+                        task={t}
+                        now={now}
+                        bot={bots.find((b) => b.id === t.botId)}
+                        draggable={byStatus}
+                        selected={t.id === state.task}
+                        onOpen={() => open(t.id)}
+                        onMove={(to) => move(t.id, to)}
+                        onDelete={() => remove(t.id)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </main>
+      {state.task && (
+        <TaskPeek
+          taskId={state.task}
+          tasks={groups.flatMap((g) => g.tasks)}
+          knownLabels={knownLabels}
+          onOpen={open}
+          onClose={() => open(undefined)}
+          onChange={replace}
+          onDeleted={(id) => {
+            setTasks((all) => all.filter((t) => t.id !== id));
+            open(undefined);
+          }}
+        />
+      )}
+    </div>
   );
 }
 
 function TaskCard({
   task,
+  now,
   bot,
+  draggable,
+  selected,
+  onOpen,
   onMove,
   onDelete,
 }: {
   task: Task;
+  now: number;
   bot: Bot | undefined;
+  /** Only on the status board: dropping on a column changes the status. */
+  draggable: boolean;
+  selected: boolean;
+  onOpen: () => void;
   onMove: (to: TaskStatus) => void;
   onDelete: () => void;
 }) {
   return (
     <li
-      draggable
+      draggable={draggable}
       onDragStart={(e) => e.dataTransfer.setData("text/plain", task.id)}
-      className="flex flex-col gap-1.5 rounded-md border bg-background p-2 text-sm shadow-xs"
+      onClick={openOnClick(onOpen)}
+      className={`flex cursor-pointer flex-col gap-2 rounded-lg bg-background p-3 text-sm shadow-sm ring-1 transition-shadow hover:shadow-md ${draggable ? "active:cursor-grabbing" : ""} ${selected ? "ring-2 ring-ring" : "ring-border/60"}`}
     >
-      <div className="flex items-start gap-1">
-        <span className="min-w-0 flex-1 break-words font-medium">{task.title}</span>
+      <div className="flex items-start gap-2">
+        <TaskTitleLink
+          task={task}
+          className="min-w-0 flex-1 break-words font-medium hover:underline"
+        />
+        {bot && (
+          <span title={bot.name} className="shrink-0">
+            <BotAvatar bot={bot} size={20} square />
+          </span>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label={`${task.title} menu`}
-            className="rounded p-1 text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+            className="-mr-1 rounded p-0.5 text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
           >
             <DotsThreeIcon className="size-4" />
           </DropdownMenuTrigger>
@@ -166,20 +336,26 @@ function TaskCard({
         </DropdownMenu>
       </div>
       {task.description && (
-        <p className="line-clamp-3 break-words text-xs text-muted-foreground">{task.description}</p>
+        <p className="line-clamp-2 break-words text-xs text-muted-foreground">{task.description}</p>
       )}
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {bot && (
-          <>
-            <BotAvatar bot={bot} size={16} square />
-            <span className="truncate">{bot.name}</span>
-          </>
-        )}
+      {(task.priority !== "none" || task.labels.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {task.priority !== "none" && <PriorityIcon priority={task.priority} />}
+          <LabelChips labels={task.labels} />
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span title={new Date(task.createdAt).toLocaleString()}>
+          Created {relativeTime(task.createdAt, now)}
+        </span>
+        <span title={new Date(task.updatedAt).toLocaleString()}>
+          Updated {relativeTime(task.updatedAt, now)}
+        </span>
         {task.conversationId && (
           <Link
             to="/chat/{-$chatId}"
             params={{ chatId: task.conversationId }}
-            className="ml-auto inline-flex items-center gap-1 hover:underline"
+            className="ml-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 hover:bg-muted"
           >
             <ChatIcon className="size-3" /> Thread
           </Link>

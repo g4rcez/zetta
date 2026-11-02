@@ -8,7 +8,6 @@ import {
   BooksIcon,
   ListChecksIcon,
   UsersIcon,
-  BrainIcon,
   ChatTextIcon,
   DotsThreeIcon,
   PaperclipIcon,
@@ -44,13 +43,15 @@ import { VmCard } from "./vm-card";
 import { Response } from "./response";
 import { splitActionNotes } from "./action-notes";
 import { stripToolFences } from "./tool-fences";
+import { useTimeFormat } from "@/features/preferences/preferences";
+import { formatDateTime, formatTime, type TimeFormat } from "@/features/preferences/time-format";
 
 export type Author = { name: string; bot?: Bot | undefined; image?: string | null | undefined };
 
-const time = (iso: string) =>
-  new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-const fullDate = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { dateStyle: "full", timeStyle: "short" });
+const time = (iso: string, f: TimeFormat) =>
+  formatTime(iso, f, { hour: "numeric", minute: "2-digit" });
+const fullDate = (iso: string, f: TimeFormat) =>
+  formatDateTime(iso, f, { dateStyle: "full", timeStyle: "short" });
 const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -63,7 +64,9 @@ function UsedNotes({ row }: { row: Row }) {
   const [data, setData] = useState<UsedKnowledge>();
   const [error, setError] = useState<string>();
   const used = row.meta?.used,
-    n = (used?.memories?.length ?? 0) + (used?.instructions?.length ?? 0);
+    n =
+      (used?.memories?.length ?? 0) +
+      Math.max(used?.instructions?.length ?? 0, used?.wiki?.length ?? 0);
   if (n === 0) return null;
   return (
     <details
@@ -85,7 +88,7 @@ function UsedNotes({ row }: { row: Row }) {
         )}
         {data?.memories.length ? (
           <div>
-            <p className="font-medium">Remembered about you</p>
+            <p className="font-medium">Notes and profile</p>
             <ul className="list-disc pl-4">
               {data.memories.map((m) => (
                 <li key={m.id} className="break-words">
@@ -95,15 +98,15 @@ function UsedNotes({ row }: { row: Row }) {
             </ul>
           </div>
         ) : null}
-        {data?.instructions.length ? (
+        {data?.wiki.length ? (
           <div>
-            <p className="font-medium">Instructions</p>
+            <p className="font-medium">Wiki</p>
             <ul className="list-disc pl-4">
-              {data.instructions.map((m) => (
+              {data.wiki.map((m) => (
                 <li key={m.id} className="break-words">
                   <Link
-                    to="/instructions/$instructionId"
-                    params={{ instructionId: m.id }}
+                    to="/wiki/$slug"
+                    params={{ slug: m.slug }}
                     className="hover:text-foreground hover:underline"
                   >
                     {m.title}
@@ -113,9 +116,7 @@ function UsedNotes({ row }: { row: Row }) {
             </ul>
           </div>
         ) : null}
-        {data && !data.memories.length && !data.instructions.length && (
-          <p>Those notes no longer exist.</p>
-        )}
+        {data && !data.memories.length && !data.wiki.length && <p>Those notes no longer exist.</p>}
       </div>
     </details>
   );
@@ -219,7 +220,7 @@ function HoverBar({
   entry,
   onReact,
   onReply,
-  onSaveInstruction,
+  onSaveToWiki,
 }: {
   row: Row;
   inThread: boolean;
@@ -227,7 +228,7 @@ function HoverBar({
   entry: "pointer" | "keyboard";
   onReact: (emoji: string) => void;
   onReply: () => void;
-  onSaveInstruction: () => void;
+  onSaveToWiki: () => void;
 }) {
   const bar = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -271,9 +272,9 @@ function HoverBar({
             </DropdownMenuTrigger>
           </Tip>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onSaveInstruction}>
+            <DropdownMenuItem onClick={onSaveToWiki}>
               <BookmarkSimpleIcon />
-              Save as instruction
+              Save to wiki
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -320,27 +321,31 @@ export const MessageRow = memo(function MessageRow({
   row,
   author,
   continued,
+  repo,
   inThread = false,
   readOnly = false,
   onReact,
   onReply,
-  onSaveInstruction,
+  onSaveToWiki,
   onQueue,
   onOpenArtifact,
 }: {
   row: Row;
   author: Author;
   continued: boolean;
+  /** `owner/repo` the `#12` and commit ids of this message belong to (see github-refs). */
+  repo?: string | undefined;
   inThread?: boolean;
   /** No reactions, replies or saving: for a log that only shows the conversation (the setup interview). */ readOnly?: boolean;
   onReact: (row: Row, emoji: string) => void;
   onReply: (row: Row) => void;
-  onSaveInstruction: (row: Row) => void;
+  onSaveToWiki: (row: Row) => void;
   /** A queued message: drop it before it is answered, or put a failed one back in line. */
   onQueue?: (row: Row, action: "remove" | "retry") => void;
   /** Open a published file beside the chat instead of leaving it. */
   onOpenArtifact?: (id: string) => void;
 }) {
+  const tf = useTimeFormat();
   const saved = !row.streaming && !readOnly;
   // The toolbar (tooltips, popover, menu) mounts on first hover or keyboard focus, not for every row of a long history.
   const [bar, setBar] = useState<"idle" | "pointer" | "keyboard">("idle");
@@ -360,7 +365,7 @@ export const MessageRow = memo(function MessageRow({
   const replies = row.replyCount ?? 0;
   return (
     <Message
-      aria-label={`${author.name} at ${time(row.createdAt)}`}
+      aria-label={`${author.name} at ${time(row.createdAt, tf)}`}
       className={cn(
         "gap-3 px-4 py-0.5 text-sm hover:bg-accent/60 has-aria-expanded:bg-accent/60",
         !continued && "mt-3 pt-1.5",
@@ -389,16 +394,16 @@ export const MessageRow = memo(function MessageRow({
             entry={bar}
             onReact={(e) => onReact(row, e)}
             onReply={() => onReply(row)}
-            onSaveInstruction={() => onSaveInstruction(row)}
+            onSaveToWiki={() => onSaveToWiki(row)}
           />
         ))}
       {continued ? (
         <time
           dateTime={row.createdAt}
-          title={fullDate(row.createdAt)}
+          title={fullDate(row.createdAt, tf)}
           className="w-8 shrink-0 pt-0.5 text-right text-xs leading-5 text-muted-foreground tabular-nums opacity-0 group-hover/message:opacity-100"
         >
-          {time(row.createdAt)}
+          {time(row.createdAt, tf)}
         </time>
       ) : (
         <MessageAvatar className="mt-0.5 size-8 min-w-8 self-start rounded-lg bg-transparent group-has-data-[slot=message-footer]/message:translate-y-0">
@@ -421,10 +426,10 @@ export const MessageRow = memo(function MessageRow({
             {author.bot && <span className="text-xs font-medium text-muted-foreground">App</span>}
             <time
               dateTime={row.createdAt}
-              title={fullDate(row.createdAt)}
+              title={fullDate(row.createdAt, tf)}
               className="text-xs font-normal text-muted-foreground tabular-nums hover:underline"
             >
-              {time(row.createdAt)}
+              {time(row.createdAt, tf)}
             </time>
           </MessageHeader>
         )}
@@ -452,7 +457,7 @@ export const MessageRow = memo(function MessageRow({
           />
         ) : (
           <>
-            <Response text={body} streaming={working} />
+            <Response text={body} streaming={working} repo={repo} />
             {notes.length > 0 && (
               // DESIGN.md "Bot work": the run's actions fold into one summary line under the reply.
               <details className="group/notes text-xs text-muted-foreground">
@@ -641,9 +646,8 @@ export const MessageRow = memo(function MessageRow({
                   </Link>
                 ) : r.kind === "wiki" ? (
                   <Link
-                    to="/studio/$tab"
-                    params={{ tab: "wiki" }}
-                    search={{ page: r.id } as never}
+                    to="/wiki/$slug"
+                    params={{ slug: r.id }}
                     className="flex items-center gap-1 hover:text-foreground hover:underline"
                   >
                     <BooksIcon aria-hidden="true" className="size-3.5" />
@@ -657,19 +661,11 @@ export const MessageRow = memo(function MessageRow({
                   >
                     <UsersIcon aria-hidden="true" className="size-3.5" />“{r.text}”
                   </Link>
-                ) : r.kind === "instruction" ? (
-                  <Link
-                    to="/instructions/$instructionId"
-                    params={{ instructionId: r.id }}
-                    className="flex items-center gap-1 hover:text-foreground hover:underline"
-                  >
-                    <BookmarkSimpleIcon aria-hidden="true" className="size-3.5" />
-                    saved instruction “{r.text}”{r.created === false ? " (already saved)" : ""}
-                  </Link>
                 ) : (
+                  // Receipts of older messages: notes and procedures are wiki items now, so they read the same way.
                   <>
-                    <BrainIcon aria-hidden="true" className="size-3.5" />
-                    remembered
+                    <BooksIcon aria-hidden="true" className="size-3.5" />
+                    saved to the wiki{r.text ? ` “${r.text}”` : ""}
                     {r.created === false ? " (already saved)" : ""}
                   </>
                 )}

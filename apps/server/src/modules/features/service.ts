@@ -1,14 +1,8 @@
 import type { Database } from "@zetta/db";
-import { and, asc, desc, eq, inArray, sql } from "@zetta/db/query";
+import { and, asc, desc, eq, inArray, or, sql } from "@zetta/db/query";
 import { bot, message } from "@zetta/db/schema/chat";
-import {
-  attentionItem,
-  delegation,
-  hook,
-  instruction,
-  memory,
-  reaction,
-} from "@zetta/db/schema/features";
+import { wikiPage } from "@zetta/db/schema/wiki";
+import { attentionItem, delegation, hook, reaction } from "@zetta/db/schema/features";
 import { AccessError, type ActiveActor } from "../identity/access";
 import type { ComputerService } from "../computer/service";
 import { createTurnRunner, evaluateHooks } from "../chat/pipeline";
@@ -20,6 +14,7 @@ import {
   raiseAttention,
   type AttentionAction,
 } from "./attention";
+import { visibleTo } from "../wiki/service";
 import { createKnowledge } from "./knowledge";
 import { createRoutines } from "./routines";
 import { createSnapshots } from "./snapshots";
@@ -84,69 +79,8 @@ export function createFeaturesService(
     workflows,
     routines,
     snapshots,
-    // --- memory & instruction library ---
-    listMemories: (a: ActiveActor) =>
-      db
-        .select()
-        .from(memory)
-        .where(eq(memory.ownerUserId, a.userId))
-        .orderBy(desc(memory.createdAt)),
-    addMemory: async (
-      a: ActiveActor,
-      content: string,
-      botId?: string,
-      category?: (typeof memory.$inferInsert)["category"],
-    ) => {
-      if (botId) await usableBot(a, botId);
-      return (await knowledge.addMemory(a.userId, { content, botId, category, source: "user" }))
-        .memory;
-    },
-    updateMemory: (a: ActiveActor, id: string, expectedVersion: number, content: string) =>
-      knowledge.updateMemory(a.userId, id, expectedVersion, content),
-    deleteMemory: async (a: ActiveActor, id: string) =>
-      first(
-        await db
-          .delete(memory)
-          .where(and(eq(memory.id, id), eq(memory.ownerUserId, a.userId)))
-          .returning(),
-      ),
-    listInstructions: (a: ActiveActor) =>
-      db
-        .select()
-        .from(instruction)
-        .where(and(eq(instruction.ownerUserId, a.userId), eq(instruction.archived, false)))
-        .orderBy(desc(instruction.createdAt)),
-    addInstruction: async (
-      a: ActiveActor,
-      v: {
-        title: string;
-        body: string;
-        trigger?: string;
-        verification?: string;
-        teamId?: string | null;
-      },
-    ) => (await knowledge.addInstruction(a.userId, v)).instruction,
-    updateInstruction: (
-      a: ActiveActor,
-      id: string,
-      expectedVersion: number,
-      v: {
-        title?: string;
-        body?: string;
-        trigger?: string;
-        verification?: string;
-        archived?: boolean;
-        teamId?: string | null;
-      },
-    ) => knowledge.updateInstruction(a.userId, id, expectedVersion, v),
-    deleteInstruction: async (a: ActiveActor, id: string) =>
-      first(
-        await db
-          .delete(instruction)
-          .where(and(eq(instruction.id, id), eq(instruction.ownerUserId, a.userId)))
-          .returning(),
-      ),
-    /** What a given answer used: the memories and instructions recorded on it (only the requester's own). */
+    // --- what an answer used ---
+    /** What a given answer used: the memories and wiki items recorded on it (only what the requester may read). */
     async usedKnowledge(a: ActiveActor, messageId: string) {
       const [m] = await db
         .select({ meta: message.meta })
@@ -154,40 +88,45 @@ export function createFeaturesService(
         .where(and(eq(message.id, messageId), eq(message.ownerUserId, a.userId)));
       const used = (
         (first(m ? [m] : []).meta ?? {}) as {
-          used?: { memories: { id: string }[]; instructions: { id: string }[] };
+          used?: { memories: { id: string }[]; instructions: { id: string }[]; wiki?: string[] };
         }
       ).used ?? { memories: [], instructions: [] };
+      // The ids of the notes and profile items that were in the prompt (they were memory rows before they became wiki items).
       const mem = used.memories.length
         ? await db
-            .select({ id: memory.id, content: memory.content })
-            .from(memory)
+            .select({ id: wikiPage.id, content: wikiPage.content })
+            .from(wikiPage)
             .where(
               and(
-                eq(memory.ownerUserId, a.userId),
                 inArray(
-                  memory.id,
+                  wikiPage.id,
                   used.memories.map((u) => u.id),
                 ),
+                visibleTo(a.userId),
               ),
             )
         : [];
-      const ins = used.instructions.length
-        ? await db
-            .select({ id: instruction.id, title: instruction.title })
-            .from(instruction)
-            .where(
-              and(
-                eq(instruction.ownerUserId, a.userId),
-                inArray(
-                  instruction.id,
-                  used.instructions.map((u) => u.id),
+      // `instructions` holds wiki ids (the old instruction ids became wiki ids); `wiki` holds the slugs listed in the prompt.
+      const ids = used.instructions.map((u) => u.id);
+      const slugs = used.wiki ?? [];
+      const items =
+        ids.length || slugs.length
+          ? await db
+              .select({ id: wikiPage.id, slug: wikiPage.slug, title: wikiPage.title })
+              .from(wikiPage)
+              .where(
+                and(
+                  or(
+                    ids.length ? inArray(wikiPage.id, ids) : undefined,
+                    slugs.length ? inArray(wikiPage.slug, slugs) : undefined,
+                  ),
+                  visibleTo(a.userId),
                 ),
-              ),
-            )
-        : [];
+              )
+          : [];
       return {
         memories: mem.map((x) => ({ id: x.id, content: x.content })),
-        instructions: ins.map((x) => ({ id: x.id, title: x.title })),
+        wiki: items.map((x) => ({ id: x.id, slug: x.slug, title: x.title })),
       };
     },
     // --- hooks (configuration belongs to the bot owner) ---

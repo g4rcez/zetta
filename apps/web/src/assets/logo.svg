@@ -1,5 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 883 1046" fill="none" stroke-linecap="round" stroke-linejoin="round">
   <title>Zetta</title>
+  <defs>
+    <linearGradient id="zetta-glass" x1="0" y1="100" x2="0" y2="335" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity=".6"/>
+      <stop offset=".45" stop-color="#fff" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#002d14" stop-opacity=".55"/>
+    </linearGradient>
+  </defs>
   <g stroke="var(--logo-ink, #2b3440)" stroke-width="15">
     <!-- ears: gears -->
     <path d="M145 507 L170 509 L170 541 L145 543 L142 551 L158 570 L135 593 L116 577 L108 580 L106 605 L74 605 L72 580 L64 577 L45 593 L22 570 L38 551 L35 543 L10 541 L10 509 L35 507 L38 499 L22 480 L45 457 L64 473 L72 470 L74 445 L106 445 L108 470 L116 473 L135 457 L158 480 L142 499Z" fill="var(--logo-metal, #c6d0db)"/>
@@ -34,7 +41,9 @@
     <g stroke-width="9"><circle cx="207" cy="630" r="13" fill="var(--logo-shade, #9db2cc)"/><circle cx="678" cy="630" r="13" fill="var(--logo-shade, #9db2cc)"/><circle cx="300" cy="912" r="13" fill="var(--logo-shade, #9db2cc)"/><circle cx="583" cy="912" r="13" fill="var(--logo-shade, #9db2cc)"/></g>
     <!-- goggles -->
     <path d="M360 330 C400 300 420 250 441 250 C462 250 482 300 524 330 C495 372 389 372 360 330 Z" fill="var(--logo-shade, #b4c4d8)"/>
-    <path d="M125 150 Q125 100 190 100 H695 Q760 100 760 150 V295 Q760 335 720 335 H530 Q485 335 441 238 Q397 335 352 335 H165 Q125 335 125 295 Z" fill="var(--logo-lens, #e18a4b)"/>
+    <path d="M125 150 Q125 100 190 100 H695 Q760 100 760 150 V295 Q760 335 720 335 H530 Q485 335 441 238 Q397 335 352 335 H165 Q125 335 125 295 Z" fill="var(--logo-lens, #0a9b50)"/>
+    <!-- glass: light edge at the top fading to a deep tint at the bottom, so the lens reads as translucent -->
+    <path d="M125 150 Q125 100 190 100 H695 Q760 100 760 150 V295 Q760 335 720 335 H530 Q485 335 441 238 Q397 335 352 335 H165 Q125 335 125 295 Z" fill="url(#zetta-glass)" stroke="none"/>
   </g>
   <g stroke="#fff" stroke-opacity=".38" stroke-width="30" fill="none">
     <path d="M300 140 L240 300 M470 120 L405 300 M640 130 L585 300"/>

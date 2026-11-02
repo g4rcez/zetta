@@ -3,6 +3,9 @@ import { createDb } from "@zetta/db";
 
 import { ENV, desktopOrigins } from "./env.server";
 
+import { layaModelFor } from "@zetta/core/laya-languages";
+import { createAttention } from "./modules/chat/attention";
+import { createRouting } from "./modules/chat/routing";
 import { createTurnRunner } from "./modules/chat/pipeline";
 import { createChatService } from "./modules/chat/service";
 import { createDecisionService } from "./modules/decisions/service";
@@ -17,7 +20,11 @@ import { createFeaturesService } from "./modules/features/service";
 import { createAgenda } from "./modules/agenda/service";
 import { createLocalEmbedder } from "./modules/knowledge/embed";
 import { createKnowledge as createCompanyKnowledge } from "./modules/knowledge/service";
+import { audit } from "./modules/features/audit";
+import { createOutputStyles } from "./modules/output-styles/service";
 import { createWikiJobs } from "./modules/wiki/jobs";
+import { createWikiAssist } from "./modules/wiki/assist";
+import { createWikiGraph } from "./modules/wiki/graph";
 import { createWiki } from "./modules/wiki/service";
 import { createSearch } from "./modules/search/service";
 import { createPreferenceStore } from "./modules/preferences/store";
@@ -48,7 +55,10 @@ import { createInvitationSignupPreflight } from "./modules/identity/signup-prefl
 // fill up after a few dozen reloads).
 const reloaded = globalThis as { zettaDb?: ReturnType<typeof createDb> };
 export const db = (reloaded.zettaDb ??= createDb(ENV));
-const installation = createInstallationService(db);
+// `decisions` is created further down; the callback only runs on a later settings update, after it exists.
+const installation = createInstallationService(db, (s) =>
+  decisions.setMode(s.laya, { preload: true, variant: layaModelFor(s.layaLanguages) }),
+);
 // Network mode is read once at boot: it adds the public origin to every trusted-origin list and (in index.ts) opens the listener to the network.
 const installed = await installation.load();
 export const networkMode = installed.networkMode;
@@ -97,6 +107,11 @@ import { createFileStore } from "./modules/chat/files";
 // Authorized server files live under ZETTA_FILES_ROOT (me/<userId>/… private, shared/… team-readable).
 const files = createFileStore(process.env.ZETTA_FILES_ROOT ?? `${process.cwd()}/.zetta-files`);
 const decisions = createDecisionService();
+// Laya is a builtin plugin, off by default: the installation setting decides. ZETTA_LAYA_PRELOAD=0 loads it on first use instead of at boot.
+decisions.setMode(installed.laya, {
+  preload: process.env.ZETTA_LAYA_PRELOAD !== "0",
+  variant: layaModelFor(installed.layaLanguages),
+});
 // Persistent per-user VMs (docker/desktop image): enable with ZETTA_DESKTOP_RUNTIME=docker.
 const vmDocker = dockerVmConfig();
 const num = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
@@ -163,7 +178,11 @@ const agenda = createAgenda(db);
 const tasks = createTaskStore(db);
 const artifacts = createArtifactStore(db);
 const loops = createLoopStore(db);
-const discussions = createDiscussionStore(db, files, loops);
+// A room post without a mention goes to the member the decision model picks (the Chief's backend, else Laya).
+const discussions = createDiscussionStore(db, files, loops, (a, text, members) => {
+  const chief = members.find((m) => m.kind === "chief");
+  return decisionRouting.pickBot(chief && { id: chief.botId }, text, members, a);
+});
 // Each bot's private Postgres schema (modules/bot-database). Bot passwords are derived from this key; the app's database user needs CREATEROLE.
 const botDbKey = process.env.ZETTA_BOT_DATABASE_KEY || ENV.ZETTA_CONNECTION_KEY;
 const botDatabase = botDbKey
@@ -191,7 +210,17 @@ const companyKnowledge = createCompanyKnowledge(db, {
 });
 // The operator's wiki: pages all of a user's bots share (see modules/wiki).
 const wiki = createWiki(db, { embedder });
-const turnRunner = createTurnRunner(db, undefined, undefined, companyKnowledge, wiki);
+// Decision-only bots (harness "decision") answer from the chosen option's text; the actor is rebuilt from the turn's authenticated user id.
+const decisionRouting = createRouting(db, decisions, jev);
+const turnRunner = createTurnRunner(
+  db,
+  undefined,
+  undefined,
+  wiki,
+  createAttention(decisions),
+  (b, text, userId) =>
+    decisionRouting.reply(b, text, userId ? { userId, isAdmin: false } : undefined),
+);
 // Bots learn from finished work and the chief reviews the wiki, through the same turn runner as the chat.
 const wikiJobs = createWikiJobs(db, { wiki, run: turnRunner, lookup: membershipLookup });
 export const chatServices = {
@@ -213,6 +242,7 @@ export const chatServices = {
       discussions,
       botDatabase,
       loops,
+      routines: features.routines,
       tasks,
       artifacts,
       wiki,
@@ -232,6 +262,8 @@ features.routines.useChat(async (userId, conversationId, prompt, requestKey) => 
       const { follow } = await chatServices.chat.startTurn(actor, conversationId, {
         content: prompt,
         clientRequestId: requestKey,
+        // A routine has one chat for all its runs; the bot gets only the run before this one.
+        history: "previous_turn",
       });
       let saved: { status: string; content: string; meta?: unknown } | undefined;
       for await (const { event } of follow()) if (event.type === "message") saved = event.message;
@@ -239,6 +271,34 @@ features.routines.useChat(async (userId, conversationId, prompt, requestKey) => 
         ok: saved?.status === "complete",
         text: saved?.content ?? "",
         error: (saved?.meta as { error?: string } | null | undefined)?.error,
+      };
+    } catch (e) {
+      if (!(e instanceof TurnBusyError) || attempt >= 24) throw e;
+      await Bun.sleep(5_000);
+    }
+  }
+});
+// The chief's wiki review is a real chat turn too, in a conversation the lists leave out (see listConversations).
+wikiJobs.useChat(async (userId, conversationId, prompt, requestKey) => {
+  const actor = await issueBackgroundActor(membershipLookup, userId);
+  if (!actor) return { ok: false, text: "", slugs: [], error: "OWNER_INACTIVE" };
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const { follow } = await chatServices.chat.startTurn(actor, conversationId, {
+        content: prompt,
+        clientRequestId: requestKey,
+      });
+      let saved: { status: string; content: string; meta?: unknown } | undefined;
+      for await (const { event } of follow()) if (event.type === "message") saved = event.message;
+      const meta = (saved?.meta ?? null) as {
+        error?: string;
+        receipts?: { kind: string; id: string }[];
+      } | null;
+      return {
+        ok: saved?.status === "complete",
+        text: saved?.content ?? "",
+        slugs: (meta?.receipts ?? []).flatMap((r) => (r.kind === "wiki" ? [r.id] : [])),
+        error: meta?.error,
       };
     } catch (e) {
       if (!(e instanceof TurnBusyError) || attempt >= 24) throw e;
@@ -363,10 +423,17 @@ export const preferenceServices = {
   preferences: createPreferenceStore(db),
 };
 export const knowledgeServices = { access: identity.access, knowledge: companyKnowledge };
-export const wikiServices = { access: identity.access, wiki, jobs: wikiJobs };
+export const wikiServices = {
+  access: identity.access,
+  wiki,
+  jobs: wikiJobs,
+  graph: createWikiGraph(db),
+  assist: createWikiAssist(db, { wiki }),
+};
 export const searchServices = { access: identity.access, search: createSearch(db) };
 export const artifactServices = { access: identity.access, artifacts };
 export const teamServices = { access: identity.access, store: teamStore };
+export const outputStyleServices = { access: identity.access, styles: createOutputStyles(db) };
 export const zettaMcpServices = {
   auth,
   resource: mcpResource(ENV),
@@ -377,6 +444,8 @@ export const zettaMcpServices = {
   features,
   wiki,
   tasks,
+  outputStyles: outputStyleServices.styles,
+  audit: (ownerUserId: string, event: Parameters<typeof audit>[2]) => audit(db, ownerUserId, event),
 };
 export const agendaServices = {
   access: identity.access,

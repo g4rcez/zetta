@@ -1,0 +1,1 @@
+ALTER TABLE "user_preference" ADD COLUMN "time_format" text DEFAULT '24h' NOT NULL;

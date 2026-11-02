@@ -2,7 +2,7 @@ import { TEAM_ROLE_COLORS, TEAM_ROLE_ICONS } from "@zetta/db/schema/teams";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
-import { DiscussionError } from "../discussions/store";
+import { DiscussionError, publicRoom } from "../discussions/store";
 import { TeamError, type TeamStore } from "./store";
 
 export type TeamServices = { access: ReturnType<typeof createIdentityAccess>; store: TeamStore };
@@ -24,6 +24,7 @@ const schemas = {
     expectedVersion: z.number().int().positive(),
     name: z.string().trim().min(1).max(80),
     goal: z.string().trim().max(1000),
+    context: z.string().max(8000).optional(),
     canvas: box,
     members: z
       .array(
@@ -42,10 +43,11 @@ const schemas = {
     color: z.enum(TEAM_ROLE_COLORS).default("slate"),
     icon: z.enum(TEAM_ROLE_ICONS).default("user"),
   }),
+  roomTeam: z.strictObject({ teamId: uuid.nullable() }),
   room: z.strictObject({
     title: z.string().trim().min(1).max(120),
     goal: z.string().trim().max(1000).default(""),
-    firstMessage: z.string().trim().min(1).max(4000),
+    firstMessage: z.string().trim().min(1).max(4000).optional(),
   }),
 };
 const out = (body: unknown, status = 200) =>
@@ -176,6 +178,16 @@ export function createTeamRoutes(
     .post(
       "/teams/:id/rooms",
       g(async (c) => store.startRoom(c.actor, id(c), schemas.room.parse(c.body)), 201),
+    )
+    .put(
+      "/discussions/:id/team",
+      g(async (c) => {
+        return {
+          discussion: publicRoom(
+            await store.setRoomTeam(c.actor, id(c), schemas.roomTeam.parse(c.body).teamId),
+          ),
+        };
+      }),
     )
     .post(
       "/teams/:id/chat",

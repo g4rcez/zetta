@@ -5,6 +5,8 @@ import { ApiError, call, errorMessage } from "../chat/chat-client";
 import { Markdown } from "../chat/markdown";
 import { ConfirmButton, Empty, list, useList } from "../shared/ui";
 import { Alert } from "@g4rcez/components/alert";
+import { useTimeFormat } from "@/features/preferences/preferences";
+import { formatDateTime } from "@/features/preferences/time-format";
 
 type Snap = { id: string; title: string; botName: string; createdAt: string; ownerUserId?: string };
 type Part = {
@@ -26,6 +28,7 @@ type Full = {
 };
 
 export function Snapshots({ onError }: { onError: (m: string) => void }) {
+  const tf = useTimeFormat();
   const [rows, reload] = useList<Snap>("/api/snapshots", "snapshots", onError);
   const [open, setOpen] = useState<{ id: string; snap?: Full; gone?: boolean }>();
   const [me, setMe] = useState<string>();
@@ -104,13 +107,13 @@ export function Snapshots({ onError }: { onError: (m: string) => void }) {
             {s.title} <span className="font-normal text-muted-foreground">· with {s.botName}</span>
           </h3>
           <Alert theme="info">
-            Read-only copy published {new Date(s.createdAt).toLocaleString()}. Later messages in the
+            Read-only copy published {formatDateTime(s.createdAt, tf)}. Later messages in the
             original chat are not part of it.
           </Alert>
           {s.revokedAt && (
             <Alert theme="danger">
-              This snapshot was taken down on {new Date(s.revokedAt).toLocaleString()} and is no
-              longer shared.
+              This snapshot was taken down on {formatDateTime(s.revokedAt, tf)} and is no longer
+              shared.
             </Alert>
           )}
           {!s.revokedAt && (

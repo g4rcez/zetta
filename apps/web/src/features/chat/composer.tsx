@@ -4,6 +4,7 @@ import { uuidv7 } from "@zetta/core/uuid";
 import { Link } from "@tanstack/react-router";
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ClipboardEvent,
@@ -48,7 +49,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/to
 import { cn } from "@zetta/ui/lib/utils";
 
 import { ImageViewer } from "./attachment-image";
-import { instructionSummary } from "./triggers";
 import {
   IMAGE_MAX_BYTES,
   listFiles,
@@ -60,18 +60,27 @@ import {
 } from "./chat-client";
 import { matchTrigger } from "./triggers";
 import { useMention } from "./mention";
+import { BotsContext } from "@/components/bot-identity";
 import { Response } from "./response";
 
 export type Outgoing = {
   text: string;
   attachmentIds: string[];
   fileRefs: string[];
-  instructionIds?: string[];
+  wikiIds?: string[];
 };
-type Instruction = { id: string; title: string; body: string; trigger?: string };
+/** A wiki item the person can pick with `/`: the bot follows it for this message. */
+type WikiItem = {
+  id: string;
+  title: string;
+  howto: string;
+  tags: string[];
+  status: string;
+  score: number;
+};
 const PICTURES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_ATTACHMENTS = 5;
-const MAX_INSTRUCTIONS = 5;
+const MAX_PICKED = 5;
 /** A picture the person picked: shown at once from the local file, kept until the message is sent. */
 type Staged = { key: string; name: string; preview: string; id?: string; uploading: boolean };
 
@@ -120,7 +129,7 @@ export function Composer({
   onError,
   autoFocus,
   minimal,
-  instructions,
+  wiki,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -133,8 +142,8 @@ export function Composer({
   onStop?: () => void;
   onError: (e: unknown) => void;
   autoFocus?: boolean;
-  /** Turn on the `/` picker: only for screens whose submit forwards `instructionIds`. */
-  instructions?: boolean;
+  /** Turn on the `/` picker: only for screens whose submit forwards `wikiIds`. */
+  wiki?: boolean;
   /** Text only: no attachments, server files or @mentions (the setup interview). */ minimal?: boolean;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
@@ -154,17 +163,18 @@ export function Composer({
     entries: { name: string; kind: "file" | "dir" }[];
   }>();
   const [previewing, setPreviewing] = useState(false);
-  const mention = useMention({ value, onChange, bots, inputRef: input });
+  const mention = useMention({ value, onChange, bots, inputRef: input, onError });
+  const botsById = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
   const [slash, setSlash] = useState<{ query: string; at: number; index: number }>();
-  const [library, setLibrary] = useState<Instruction[]>();
-  const [chosen, setChosen] = useState<Instruction[]>([]);
-  const instructionCandidates =
+  const [library, setLibrary] = useState<WikiItem[]>();
+  const [chosen, setChosen] = useState<WikiItem[]>([]);
+  const wikiCandidates =
     slash && library
       ? library
           .filter(
             (i) =>
               !chosen.some((c) => c.id === i.id) &&
-              i.title.toLowerCase().includes(slash.query.toLowerCase()),
+              `${i.title} ${i.tags.join(" ")}`.toLowerCase().includes(slash.query.toLowerCase()),
           )
           .slice(0, 6)
       : [];
@@ -248,15 +258,25 @@ export function Composer({
   }
   function trackMention(text: string, caret: number) {
     mention.track(text, caret);
-    const s = instructions ? matchTrigger(text, caret, "/") : undefined;
+    const s = wiki ? matchTrigger(text, caret, "/") : undefined;
     setSlash(s ? { ...s, index: 0 } : undefined);
-    if (s && !library && chosen.length < MAX_INSTRUCTIONS)
-      void call<{ instructions: Instruction[] }>("/api/instructions").then(
-        (r) => setLibrary(r.instructions),
+    if (s && !library && chosen.length < MAX_PICKED)
+      void call<{ pages: WikiItem[]; shared: WikiItem[] }>("/api/wiki").then(
+        (r) =>
+          setLibrary(
+            [...r.pages, ...r.shared]
+              .filter((p) => p.status !== "archived")
+              // Procedures first, then the most important.
+              .sort(
+                (a, b) =>
+                  Number(b.tags.includes("instruction")) - Number(a.tags.includes("instruction")) ||
+                  b.score - a.score,
+              ),
+          ),
         onError,
       );
   }
-  function openInstructions() {
+  function openPicker() {
     const el = input.current;
     if (!el) return;
     const at = el.selectionStart,
@@ -270,11 +290,11 @@ export function Composer({
       el.setSelectionRange(caret, caret);
     });
   }
-  function pickInstruction(i: Instruction) {
+  function pickItem(i: WikiItem) {
     if (!slash) return;
     const end = slash.at + 1 + slash.query.length;
     onChange(value.slice(0, slash.at) + value.slice(end).replace(/^ /, ""));
-    setChosen((l) => (l.length < MAX_INSTRUCTIONS ? [...l, i] : l));
+    setChosen((l) => (l.length < MAX_PICKED ? [...l, i] : l));
     setSlash(undefined);
     requestAnimationFrame(() => {
       input.current?.focus();
@@ -292,7 +312,7 @@ export function Composer({
       text: value.trim(),
       attachmentIds: [...attached.map((a) => a.id), ...pictures.map((x) => x.id!)],
       fileRefs,
-      ...(chosen.length ? { instructionIds: chosen.map((i) => i.id) } : {}),
+      ...(chosen.length ? { wikiIds: chosen.map((i) => i.id) } : {}),
     });
     if (ok) {
       setChosen([]);
@@ -307,19 +327,19 @@ export function Composer({
     }
   }
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (slash && instructionCandidates.length) {
+    if (slash && wikiCandidates.length) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const d = e.key === "ArrowDown" ? 1 : -1;
         setSlash({
           ...slash,
-          index: (slash.index + d + instructionCandidates.length) % instructionCandidates.length,
+          index: (slash.index + d + wikiCandidates.length) % wikiCandidates.length,
         });
         return;
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
-        pickInstruction(instructionCandidates[slash.index]!);
+        pickItem(wikiCandidates[slash.index]!);
         return;
       }
       if (e.key === "Escape") {
@@ -395,30 +415,28 @@ export function Composer({
       {slash && library && (
         <ul
           role="listbox"
-          aria-label="Follow an instruction"
+          aria-label="Follow a wiki item"
           className="absolute bottom-full left-0 z-20 mb-1 w-80 overflow-hidden rounded-lg border bg-popover p-1 shadow-md"
         >
           <li
             className="flex items-center justify-between px-2 py-1 text-xs font-medium text-muted-foreground"
             role="presentation"
           >
-            Instructions
+            Wiki
             <Link
-              to="/studio/$tab"
-              params={{ tab: "instructions" }}
+              to="/wiki"
               onMouseDown={(e) => e.preventDefault()}
               className="underline hover:text-foreground"
             >
               Manage
             </Link>
           </li>
-          {instructionCandidates.length === 0 && (
+          {wikiCandidates.length === 0 && (
             <li className="px-2 py-1.5 text-sm text-muted-foreground" role="presentation">
-              {library.length === 0 ? "No instructions yet. " : "No match."}
+              {library.length === 0 ? "Nothing in the wiki yet. " : "No match."}
               {library.length === 0 && (
                 <Link
-                  to="/studio/$tab"
-                  params={{ tab: "instructions" }}
+                  to="/wiki"
                   onMouseDown={(e) => e.preventDefault()}
                   className="underline hover:text-foreground"
                 >
@@ -427,15 +445,15 @@ export function Composer({
               )}
             </li>
           )}
-          {instructionCandidates.map((i, k) => (
+          {wikiCandidates.map((i, k) => (
             <li
               key={i.id}
               role="option"
               aria-selected={k === slash.index}
-              title={instructionSummary(i)}
+              title={i.howto}
               onMouseDown={(e) => {
                 e.preventDefault();
-                pickInstruction(i);
+                pickItem(i);
               }}
               className={cn(
                 "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
@@ -445,9 +463,7 @@ export function Composer({
               <BookOpenIcon className="size-4 shrink-0" />
               <span className="min-w-0">
                 <span className="block truncate font-medium">{i.title}</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {instructionSummary(i)}
-                </span>
+                <span className="block truncate text-xs text-muted-foreground">{i.howto}</span>
               </span>
             </li>
           ))}
@@ -536,7 +552,7 @@ export function Composer({
                 </Attachment>
               ))}
               {chosen.map((i) => (
-                <Attachment key={i.id} size="sm" title={instructionSummary(i)}>
+                <Attachment key={i.id} size="sm" title={i.howto}>
                   <AttachmentMedia>
                     <BookOpenIcon />
                   </AttachmentMedia>
@@ -577,7 +593,9 @@ export function Composer({
         {previewing ? (
           <div aria-label="Message preview" className="max-h-60 w-full overflow-y-auto px-3 py-2">
             {value.trim() ? (
-              <Response text={value} />
+              <BotsContext.Provider value={botsById}>
+                <Response text={value} />
+              </BotsContext.Provider>
             ) : (
               <p className="text-sm text-muted-foreground">Nothing to preview yet.</p>
             )}
@@ -621,8 +639,8 @@ export function Composer({
                   void addFiles(picked);
                 }}
               />
-              {instructions && (
-                <Tool label="Use an instruction (/)" onClick={openInstructions}>
+              {wiki && (
+                <Tool label="Use a wiki item (/)" onClick={openPicker}>
                   <BookOpenIcon />
                 </Tool>
               )}

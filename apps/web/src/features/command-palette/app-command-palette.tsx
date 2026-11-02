@@ -4,14 +4,12 @@ import { CommandPalette, type CommandItemTypes } from "@g4rcez/components";
 import {
   PulseIcon,
   BellIcon,
-  BookOpenIcon,
   CameraIcon,
   KeyIcon,
   ChatIcon,
   MonitorIcon,
   MoonIcon,
   PlusIcon,
-  ListChecksIcon,
   ScalesIcon,
   MagnifyingGlassIcon,
   NotePencilIcon,
@@ -48,8 +46,6 @@ const icon = (Icon: PhosphorIcon) => <Icon className="size-4" aria-hidden="true"
 
 const STUDIO_ICONS: Partial<Record<StudioTab, PhosphorIcon>> = {
   attention: BellIcon,
-  knowledge: BookOpenIcon,
-  instructions: ListChecksIcon,
   workflows: FlowArrowIcon,
   decisions: ScalesIcon,
   accounts: KeyIcon,
@@ -167,7 +163,7 @@ export function AppCommandPalette({
     const q = text.trim();
     const found: CommandItemTypes[] = hits.map((h) => ({
       type: "shortcut",
-      title: `${KIND_LABEL[h.kind]} · ${h.kind === "message" || h.kind === "memory" ? plainSnippet(h.snippet).slice(0, 80) : h.title}`,
+      title: `${KIND_LABEL[h.kind]} · ${h.kind === "message" ? plainSnippet(h.snippet).slice(0, 80) : h.title}`,
       // The library filters by title and hint; the server already matched, so the typed text keeps the hit visible.
       hint: [q],
       Icon: icon(
@@ -175,7 +171,11 @@ export function AppCommandPalette({
       ),
       action: go(() => {
         const t = hitTarget(h);
-        return navigate({ to: t.to, params: t.params as never, search: {} as never } as never);
+        return navigate({
+          to: t.to,
+          params: t.params as never,
+          search: (t.search ?? {}) as never,
+        } as never);
       }),
     }));
     return [

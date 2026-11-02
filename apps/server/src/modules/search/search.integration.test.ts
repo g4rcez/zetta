@@ -109,8 +109,8 @@ suite("global search against compose postgres", () => {
       [chatB, B, "orçamento secreto do projeto Aurora de B"],
     );
     await q(
-      "insert into memory (owner_user_id, target, content, category, source, content_hash) values ($1, 'user', $2, 'fact', 'user', $3)",
-      [A, "Aurora is the codename for the launch", `h-${uuidv7()}`],
+      "insert into wiki_page (owner_user_id, slug, title, content, tags) values ($1, $2, 'Launch codename', $3, '{profile}')",
+      [A, `codename-${uuidv7().slice(-8)}`, "Aurora is the codename for the launch"],
     );
     await q("insert into task (owner_user_id, title, description) values ($1, $2, $3)", [
       A,
@@ -127,10 +127,10 @@ suite("global search against compose postgres", () => {
     await cleanupTestUsers(db, [A, B]);
   });
 
-  test("finds the user's own chats, messages, memory, tasks and artifacts, and never another user's", async () => {
+  test("finds the user's own chats, messages, wiki items, tasks and artifacts, and never another user's", async () => {
     const mine = await find(A, "aurora");
     expect(mine.status).toBe(200);
-    expect(mine.hits.map((h) => h.kind).sort()).toEqual(["artifact", "memory", "message", "task"]);
+    expect(mine.hits.map((h) => h.kind).sort()).toEqual(["artifact", "message", "task", "wiki"]);
     expect(mine.hits.some((h) => h.snippet.includes("secreto"))).toBe(false);
     const theirs = await find(B, "aurora");
     expect(theirs.hits.map((h) => h.title)).toEqual(["Segredo de B"]);

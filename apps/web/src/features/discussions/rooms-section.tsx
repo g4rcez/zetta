@@ -124,7 +124,7 @@ function RoomRow({
         data-chat-row
         aria-current={current ? "page" : undefined}
         title={label}
-        className={cn(ROW, current ? "bg-sidebar-accent" : IDLE)}
+        className={cn(ROW, current ? "bg-sidebar-accent text-primary!" : IDLE)}
       >
         {icon}
         <span
@@ -153,6 +153,9 @@ export function RoomsSection({ query }: { query: string }) {
   const selected = useRouterState({
     select: (s) =>
       s.location.pathname === "/rooms" ? (s.location.search as { id?: string }).id : undefined,
+  });
+  const onList = useRouterState({
+    select: (s) => s.location.pathname === "/rooms" && !(s.location.search as { id?: string }).id,
   });
   const { rooms: live, issues } = useMemo(() => groupRooms(rooms ?? []), [rooms]);
   const matches = (d: DiscussionListItem) => roomLabel(d).toLowerCase().includes(query);
@@ -210,7 +213,12 @@ export function RoomsSection({ query }: { query: string }) {
               </li>
             )}
             <li>
-              <Link to="/rooms" search={{}} className={cn(ROW, IDLE)}>
+              <Link
+                to="/rooms"
+                search={{}}
+                aria-current={onList ? "page" : undefined}
+                className={cn(ROW, onList ? "bg-sidebar-accent font-medium text-primary!" : IDLE)}
+              >
                 <ListBulletsIcon aria-hidden="true" className={icon} />
                 <span className="min-w-0 flex-1 truncate">All rooms</span>
               </Link>

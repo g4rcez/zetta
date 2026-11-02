@@ -168,7 +168,8 @@ export type PluginDef = {
   /** Revoke remote access / delete remote state. Runs before the local secret is removed. */
   /** OAuth redirect target (GET /api/plugins/<id>/callback). Runs as the signed-in user; throw PluginError to report a failure. */
   callback?(ctx: PluginContext, params: URLSearchParams): Promise<void>;
-  disconnect?(ctx: PluginContext): Promise<void>;
+  /** `options` is the optional body of the disconnect request (for example `{ account }` to remove one of several accounts). */
+  disconnect?(ctx: PluginContext, options?: Record<string, unknown>): Promise<void>;
   /** Health of a native plugin (kind "mcp" is probed by listing its tools instead). */
   status?(ctx: PluginContext): Promise<PluginStatus>;
   /** Password managers only: the user's grants and server-side reveal (never exposed as a tool). */

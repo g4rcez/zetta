@@ -3,9 +3,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if command -v docker >/dev/null 2>&1; then CONTAINER=docker; elif command -v podman >/dev/null 2>&1; then CONTAINER=podman; else
-  echo "docker or podman is required to run postgres" >&2; exit 1
-fi
+CONTAINER=""
+for runtime in docker podman; do
+  if command -v "$runtime" >/dev/null 2>&1 && "$runtime" info >/dev/null 2>&1; then CONTAINER=$runtime; break; fi
+done
+[ -n "$CONTAINER" ] || { echo "a running docker or podman is required to run postgres" >&2; exit 1; }
 
 echo "▶ Starting postgres"
 $CONTAINER compose up -d postgres
@@ -25,7 +27,11 @@ pids=()
 cleanup() { trap - INT TERM EXIT; kill "${pids[@]}" 2>/dev/null || true; wait 2>/dev/null || true; }
 trap cleanup INT TERM EXIT
 
-vp run --filter server dev & pids+=($!)
+vp run --filter server dev:server & pids+=($!)
 vp run --filter web dev & pids+=($!)
 
-wait -n
+# Portable stand-in for `wait -n` (macOS ships bash 3.2): exit when either process ends; the EXIT trap stops the other.
+while :; do
+  for pid in "${pids[@]}"; do kill -0 "$pid" 2>/dev/null || exit 0; done
+  sleep 1
+done

@@ -9,6 +9,7 @@ import { cleanupTestUsers } from "../test-support/db-cleanup";
 import { createChatService } from "./chat/service";
 import { HarnessError } from "./chat/harness";
 import { createTurnRunner } from "./chat/pipeline";
+import { createWiki } from "./wiki/service";
 import { createFeaturesService } from "./features/service";
 import { createIdentityAccess } from "./identity/access";
 
@@ -47,16 +48,29 @@ suite("v1 user journeys", () => {
     prompts.push(t.prompt);
     yield script.shift() ?? "OK";
   };
-  const run = createTurnRunner(db, cli as never, stream as never);
+  const wiki = createWiki(db);
+  const run = createTurnRunner(db, cli as never, stream as never, wiki);
   const features = createFeaturesService(db, run);
-  const chat = createChatService(db, run, undefined, undefined, undefined, undefined, {
-    routine: features.routines.create as never,
-    workflow: features.workflows.save as never,
-  });
+  const chat = createChatService(
+    db,
+    run,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { routine: features.routines.create as never, workflow: features.workflows.save as never },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { wiki },
+  );
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: { access, chat },
     features: { access, features },
+    wiki: { access, wiki },
     webOrigin: "http://web.test",
     desktopOrigins: [],
     drain: () => {},
@@ -93,30 +107,11 @@ suite("v1 user journeys", () => {
     await cleanupTestUsers(db, ids);
   });
 
-  test("onboarding journey: configure -> real answer -> bot asks -> explicit yes -> ready; 'no' returns to refinement; reconfiguring needs a fresh check", async () => {
+  test("a new bot is ready at once: its routine can be activated with no onboarding check", async () => {
     const bot = (
       await call("POST", "/api/bots", { name: "Newsie", harness: "pi", personality: "brief" })
     ).json.bot;
-    const conv = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation.id;
-    expect(
-      (await call("POST", `/api/bots/${bot.id}/onboarding/question`, { conversationId: conv }))
-        .status,
-    ).toBe(409); // no real conversation yet
-    await call("POST", `/api/conversations/${conv}/messages`, { content: "Introduce yourself" });
-    const q1 = (
-      await call("POST", `/api/bots/${bot.id}/onboarding/question`, { conversationId: conv })
-    ).json.questionId;
-    expect(
-      (
-        await call("POST", `/api/bots/${bot.id}/onboarding`, {
-          conversationId: conv,
-          questionId: q1,
-          expectedVersion: 1,
-          satisfied: false,
-        })
-      ).json.bot.onboarded,
-    ).toBe(false);
-    // routines cannot be activated for a bot that is not ready (admission gate)
+    expect(bot.onboarded).toBe(true);
     const r = (
       await call("POST", "/api/routines", {
         botId: bot.id,
@@ -126,28 +121,12 @@ suite("v1 user journeys", () => {
         everyMinutes: 60,
       })
     ).json.routine;
-    expect(
-      (await call("POST", `/api/routines/${r.id}/paused`, { paused: false })).json.error.missing[0],
-    ).toContain("onboarding");
-    const q2 = (
-      await call("POST", `/api/bots/${bot.id}/onboarding/question`, { conversationId: conv })
-    ).json.questionId;
-    expect(
-      (
-        await call("POST", `/api/bots/${bot.id}/onboarding`, {
-          conversationId: conv,
-          questionId: q2,
-          expectedVersion: 1,
-          satisfied: true,
-        })
-      ).json.bot.onboarded,
-    ).toBe(true);
     expect((await call("POST", `/api/routines/${r.id}/paused`, { paused: false })).status).toBe(
       200,
     );
   });
 
-  test("a team instruction reaches only bots of that team, and a picked instruction is followed in full", async () => {
+  test("a team item reaches only bots of that team, and a picked item is followed in full", async () => {
     const mk = async (name: string) => {
       const b = (await call("POST", "/api/bots", { name, harness: "pi" })).json.bot;
       await db.$client.query("update bot set onboarded = true where id = $1", [b.id]);
@@ -159,49 +138,57 @@ suite("v1 user journeys", () => {
       .values({ ownerUserId: A, name: `Deployers-${uuidv7().slice(-6)}` })
       .returning();
     await db.insert(teamMember).values({ teamId: t!.id, botId: inside.id, kind: "chief" });
-    expect(
-      (await call("POST", "/api/instructions", { title: "Nope", body: "1) x", teamId: uuidv7() }))
-        .status,
-    ).toBe(404);
-    const made = await call("POST", "/api/instructions", {
+    const item = {
       title: "Release checklist",
-      body: "1) tag the commit 2) push the tag",
-      trigger: "release",
-      teamId: t!.id,
-    });
-    expect(made.status).toBe(201);
-    const say = async (b: { id: string }, content: string, instructionIds?: string[]) => {
+      howto: "release",
+      tags: ["instruction"],
+      content: "1) tag the commit 2) push the tag",
+      type: "teams",
+      expectedVersion: 0,
+    };
+    // A team that is not the owner's cannot be used.
+    expect(
+      (await call("PUT", "/api/wiki/nope", { ...item, title: "Nope", teams: [uuidv7()] })).status,
+    ).toBe(400);
+    const made = await call("PUT", "/api/wiki/release-checklist", { ...item, teams: [t!.id] });
+    expect(made.status).toBe(200);
+    const id = (
+      await db.$client.query(
+        "select id from wiki_page where slug = 'release-checklist' and owner_user_id = $1",
+        [A],
+      )
+    ).rows[0].id as string;
+    const say = async (b: { id: string }, content: string, wikiIds?: string[]) => {
       const conv = (await call("POST", "/api/conversations", { botId: b.id })).json.conversation.id;
       prompts.length = 0;
       return call("POST", `/api/conversations/${conv}/messages`, {
         content,
-        ...(instructionIds ? { instructionIds } : {}),
+        ...(wikiIds ? { wikiIds } : {}),
       });
     };
-    await say(inside, "Prepare the release");
+    await say(inside, "Prepare the release candidate today");
     expect(prompts.at(-1)).toContain("tag the commit");
-    await say(outside, "Prepare the release");
+    await say(outside, "Prepare the release candidate today");
     expect(prompts.at(-1)).not.toContain("Release checklist");
-    const picked = await say(outside, "Go", [made.json.instruction.id]);
-    expect(prompts.at(-1)).toContain("The user asked you to follow these instructions");
+    // The person picks it: the bot follows it even though it is not in the team.
+    const picked = await say(outside, "Go", [id]);
+    expect(prompts.at(-1)).toContain("The user asked you to follow these wiki items");
     expect(prompts.at(-1)).toContain("1) tag the commit 2) push the tag");
-    expect(picked.json.assistant.meta.used.instructions).toEqual([
-      { id: made.json.instruction.id },
-    ]);
+    expect(picked.json.assistant.meta.used.instructions).toEqual([{ id }]);
     expect((await say(outside, "Go", [uuidv7()])).status).toBe(404);
   });
 
-  test("journey: successful task -> reusable instruction -> routine -> first occurrence -> durable result", async () => {
+  test("journey: successful task -> reusable wiki procedure -> routine -> first occurrence -> durable result", async () => {
     const bot = (await call("POST", "/api/bots", { name: "Worker", harness: "pi" })).json.bot;
     await db.$client.query("update bot set onboarded = true where id = $1", [bot.id]);
     const conv = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation.id;
     script.push(
-      'Here is the weekly summary.\n```zetta:instruction\n{"title":"Weekly metrics summary","body":"1) pull metrics 2) compare to last week 3) three bullets","verification":"numbers match source"}\n```',
+      'Here is the weekly summary.\n```zetta:wiki\n{"action":"write","slug":"weekly-metrics-summary","title":"Weekly metrics summary","tags":["instruction"],"howto":"the weekly metrics summary","content":"1) pull metrics 2) compare to last week 3) three bullets"}\n```',
     );
     const first = await call("POST", `/api/conversations/${conv}/messages`, {
       content: "Summarize this week's metrics",
     });
-    // The bot can run code and the message did not ask to save anything, so the instruction waits for the person's approval.
+    // The bot can run code and the message did not ask to save anything, so the item waits for the person's approval.
     expect(first.json.assistant.meta.receipts[0]).toMatchObject({
       kind: "proposal",
       text: "Weekly metrics summary",
@@ -213,11 +200,11 @@ suite("v1 user journeys", () => {
         })
       ).json.status,
     ).toBe("approved");
-    const ins = (await call("GET", "/api/instructions")).json.instructions.find(
+    const ins = (await call("GET", "/api/wiki")).json.pages.find(
       (i: { title: string }) => i.title === "Weekly metrics summary",
     );
-    expect(ins).toBeTruthy();
-    // the instruction is retrieved for similar later work, and the answer says what it used
+    expect(ins).toMatchObject({ tags: ["instruction"], type: "owner" });
+    // the procedure is shown for similar later work, and the answer says what it used
     prompts.length = 0;
     const second = await call("POST", `/api/conversations/${conv}/messages`, {
       content: "Do the weekly metrics summary again",
@@ -239,7 +226,7 @@ suite("v1 user journeys", () => {
     expect(sum).toMatchObject({
       bot: "Worker",
       timezone: "Europe/Lisbon",
-      contextMode: "Each run starts a new chat",
+      contextMode: "All runs share one chat; the bot reads only the run before",
       missing: [],
     });
     expect(sum.nextRuns).toHaveLength(3);
@@ -257,19 +244,28 @@ suite("v1 user journeys", () => {
   test("journey: wrong result -> inspect knowledge used -> correct it -> improved later context", async () => {
     const bot = (await call("POST", "/api/bots", { name: "Fact", harness: "pi" })).json.bot;
     await db.$client.query("update bot set onboarded = true where id = $1", [bot.id]);
-    const mem = (
-      await call("POST", "/api/memories", { content: "The office closes at 17:00 on Fridays" })
-    ).json.memory;
+    const note = (content: string, expectedVersion: number) =>
+      call("PUT", "/api/wiki/office-hours", {
+        title: "Office hours",
+        content,
+        type: "solo",
+        authorBotId: bot.id,
+        tags: ["memory"],
+        expectedVersion,
+      });
+    expect((await note("The office closes at 17:00 on Fridays", 0)).status).toBe(200);
+    const mem = {
+      id: (await call("GET", "/api/wiki")).json.pages.find(
+        (p: { slug: string }) => p.slug === "office-hours",
+      ).id as string,
+    };
     const conv = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation.id;
     const wrong = await call("POST", `/api/conversations/${conv}/messages`, {
       content: "When does the office close on Fridays?",
     });
     const used = (await call("GET", `/api/messages/${wrong.json.assistant.id}/knowledge`)).json;
     expect(used.memories.map((m: { id: string }) => m.id)).toContain(mem.id); // the person can see which note drove the answer
-    await call("PATCH", `/api/memories/${mem.id}`, {
-      expectedVersion: 1,
-      content: "The office closes at 15:00 on Fridays",
-    });
+    expect((await note("The office closes at 15:00 on Fridays", 1)).status).toBe(200);
     prompts.length = 0;
     // memory is frozen per conversation (stable prompt prefix): the correction shows in the next conversation
     const conv2 = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation

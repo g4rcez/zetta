@@ -52,6 +52,8 @@ export type Team = {
   id: string;
   name: string;
   goal: string;
+  /** Shared by every room of the team. */
+  context: string;
   canvas: TeamBox;
   version: number;
   members: TeamMember[];
@@ -60,6 +62,8 @@ export type TeamSave = {
   expectedVersion: number;
   name: string;
   goal: string;
+  /** Left out: the team's context stays as it is. */
+  context?: string;
   canvas: TeamBox;
   members: Omit<TeamMember, "name" | "role">[];
 };
@@ -81,6 +85,6 @@ export const teamsApi = {
   /** The team's chat: its open room, or a new one. Opening it does not wake the chief. */
   chat: (id: string) =>
     call<{ discussionId: string }>(`/api/teams/${id}/chat`, "POST").then((r) => r.discussionId),
-  startRoom: (id: string, v: { title: string; firstMessage: string; goal?: string }) =>
+  startRoom: (id: string, v: { title: string; firstMessage?: string; goal?: string }) =>
     call<{ discussionId: string }>(`/api/teams/${id}/rooms`, "POST", v).then((r) => r.discussionId),
 };

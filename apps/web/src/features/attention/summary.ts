@@ -14,7 +14,12 @@ type Item = {
   botId: string | null;
   status: string;
   readAt: string | null;
+  source: string;
+  sourceKey: string | null;
 };
+
+/** Runs of the user's routines not opened yet (a running one counts), and the chats they live in. */
+type RoutineUnread = { count: number; conversationIds: string[] };
 
 const NOTIFIED_KEY = "zetta.notified-attention";
 const readNotified = (): Set<string> | undefined => {
@@ -72,6 +77,9 @@ function notifyNew(items: Item[]) {
 let state: AttentionSummary | undefined;
 let byBot: ReadonlyMap<string, BotAttention> = new Map();
 let running = 0;
+let routineUnread = 0;
+let routineUnreadChats: ReadonlySet<string> = new Set();
+let routineAttention: ReadonlySet<string> = new Set();
 let signedOut = false;
 let subscribers = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -83,22 +91,58 @@ export async function refreshAttention(force = false) {
   if (signedOut && !force) return;
   lastRefresh = Date.now();
   try {
-    const [summary, list, discussions] = await Promise.all([
+    const [summary, list, discussions, firstRoutines] = await Promise.all([
       chatClient.attentionSummary(),
       call<{ items: Item[] }>("/api/attention"),
       // A failed count keeps the last one, so it never blocks the attention counts.
       discussionsApi.running().catch(() => running),
+      call<RoutineUnread>("/api/routines/unread").catch(() => undefined),
     ]);
+    // Cards that point at the chat on screen are seen: mark them read now, so no badge or native alert says it is new.
+    const here = window.location.pathname;
+    const onScreen = document.hidden
+      ? []
+      : list.items.filter(
+          (i) =>
+            i.status === "open" && !i.readAt && i.resultLink === here && here.startsWith("/chat/"),
+        );
+    await Promise.all(
+      onScreen.map((i) =>
+        call(`/api/attention/${i.id}/action`, "POST", { action: "read" }).catch(() => {}),
+      ),
+    );
+    const readNow = new Date().toISOString();
+    const items = list.items.map((i) => (onScreen.includes(i) ? { ...i, readAt: readNow } : i));
     const next = new Map<string, BotAttention>();
-    for (const i of list.items) {
+    for (const i of items) {
       if (i.botId === null || i.status !== "open") continue;
       const n = next.get(i.botId) ?? { open: 0, unread: 0 };
       next.set(i.botId, { open: n.open + 1, unread: n.unread + (i.readAt ? 0 : 1) });
     }
-    notifyNew(list.items);
-    state = summary;
+    notifyNew(items);
+    // A routine with an open or seen-but-not-fixed card still needs the user, whatever its run status is now.
+    const needing = new Set<string>();
+    for (const i of items) {
+      if (i.source !== "routine" || (i.status !== "open" && i.status !== "acknowledged")) continue;
+      const id = /^routine:([^:]+):/.exec(i.sourceKey ?? "")?.[1];
+      if (id) needing.add(id);
+    }
+    routineAttention = needing;
+    // The routine chat on screen is seen: mark its runs read now, so the badge does not count what the user is looking at.
+    let routines = firstRoutines;
+    const seen =
+      routines && !document.hidden && here.startsWith("/chat/")
+        ? routines.conversationIds.find((id) => here === `/chat/${id}`)
+        : undefined;
+    if (seen) {
+      await call("/api/routines/read", "POST", { conversationId: seen }).catch(() => {});
+      routines = await call<RoutineUnread>("/api/routines/unread").catch(() => undefined);
+    }
+    state = { ...summary, unread: Math.max(0, summary.unread - onScreen.length) };
     byBot = next;
     running = discussions;
+    routineUnread = routines?.count ?? routineUnread;
+    if (routines) routineUnreadChats = new Set(routines.conversationIds);
     signedOut = false;
     emit();
   } catch (e) {
@@ -107,6 +151,9 @@ export async function refreshAttention(force = false) {
       state = undefined;
       byBot = new Map();
       running = 0;
+      routineUnread = 0;
+      routineUnreadChats = new Set();
+      routineAttention = new Set();
       emit();
     }
   }
@@ -162,4 +209,22 @@ export function useRunningDiscussions(): number {
 export function useBotAttention(): ReadonlyMap<string, BotAttention> {
   useAttentionSummary(); // subscribes to the poll; every emit re-renders the caller, which then reads the fresh map
   return byBot;
+}
+
+/** Routine runs the user has not opened yet, from the same poll; opening the run's chat clears them. */
+export function useRoutineUnread(): number {
+  useAttentionSummary(); // subscribes to the poll and refreshes on route change, so opening a run's chat clears it at once
+  return routineUnread;
+}
+
+/** Ids of the routines that have an open Inbox card (failed, blocked or interrupted and not yet resolved). */
+export function useRoutineAttention(): ReadonlySet<string> {
+  useAttentionSummary(); // subscribes to the poll; every emit re-renders the caller, which then reads the fresh set
+  return routineAttention;
+}
+
+/** The routine chats that hold runs the user has not opened yet. */
+export function useRoutineUnreadChats(): ReadonlySet<string> {
+  useAttentionSummary(); // subscribes to the poll; every emit re-renders the caller, which then reads the fresh set
+  return routineUnreadChats;
 }

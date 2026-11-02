@@ -2,13 +2,17 @@ import { Link } from "@tanstack/react-router";
 import { ArrowsClockwiseIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
-import { Button, Checkbox } from "@/components/ui";
+import { Button, Checkbox, Select } from "@/components/ui";
 
 import { errorMessage } from "../chat/chat-client";
 import { pluginsApi } from "../plugins/plugins-api";
 import { agendaApi, type AgendaSync } from "./agenda-api";
+import { useTimeFormat } from "@/features/preferences/preferences";
+import { formatTime } from "@/features/preferences/time-format";
 
 type Google = "loading" | "missing" | "no-calendar" | "read-only" | "ok";
+/** Google accounts that can create events, as the Google plugin reports them. */
+type Writer = { email: string };
 
 /** Google Calendar sync settings for the Agenda. Connecting Google itself stays in Studio > Plugins. */
 export function AgendaSyncPanel({
@@ -22,8 +26,10 @@ export function AgendaSyncPanel({
   onSynced: () => void;
   onError: (m: string) => void;
 }) {
+  const tf = useTimeFormat();
   const [google, setGoogle] = useState<Google>("loading");
   const [busy, setBusy] = useState(false);
+  const [writers, setWriters] = useState<Writer[]>([]);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -32,6 +38,14 @@ export function AgendaSyncPanel({
       const t = await pluginsApi.test("google").catch(() => undefined);
       if (t?.status.state !== "connected") return "missing" as const;
       const scopes = (t.status.info?.scopes ?? []) as string[];
+      const accounts = (t.status.info?.accounts ?? []) as {
+        email: string;
+        state: string;
+        scopes: string[];
+      }[];
+      setWriters(
+        accounts.filter((a) => a.state === "connected" && a.scopes.includes("calendar.events")),
+      );
       return scopes.includes("calendar.events")
         ? ("ok" as const)
         : scopes.includes("calendar.events.readonly")
@@ -45,7 +59,7 @@ export function AgendaSyncPanel({
     };
   }, []);
 
-  const set = async (v: Partial<Pick<AgendaSync, "enabled" | "pushByDefault">>) => {
+  const set = async (v: Partial<Pick<AgendaSync, "enabled" | "pushByDefault" | "pushAccount">>) => {
     setBusy(true);
     try {
       onSync(await agendaApi.setSync(v));
@@ -105,6 +119,19 @@ export function AgendaSyncPanel({
           Send new items to Google
         </Checkbox>
       )}
+      {sync.enabled && google === "ok" && writers.length > 1 && (
+        <Select
+          title="New items go to"
+          required={false}
+          value={sync.pushAccount ?? ""}
+          disabled={busy}
+          onChange={(e) => void set({ pushAccount: e.target.value || null })}
+          options={[
+            { value: "", label: "First account that can write" },
+            ...writers.map((w) => ({ value: w.email, label: w.email })),
+          ]}
+        />
+      )}
       {sync.enabled && (
         <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void now()}>
           <ArrowsClockwiseIcon
@@ -120,7 +147,7 @@ export function AgendaSyncPanel({
           {sync.lastError ? (
             <span className="text-destructive">{sync.lastError}</span>
           ) : sync.lastSyncedAt ? (
-            `Synced ${new Date(sync.lastSyncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+            `Synced ${formatTime(sync.lastSyncedAt, tf)}`
           ) : (
             "Not synced yet"
           )}

@@ -6,3 +6,6 @@ import { sql, type SQL } from "drizzle-orm";
  */
 export const searchVector = (text: SQL | { name: string }) =>
   sql`to_tsvector('simple', f_unaccent(${text}))`;
+
+/** Size of the embedding model's vectors (multilingual-e5-small). Changing the model means changing this and re-embedding. */
+export const EMBEDDING_DIMENSIONS = 384;

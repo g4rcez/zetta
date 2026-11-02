@@ -1,7 +1,7 @@
 import type { Database } from "@zetta/db";
 import { and, asc, desc, eq, inArray, or, sql } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
-import { discussion } from "@zetta/db/schema/discussions";
+import { discussion, discussionMember } from "@zetta/db/schema/discussions";
 import {
   team,
   teamMember,
@@ -13,7 +13,8 @@ import {
   type TeamRoleIcon,
 } from "@zetta/db/schema/teams";
 import { requireOwned, type ActiveActor } from "../identity/access";
-import type { DiscussionStore } from "../discussions/store";
+import { DiscussionError, type DiscussionStore } from "../discussions/store";
+import { insertMessage } from "../chat/messages";
 
 /**
  * Teams: named groups of bots with one chief. A room is a discussion opened for a team: the chief is its facilitator, so the user's
@@ -67,7 +68,14 @@ const DEFAULT_ROLES: TeamRoleInput[] = [
   { name: "Tester", description: "Looks for bugs and regressions", color: "red", icon: "bug" },
   { name: "Planner", description: "Splits goals into steps", color: "orange", icon: "compass" },
 ];
-export type TeamInput = { name: string; goal: string; canvas: TeamBox; members: TeamMemberInput[] };
+export type TeamInput = {
+  name: string;
+  goal: string;
+  /** Left out by callers that do not edit it (the Teams canvas), so a save never wipes it. */
+  context?: string | undefined;
+  canvas: TeamBox;
+  members: TeamMemberInput[];
+};
 
 const isUnique = (e: unknown) =>
   [e, (e as { cause?: unknown } | null)?.cause].some(
@@ -185,7 +193,7 @@ export function createTeamStore(
         throw e;
       }
     },
-    /** Replaces name, goal, position and members in one step. A team with members has exactly one chief. */
+    /** Replaces name, goal, context (when given), position and members in one step. A team with members has exactly one chief. */
     async save(a: ActiveActor, id: string, expectedVersion: number, v: TeamInput) {
       await loadOwned(a, id);
       const ids = v.members.map((m) => m.botId);
@@ -217,6 +225,7 @@ export function createTeamStore(
             .set({
               name: v.name,
               goal: v.goal,
+              ...(v.context !== undefined ? { context: v.context } : {}),
               canvas: v.canvas,
               version: sql`${team.version} + 1`,
               updatedAt: new Date(),
@@ -312,6 +321,94 @@ export function createTeamStore(
       // Without a first order the chief stays asleep until the user writes.
       if (v.firstMessage) await discussions.postAsOwner(a, opened.discussion.id, v.firstMessage);
       return { discussionId: opened.discussion.id };
+    },
+    /**
+     * Changes the type of a room after it was made. Into a team: the chief becomes the facilitator and the team's other bots join
+     * (the bots already in the room stay). Out of a team: the room keeps its members and the user is the facilitator again.
+     */
+    async setRoomTeam(a: ActiveActor, roomId: string, teamId: string | null) {
+      const [room] = await db
+        .select()
+        .from(discussion)
+        .where(and(eq(discussion.id, roomId), eq(discussion.ownerUserId, a.userId)));
+      const d = requireOwned(a, room);
+      if (d.kind !== "room")
+        throw new DiscussionError("NOT_ALLOWED", "Only a room can change its type.");
+      if (d.status === "resolved" || d.status === "cancelled")
+        throw new DiscussionError("CLOSED", `That room is ${d.status}.`);
+      if ((d.teamId ?? null) === teamId) return d;
+      let chiefBotId: string | null = null;
+      let joining: { botId: string; role: string }[] = [];
+      let note = "Room is no longer in a team.";
+      if (teamId) {
+        const t = await loadOwned(a, teamId);
+        const members = await membersOf([teamId]);
+        const chief = members.find((m) => m.m.kind === "chief");
+        if (!chief || members.length < 2)
+          throw new TeamError(
+            "INVALID",
+            "A room needs a chief and at least one other bot in the team.",
+          );
+        const usable = await db
+          .select({ id: bot.id })
+          .from(bot)
+          .where(
+            and(
+              inArray(
+                bot.id,
+                members.map((m) => m.m.botId),
+              ),
+              visible(a),
+              eq(bot.archived, false),
+            ),
+          );
+        if (!usable.some((b) => b.id === chief.m.botId))
+          throw new TeamError("NOT_FOUND", "The chief of this team is not available.");
+        const ok = new Set(usable.map((b) => b.id));
+        chiefBotId = chief.m.botId;
+        joining = members
+          .filter((m) => ok.has(m.m.botId))
+          .map((m) => ({ botId: m.m.botId, role: roleText(m.role) }));
+        note = `Room moved to team ${t.name}.`;
+      }
+      try {
+        return await db.transaction(async (tx) => {
+          const [row] = await tx
+            .update(discussion)
+            .set({
+              teamId,
+              createdByBotId: chiefBotId,
+              version: sql`${discussion.version} + 1`,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(discussion.id, d.id), eq(discussion.version, d.version)))
+            .returning();
+          if (!row)
+            throw new DiscussionError(
+              "CONFLICT",
+              "The room changed meanwhile. Reload it and try again.",
+            );
+          if (joining.length)
+            await tx
+              .insert(discussionMember)
+              .values(joining.map((m) => ({ discussionId: d.id, ...m })))
+              .onConflictDoNothing();
+          await insertMessage(tx, d.conversationId, {
+            ownerUserId: d.ownerUserId,
+            role: "system",
+            content: note,
+            meta: { discussionEvent: "team" },
+          });
+          return row;
+        });
+      } catch (e) {
+        if (isUnique(e))
+          throw new TeamError(
+            "NAME_TAKEN",
+            "A room with this name already exists. Pick another name.",
+          );
+        throw e;
+      }
     },
     /**
      * The team's chat: its newest live room, else the room named after the team (a closed one is reopened), else a new one.

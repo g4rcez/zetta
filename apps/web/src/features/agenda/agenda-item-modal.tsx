@@ -1,13 +1,17 @@
 import { Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 
-import { Button, Checkbox, Input, Select, Textarea } from "@/components/ui";
+import { Button, Checkbox, Input, Select } from "@/components/ui";
+import { MentionTextarea } from "../chat/mention";
+import { useSidebarData } from "../chat/sidebar-data";
 
 import { errorMessage } from "../chat/chat-client";
 import { ConfirmButton, Modal } from "../shared/ui";
 import { agendaApi, type AgendaDraft, type AgendaItem, type AgendaKind } from "./agenda-api";
 import { KIND_LABEL } from "./agenda-kinds";
 import { Alert } from "@g4rcez/components/alert";
+import { useTimeFormat } from "@/features/preferences/preferences";
+import { formatDateTime } from "@/features/preferences/time-format";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const localDateTime = (d: Date) =>
@@ -45,6 +49,8 @@ export function AgendaItemModal({
   onSaved: () => void;
   onError: (m: string) => void;
 }) {
+  const tf = useTimeFormat();
+  const { bots } = useSidebarData();
   const start = item
     ? new Date(item.startAt)
     : (at ?? new Date(Math.ceil(Date.now() / 3_600_000) * 3_600_000));
@@ -252,7 +258,7 @@ export function AgendaItemModal({
           onChange={(e) => setRemind(e.target.value)}
           options={[
             ...(remind === "keep"
-              ? [{ value: "keep", label: `Keep (${new Date(item!.remindAt!).toLocaleString()})` }]
+              ? [{ value: "keep", label: `Keep (${formatDateTime(item!.remindAt!, tf)})` }]
               : []),
             ...REMIND.map((r) => ({ value: r.value, label: r.label })),
           ]}
@@ -265,9 +271,10 @@ export function AgendaItemModal({
           disabled={readOnly}
           defaultValue={item?.location ?? ""}
         />
-        <Textarea
+        <MentionTextarea
           title="Notes"
           name="description"
+          bots={bots}
           required={false}
           rows={3}
           maxLength={4000}

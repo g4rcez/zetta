@@ -1,0 +1,266 @@
+/* Token values copied from packages/ui/src/styles/globals.css (DESIGN.md). Change a value there first, then here.
+   The landing page is light only, whatever the system scheme. Status values come from apps/web/src/index.css and DESIGN.md.
+   Every text pair is 7:1 or more. Emerald marks what to act on. Amber means "a person is needed", nothing else.
+
+   The page alternates two flat grounds: --background and --sidebar (.band). Cards sit on --card with a 1px --border. */
+:root {
+  color-scheme: light;
+  --sidebar: #f3f3f5;
+  --background: #fbfbfc;
+  --card: #ffffff;
+  --muted: #f0f0f3;
+  --accent: #ededf0;
+  --border: #e2e2e6;
+  --input: #8a8a93;
+  --foreground: #18181b;
+  --muted-foreground: #4a4a52;
+  --primary: #015a45;
+  --primary-foreground: #ffffff;
+  --attention: #f0a63a;
+  --attention-foreground: #2b1a00;
+  --warn: #6a4100;
+  --success: #1a4f18;
+  --info: #16457e;
+  --destructive: #8a1818;
+  --logo-ink: #2b3440;
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --page: 1120px;
+  --gutter: 24px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 80px;
+  scrollbar-color: var(--input) var(--sidebar);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 24px;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+ul,
+ol,
+dl,
+dd,
+figure,
+pre {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: clamp(44px, 6vw, 80px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+h2 {
+  font-size: clamp(32px, 4vw, 48px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+
+h3 {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+ul,
+ol {
+  padding: 0;
+  list-style: none;
+}
+
+a {
+  color: var(--primary);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+textarea {
+  caret-color: var(--primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 35%, transparent);
+}
+
+.wrap {
+  width: 100%;
+  max-width: calc(var(--page) + var(--gutter) * 2);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.section {
+  padding-block: 112px;
+}
+
+/* Every second section sits on the sidebar tone, so the page has rhythm without gradients or shadows. */
+.band {
+  background: var(--sidebar);
+}
+
+/* Centered section heading: the CopilotKit composition, in Zetta type. */
+.head {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  max-width: 720px;
+  margin-inline: auto;
+  margin-bottom: 64px;
+  text-align: center;
+}
+
+.head .lead {
+  max-width: 60ch;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.lead {
+  color: var(--muted-foreground);
+  font-size: 20px;
+  line-height: 30px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* 44px controls on the landing page. One primary per view. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding-inline: 20px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 150ms;
+}
+
+.btn:hover {
+  background: var(--accent);
+  text-decoration: none;
+}
+
+.btn-primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.btn-primary:hover {
+  background: var(--primary);
+  filter: brightness(1.12);
+}
+
+.btn-sm {
+  height: 32px;
+  padding-inline: 12px;
+  font-size: 14px;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+@media (max-width: 720px) {
+  .section {
+    padding-block: 72px;
+  }
+  .head {
+    margin-bottom: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

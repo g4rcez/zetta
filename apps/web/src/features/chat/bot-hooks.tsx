@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Button, Checkbox, Input, Select, Textarea } from "@/components/ui";
+import { Button, Checkbox, Input, Select } from "@/components/ui";
+import { MentionTextarea } from "./mention";
+import { useSidebarData } from "./sidebar-data";
 
 import { chatClient, errorMessage, type Bot, type Hook, type HookDryRun } from "./chat-client";
 
@@ -12,6 +14,7 @@ const KIND: Record<Hook["kind"], string> = {
 const sorted = (l: Hook[]) => [...l].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
 export function BotHooks({ bot }: { bot: Bot }) {
+  const { bots } = useSidebarData();
   const [hooks, setHooks] = useState<Hook[]>([]);
   const [error, setError] = useState<string>();
   const [test, setTest] = useState("");
@@ -161,11 +164,12 @@ export function BotHooks({ bot }: { bot: Bot }) {
         </p>
       )}
       <form className="space-y-1" onSubmit={(e) => void dry(e)}>
-        <Textarea
+        <MentionTextarea
           title="Try a message against these hooks (nothing is sent to the bot)"
-          container="mt-0.5"
+          className="mt-0.5"
+          bots={bots}
           value={test}
-          onChange={(e) => setTest(e.target.value)}
+          onChange={setTest}
           rows={2}
         />
         <Button type="submit" size="sm" variant="outline" disabled={!test.trim()}>

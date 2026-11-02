@@ -8,6 +8,7 @@ export const HARNESSES = [
   "opencode",
   "cursor",
   "hermes",
+  "decision",
 ] as const;
 export type Harness = (typeof HARNESSES)[number];
 
@@ -51,6 +52,11 @@ export const HARNESS_MODELS: Record<Harness, ModelOption[]> = {
   ],
   // Hermes picks its model and provider from its own config; naming one here would have to match the provider it is signed in to.
   hermes: [],
+  // No LLM: the builtin Laya model (default) or hosted Jev classifies the message and the bot sends the chosen option's reply.
+  decision: [
+    { value: "laya", label: "Laya · built in, free, private" },
+    { value: "jev", label: "Jev · Typesafe, hosted, needs your Jev key" },
+  ],
 };
 
 /** Select options for a harness's models; a saved model outside the list is kept so editing never silently drops it. */

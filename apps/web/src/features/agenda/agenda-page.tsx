@@ -15,6 +15,8 @@ import {
 import { AgendaItemModal } from "./agenda-item-modal";
 import { KIND_ICON, KIND_LABEL, KIND_THEME, pillTheme } from "./agenda-kinds";
 import { AgendaSyncPanel } from "./agenda-sync";
+import { useTimeFormat } from "@/features/preferences/preferences";
+import { formatTime } from "@/features/preferences/time-format";
 
 type Ev = CalendarEvent<{ id: string; date: Date; item: AgendaItem }>;
 const MONTH_MS = 31 * 86_400_000;
@@ -49,7 +51,13 @@ export function AgendaPage({ focusId }: { focusId?: string | undefined }) {
       .sync()
       .then(setSync)
       .catch(() =>
-        setSync({ enabled: false, pushByDefault: false, lastSyncedAt: null, lastError: "" }),
+        setSync({
+          enabled: false,
+          pushByDefault: false,
+          pushAccount: null,
+          lastSyncedAt: null,
+          lastError: "",
+        }),
       );
   }, []);
   // Opened from an attention item or a chat receipt (/agenda?item=<id>).
@@ -133,10 +141,9 @@ export function AgendaPage({ focusId }: { focusId?: string | undefined }) {
 }
 
 function AgendaEventLabel({ item }: { item: AgendaItem }) {
+  const tf = useTimeFormat();
   const Icon = KIND_ICON[item.kind];
-  const time = item.allDay
-    ? "All day"
-    : new Date(item.startAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const time = item.allDay ? "All day" : formatTime(item.startAt, tf);
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       {item.status === "done" ? (

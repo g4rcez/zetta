@@ -6,6 +6,7 @@ import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createChatService } from "../chat/service";
+import { createWiki } from "../wiki/service";
 import { createIdentityAccess } from "../identity/access";
 import { createFeaturesService } from "./service";
 import { nextDailyRun } from "./schedule";
@@ -41,10 +42,29 @@ suite("features against compose postgres", () => {
     async () => ({ isAdmin: false }),
   );
   const features = createFeaturesService(db);
+  const wiki = createWiki(db);
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
-    chat: { access, chat: createChatService(db) },
+    chat: {
+      access,
+      chat: createChatService(
+        db,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { wiki },
+      ),
+    },
     features: { access, features },
+    wiki: { access, wiki },
     webOrigin: "http://web.test",
     desktopOrigins: [],
     drain: () => {},
@@ -104,21 +124,7 @@ suite("features against compose postgres", () => {
     await chat(A, bot.id, "remember that my favourite colour is teal");
     expect((await chat(A, bot.id, "what colour?")).reply).toContain("favourite colour is teal");
     expect((await chat(B, bot.id, "what colour?")).reply).not.toContain("teal");
-    expect((await call(B, "GET", "/api/memories")).json.memories).toHaveLength(0);
-  });
-
-  test("instructions are retrieved for similar work only", async () => {
-    const bot = await newBot(A);
-    await call(A, "POST", "/api/instructions", {
-      title: "Weekly newsletter digest",
-      body: "Always list five links.",
-    });
-    expect((await chat(A, bot.id, "write the newsletter please")).reply).toContain(
-      "Always list five links.",
-    );
-    expect((await chat(A, bot.id, "tell me a joke")).reply).not.toContain(
-      "Always list five links.",
-    );
+    expect((await call(B, "GET", "/api/wiki")).json.pages).toHaveLength(0);
   });
 
   test("hooks add context, redact, and stop; only the bot owner configures them", async () => {
@@ -148,6 +154,7 @@ suite("features against compose postgres", () => {
     });
     expect(created.status).toBe(201);
     const rid = created.json.routine.id as string;
+    await db.$client.query("update bot set onboarded = false where id = $1", [bot.id]); // no API path leaves a bot unready; the guard stays
     expect((await call(A, "POST", `/api/routines/${rid}/paused`, { paused: false })).status).toBe(
       409,
     ); // not onboarded
@@ -166,11 +173,8 @@ suite("features against compose postgres", () => {
     expect(runs).toHaveLength(1);
     expect(runs[0].status).toBe("succeeded");
     expect((await call(B, "GET", `/api/routines/${rid}/runs`)).json.runs).toHaveLength(0);
-    // Reconfiguring the bot makes it unready; the next due occurrence pauses and raises attention instead of running.
-    await call(A, "PATCH", `/api/bots/${bot.id}`, {
-      expectedVersion: 1,
-      patch: { personality: "new" },
-    });
+    // An unready bot: the next due occurrence pauses and raises attention instead of running.
+    await db.$client.query("update bot set onboarded = false where id = $1", [bot.id]);
     expect(await features.runDue(new Date(Date.now() + 20 * 60_000))).toBe(1);
     const runsAfter = (await call(A, "GET", `/api/routines/${rid}/runs`)).json.runs as {
       status: string;

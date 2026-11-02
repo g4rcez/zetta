@@ -90,6 +90,7 @@ export const discussionsApi = {
     call<{ discussions: DiscussionListItem[] }>("/api/discussions").then((r) => r.discussions),
   running: () => call<{ running: number }>("/api/discussions/running").then((r) => r.running),
   get: (id: string) => call<DiscussionDetail>(`/api/discussions/${id}`),
+  seen: (id: string) => call(`/api/discussions/${id}/seen`, "POST", {}),
   startLoop: (id: string, v: { goal: string; doneWhen: string }) =>
     call(`/api/discussions/${id}/loop`, "POST", v),
   steps: (id: string) =>
@@ -105,19 +106,28 @@ export const discussionsApi = {
       expectedVersion,
       ...v,
     }).then((r) => r.discussion),
+  /** Moves a room into a team (its chief becomes the facilitator) or out of it (`null`). */
+  setTeam: (id: string, teamId: string | null) =>
+    call<{ discussion: Discussion }>(`/api/discussions/${id}/team`, "PUT", { teamId }).then(
+      (r) => r.discussion,
+    ),
   post: (
     id: string,
     content: string,
-    files: { attachmentIds?: string[]; fileRefs?: string[]; instructionIds?: string[] } = {},
+    files: { attachmentIds?: string[]; fileRefs?: string[]; wikiIds?: string[] } = {},
   ) =>
     call(`/api/discussions/${id}/messages`, "POST", {
       content,
       ...(files.attachmentIds?.length ? { attachmentIds: files.attachmentIds } : {}),
       ...(files.fileRefs?.length ? { fileRefs: files.fileRefs } : {}),
-      ...(files.instructionIds?.length ? { instructionIds: files.instructionIds } : {}),
+      ...(files.wikiIds?.length ? { wikiIds: files.wikiIds } : {}),
     }),
   act: (id: string, action: "pause" | "resume" | "cancel") =>
     call<{ discussion: Discussion }>(`/api/discussions/${id}/${action}`, "POST", {}).then(
+      (r) => r.discussion,
+    ),
+  remove: (id: string) =>
+    call<{ discussion: Discussion }>(`/api/discussions/${id}/delete`, "POST", {}).then(
       (r) => r.discussion,
     ),
   resolve: (id: string, summary: string) =>

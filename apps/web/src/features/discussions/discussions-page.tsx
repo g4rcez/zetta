@@ -13,6 +13,7 @@ import {
   PlusIcon,
   RepeatIcon,
   TargetIcon,
+  TrashIcon,
   UsersIcon,
   UsersThreeIcon,
   XCircleIcon,
@@ -31,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
 import { cn } from "@zetta/ui/lib/utils";
-import { Button, Checkbox, Input, Textarea } from "@/components/ui";
+import { Button, Checkbox, Input, Select } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";
 
 import {
@@ -41,7 +42,7 @@ import {
   type Message,
   type Proposal,
 } from "../chat/chat-client";
-import type { Row } from "../chat/chat-rows";
+import { transcriptRows, type Row } from "../chat/chat-rows";
 import { Composer, type Outgoing } from "../chat/composer";
 import { LoopBanner, useGoalLoop } from "../chat/loop-banner";
 import { useRooms, useSidebarData } from "../chat/sidebar-data";
@@ -64,6 +65,7 @@ import {
   type RoomTask,
   type RoomTurn,
 } from "./discussions-api";
+import { teamsApi, type Team } from "../teams/teams-api";
 import { roomLabel, roomStatus } from "./rooms";
 import { RoomCanvas } from "./room-canvas";
 import { StepsDrawer } from "./steps-drawer";
@@ -376,11 +378,13 @@ function RoomView({
   onChanged: () => void;
 }) {
   const { data: session } = authClient.useSession();
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<DiscussionDetail>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [briefs, setBriefs] = useState<Proposal[]>([]);
   const [draft, setDraft] = useState("");
-  const [context, setContext] = useState<string>();
+  const [edit, setEdit] = useState<{ title: string; goal: string; context: string }>();
+  const [teams, setTeams] = useState<Team[]>([]);
   const [busy, setBusy] = useState(false);
   const [room, setRoom] = useState<{ turns: RoomTurn[]; tasks: RoomTask[] }>({
     turns: [],
@@ -413,6 +417,20 @@ function RoomView({
   useEffect(() => {
     void load();
   }, [load]);
+  // The teams a room can move into, and the shared context of its own team.
+  useEffect(() => {
+    teamsApi
+      .list()
+      .then(setTeams)
+      .catch(() => {});
+  }, [id]);
+  // Opening the room closes its "is waiting" card. Once per open, not on each poll; a failure leaves the card as it was.
+  useEffect(() => {
+    void discussionsApi
+      .seen(id)
+      .then(() => refreshAttention())
+      .catch(() => {});
+  }, [id]);
   // The room's goal loop: each step wakes the facilitator and the members discuss it; the room polling above shows the result.
   const goalLoop = useGoalLoop(
     detail?.discussion.conversationId,
@@ -452,19 +470,7 @@ function RoomView({
     },
     [bots, session?.user.name, session?.user.image],
   );
-  const rows = useMemo<Row[]>(() => {
-    const saved = messages.map((m) => ({
-      ...m,
-      createdAt: m.createdAt ?? new Date().toISOString(),
-      streaming: m.status === "running",
-    }));
-    const known = new Set(saved.filter((r) => r.status !== "running").map((r) => r.id));
-    const streaming = new Set(liveChat.rows.map((r) => r.id));
-    return [
-      ...saved.filter((r) => r.status !== "running" || !streaming.has(r.id)),
-      ...liveChat.rows.filter((r) => !known.has(r.id)),
-    ];
-  }, [messages, liveChat.rows]);
+  const rows = useMemo(() => transcriptRows(messages, liveChat.rows), [messages, liveChat.rows]);
 
   async function act(work: () => Promise<unknown>, done?: string) {
     setBusy(true);
@@ -501,7 +507,8 @@ function RoomView({
       </p>
     );
   const d = detail.discussion,
-    isClosed = closed(d.status);
+    isClosed = closed(d.status),
+    roomTeam = d.teamId ? teams.find((t) => t.id === d.teamId) : undefined;
   const running = detail.turns.find((t) => t.status === "running");
   const names = new Map(detail.members.map((m) => [m.botId, m.name]));
 
@@ -643,6 +650,26 @@ function RoomView({
                   <XCircleIcon />
                   Cancel room
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Delete this room? It stops and leaves your lists. Its history is kept.",
+                      )
+                    )
+                      void act(
+                        () =>
+                          discussionsApi
+                            .remove(id)
+                            .then(() => navigate({ to: "/rooms", search: {} })),
+                        "Room deleted.",
+                      );
+                  }}
+                >
+                  <TrashIcon />
+                  Delete room
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -676,12 +703,13 @@ function RoomView({
                 }, "The chief is on it.").then(() => setTeamGoal(undefined));
               }}
             >
-              <Textarea
+              <MentionTextarea
                 title="Goal"
                 rows={4}
                 maxLength={1000}
+                bots={bots}
                 value={teamGoal}
-                onChange={(e) => setTeamGoal(e.target.value)}
+                onChange={setTeamGoal}
               />
               <Button type="submit" disabled={busy || !teamGoal.trim()}>
                 Send to the chief
@@ -705,12 +733,13 @@ function RoomView({
                 );
               }}
             >
-              <Textarea
+              <MentionTextarea
                 title="Goal"
                 rows={3}
                 maxLength={500}
+                bots={bots}
                 value={loopForm.goal}
-                onChange={(e) => setLoopForm({ ...loopForm, goal: e.target.value })}
+                onChange={(goal) => setLoopForm({ ...loopForm, goal })}
               />
               <Input
                 title="Done when"
@@ -758,6 +787,7 @@ function RoomView({
             <MessageList
               key={d.conversationId}
               rows={rows}
+              bots={bots}
               authorOf={authorOf}
               busy={Boolean(working) || liveChat.busy}
               label="Room transcript"
@@ -765,10 +795,10 @@ function RoomView({
               actions={{
                 onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
                 onReply: () => {},
-                onSaveInstruction: (row) =>
+                onSaveToWiki: (row) =>
                   void chatClient
-                    .saveInstruction(d.title, row.content)
-                    .then(() => toast.success("Saved as an instruction."), fail),
+                    .saveToWiki(d.title, row.content)
+                    .then(() => toast.success("Saved to your wiki."), fail),
               }}
               intro={
                 rows.length === 0 ? (
@@ -811,7 +841,7 @@ function RoomView({
                   bots={bots.filter((b) => names.has(b.id))}
                   busy={busy}
                   conversationId={d.conversationId}
-                  instructions
+                  wiki
                   onSubmit={send}
                   onError={fail}
                 />
@@ -825,16 +855,27 @@ function RoomView({
           aria-label="Room details"
           className="max-h-[45%] min-w-0 shrink-0 space-y-5 overflow-x-hidden overflow-y-auto border-t p-4 text-sm break-words lg:max-h-none lg:w-80 lg:border-t-0 lg:border-l"
         >
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <h3 className="font-heading text-base font-medium">Details</h3>
-            <IconButton
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Close details"
-              onClick={() => setDetails(false)}
-            >
-              <XIcon />
-            </IconButton>
+            <div className="flex items-center gap-1">
+              {!isClosed && edit === undefined && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEdit({ title: d.title, goal: d.goal, context: d.context })}
+                >
+                  Edit
+                </Button>
+              )}
+              <IconButton
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Close details"
+                onClick={() => setDetails(false)}
+              >
+                <XIcon />
+              </IconButton>
+            </div>
           </div>
           {d.tainted && (
             <Alert theme="warn">
@@ -843,67 +884,113 @@ function RoomView({
               code wait for you to approve the brief.
             </Alert>
           )}
-          <div className="space-y-1">
-            <h4 className="label-mono">Goal</h4>
-            <p className="whitespace-pre-wrap">{d.goal || "(not set)"}</p>
-          </div>
-          {d.summary && (
-            <div className="space-y-1">
-              <h4 className="label-mono">Outcome</h4>
-              <p className="whitespace-pre-wrap">{d.summary}</p>
-            </div>
+          {d.kind === "room" && !isClosed && (
+            <Select
+              title="Type"
+              required={false}
+              disabled={busy}
+              value={d.teamId ?? ""}
+              onChange={(e) =>
+                void act(
+                  () => discussionsApi.setTeam(id, e.target.value || null),
+                  "Room type changed.",
+                )
+              }
+              options={[
+                { value: "", label: "Plain room" },
+                ...teams.map((t) => ({ value: t.id, label: `Team: ${t.name}` })),
+              ]}
+            />
           )}
-          <div className="space-y-1">
-            <h4 className="label-mono">
-              Shared context <span className="font-normal normal-case">v{d.contextVersion}</span>
-            </h4>
-            {context === undefined ? (
-              <>
-                <p className="whitespace-pre-wrap break-words">{d.context || "(empty)"}</p>
-                {!isClosed && (
-                  <Button size="sm" variant="outline" onClick={() => setContext(d.context)}>
-                    Edit
-                  </Button>
-                )}
-              </>
-            ) : (
-              <form
-                className="space-y-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void act(async () => {
-                    await discussionsApi.update(id, d.version, { context });
-                    setContext(undefined);
-                  }, "Context saved.");
-                }}
-              >
-                <Textarea
-                  title="Shared context"
-                  hiddenLabel
-                  rows={8}
-                  value={context}
-                  maxLength={8000}
-                  onChange={(e) => setContext(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Changing it asks again before a code bot acts on outside content.
-                </p>
-                <div className="flex gap-2">
-                  <Button size="sm" type="submit" disabled={busy}>
-                    Save
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    type="button"
-                    onClick={() => setContext(undefined)}
-                  >
-                    Discard
-                  </Button>
+          {edit === undefined ? (
+            <>
+              <div className="space-y-1">
+                <h4 className="label-mono">Goal</h4>
+                <p className="whitespace-pre-wrap">{d.goal || "(not set)"}</p>
+              </div>
+              {d.summary && (
+                <div className="space-y-1">
+                  <h4 className="label-mono">Outcome</h4>
+                  <p className="whitespace-pre-wrap">{d.summary}</p>
                 </div>
-              </form>
-            )}
-          </div>
+              )}
+              {roomTeam && (
+                <div className="space-y-1">
+                  <h4 className="label-mono">Team context</h4>
+                  <p className="line-clamp-6 whitespace-pre-wrap break-words">
+                    {roomTeam.context || "(empty)"}
+                  </p>
+                  <Link
+                    className="text-xs text-primary hover:underline"
+                    to="/teams/$teamId/settings"
+                    params={{ teamId: roomTeam.id }}
+                    search={{ room: id }}
+                  >
+                    Edit in team settings
+                  </Link>
+                </div>
+              )}
+              <div className="space-y-1">
+                <h4 className="label-mono">
+                  Room context <span className="font-normal normal-case">v{d.contextVersion}</span>
+                </h4>
+                <p className="whitespace-pre-wrap break-words">{d.context || "(empty)"}</p>
+              </div>
+            </>
+          ) : (
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void act(async () => {
+                  await discussionsApi.update(id, d.version, {
+                    title: edit.title.trim(),
+                    goal: edit.goal.trim(),
+                    context: edit.context,
+                  });
+                  setEdit(undefined);
+                }, "Room saved.");
+              }}
+            >
+              <Input
+                title="Title"
+                required
+                maxLength={120}
+                value={edit.title}
+                onChange={(e) => setEdit({ ...edit, title: e.target.value })}
+              />
+              <MentionTextarea
+                title="Goal"
+                required={false}
+                rows={3}
+                maxLength={1000}
+                bots={bots}
+                value={edit.goal}
+                onChange={(goal) => setEdit({ ...edit, goal })}
+              />
+              <MentionTextarea
+                title="Room context"
+                required={false}
+                rows={8}
+                maxLength={8000}
+                bots={bots}
+                value={edit.context}
+                onChange={(context) => setEdit({ ...edit, context })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Changing the goal or the context asks again before a code bot acts on outside
+                content.
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" type="submit" disabled={busy || !edit.title.trim()}>
+                  Save
+                </Button>
+                <Button size="sm" variant="ghost" type="button" onClick={() => setEdit(undefined)}>
+                  Discard
+                </Button>
+              </div>
+            </form>
+          )}
           <div className="space-y-2">
             <h4 className="label-mono">Bots</h4>
             <ul className="space-y-2.5">
@@ -968,18 +1055,43 @@ function NewRoom({
   const ready = bots.filter((b) => b.onboarded);
   const [task, setTask] = useState("");
   const [busy, setBusy] = useState(false);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamId, setTeamId] = useState("");
   const picked = mentionedBots(task, ready);
+  useEffect(() => {
+    // A team can start a room only with a chief and one more bot.
+    teamsApi
+      .list()
+      .then((all) =>
+        setTeams(
+          all.filter((t) => t.members.length >= 2 && t.members.some((m) => m.kind === "chief")),
+        ),
+      )
+      .catch(() => {});
+  }, []);
   async function submit(form: HTMLFormElement) {
     const f = new FormData(form);
+    const title = String(f.get("title") ?? "");
     setBusy(true);
     try {
-      const d = await discussionsApi.create({
-        title: String(f.get("title") ?? ""),
-        goal: task.trim(),
-        context: "",
-        members: picked.map((b) => ({ bot: b.id })),
-      });
-      onCreated(d.id);
+      if (teamId) {
+        // The team's chief and bots join; the team context is shared with the room.
+        const goal = task.trim();
+        onCreated(
+          await teamsApi.startRoom(teamId, {
+            title,
+            ...(goal ? { goal, firstMessage: goal } : {}),
+          }),
+        );
+      } else {
+        const d = await discussionsApi.create({
+          title,
+          goal: task.trim(),
+          context: "",
+          members: picked.map((b) => ({ bot: b.id })),
+        });
+        onCreated(d.id);
+      }
       void refreshAttention();
     } catch (e) {
       toast.error(errorMessage(e));
@@ -1013,6 +1125,16 @@ function NewRoom({
           placeholder="e.g. Login crash reported by a customer"
           autoFocus
         />
+        <Select
+          title="Team"
+          required={false}
+          value={teamId}
+          onChange={(e) => setTeamId(e.target.value)}
+          options={[
+            { value: "", label: "No team: I pick the bots" },
+            ...teams.map((t) => ({ value: t.id, label: t.name })),
+          ]}
+        />
         <MentionTextarea
           title="What should the bots do?"
           value={task}
@@ -1023,46 +1145,50 @@ function NewRoom({
           maxLength={1000}
           placeholder="Type @ to bring a bot in, e.g. @Dev fix the login crash, then @DaVinci check the screen"
         />
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">Bots</legend>
-          {ready.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No ready bots yet.</p>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {ready.map((b) => (
-                <label
-                  key={b.id}
-                  className="relative flex cursor-pointer items-start gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent/40 has-[:checked]:border-primary has-[:checked]:bg-primary/10 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring"
-                >
-                  <input
-                    type="checkbox"
-                    className="peer sr-only"
-                    checked={picked.some((p) => p.id === b.id)}
-                    onChange={(e) =>
-                      setTask((t) => (e.target.checked ? withMention(t, b) : withoutMention(t, b)))
-                    }
-                  />
-                  <BotAvatar bot={b} size={32} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{b.name}</span>
-                    {b.description && (
-                      <span className="line-clamp-2 text-xs text-muted-foreground">
-                        {b.description}
-                      </span>
-                    )}
-                  </span>
-                  <CheckCircleIcon
-                    weight="fill"
-                    aria-hidden="true"
-                    className="absolute top-2 right-2 size-4 text-primary opacity-0 peer-checked:opacity-100"
-                  />
-                </label>
-              ))}
-            </div>
-          )}
-        </fieldset>
+        {!teamId && (
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Bots</legend>
+            {ready.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No ready bots yet.</p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {ready.map((b) => (
+                  <label
+                    key={b.id}
+                    className="relative flex cursor-pointer items-start gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent/40 has-[:checked]:border-primary has-[:checked]:bg-primary/10 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring"
+                  >
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      checked={picked.some((p) => p.id === b.id)}
+                      onChange={(e) =>
+                        setTask((t) =>
+                          e.target.checked ? withMention(t, b) : withoutMention(t, b),
+                        )
+                      }
+                    />
+                    <BotAvatar bot={b} size={32} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{b.name}</span>
+                      {b.description && (
+                        <span className="line-clamp-2 text-xs text-muted-foreground">
+                          {b.description}
+                        </span>
+                      )}
+                    </span>
+                    <CheckCircleIcon
+                      weight="fill"
+                      aria-hidden="true"
+                      className="absolute top-2 right-2 size-4 text-primary opacity-0 peer-checked:opacity-100"
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
+        )}
         <div className="flex gap-2">
-          <Button type="submit" disabled={busy || picked.length === 0}>
+          <Button type="submit" disabled={busy || (!teamId && picked.length === 0)}>
             Start room
           </Button>
           <Button type="button" variant="ghost" onClick={onCancel}>

@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { readUIMessageStream, type UIMessageChunk } from "ai";
 
+import type { Message } from "./chat-client";
+
 import {
   dayLabel,
   groupMessages,
   liveRows,
   reuseRows,
   shouldAutoOpen,
+  transcriptRows,
   type Row,
   type ZettaUIMessage,
 } from "./chat-rows";
@@ -292,5 +295,59 @@ describe("reuseRows", () => {
     const prev = [row("a", "x", { computers: [{ id: "vm", name: "Desk" }] })];
     const next = [row("a", "x", { computers: [{ id: "vm", name: "Laptop" }] })];
     expect(reuseRows(prev, next)[0]).toBe(next[0]!);
+  });
+});
+
+describe("transcriptRows", () => {
+  const saved = (m: Partial<Message> & { id: string }) =>
+    ({
+      role: "assistant",
+      content: "",
+      seq: 1,
+      createdAt: "2026-10-26T10:00:00.000Z",
+      ...m,
+    }) as Message;
+  const live = (r: Partial<Row> & { id: string }) =>
+    ({
+      role: "assistant",
+      content: "",
+      seq: Number.MAX_SAFE_INTEGER,
+      createdAt: "2026-10-26T10:00:00.000Z",
+      ...r,
+    }) as Row;
+
+  test("shows saved top-level messages only", () => {
+    const rows = transcriptRows([saved({ id: "a" }), saved({ id: "b", parentMessageId: "a" })], []);
+    expect(rows.map((r) => r.id)).toEqual(["a"]);
+  });
+  test("appends a live reply that is not saved yet", () => {
+    const rows = transcriptRows([saved({ id: "a" })], [live({ id: "x", content: "Hi" })]);
+    expect(rows.map((r) => r.id)).toEqual(["a", "x"]);
+  });
+  test("a saved reply that is still running yields to its live row", () => {
+    const rows = transcriptRows(
+      [saved({ id: "a", status: "running" })],
+      [live({ id: "a", content: "Working", activity: "Running postgres.db_overview" })],
+    );
+    expect(rows.map((r) => [r.id, r.activity])).toEqual([["a", "Running postgres.db_overview"]]);
+  });
+  test("a finished saved reply wins over its live row", () => {
+    const rows = transcriptRows(
+      [saved({ id: "a", status: "complete", content: "Done" })],
+      [live({ id: "a", content: "Do" })],
+    );
+    expect(rows.map((r) => r.content)).toEqual(["Done"]);
+  });
+  test("drops a live user row already saved under another id", () => {
+    const now = new Date().toISOString();
+    const rows = transcriptRows(
+      [saved({ id: "u1", role: "user", content: "Hello", createdAt: now })],
+      [live({ id: "client-1", role: "user", content: "Hello" })],
+    );
+    expect(rows.map((r) => r.id)).toEqual(["u1"]);
+  });
+  test("keeps the same row object for an unchanged saved message", () => {
+    const m = saved({ id: "a" });
+    expect(transcriptRows([m], [])[0]).toBe(transcriptRows([m], [])[0]!);
   });
 });

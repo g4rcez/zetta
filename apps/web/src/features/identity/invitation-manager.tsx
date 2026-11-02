@@ -6,10 +6,13 @@ import z from "zod";
 import { getIdentityError, identityClient, type IssuedInvitation } from "@/lib/identity-client";
 
 import { AuthField } from "./auth-field";
+import { useTimeFormat } from "@/features/preferences/preferences";
+import { formatDateTime } from "@/features/preferences/time-format";
 
 type DisplayedInvitation = Omit<IssuedInvitation, "token"> & { token: string | null };
 
 export function InvitationManager() {
+  const tf = useTimeFormat();
   const [invitation, setInvitation] = useState<DisplayedInvitation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
@@ -158,9 +161,7 @@ export function InvitationManager() {
           <p className="break-all text-sm">Invitation ID: {invitation.invitationId}</p>
           <p className="text-sm">
             Expires:{" "}
-            <time dateTime={invitation.expiresAt}>
-              {new Date(invitation.expiresAt).toLocaleString()}
-            </time>
+            <time dateTime={invitation.expiresAt}>{formatDateTime(invitation.expiresAt, tf)}</time>
           </p>
           {invitation.token ? (
             <>

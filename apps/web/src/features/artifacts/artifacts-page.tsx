@@ -34,6 +34,8 @@ import {
   type ArtifactUsage,
 } from "./artifacts-api";
 import { groupVersions } from "./versions";
+import { useTimeFormat } from "@/features/preferences/preferences";
+import { formatDateTime } from "@/features/preferences/time-format";
 
 export const KIND_ICON: Record<ArtifactKind, PhosphorIcon> = {
   html: GlobeIcon,
@@ -316,6 +318,7 @@ function Row({
   onRemove: (a: Artifact) => void;
   children?: React.ReactNode;
 }) {
+  const tf = useTimeFormat();
   const Icon = KIND_ICON[a.kind];
   const author = a.botId ? (byId.get(a.botId) ?? { id: a.botId, name: "Deleted bot" }) : undefined;
   return (
@@ -342,7 +345,7 @@ function Row({
         </span>
         <time
           dateTime={a.createdAt}
-          title={new Date(a.createdAt).toLocaleString()}
+          title={formatDateTime(a.createdAt, tf)}
           className="w-24 shrink-0 text-right text-xs text-muted-foreground"
         >
           {ago(a.createdAt)}

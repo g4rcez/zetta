@@ -14,6 +14,8 @@ import { BotIdentity } from "@/components/bot-identity";
 import { Drawer } from "@/components/drawer";
 import { Response } from "../chat/response";
 import type { DiscussionTurn, RoomTask, RoomTurn, TurnStep } from "./discussions-api";
+import { useTimeFormat } from "@/features/preferences/preferences";
+import { formatTime, type TimeFormat } from "@/features/preferences/time-format";
 
 const ICON: Record<TurnStep["kind"], Icon> = {
   activity: CircleNotchIcon,
@@ -40,8 +42,8 @@ const TASK_CLASS: Record<RoomTask["status"], string> = {
   review: "bg-warn/15 text-warn",
   done: "bg-success/15 text-success",
 };
-const time = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const time = (iso: string, f: TimeFormat) =>
+  formatTime(iso, f, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const seconds = (a: string, b: string | null) =>
   b ? Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 1000)) : undefined;
 
@@ -59,6 +61,7 @@ export function StepsDrawer({
   tasks: RoomTask[];
   onClose: () => void;
 }) {
+  const tf = useTimeFormat();
   return (
     <Drawer
       open
@@ -124,7 +127,7 @@ export function StepsDrawer({
                         <p className="flex items-baseline justify-between gap-2">
                           <span className="font-medium">{s.label}</span>
                           <time className="shrink-0 text-xs text-muted-foreground" dateTime={s.at}>
-                            {time(s.at)}
+                            {time(s.at, tf)}
                           </time>
                         </p>
                         {s.detail &&

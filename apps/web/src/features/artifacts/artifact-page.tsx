@@ -21,12 +21,15 @@ import {
   type Artifact,
 } from "./artifacts-api";
 import { ArtifactViewer } from "./viewers";
+import { useTimeFormat } from "@/features/preferences/preferences";
+import { formatDateTime } from "@/features/preferences/time-format";
 
 const action =
   "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-muted";
 
 /** One artifact: who made it and when, the actions, and a built-in preview chosen by its file type. */
 export function ArtifactPage({ id }: { id: string }) {
+  const tf = useTimeFormat();
   const navigate = useNavigate();
   const [artifact, setArtifact] = useState<Artifact | null>();
   const [bot, setBot] = useState<Bot>();
@@ -80,7 +83,7 @@ export function ArtifactPage({ id }: { id: string }) {
                   {artifact.fileName} · {formatSize(artifact.size)} · {artifact.mimeType} ·{" "}
                   <time
                     dateTime={artifact.createdAt}
-                    title={new Date(artifact.createdAt).toLocaleString()}
+                    title={formatDateTime(artifact.createdAt, tf)}
                   >
                     {ago(artifact.createdAt)}
                   </time>

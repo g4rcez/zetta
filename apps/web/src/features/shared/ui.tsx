@@ -1,8 +1,10 @@
+import { CheckIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Modal as LibModal } from "@/components/ui";
 import { Skeleton } from "@g4rcez/components";
 
 import { call, errorMessage } from "../chat/chat-client";
+import { formatDateTime, type TimeFormat } from "@/features/preferences/time-format";
 
 export const field =
   "w-full min-w-0 rounded-md border border-input bg-muted/40 px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring/40";
@@ -89,7 +91,8 @@ export function Panel({
     </section>
   );
 }
-export const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : "-");
+export const when = (iso: string | null | undefined, f: TimeFormat) =>
+  iso ? formatDateTime(iso, f) : "-";
 
 /** Loads `{[key]: T[]}` from a GET endpoint. */
 export function useList<T>(path: string, key: string, onError: (m: string) => void) {
@@ -186,5 +189,56 @@ export function Modal({
     >
       <div className="flex flex-col gap-3 text-sm">{children}</div>
     </LibModal>
+  );
+}
+
+/** A selectable tile backed by a real radio input, so arrow keys, focus and screen readers behave natively. */
+export function Choice({
+  name,
+  value,
+  checked,
+  onSelect,
+  title,
+  art,
+  children,
+  className = "",
+}: {
+  name: string;
+  value: string;
+  checked: boolean;
+  onSelect: (v: string) => void;
+  title: ReactNode;
+  art?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <label
+      className={`relative flex cursor-pointer gap-4 rounded-lg border p-4 text-sm transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring ${checked ? "border-primary bg-primary/[0.06]" : "bg-card hover:border-foreground/25"} ${className}`}
+    >
+      <input
+        type="radio"
+        name={name}
+        value={value}
+        checked={checked}
+        onChange={() => onSelect(value)}
+        className="sr-only"
+      />
+      {art}
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex items-center justify-between gap-2 font-medium">
+          {title}
+          <span
+            aria-hidden="true"
+            className={`grid size-4 shrink-0 place-items-center rounded-full ${checked ? "bg-primary text-primary-foreground" : "ring-1 ring-border"}`}
+          >
+            {checked && <CheckIcon className="size-3" />}
+          </span>
+        </span>
+        {children && (
+          <span className="text-sm leading-snug text-pretty text-muted-foreground">{children}</span>
+        )}
+      </span>
+    </label>
   );
 }

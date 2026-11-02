@@ -1,19 +1,29 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
-import { TASK_STATUSES, type TaskStore } from "./store";
+import { TASK_PRIORITIES, TASK_STATUSES, type TaskStore } from "./store";
 
 export type TaskServices = { access: ReturnType<typeof createIdentityAccess>; tasks: TaskStore };
 const status = z.enum(TASK_STATUSES);
+const priority = z.enum(TASK_PRIORITIES);
+/** Labels are free text: lowercase, trimmed, no repeats. */
+const labels = z
+  .array(z.string().trim().min(1).max(32))
+  .max(10)
+  .transform((all) => [...new Set(all.map((l) => l.toLowerCase()))]);
 const create = z.strictObject({
   title: z.string().trim().min(1).max(200),
   description: z.string().max(4000).optional(),
   status: status.optional(),
+  priority: priority.optional(),
+  labels: labels.optional(),
 });
 const patch = z.strictObject({
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(4000).optional(),
   status: status.optional(),
+  priority: priority.optional(),
+  labels: labels.optional(),
 });
 const out = (body: unknown, code = 200) =>
   Response.json(body, { status: code, headers: { "cache-control": "no-store" } });
@@ -77,6 +87,10 @@ export function createTaskRoutes(
     .get(
       "/tasks",
       g(async (c) => ({ tasks: await tasks.list(c.actor) })),
+    )
+    .get(
+      "/tasks/:id",
+      g(async (c) => ({ task: await tasks.get(c.actor, id(c)) })),
     )
     .post(
       "/tasks",

@@ -13,7 +13,11 @@ import { cn } from "@zetta/ui/lib/utils";
 
 import { appLinks } from "@/components/app-links";
 import { BotAvatar } from "@/components/bot-avatar";
-import { useAttentionSummary, useBotAttention } from "@/features/attention/summary";
+import {
+  useAttentionSummary,
+  useBotAttention,
+  useRoutineUnread,
+} from "@/features/attention/summary";
 import {
   SidebarTree,
   orderBots,
@@ -34,7 +38,7 @@ import UserMenu from "./user-menu";
 type AppLink = (typeof appLinks)[number];
 const linkOf = (label: AppLink["label"]) => appLinks.find((l) => l.label === label)!;
 /** DESIGN.md "Sidebar structure": the daily destinations stay fixed on top; building and oversight sit under More. */
-const FIXED = [linkOf("Inbox"), linkOf("Tasks"), linkOf("Routines")];
+const FIXED = [linkOf("Inbox"), linkOf("Tasks"), linkOf("Routines"), linkOf("Wiki")];
 const MORE = [
   linkOf("Agenda"),
   linkOf("Studio"),
@@ -118,28 +122,55 @@ function NavRow({
   );
 }
 
-/** Inbox count: amber, because it means a person is needed (DESIGN.md "The Attention Rule"). */
-function InboxBadge({ collapsed }: { collapsed: boolean }) {
-  const attention = useAttentionSummary();
-  const unread = attention?.unread ?? 0;
-  if (!unread) return null;
-  const label = <span className="sr-only">({unread} unread)</span>;
+/** A count on a nav row: a dot when the rail is collapsed, a pill when it is open. Amber is only for "a person is needed" (DESIGN.md "The Attention Rule"). */
+function CountBadge({
+  collapsed,
+  count,
+  tone,
+}: {
+  collapsed: boolean;
+  count: number;
+  tone: "attention" | "quiet";
+}) {
+  if (!count) return null;
+  const label = <span className="sr-only">({count} unread)</span>;
   if (collapsed)
     return (
       <>
         {label}
         <span
           aria-hidden="true"
-          className="absolute top-1 right-1 size-2 rounded-full border border-sidebar bg-attention"
+          className={cn(
+            "absolute top-1 right-1 size-2 rounded-full border border-sidebar",
+            tone === "attention" ? "bg-attention" : "bg-muted-foreground",
+          )}
         />
       </>
     );
   return (
-    <span className="rounded-sm bg-attention px-1.5 text-xs leading-5 font-medium tabular-nums text-attention-foreground">
+    <span
+      className={cn(
+        "rounded-sm px-1.5 text-xs leading-5 font-medium tabular-nums",
+        tone === "attention"
+          ? "bg-attention text-attention-foreground"
+          : "bg-sidebar-accent text-sidebar-foreground",
+      )}
+    >
       {label}
-      <span aria-hidden="true">{unread > 99 ? "99+" : unread}</span>
+      <span aria-hidden="true">{count > 99 ? "99+" : count}</span>
     </span>
   );
+}
+
+/** Inbox count: amber, because it means a person is needed. */
+function InboxBadge({ collapsed }: { collapsed: boolean }) {
+  const attention = useAttentionSummary();
+  return <CountBadge collapsed={collapsed} count={attention?.unread ?? 0} tone="attention" />;
+}
+
+/** Routine runs not opened yet: quiet, a result to read and not a request. */
+function RoutinesBadge({ collapsed }: { collapsed: boolean }) {
+  return <CountBadge collapsed={collapsed} count={useRoutineUnread()} tone="quiet" />;
 }
 
 /** The collapsed rail shows each bot as its avatar, in the same order as the full sidebar, with the attention dot kept. */
@@ -359,7 +390,13 @@ export function AppSidebar({
             key={l.label}
             link={l}
             collapsed={collapsed}
-            badge={l.label === "Inbox" ? <InboxBadge collapsed={collapsed} /> : undefined}
+            badge={
+              l.label === "Inbox" ? (
+                <InboxBadge collapsed={collapsed} />
+              ) : l.label === "Routines" ? (
+                <RoutinesBadge collapsed={collapsed} />
+              ) : undefined
+            }
           />
         ))}
       </nav>

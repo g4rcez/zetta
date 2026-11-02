@@ -6,7 +6,8 @@ export const toWidth = (n: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(n)));
 
 /**
- * A draggable divider on the right edge of a sidebar. The parent must be `relative`.
+ * A draggable divider on one edge of a panel (right by default). The parent must be `relative`.
+ * With `edge="left"` the panel sits on the right of the page, so dragging left makes it wider.
  * Drag, use the arrow keys (Shift for bigger steps), or double-click to restore the default width.
  */
 export function ResizeHandle({
@@ -15,6 +16,7 @@ export function ResizeHandle({
   min,
   max,
   fallback,
+  edge = "right",
   onChange,
   onDragging,
 }: {
@@ -23,13 +25,15 @@ export function ResizeHandle({
   min: number;
   max: number;
   fallback: number;
+  edge?: "left" | "right";
   onChange: (width: number) => void;
   onDragging?: (dragging: boolean) => void;
 }) {
+  const dir = edge === "left" ? -1 : 1;
   const start = useRef<{ x: number; width: number }>(undefined);
   const move = (event: PointerEvent<HTMLDivElement>) => {
     if (!start.current) return;
-    onChange(toWidth(start.current.width + event.clientX - start.current.x, min, max));
+    onChange(toWidth(start.current.width + dir * (event.clientX - start.current.x), min, max));
   };
   const end = () => {
     start.current = undefined;
@@ -39,9 +43,9 @@ export function ResizeHandle({
     const step = event.shiftKey ? STEP * 4 : STEP;
     const next =
       event.key === "ArrowLeft"
-        ? value - step
+        ? value - dir * step
         : event.key === "ArrowRight"
-          ? value + step
+          ? value + dir * step
           : event.key === "Home"
             ? min
             : event.key === "End"
@@ -61,7 +65,7 @@ export function ResizeHandle({
       aria-valuemax={max}
       tabIndex={0}
       title="Drag to resize. Double-click to reset."
-      className="absolute inset-y-0 right-0 z-20 hidden w-1.5 cursor-col-resize touch-none select-none transition-colors hover:bg-ring/40 focus-visible:bg-ring/60 active:bg-ring/60 md:block"
+      className={`absolute inset-y-0 ${edge === "left" ? "left-0" : "right-0"} z-20 hidden w-1.5 cursor-col-resize touch-none select-none transition-colors hover:bg-ring/40 focus-visible:bg-ring/60 active:bg-ring/60 md:block`}
       onPointerDown={(event) => {
         event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);

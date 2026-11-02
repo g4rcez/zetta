@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { user } from "./auth";
+import { OUTPUT_STYLE_KEYS, outputStyle } from "./output-styles";
 import { searchVector } from "./search";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
@@ -60,24 +61,42 @@ export const bot = pgTable(
     slug: text("slug").notNull(),
     description: text("description").default("").notNull(),
     harness: text("harness", {
-      enum: ["pi", "codex", "omp", "claude-code", "opencode", "cursor", "hermes", "fixture"],
+      enum: [
+        "pi",
+        "codex",
+        "omp",
+        "claude-code",
+        "opencode",
+        "cursor",
+        "hermes",
+        "fixture",
+        "decision",
+      ],
     })
       .default("fixture")
       .notNull(),
     model: text("model"),
     personality: text("personality").default("").notNull(),
     instructions: text("instructions").default("").notNull(),
+    // Tone of voice: a built-in key, or `custom` + `output_style_id` (live reference, so edits reach every bot using it).
+    outputStyle: text("output_style", { enum: OUTPUT_STYLE_KEYS }).default("default").notNull(),
+    outputStyleId: uuid("output_style_id").references(() => outputStyle.id, restrict),
     // Picture: a frontend-built SVG preset with its colors, or an uploaded image (data URL). Null = generated default.
     avatar: jsonb("avatar").$type<
       { kind: "preset"; preset: string; colors: string[] } | { kind: "image"; src: string }
     >(),
-    onboarded: boolean("onboarded").default(false).notNull(),
+    onboarded: boolean("onboarded").default(true).notNull(),
     // Computer use the owner granted this bot: off (default), browser only, or browser + desktop.
     computerMode: text("computer_mode", { enum: ["off", "browser", "desktop"] })
       .default("off")
       .notNull(),
     // Code access the owner granted this bot: a persistent per-user workspace where it can run git, edit files and push. On by default.
     codeAccess: boolean("code_access").default(true).notNull(),
+    // Who a commit of this bot is signed as: the server's git config (default), the bot's own address, the owner's account, or `commit_email`.
+    commitIdentity: text("commit_identity", { enum: ["git-config", "bot", "account", "custom"] })
+      .default("git-config")
+      .notNull(),
+    commitEmail: text("commit_email"),
     // Connections this bot needs before it is ready ([{ key, provider }]); bound per user in bot_connection.
     requiredConnections: jsonb("required_connections")
       .$type<{ key: string; provider: string }[]>()
@@ -100,6 +119,11 @@ export const bot = pgTable(
       sql`${table.kind} <> 'chief' or ${table.visibility} = 'private'`,
     ),
     check("bot_name_check", sql`length(btrim(${table.name})) between 1 and 80`),
+    index("bot_output_style_id_idx").on(table.outputStyleId),
+    check(
+      "bot_output_style_check",
+      sql`(${table.outputStyle} = 'custom') = (${table.outputStyleId} is not null)`,
+    ),
     uniqueIndex("bot_slug_key").on(table.slug),
     check(
       "bot_slug_check",
@@ -125,6 +149,10 @@ export const conversation = pgTable(
       .default("chat")
       .notNull(),
     title: text("title").default("New chat").notNull(),
+    // Like tmux automatic-rename: a person's rename sets "manual" and the bot turn never names the chat again.
+    titleSource: text("title_source", { enum: ["auto", "manual"] })
+      .default("auto")
+      .notNull(),
     pinned: boolean("pinned").default(false).notNull(),
     favorite: boolean("favorite").default(false).notNull(),
     /** Threads: an archived conversation leaves the tab bar and lists, and opening it restores it. */
@@ -215,7 +243,7 @@ export const chatQueue = pgTable(
     // Starts of this answer; a message that keeps failing (or crashing the process) stops at a limit instead of looping.
     attempts: integer("attempts").default(0).notNull(),
     reasonCode: text("reason_code"),
-    // Send options read when the answer runs: { fileRefs, instructionIds }.
+    // Send options read when the answer runs: { fileRefs, wikiIds }.
     input: jsonb("input"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },

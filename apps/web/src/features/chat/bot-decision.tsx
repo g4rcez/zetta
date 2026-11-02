@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Button, Checkbox, Input, Select, Textarea } from "@/components/ui";
+import { Button, Checkbox, Input, Select } from "@/components/ui";
+import { MentionTextarea } from "./mention";
+import { LayaOffNote } from "../studio/laya-switch";
 
 import {
   ApiError,
@@ -76,6 +78,9 @@ export function BotDecision({ bot, bots }: { bot: Bot; bots: Bot[] }) {
   const setOpt = (i: number, p: Partial<DecisionOption>) =>
     setCfg({ ...cfg, options: cfg.options.map((o, k) => (k === i ? { ...o, ...p } : o)) });
   const others = bots.filter((b) => b.id !== bot.id);
+  // A decision-only bot (harness "decision") has no AI: its model picks an option and the option's reply is the whole answer.
+  const only = bot.harness === "decision";
+  const engine = only ? (bot.model === "jev" ? "jev" : "laya") : (cfg.backend ?? "laya");
   const labels = cfg.options.map((o) => o.label.trim());
   const problem =
     cfg.options.length < 2
@@ -86,19 +91,24 @@ export function BotDecision({ bot, bots }: { bot: Bot; bots: Bot[] }) {
           ? "Option names must be different."
           : cfg.options.some((o) => o.action === "delegate" && !o.targetBotId)
             ? "Choose which bot to hand over to."
-            : undefined;
+            : only && cfg.options.some((o) => o.action !== "delegate" && !o.reply?.trim())
+              ? "Every option needs a reply, because this bot has no AI to write one."
+              : undefined;
   async function save() {
     setError(undefined);
     setStatus(undefined);
     const clean: DecisionConfig = {
       ...cfg!,
-      backend: cfg!.backend ?? "laya",
+      enabled: only || cfg!.enabled,
+      backend: engine,
       options: cfg!.options.map((o) => ({
         label: o.label.trim(),
         description: o.description.trim(),
         action: o.action,
         ...(o.action === "delegate" ? { targetBotId: o.targetBotId } : {}),
-        ...(o.action === "ask_user" || o.action === "stop" ? { reply: o.reply ?? "" } : {}),
+        ...(o.action === "ask_user" || o.action === "stop" || (only && o.action === "respond")
+          ? { reply: o.reply ?? "" }
+          : {}),
       })),
     };
     try {
@@ -125,27 +135,33 @@ export function BotDecision({ bot, bots }: { bot: Bot; bots: Bot[] }) {
     <section aria-label="Decision routing" className="space-y-4 rounded-xl border bg-card p-5">
       <h3 className="font-medium">Decision routing</h3>
       <p className="text-xs text-muted-foreground">
-        Before answering, the built-in decision model (Laya) can sort each message into one of your
-        options and act on it.
+        {only
+          ? `This bot has no AI. ${engine === "jev" ? "Jev" : "Laya"} sorts each message into one of your options and the bot sends that option's reply. Change the model in the bot's general settings.`
+          : "Before answering, the built-in decision model (Laya) can sort each message into one of your options and act on it."}
       </p>
-      <Checkbox
-        checked={cfg.enabled}
-        onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })}
-      >
-        Use routing for this bot
-      </Checkbox>
-      <Select
-        title="Decision engine"
-        container="ml-2 rounded-md border bg-muted/40 px-1"
-        required={false}
-        value={cfg.backend ?? "laya"}
-        onChange={(e) => setCfg({ ...cfg, backend: e.target.value as "laya" | "jev" })}
-        options={[
-          { value: "laya", label: "Laya (built in, free, private)" },
-          { value: "jev", label: "Jev (Typesafe, hosted) - not verified yet" },
-        ]}
-      />
-      {cfg.backend === "jev" && (
+      {engine === "laya" && <LayaOffNote />}
+      {!only && (
+        <>
+          <Checkbox
+            checked={cfg.enabled}
+            onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })}
+          >
+            Use routing for this bot
+          </Checkbox>
+          <Select
+            title="Decision engine"
+            container="ml-2 rounded-md border bg-muted/40 px-1"
+            required={false}
+            value={cfg.backend ?? "laya"}
+            onChange={(e) => setCfg({ ...cfg, backend: e.target.value as "laya" | "jev" })}
+            options={[
+              { value: "laya", label: "Laya (built in, free, private)" },
+              { value: "jev", label: "Jev (Typesafe, hosted) - not verified yet" },
+            ]}
+          />
+        </>
+      )}
+      {engine === "jev" && (
         <p className="text-xs text-muted-foreground">
           Jev sends the message text to Typesafe and needs your own Jev key under Studio &gt;
           Accounts. It has not been verified against the real service.
@@ -208,7 +224,9 @@ export function BotDecision({ bot, bots }: { bot: Bot; bots: Bot[] }) {
                 options={others.map((b) => ({ value: b.id, label: b.name }))}
               />
             )}
-            {(o.action === "ask_user" || o.action === "stop") && (
+            {(o.action === "ask_user" ||
+              o.action === "stop" ||
+              (only && o.action === "respond")) && (
               <Input
                 title="Reply"
                 value={o.reply ?? ""}
@@ -249,11 +267,12 @@ export function BotDecision({ bot, bots }: { bot: Bot; bots: Bot[] }) {
         </Button>
       </div>
       <div className="space-y-1 rounded-md border bg-card p-3">
-        <Textarea
+        <MentionTextarea
           title="Preview: type a message to see what routing would do (saved settings are used)"
-          container="mt-0.5"
+          className="mt-0.5"
+          bots={bots}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={setText}
           rows={2}
         />
         <Button

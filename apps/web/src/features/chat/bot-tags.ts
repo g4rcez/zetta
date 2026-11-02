@@ -15,7 +15,7 @@ type Node = {
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** Elements whose text stays as written: code, links, and the tags this plugin already made. */
-const SKIP = new Set(["code", "pre", "a", "bot-tag"]);
+const SKIP = new Set(["code", "pre", "a", "bot-tag", "gh-ref"]);
 
 export type TagPart = { text: string } | { text: string; bot: TagBot };
 

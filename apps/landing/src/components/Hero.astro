@@ -1,0 +1,85 @@
+---
+import Hub from "./Hub.astro";
+import { getCopy, type Locale } from "../i18n";
+import { REPO } from "../links";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = getCopy(locale).hero;
+---
+
+<section class="hero">
+  <svg class="dots" aria-hidden="true" focusable="false">
+    <defs>
+      <pattern id="hero-dots" width="24" height="24" patternUnits="userSpaceOnUse">
+        <circle cx="12" cy="12" r="1.25" fill="currentColor" />
+      </pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#hero-dots)" />
+  </svg>
+  <div class="wrap">
+    <div class="copy">
+      <h1>{t.title}</h1>
+      <p class="lead">{t.lead}</p>
+      <div class="row">
+        <a class="btn btn-primary" href="#self-host">{t.primary}</a>
+        <a class="btn" href={REPO} target="_blank" rel="noopener noreferrer">{t.secondary}</a>
+      </div>
+      <p class="note">{t.note}</p>
+    </div>
+    <Hub locale={locale} />
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    padding-block: 88px 96px;
+    overflow: hidden;
+  }
+  /* A dotted canvas under the diagram, fading out behind the headline. The wrap sits above it. */
+  .dots {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    color: var(--input);
+    opacity: 0.45;
+    mask: linear-gradient(to bottom, transparent 20%, black 60%);
+  }
+  .hero > .wrap {
+    position: relative;
+  }
+  .copy {
+    display: grid;
+    justify-items: center;
+    gap: 28px;
+    text-align: center;
+  }
+  h1 {
+    max-width: 15em;
+  }
+  .lead {
+    max-width: 62ch;
+    text-wrap: balance;
+  }
+  .note {
+    color: var(--muted-foreground);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .copy + :global(.hub) {
+    margin-top: 72px;
+  }
+  @media (max-width: 720px) {
+    .hero {
+      padding-block: 56px 64px;
+    }
+    .copy + :global(.hub) {
+      margin-top: 48px;
+    }
+  }
+</style>

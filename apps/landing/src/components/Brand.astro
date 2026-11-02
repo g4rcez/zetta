@@ -1,0 +1,28 @@
+---
+// A vendor's mark from the app's plugin catalog (see src/cast.ts). Decorative; the vendor's name is always written next to it.
+import { logoOf } from "../cast";
+
+interface Props {
+  name: string;
+  size?: number;
+}
+
+const { name, size = 20 } = Astro.props;
+const logo = logoOf(name);
+---
+
+{logo ? <img class:list={["brand", { plate: logo.plate }]} src={logo.src} width={size} height={size} alt="" loading="lazy" decoding="async" /> : null}
+
+<style>
+  .brand {
+    flex: none;
+    display: block;
+    border-radius: 22%;
+    object-fit: contain;
+  }
+  /* Dark marks (GitHub) sit on a white tile, as in the app. */
+  .plate {
+    padding: 1px;
+    background: #ffffff;
+  }
+</style>

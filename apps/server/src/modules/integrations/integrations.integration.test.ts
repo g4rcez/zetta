@@ -419,7 +419,7 @@ suite("MCP integrations and sources against compose postgres", () => {
       content: "check my mail",
     });
     expect(r.json.assistant.content).toContain(
-      "Google (Gmail, Calendar, Drive): gmail search didn't work",
+      "Google (Gmail, Calendar, Drive, Docs, Sheets): gmail search didn't work",
     );
     expect(r.json.assistant.content).toContain("What you can do:");
     expect(r.json.assistant.content).toContain("Then ask Mailer to try again");

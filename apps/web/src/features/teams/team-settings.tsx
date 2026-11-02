@@ -3,13 +3,13 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { Button, Input, Textarea } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 
 import { errorMessage } from "../chat/chat-client";
+import { MentionTextarea } from "../chat/mention";
 import { useSidebarData } from "../chat/sidebar-data";
-import { discussionsApi } from "../discussions/discussions-api";
 import { Badge, Empty, list, listItem, Loading, Panel } from "../shared/ui";
-import { RoleField, RolesDialog, useTeamRoles } from "./team-roles";
+import { RoleField, useTeamRoles } from "./team-roles";
 import {
   TEAM_SIZE_WARNING,
   TEAM_SIZE_WARNING_AT,
@@ -36,7 +36,7 @@ function BackLink({ roomId }: { roomId?: string | undefined }) {
 
 /**
  * Settings of one team, opened from the room header like a bot's settings. Adding or removing bots stays on the Teams canvas.
- * The room (whose name must stay unique) is renamed first, so a clash fails before the team changes.
+ * A team has many rooms, so a room's title, goal and context are edited in the room itself; `roomId` only gives the way back.
  */
 export function TeamSettingsPage({
   teamId,
@@ -45,25 +45,26 @@ export function TeamSettingsPage({
   teamId: string;
   roomId?: string | undefined;
 }) {
-  const { reloadRooms } = useSidebarData();
+  const { reloadRooms, bots } = useSidebarData();
   const [team, setTeam] = useState<Team>();
   const [name, setName] = useState("");
   const [goal, setGoal] = useState("");
   const [members, setMembers] = useState<TeamMember[]>([]);
+  const [context, setContext] = useState("");
   const [error, setError] = useState<string>();
   const [loadError, setLoadError] = useState<string>();
   const [saving, setSaving] = useState(false);
-  const { roles, reload: reloadRoles } = useTeamRoles();
-  const [rolesOpen, setRolesOpen] = useState(false);
+  const { roles } = useTeamRoles();
   const fill = (t: Team) => {
     setTeam(t);
     setName(t.name);
     setGoal(t.goal);
+    setContext(t.context);
     setMembers(t.members);
   };
   useEffect(() => {
     setLoadError(undefined);
-    void teamsApi
+    teamsApi
       .get(teamId)
       .then(fill)
       .catch((e) => setLoadError(errorMessage(e)));
@@ -77,29 +78,17 @@ export function TeamSettingsPage({
         kind: m.botId === botId ? ("chief" as const) : ("member" as const),
       })),
     );
-  async function renameRoom(changed: { name?: string; goal?: string }) {
-    if (!roomId) return;
-    const { discussion } = await discussionsApi.get(roomId);
-    await discussionsApi.update(roomId, discussion.version, {
-      ...(changed.name !== undefined ? { title: changed.name } : {}),
-      ...(changed.goal !== undefined ? { goal: changed.goal } : {}),
-    });
-  }
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!team) return;
     setError(undefined);
     setSaving(true);
     try {
-      const next = { name: name.trim(), goal: goal.trim() };
-      const changed = {
-        ...(next.name !== team.name ? { name: next.name } : {}),
-        ...(next.goal !== team.goal ? { goal: next.goal } : {}),
-      };
-      if (Object.keys(changed).length) await renameRoom(changed);
       const saved = await teamsApi.save(team.id, {
         expectedVersion: team.version,
-        ...next,
+        name: name.trim(),
+        goal: goal.trim(),
+        context,
         canvas: team.canvas,
         members: members.map(({ botId, kind, roleId, canvas }) => ({
           botId,
@@ -135,6 +124,7 @@ export function TeamSettingsPage({
   const dirty =
     name.trim() !== team.name ||
     goal.trim() !== team.goal ||
+    context !== team.context ||
     JSON.stringify(members.map((m) => [m.botId, m.kind, m.roleId])) !==
       JSON.stringify(team.members.map((m) => [m.botId, m.kind, m.roleId]));
   const chief = members.find((m) => m.kind === "chief");
@@ -173,16 +163,33 @@ export function TeamSettingsPage({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
-              <Textarea
+              <MentionTextarea
                 title="Goal"
                 reportStatus={false}
                 required={false}
                 rows={4}
                 maxLength={1000}
+                bots={bots}
                 value={goal}
-                onChange={(e) => setGoal(e.target.value)}
+                onChange={setGoal}
               />
             </div>
+          </Panel>
+          <Panel
+            title="Team context"
+            description="What every bot reads in every room of this team, before the room's own context."
+          >
+            <MentionTextarea
+              title="Team context"
+              hiddenLabel
+              reportStatus={false}
+              required={false}
+              rows={8}
+              maxLength={8000}
+              bots={bots}
+              value={context}
+              onChange={setContext}
+            />
           </Panel>
           <Panel
             title="Members"
@@ -221,7 +228,6 @@ export function TeamSettingsPage({
                     roles={roles}
                     value={m.roleId}
                     onChange={(roleId) => patchMember(m.botId, { roleId })}
-                    onManage={() => setRolesOpen(true)}
                   />
                   <div className="md:pt-6">
                     {m.kind === "chief" ? null : (
@@ -241,9 +247,6 @@ export function TeamSettingsPage({
             </ul>
           </Panel>
         </div>
-        {rolesOpen && (
-          <RolesDialog roles={roles} onChanged={reloadRoles} onClose={() => setRolesOpen(false)} />
-        )}
         <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur md:px-8">
           {error && (
             <p role="alert" className="mr-auto text-sm text-destructive">

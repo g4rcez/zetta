@@ -153,7 +153,6 @@ export function createRoutines(
   async function execute(
     r: Routine,
     runId: string,
-    startedAt: Date,
     retry?: { prompt: string; conversationId: string | null; attempt: number },
   ) {
     const prompt = retry?.prompt ?? r.prompt;
@@ -207,7 +206,7 @@ export function createRoutines(
         title: `Routine "${r.title}" paused`,
         detail: text,
         nextAction: "Fix the cause, then activate the routine again.",
-        resultLink: `/studio?routine=${r.id}`,
+        resultLink: `/routines?routine=${r.id}`,
         source: "routine",
         sourceKey: `routine:${r.id}:blocked`,
         remaining: "Next occurrence",
@@ -218,9 +217,9 @@ export function createRoutines(
     const missing = await prerequisites(r.ownerUserId, r);
     if (missing.length) return block("not_ready", missing[0]!);
     const [b] = await db.select().from(bot).where(eq(bot.id, r.botId));
-    // Result destination: a chat the owner can open (new per run, or continuing the routine's chat).
+    // Result destination: the routine's one chat the owner can open. Every run appends to it; the bot reads only the previous run (see chatTurn).
     let convId: string | undefined = retry?.conversationId ?? undefined;
-    if (!convId && r.conversationMode === "continue") {
+    if (!convId) {
       const [last] = await db
         .select({ c: routineRun.conversationId })
         .from(routineRun)
@@ -236,7 +235,9 @@ export function createRoutines(
           .values({
             ownerUserId: r.ownerUserId,
             botId: b!.id,
-            title: `${r.title} · ${startedAt.toISOString().slice(0, 16)}`,
+            // "manual" so the first turn keeps the routine title instead of renaming the chat to the prompt.
+            title: r.title,
+            titleSource: "manual",
           })
           .returning()
       )[0]!.id;
@@ -367,7 +368,7 @@ export function createRoutines(
       .returning();
     if (next) arm(next);
     if (!claimed) return false; // another worker (or an earlier crash) already owns this occurrence
-    await execute(r, claimed.id, now);
+    await execute(r, claimed.id);
     return true;
   }
 
@@ -441,7 +442,7 @@ export function createRoutines(
       todo.map(async ({ run, r }) => {
         const claimed = await claim(r, `retry:${run.id}`, "recovery", now);
         if (!claimed) return false;
-        await execute(r, claimed.id, now, {
+        await execute(r, claimed.id, {
           prompt: recoveryPrompt(r, run),
           conversationId: run.conversationId,
           attempt: run.attempt + 1,
@@ -485,7 +486,7 @@ export function createRoutines(
         : undefined;
       await db.update(routineRun).set({ retryAt: null }).where(eq(routineRun.id, run.id));
       if (!claimed) continue;
-      await execute(r, claimed.id, now, {
+      await execute(r, claimed.id, {
         prompt: recoveryPrompt(r, run),
         conversationId: run.conversationId,
         attempt: run.attempt + 1,
@@ -631,8 +632,7 @@ export function createRoutines(
         schedule: describeSchedule(rec(r)),
         timezone: r.timezone,
         nextRuns: previewRuns(new Date(), rec(r), 3),
-        contextMode:
-          r.conversationMode === "new" ? "Each run starts a new chat" : "Runs continue one chat",
+        contextMode: "All runs share one chat; the bot reads only the run before",
         accounts: b?.requiredConnections.map((c) => c.key) ?? [],
         destination: "Results appear as a chat you can open and in the run history",
         missing: await prerequisites(a.userId, r),
@@ -742,6 +742,39 @@ export function createRoutines(
         })),
       };
     },
+    /** Runs the owner has not opened yet (a running one counts as pending), for the Routines badge, with the chats they live in. */
+    async unread(a: ActiveActor) {
+      const rows = await db
+        .select({ conversationId: routineRun.conversationId, runs: sql<number>`count(*)::int` })
+        .from(routineRun)
+        .where(
+          and(
+            eq(routineRun.ownerUserId, a.userId),
+            isNull(routineRun.readAt),
+            sql`${routineRun.conversationId} is not null`,
+            sql`${routineRun.status} <> 'skipped'`,
+          ),
+        )
+        .groupBy(routineRun.conversationId);
+      return {
+        count: rows.reduce((n, r) => n + r.runs, 0),
+        conversationIds: rows.map((r) => r.conversationId!),
+      };
+    },
+    /** The owner opened this chat: its finished runs are seen. A run still running stays pending until it ends and the chat is seen again. */
+    async markRead(a: ActiveActor, conversationId: string) {
+      await db
+        .update(routineRun)
+        .set({ readAt: new Date() })
+        .where(
+          and(
+            eq(routineRun.ownerUserId, a.userId),
+            eq(routineRun.conversationId, conversationId),
+            isNull(routineRun.readAt),
+            sql`${routineRun.status} <> 'running'`,
+          ),
+        );
+    },
     preview(
       _a: ActiveActor,
       v: { timezone: string; dailyAt?: string; everyMinutes?: number; onceAt?: string },
@@ -760,12 +793,20 @@ export function createRoutines(
         Math.min(count, 10),
       );
     },
-    list: (a: ActiveActor) =>
-      db
-        .select()
+    /** Each routine with its one chat: the newest run's conversation (the one `execute` appends to), null before the first run. The outer column is spelled out: Drizzle drops the table name in a one-table select, so `${routine.id}` would read as `rr.id`. */
+    async list(a: ActiveActor) {
+      const rows = await db
+        .select({
+          routine,
+          conversationId: sql<
+            string | null
+          >`(select rr.conversation_id from routine_run rr where rr.routine_id = "routine"."id" and rr.conversation_id is not null order by rr.started_at desc limit 1)`,
+        })
         .from(routine)
         .where(and(eq(routine.ownerUserId, a.userId), eq(routine.archived, false)))
-        .orderBy(asc(routine.createdAt)),
+        .orderBy(asc(routine.createdAt));
+      return rows.map((r) => ({ ...r.routine, conversationId: r.conversationId }));
+    },
     async setPaused(a: ActiveActor, id: string, paused: boolean) {
       const [cur] = await db
         .select()
@@ -808,6 +849,21 @@ export function createRoutines(
           .returning(),
       );
     },
+    /** Archives every live routine of a bot that was deleted, so no armed job fires for it later. */
+    async removeForBot(botId: string) {
+      const rows = await db
+        .update(routine)
+        .set({
+          archived: true,
+          paused: true,
+          nextRunAt: null,
+          status: "paused",
+          statusAt: new Date(),
+        })
+        .where(and(eq(routine.botId, botId), eq(routine.archived, false)))
+        .returning({ id: routine.id });
+      for (const r of rows) disarm(r.id);
+    },
     /** Idempotent with `requestKey`: the same key returns the same occurrence instead of running again. */
     async runNow(a: ActiveActor, id: string, requestKey: string) {
       const [cur] = await db
@@ -824,7 +880,7 @@ export function createRoutines(
             .from(routineRun)
             .where(and(eq(routineRun.routineId, id), eq(routineRun.occurrenceKey, key))),
         );
-      await execute(r, claimed.id, claimed.startedAt);
+      await execute(r, claimed.id);
       return first(await db.select().from(routineRun).where(eq(routineRun.id, claimed.id)));
     },
     /** Boot recovery: occurrences left running by a dead process become interrupted, with one attention card per routine. */
@@ -845,12 +901,22 @@ export function createRoutines(
               inArray(routine.id, [...new Set(rows.map((x) => x.routineId))]),
             ),
           );
+      const titles = new Map(
+        rows.length
+          ? (
+              await db
+                .select({ id: routine.id, title: routine.title })
+                .from(routine)
+                .where(inArray(routine.id, [...new Set(rows.map((x) => x.routineId))]))
+            ).map((t) => [t.id, t.title])
+          : [],
+      );
       for (const x of rows)
         await raiseAttention(db, x.ownerUserId, {
-          title: "A routine run was interrupted by a restart",
+          title: `Routine "${titles.get(x.routineId) ?? "unnamed"}" was interrupted by a restart`,
           detail: "The server stopped while it was running; the result is uncertain.",
           nextAction: "Open the routine history and run it again if needed.",
-          resultLink: `/studio?routine=${x.routineId}`,
+          resultLink: `/routines?routine=${x.routineId}`,
           source: "routine",
           sourceKey: `routine:${x.routineId}:interrupted`,
         });

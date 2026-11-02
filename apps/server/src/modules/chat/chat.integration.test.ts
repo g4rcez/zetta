@@ -3,9 +3,16 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
 import { membership } from "@zetta/db/schema/identity";
+import { and, eq } from "@zetta/db/query";
+import { bot as botTable, conversation } from "@zetta/db/schema/chat";
+import { botPeer } from "@zetta/db/schema/discussions";
+import { attentionItem, botIntegration, mcpServer, routine } from "@zetta/db/schema/features";
+import { inboundRoute } from "@zetta/db/schema/inbound";
+import { team, teamMember } from "@zetta/db/schema/teams";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess } from "../identity/access";
+import { createRoutines } from "../features/routines";
 import { createChatService } from "./service";
 const fakeRun = Object.assign(
   async (t: { prompt: string }) => ({ text: `reply: ${t.prompt.slice(-40)}`, stopped: false }),
@@ -35,7 +42,29 @@ suite("chat against compose postgres", () => {
   );
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
-    chat: { access, chat: createChatService(db, fakeRun as never) },
+    chat: {
+      access,
+      chat: createChatService(
+        db,
+        fakeRun as never,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          routines: createRoutines(db, (async () => ({ text: "" })) as never, async () => ({
+            status: "done",
+            output: "",
+          })),
+        },
+      ),
+    },
     webOrigin: "http://web.test",
     desktopOrigins: [],
     drain: () => {},
@@ -252,6 +281,38 @@ suite("chat against compose postgres", () => {
       (await call(ids[1]!, "PATCH", `/api/conversations/${conv.id}`, { title: "Nope" })).status,
     ).toBe(404);
   });
+  test("a manual rename sticks: the first turn does not rename the chat again", async () => {
+    const { bot } = (await (
+      await call(ids[0]!, "POST", "/api/bots", { name: "Keeper" })
+    ).json()) as { bot: { id: string } };
+    const create = async () =>
+      (
+        (await (await call(ids[0]!, "POST", "/api/conversations", { botId: bot.id })).json()) as {
+          conversation: { id: string };
+        }
+      ).conversation.id;
+    const titleOf = async (id: string) =>
+      (
+        (await (await call(ids[0]!, "GET", `/api/conversations?botId=${bot.id}`)).json()) as {
+          conversations: { id: string; title: string }[];
+        }
+      ).conversations.find((c) => c.id === id)!.title;
+    const renamed = await create();
+    await call(ids[0]!, "PATCH", `/api/conversations/${renamed}`, { title: "My name" });
+    await (
+      await call(ids[0]!, "POST", `/api/conversations/${renamed}/stream`, {
+        content: "first message of the renamed chat",
+      })
+    ).text();
+    expect(await titleOf(renamed)).toBe("My name");
+    const untouched = await create();
+    await (
+      await call(ids[0]!, "POST", `/api/conversations/${untouched}/stream`, {
+        content: "first message of the other chat",
+      })
+    ).text();
+    expect(await titleOf(untouched)).toBe("first message of the other chat");
+  });
   test("a thread can be archived, listed apart and restored, only by its owner", async () => {
     const { bot } = (await (
       await call(ids[0]!, "POST", "/api/bots", { name: "Archiver" })
@@ -354,10 +415,11 @@ suite("chat against compose postgres", () => {
       (await call(ids[1]!, "POST", "/api/workspaces", { name: "Sneaky", parentId: w.id })).status,
     ).toBe(404);
   });
-  test("a bot owned by someone else is unusable until its owner finishes onboarding it", async () => {
+  test("a new bot is ready at once, also for someone else, and editing it does not lock it", async () => {
     const { bot: b } = (await (
-      await call(ids[0]!, "POST", "/api/bots", { name: "Shared one", harness: "pi" })
-    ).json()) as { bot: { id: string } };
+      await call(ids[0]!, "POST", "/api/bots", { name: "Ready at once", harness: "pi" })
+    ).json()) as { bot: { id: string; version: number; onboarded: boolean } };
+    expect(b.onboarded).toBe(true);
     const conv = (
       (await (await call(ids[1]!, "POST", "/api/conversations", { botId: b.id })).json()) as {
         conversation: { id: string };
@@ -366,60 +428,14 @@ suite("chat against compose postgres", () => {
     expect(
       (await call(ids[1]!, "POST", `/api/conversations/${conv.id}/messages`, { content: "hi" }))
         .status,
-    ).toBe(409);
-  });
-  test("onboarding: persisted question, explicit answer tied to it, one answer, reset on reconfiguration", async () => {
-    const { bot: b } = (await (
-      await call(ids[0]!, "POST", "/api/bots", { name: "Onboard me", harness: "pi" })
-    ).json()) as { bot: { id: string; version: number } };
-    const conv = (
-      (await (await call(ids[0]!, "POST", "/api/conversations", { botId: b.id })).json()) as {
-        conversation: { id: string };
-      }
-    ).conversation;
-    const ask = (as: string) =>
-      call(as, "POST", `/api/bots/${b.id}/onboarding/question`, { conversationId: conv.id });
-    const answer = (as: string, questionId: string, satisfied: boolean, version = b.version) =>
-      call(as, "POST", `/api/bots/${b.id}/onboarding`, {
-        conversationId: conv.id,
-        questionId,
-        expectedVersion: version,
-        satisfied,
-      });
-    expect((await ask(ids[0]!)).status).toBe(409); // no real conversation yet
-    await call(ids[0]!, "POST", `/api/conversations/${conv.id}/messages`, { content: "ping" });
-    expect((await ask(ids[1]!)).status).toBe(404); // not the owner
-    const q = (await (await ask(ids[0]!)).json()) as { questionId: string };
-    expect((await answer(ids[1]!, q.questionId, true)).status).toBe(404);
-    expect((await answer(ids[0]!, uuidv7(), true)).status).toBe(409); // an answer must reference the persisted question
-    const no = (await (await answer(ids[0]!, q.questionId, false)).json()) as {
-      bot: { onboarded: boolean };
-    };
-    expect(no.bot.onboarded).toBe(false);
-    expect((await answer(ids[0]!, q.questionId, true)).status).toBe(404); // the question was already answered
-    const q2 = (await (await ask(ids[0]!)).json()) as { questionId: string };
-    expect(
-      (
-        (await (await answer(ids[0]!, q2.questionId, true)).json()) as {
-          bot: { onboarded: boolean };
-        }
-      ).bot.onboarded,
-    ).toBe(true);
-    const msgs = (
-      (await (await call(ids[0]!, "GET", `/api/conversations/${conv.id}/messages`)).json()) as {
-        messages: { role: string; content: string }[];
-      }
-    ).messages;
-    expect(msgs.filter((m) => m.role === "system")).toHaveLength(2);
-    expect(msgs.some((m) => m.content === "Yes, I am satisfied.")).toBe(true);
+    ).not.toBe(409);
     const edited = (await (
       await call(ids[0]!, "PATCH", `/api/bots/${b.id}`, {
         expectedVersion: b.version,
         patch: { personality: "terse" },
       })
-    ).json()) as { bot: { onboarded: boolean; version: number } };
-    expect(edited.bot.onboarded).toBe(false);
-    expect((await answer(ids[0]!, q2.questionId, true, edited.bot.version)).status).toBe(409); // old-version evidence is not enough
+    ).json()) as { bot: { onboarded: boolean } };
+    expect(edited.bot.onboarded).toBe(true);
   });
   test("the chief without a real harness guides setup; messages paginate with reply counts", async () => {
     const chief = (
@@ -466,6 +482,94 @@ suite("chat against compose postgres", () => {
       ).json()) as { messages: { id: string; replyCount: number }[] }
     ).messages.find((m) => m.id === r.user.id)!;
     expect(root.replyCount).toBeGreaterThanOrEqual(5);
+  });
+  test("deleting a specialist detaches everything it could use and keeps its chats; the chief cannot be deleted", async () => {
+    const owner = ids[0]!;
+    const make = async (name: string) =>
+      (
+        (await (await call(owner, "POST", "/api/bots", { name })).json()) as {
+          bot: { id: string };
+        }
+      ).bot.id;
+    const doomed = await make("Doomed");
+    const peer = await make("Peer");
+    const [server] = await db
+      .insert(mcpServer)
+      .values({
+        ownerUserId: owner,
+        name: "doomed-mcp",
+        transport: "http",
+        url: "https://mcp.example.invalid",
+      })
+      .returning();
+    await db
+      .insert(botIntegration)
+      .values({ botId: doomed, ownerUserId: owner, serverId: server!.id });
+    await db
+      .insert(inboundRoute)
+      .values({ ownerUserId: owner, botId: doomed, pluginId: "whatsapp" });
+    const [t] = await db
+      .insert(team)
+      .values({ ownerUserId: owner, name: `Doomed team ${uuidv7().slice(-6)}` })
+      .returning();
+    await db.insert(teamMember).values({ teamId: t!.id, botId: doomed, kind: "chief" });
+    await db.insert(botPeer).values({ ownerUserId: owner, botId: peer, peerBotId: doomed });
+    const [r] = await db
+      .insert(routine)
+      .values({
+        ownerUserId: owner,
+        botId: doomed,
+        title: "Daily",
+        prompt: "hi",
+        paused: false,
+        status: "scheduled",
+        nextRunAt: new Date(Date.now() + 3_600_000),
+      })
+      .returning();
+    const chat = (
+      (await (await call(owner, "POST", "/api/conversations", { botId: doomed })).json()) as {
+        conversation: { id: string };
+      }
+    ).conversation;
+    await db.update(botTable).set({ computerMode: "browser" }).where(eq(botTable.id, doomed));
+
+    expect((await call(ids[1]!, "DELETE", `/api/bots/${doomed}`)).status).toBe(404);
+    expect((await call(owner, "DELETE", `/api/bots/${doomed}`)).status).toBe(200);
+    expect((await call(owner, "DELETE", `/api/bots/${doomed}`)).status).toBe(200); // repeatable
+
+    const listed = (
+      (await (await call(owner, "GET", "/api/bots")).json()) as { bots: { id: string }[] }
+    ).bots.map((b) => b.id);
+    expect(listed).not.toContain(doomed);
+    expect(listed).toContain(peer);
+    expect(
+      await db.select().from(botIntegration).where(eq(botIntegration.botId, doomed)),
+    ).toHaveLength(0);
+    expect(await db.select().from(teamMember).where(eq(teamMember.botId, doomed))).toHaveLength(0);
+    expect(await db.select().from(botPeer).where(eq(botPeer.peerBotId, doomed))).toHaveLength(0);
+    expect(
+      (await db.select().from(inboundRoute).where(eq(inboundRoute.botId, doomed)))[0]!.enabled,
+    ).toBe(false);
+    const [after] = await db.select().from(routine).where(eq(routine.id, r!.id));
+    expect({ archived: after!.archived, paused: after!.paused, next: after!.nextRunAt }).toEqual({
+      archived: true,
+      paused: true,
+      next: null,
+    });
+    expect((await db.select().from(botTable).where(eq(botTable.id, doomed)))[0]!.computerMode).toBe(
+      "off",
+    );
+    expect(await db.select().from(conversation).where(eq(conversation.id, chat.id))).toHaveLength(
+      1,
+    );
+
+    const chief = (
+      (await (await call(owner, "GET", "/api/bots")).json()) as {
+        bots: { id: string; kind: string }[];
+      }
+    ).bots.find((b) => b.kind === "chief");
+    expect((await call(owner, "DELETE", `/api/bots/${chief!.id}`)).status).toBe(404);
+    await db.delete(mcpServer).where(eq(mcpServer.id, server!.id));
   });
   test("workspaces can be renamed and deleted without touching bots, chats or access", async () => {
     const w = (
@@ -571,5 +675,51 @@ suite("chat against compose postgres", () => {
     expect((await call(ids[1]!, "GET", `/api/conversations/${conv.id}/chat/stream`)).status).toBe(
       404,
     );
+  });
+  test("no bot can be named like a mention of people: user, channel, here, all", async () => {
+    for (const name of ["user", "User", "ALL", "He re", "channel"]) {
+      const res = await call(ids[0]!, "POST", "/api/bots", { name });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+        "BOT_NAME_RESERVED",
+      );
+    }
+    const { bot } = (await (
+      await call(ids[0]!, "POST", "/api/bots", { name: "Usher" })
+    ).json()) as { bot: { id: string } };
+    const renamed = await call(ids[0]!, "PATCH", `/api/bots/${bot.id}`, {
+      expectedVersion: 1,
+      patch: { name: "all" },
+    });
+    expect(renamed.status).toBe(400);
+    expect(((await renamed.json()) as { error: { code: string } }).error.code).toBe(
+      "BOT_NAME_RESERVED",
+    );
+  });
+  test("a bot reply that says @user raises one attention card that links to the chat", async () => {
+    const { bot } = (await (
+      await call(ids[0]!, "POST", "/api/bots", { name: "Caller" })
+    ).json()) as { bot: { id: string } };
+    const conv = (
+      (await (await call(ids[0]!, "POST", "/api/conversations", { botId: bot.id })).json()) as {
+        conversation: { id: string };
+      }
+    ).conversation.id;
+    const cards = () =>
+      db
+        .select({ title: attentionItem.title, resultLink: attentionItem.resultLink })
+        .from(attentionItem)
+        .where(and(eq(attentionItem.ownerUserId, ids[0]!), eq(attentionItem.botId, bot.id)));
+    await (
+      await call(ids[0]!, "POST", `/api/conversations/${conv}/stream`, { content: "just hello" })
+    ).text();
+    expect(await cards()).toHaveLength(0);
+    await (
+      await call(ids[0]!, "POST", `/api/conversations/${conv}/stream`, { content: "@user ping" })
+    ).text();
+    const found = await cards();
+    expect(found).toHaveLength(1);
+    expect(found[0]!.title).toBe("Caller needs you");
+    expect(found[0]!.resultLink).toBe(`/chat/${conv}`);
   });
 });

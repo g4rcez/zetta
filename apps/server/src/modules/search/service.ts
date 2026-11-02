@@ -1,14 +1,7 @@
 import type { Database } from "@zetta/db";
 import type { ActiveActor } from "../identity/access";
 
-export const SEARCH_KINDS = [
-  "conversation",
-  "message",
-  "memory",
-  "instruction",
-  "artifact",
-  "task",
-] as const;
+export const SEARCH_KINDS = ["conversation", "message", "wiki", "artifact", "task"] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
 export type SearchHit = {
   kind: SearchKind;
@@ -30,37 +23,34 @@ const HEADLINE = `'MaxFragments=1,MinWords=6,MaxWords=24,StartSel=[[,StopSel=]]'
  * $1 is the user's text and is only ever a bound parameter.
  */
 const BRANCH: Record<SearchKind, string> = {
-  conversation: `select 'conversation' as kind, c.id, c.title, c.title as snippet, c.id as conversation_id, null::uuid as message_id,
+  conversation: `select 'conversation' as kind, c.id::text, c.title, c.title as snippet, c.id as conversation_id, null::uuid as message_id,
       ts_rank(to_tsvector('simple', f_unaccent(c.title)), q.q) as rank, c.updated_at
     from conversation c, q where c.owner_user_id = $2 and not c.archived and to_tsvector('simple', f_unaccent(c.title)) @@ q.q
     order by rank desc, c.updated_at desc limit $3`,
-  message: `select 'message', m.id, c.title, ts_headline('simple', m.content, q.q || q.h, ${HEADLINE}), c.id, m.id,
+  message: `select 'message', m.id::text, c.title, ts_headline('simple', m.content, q.q || q.h, ${HEADLINE}), c.id, m.id,
       ts_rank(to_tsvector('simple', f_unaccent(m.content)), q.q), m.created_at
     from message m join conversation c on c.id = m.conversation_id, q
     where m.owner_user_id = $2 and c.owner_user_id = $2 and not c.archived and m.role <> 'system'
       and to_tsvector('simple', f_unaccent(m.content)) @@ q.q
     order by 7 desc, m.created_at desc limit $3`,
-  memory: `select 'memory', x.id, left(x.content, 80), ts_headline('simple', x.content, q.q || q.h, ${HEADLINE}), null::uuid, null::uuid,
-      ts_rank(to_tsvector('simple', f_unaccent(x.content)), q.q), x.created_at
-    from memory x, q where x.owner_user_id = $2 and to_tsvector('simple', f_unaccent(x.content)) @@ q.q
-    order by 7 desc, x.created_at desc limit $3`,
-  instruction: `select 'instruction', i.id, i.title, ts_headline('simple', i.body, q.q || q.h, ${HEADLINE}), null::uuid, null::uuid,
-      ts_rank(to_tsvector('simple', f_unaccent(i.title || ' ' || i.body)), q.q), i.created_at
-    from instruction i, q where i.owner_user_id = $2 and not i.archived
-      and to_tsvector('simple', f_unaccent(i.title || ' ' || i.body)) @@ q.q
-    order by 7 desc, i.created_at desc limit $3`,
-  artifact: `select 'artifact', a.id, a.title, ts_headline('simple', a.description, q.q || q.h, ${HEADLINE}), null::uuid, null::uuid,
+  // The id of a wiki hit is its slug, which is how the wiki page opens.
+  wiki: `select 'wiki', w.slug, w.title, ts_headline('simple', w.content, q.q || q.h, ${HEADLINE}), null::uuid, null::uuid,
+      ts_rank(to_tsvector('simple', f_unaccent(w.title || ' ' || w.howto || ' ' || w.content)), q.q), w.updated_at
+    from wiki_page w, q where w.owner_user_id = $2 and w.status <> 'archived'
+      and to_tsvector('simple', f_unaccent(w.title || ' ' || w.howto || ' ' || w.content)) @@ q.q
+    order by 7 desc, w.updated_at desc limit $3`,
+  artifact: `select 'artifact', a.id::text, a.title, ts_headline('simple', a.description, q.q || q.h, ${HEADLINE}), null::uuid, null::uuid,
       ts_rank(to_tsvector('simple', f_unaccent(a.title || ' ' || a.description || ' ' || a.file_name)), q.q), a.created_at
     from artifact a, q where a.owner_user_id = $2
       and to_tsvector('simple', f_unaccent(a.title || ' ' || a.description || ' ' || a.file_name)) @@ q.q
     order by 7 desc, a.created_at desc limit $3`,
-  task: `select 'task', t.id, t.title, ts_headline('simple', t.description, q.q || q.h, ${HEADLINE}), t.conversation_id, null::uuid,
+  task: `select 'task', t.id::text, t.title, ts_headline('simple', t.description, q.q || q.h, ${HEADLINE}), t.conversation_id, null::uuid,
       ts_rank(to_tsvector('simple', f_unaccent(t.title || ' ' || t.description)), q.q), t.updated_at
     from task t, q where t.owner_user_id = $2 and to_tsvector('simple', f_unaccent(t.title || ' ' || t.description)) @@ q.q
     order by 7 desc, t.updated_at desc limit $3`,
 };
 
-/** Full-text search over everything the signed-in user owns: chats, messages, memory, instructions, artifacts and tasks. */
+/** Full-text search over everything the signed-in user owns: chats, messages, wiki items (which hold what bots remember), artifacts and tasks. */
 export function createSearch(db: Database) {
   return {
     async search(

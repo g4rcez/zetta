@@ -10,7 +10,7 @@ import { isAppUrl, signedOAuthQuery } from "./oauth";
 const SCOPES: Record<string, string> = {
   "mcp:read": "See your bots, chats, integrations, routines, wiki and tasks",
   "mcp:write":
-    "Create and change bots, chats, integrations, routines, wiki pages and tasks for you",
+    "Create and change bots, chats, integrations, routines, wiki items and tasks for you",
   openid: "Confirm who you are",
   profile: "See your name",
   email: "See your email address",

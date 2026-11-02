@@ -8,6 +8,8 @@ import {
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { Button, Input, Select, Textarea } from "@/components/ui";
+import { MentionTextarea } from "../chat/mention";
+import { useSidebarData } from "../chat/sidebar-data";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { Badge, ConfirmButton, Empty, list, listItem, Modal } from "../shared/ui";
 import {
@@ -82,6 +84,7 @@ function PermissionsForm({
   notify: (m: string) => void;
 }) {
   const c = data.config;
+  const { bots } = useSidebarData();
   const [preset, setPreset] = useState(c.preset);
   const [effort, setEffort] = useState(c.effort ?? "");
   const [busy, setBusy] = useState(false);
@@ -131,6 +134,7 @@ function PermissionsForm({
           ? " Code access is off for this bot (see Code access), so these permissions do not apply until you turn it on."
           : ""}
       </p>
+      {/* Plain on purpose: tool and command patterns, not text for people. A mention picker would only get in the way. */}
       <Textarea
         title={hermes ? "Also turn on these toolsets" : "Also allow"}
         name="allow"
@@ -148,6 +152,7 @@ function PermissionsForm({
             ? "Any tool or command pattern works, because every run is inside a container."
             : "Without containers only plain tools (WebFetch, WebSearch...) and git commands are honoured."}
       </p>
+      {/* Plain on purpose: tool and command patterns (see above). */}
       <Textarea
         title={hermes ? "Always turn off these toolsets" : "Never allow"}
         name="deny"
@@ -158,9 +163,10 @@ function PermissionsForm({
       <p className="-mt-2 text-xs text-muted-foreground">
         Always wins over everything above, and also applies when code access is off.
       </p>
-      <Textarea
+      <MentionTextarea
         title={hermes ? "Extra instructions for Hermes" : "Extra instructions for Claude Code"}
         name="appendPrompt"
+        bots={bots}
         defaultValue={c.appendPrompt}
         rows={4}
         maxLength={data.options.limits.prompt}
@@ -415,6 +421,7 @@ function AssetDialog({
               Import from a {kind === "skill" ? "SKILL.md" : "agent .md"} file
             </summary>
             <div className="mt-2 space-y-2">
+              {/* Plain on purpose: a pasted file for another tool, where `@` has its own meaning. */}
               <Textarea
                 title="Paste the file"
                 value={paste}
@@ -445,6 +452,7 @@ function AssetDialog({
           disabled={Boolean(asset)}
           autoComplete="off"
         />
+        {/* Plain on purpose: this is written into a SKILL.md or agent file for Claude Code, where `@` means a file reference, not a bot. */}
         <Textarea
           title={
             kind === "skill" ? "When should it be used?" : "When should the bot hand work to it?"
@@ -454,6 +462,7 @@ function AssetDialog({
           rows={2}
           maxLength={data.options.limits.description}
         />
+        {/* Plain on purpose: the body of a SKILL.md or agent file (see above). */}
         <Textarea
           title="Instructions"
           value={v.body}

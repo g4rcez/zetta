@@ -15,8 +15,6 @@ import {
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
 import { connection } from "./connections";
-import { team } from "./teams";
-import { searchVector } from "./search";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
@@ -25,72 +23,6 @@ const owner = () =>
     .notNull()
     .references(() => user.id, restrict);
 const created = () => timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
-
-/** Persistent facts, per user, optionally scoped to one bot. Never shared across users. */
-export const memory = pgTable(
-  "memory",
-  {
-    id: uuid("id")
-      .primaryKey()
-      .default(sql`uuidv7()`),
-    ownerUserId: owner(),
-    botId: uuid("bot_id").references(() => bot.id, restrict),
-    // Hermes-style stores: "user" = profile of the person (shared by their bots), "memory" = this bot's own notes about working for them.
-    target: text("target", { enum: ["user", "memory"] })
-      .default("memory")
-      .notNull(),
-    content: text("content").notNull(),
-    category: text("category", { enum: ["fact", "preference", "decision", "correction"] })
-      .default("fact")
-      .notNull(),
-    version: integer("version").default(1).notNull(),
-    contentHash: text("content_hash").notNull().default(""),
-    source: text("source", { enum: ["user", "bot", "chat"] })
-      .default("user")
-      .notNull(),
-    createdAt: created(),
-  },
-  (t) => [
-    index("memory_bot_id_idx").on(t.botId),
-    index("memory_owner_idx").on(t.ownerUserId),
-    index("memory_search_idx").using("gin", searchVector(t.content)),
-    uniqueIndex("memory_owner_hash")
-      .on(t.ownerUserId, t.contentHash)
-      .where(sql`${t.contentHash} <> ''`),
-  ],
-);
-
-/**
- * Reusable ordered steps a bot must follow. `teamId` null = every bot of the owner; set = only bots in that team.
- * `createdByBotId` is set when a bot wrote it.
- */
-export const instruction = pgTable(
-  "instruction",
-  {
-    id: uuid("id")
-      .primaryKey()
-      .default(sql`uuidv7()`),
-    ownerUserId: owner(),
-    title: text("title").notNull(),
-    body: text("body").notNull(),
-    createdAt: created(),
-    trigger: text("trigger").default("").notNull(),
-    verification: text("verification").default("").notNull(),
-    version: integer("version").default(1).notNull(),
-    archived: boolean("archived").default(false).notNull(),
-    contentHash: text("content_hash").notNull().default(""),
-    teamId: uuid("team_id").references(() => team.id, restrict),
-    createdByBotId: uuid("created_by_bot_id").references(() => bot.id, setNull),
-  },
-  (t) => [
-    index("instruction_owner_idx").on(t.ownerUserId),
-    index("instruction_search_idx").using("gin", searchVector(sql`${t.title} || ' ' || ${t.body}`)),
-    index("instruction_team_id_idx").on(t.teamId),
-    uniqueIndex("instruction_owner_hash")
-      .on(t.ownerUserId, t.contentHash)
-      .where(sql`${t.contentHash} <> ''`),
-  ],
-);
 
 /** Pre-model hooks: add_context | redact | stop | background (start an owned background chat task). */
 export const hook = pgTable(
@@ -187,8 +119,13 @@ export const routineRun = pgTable(
     attempt: integer("attempt").default(0).notNull(),
     /** A failed run with this set in the future is waiting to be retried; the sweep runs it when due. */
     retryAt: timestamp("retry_at", { withTimezone: true }),
+    /** When the owner opened the run's chat. Null = pending (running) or not seen yet: it counts in the Routines badge. */
+    readAt: timestamp("read_at", { withTimezone: true }),
   },
   (t) => [
+    index("routine_run_unread_idx")
+      .on(t.ownerUserId)
+      .where(sql`${t.readAt} is null`),
     index("routine_run_owner_user_id_idx").on(t.ownerUserId),
     index("routine_run_conversation_id_idx").on(t.conversationId),
     index("routine_run_routine_idx").on(t.routineId, t.startedAt),
@@ -381,14 +318,12 @@ export const configProposal = pgTable(
         "create_bot",
         "create_routine",
         "create_workflow",
-        "create_instruction",
         "create_vm",
         "open_discussion",
         "discussion_brief",
         "start_loop",
         "team_goals",
         "bot_permission",
-        "create_memory",
         "create_wiki_page",
       ],
     })

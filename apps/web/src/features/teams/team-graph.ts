@@ -20,6 +20,52 @@ export type Box = { x: number; y: number; w: number; h: number };
 export const teamNodeId = (teamId: string) => `team:${teamId}`;
 export const botNodeId = (teamId: string, botId: string) => `${teamId}:${botId}`;
 export const BOT_SIZE = { w: 190, h: 56 };
+export const TEAM_DEFAULT_SIZE = { w: 440, h: 280 };
+const PAD = 16;
+const GAP = 12;
+const HEADER_H = 40;
+const GOAL_H = 40;
+const MIN_TEAM_H = 180;
+
+/**
+ * Bots sit in a grid under the title bar: the chief first, then the others in the order of their position (so a drag reorders them).
+ * The grid is centered, its columns follow the group width, and the group height grows to hold every row.
+ */
+export function arrange(nodes: TeamsNode[]): TeamsNode[] {
+  const moved = new Map<string, TeamsNode>();
+  for (const team of nodes) {
+    if (team.type !== "team") continue;
+    const members = nodes.filter((n): n is BotNode => n.type === "bot" && n.parentId === team.id);
+    if (members.length === 0) continue;
+    const w = team.width ?? TEAM_DEFAULT_SIZE.w;
+    const top = HEADER_H + (team.data.goal ? GOAL_H : 0) + PAD / 2;
+    const cols = Math.max(1, Math.floor((w - 2 * PAD + GAP) / (BOT_SIZE.w + GAP)));
+    const left = Math.max(PAD, Math.round((w - (cols * BOT_SIZE.w + (cols - 1) * GAP)) / 2));
+    const row = (b: BotNode) => Math.round((b.position.y - top) / (BOT_SIZE.h + GAP));
+    const ordered = [...members].sort(
+      (a, b) =>
+        Number(b.data.kind === "chief") - Number(a.data.kind === "chief") ||
+        row(a) - row(b) ||
+        a.position.x - b.position.x,
+    );
+    ordered.forEach((b, i) =>
+      moved.set(b.id, {
+        ...b,
+        position: {
+          x: left + (i % cols) * (BOT_SIZE.w + GAP),
+          y: top + Math.floor(i / cols) * (BOT_SIZE.h + GAP),
+        },
+      }),
+    );
+    const rows = Math.ceil(members.length / cols);
+    moved.set(team.id, {
+      ...team,
+      width: w,
+      height: Math.max(MIN_TEAM_H, top + rows * (BOT_SIZE.h + GAP) - GAP + PAD),
+    });
+  }
+  return nodes.map((n) => moved.get(n.id) ?? n);
+}
 
 const botNode = (
   teamId: string,
@@ -115,12 +161,18 @@ export function normalizeChiefs(nodes: TeamsNode[]): TeamsNode[] {
 
 export const makeChief = (nodes: TeamsNode[], id: string): TeamsNode[] => {
   const parent = nodes.find((n) => n.id === id)?.parentId;
-  return nodes.map((n) =>
-    n.type === "bot" && n.parentId === parent
-      ? { ...n, data: { ...n.data, kind: n.id === id ? "chief" : "member" } }
-      : n,
+  return arrange(
+    nodes.map((n) =>
+      n.type === "bot" && n.parentId === parent
+        ? { ...n, data: { ...n.data, kind: n.id === id ? "chief" : "member" } }
+        : n,
+    ),
   );
 };
+
+/** Takes a bot out of its team; a removed chief passes the role on. */
+export const removeBot = (nodes: TeamsNode[], id: string): TeamsNode[] =>
+  arrange(normalizeChiefs(nodes.filter((n) => n.id !== id)));
 
 /** Puts a bot in a team at a position inside the group. Returns the same nodes when the team already has that bot. */
 export function addBot(
@@ -134,16 +186,18 @@ export function addBot(
   if (!teamId) return nodes;
   const inTeam = nodes.filter((n) => n.type === "bot" && n.parentId === teamNode);
   if (inTeam.some((n) => (n as BotNode).data.botId === bot.botId)) return nodes;
-  return normalizeChiefs([
-    ...nodes,
-    botNode(teamId, {
-      botId: bot.botId,
-      name: bot.name,
-      kind: "member",
-      roleId,
-      canvas: position,
-    }),
-  ]);
+  return arrange(
+    normalizeChiefs([
+      ...nodes,
+      botNode(teamId, {
+        botId: bot.botId,
+        name: bot.name,
+        kind: "member",
+        roleId,
+        canvas: position,
+      }),
+    ]),
+  );
 }
 
 /**
@@ -159,12 +213,12 @@ export function dropBot(
   if (!node) return nodes;
   const groups = groupsOf(nodes);
   const target = dropTarget({ x: abs.x + BOT_SIZE.w / 2, y: abs.y + BOT_SIZE.h / 2 }, groups);
-  if (target === node.parentId) return nodes;
+  if (target === node.parentId) return arrange(nodes);
   const rest = nodes.filter((n) => n.id !== id);
   const dest = groups.find((g) => g.id === target);
-  if (!dest) return normalizeChiefs(rest);
+  if (!dest) return arrange(normalizeChiefs(rest));
   return addBot(
-    normalizeChiefs(rest),
+    arrange(normalizeChiefs(rest)),
     dest.id,
     { botId: node.data.botId, name: node.data.name },
     { x: abs.x - dest.x, y: abs.y - dest.y },

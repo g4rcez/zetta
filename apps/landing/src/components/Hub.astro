@@ -1,0 +1,548 @@
+---
+// The hero's object: the chief in the middle, the specialist bots it calls on the left, the agents on the server on the right.
+// Lines are one SVG per side with preserveAspectRatio="none", so they stay aligned with the HTML nodes at any width.
+// Each bot takes an equal share of the column height, so a node's centre is at (i + 0.5) / n of it. The SVG paths use that.
+// The run plays once when the diagram scrolls into view (about 3.5 s, under the WCAG 2.2.2 five-second limit): you ask,
+// the chief lights up, the work goes out, the bots wake up, and Writer stops to ask for you. Every animation holds its start
+// state and ends on the static default, so without script or with reduced motion the finished scene shows at once.
+// The whole figure is one image for assistive tech. The example is illustrated, not live data.
+import Logo from "./Logo.astro";
+import BotArt from "./BotArt.astro";
+import { getCopy, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const t = getCopy(Astro.props.locale).hero.hub;
+
+const stubs = (n: number, tall: number) => Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) / n) * tall));
+const left = stubs(t.bots.length, 300);
+const leftPath = [...left.map((y) => `M0 ${y}H32`), `M32 ${left[0]}V${left.at(-1)}`, "M32 150H64"].join("");
+---
+
+<figure class="hub" data-hub>
+  <div class="frame" role="img" aria-label={t.description}>
+    <div class="grid">
+      <ul class="bots">
+        {t.bots.map((bot, i) => (
+          <li style={`--i:${i}`}>
+            <div class={`node bot ${bot.kind}`}>
+              <span class="face">
+                <BotArt name={bot.name} size={64} />
+                {bot.kind === "needs" ? (
+                  <i class="pin ask" />
+                ) : (
+                  <i class="pin typing"><b /><b /><b /></i>
+                )}
+              </span>
+              <div class="text">
+                <b class="name">{bot.name}</b>
+                {bot.kind === "needs" ? (
+                  <span class="status">
+                    <span class="before">{t.writing}</span>
+                    <span class="now">{bot.status}</span>
+                  </span>
+                ) : (
+                  <span class="status"><span class="now">{bot.status}</span></span>
+                )}
+                {bot.kind === "needs" ? <i class="badge">{t.needs}</i> : null}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <svg class="wire wire-l" viewBox="0 0 64 300" preserveAspectRatio="none" aria-hidden="true">
+        <path d={leftPath} />
+      </svg>
+
+      <div class="center">
+        <div class="top">
+          <div class="you"><span class="avatar">{t.you[0]}</span><span>{t.ask}</span></div>
+          <span class="drop"></span>
+        </div>
+        <div class="chief">
+          <Logo size={64} tile id="hub" />
+          <b>{t.chief}</b>
+          <span>{t.chiefRole}</span>
+        </div>
+      </div>
+
+      <svg class="wire wire-r" viewBox="0 0 64 300" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0 150H64" />
+      </svg>
+
+      <div class="server">
+        <p class="cap">{t.agentsTitle}</p>
+        <ul class="agents">
+          {t.agents.map((name, i) => <li style={`--i:${i}`}>{name}</li>)}
+        </ul>
+      </div>
+
+      <p class="cap cap-bots">{t.botsTitle}</p>
+    </div>
+    <figcaption>{t.label}</figcaption>
+  </div>
+</figure>
+
+<script is:inline>
+  // Arm the run before first paint (start states hold), then play it once when the diagram is in view.
+  (() => {
+    const hub = document.currentScript?.previousElementSibling;
+    if (!hub || !("IntersectionObserver" in window)) return;
+    hub.classList.add("armed");
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        hub.classList.add("run");
+        io.disconnect();
+      },
+      { threshold: 0.35 },
+    );
+    io.observe(hub);
+  })();
+</script>
+
+<style>
+  .frame {
+    position: relative;
+    padding: 48px 40px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    background: var(--card);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) 56px 208px 56px minmax(0, 0.9fr);
+    grid-template-rows: auto auto;
+    row-gap: 20px;
+  }
+  .bots {
+    display: flex;
+    flex-direction: column;
+  }
+  .bots li {
+    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+    min-height: 104px;
+    padding-block: 6px;
+  }
+  .node {
+    position: relative;
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--background);
+  }
+  .bot {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px;
+  }
+  .face {
+    position: relative;
+    flex: none;
+  }
+  /* The bot's state, worn on its face: typing while it works, an amber pin when it needs you. */
+  .pin {
+    position: absolute;
+    right: -6px;
+    bottom: -6px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    border: 2px solid var(--background);
+    font-style: normal;
+  }
+  .typing {
+    height: 20px;
+    padding-inline: 6px;
+    border-radius: var(--radius-xl);
+    background: var(--card);
+    outline: 1px solid var(--border);
+  }
+  .typing b {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--muted-foreground);
+  }
+  .ask {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--attention);
+  }
+  .text {
+    display: grid;
+    justify-items: start;
+    min-width: 0;
+  }
+  .name {
+    font-size: 18px;
+    line-height: 24px;
+    font-weight: 600;
+  }
+  /* Both status lines share one cell, so the swap never moves the layout. */
+  .status {
+    display: grid;
+    color: var(--muted-foreground);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .status > span {
+    grid-area: 1 / 1;
+  }
+  .status .before {
+    opacity: 0;
+  }
+  /* Amber: the one bot that waits for a person. The word carries it as well as the color. */
+  .bot.needs {
+    border-color: var(--attention);
+    background: color-mix(in srgb, var(--attention) 12%, var(--background));
+  }
+  .bot.needs .pin {
+    border-color: color-mix(in srgb, var(--attention) 12%, var(--background));
+  }
+  .badge {
+    margin-top: 6px;
+    padding-inline: 6px;
+    border-radius: var(--radius-sm);
+    background: var(--attention);
+    color: var(--attention-foreground);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 20px;
+  }
+
+  /* The agents are one place on the server, not six destinations. */
+  .server {
+    align-self: center;
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--background);
+  }
+  .agents {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .agents li {
+    display: flex;
+    align-items: center;
+    height: 36px;
+    padding-inline: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .wire {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .wire path {
+    fill: none;
+    stroke: var(--input);
+    stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  /* The centre cell is three tracks, so the chief sits exactly in the middle of the column. */
+  .center {
+    display: grid;
+    grid-template-rows: 1fr auto 1fr;
+    justify-items: center;
+  }
+  .top {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-self: stretch;
+  }
+  .you {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    padding: 4px 12px 4px 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    background: var(--background);
+    font-size: 14px;
+    line-height: 20px;
+    text-align: left;
+  }
+  .avatar {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--accent);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .drop {
+    flex: 1;
+    min-height: 16px;
+    width: 2px;
+    background: var(--input);
+    transform-origin: top;
+  }
+  .chief {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    width: 100%;
+    padding: 20px 12px 16px;
+    border: 2px solid var(--primary);
+    border-radius: var(--radius-xl);
+    background: var(--card);
+  }
+  /* The ring that answers the ask: drawn once, then gone. */
+  .chief::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border: 2px solid var(--primary);
+    border-radius: var(--radius-xl);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .chief :global(.logo) {
+    margin-bottom: 8px;
+  }
+  .chief b {
+    font-size: 18px;
+    line-height: 24px;
+    font-weight: 600;
+  }
+  .chief span:last-child {
+    color: var(--muted-foreground);
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  .cap {
+    color: var(--muted-foreground);
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
+  }
+  .cap-bots {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  figcaption {
+    padding-top: 16px;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 16px;
+    text-align: right;
+  }
+
+  /* The run. Times are from the moment the diagram is in view. Armed but not yet running, everything holds its start. */
+  @media (prefers-reduced-motion: no-preference) {
+    .hub.armed:not(.run) *,
+    .hub.armed:not(.run) *::after {
+      animation-play-state: paused !important;
+    }
+    .armed .you {
+      animation: rise 400ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
+    }
+    .armed .drop {
+      animation: grow 300ms cubic-bezier(0.16, 1, 0.3, 1) 450ms both;
+    }
+    .armed .chief::after {
+      animation: ring 900ms cubic-bezier(0.16, 1, 0.3, 1) 700ms;
+    }
+    /* Both wires grow out of the chief: the left one right-to-left, the right one left-to-right. */
+    .armed .wire-l {
+      animation: draw-l 700ms cubic-bezier(0.16, 1, 0.3, 1) 900ms both;
+    }
+    .armed .wire-r {
+      animation: draw-r 500ms cubic-bezier(0.16, 1, 0.3, 1) 900ms both;
+    }
+    /* The work travels in emerald, then settles to a quiet line. */
+    .armed .wire path {
+      animation: live 2800ms linear;
+    }
+    .armed .cap-bots {
+      animation: rise 500ms cubic-bezier(0.16, 1, 0.3, 1) 1300ms both;
+    }
+    .armed .bots li {
+      animation: rise 500ms cubic-bezier(0.16, 1, 0.3, 1) calc(1300ms + var(--i) * 150ms) both;
+    }
+    .armed .face {
+      animation: pop 500ms cubic-bezier(0.16, 1, 0.3, 1) calc(1350ms + var(--i) * 150ms) both;
+    }
+    .armed .server {
+      animation: rise 500ms cubic-bezier(0.16, 1, 0.3, 1) 1300ms both;
+    }
+    .armed .agents li {
+      animation: rise 400ms cubic-bezier(0.16, 1, 0.3, 1) calc(1450ms + var(--i) * 70ms) both;
+    }
+    .armed .typing b {
+      animation: type 600ms ease-in-out 1800ms 3 alternate;
+    }
+    .armed .typing b:nth-child(2) {
+      animation-delay: 1950ms;
+    }
+    .armed .typing b:nth-child(3) {
+      animation-delay: 2100ms;
+    }
+    /* Writer works first, then stops to ask. */
+    .armed .bot.needs {
+      animation: neutral 3300ms linear;
+    }
+    .armed .ask {
+      animation: badge 3400ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .armed .status .before {
+      animation: held 3300ms linear;
+    }
+    .armed .status .now {
+      animation: swap 3300ms linear;
+    }
+    .armed .bots .status .now:only-child {
+      animation: none;
+    }
+    .armed .badge {
+      animation: badge 3500ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes grow {
+    from {
+      transform: scaleY(0);
+    }
+  }
+  @keyframes pop {
+    from {
+      transform: scale(0.6);
+    }
+  }
+  @keyframes type {
+    to {
+      transform: translateY(-3px);
+    }
+  }
+  @keyframes ring {
+    from {
+      opacity: 0.8;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.12);
+    }
+  }
+  @keyframes draw-l {
+    from {
+      clip-path: inset(0 0 0 100%);
+    }
+    to {
+      clip-path: inset(0 0 0 0);
+    }
+  }
+  @keyframes draw-r {
+    from {
+      clip-path: inset(0 100% 0 0);
+    }
+    to {
+      clip-path: inset(0 0 0 0);
+    }
+  }
+  @keyframes live {
+    0%,
+    70% {
+      stroke: var(--primary);
+    }
+  }
+  @keyframes neutral {
+    0%,
+    88% {
+      border-color: var(--border);
+      background: var(--background);
+    }
+  }
+  @keyframes held {
+    0%,
+    88% {
+      opacity: 1;
+    }
+  }
+  @keyframes swap {
+    0%,
+    90% {
+      opacity: 0;
+    }
+  }
+  @keyframes badge {
+    0%,
+    88% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+  }
+
+  @media (max-width: 860px) {
+    .frame {
+      padding: 32px 16px 16px;
+    }
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: none;
+      row-gap: 12px;
+    }
+    .wire,
+    .drop {
+      display: none;
+    }
+    .center {
+      order: 1;
+      grid-template-rows: auto auto;
+      row-gap: 12px;
+      max-width: 240px;
+      justify-self: center;
+      width: 100%;
+    }
+    .cap-bots {
+      grid-column: auto;
+      grid-row: auto;
+      order: 2;
+      margin-top: 12px;
+    }
+    .bots {
+      order: 3;
+    }
+    .server {
+      order: 4;
+      margin-top: 12px;
+    }
+    .bots li {
+      flex: none;
+      min-height: 0;
+    }
+  }
+</style>

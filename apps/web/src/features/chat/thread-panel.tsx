@@ -61,6 +61,7 @@ export function ThreadPanel({
       <MessageList
         followToken={sent}
         rows={all}
+        bots={bots}
         authorOf={authorOf}
         fallbackBotId={bot?.id}
         inThread
@@ -97,7 +98,7 @@ export function ThreadPanel({
           </p>
         )}
         <Composer
-          instructions
+          wiki
           value={draft.value}
           onChange={draft.set}
           placeholder="Reply…"
@@ -107,11 +108,11 @@ export function ThreadPanel({
           onError={onError}
           autoFocus
           onStop={() => void chat.stop()}
-          onSubmit={async ({ text, attachmentIds, fileRefs, instructionIds }) => {
+          onSubmit={async ({ text, attachmentIds, fileRefs, wikiIds }) => {
             draft.clear();
             setSent((n) => n + 1);
             try {
-              await chat.send(text, { attachmentIds, fileRefs, instructionIds });
+              await chat.send(text, { attachmentIds, fileRefs, wikiIds });
               return true;
             } catch (e) {
               onError(e);

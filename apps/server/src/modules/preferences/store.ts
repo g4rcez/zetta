@@ -1,12 +1,18 @@
 import type { Database } from "@zetta/db";
 import { eq } from "@zetta/db/query";
-import { SIDEBAR_LIMITS, userPreference, type RailMode } from "@zetta/db/schema/preferences";
+import {
+  SIDEBAR_LIMITS,
+  userPreference,
+  type RailMode,
+  type TimeFormat,
+} from "@zetta/db/schema/preferences";
 import type { ActiveActor } from "../identity/access";
 
 export type Preferences = {
   railMode: RailMode;
   railWidth: number;
   listWidth: number;
+  timeFormat: TimeFormat;
   botOrder: string[];
 };
 export type PreferencesPatch = Partial<Preferences>;
@@ -16,6 +22,7 @@ export function createPreferenceStore(db: Database) {
     railMode: r.railMode,
     railWidth: r.railWidth,
     listWidth: r.listWidth,
+    timeFormat: r.timeFormat,
     botOrder: r.botOrder,
   });
   return {
@@ -31,6 +38,7 @@ export function createPreferenceStore(db: Database) {
             railMode: "expanded",
             railWidth: SIDEBAR_LIMITS.railWidth.fallback,
             listWidth: SIDEBAR_LIMITS.listWidth.fallback,
+            timeFormat: "24h",
             botOrder: [],
           };
     },

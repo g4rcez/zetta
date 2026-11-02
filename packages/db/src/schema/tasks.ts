@@ -12,6 +12,9 @@ const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
 export const TASK_STATUSES = ["backlog", "in_progress", "blocked", "review", "done"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
+export const TASK_PRIORITIES = ["none", "low", "medium", "high", "urgent"] as const;
+export type TaskPriority = (typeof TASK_PRIORITIES)[number];
+
 /** A unit of work a bot (or the user) put on the board. It links back to the thread and message it came from; deleting those only unlinks it. */
 export const task = pgTable(
   "task",
@@ -25,6 +28,11 @@ export const task = pgTable(
     title: text("title").notNull(),
     description: text("description").default("").notNull(),
     status: text("status", { enum: TASK_STATUSES }).default("backlog").notNull(),
+    priority: text("priority", { enum: TASK_PRIORITIES }).default("none").notNull(),
+    labels: text("labels")
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
     botId: uuid("bot_id").references(() => bot.id, setNull),
     conversationId: uuid("conversation_id").references(() => conversation.id, setNull),
     messageId: uuid("message_id").references(() => message.id, setNull),

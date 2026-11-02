@@ -16,6 +16,7 @@ import { catalogStdio } from "./plugins/catalog";
 import { getPlugin } from "./plugins/registry";
 import { toolAllowed } from "./tool-access";
 import { configureWhatsapp } from "./plugins/whatsapp"; // importing registers the plugin
+import { configureHomeAssistant } from "./plugins/homeassistant"; // importing registers the plugin
 import "./plugins/google"; // importing registers the plugin
 import "./plugins/telegram"; // importing registers the plugin
 import "./plugins/reddit"; // importing registers the plugin
@@ -239,6 +240,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
   let core!: McpCore;
   configureWhatsapp({ allowPrivate: opts.allowPrivate }); // same private-address policy as MCP servers
   configureVault({ allowPrivate: Boolean(opts.allowPrivate) }); // 1Password Connect servers follow it too
+  configureHomeAssistant({ allowPrivate: opts.allowPrivate }); // a Home Assistant server is normally on the LAN
   const plugins = createPlugins(db, connections, () => core);
   const api = {
     async addServer(
@@ -378,7 +380,9 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
             ))
           )
             return undefined;
-          if (!s.connectionId) return { s, i, url: s.url, secret: undefined };
+          if (!s.connectionId)
+            // GitHub's MCP server refuses requests without a token; with none, the bot works through the gh CLI only.
+            return s.name === "github" ? undefined : { s, i, url: s.url, secret: undefined };
           const secret = connections
             ? await connections.secretFor(secretOwner(a, s), s.connectionId).catch(() => undefined)
             : undefined;
@@ -442,6 +446,10 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
           ),
         );
       return { toolsMode: v.toolsMode, allowedTools };
+    },
+    /** Whether the user bound the plugin `name` to the bot (no secret is read). */
+    async isBound(a: ActiveActor, botId: string, name: string): Promise<boolean> {
+      return (await boundRows(a, botId)).some((r) => r.s.name === name);
     },
     /** The access token of the plugin `name` the user bound to the bot, for a CLI run that needs to authenticate as that account. */
     async tokenOf(a: ActiveActor, botId: string, name: string): Promise<string | undefined> {

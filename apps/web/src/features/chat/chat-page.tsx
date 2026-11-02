@@ -4,8 +4,8 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ComponentProps,
+  type CSSProperties,
   type RefObject,
 } from "react";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
@@ -31,18 +31,19 @@ import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotStatusDot, BotStatusLabel } from "@/components/bot-status";
+import { ResizeHandle, toWidth } from "@/components/resize-handle";
 import { authClient } from "@/lib/auth-client";
+import { useMedia } from "@/lib/use-media";
 
 import { refreshAttention } from "../attention/summary";
 import {
   chatClient,
   errorMessage,
-  type Bot,
   type Conversation,
   type Message,
   type Proposal,
 } from "./chat-client";
-import { isSavedUserEcho, shouldAutoOpen, type Row } from "./chat-rows";
+import { asRow, shouldAutoOpen, transcriptRows, type Row } from "./chat-rows";
 import { Composer } from "./composer";
 import { MessageList, type RowActions } from "./message-list";
 import { SetupActionsContext, type SetupActions } from "./setup-actions";
@@ -62,27 +63,6 @@ const SUGGESTIONS = [
   "Summarize what you remember about me.",
   "Plan my week.",
 ];
-const wide = (query: string) => (notify: () => void) => {
-  const m = window.matchMedia(query);
-  m.addEventListener("change", notify);
-  return () => m.removeEventListener("change", notify);
-};
-const useMedia = (query: string) =>
-  useSyncExternalStore(
-    wide(query),
-    () => window.matchMedia(query).matches,
-    () => true,
-  );
-// A saved message keeps the same Row object while it is unchanged, so memoized rows skip rendering after a reaction or reload.
-const rowCache = new WeakMap<Message, Row>();
-const asRow = (m: Message): Row => {
-  let row = rowCache.get(m);
-  if (!row) {
-    row = { ...m, createdAt: m.createdAt ?? new Date(0).toISOString() };
-    rowCache.set(m, row);
-  }
-  return row;
-};
 
 type DraftHandle = ReturnType<typeof useDraft>;
 /** The composer owns its draft text, so each keystroke renders this component and not the whole page. `handle` gives the page adopt/clear. */
@@ -108,6 +88,26 @@ const readLastChat = () => {
     return undefined;
   }
 };
+// The artifact panel width is a per-browser layout choice. 448 is the old 28rem minimum.
+const ARTIFACT_WIDTH_KEY = "zetta.artifact-width";
+const ARTIFACT_LIMITS = { min: 448, max: 1024, fallback: 640 } as const;
+const readArtifactWidth = () => {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(ARTIFACT_WIDTH_KEY) ?? "null");
+    return typeof raw === "number" && Number.isFinite(raw)
+      ? toWidth(raw, ARTIFACT_LIMITS.min, ARTIFACT_LIMITS.max)
+      : ARTIFACT_LIMITS.fallback;
+  } catch {
+    return ARTIFACT_LIMITS.fallback;
+  }
+};
+const writeArtifactWidth = (width: number) => {
+  try {
+    localStorage.setItem(ARTIFACT_WIDTH_KEY, String(width));
+  } catch {
+    // Storage unavailable (private mode): the width just lasts for this session.
+  }
+};
 type ChatSearchState = {
   thread?: string | undefined;
   bot?: string | undefined;
@@ -127,6 +127,7 @@ export function ChatPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [details, setDetails] = useState(false); // the context panel's bot and files view
+  const [artifactWidth, setArtifactWidth] = useState(readArtifactWidth);
   const reduceMotion = useReducedMotion();
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sent, setSent] = useState(0); // bumps on every send so the list jumps to the newest message
@@ -135,7 +136,22 @@ export function ChatPage() {
   const threadId = search.thread;
   const urlChat = params.chatId;
   const chatId = urlChat && urlChat !== NEW_CHAT ? urlChat : undefined;
-  const openChatRow = chatId ? chats.find((c) => c.id === chatId) : undefined;
+  // A routine's chat is not in the sidebar list (`chats`): it is opened from Routines, so it is looked up by id.
+  const [lookup, setLookup] = useState<{ id: string; row?: Conversation }>();
+  const listedRow = chatId ? chats.find((c) => c.id === chatId) : undefined;
+  const lookedUp = lookup?.id === chatId;
+  const openChatRow = listedRow ?? (lookedUp ? lookup?.row : undefined);
+  useEffect(() => {
+    if (!chatId || !chatsLoaded || listedRow || lookedUp) return;
+    let live = true;
+    chatClient
+      .conversation(chatId)
+      .then((row) => live && setLookup({ id: chatId, row }))
+      .catch(() => live && setLookup({ id: chatId }));
+    return () => {
+      live = false;
+    };
+  }, [chatId, chatsLoaded, listedRow, lookedUp]);
   const defaultBot =
     bots.find((b) => b.id === search.bot) ?? bots.find((b) => b.kind === "chief") ?? bots[0];
   // A conversation decides its bot; a draft (or a bare /chat) takes the bot from ?bot=, falling back to the chief.
@@ -207,13 +223,13 @@ export function ChatPage() {
   // A bare /chat has no state of its own: it becomes the last used conversation, else the default bot's latest. A chat that no longer exists falls back to the default bot.
   useEffect(() => {
     if (!chatsLoaded || !bots.length) return;
-    if (!urlChat || (chatId && !openChatRow)) {
+    if (!urlChat || (chatId && !openChatRow && lookedUp)) {
       const last = !urlChat ? readLastChat() : undefined;
       if (last && chats.some((c) => c.id === last)) toChat(last, true);
       else if (defaultBot) toBot(defaultBot.id, true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatsLoaded, bots, urlChat, chatId, openChatRow, defaultBot?.id]);
+  }, [chatsLoaded, bots, urlChat, chatId, openChatRow, lookedUp, defaultBot?.id]);
   const reload = useCallback(async (id: string) => {
     try {
       const list = await chatClient.messages(id);
@@ -304,10 +320,6 @@ export function ChatPage() {
   );
 
   const current = bots.find((b) => b.id === botId);
-  const replaceBot = (bot: Bot) =>
-    setBots((list) =>
-      list.map((b) => (b.id === bot.id ? { ...b, ...bot, canEdit: b.canEdit } : b)),
-    );
   const meName = session?.user.name ?? "You",
     meImage = session?.user.image;
   // Author objects are cached so memoized rows see the same one on every render; the cache resets when its inputs change.
@@ -333,15 +345,7 @@ export function ChatPage() {
     };
   }, [bots, botId, meName, meImage]);
 
-  // Saved history is rebuilt only when it changes; each streamed chunk just appends the live rows.
-  const top = useMemo(() => saved.filter((m) => !m.parentMessageId).map(asRow), [saved]);
-  const rows = useMemo(() => {
-    const ids = new Set(top.map((x) => x.id));
-    const live = main.rows.filter(
-      (r) => !r.parentMessageId && !ids.has(r.id) && !isSavedUserEcho(r, top),
-    );
-    return live.length ? [...top, ...live] : top;
-  }, [top, main.rows]);
+  const rows = useMemo(() => transcriptRows(saved, main.rows), [saved, main.rows]);
   const thread = threadId
     ? (rows.find((r) => r.id === threadId) ?? saved.map(asRow).find((r) => r.id === threadId))
     : undefined;
@@ -354,12 +358,12 @@ export function ChatPage() {
     text,
     attachmentIds,
     fileRefs,
-    instructionIds,
+    wikiIds,
   }: {
     text: string;
     attachmentIds: string[];
     fileRefs: string[];
-    instructionIds?: string[] | undefined;
+    wikiIds?: string[] | undefined;
   }) {
     if (!botId) return false;
     setError(undefined);
@@ -374,9 +378,7 @@ export function ChatPage() {
       }
       draft.current?.clear();
       setSent((n) => n + 1);
-      void main
-        .send(text, { conversationId: id, attachmentIds, fileRefs, instructionIds })
-        .catch(fail);
+      void main.send(text, { conversationId: id, attachmentIds, fileRefs, wikiIds }).catch(fail);
       return true;
     } catch (e) {
       fail(e);
@@ -398,29 +400,6 @@ export function ChatPage() {
     () => ({ say: (text) => void sendRef.current({ text, attachmentIds: [], fileRefs: [] }) }),
     [],
   );
-  const hasReply = saved.some((m) => m.role === "assistant" && m.status === "complete");
-  async function answer(satisfied: boolean) {
-    if (!current || !chatId) return;
-    try {
-      const q = await chatClient.askOnboarding(current.id, chatId);
-      replaceBot(
-        await chatClient.answerOnboarding(current.id, {
-          conversationId: chatId,
-          questionId: q.questionId,
-          expectedVersion: current.version,
-          satisfied,
-        }),
-      );
-      void reload(chatId);
-      setNotice(
-        satisfied
-          ? "Great, this bot is ready for work."
-          : "Okay. Adjust the settings, then chat again to retest.",
-      );
-    } catch (e) {
-      fail(e);
-    }
-  }
   const setReactions = (id: string, reactions: Message["reactions"]) =>
     setSaved((l) => l.map((m) => (m.id === id ? { ...m, reactions } : m)));
   async function toggleReact(m: Row, emoji: string) {
@@ -440,10 +419,10 @@ export function ChatPage() {
     onReact: (row, emoji) => void toggleReact(row, emoji),
     onReply: (row) => setThread(row.id),
     onOpenArtifact: (id) => setArtifact(id),
-    onSaveInstruction: (row) =>
+    onSaveToWiki: (row) =>
       void chatClient
-        .saveInstruction(`From chat: ${row.content.slice(0, 40)}`, row.content)
-        .then(() => setNotice("Saved to your instruction library."), fail),
+        .saveToWiki(`From chat: ${row.content.slice(0, 40)}`, row.content)
+        .then(() => setNotice("Saved to your wiki."), fail),
     onQueue: (row, action) => {
       if (!chatId) return;
       void (
@@ -457,7 +436,7 @@ export function ChatPage() {
     () => ({
       onReact: (row, emoji) => latestActions.current.onReact(row, emoji),
       onReply: (row) => latestActions.current.onReply(row),
-      onSaveInstruction: (row) => latestActions.current.onSaveInstruction(row),
+      onSaveToWiki: (row) => latestActions.current.onSaveToWiki(row),
       onQueue: (row, action) => latestActions.current.onQueue?.(row, action),
       onOpenArtifact: (id) => latestActions.current.onOpenArtifact?.(id),
     }),
@@ -582,10 +561,15 @@ export function ChatPage() {
             sidePane &&
               desktop &&
               (artifactPane
-                ? // A file needs room: half the page, never under 28rem or over 45rem.
-                  "lg:grid-cols-[minmax(0,1fr)_clamp(28rem,45%,45rem)]"
+                ? // A file needs room: the width the person dragged it to, capped so the chat stays usable.
+                  "lg:grid-cols-[minmax(0,1fr)_var(--artifact-width)]"
                 : "lg:grid-cols-[minmax(0,1fr)_22.5rem]"),
           )}
+          style={
+            artifactPane
+              ? ({ "--artifact-width": `min(${artifactWidth}px, 65%)` } as CSSProperties)
+              : undefined
+          }
         >
           <section
             className="flex min-h-0 min-w-0 flex-col bg-background"
@@ -710,6 +694,7 @@ export function ChatPage() {
                 key={chatId ?? `new:${botId}`}
                 followToken={sent}
                 rows={rows}
+                bots={bots}
                 authorOf={authorOf}
                 fallbackBotId={botId}
                 busy={main.busy || loadingMessages}
@@ -752,11 +737,6 @@ export function ChatPage() {
                           <strong className="text-foreground">{current.name}</strong>.{" "}
                           {current.description}
                         </p>
-                        {current.canEdit && !current.onboarded && (
-                          <p className="max-w-prose text-sm text-muted-foreground">
-                            {current.name} isn't ready yet: send a test message to start setup.
-                          </p>
-                        )}
                         <div
                           className="flex flex-wrap gap-2"
                           role="group"
@@ -800,23 +780,6 @@ export function ChatPage() {
                 onResolved={(id) => setProposals((l) => l.filter((x) => x.id !== id))}
                 onBotsChanged={() => void refreshBots()}
               />
-              {current && current.canEdit && !current.onboarded && hasReply && (
-                <div
-                  role="group"
-                  aria-label="Onboarding"
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm"
-                >
-                  <p>Are you satisfied with how {current.name} answers?</p>
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => void answer(true)}>
-                      Yes, I'm satisfied
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => void answer(false)}>
-                      Not yet
-                    </Button>
-                  </div>
-                </div>
-              )}
               {notice && (
                 <Alert theme="info" onClose={() => setNotice(undefined)}>
                   {notice}
@@ -836,7 +799,7 @@ export function ChatPage() {
               <LoopBanner loop={goal.loop} onChange={goal.update} onError={setError} />
               {botId && <ComputerActivity botId={botId} botName={current?.name} />}
               <DraftComposer
-                instructions
+                wiki
                 storageKey={draftKey(botId, chatId)}
                 handle={draft}
                 placeholder={
@@ -857,7 +820,19 @@ export function ChatPage() {
             </div>
           </section>
           {sidePane && desktop && (
-            <aside className="hidden min-h-0 border-l lg:flex lg:flex-col">
+            <aside className="relative hidden min-h-0 border-l lg:flex lg:flex-col">
+              {artifactPane && (
+                <ResizeHandle
+                  edge="left"
+                  label="Resize artifact panel"
+                  value={artifactWidth}
+                  {...ARTIFACT_LIMITS}
+                  onChange={(width) => {
+                    setArtifactWidth(width);
+                    writeArtifactWidth(width);
+                  }}
+                />
+              )}
               {/* DESIGN.md "Motion": panels arrive in 200ms; with reduced motion they just appear. */}
               <motion.div
                 key={artifactPane ? "artifact" : threadPane ? "thread" : "details"}

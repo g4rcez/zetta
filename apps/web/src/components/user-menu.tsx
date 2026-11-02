@@ -6,6 +6,8 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
@@ -14,9 +16,13 @@ import { CaretUpDownIcon, UserIcon } from "@phosphor-icons/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { usePreferences } from "@/features/preferences/preferences";
+import { TIME_FORMATS, type TimeFormat } from "@/features/preferences/time-format";
 import { railRow, railRowExpanded } from "@/components/rail-row";
 import { authClient } from "@/lib/auth-client";
 import { AuthenticationRequestError } from "@/lib/auth-transport";
+
+const TIME_FORMAT_LABEL: Record<TimeFormat, string> = { "24h": "24-hour", "12h": "12-hour" };
 
 export default function UserMenu({
   compact = false,
@@ -28,6 +34,7 @@ export default function UserMenu({
   rail?: "collapsed" | "expanded";
 }) {
   const navigate = useNavigate();
+  const { preferences, set } = usePreferences();
   const { data: session, isPending } = authClient.useSession();
   const [signingOut, setSigningOut] = useState(false);
   const signOutPending = useRef(false);
@@ -148,6 +155,19 @@ export default function UserMenu({
           <DropdownMenuLabel className="break-words">{session.user.name}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem className="break-all">{session.user.email}</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Time format</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={preferences.timeFormat}
+            onValueChange={(value) => set({ timeFormat: value as TimeFormat })}
+          >
+            {TIME_FORMATS.map((f) => (
+              <DropdownMenuRadioItem key={f} value={f}>
+                {TIME_FORMAT_LABEL[f]}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
             disabled={signingOut}

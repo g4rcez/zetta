@@ -1,9 +1,12 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { Suspense, lazy, useEffect, useState, type FormEvent } from "react";
-import { Button, Input, Select, Textarea } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
+import { MentionTextarea } from "../chat/mention";
+import { useSidebarData } from "../chat/sidebar-data";
 
 import { ApiError, call, errorMessage, type Bot } from "../chat/chat-client";
 import { Empty, Loading, useList, when } from "../shared/ui";
+import { LayaOffNote } from "./laya-switch";
 import { graphToSteps, stepsToGraph, type Step } from "./workflow-steps";
 
 // The canvas pulls in @xyflow/react: load it only when someone opens it.
@@ -11,6 +14,7 @@ const WorkflowCanvas = lazy(() =>
   import("./workflow-canvas").then((m) => ({ default: m.WorkflowCanvas })),
 );
 import type { ServerGraph } from "./workflow-graph";
+import { useTimeFormat } from "@/features/preferences/preferences";
 
 type Flow = { id: string; name: string; version: number };
 type TraceItem = {
@@ -107,6 +111,8 @@ export function TraceView({ run }: { run: RunResult }) {
 }
 
 function RunPanel({ flow }: { flow: Flow }) {
+  const { bots } = useSidebarData();
+  const tf = useTimeFormat();
   const [input, setInput] = useState("");
   const [result, setResult] = useState<{ run: RunResult; output: string; replayed: boolean }>();
   const [error, setError] = useState<string>();
@@ -143,10 +149,11 @@ function RunPanel({ flow }: { flow: Flow }) {
   return (
     <div className="mt-2 space-y-2 rounded-md border bg-card p-3">
       <form onSubmit={(e) => void run(e)} className="space-y-1">
-        <Textarea
+        <MentionTextarea
           title={`Input for ${flow.name} (optional)`}
+          bots={bots}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={setInput}
           rows={2}
         />
         <Button type="submit" size="sm" disabled={busy}>
@@ -183,7 +190,7 @@ function RunPanel({ flow }: { flow: Flow }) {
             <li key={r.id} className="rounded-md border bg-card p-2 text-sm">
               <details>
                 <summary className="cursor-pointer">
-                  {RUN_STATUS[r.status] ?? r.status} · {when(r.createdAt)} · version{" "}
+                  {RUN_STATUS[r.status] ?? r.status} · {when(r.createdAt, tf)} · version{" "}
                   {r.workflowVersion}
                 </summary>
                 <TraceView run={r} />
@@ -361,6 +368,7 @@ function Editor({
               onChange={(e) => patch(i, { url: e.target.value })}
             />
           )}
+          {s.kind === "decision" && <LayaOffNote />}
           {s.kind === "decision" && (
             <div className="grid gap-2 sm:grid-cols-3">
               <Input

@@ -4,7 +4,7 @@ import { SparkleIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui";
 import { Alert } from "@g4rcez/components/alert";
 import type { AvatarValue } from "@/components/bot-avatar";
-import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { chatClient, errorMessage, type Bot, type OutputStyleKey } from "../chat/chat-client";
 import type { Row } from "../chat/chat-rows";
 import { Composer } from "../chat/composer";
 import { MessageList } from "../chat/message-list";
@@ -19,16 +19,28 @@ type Engine = {
 };
 type Props = {
   engine: Engine;
+  /** Who asks the questions when the new bot cannot write (a decision model): the owner's Chief. */
+  interviewer?: Bot;
   state: InterviewState;
   setState: (s: InterviewState | ((s: InterviewState) => InterviewState)) => void;
   /** What is written now; sent along when refining. */
-  draft: { personality: string; instructions: string };
-  onDraft: (d: { personality?: string; instructions: string }) => void;
+  draft: { personality: string; instructions: string; outputStyle: OutputStyleKey };
+  onDraft: (d: {
+    personality?: string;
+    instructions: string;
+    outputStyle?: Exclude<OutputStyleKey, "custom">;
+  }) => void;
 };
 
 const TOTAL = 5;
 const noop = () => {};
-const actions = { onReact: noop, onReply: noop, onSaveInstruction: noop };
+const actions = { onReact: noop, onReply: noop, onSaveToWiki: noop };
+
+/** The first question is fixed text, so the engine runs only after the person sends an answer. */
+const OPENING = {
+  question: "What is this bot for? Describe its job in a sentence or two.",
+  suggestions: ["Turn merged pull requests into customer-facing release notes"],
+};
 
 const READY_ENGINE =
   "Your draft is ready. Read it below. Tell me anything you'd like changed, or continue.";
@@ -36,7 +48,14 @@ const READY_BASIC =
   "Your basic draft is ready. It was filled from a template, not written by the engine. Read it below and edit the text there.";
 
 /** The setup interview, drawn with the same list, rows and composer as a chat: the engine asks, the person answers, then it writes the draft. */
-export function InstructionsInterview({ engine, state, setState, draft, onDraft }: Props) {
+export function InstructionsInterview({
+  engine,
+  interviewer,
+  state,
+  setState,
+  draft,
+  onDraft,
+}: Props) {
   const [answer, setAnswer] = useState("");
   const [composerError, setComposerError] = useState<string | null>(null);
   const latest = useRef(0);
@@ -83,6 +102,7 @@ export function InstructionsInterview({ engine, state, setState, draft, onDraft 
         name: engine.name.trim() || "New bot",
         description: engine.description,
         transcript: turns,
+        outputStyle: draft.outputStyle,
         ...(refine
           ? {
               refine: {
@@ -105,7 +125,11 @@ export function InstructionsInterview({ engine, state, setState, draft, onDraft 
           current: { question: r.question, suggestions: r.suggestions },
           status: "idle",
         }));
-      onDraft({ personality: r.personality, instructions: r.instructions });
+      onDraft({
+        personality: r.personality,
+        instructions: r.instructions,
+        ...(r.outputStyle ? { outputStyle: r.outputStyle } : {}),
+      });
       setState((s) => ({
         ...s,
         turns,
@@ -120,7 +144,7 @@ export function InstructionsInterview({ engine, state, setState, draft, onDraft 
     }
   }
 
-  // First visit with nothing written: start the interview. Coming back shows what exists instead.
+  // First visit with nothing written: show the opening question. Nothing runs until the person sends. Coming back shows what exists instead.
   useEffect(() => {
     if (
       started.current ||
@@ -132,7 +156,7 @@ export function InstructionsInterview({ engine, state, setState, draft, onDraft 
     )
       return;
     started.current = true;
-    void ask([]);
+    patch({ current: OPENING });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -155,8 +179,7 @@ export function InstructionsInterview({ engine, state, setState, draft, onDraft 
     latest.current++;
     started.current = true;
     setAnswer("");
-    setState({ ...FRESH_INTERVIEW });
-    void ask([]);
+    setState({ ...FRESH_INTERVIEW, current: OPENING });
   }
 
   const thinking = state.status === "thinking";
@@ -164,12 +187,13 @@ export function InstructionsInterview({ engine, state, setState, draft, onDraft 
   const refining = finished && state.source === "engine";
   const asker = useMemo(
     () =>
+      interviewer ??
       ({
         id: "new-bot",
         name: engine.name.trim() || "New bot",
         avatar: engine.avatar,
-      }) as unknown as Bot,
-    [engine.name, engine.avatar],
+      } as unknown as Bot),
+    [interviewer, engine.name, engine.avatar],
   );
 
   const rows = useMemo(() => {
@@ -181,7 +205,7 @@ export function InstructionsInterview({ engine, state, setState, draft, onDraft 
         role,
         content,
         status: "complete",
-        botId: role === "assistant" ? "new-bot" : null,
+        botId: role === "assistant" ? asker.id : null,
         createdAt: new Date(t0.current + out.length * 1000).toISOString(),
         ...more,
       });
@@ -195,7 +219,7 @@ export function InstructionsInterview({ engine, state, setState, draft, onDraft 
     } else if (state.current && !thinking) add("assistant", state.current.question);
     if (thinking) add("assistant", "", { streaming: true });
     return out;
-  }, [state.turns, state.current, state.changes, state.source, finished, thinking]);
+  }, [state.turns, state.current, state.changes, state.source, finished, thinking, asker.id]);
 
   const authorOf = (r: Row) =>
     r.role === "assistant" ? { name: asker.name, bot: asker } : { name: "You" };
@@ -247,6 +271,7 @@ export function InstructionsInterview({ engine, state, setState, draft, onDraft 
         </div>
         <MessageList
           rows={rows}
+          bots={[]}
           authorOf={authorOf}
           fallbackBotId="new-bot"
           inThread

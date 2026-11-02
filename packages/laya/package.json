@@ -1,0 +1,23 @@
+{
+  "name": "@zetta/laya",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@huggingface/tokenizers": "^0.2.0",
+    "onnxruntime-node": "^1.22.0"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "@zetta/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

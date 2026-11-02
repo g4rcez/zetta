@@ -1,3 +1,4 @@
+import { mentionsUser } from "@zetta/core/mentions";
 import { useEffect } from "react";
 
 import { call, chatClient } from "../chat/chat-client";
@@ -41,7 +42,13 @@ export function useBackgroundNotifications() {
         const histories = await Promise.all(changed.map((c) => chatClient.messages(c.id)));
         for (const [i, c] of changed.entries()) {
           const last = histories[i]!.at(-1);
-          if (last?.role === "assistant" && last.status === "complete" && last.content.trim())
+          // A reply that calls `@user` already raised its own attention card, and that card notifies.
+          if (
+            last?.role === "assistant" &&
+            last.status === "complete" &&
+            last.content.trim() &&
+            !mentionsUser(last.content)
+          )
             showNative(c.title || "New reply", last.content, `chat-${c.id}`, `/chat/${c.id}`);
         }
         for (const r of routines) {
@@ -52,7 +59,7 @@ export function useBackgroundNotifications() {
               r.status === "failed" ? `Routine failed: ${r.title}` : `Routine ran: ${r.title}`,
               "",
               `routine-${r.id}-${r.lastRunAt}`,
-              "/studio/routines",
+              "/routines",
             );
         }
         for (const a of list) {

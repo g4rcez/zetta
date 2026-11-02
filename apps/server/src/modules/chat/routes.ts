@@ -1,9 +1,12 @@
+import { OUTPUT_STYLE_KEYS } from "@zetta/db/schema/output-styles";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
+import { OutputStyleError } from "../output-styles/service";
 import {
   AttachmentError,
   DiscussionConversationError,
+  BotNameError,
   ModelError,
   NotReadyError,
   OnboardingError,
@@ -51,13 +54,27 @@ const botInput = z.strictObject({
   description: z.string().max(2048).optional(),
   visibility: z.enum(["private", "team"]).optional(),
   harness: z
-    .enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "hermes", "fixture"])
+    .enum([
+      "pi",
+      "codex",
+      "omp",
+      "claude-code",
+      "opencode",
+      "cursor",
+      "hermes",
+      "fixture",
+      "decision",
+    ])
     .optional(),
   model: z.string().max(128).nullable().optional(),
   personality: z.string().max(4096).optional(),
   instructions: z.string().max(16384).optional(),
+  outputStyle: z.enum(OUTPUT_STYLE_KEYS).optional(),
+  outputStyleId: z.string().uuid().nullable().optional(),
   computerMode: z.enum(["off", "browser", "desktop"]).optional(),
   codeAccess: z.boolean().optional(),
+  commitIdentity: z.enum(["git-config", "bot", "account", "custom"]).optional(),
+  commitEmail: z.email().max(254).nullable().optional(),
   requiredConnections: z
     .array(
       z.strictObject({
@@ -84,7 +101,7 @@ const sendBody = z.strictObject({
   parentMessageId: uuid.optional(),
   attachmentIds: z.array(uuid).max(5).optional(),
   fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
-  instructionIds: z.array(uuid).max(5).optional(),
+  wikiIds: z.array(uuid).max(5).optional(),
 });
 /** A message may be only pictures or files, but never empty. */
 const hasBody = (v: {
@@ -384,6 +401,18 @@ export function createChatRoutes(
           ? "Choose a real harness for this bot first; the offline fixture cannot confirm readiness."
           : "Chat with the bot first, then say whether you are satisfied.",
       );
+    if (error instanceof BotNameError)
+      return fail(
+        400,
+        "BOT_NAME_RESERVED",
+        "user, channel, here and all are reserved for mentions. Choose another name.",
+      );
+    if (error instanceof OutputStyleError)
+      return fail(
+        400,
+        "OUTPUT_STYLE_INVALID",
+        "Choose an output style from the list. A shared style must still be shared with you.",
+      );
     if (error instanceof ModelError)
       return fail(
         400,
@@ -514,7 +543,10 @@ export function createChatRoutes(
         if (recent.length >= 20)
           return { kind: "unavailable", reason: "Too many requests. Wait a minute and try again." };
         interviewCalls.set(actor.userId, [...recent, now]);
-        return interviewTurn(parse(interviewInput, body), { userId: actor.userId });
+        const input = parse(interviewInput, body);
+        // A decision model cannot write: the owner's Chief interviews in its place.
+        const chief = input.harness === "decision" ? await chat.ensureChief(actor) : null;
+        return interviewTurn(input, { userId: actor.userId, chief });
       }),
     )
     .patch(
@@ -697,6 +729,12 @@ export function createChatRoutes(
         201,
       ),
     )
+    .get(
+      "/conversations/:id",
+      guarded(async ({ actor, params }) => ({
+        conversation: await chat.getConversation(actor, parse(uuid, params.id)),
+      })),
+    )
     .patch(
       "/conversations/:id",
       guarded(async ({ actor, body, params }) => ({
@@ -733,7 +771,7 @@ export function createChatRoutes(
         return chat.sendMessage(actor, parse(uuid, params.id), v.content, v.parentMessageId, {
           attachmentIds: v.attachmentIds,
           fileRefs: v.fileRefs,
-          instructionIds: v.instructionIds,
+          wikiIds: v.wikiIds,
           clientRequestId: v.clientRequestId,
         });
       }, 201),

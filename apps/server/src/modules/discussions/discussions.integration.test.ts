@@ -5,9 +5,11 @@ import { and, eq, inArray } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { bot } from "@zetta/db/schema/chat";
 import { attentionItem } from "@zetta/db/schema/features";
-import { discussionTurn } from "@zetta/db/schema/discussions";
+import { discussion, discussionTurn } from "@zetta/db/schema/discussions";
 import { membership } from "@zetta/db/schema/identity";
+import { task } from "@zetta/db/schema/tasks";
 import { createApp } from "../../app";
+import { createWiki } from "../wiki/service";
 import { createBotClaude } from "../bot-claude/store";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
@@ -73,6 +75,7 @@ suite("group discussions against compose postgres", () => {
   });
   const features = createFeaturesService(db, fakeRun as never);
   const store = createDiscussionStore(db);
+  const wiki = createWiki(db);
   const chat = createChatService(
     db,
     fakeRun as never,
@@ -86,7 +89,7 @@ suite("group discussions against compose postgres", () => {
     undefined,
     undefined,
     undefined,
-    { discussions: store },
+    { discussions: store, wiki },
   );
   const worker = createDiscussionWorker(db, store, chat, lookup);
   store.onEnqueue = worker.kick;
@@ -478,27 +481,32 @@ suite("group discussions against compose postgres", () => {
       })
     ).json.discussion;
     await worker.drain();
-    const ins = (
-      await call(A, "POST", "/api/instructions", {
+    await wiki.write(
+      A,
+      {
+        slug: "launch-steps",
         title: "Launch steps",
-        body: "1) freeze the branch 2) tag it",
-      })
-    ).json.instruction as { id: string };
+        content: "1) freeze the branch 2) tag it",
+        tags: ["instruction"],
+      },
+      { by: "user" },
+    );
+    const ins = { id: (await wiki.read(A, "launch-steps"))!.page.id };
     const posted = await call(A, "POST", `/api/discussions/${d.id}/messages`, {
       content: "@Steps2 do the launch",
-      instructionIds: [ins.id],
+      wikiIds: [ins.id],
     });
     expect(posted.status).toBe(201);
     await worker.drain();
     const run = runs.filter((x) => x.bot === "Steps2").at(-1)!;
     expect(run.referenced).toMatchObject([
-      { title: "Launch steps", body: "1) freeze the branch 2) tag it" },
+      { title: "Launch steps", content: "1) freeze the branch 2) tag it" },
     ]);
     expect(
       (
         await call(A, "POST", `/api/discussions/${d.id}/messages`, {
           content: "again",
-          instructionIds: [uuidv7()],
+          wikiIds: [uuidv7()],
         })
       ).status,
     ).toBe(404);
@@ -542,6 +550,63 @@ suite("group discussions against compose postgres", () => {
       { title: 'Room "Release" is waiting', status: "resolved" },
       { title: 'Room "Rollback" is waiting', status: "cancelled" },
     ]);
+  });
+
+  test("opening a room closes its 'is waiting' card, and the next sweeps do not bring it back for one idle period", async () => {
+    const p = await makeBot(D, "Seen1"),
+      q = await makeBot(D, "Seen2");
+    const roomId = (
+      await call(D, "POST", "/api/discussions", {
+        title: "Seen room",
+        goal: "x",
+        members: [{ bot: p.id }, { bot: q.id }],
+        firstMessage: "@Seen1 go",
+      })
+    ).json.discussion.id as string;
+    await worker.drain();
+    const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+    const cards = () =>
+      db
+        .select({ status: attentionItem.status, occurrences: attentionItem.occurrences })
+        .from(attentionItem)
+        .where(
+          and(
+            eq(attentionItem.ownerUserId, D),
+            eq(attentionItem.sourceKey, `discussion:${roomId}:idle`),
+          ),
+        )
+        .orderBy(attentionItem.createdAt);
+    await db
+      .update(discussion)
+      .set({ updatedAt: minutesAgo(31) })
+      .where(eq(discussion.id, roomId));
+    await store.sweepIdle(new Date());
+    expect(await cards()).toEqual([{ status: "open", occurrences: 1 }]);
+
+    expect((await call(D, "POST", `/api/discussions/${roomId}/seen`)).status).toBe(200);
+    expect(await cards()).toEqual([{ status: "resolved", occurrences: 1 }]);
+
+    // The room is still idle, but the card was closed a moment ago: the sweep leaves it closed.
+    await store.sweepIdle(new Date());
+    expect(await cards()).toEqual([{ status: "resolved", occurrences: 1 }]);
+
+    // One idle period later the room still waits: a fresh card, counted from 1.
+    await db
+      .update(attentionItem)
+      .set({ updatedAt: minutesAgo(31) })
+      .where(
+        and(
+          eq(attentionItem.ownerUserId, D),
+          eq(attentionItem.sourceKey, `discussion:${roomId}:idle`),
+        ),
+      );
+    await store.sweepIdle(new Date());
+    expect(await cards()).toEqual([
+      { status: "resolved", occurrences: 1 },
+      { status: "open", occurrences: 1 },
+    ]);
+
+    expect((await call(B, "POST", `/api/discussions/${roomId}/seen`)).status).toBe(404);
   });
 
   test("in a room the person opens, the Chief joins and answers a post without a mention alone; a mention reaches only that bot", async () => {
@@ -597,13 +662,19 @@ suite("group discussions against compose postgres", () => {
       ),
     );
     expect(more.map((r) => r.status)).toEqual([201, 201, 201, 201, 201, 201]);
+    // User D has other open rooms from earlier tests: count only the ones made here.
     const live = (await call(D, "GET", "/api/discussions")).json.discussions as {
       status: string;
+      title: string;
     }[];
-    expect(live.filter((d) => d.status === "open")).toHaveLength(7);
+    expect(
+      live.filter(
+        (d) => d.status === "open" && (d.title === "Everyone" || d.title.startsWith("Room ")),
+      ),
+    ).toHaveLength(7);
   });
 
-  test("a restart interrupts running turns and stalls their discussion instead of retrying", async () => {
+  test("a restart puts running turns back in the queue and raises no card", async () => {
     const p = await makeBot(A, "Restart1"),
       q = await makeBot(A, "Restart2");
     const created = (
@@ -622,6 +693,34 @@ suite("group discussions against compose postgres", () => {
     await db
       .update(discussionTurn)
       .set({ status: "running" })
+      .where(inArray(discussionTurn.id, [turn!.id]));
+    expect(await store.recover()).toBeGreaterThanOrEqual(1);
+    const g = (await call(A, "GET", `/api/discussions/${created.id}`)).json;
+    expect(g.discussion.status).toBe("open");
+    expect(g.turns.find((t: { id: string }) => t.id === turn!.id).status).toBe("queued");
+    const items = (await call(A, "GET", "/api/attention")).json.items as { title: string }[];
+    expect(items.map((i) => i.title)).not.toContain('Room "Restart" was interrupted');
+  });
+
+  test("a turn that keeps dying on restart is interrupted and stalls its discussion", async () => {
+    const p = await makeBot(A, "Loop1"),
+      q = await makeBot(A, "Loop2");
+    const created = (
+      await call(A, "POST", "/api/discussions", {
+        title: "Restart loop",
+        goal: "x",
+        members: [{ bot: p.id }, { bot: q.id }],
+        firstMessage: "@Loop1 go",
+      })
+    ).json.discussion;
+    await worker.drain();
+    const [turn] = await db
+      .select()
+      .from(discussionTurn)
+      .where(eq(discussionTurn.discussionId, created.id));
+    await db
+      .update(discussionTurn)
+      .set({ status: "running", attempts: 3 })
       .where(inArray(discussionTurn.id, [turn!.id]));
     expect(await store.recover()).toBeGreaterThanOrEqual(1);
     const g = (await call(A, "GET", `/api/discussions/${created.id}`)).json;
@@ -714,6 +813,16 @@ suite("group discussions against compose postgres", () => {
     ]);
     expect(chat.map((m) => m.content)).toContain("pnpm ran, the routine is done.");
     expect(chat.filter((m) => m.role === "user")).toHaveLength(1);
+    // The granted request no longer waits for the user: its card is closed. The denied one still shows.
+    const cards = (
+      await db.$client.query(
+        "select title, status from attention_item where source_key like 'permission:%' order by title",
+      )
+    ).rows;
+    expect(cards).toEqual([
+      { title: "Components asks for permission: Bash(pnpm:*)", status: "resolved" },
+      { title: "Docs asks for permission: WebFetch", status: "open" },
+    ]);
     // Docs was not granted anything, so its chat stays as it was.
   });
   test("a blocked bot escalates to the chief: the answer resumes the bot, and a handoff shows the question on the blocked bot, not on the chief", async () => {
@@ -833,4 +942,99 @@ suite("group discussions against compose postgres", () => {
       summary: "Asked the user: Sign in to Reddit on the desktop",
     });
   }, 30_000);
+  describe("deleting a room", () => {
+    // Earlier tests leave bots named Support/Dev for this user and the oldest bot of a name wins, so each test uses fresh names.
+    const pair = async () => {
+      const tag = uuidv7().slice(-6);
+      const fac = { name: `Fac${tag}`, ...(await makeBot(A, `Fac${tag}`)) };
+      const mem = { name: `Mem${tag}`, ...(await makeBot(A, `Mem${tag}`)) };
+      await call(A, "PUT", `/api/bots/${fac.id}/peers`, { peerBotIds: [mem.id] });
+      return { fac, mem };
+    };
+    const deleteBlock = (room: string, reason = "wrong place") =>
+      `On it.\n\`\`\`zetta:discussion\n{"action":"delete","room":"${room}","reason":"${reason}"}\n\`\`\``;
+    const roomTitled = async (title: string) =>
+      (await call(A, "GET", "/api/discussions")).json.discussions.find(
+        (x: { title: string }) => x.title === title,
+      );
+
+    test("the facilitator deletes a room it opened: cancelled, hidden, its tasks move to the chat", async () => {
+      const { fac, mem } = await pair();
+      const { c, say } = await chatWith(A, fac.id);
+      replies[fac.name] = [open("Mistaken room", [mem.name], `@${mem.name} start`)];
+      await say("open a room");
+      const d = await roomTitled("Mistaken room");
+      await db
+        .insert(task)
+        .values({ ownerUserId: A, title: "in the room", conversationId: d.conversationId });
+      replies[fac.name] = [
+        deleteBlock("Mistaken room", `wrong place ${fac.name}`),
+        "Continuing here.",
+      ];
+      const r = await say("delete that room and continue here");
+      expect(r.json.assistant.content).toContain('Deleted the room "Mistaken room"');
+      expect(await roomTitled("Mistaken room")).toBeUndefined();
+      expect((await call(A, "GET", `/api/discussions/${d.id}`)).json.discussion.status).toBe(
+        "cancelled",
+      );
+      expect(
+        await db
+          .select()
+          .from(discussionTurn)
+          .where(and(eq(discussionTurn.discussionId, d.id), eq(discussionTurn.status, "queued"))),
+      ).toEqual([]);
+      expect(
+        (await db.select().from(task).where(eq(task.ownerUserId, A))).find(
+          (t) => t.title === "in the room",
+        )?.conversationId,
+      ).toBe(c);
+      expect((await messagesOf(A, d.conversationId)).map((m) => m.content)).toContain(
+        `🗑 Deleted by ${fac.name}: wrong place ${fac.name}`,
+      );
+    });
+
+    test("a room request still waiting for approval is withdrawn", async () => {
+      const { fac } = await pair();
+      const title = `Pending ${uuidv7().slice(-6)}`;
+      // A chat turn applies its proposals at once; one waits for the user when it was made where nobody is chatting (a room, an inbound thread).
+      await db.$client.query(
+        "insert into config_proposal (owner_user_id, kind, proposed_by_bot_id, base_version, patch, diff) values ($1, 'open_discussion', $2, 0, $3, '[]')",
+        [A, fac.id, JSON.stringify({ title })],
+      );
+      const status = async () =>
+        (
+          await db.$client.query(
+            "select status from config_proposal where owner_user_id = $1 and kind = 'open_discussion' and patch->>'title' = $2",
+            [A, title],
+          )
+        ).rows;
+      expect(await status()).toEqual([{ status: "pending" }]);
+      const { say } = await chatWith(A, fac.id);
+      replies[fac.name] = [deleteBlock(title), "Done."];
+      const r = await say("never mind, withdraw that room request");
+      expect(r.json.assistant.content).toContain(`Withdrew the room request "${title}"`);
+      expect(await status()).toEqual([{ status: "stale" }]);
+    });
+
+    test("a member that did not open the room cannot delete it", async () => {
+      const { fac, mem } = await pair();
+      replies[fac.name] = [open("Kept room", [mem.name], `@${mem.name} start`)];
+      await (await chatWith(A, fac.id)).say("open a room");
+      await worker.drain(); // the room's own first turn for the member runs before the chat one
+      replies[mem.name] = [deleteBlock("Kept room"), "Understood."];
+      const r = await (await chatWith(A, mem.id)).say("delete the room");
+      expect(r.json.assistant.content).toContain("Only the bot that opened a room, or the Chief");
+      expect((await roomTitled("Kept room")).status).toBe("open");
+    });
+
+    test("the owner deletes a room from the API; another user cannot", async () => {
+      const { fac, mem } = await pair();
+      replies[fac.name] = [open("Api room", [mem.name], `@${mem.name} start`)];
+      await (await chatWith(A, fac.id)).say("open a room");
+      const d = await roomTitled("Api room");
+      expect((await call(B, "POST", `/api/discussions/${d.id}/delete`)).status).toBe(404);
+      expect((await call(A, "POST", `/api/discussions/${d.id}/delete`)).status).toBe(200);
+      expect(await roomTitled("Api room")).toBeUndefined();
+    });
+  });
 });

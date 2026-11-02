@@ -1,5 +1,7 @@
 # Hermes-style persistent memory
 
+> **Replaced 2026-11-02 by the unified wiki** (see [operator-wiki](operator-wiki.md), "Unified wiki"). The `memory` table and the `zetta:remember` block are gone. A bot's notes are wiki items of type `solo` tagged `memory`, the person's profile is items of type `owner` tagged `profile`, and the same bounded blocks (1375 and 2200 characters) are built from them. This page stays as the record of the research.
+
 Status: source-backed proposal, 2026-10-22. [054a](../../tasks/054a-record-hermes-memory-contract.md) records research before full runtime prerequisites. This does not complete RFC-054, authorize schema changes or claim Hermes is installed/connected. Source reads only; no private memory import, dependency install, model call or database migration. All upstream references accessed 2026-10-22.
 
 ## Motivation and constraints
@@ -12,13 +14,13 @@ Reuse Hermes's bounded curated-memory semantics through Zetta's actor-scoped dur
 
 The intended reference is **NousResearch/hermes-agent built-in curated memory**, not a hosted Hermes API or a specific external vector store. Research pinned upstream commit `41dfcf2c1bd7146d4ad46aea08b7dd007900602e` (2026-10-22). The repository's [pinned LICENSE](https://github.com/NousResearch/hermes-agent/blob/41dfcf2c1bd7146d4ad46aea08b7dd007900602e/LICENSE) is MIT, copyright2025 Nous Research; retain its notice if code is copied. The proposal below reimplements named semantics in TypeScript/PostgreSQL, with no Python package/service or upstream code copied in this task. Future copied code/assets require provenance and license notices at that change.
 
-| Primary source at the pinned commit | Observed behavior |
-| --- | --- |
-| [`tools/memory_tool_store.py`](https://github.com/NousResearch/hermes-agent/blob/41dfcf2c1bd7146d4ad46aea08b7dd007900602e/tools/memory_tool_store.py) | File-backed `MemoryStore`, frozen prompt snapshot, bounded writes, separate lock files, re-read under lock and atomic replace, drift/stale-entry errors, duplicate-add no-op, all-or-nothing batches |
-| [`tools/memory_tool.py`](https://github.com/NousResearch/hermes-agent/blob/41dfcf2c1bd7146d4ad46aea08b7dd007900602e/tools/memory_tool.py) | Native `memory` tool with memory/user targets and add/patch/remove or operations batch; legacy replace rejected at public tool entry; JSON result/error and enabled-store gates |
-| [`agent/memory_provider.py`](https://github.com/NousResearch/hermes-agent/blob/41dfcf2c1bd7146d4ad46aea08b7dd007900602e/agent/memory_provider.py) | Provider lifecycle: initialize/static block/prefetch/sync/tool dispatch/session boundaries/shutdown; instances must retain home/identity binding and thread context |
-| [`agent/memory_manager.py`](https://github.com/NousResearch/hermes-agent/blob/41dfcf2c1bd7146d4ad46aea08b7dd007900602e/agent/memory_manager.py) | Provider management, scoped background operations, finite drains/stuck-call handling and successful built-in write mirroring; not a Zetta service API |
-| [`tools/session_search_tool.py`](https://github.com/NousResearch/hermes-agent/blob/41dfcf2c1bd7146d4ad46aea08b7dd007900602e/tools/session_search_tool.py) | Separate history discovery/read/scroll/browse tool using FTS5/session lineage; curated memory is not the full transcript database |
+| Primary source at the pinned commit                                                                                                                       | Observed behavior                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`tools/memory_tool_store.py`](https://github.com/NousResearch/hermes-agent/blob/41dfcf2c1bd7146d4ad46aea08b7dd007900602e/tools/memory_tool_store.py)     | File-backed `MemoryStore`, frozen prompt snapshot, bounded writes, separate lock files, re-read under lock and atomic replace, drift/stale-entry errors, duplicate-add no-op, all-or-nothing batches |
+| [`tools/memory_tool.py`](https://github.com/NousResearch/hermes-agent/blob/41dfcf2c1bd7146d4ad46aea08b7dd007900602e/tools/memory_tool.py)                 | Native `memory` tool with memory/user targets and add/patch/remove or operations batch; legacy replace rejected at public tool entry; JSON result/error and enabled-store gates                      |
+| [`agent/memory_provider.py`](https://github.com/NousResearch/hermes-agent/blob/41dfcf2c1bd7146d4ad46aea08b7dd007900602e/agent/memory_provider.py)         | Provider lifecycle: initialize/static block/prefetch/sync/tool dispatch/session boundaries/shutdown; instances must retain home/identity binding and thread context                                  |
+| [`agent/memory_manager.py`](https://github.com/NousResearch/hermes-agent/blob/41dfcf2c1bd7146d4ad46aea08b7dd007900602e/agent/memory_manager.py)           | Provider management, scoped background operations, finite drains/stuck-call handling and successful built-in write mirroring; not a Zetta service API                                                |
+| [`tools/session_search_tool.py`](https://github.com/NousResearch/hermes-agent/blob/41dfcf2c1bd7146d4ad46aea08b7dd007900602e/tools/session_search_tool.py) | Separate history discovery/read/scroll/browse tool using FTS5/session lineage; curated memory is not the full transcript database                                                                    |
 
 The [official overview](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory) documents two files under a Hermes home: MEMORY.md (2,200 characters) and USER.md (1,375). Both enter the prompt as a session-start snapshot; writes persist without changing that prefix. Overflow returns an error rather than silent eviction. It explicitly warns against two agents sharing one Hermes home. Native profiles and the Python provider extension API are integration mechanisms, not an already-authorized multi-user Zetta backend.
 
@@ -26,21 +28,21 @@ Current source refines the overview: successful writes report completion, usage/
 
 ## Options and decision
 
-| Option | Cost / trade-off | Recommendation |
-| --- | --- | --- |
-| Run Hermes memory files/Python per actor and bot | Another runtime, process/home leases, file synchronization and callback integration for six harnesses | Reject for initial Zetta implementation |
-| Add a Hermes external memory provider | Adds provider-specific credentials/egress, retrieval and retention semantics; no chosen provider currently required | Defer; no fictitious hosted Hermes endpoint |
-| Port bounded curated semantics to existing PostgreSQL | Requires scoped transactions/revisions and a renderer; uses existing `pg`, Drizzle and Zod dependencies | Select as proposal |
+| Option                                                | Cost / trade-off                                                                                                    | Recommendation                              |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Run Hermes memory files/Python per actor and bot      | Another runtime, process/home leases, file synchronization and callback integration for six harnesses               | Reject for initial Zetta implementation     |
+| Add a Hermes external memory provider                 | Adds provider-specific credentials/egress, retrieval and retention semantics; no chosen provider currently required | Defer; no fictitious hosted Hermes endpoint |
+| Port bounded curated semantics to existing PostgreSQL | Requires scoped transactions/revisions and a renderer; uses existing `pg`, Drizzle and Zod dependencies             | Select as proposal                          |
 
 The port reuses curated stores, explicit add/patch/remove, bounded capacity, atomic batches, duplicate handling, immutable prompt snapshots and visible errors. It adds Zetta's immutable actor binding, stable entry IDs, optimistic revisions, provenance and deletion rules. Those additions are **local design**, not claims of upstream revision tokens or tenant ACLs. `packages/db/package.json` already declares pg/Drizzle/Zod; no vector database, embedding/model dependency or package change is proposed.
 
 ## Proposed scopes and bounded contract
 
-| Namespace | Read/write authority | Initial capacity |
-| --- | --- | --- |
-| User profile | Actor's own stable preferences; owner-authorized bots may read within that actor's run | 1,375 Unicode code points total |
-| Actor + bot curated notes | Facts/corrections learned by that bot while working for that actor | 2,200 Unicode code points total |
-| Published reusable instruction | Separate explicit authorized publication/versioned configuration flow | No implicit memory-to-team promotion; limits belong to its owning RFC |
+| Namespace                      | Read/write authority                                                                   | Initial capacity                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| User profile                   | Actor's own stable preferences; owner-authorized bots may read within that actor's run | 1,375 Unicode code points total                                       |
+| Actor + bot curated notes      | Facts/corrections learned by that bot while working for that actor                     | 2,200 Unicode code points total                                       |
+| Published reusable instruction | Separate explicit authorized publication/versioned configuration flow                  | No implicit memory-to-team promotion; limits belong to its owning RFC |
 
 These are logical namespaces, not an approved SQL schema/API. A bot ID never substitutes for actor identity. Workspaces/groups are visual and never enter an access decision. Shared-bot owner/admin cannot read another actor's memories. Chief delegation preserves actor; delegated work may receive only the selected source memories authorized for that task, not a union of all bots' stores. Scheduled work reads the routine owner's namespaces. No team memory is created merely because a bot is team-visible.
 
@@ -68,14 +70,14 @@ flowchart LR
 
 Capture snapshot content/revisions once at the logical run's initial native context boundary and retain its immutable identity for attempts/reconnects. This maps Hermes session-start freezing to Zetta's durable runs. Writes become visible through tool results immediately and in the next new run snapshot; they do not rewrite an in-flight prefix. Resume/retry must use the recorded snapshot only while access and deletion leases remain valid. If a native resumed session contains a different actor/configuration/snapshot, start a fresh owned session instead of claiming its history was replaced. Restart does not imply a fresh snapshot or permission to replay side effects.
 
-| Harness | Snapshot / live-tool candidate | Native memory boundary to prove |
-| --- | --- | --- |
-| Pi1.4.0 | Explicit initial instructions/context plus trusted registered Zetta extension tool | Private agent directory, no discovered global context/extensions/MCP; materialized approved inputs only |
-| Codex0.163.0 | App-server initial instructions plus dynamic host tools | Private CODEX_HOME/HOME, generated config and controlled memory/skill/hook roots; no host app daemon |
-| OMP18.6.1 | Explicit initial context plus native host tools | Private full native root/profile/XDG state, no .claude/.codex/.gemini or mnemopi/provider fallback |
-| Claude2.1.233 | Explicit initial context plus strict selected stdio MCP | Private HOME/config/native login; disable uncontrolled auto-memory/discovery with version-evidenced settings, without disabling the needed MCP bridge |
-| OpenCode2.0.28 | Owned session context plus private v2 local MCP | Private server/DB/XDG/temp, explicit selected config/plugins/instructions; no background service or foreign session |
-| Cursor | Explicit context plus local MCP is a documented candidate | Still blocked on verified product/version and complete private-state behavior |
+| Harness        | Snapshot / live-tool candidate                                                     | Native memory boundary to prove                                                                                                                       |
+| -------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pi1.4.0        | Explicit initial instructions/context plus trusted registered Zetta extension tool | Private agent directory, no discovered global context/extensions/MCP; materialized approved inputs only                                               |
+| Codex0.163.0   | App-server initial instructions plus dynamic host tools                            | Private CODEX_HOME/HOME, generated config and controlled memory/skill/hook roots; no host app daemon                                                  |
+| OMP18.6.1      | Explicit initial context plus native host tools                                    | Private full native root/profile/XDG state, no .claude/.codex/.gemini or mnemopi/provider fallback                                                    |
+| Claude2.1.233  | Explicit initial context plus strict selected stdio MCP                            | Private HOME/config/native login; disable uncontrolled auto-memory/discovery with version-evidenced settings, without disabling the needed MCP bridge |
+| OpenCode2.0.28 | Owned session context plus private v2 local MCP                                    | Private server/DB/XDG/temp, explicit selected config/plugins/instructions; no background service or foreign session                                   |
+| Cursor         | Explicit context plus local MCP is a documented candidate                          | Still blocked on verified product/version and complete private-state behavior                                                                         |
 
 These paths come from the [six-harness research](harness-compatibility.md); none is a completed operational proof. Do not invent a universal memory-disable flag. A private native home prevents cross-user reads but does not by itself prevent a harness's own automatic memory from diverging from Zetta. Each adapter must prove that only the accepted snapshot and scoped live tools become durable memory sources. Actor-private native transcripts may contain snapshots; include them in retention/deletion accounting.
 
@@ -103,20 +105,20 @@ Before implementation acceptance: approve logical scope/quotas/conflicts/deletio
 
 Verified against the upstream docs (memory feature page, MIT repo `NousResearch/hermes-agent`); semantics reimplemented on PostgreSQL, no Python or upstream code copied.
 
-| Hermes behaviour | Zetta v1 |
-| --- | --- |
-| Two bounded stores (MEMORY 2,200 / USER 1,375 chars, `§`-delimited) | `memory.target` = `memory` (that bot's own notes, per user) or `user` (profile shared by the user's bots); same limits, counted in Unicode code points, max 64 entries per store |
-| `memory` tool: add / patch (unique span) / remove (unique substring), `operations` batch | `zetta:remember` block with `target`, `action`, `content`, `match`, or `operations[]` (max 16); no `replace`, no read action |
-| Final-size budget check; full store errors with its entries, never auto-evicts | `OVERFLOW` returns current entries and usage to the model in the tool result; "shorten + add" in one batch succeeds |
-| Exact duplicate is a no-op success | Same (case/whitespace-insensitive) |
-| Ambiguous or missing match is rejected with candidates | `AMBIGUOUS` / `NOT_FOUND` with entries |
-| Entries scanned for injection, exfiltration, invisible Unicode | Secret screen plus injection/exfiltration/invisible-character screen (`UNSAFE`) |
-| Frozen snapshot at session start; writes visible in tool results, in prompt next session | Snapshot stored per conversation and bot on first turn (`conversation.memory_snapshot`); header shows `% — used/limit chars`; writes appear in the next conversation |
-| Whole store injected (no retrieval ranking) | Same; the old relevance filter was removed for memory (kept for reusable instructions) |
-| Per-profile isolation (never share one home) | Every query is scoped by owner; two-user test proves no cross-read; native harness homes stay private |
-| Save-vs-skip guidance in the prompt | Included in the tool preamble |
-| Atomic batches, lock on write | One transaction with a per-store advisory lock; failure rolls back the whole batch |
+| Hermes behaviour                                                                         | Zetta v1                                                                                                                                                                         |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Two bounded stores (MEMORY 2,200 / USER 1,375 chars, `§`-delimited)                      | `memory.target` = `memory` (that bot's own notes, per user) or `user` (profile shared by the user's bots); same limits, counted in Unicode code points, max 64 entries per store |
+| `memory` tool: add / patch (unique span) / remove (unique substring), `operations` batch | `zetta:remember` block with `target`, `action`, `content`, `match`, or `operations[]` (max 16); no `replace`, no read action                                                     |
+| Final-size budget check; full store errors with its entries, never auto-evicts           | `OVERFLOW` returns current entries and usage to the model in the tool result; "shorten + add" in one batch succeeds                                                              |
+| Exact duplicate is a no-op success                                                       | Same (case/whitespace-insensitive)                                                                                                                                               |
+| Ambiguous or missing match is rejected with candidates                                   | `AMBIGUOUS` / `NOT_FOUND` with entries                                                                                                                                           |
+| Entries scanned for injection, exfiltration, invisible Unicode                           | Secret screen plus injection/exfiltration/invisible-character screen (`UNSAFE`)                                                                                                  |
+| Frozen snapshot at session start; writes visible in tool results, in prompt next session | Snapshot stored per conversation and bot on first turn (`conversation.memory_snapshot`); header shows `% — used/limit chars`; writes appear in the next conversation             |
+| Whole store injected (no retrieval ranking)                                              | Same; the old relevance filter was removed for memory (kept for reusable instructions)                                                                                           |
+| Per-profile isolation (never share one home)                                             | Every query is scoped by owner; two-user test proves no cross-read; native harness homes stay private                                                                            |
+| Save-vs-skip guidance in the prompt                                                      | Included in the tool preamble                                                                                                                                                    |
+| Atomic batches, lock on write                                                            | One transaction with a per-store advisory lock; failure rolls back the whole batch                                                                                               |
 
-Deliberately not in v1: `session_search` over past chats (FTS), background "nudge" reviews, external providers, optional `write_approval` staging (bot-written *instructions* already need approval), `/journey` timeline. Native harness memory (e.g. Claude auto-memory, Codex memories) is still only isolated by per-user homes; per-harness disabling is unproven because the other five harnesses are quota-limited or missing (see release readiness).
+Deliberately not in v1: `session_search` over past chats (FTS), background "nudge" reviews, external providers, optional `write_approval` staging (bot-written _instructions_ already need approval), `/journey` timeline. Native harness memory (e.g. Claude auto-memory, Codex memories) is still only isolated by per-user homes; per-harness disabling is unproven because the other five harnesses are quota-limited or missing (see release readiness).
 
 Tests: `apps/server/src/modules/features/memory.integration.test.ts` (idempotent add, unique patch/remove, atomic rollback, overflow with entries, code-point counting, secret/injection refusal, per-user and per-bot privacy, rendered usage line).

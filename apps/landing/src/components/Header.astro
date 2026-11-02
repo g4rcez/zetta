@@ -1,0 +1,116 @@
+---
+import Logo from "./Logo.astro";
+import { getCopy, type Locale } from "../i18n";
+import { REPO } from "../links";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const { header: t } = getCopy(locale);
+const home = locale === "pt-br" ? "/pt-br/" : "/";
+const other = locale === "pt-br" ? "en" : "pt-BR";
+const links = [
+  { href: "#how", label: t.nav.how },
+  { href: "#features", label: t.nav.features },
+  { href: "#control", label: t.nav.control },
+  { href: "#self-host", label: t.nav.selfHost },
+  { href: "#faq", label: t.nav.faq },
+];
+---
+
+<header class="header">
+  <div class="wrap bar">
+    <a class="brand" href={home} aria-label={t.home}>
+      <Logo size={32} tile id="header" />
+      <span>Zetta</span>
+    </a>
+    <nav class="links">
+      <ul>
+        {links.map((l) => <li><a href={l.href}>{l.label}</a></li>)}
+      </ul>
+    </nav>
+    <div class="actions">
+      <a class="lang" href={t.switchHref} hreflang={other} lang={other} title={t.switchName}>{t.switchLabel}</a>
+      <a class="btn btn-ghost btn-sm github" href={REPO} target="_blank" rel="noopener noreferrer">{t.github}</a>
+      <a class="btn btn-primary btn-sm" href="#self-host">{t.cta}</a>
+    </div>
+  </div>
+</header>
+
+<style>
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    border-bottom: 1px solid var(--border);
+    background: var(--background);
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    height: 64px;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--foreground);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+  }
+  .links {
+    flex: 1;
+  }
+  .links ul {
+    display: flex;
+    justify-content: center;
+    gap: 28px;
+  }
+  .links a {
+    color: var(--muted-foreground);
+    font-size: 15px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .links a:hover {
+    color: var(--foreground);
+  }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .lang {
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    padding-inline: 8px;
+    border-radius: var(--radius-md);
+    color: var(--foreground);
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .lang:hover {
+    background: var(--accent);
+  }
+  .github {
+    color: var(--foreground);
+  }
+  @media (max-width: 880px) {
+    .links {
+      display: none;
+    }
+  }
+  @media (max-width: 520px) {
+    .github {
+      display: none;
+    }
+  }
+</style>

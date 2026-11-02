@@ -77,6 +77,17 @@ export function createDecisionRoutes(
             { error: { code: "INVALID_REQUEST", message: "Check the details and try again." } },
             400,
           );
+        if (e instanceof DecisionError && e.code === "off")
+          return json(
+            {
+              error: {
+                code: "DECISION_MODEL_OFF",
+                message:
+                  "The decision model is off. An administrator can turn it on in Studio > Decisions.",
+              },
+            },
+            409,
+          );
         return json(
           {
             error: {

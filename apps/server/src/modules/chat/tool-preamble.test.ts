@@ -59,7 +59,7 @@ describe("zetta:plan", () => {
     expect(r.text).toBe("Hi");
   });
   test("a plan does not count toward the eight-block limit", () => {
-    const remember = '```zetta:remember\n{"content":"x"}\n```\n';
+    const remember = '```zetta:wiki\n{"action":"search","query":"x"}\n```\n';
     const r = parseTools(remember.repeat(8) + fence('{"steps":[{"id":"1","title":"Only"}]}'));
     expect(r.calls).toHaveLength(8);
     expect(r.rejected).toEqual([]);
@@ -138,22 +138,28 @@ describe("chief tools", () => {
       },
     ]);
   });
-  test("instruction accepts the old create form and a read by id, and nothing else", () => {
+  test("wiki accepts the graph fields and never lets a bot publish", () => {
+    const wiki = (json: string) => parseTools("```zetta:wiki\n" + json + "\n```").calls;
     expect(
-      parseTools('```zetta:instruction\n{"title":"Report","body":"1. pull 2. sum"}\n```').calls,
+      wiki(
+        '{"action":"write","slug":"close-month","title":"Close the month","content":"1. pull 2. sum","howto":"month end","tags":["instruction"],"type":"teams","teams":["0192f5a0-7b1c-7000-8000-000000000001"],"score":80}',
+      ),
     ).toHaveLength(1);
+    expect(wiki('{"action":"links","slug":"close-month","depth":2}')).toHaveLength(1);
+    expect(wiki('{"action":"archive","slug":"close-month"}')).toHaveLength(1);
+    // `all` publishes to every member: only a person does that. Out-of-range score, depth and old field names are refused.
     expect(
-      parseTools(
-        '```zetta:instruction\n{"action":"read","id":"0192f5a0-7b1c-7000-8000-000000000001"}\n```',
-      ).calls,
-    ).toHaveLength(1);
-    expect(
-      parseTools('```zetta:instruction\n{"action":"read","id":"not-a-uuid"}\n```').calls,
+      wiki('{"action":"write","slug":"a","title":"A","content":"x","type":"all"}'),
     ).toHaveLength(0);
     expect(
-      parseTools(
-        '```zetta:instruction\n{"action":"read","id":"0192f5a0-7b1c-7000-8000-000000000001","body":"x"}\n```',
-      ).calls,
+      wiki('{"action":"write","slug":"a","title":"A","content":"x","score":101}'),
+    ).toHaveLength(0);
+    expect(wiki('{"action":"links","slug":"a","depth":3}')).toHaveLength(0);
+    expect(wiki('{"action":"write","slug":"a","title":"A","body":"x"}')).toHaveLength(0);
+  });
+  test("the old instruction block is not a tool any more", () => {
+    expect(
+      parseTools('```zetta:instruction\n{"title":"Report","body":"1. pull 2. sum"}\n```').calls,
     ).toHaveLength(0);
   });
 });

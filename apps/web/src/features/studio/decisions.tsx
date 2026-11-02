@@ -3,22 +3,27 @@ import { Button, Input, Textarea } from "@/components/ui";
 
 import { call } from "../chat/chat-client";
 import { Badge } from "../shared/ui";
+import { LayaSwitch } from "./laya-switch";
 
 export function Decisions({ onError }: { onError: (m: string) => void }) {
   const [status, setStatus] = useState<string>("checking");
+  const [variant, setVariant] = useState<string>();
   const [result, setResult] = useState<{ choice: string; probabilities: Record<string, number> }>();
   const [busy, setBusy] = useState(false);
+  // Bumped when the administrator flips the switch, so the status is read again.
+  const [epoch, setEpoch] = useState(0);
   useEffect(() => {
     let alive = true;
     let t: ReturnType<typeof setInterval> | undefined;
-    // The model only loads once: stop polling when it is ready, and skip hidden tabs.
+    // The model only loads once: stop polling when it is ready or off, and skip hidden tabs.
     const poll = () => {
       if (document.visibilityState === "visible")
-        void call<{ state: string }>("/api/decisions/status")
+        void call<{ state: string; variant?: string }>("/api/decisions/status")
           .then((r) => {
             if (!alive) return;
             setStatus(r.state);
-            if (r.state === "ready") stop();
+            setVariant(r.variant);
+            if (r.state === "ready" || r.state === "off") stop();
           })
           .catch(() => {
             if (alive) setStatus("unavailable");
@@ -35,7 +40,7 @@ export function Decisions({ onError }: { onError: (m: string) => void }) {
       alive = false;
       stop();
     };
-  }, []);
+  }, [epoch]);
   async function decide(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -72,12 +77,30 @@ export function Decisions({ onError }: { onError: (m: string) => void }) {
       <p className="flex flex-wrap items-center xl:col-span-2 gap-x-2 gap-y-1 text-sm text-pretty text-muted-foreground">
         Built-in decision model (Laya){" "}
         <Badge tone={status === "ready" ? "success" : status === "loading" ? "warning" : "neutral"}>
-          {status === "ready" ? "Ready" : status === "loading" ? "Loading…" : status}
+          {status === "ready"
+            ? "Ready"
+            : status === "loading"
+              ? "Loading…"
+              : status === "off"
+                ? "Off"
+                : status}
         </Badge>{" "}
+        {status !== "off" && variant && (
+          <span>({variant === "multilingual" ? "multilingual" : "English"} model) </span>
+        )}
         Runs on this server for free and picks between options with calibrated probabilities.
         Workflows and bot routing can use it.
       </p>
+      <LayaSwitch
+        className="xl:col-span-2"
+        onError={onError}
+        onChanged={() => {
+          setStatus("checking");
+          setEpoch((n) => n + 1);
+        }}
+      />
       <form onSubmit={(e) => void decide(e)} className="space-y-3 rounded-xl border bg-card p-5">
+        {/* Plain on purpose: pasted external text (a ticket, an email), where `@` appears in addresses and handles. */}
         <Textarea
           title="Situation"
           name="subject"

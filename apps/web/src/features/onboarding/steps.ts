@@ -6,7 +6,6 @@ export const ONBOARDING_STEPS = [
   "engine",
   "instructions",
   "plugins",
-  "test",
 ] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 export const isOnboardingStep = (value: unknown): value is OnboardingStep =>

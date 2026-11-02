@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ARTIFACT_HTML_CSP, ARTIFACT_HTML_SANDBOX } from "@zetta/core/artifact-csp";
 import { Skeleton } from "@zetta/ui/components/skeleton";
 import { CodeBlock } from "../chat/chat-copy";
+import { languageOf } from "../chat/code-fence";
+import { HighlightedCode } from "../chat/highlighted-code";
 import { Response } from "../chat/response";
 import { Empty } from "../shared/ui";
 import { contentUrl, fetchContent, formatSize, type Artifact } from "./artifacts-api";
@@ -91,6 +93,8 @@ function TextViewer({ a }: { a: Artifact }) {
     <div className="rounded-lg border bg-card p-5">
       <Response text={body} />
     </div>
+  ) : a.kind === "code" || a.kind === "json" ? (
+    <HighlightedCode text={body} language={a.kind === "json" ? "json" : languageOf(a.fileName)} />
   ) : (
     <CodeBlock text={body} />
   );
@@ -168,6 +172,8 @@ function ImageViewer({ a }: { a: Artifact }) {
 }
 
 const ENTRY_TEXT = /\.(txt|md|csv|tsv|json|html?|css|js|ts|tsx|jsx|py|sh|sql|ya?ml|toml|xml|log)$/i;
+/** Entries shown with syntax highlighting; the other text entries stay plain. */
+const ENTRY_CODE = /\.(json|html?|css|js|ts|tsx|jsx|py|sh|sql|ya?ml|toml|xml)$/i;
 const ENTRY_IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;
 type Entry = { name: string; size: number };
 
@@ -270,6 +276,10 @@ function ZipEntry({ data, entry }: { data: Uint8Array; entry: Entry }) {
   if (!bytes) return <Empty>This file is too large to preview. Download the zip to open it.</Empty>;
   if (url)
     return <img src={url} alt={entry.name} className="max-h-[75vh] max-w-full rounded-lg border" />;
+  if (ENTRY_CODE.test(entry.name))
+    return (
+      <HighlightedCode text={new TextDecoder().decode(bytes)} language={languageOf(entry.name)} />
+    );
   if (ENTRY_TEXT.test(entry.name)) return <CodeBlock text={new TextDecoder().decode(bytes)} />;
   return <Empty>No preview for this type of file. Download the zip to open it.</Empty>;
 }

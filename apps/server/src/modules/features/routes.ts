@@ -1,7 +1,6 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
-import { KnowledgeError } from "./knowledge";
 import { HookError, isReactionEmoji, type FeaturesService } from "./service";
 import { RoutineError } from "./routines";
 import { SnapshotError } from "./snapshots";
@@ -22,28 +21,6 @@ const schedule = {
   onceAt: z.string().datetime().optional(),
 };
 const schemas = {
-  memory: z.strictObject({
-    content: text(500),
-    botId: uuid.optional(),
-    category: z.enum(["fact", "preference", "decision", "correction"]).optional(),
-  }),
-  memoryUpdate: z.strictObject({ expectedVersion: counter, content: text(500) }),
-  instruction: z.strictObject({
-    title: text(120),
-    body: text(8000),
-    trigger: z.string().max(300).optional(),
-    verification: z.string().max(500).optional(),
-    teamId: z.string().uuid().nullable().optional(),
-  }),
-  instructionUpdate: z.strictObject({
-    expectedVersion: counter,
-    title: text(120).optional(),
-    body: text(8000).optional(),
-    trigger: z.string().max(300).optional(),
-    verification: z.string().max(500).optional(),
-    archived: z.boolean().optional(),
-    teamId: z.string().uuid().nullable().optional(),
-  }),
   hook: z.strictObject({
     kind: z.enum(["add_context", "redact", "stop", "background"]),
     pattern: z.string().max(100).optional(),
@@ -80,6 +57,7 @@ const schemas = {
     count: z.number().int().min(1).max(10).optional(),
   }),
   calendar: z.strictObject({ from: z.string().datetime(), to: z.string().datetime() }),
+  routineRead: z.strictObject({ conversationId: uuid }),
   paused: z.strictObject({ paused: z.boolean() }),
   runNow: z.strictObject({ requestKey: z.string().min(8).max(100) }),
   attention: z.strictObject({
@@ -157,16 +135,6 @@ export function createFeatureRoutes(
               `${e.detail ?? "A bot"} is not ready yet. Finish its setup first.`,
             )
           : fail(400, "INVALID_WORKFLOW", e.detail ?? "The workflow is not valid.");
-    if (e instanceof KnowledgeError)
-      return e.code === "SECRET_REJECTED"
-        ? fail(400, "SECRET_REJECTED", "That looks like a secret, so it was not saved.")
-        : e.code === "FULL"
-          ? fail(409, "LIMIT", "You reached the limit. Delete something first.")
-          : fail(
-              409,
-              "STALE_VERSION",
-              "This changed or duplicates another entry. Reload and try again.",
-            );
     if (e instanceof HookError)
       return fail(
         400,
@@ -223,54 +191,8 @@ export function createFeatureRoutes(
   const id = (c: Ctx) => uuid.parse(c.params.id);
   return new Elysia({ prefix: "/api", normalize: false })
     .get(
-      "/memories",
-      g(async ({ actor }) => ({ memories: await f.listMemories(actor) })),
-    )
-    .post(
-      "/memories",
-      g(async (c) => {
-        const v = schemas.memory.parse(c.body);
-        return { memory: await f.addMemory(c.actor, v.content, v.botId, v.category) };
-      }, 201),
-    )
-    .patch(
-      "/memories/:id",
-      g(async (c) => {
-        const v = schemas.memoryUpdate.parse(c.body);
-        return { memory: await f.updateMemory(c.actor, id(c), v.expectedVersion, v.content) };
-      }),
-    )
-    .delete(
-      "/memories/:id",
-      g(async (c) => ({ memory: await f.deleteMemory(c.actor, id(c)) })),
-    )
-    .get(
       "/messages/:id/knowledge",
       g(async (c) => f.usedKnowledge(c.actor, id(c))),
-    )
-    .get(
-      "/instructions",
-      g(async ({ actor }) => ({ instructions: await f.listInstructions(actor) })),
-    )
-    .post(
-      "/instructions",
-      g(
-        async (c) => ({
-          instruction: await f.addInstruction(c.actor, schemas.instruction.parse(c.body)),
-        }),
-        201,
-      ),
-    )
-    .patch(
-      "/instructions/:id",
-      g(async (c) => {
-        const { expectedVersion, ...v } = schemas.instructionUpdate.parse(c.body);
-        return { instruction: await f.updateInstruction(c.actor, id(c), expectedVersion, v) };
-      }),
-    )
-    .delete(
-      "/instructions/:id",
-      g(async (c) => ({ instruction: await f.deleteInstruction(c.actor, id(c)) })),
     )
     .get(
       "/bots/:id/hooks",
@@ -323,6 +245,17 @@ export function createFeatureRoutes(
       g(async (c) => {
         const v = schemas.calendar.parse(c.body);
         return f.routines.timeline(c.actor, new Date(v.from), new Date(v.to));
+      }),
+    )
+    .get(
+      "/routines/unread",
+      g(async ({ actor }) => f.routines.unread(actor)),
+    )
+    .post(
+      "/routines/read",
+      g(async (c) => {
+        await f.routines.markRead(c.actor, schemas.routineRead.parse(c.body).conversationId);
+        return { ok: true };
       }),
     )
     .post(

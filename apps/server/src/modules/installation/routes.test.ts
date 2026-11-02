@@ -10,6 +10,8 @@ function app() {
     networkMode: "local",
     publicUrl: null,
     onboarding: "pending",
+    laya: "off",
+    layaLanguages: ["en"],
   };
   const auth = {
     api: {
@@ -62,8 +64,45 @@ describe("installation settings", () => {
       networkMode: "network",
       publicUrl: "https://zetta.example.invalid",
       onboarding: "pending",
+      laya: "off",
+      layaLanguages: ["en"],
+      layaModel: "english",
       restartRequired: true,
     });
+  });
+  test("Laya is off until the admin turns it on", async () => {
+    const a = app();
+    const read = async () =>
+      (
+        (await (
+          await a.handle(
+            new Request("http://localhost/api/installation", { headers: { cookie: "member" } }),
+          )
+        ).json()) as { laya: string }
+      ).laya;
+    expect(await read()).toBe("off");
+    expect((await patch(a, "member", { laya: "on" })).status).toBe(403);
+    expect((await patch(a, "admin", { laya: "maybe" })).status).toBe(400);
+    expect((await patch(a, "admin", { laya: "on" })).status).toBe(200);
+    expect(await read()).toBe("on");
+  });
+  test("Laya languages: other languages select the multilingual model, bad tags are refused", async () => {
+    const a = app();
+    const read = async () =>
+      (await (
+        await a.handle(
+          new Request("http://localhost/api/installation", { headers: { cookie: "member" } }),
+        )
+      ).json()) as { layaLanguages: string[]; layaModel: string };
+    expect((await patch(a, "member", { layaLanguages: ["en", "pt-BR"] })).status).toBe(403);
+    expect((await patch(a, "admin", { layaLanguages: ["pt_BR"] })).status).toBe(400);
+    expect((await patch(a, "admin", { layaLanguages: ["en", "pt-BR"] })).status).toBe(200);
+    expect(await read()).toMatchObject({
+      layaLanguages: ["en", "pt-BR"],
+      layaModel: "multilingual",
+    });
+    expect((await patch(a, "admin", { layaLanguages: ["en"] })).status).toBe(200);
+    expect(await read()).toMatchObject({ layaLanguages: ["en"], layaModel: "english" });
   });
   test("only the admin changes settings", async () => {
     expect((await patch(app(), "member", { onboarding: "done" })).status).toBe(403);

@@ -203,6 +203,18 @@ describe("plugin service", () => {
   });
 });
 
+describe("github plugin", () => {
+  test("installs without a token (the server's gh login can serve) and keeps no secret", async () => {
+    const { plugins, secrets, servers } = world();
+    const a = actor("u1");
+    await plugins.install(a, "github", {}, ["bot1"]);
+    expect(servers[0]).toMatchObject({ name: "github", url: "https://api.githubcopilot.com/mcp/" });
+    expect(secrets.size).toBe(0);
+    expect(await plugins.bindings(a, "bot1")).toEqual(["github"]);
+    expect((await plugins.test(a, "github")).tools).toEqual([]);
+  });
+});
+
 const line: PluginDef = {
   id: "fake-line",
   name: "Fake line",

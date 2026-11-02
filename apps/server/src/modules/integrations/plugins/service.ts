@@ -1,5 +1,6 @@
 import type { Database } from "@zetta/db";
 import { audit, auditToolDetail } from "../../features/audit";
+import { ghLoggedIn, harnessHome } from "../../chat/harness";
 import { AccessError, type ActiveActor } from "../../identity/access";
 import type { ConnectionsService } from "../../connections/service";
 import { toolAllowed, type ToolAccess } from "../tool-access";
@@ -308,6 +309,26 @@ export function createPlugins(
       const { d, s } = await installed(a, id).catch(() => installed(a, id, "team"));
       return ctxFor(a, d, s);
     },
+    /**
+     * Internal (the chat fast path): the context of a native plugin for one bot and one tool, or undefined when the plugin is not
+     * bound to the bot, the bot may not use the tool, or the bot holds both the user's own and the team's configuration. Never exposed through routes.
+     */
+    async contextForBot(
+      a: ActiveActor,
+      botId: string,
+      id: string,
+      tool: string,
+    ): Promise<PluginContext | undefined> {
+      try {
+        const d = getPlugin(id);
+        const binding = pickBinding(await mcp().bound(a, botId), id);
+        if (!d || d.kind !== "native" || d.always || !binding || !toolAllowed(binding, tool))
+          return undefined;
+        return await ctxFor(a, d, await boundRow(a, binding), undefined, botId);
+      } catch {
+        return undefined;
+      }
+    },
     /** The plugins the user may use: their own and the team's. Probing is separate (`test`). */
     async list(a: ActiveActor) {
       const out: {
@@ -482,11 +503,16 @@ export function createPlugins(
       throw failure;
     },
     /** Revokes remote access and wipes the stored credentials, keeping the plugin installed. */
-    async disconnect(a: ActiveActor, id: string, scope: Scope = "mine") {
+    async disconnect(
+      a: ActiveActor,
+      id: string,
+      scope: Scope = "mine",
+      options?: Record<string, unknown>,
+    ) {
       const { d, s } = await managed(a, id, scope);
       if (!d.disconnect)
         throw new PluginError("NOT_SUPPORTED", "This plugin has nothing to disconnect.");
-      await withDeadline(d.disconnect(await ctxFor(a, d, s)));
+      await withDeadline(d.disconnect(await ctxFor(a, d, s), options));
       return { id };
     },
     /** Health check + tool list. MCP plugins connect and list tools; native plugins use `status()`. Never throws for plugin failures. */
@@ -496,6 +522,19 @@ export function createPlugins(
       scope: Scope = "mine",
     ): Promise<{ status: PluginStatus; tools: { name: string; description: string }[] }> {
       const { d, s } = await installed(a, id, scope);
+      // GitHub without a token has no tools (its MCP server needs one), but bots still use the server's gh login for git and gh.
+      if (d.id === "github" && !s.connectionId) {
+        const cli = await ghLoggedIn(harnessHome(a.userId, "claude-code"));
+        return {
+          status: cli
+            ? { state: "connected", detail: "Uses the GitHub CLI login on the server." }
+            : {
+                state: "needs-auth",
+                detail: "Add a token, or run `gh auth login` on the server.",
+              },
+          tools: [],
+        };
+      }
       if (d.kind === "mcp") {
         try {
           const tools = await mcp().tools(a, s.id);

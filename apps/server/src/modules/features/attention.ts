@@ -47,6 +47,7 @@ export async function raiseAttention(
       target: [attentionItem.ownerUserId, attentionItem.sourceKey],
       targetWhere: sql`${attentionItem.sourceKey} is not null and ${attentionItem.status} in ('open', 'acknowledged')`,
       set: {
+        title: values.title,
         occurrences: sql`${attentionItem.occurrences} + 1`,
         detail: values.detail,
         updatedAt: new Date(),
@@ -72,6 +73,25 @@ export async function closeAttention(
       and(
         eq(attentionItem.ownerUserId, ownerUserId),
         eq(attentionItem.resultLink, resultLink),
+        inArray(attentionItem.status, ["open", "acknowledged"]),
+      ),
+    );
+}
+
+/** Closes the live card of one situation by its `sourceKey` (for example `proposal:<id>` once the proposal is decided). */
+export async function closeAttentionKey(
+  db: Pick<Database, "update">,
+  ownerUserId: string,
+  sourceKey: string,
+  status: "resolved" | "cancelled",
+) {
+  await db
+    .update(attentionItem)
+    .set({ status, updatedAt: new Date() })
+    .where(
+      and(
+        eq(attentionItem.ownerUserId, ownerUserId),
+        eq(attentionItem.sourceKey, sourceKey),
         inArray(attentionItem.status, ["open", "acknowledged"]),
       ),
     );

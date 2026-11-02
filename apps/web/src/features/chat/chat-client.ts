@@ -21,10 +21,25 @@ export type Bot = {
   model: string | null;
   personality: string;
   instructions: string;
+  /** Tone of voice. Missing on the public card of a bot you do not own. */
+  outputStyle?: OutputStyleKey;
+  outputStyleId?: string | null;
   computerMode?: ComputerMode;
   codeAccess?: boolean;
+  commitIdentity?: CommitIdentity;
+  commitEmail?: string | null;
   requiredConnections?: RequiredConnection[];
 };
+/** A built-in key, or `custom` together with `outputStyleId`. A patch sends both or neither. */
+export type OutputStyleKey =
+  | "default"
+  | "proactive"
+  | "concise"
+  | "explanatory"
+  | "learning"
+  | "custom";
+/** Who a code bot's commits are signed as: the server's git config, the bot's own address, the owner's account, or `commitEmail`. */
+export type CommitIdentity = "git-config" | "bot" | "account" | "custom";
 export type ComputerMode = "off" | "browser" | "desktop";
 export type BotStatus = "available" | "working" | "planning" | "pending" | "error" | "offline";
 export type BotStatusEntry = { botId: string; status: BotStatus; reason: string };
@@ -45,8 +60,12 @@ export type BotPatch = Partial<{
   model: string | null;
   personality: string;
   instructions: string;
+  outputStyle: OutputStyleKey;
+  outputStyleId: string | null;
   computerMode: ComputerMode;
   codeAccess: boolean;
+  commitIdentity: CommitIdentity;
+  commitEmail: string | null;
   requiredConnections: RequiredConnection[];
 }>;
 export type Conversation = {
@@ -65,14 +84,12 @@ export type ProposalKind =
   | "create_bot"
   | "create_routine"
   | "create_workflow"
-  | "create_instruction"
   | "create_vm"
   | "open_discussion"
   | "discussion_brief"
   | "start_loop"
   | "team_goals"
   | "bot_permission"
-  | "create_memory"
   | "create_wiki_page";
 export type Proposal = {
   id: string;
@@ -125,6 +142,7 @@ export type MessageMeta = {
   used?: {
     memories?: string[];
     instructions?: string[];
+    wiki?: string[];
     /** Company documents the bot was shown, in citation order. */ docs?: {
       docId: string;
       chunkId: string;
@@ -139,6 +157,8 @@ export type MessageMeta = {
     label: string;
   }[];
   decision?: { action: string; choice?: string; confidence?: number };
+  /** GitHub repositories (`owner/repo`) this code run worked in, most recent first: where `#12` and commit ids of the reply point. */
+  repos?: string[];
   /** Written by outside people through a channel plugin (WhatsApp, Telegram...). */ inbound?: {
     plugin: string;
     label: string;
@@ -169,7 +189,7 @@ export type Message = {
 };
 export type UsedKnowledge = {
   memories: { id: string; content: string }[];
-  instructions: { id: string; title: string }[];
+  wiki: { id: string; slug: string; title: string }[];
 };
 export type ConnectionState = "active" | "revoked" | string;
 export type Connection = {
@@ -323,11 +343,20 @@ export type InterviewInput = {
   name: string;
   description?: string;
   transcript: { question: string; answer: string }[];
+  /** The style picked so far, so the engine keeps it or a custom one. */
+  outputStyle?: OutputStyleKey;
   refine?: { personality: string; instructions: string; change: string };
 };
 export type InterviewResult =
   | { kind: "question"; question: string; suggestions: string[] }
-  | { kind: "draft"; personality: string; instructions: string; summary: string[] }
+  | {
+      kind: "draft";
+      personality: string;
+      instructions: string;
+      summary: string[];
+      /** The built-in style the engine recommends; absent when it chose none. */
+      outputStyle?: Exclude<OutputStyleKey, "custom">;
+    }
   | { kind: "unavailable"; reason: string };
 
 export const chatClient = {
@@ -343,26 +372,21 @@ export const chatClient = {
     model?: string | null;
     personality?: string;
     instructions?: string;
+    outputStyle?: OutputStyleKey;
+    outputStyleId?: string | null;
   }) => call<{ bot: Bot }>("/api/bots", "POST", input).then((r) => r.bot),
   interviewBot: (input: InterviewInput) =>
     call<InterviewResult>("/api/bots/interview", "POST", input),
   updateBot: (id: string, expectedVersion: number, patch: BotPatch) =>
     call<{ bot: Bot }>(`/api/bots/${id}`, "PATCH", { expectedVersion, patch }).then((r) => r.bot),
-  askOnboarding: (id: string, conversationId: string) =>
-    call<{ questionId: string }>(`/api/bots/${id}/onboarding/question`, "POST", { conversationId }),
-  answerOnboarding: (
-    id: string,
-    input: {
-      conversationId: string;
-      questionId: string;
-      expectedVersion: number;
-      satisfied: boolean;
-    },
-  ) => call<{ bot: Bot }>(`/api/bots/${id}/onboarding`, "POST", input).then((r) => r.bot),
+  deleteBot: (id: string) => call<{ bot: Bot }>(`/api/bots/${id}`, "DELETE").then((r) => r.bot),
   conversations: (botId?: string, archived = false) =>
     call<{ conversations: Conversation[] }>(
       `/api/conversations?${new URLSearchParams({ ...(botId ? { botId } : {}), ...(archived ? { archived: "true" } : {}) })}`,
     ).then((r) => r.conversations),
+  /** One chat by id, also a routine's chat that `conversations()` leaves out. */
+  conversation: (id: string) =>
+    call<{ conversation: Conversation }>(`/api/conversations/${id}`).then((r) => r.conversation),
   deleteConversation: (id: string) => call(`/api/conversations/${id}`, "DELETE"),
   startConversation: (botId: string) =>
     call<{ conversation: Conversation }>("/api/conversations", "POST", { botId }).then(
@@ -386,7 +410,7 @@ export const chatClient = {
       parentMessageId?: string;
       attachmentIds?: string[];
       fileRefs?: string[];
-      instructionIds?: string[];
+      wikiIds?: string[];
     },
   ) =>
     call<{ message: Message }>(`/api/conversations/${id}/queue`, "POST", body).then(
@@ -438,8 +462,14 @@ export const chatClient = {
       sources: { n: number; docId: string; name: string; link: string | null; snippet: string }[];
     }>(`/api/messages/${messageId}/sources`).then((r) => r.sources),
   usedKnowledge: (messageId: string) => call<UsedKnowledge>(`/api/messages/${messageId}/knowledge`),
-  saveInstruction: (title: string, body: string) =>
-    call("/api/instructions", "POST", { title, body }),
+  /** Saves text as a wiki procedure (tag instruction) the bots find when a similar task comes up. */
+  saveToWiki: (title: string, content: string) =>
+    call(`/api/wiki/${encodeURIComponent(title.slice(0, 80))}`, "PUT", {
+      title,
+      content,
+      tags: ["instruction"],
+      expectedVersion: 0,
+    }),
   connections: () => call<ConnectionList>("/api/connections"),
   requirements: (botId: string) =>
     call<{ requirements: Requirement[] }>(`/api/bots/${botId}/connections`).then(

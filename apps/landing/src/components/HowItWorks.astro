@@ -1,0 +1,308 @@
+---
+// Five steps as alternating text and small UI scenes. The clock is the same one the example runs use.
+// The fourth step is the stop where a person was needed, so it is the only one in amber.
+import Logo from "./Logo.astro";
+import BotArt from "./BotArt.astro";
+import { getCopy, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const copy = getCopy(Astro.props.locale);
+const t = copy.how;
+const v = t.vignettes;
+const hub = copy.hero.hub;
+const [briefing, , newsletter] = t.demo.tabs;
+const times = ["08:00", "08:01", "08:06", "08:14", "08:20"];
+---
+
+<section class="section band" id="how">
+  <div class="wrap">
+    <div class="head">
+      <h2>{t.title}</h2>
+      <p class="lead">{t.lead}</p>
+    </div>
+
+    <ol class="steps">
+      {t.steps.map((s, i) => (
+        <li class:list={{ stop: i === 3 }}>
+          <div class="text">
+            <div class="title">
+              <h3>{s.title}</h3>
+              <span class="time">{times[i]}</span>
+            </div>
+            <p>{s.body}</p>
+          </div>
+
+          <div class="scene" role="img" aria-label={`${s.title}. ${t.demo.illustrated}.`}>
+            {i === 0 ? (
+              <div class="composer">
+                <p>{briefing.user}</p>
+                <span class="send" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </span>
+              </div>
+            ) : null}
+
+            {i === 1 ? (
+              <ul class="rows tree">
+                <li class="chief"><Logo size={28} tile id="how-chief" /><b>{hub.chief}</b><span>{hub.chiefRole}</span></li>
+                {v.delegate.map((line, n) => (
+                  <li class="sub"><BotArt name={hub.bots[n].name} size={28} />{line}</li>
+                ))}
+              </ul>
+            ) : null}
+
+            {i === 2 ? (
+              <ul class="rows">
+                <li><Logo size={28} tile id="how-routine" />{v.server[0]}</li>
+                <li><BotArt name={hub.bots[2].name} size={28} />{v.server[1]}</li>
+                <li class="closed"><span class="dot"></span>{v.server[2]}</li>
+              </ul>
+            ) : null}
+
+            {i === 3 ? (
+              <div class="inbox">
+                <p class="bar"><b>{v.inbox}</b><span class="count">1</span></p>
+                <div class="needs">
+                  <p class="who"><BotArt name={hub.bots[0].name} size={28} /><b>{hub.bots[0].name}</b><b class="badge">{hub.needs}</b></p>
+                  <p>{newsletter.outcome.body}</p>
+                  {newsletter.outcome.actions ? <div class="acts"><span class="ok">{newsletter.outcome.actions[0]}</span><span class="no">{newsletter.outcome.actions[1]}</span></div> : null}
+                </div>
+              </div>
+            ) : null}
+
+            {i === 4 ? (
+              <div class="result">
+                <h4>
+                  <svg viewBox="0 0 16 16" width="16" height="16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  {briefing.outcome.title}
+                </h4>
+                <p>{briefing.outcome.body}</p>
+                <p class="foot">{v.actions}</p>
+              </div>
+            ) : null}
+          </div>
+        </li>
+      ))}
+    </ol>
+  </div>
+</section>
+
+<style>
+  .steps {
+    display: grid;
+    gap: 72px;
+    max-width: 1040px;
+    margin-inline: auto;
+  }
+  .steps > li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 72px;
+    align-items: center;
+  }
+  /* Zigzag: even rows put the scene on the left. */
+  .steps > li:nth-child(even) .text {
+    order: 2;
+  }
+  .text {
+    display: grid;
+    justify-items: start;
+    gap: 12px;
+  }
+  .text h3 {
+    font-size: 32px;
+    line-height: 36px;
+    letter-spacing: -0.03em;
+  }
+  .title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+  }
+  .text p {
+    max-width: 44ch;
+    color: var(--muted-foreground);
+    font-size: 18px;
+    line-height: 28px;
+  }
+  .time {
+    padding-inline: 8px;
+    border: 1px solid var(--input);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 22px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stop .time {
+    border-color: var(--attention);
+    background: var(--attention);
+    color: var(--attention-foreground);
+  }
+
+  .scene {
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    background: var(--card);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .composer {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    padding: 12px 12px 12px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--card);
+    font-size: 15px;
+    line-height: 22px;
+  }
+  .send {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+
+  .rows {
+    display: grid;
+    gap: 8px;
+  }
+  .rows li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--background);
+  }
+  .rows .chief span:last-child {
+    margin-left: auto;
+    color: var(--muted-foreground);
+  }
+  .tree .sub {
+    margin-left: 32px;
+  }
+  .dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--input);
+  }
+  /* The row that says the tab is closed sits back: the work goes on without it. */
+  .closed {
+    color: var(--muted-foreground);
+  }
+  .closed .dot {
+    margin-inline: 10px;
+  }
+
+  .inbox .bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .count,
+  .badge {
+    padding-inline: 6px;
+    border-radius: var(--radius-sm);
+    background: var(--attention);
+    color: var(--attention-foreground);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  .who {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .needs {
+    display: grid;
+    justify-items: start;
+    gap: 4px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--attention) 60%, transparent);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--attention) 12%, var(--card));
+  }
+  .result h4 {
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
+  }
+  .acts {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .acts span {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding-inline: 12px;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+  }
+  .ok {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .no {
+    border: 1px solid var(--input);
+    background: var(--card);
+  }
+
+  .result {
+    display: grid;
+    gap: 4px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+  .result h4 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--success);
+  }
+  .result .foot {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    color: var(--muted-foreground);
+  }
+
+  @media (max-width: 860px) {
+    .steps {
+      gap: 48px;
+    }
+    .steps > li {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 24px;
+    }
+    .steps > li:nth-child(even) .text {
+      order: 0;
+    }
+    .text h3 {
+      font-size: 28px;
+      line-height: 32px;
+    }
+  }
+</style>

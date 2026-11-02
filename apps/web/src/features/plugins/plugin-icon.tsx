@@ -6,6 +6,7 @@ import {
   DatabaseIcon,
   GitBranchIcon,
   GlobeIcon,
+  HouseIcon,
   KeyIcon,
   BooksIcon,
   ListChecksIcon,
@@ -55,6 +56,7 @@ const ICONS: Record<string, ComponentType<IconProps>> = {
   composio: PlugsConnectedIcon,
   "key-round": KeyIcon,
   database: DatabaseIcon,
+  home: HouseIcon,
 };
 
 /** Brand marks downloaded from each vendor's own site (favicon / brand asset), keyed by plugin id. `plate` sits a light tile behind marks that are dark-on-transparent. */

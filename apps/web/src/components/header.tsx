@@ -11,11 +11,13 @@ export const APP_PREFIXES = [
   "/agenda",
   "/tasks",
   "/studio",
+  "/routines",
   "/plugins",
   "/dashboard",
   "/teams",
+  "/team-roles",
   "/artifacts",
-  "/instructions",
+  "/wiki",
   "/search",
 ];
 export const inApp = (pathname: string) =>

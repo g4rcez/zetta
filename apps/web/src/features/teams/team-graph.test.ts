@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   addBot,
+  arrange,
   dropBot,
   dropTarget,
   flowToTeams,
@@ -14,6 +15,7 @@ const team = (id: string, x: number, bots: [string, "chief" | "member"][]): Team
   id,
   name: `Team ${id}`,
   goal: "Ship",
+  context: "",
   version: 3,
   canvas: { x, y: 0, w: 300, h: 200 },
   members: bots.map(([botId, kind], i) => ({
@@ -104,6 +106,37 @@ describe("teams canvas model", () => {
     ]);
     const moved = dropBot(nodes, "t1:b", { x: 450, y: 120 });
     expect(kinds(moved)).toEqual(["t1:a=chief", "t2:c=chief", "t2:b=member"]);
-    expect(moved.find((n) => n.id === "t2:b")!.position).toEqual({ x: 50, y: 120 });
+    expect(moved.find((n) => n.id === "t2:b")!.position).toEqual({ x: 55, y: 156 });
+  });
+
+  test("arranges bots in a centered grid under the title, the chief first, and fits the group height", () => {
+    const wide = {
+      ...team("t1", 0, [
+        ["a", "member"],
+        ["b", "chief"],
+        ["c", "member"],
+      ]),
+    };
+    wide.canvas = { x: 0, y: 0, w: 440, h: 100 };
+    const nodes = arrange(teamsToFlow([wide]));
+    const at = (id: string) => nodes.find((n) => n.id === id)!.position;
+    expect(at("t1:b")).toEqual({ x: 24, y: 88 });
+    expect(at("t1:a")).toEqual({ x: 226, y: 88 });
+    expect(at("t1:c")).toEqual({ x: 24, y: 156 });
+    expect(nodes.find((n) => n.id === "team:t1")!.height).toBe(228);
+  });
+
+  test("dropping a bot onto another slot of its own team reorders the grid", () => {
+    const wide = team("t1", 0, [
+      ["a", "chief"],
+      ["b", "member"],
+      ["c", "member"],
+    ]);
+    wide.canvas = { x: 0, y: 0, w: 440, h: 240 };
+    const nodes = arrange(teamsToFlow([wide]));
+    const dragged = nodes.map((n) => (n.id === "t1:c" ? { ...n, position: { x: 200, y: 88 } } : n));
+    const after = dropBot(dragged, "t1:c", { x: 200, y: 88 });
+    expect(after.find((n) => n.id === "t1:c")!.position).toEqual({ x: 226, y: 88 });
+    expect(after.find((n) => n.id === "t1:b")!.position).toEqual({ x: 24, y: 156 });
   });
 });

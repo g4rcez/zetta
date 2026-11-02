@@ -1,12 +1,17 @@
 import { MCP_SCOPES } from "@zetta/auth";
 import { McpServer, requireScopes, type CallToolResult } from "@modelcontextprotocol/server";
+import { OUTPUT_STYLE_KEYS, OUTPUT_STYLE_SCOPES } from "@zetta/db/schema/output-styles";
 import { z } from "zod";
 
 import type { ChatService } from "../chat/service";
 import type { ConnectionsService } from "../connections/service";
+import { auditToolDetail, type audit } from "../features/audit";
 import type { FeaturesService } from "../features/service";
 import { AccessError, type ActiveActor } from "../identity/access";
 import { McpError, type Mcp } from "../integrations/mcp";
+import { BUILTIN_KEYS } from "../output-styles/builtins";
+import { STYLE_LIMITS } from "../output-styles/format";
+import { OutputStyleError, type OutputStyles } from "../output-styles/service";
 import type { TaskStore } from "../tasks/store";
 import { WIKI_LIMITS, WikiError, type Wiki } from "../wiki/service";
 
@@ -21,6 +26,9 @@ export type ZettaMcpServices = {
   features: FeaturesService;
   wiki: Wiki;
   tasks: TaskStore;
+  outputStyles: OutputStyles;
+  /** Records a write the client made on the member's behalf (best effort, never throws). */
+  audit: (ownerUserId: string, event: Parameters<typeof audit>[2]) => Promise<void>;
 };
 
 const uuid = z.string().uuid();
@@ -28,6 +36,15 @@ const READ = {
   scopeChallenge: requireScopes(MCP_SCOPES.read),
   annotations: { readOnlyHint: true, openWorldHint: false },
 };
+/** A tool that changes something needs the write scope, which the member granted on the consent page. */
+const WRITE = {
+  scopeChallenge: requireScopes(MCP_SCOPES.write),
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+};
+const styleName = z.string().trim().min(1).max(STYLE_LIMITS.name);
+const styleDescription = z.string().trim().max(STYLE_LIMITS.description);
+const styleBody = z.string().trim().min(1).max(STYLE_LIMITS.body);
+const styleScope = z.enum(OUTPUT_STYLE_SCOPES);
 
 function json(value: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };
@@ -40,7 +57,7 @@ function failure(e: unknown): CallToolResult {
       ? e.message
       : e instanceof z.ZodError
         ? `Invalid input: ${e.issues.map((i) => `${i.path.join(".") || "input"} ${i.message}`).join("; ")}`
-        : e instanceof McpError || e instanceof WikiError
+        : e instanceof McpError || e instanceof WikiError || e instanceof OutputStyleError
           ? e.code
           : (console.error("zetta-mcp: unhandled tool error", e),
             "Something went wrong. Please retry.");
@@ -70,6 +87,8 @@ function botView(actor: ActiveActor, b: Bot) {
     model: b.model,
     personality: b.personality,
     instructions: b.instructions,
+    // Like personality and instructions, only the owner's own bots carry it.
+    ...("outputStyle" in b ? { outputStyle: b.outputStyle, outputStyleId: b.outputStyleId } : {}),
     onboarded: b.onboarded,
     computerMode: b.computerMode,
     codeAccess: b.codeAccess,
@@ -81,13 +100,41 @@ function botView(actor: ActiveActor, b: Bot) {
 
 /** One server per request: it acts only as `actor`. */
 export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveActor) {
-  const { chat, mcp, connections, features, wiki, tasks } = services;
+  const { chat, mcp, connections, features, wiki, tasks, outputStyles } = services;
+  /** Runs a write and records it. The audit row names the tool and the thing changed, never the content. */
+  async function runWrite(
+    tool: string,
+    work: () => Promise<unknown>,
+    subject: { botId?: string; subjectId?: (result: unknown) => string | undefined } = {},
+  ): Promise<CallToolResult> {
+    const base = {
+      kind: "tool_call",
+      detail: auditToolDetail("mcp", tool),
+      botId: subject.botId,
+    } as const;
+    try {
+      const result = await work();
+      await services.audit(actor.userId, {
+        ...base,
+        outcome: "ok",
+        subjectId: subject.subjectId?.(result),
+      });
+      return json(result);
+    } catch (e) {
+      await services.audit(actor.userId, {
+        ...base,
+        outcome: e instanceof AccessError ? "denied" : "failed",
+      });
+      return failure(e);
+    }
+  }
   const server = new McpServer(
     { name: "zetta", version: "1.0.0" },
     {
       instructions:
         "Zetta runs AI bots for a team. Use these tools to inspect the signed-in member's bots, chats, integrations, connections, " +
-        "routines, workflows, memories, instructions, wiki and tasks. Bots shared with the team are listed with canEdit=false.",
+        "routines, workflows, output styles, wiki (which holds the bots' memory) and tasks. Bots shared with the team are listed with canEdit=false. " +
+        "Tools that change something need the write scope and are recorded in the member's activity log.",
     },
   );
 
@@ -230,19 +277,149 @@ export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveAc
   );
 
   server.registerTool(
-    "list_memories",
-    { title: "List memories", description: "What the member's bots remember.", ...READ },
-    () => run(() => features.listMemories(actor)),
+    "list_output_styles",
+    {
+      title: "List output styles",
+      description:
+        "How bots write. `builtins` are the five built-in styles; `styles` are the member's own custom styles and the ones other members shared. " +
+        "A bot's `outputStyle` is a built-in key, or `custom` with `outputStyleId` naming one of `styles`.",
+      ...READ,
+    },
+    () => run(() => outputStyles.list(actor.userId)),
   );
 
   server.registerTool(
-    "list_instructions",
+    "export_output_style",
     {
-      title: "List instructions",
-      description: "Standing instructions for the member's bots.",
+      title: "Export output style",
+      description:
+        "A style as a Claude Code style file (Markdown with name and description in the frontmatter). Give `id` for a custom style or `builtin` for a built-in one (Default has no text to export).",
+      inputSchema: z.object({ id: uuid.optional(), builtin: z.enum(BUILTIN_KEYS).optional() }),
       ...READ,
     },
-    () => run(() => features.listInstructions(actor)),
+    ({ id, builtin }) =>
+      run(async () => {
+        if (!id === !builtin) throw new OutputStyleError("INVALID");
+        return id
+          ? outputStyles.exportStyle(actor.userId, id)
+          : outputStyles.exportBuiltin(builtin!);
+      }),
+  );
+
+  server.registerTool(
+    "create_output_style",
+    {
+      title: "Create output style",
+      description:
+        "Saves a custom output style: how a bot writes. It is private unless `scope` is `installation`, which lets every member pick it for their bots.",
+      inputSchema: z.object({
+        name: styleName,
+        description: styleDescription.default(""),
+        body: styleBody,
+        scope: styleScope.optional(),
+      }),
+      ...WRITE,
+    },
+    (v) =>
+      runWrite(
+        "create_output_style",
+        async () => ({ style: await outputStyles.create(actor.userId, v) }),
+        {
+          subjectId: (r) => (r as { style: { id: string } }).style.id,
+        },
+      ),
+  );
+
+  server.registerTool(
+    "update_output_style",
+    {
+      title: "Update output style",
+      description:
+        "Changes one of the member's own custom styles. Every bot that uses it writes the new way from its next turn. `expectedVersion` is the version you read.",
+      inputSchema: z.object({
+        id: uuid,
+        expectedVersion: z.number().int().positive(),
+        name: styleName.optional(),
+        description: styleDescription.optional(),
+        body: styleBody.optional(),
+        scope: styleScope.optional(),
+      }),
+      ...WRITE,
+    },
+    ({ id, expectedVersion, ...v }) =>
+      runWrite(
+        "update_output_style",
+        async () => ({ style: await outputStyles.update(actor.userId, id, expectedVersion, v) }),
+        {
+          subjectId: () => id,
+        },
+      ),
+  );
+
+  server.registerTool(
+    "archive_output_style",
+    {
+      title: "Delete output style",
+      description:
+        "Deletes one of the member's own custom styles. Bots that use it keep writing that way until their style is changed.",
+      inputSchema: z.object({ id: uuid }),
+      ...WRITE,
+      annotations: { ...WRITE.annotations, destructiveHint: true },
+    },
+    ({ id }) =>
+      runWrite("archive_output_style", () => outputStyles.archive(actor.userId, id), {
+        subjectId: () => id,
+      }),
+  );
+
+  server.registerTool(
+    "import_output_style",
+    {
+      title: "Import output style",
+      description:
+        "Creates a private custom style from a Claude Code style file: Markdown with `name` (and optionally `description`) in the frontmatter and the instructions below it.",
+      inputSchema: z.object({ markdown: z.string().max(STYLE_LIMITS.file) }),
+      ...WRITE,
+    },
+    ({ markdown }) =>
+      runWrite(
+        "import_output_style",
+        async () => ({ style: await outputStyles.importMarkdown(actor.userId, markdown) }),
+        {
+          subjectId: (r) => (r as { style: { id: string } }).style.id,
+        },
+      ),
+  );
+
+  server.registerTool(
+    "set_bot_output_style",
+    {
+      title: "Set a bot's output style",
+      description:
+        "Chooses how one of the member's own bots writes: a built-in key, or `custom` with `outputStyleId` from list_output_styles. " +
+        "A built-in key needs no `outputStyleId`. `expectedVersion` is the bot's version from list_bots.",
+      inputSchema: z.object({
+        botId: uuid,
+        expectedVersion: z.number().int().positive(),
+        outputStyle: z.enum(OUTPUT_STYLE_KEYS),
+        outputStyleId: uuid.nullable().optional(),
+      }),
+      ...WRITE,
+    },
+    ({ botId, expectedVersion, outputStyle, outputStyleId }) =>
+      runWrite(
+        "set_bot_output_style",
+        async () => ({
+          bot: botView(
+            actor,
+            await chat.updateBot(actor, botId, expectedVersion, {
+              outputStyle,
+              outputStyleId: outputStyle === "custom" ? (outputStyleId ?? null) : null,
+            }),
+          ),
+        }),
+        { botId, subjectId: () => botId },
+      ),
   );
 
   server.registerTool(
@@ -256,7 +433,7 @@ export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveAc
     {
       title: "Search wiki",
       description:
-        "Search the member's wiki pages, or list them (with pages shared with the installation) when `query` is empty.",
+        "Search the member's wiki items (a graph: each has tags, a howto, a score and typed links), or list them (with items shared with the installation) when `query` is empty.",
       inputSchema: z.object({ query: z.string().max(200).optional() }),
       ...READ,
     },
@@ -272,7 +449,7 @@ export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveAc
     "read_wiki_page",
     {
       title: "Read wiki page",
-      description: "One wiki page by slug.",
+      description: "One wiki item by slug, with its links to and from other items.",
       inputSchema: z.object({ slug: z.string().trim().min(1).max(WIKI_LIMITS.slug) }),
       ...READ,
     },
@@ -280,8 +457,7 @@ export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveAc
       run(async () => {
         const r = await wiki.read(actor.userId, slug);
         if (!r) throw new WikiError("NOT_FOUND");
-        const { embedding: _, ...page } = r.page;
-        return { access: r.access, page, linkedFrom: r.linkedFrom };
+        return { access: r.access, page: r.page, links: r.links, linkedFrom: r.linkedFrom };
       }),
   );
 

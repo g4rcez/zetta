@@ -99,7 +99,9 @@ export const pluginsApiFor = (scope: PluginScope) => ({
       message?: string;
       data?: Record<string, unknown>;
     }>(at(`/api/plugins/${id}/connect`, scope), "POST", options ? { options } : {}),
-  disconnect: (id: string) => call(at(`/api/plugins/${id}/disconnect`, scope), "POST", {}),
+  /** `options.account` disconnects one account of a plugin that has several (Google); without it everything is disconnected. */
+  disconnect: (id: string, options?: Record<string, unknown>) =>
+    call(at(`/api/plugins/${id}/disconnect`, scope), "POST", options ? { options } : {}),
   /** The plugin ids a bot uses, and which configuration of each. */
   botPlugins: (botId: string) =>
     call<{ plugins: string[]; configs: BotPluginConfig[] }>(`/api/bots/${botId}/plugins`),

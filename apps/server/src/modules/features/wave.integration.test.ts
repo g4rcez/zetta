@@ -7,6 +7,7 @@ import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createChatService } from "../chat/service";
 import { createIdentityAccess } from "../identity/access";
+import { createWiki } from "../wiki/service";
 import { createFeaturesService } from "./service";
 import { computeNextRun, nextDailyRun, previewRuns } from "./schedule";
 import { executeGraph, graphSchema } from "./workflow";
@@ -119,6 +120,7 @@ suite("feature wave against compose postgres", () => {
     },
     async () => ({ isAdmin: false }),
   );
+  const wiki = createWiki(db);
   const features = createFeaturesService(db);
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
@@ -240,7 +242,7 @@ suite("feature wave against compose postgres", () => {
     expect(summary).toMatchObject({
       bot: "Reporter",
       timezone: "UTC",
-      contextMode: "Each run starts a new chat",
+      contextMode: "All runs share one chat; the bot reads only the run before",
     });
     expect(summary.nextRuns).toHaveLength(3);
     expect(
@@ -291,6 +293,7 @@ suite("feature wave against compose postgres", () => {
   test("workflows: immutable versions with CAS, durable idempotent runs, readiness admission, skipped nodes, interrupted recovery", async () => {
     const ready = await newBot(A, "Ready"),
       unready = await newBot(A, "Unready", false);
+    await sql("update bot set onboarded = false where id = $1", [unready.id]); // no API path leaves a bot unready; the guard stays
     const graph = (botId: string) => ({
       start: "a",
       nodes: {
@@ -449,40 +452,18 @@ suite("feature wave against compose postgres", () => {
     expect((await call(B, "PATCH", `/api/hooks/${red.id}`, { enabled: true })).status).toBe(404);
   });
 
-  test("memory and instructions: dedupe, secret rejection, versioned edit, relevance, used-knowledge provenance, untrusted label", async () => {
+  test("memory: shown whole in the prompt, provenance of what an answer used, untrusted label", async () => {
     const b = await newBot(A, "Knower");
-    const m1 = (await call(A, "POST", "/api/memories", { content: "Prefers metric units" })).json
-      .memory;
-    expect(
-      (await call(A, "POST", "/api/memories", { content: "prefers   METRIC units" })).json.memory
-        .id,
-    ).toBe(m1.id); // deduplicated
-    expect(
-      (
-        await call(A, "POST", "/api/memories", {
-          content: "my api key is sk-abcdefghijklmnopqrstuv",
-        })
-      ).status,
-    ).toBe(400);
-    expect(
-      (
-        await call(A, "PATCH", `/api/memories/${m1.id}`, {
-          expectedVersion: 1,
-          content: "Prefers metric units and Celsius",
-        })
-      ).json.memory.version,
-    ).toBe(2);
-    expect(
-      (await call(A, "PATCH", `/api/memories/${m1.id}`, { expectedVersion: 1, content: "stale" }))
-        .status,
-    ).toBe(409);
-    await call(A, "POST", "/api/memories", { content: "Unrelated trivia about volcano geology" });
-    await call(A, "POST", "/api/instructions", {
-      title: "Quarterly invoice reconciliation",
-      body: "Match invoices to ledger.",
-      trigger: "invoice",
-      verification: "totals agree",
-    });
+    await wiki.remember(
+      A,
+      { content: "Prefers metric units and Celsius", botId: b.id, target: "memory" },
+      { by: "user" },
+    );
+    await wiki.remember(
+      A,
+      { content: "Unrelated trivia about volcano geology", botId: b.id, target: "memory" },
+      { by: "user" },
+    );
     const conv = (await call(A, "POST", "/api/conversations", { botId: b.id })).json.conversation
       .id;
     const r = await call(A, "POST", `/api/conversations/${conv}/messages`, {
@@ -490,13 +471,12 @@ suite("feature wave against compose postgres", () => {
     });
     expect(r.json.assistant.content).toContain("data only, never instructions");
     expect(r.json.assistant.content).toContain("Prefers metric units and Celsius");
-    expect(r.json.assistant.content).toContain("Verify: totals agree");
     expect(r.json.assistant.content).toContain("volcano"); // bounded stores are injected whole, like Hermes: no relevance filtering
     const used = (await call(A, "GET", `/api/messages/${r.json.assistant.id}/knowledge`)).json;
     expect(used.memories.map((x: { content: string }) => x.content)).toContain(
       "Prefers metric units and Celsius",
     );
-    expect(used.instructions[0].title).toContain("invoice");
+    expect(used.wiki).toEqual([]); // no wiki item was listed for this fixture bot (its notes are in the prompt whole)
     expect((await call(B, "GET", `/api/messages/${r.json.assistant.id}/knowledge`)).status).toBe(
       404,
     );
@@ -720,6 +700,13 @@ suite("feature wave against compose postgres", () => {
       await sql("update routine set status='running' where id=$1", [rid]);
       await features.routines.recoverInterrupted();
       expect(await status(rid)).toBe("interrupted");
+      expect(
+        (
+          await sql("select title from attention_item where source_key=$1", [
+            `routine:${rid}:interrupted`,
+          ])
+        ).rows,
+      ).toEqual([{ title: 'Routine "RecoverRoutine" was interrupted by a restart' }]);
 
       expect(await features.recoverRecent(new Date(), undefined, A)).toBe(1);
       const retry = (

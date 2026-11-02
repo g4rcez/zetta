@@ -11,6 +11,7 @@ import { createChatService } from "./chat/service";
 import { createFeaturesService } from "./features/service";
 import { createIdentityAccess } from "./identity/access";
 import { createMcp } from "./integrations/mcp";
+import { createWiki } from "./wiki/service";
 import { createSources } from "./integrations/sources";
 
 /**
@@ -60,6 +61,7 @@ suite("cross-user isolation matrix", () => {
     fetcher: async () => "<rss/>",
   });
   const discussions = createDiscussionStore(db);
+  const wiki = createWiki(db);
   const chat = createChatService(
     db,
     undefined,
@@ -73,7 +75,7 @@ suite("cross-user isolation matrix", () => {
     undefined,
     undefined,
     undefined,
-    { discussions },
+    { discussions, wiki },
   );
   const inbound = createInbound(db, mcp.plugins, chat, async () => ({ isAdmin: false }));
   const app = createApp({
@@ -87,6 +89,7 @@ suite("cross-user isolation matrix", () => {
       worker: { kick: () => {}, tick: async () => {}, drain: async () => {} },
     },
     inbound: { access: realAccess, inbound },
+    wiki: { access: realAccess, wiki },
     webOrigin: "http://web.test",
     desktopOrigins: [],
     drain: () => {},
@@ -141,15 +144,15 @@ suite("cross-user isolation matrix", () => {
       })
     ).json;
     owned.msg = sent.user.id;
+    owned.wiki = `note-${uuidv7().slice(-8)}`;
+    await call(A, "PUT", `/api/wiki/${owned.wiki}`, {
+      title: "Isolated note",
+      content: `fact ${SECRET}`,
+      expectedVersion: 0,
+    });
     owned.att = (
       await call(A, "POST", "/api/attachments", { name: "a.txt", text: SECRET })
     ).json.attachment.id;
-    owned.mem = (
-      await call(A, "POST", "/api/memories", { content: `fact ${SECRET}` })
-    ).json.memory.id;
-    owned.ins = (
-      await call(A, "POST", "/api/instructions", { title: `proc ${SECRET}`, body: "steps" })
-    ).json.instruction.id;
     owned.hook = (
       await call(A, "POST", `/api/bots/${bot}/hooks`, {
         kind: "add_context",
@@ -233,8 +236,7 @@ suite("cross-user isolation matrix", () => {
         o = owned as Record<string, string>;
       // lists never contain A's data (C, a removed member, is denied outright)
       for (const path of [
-        "/api/memories",
-        "/api/instructions",
+        "/api/wiki",
         "/api/routines",
         "/api/workflows",
         "/api/attention",
@@ -269,11 +271,9 @@ suite("cross-user isolation matrix", () => {
         ["DELETE", `/api/bots/${o.bot}`],
         ["POST", `/api/messages/${o.msg}/reactions`, { emoji: "👍" }],
         ["GET", `/api/messages/${o.msg}/knowledge`],
+        ["GET", `/api/wiki/${o.wiki}`],
+        ["PATCH", `/api/wiki/${o.wiki}`, { status: "archived" }],
         ["DELETE", `/api/attachments/${o.att}`],
-        ["PATCH", `/api/memories/${o.mem}`, { expectedVersion: 1, content: "x" }],
-        ["DELETE", `/api/memories/${o.mem}`],
-        ["PATCH", `/api/instructions/${o.ins}`, { expectedVersion: 1, title: "x" }],
-        ["DELETE", `/api/instructions/${o.ins}`],
         ["GET", `/api/bots/${o.bot}/hooks`],
         ["POST", `/api/bots/${o.bot}/hooks`, { kind: "stop", pattern: "x" }],
         ["PATCH", `/api/hooks/${o.hook}`, { enabled: false }],
@@ -363,7 +363,7 @@ suite("cross-user isolation matrix", () => {
         "user",
         "assistant",
       ]);
-      expect((await call(A, "GET", "/api/memories")).json.memories).toHaveLength(2); // the typed fact + "remember that" fact
+      expect((await call(A, "GET", "/api/wiki")).json.pages).toHaveLength(2); // the typed note + the "remember that" fact
       expect((await call(A, "GET", "/api/routines")).json.routines[0].paused).toBe(true);
     });
   }

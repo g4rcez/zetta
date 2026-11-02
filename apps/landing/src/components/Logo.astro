@@ -1,0 +1,42 @@
+---
+// The Zetta robot, inlined from src/assets/logo.svg (a copy of apps/web/src/assets/logo.svg).
+// Tile rule from DESIGN.md: on the light theme the pale face would vanish, so the robot sits at 80% on a tile of the logo ink.
+// The landing page is light only, so the tile always shows.
+import raw from "../assets/logo.svg?raw";
+
+interface Props {
+  size?: number;
+  tile?: boolean;
+  /** Gradient ids must be unique per page, so every instance passes its own. */
+  id: string;
+}
+
+const { size = 28, tile = false, id } = Astro.props;
+const svg = raw
+  .replaceAll("zetta-glass", `zetta-glass-${id}`)
+  .replace("<title>Zetta</title>", "")
+  .replace("<svg ", '<svg aria-hidden="true" focusable="false" ');
+---
+
+<span class:list={["logo", { tile }]} style={`--s:${size}px`} set:html={svg} />
+
+<style>
+  .logo {
+    display: inline-flex;
+    flex: none;
+    width: var(--s);
+    height: var(--s);
+  }
+  .logo :global(svg) {
+    width: 100%;
+    height: 100%;
+  }
+  .tile {
+    padding: calc(var(--s) * 0.12);
+    border-radius: var(--radius-lg);
+    background: var(--logo-ink);
+  }
+  .tile :global(svg) {
+    opacity: 0.8;
+  }
+</style>

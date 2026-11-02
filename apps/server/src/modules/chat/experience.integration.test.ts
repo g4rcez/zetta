@@ -10,6 +10,7 @@ import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess } from "../identity/access";
 import { createFileStore } from "./files";
+import { createWiki } from "../wiki/service";
 import { createChatService } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
@@ -59,7 +60,21 @@ suite("chat experience against compose postgres", () => {
       auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
       chat: {
         access,
-        chat: createChatService(db, undefined, createFileStore(root)),
+        chat: createChatService(
+          db,
+          undefined,
+          createFileStore(root),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          { wiki: createWiki(db) },
+        ),
         files: createFileStore(root),
       },
       webOrigin: "http://web.test",
@@ -261,7 +276,7 @@ suite("chat experience against compose postgres", () => {
     expect(sent.status).toBeLessThan(300);
     const rows = (
       await db.$client.query(
-        "select content from memory where bot_id = $1 and owner_user_id = $2",
+        "select content from wiki_page where author_bot_id = $1 and owner_user_id = $2 and type = 'solo'",
         [bot.id, A],
       )
     ).rows as { content: string }[];
@@ -309,17 +324,15 @@ suite("chat experience against compose postgres", () => {
     ).toContain("team.md");
   });
 
-  test("@mentions delegate to ready visible bots (bounded) and failures raise attention", async () => {
+  test("@mentions delegate to visible bots (bounded) and failures raise attention", async () => {
     const chief = await newBot(A, "Lead", false);
     const spec = await newBot(A, "Analyst");
-    const unready = await newBot(A, "Rookie", false);
     const c = await conv(A, chief.id);
     const r = await call(A, "POST", `/api/conversations/${c}/messages`, {
-      content: "@Analyst @Rookie @Nobody please look",
+      content: "@Analyst @Nobody please look",
     });
     expect(r.json.replies).toHaveLength(2); // chat bot + Analyst only
     expect(r.json.replies[1].botId).toBe(spec.id);
-    expect(r.json.replies.map((m: { botId: string }) => m.botId)).not.toContain(unready.id);
     // B cannot be reached through A's private bots; team bots owned by A are visible to B
     const cb = await conv(B, (await newBot(B, "Mine", false)).id);
     const viaTeam = await call(B, "POST", `/api/conversations/${cb}/messages`, {

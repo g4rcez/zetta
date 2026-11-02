@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Database } from "@zetta/db";
-import { and, asc, desc, eq, inArray, lt, or, sql } from "@zetta/db/query";
+import { and, asc, desc, eq, inArray, lt, ne, or, sql } from "@zetta/db/query";
 import { bot, conversation, message } from "@zetta/db/schema/chat";
 import {
   botPeer,
@@ -10,15 +10,17 @@ import {
   turnStep,
   type TurnStep,
 } from "@zetta/db/schema/discussions";
-import { attachment, configProposal, instruction } from "@zetta/db/schema/features";
+import { attachment, configProposal } from "@zetta/db/schema/features";
 import { task } from "@zetta/db/schema/tasks";
-import { closeAttention, raiseAttention } from "../features/attention";
+import { wikiPage } from "@zetta/db/schema/wiki";
+import { closeAttention, closeAttentionKey, raiseAttention } from "../features/attention";
 import { AccessError, requireOwned, type ActiveActor } from "../identity/access";
 import { dockerConfig } from "../chat/harness";
 import type { FileStore } from "../chat/files";
 import { insertMessage } from "../chat/messages";
 import { codeEnabled } from "../chat/pipeline";
 import type { LoopStore } from "../chat/loops";
+import { visibleTo } from "../wiki/service";
 import { HELP_PREFIX, mentionKey, wakeTargets } from "./prompt";
 
 type Bot = typeof bot.$inferSelect;
@@ -76,7 +78,7 @@ export type Claimed = { turn: DiscussionTurn; discussion: Discussion; member: Me
 export type PostFiles = {
   attachmentIds?: string[] | undefined;
   fileRefs?: string[] | undefined;
-  instructionIds?: string[] | undefined;
+  wikiIds?: string[] | undefined;
 };
 const FILE_CLIP = 12_000;
 
@@ -91,10 +93,19 @@ export type RoomSettle =
   | "stopped";
 const SETTLE_POLL_MS = 2_000;
 
+/** A turn that started this many times and still sits in "running" at boot is treated as a crash loop. */
+const MAX_RESTART_ATTEMPTS = 3;
+
 export function createDiscussionStore(
   db: Database,
   files?: Pick<FileStore, "readWithHash">,
   loops?: Pick<LoopStore, "start" | "active" | "kick">,
+  /** Chooses the member that answers a person's post without a mention (a decision model); null means the fallback answers. */
+  pickResponder?: (
+    a: ActiveActor,
+    text: string,
+    members: readonly { botId: string; name: string; kind: string; description: string }[],
+  ) => Promise<string | null>,
 ) {
   let onEnqueue: (() => void) | undefined;
   const visible = (a: ActiveActor) => or(eq(bot.ownerUserId, a.userId), eq(bot.visibility, "team"));
@@ -105,6 +116,19 @@ export function createDiscussionStore(
       .from(discussion)
       .where(and(eq(discussion.id, id), eq(discussion.ownerUserId, a.userId)));
     return requireOwned(a, row);
+  }
+  /** A cancelled room runs nothing more: queued and waiting turns stop and its attention item closes. */
+  async function dropQueuedTurns(tx: Tx, d: Pick<Discussion, "id" | "ownerUserId">) {
+    await tx
+      .update(discussionTurn)
+      .set({ status: "cancelled", finishedAt: new Date(), reasonCode: "cancelled" })
+      .where(
+        and(
+          eq(discussionTurn.discussionId, d.id),
+          inArray(discussionTurn.status, ["queued", "awaiting_approval"]),
+        ),
+      );
+    await closeAttention(tx, d.ownerUserId, `/rooms?id=${d.id}`, "cancelled");
   }
   async function membersOf(d: Pick<Discussion, "id">) {
     return db
@@ -169,13 +193,22 @@ export function createDiscussionStore(
     messageId: string,
     opening = false,
     fallback = true,
+    picked: string | null = null,
   ) {
     const members = await tx
       .select({ botId: discussionMember.botId, name: bot.name, kind: bot.kind })
       .from(discussionMember)
       .innerJoin(bot, eq(bot.id, discussionMember.botId))
       .where(eq(discussionMember.discussionId, d.id));
-    const targets = wakeTargets(members, d.createdByBotId, authorBotId, text, opening, fallback);
+    const targets = wakeTargets(
+      members,
+      d.createdByBotId,
+      authorBotId,
+      text,
+      opening,
+      fallback,
+      picked,
+    );
     if (!targets.length) return 0;
     const rows = await tx
       .insert(discussionTurn)
@@ -539,7 +572,7 @@ export function createDiscussionStore(
     async takeGrantedRequests(a: ActiveActor, botId: string, allow: string[]) {
       if (!allow.length) return [];
       const waiting = await db
-        .select({ id: message.id, meta: message.meta })
+        .select({ id: message.id, meta: message.meta, roomChat: message.conversationId })
         .from(message)
         .where(
           and(
@@ -571,7 +604,16 @@ export function createDiscussionStore(
             ),
           )
           .returning({ id: message.id });
-        if (won) taken.push({ requestId: w.id, ...req });
+        if (won) {
+          taken.push({ requestId: w.id, ...req });
+          // The request message sits in the Permissions room; its card is keyed by that room and message.
+          const [room] = await db
+            .select({ id: discussion.id })
+            .from(discussion)
+            .where(eq(discussion.conversationId, w.roomChat));
+          if (room)
+            await closeAttentionKey(db, a.userId, `permission:${room.id}:${w.id}`, "resolved");
+        }
       }
       return taken;
     },
@@ -736,22 +778,42 @@ export function createDiscussionStore(
           throw new DiscussionError("NOT_FOUND", `The file ${ref} could not be read.`);
         }
       }
-      // Instructions the person picked: they must be the owner's, and they stay on the post for the bots woken by it.
-      const instructionIds = [...new Set(attached.instructionIds ?? [])];
-      if (instructionIds.length) {
-        const owned = await db
-          .select({ id: instruction.id })
-          .from(instruction)
+      // Wiki items the person picked: they must be readable by them, and they stay on the post for the bots woken by it.
+      const wikiIds = [...new Set(attached.wikiIds ?? [])];
+      if (wikiIds.length) {
+        const readable = await db
+          .select({ id: wikiPage.id })
+          .from(wikiPage)
           .where(
             and(
-              inArray(instruction.id, instructionIds),
-              eq(instruction.ownerUserId, a.userId),
-              eq(instruction.archived, false),
+              inArray(wikiPage.id, wikiIds),
+              ne(wikiPage.status, "archived"),
+              visibleTo(a.userId),
             ),
           );
-        if (owned.length !== instructionIds.length)
-          throw new DiscussionError("NOT_FOUND", "An instruction is no longer available.");
+        if (readable.length !== wikiIds.length)
+          throw new DiscussionError("NOT_FOUND", "A wiki item is no longer available.");
       }
+      // No mention: a decision model picks the member to answer; without a pick the fallback (facilitator or Chief) answers.
+      const roster = await db
+        .select({
+          botId: discussionMember.botId,
+          name: bot.name,
+          kind: bot.kind,
+          role: discussionMember.role,
+          about: bot.description,
+        })
+        .from(discussionMember)
+        .innerJoin(bot, eq(bot.id, discussionMember.botId))
+        .where(eq(discussionMember.discussionId, d.id));
+      const routed =
+        pickResponder && !wakeTargets(roster, d.createdByBotId, null, text, false, false).length
+          ? await pickResponder(
+              a,
+              text,
+              roster.map((m) => ({ ...m, description: m.role || m.about })),
+            ).catch(() => null)
+          : null;
       const res = await db.transaction(async (tx) => {
         const cur =
           d.status === "stalled"
@@ -771,9 +833,9 @@ export function createDiscussionStore(
           role: "user",
           content: text,
           meta:
-            carried.length || images.length || instructionIds.length
+            carried.length || images.length || wikiIds.length
               ? {
-                  ...(instructionIds.length ? { instructionIds } : {}),
+                  ...(wikiIds.length ? { wikiIds } : {}),
                   ...(carried.length ? { files: carried } : {}),
                   ...(images.length ? { images } : {}),
                   ...(refs.length ? { fileRefs: refs, fileHashes } : {}),
@@ -790,7 +852,10 @@ export function createDiscussionStore(
                 picked.map((f) => f.id),
               ),
             );
-        const n = cur.status === "open" ? await enqueueWakes(tx, cur, null, text, row.id) : 0;
+        const n =
+          cur.status === "open"
+            ? await enqueueWakes(tx, cur, null, text, row.id, false, true, routed)
+            : 0;
         return { row, n };
       });
       if (res.n) onEnqueue?.();
@@ -826,7 +891,19 @@ export function createDiscussionStore(
           updatedAt: new Date(),
         })
         .where(and(eq(discussion.id, d.id), eq(discussion.version, d.version)))
-        .returning();
+        .returning()
+        .catch((e) => {
+          if (
+            [e, (e as { cause?: unknown } | null)?.cause].some(
+              (x) => (x as { code?: string } | null)?.code === "23505",
+            )
+          )
+            throw new DiscussionError(
+              "CONFLICT",
+              "A room with this name already exists. Pick another name.",
+            );
+          throw e;
+        });
       if (!row)
         throw new DiscussionError(
           "CONFLICT",
@@ -938,18 +1015,7 @@ export function createDiscussionStore(
           .set({ ...set, updatedAt: new Date(), version: sql`${discussion.version} + 1` })
           .where(eq(discussion.id, d.id))
           .returning();
-        if (action === "cancel") {
-          await tx
-            .update(discussionTurn)
-            .set({ status: "cancelled", finishedAt: new Date(), reasonCode: "cancelled" })
-            .where(
-              and(
-                eq(discussionTurn.discussionId, d.id),
-                inArray(discussionTurn.status, ["queued", "awaiting_approval"]),
-              ),
-            );
-          await closeAttention(tx, d.ownerUserId, `/rooms?id=${d.id}`, "cancelled");
-        }
+        if (action === "cancel") await dropQueuedTurns(tx, d);
         // Resuming retries what a restart interrupted (the owner saw the card and chose to go on).
         if (action === "resume")
           await tx
@@ -974,6 +1040,93 @@ export function createDiscussionStore(
       if (action === "resume") onEnqueue?.();
       return row;
     },
+    /**
+     * "Delete" a room: it is cancelled and hidden from every list (its conversation is archived), history kept. Work attached to it
+     * (its tasks) moves to `moveTo`, the chat the person asked to continue in. Returns what a caller needs to carry the work on.
+     */
+    async remove(
+      a: ActiveActor,
+      id: string,
+      by: Bot | null,
+      opts: { reason?: string; moveTo?: string } = {},
+    ) {
+      const d = await loadOwned(a, id);
+      await db.transaction(async (tx) => {
+        const live = d.status !== "resolved" && d.status !== "cancelled";
+        if (live) {
+          await tx
+            .update(discussion)
+            .set({
+              status: "cancelled",
+              updatedAt: new Date(),
+              version: sql`${discussion.version} + 1`,
+            })
+            .where(eq(discussion.id, d.id));
+          await dropQueuedTurns(tx, d);
+        }
+        if (opts.moveTo && opts.moveTo !== d.conversationId)
+          await tx
+            .update(task)
+            .set({ conversationId: opts.moveTo, updatedAt: new Date() })
+            .where(and(eq(task.ownerUserId, a.userId), eq(task.conversationId, d.conversationId)));
+        await insertMessage(tx, d.conversationId, {
+          ownerUserId: d.ownerUserId,
+          role: "system",
+          content: `🗑 Deleted by ${by ? by.name : "the user"}${opts.reason ? `: ${opts.reason}` : "."}`,
+          meta: { discussionEvent: "deleted" },
+        });
+        await tx
+          .update(conversation)
+          .set({ archived: true, archivedAt: new Date() })
+          .where(eq(conversation.id, d.conversationId));
+      });
+      return { discussion: d, transcript: await this.transcript(d, 20) };
+    },
+    /** A room of the owner where `botId` is the creator or a member, found by id, title or `#mention` key. The newest match wins. */
+    async findForBot(a: ActiveActor, botId: string, ref: string) {
+      const key = mentionKey(ref.replace(/^#/, ""));
+      const rows = await db
+        .select({ d: discussion })
+        .from(discussion)
+        .innerJoin(conversation, eq(conversation.id, discussion.conversationId))
+        .leftJoin(
+          discussionMember,
+          and(eq(discussionMember.discussionId, discussion.id), eq(discussionMember.botId, botId)),
+        )
+        .where(
+          and(
+            eq(discussion.ownerUserId, a.userId),
+            eq(conversation.archived, false),
+            or(eq(discussion.createdByBotId, botId), eq(discussionMember.botId, botId)),
+          ),
+        )
+        .orderBy(desc(discussion.createdAt));
+      return rows
+        .map((r) => r.d)
+        .find((d) => d.id === ref || mentionKey(d.title) === key || d.title === ref);
+    },
+    /** A room request still waiting for approval, withdrawn by the bot that made it (found by title). */
+    async withdrawRequest(a: ActiveActor, botId: string, ref: string) {
+      const key = mentionKey(ref.replace(/^#/, ""));
+      const rows = await db
+        .select()
+        .from(configProposal)
+        .where(
+          and(
+            eq(configProposal.ownerUserId, a.userId),
+            eq(configProposal.kind, "open_discussion"),
+            eq(configProposal.status, "pending"),
+            eq(configProposal.proposedByBotId, botId),
+          ),
+        );
+      const hit = rows.find(
+        (p) => mentionKey(String((p.patch as { title?: string }).title ?? "")) === key,
+      );
+      if (!hit) return undefined;
+      await db.update(configProposal).set({ status: "stale" }).where(eq(configProposal.id, hit.id));
+      await closeAttentionKey(db, a.userId, `proposal:${hit.id}`, "cancelled");
+      return { id: hit.id, title: String((hit.patch as { title?: string }).title ?? "") };
+    },
     /** Discussions the bots are working on now (status open): the count on the Discussions rail badge. */
     async countRunning(a: ActiveActor) {
       const [r] = await db
@@ -983,17 +1136,21 @@ export function createDiscussionStore(
       return r?.n ?? 0;
     },
     async list(a: ActiveActor, status?: Discussion["status"]) {
-      const rows = await db
-        .select()
-        .from(discussion)
-        .where(
-          and(
-            eq(discussion.ownerUserId, a.userId),
-            status ? eq(discussion.status, status) : undefined,
-          ),
-        )
-        .orderBy(desc(discussion.updatedAt))
-        .limit(100);
+      const rows = (
+        await db
+          .select({ d: discussion })
+          .from(discussion)
+          .innerJoin(conversation, eq(conversation.id, discussion.conversationId))
+          .where(
+            and(
+              eq(discussion.ownerUserId, a.userId),
+              eq(conversation.archived, false),
+              status ? eq(discussion.status, status) : undefined,
+            ),
+          )
+          .orderBy(desc(discussion.updatedAt))
+          .limit(100)
+      ).map((r) => r.d);
       const members = rows.length
         ? await db
             .select({
@@ -1478,8 +1635,22 @@ export function createDiscussionStore(
           meta: { discussionEvent: "declined" },
         });
     },
-    /** Boot: turns that were running are interrupted, never retried on their own (a code bot may already have pushed). */
+    /**
+     * Boot: turns that were running go back to the queue and run again, with no card. A turn that already started `MAX_RESTART_ATTEMPTS`
+     * times is interrupted instead (a crash loop), and its room stalls with a card so the owner decides.
+     */
     async recover() {
+      const requeued = await db
+        .update(discussionTurn)
+        .set({ status: "queued", reasonCode: null, claimedAt: null })
+        .where(
+          and(
+            eq(discussionTurn.status, "running"),
+            lt(discussionTurn.attempts, MAX_RESTART_ATTEMPTS),
+          ),
+        )
+        .returning({ id: discussionTurn.id });
+      if (requeued.length) onEnqueue?.();
       const rows = await db
         .update(discussionTurn)
         .set({ status: "interrupted", reasonCode: "restart", finishedAt: new Date() })
@@ -1501,18 +1672,28 @@ export function createDiscussionStore(
             sourceKey: `discussion:${d.id}:interrupted`,
           }).catch(() => {});
       }
-      return rows.length;
+      return requeued.length + rows.length;
     },
-    /** Open discussions with nothing queued: one card after 30 minutes, stalled after a day. */
+    /** The owner opened the room: its "is waiting" card is closed, and `sweepIdle` leaves the room alone for one idle period. */
+    async markSeen(a: ActiveActor, id: string) {
+      const d = await loadOwned(a, id);
+      await closeAttentionKey(db, d.ownerUserId, `discussion:${d.id}:idle`, "resolved");
+    },
+    /**
+     * Open discussions with nothing queued: one card after 30 minutes, stalled after a day.
+     * A room whose idle card was closed in the last 30 minutes is skipped, so a visit (or Resolve/Dismiss on the card) is not undone by the next sweep.
+     */
     async sweepIdle(now = new Date()) {
+      const idleFor = new Date(now.getTime() - 30 * 60_000);
       const idle = await db
         .select()
         .from(discussion)
         .where(
           and(
             eq(discussion.status, "open"),
-            lt(discussion.updatedAt, new Date(now.getTime() - 30 * 60_000)),
+            lt(discussion.updatedAt, idleFor),
             sql`not exists (select 1 from discussion_turn t where t.discussion_id = ${discussion.id} and t.status in ('queued', 'running', 'awaiting_approval'))`,
+            sql`not exists (select 1 from attention_item a where a.owner_user_id = ${discussion.ownerUserId} and a.source_key = 'discussion:' || ${discussion.id}::text || ':idle' and a.status in ('resolved', 'cancelled') and a.updated_at > ${idleFor})`,
           ),
         )
         .limit(50);

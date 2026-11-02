@@ -1,8 +1,10 @@
 import {
+  Autocomplete as LibAutocomplete,
   Button as LibButton,
   Checkbox as LibCheckbox,
   Input as LibInput,
   Modal as LibModal,
+  ModalConfirmProvider as LibModalConfirmProvider,
   Radiobox as LibRadiobox,
   Select as LibSelect,
   Textarea as LibTextarea,
@@ -54,6 +56,9 @@ export function Button({
 export const Input = LibInput;
 export const Textarea = LibTextarea;
 export const Modal = LibModal;
+/** Mounted once in the root layout: it renders the dialog behind `Modal.confirm(...)`, which replaces `window.confirm`. */
+export const ModalConfirmProvider = LibModalConfirmProvider;
 export const Select = LibSelect;
+export const Autocomplete = LibAutocomplete;
 export const Checkbox = LibCheckbox;
 export const Radiobox = LibRadiobox;

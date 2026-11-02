@@ -1,11 +1,16 @@
 import { ArrowLeftIcon } from "@phosphor-icons/react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { BotAvatar } from "@/components/bot-avatar";
-import { Button, Input, Select, Textarea } from "@/components/ui";
+import { Button, Input, Modal, Select } from "@/components/ui";
 import { Empty, Loading, Panel } from "../shared/ui";
+import {
+  DEFAULT_CHOICE,
+  OutputStylePicker,
+  type StyleChoice,
+} from "../output-styles/output-style-picker";
 
 import { BotAvatarPicker } from "./bot-avatar-picker";
 import { BotAccounts } from "./bot-accounts";
@@ -29,6 +34,7 @@ import {
   type BotPatch,
   type Workspace,
 } from "./chat-client";
+import { MentionTextarea } from "./mention";
 import { useSidebarData } from "./sidebar-data";
 
 const UNGROUPED = "__ungrouped";
@@ -113,6 +119,11 @@ function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
           maxLength={2048}
           placeholder="What is this bot good at?"
         />
+        {harness === "decision" && (
+          <p className="text-xs text-muted-foreground md:col-span-2">
+            This bot has no AI. Its answers come only from the options in Decision routing below.
+          </p>
+        )}
         {harness !== "fixture" && (
           <Select
             title="Model"
@@ -175,7 +186,7 @@ function AvatarForm({ bot, onBotChange, notify }: Common) {
   );
 }
 
-function PersonalityForm({ bot, onBotChange, notify }: Common) {
+function PersonalityForm({ bot, bots, onBotChange, notify }: Common) {
   const { error, saving, save } = useSave(bot, onBotChange, notify);
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -187,16 +198,18 @@ function PersonalityForm({ bot, onBotChange, notify }: Common) {
   }
   return (
     <form key={`${bot.id}-${bot.version}`} onSubmit={submit} className="space-y-4">
-      <Textarea
+      <MentionTextarea
         title="Personality"
         name="personality"
+        bots={bots}
         defaultValue={bot.personality}
         rows={5}
         maxLength={4096}
       />
-      <Textarea
+      <MentionTextarea
         title="Instructions"
         name="instructions"
+        bots={bots}
         defaultValue={bot.instructions}
         rows={12}
         maxLength={16384}
@@ -211,6 +224,72 @@ function PersonalityForm({ bot, onBotChange, notify }: Common) {
   );
 }
 
+function OutputStyleForm({ bot, onBotChange, notify }: Common) {
+  const { error, saving, save } = useSave(bot, onBotChange, notify);
+  const saved: StyleChoice = {
+    outputStyle: bot.outputStyle ?? DEFAULT_CHOICE.outputStyle,
+    outputStyleId: bot.outputStyleId ?? null,
+  };
+  const [choice, setChoice] = useState<StyleChoice>(saved);
+  const unchanged =
+    choice.outputStyle === saved.outputStyle && choice.outputStyleId === saved.outputStyleId;
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void save(choice);
+  }
+  return (
+    <form key={`${bot.id}-${bot.version}`} onSubmit={submit} className="space-y-4">
+      <OutputStylePicker name={`output-style-${bot.id}`} value={choice} onChange={setChoice} />
+      <div className={saveRow}>
+        <Failure error={error} />
+        <Button type="submit" size="sm" disabled={saving || unchanged}>
+          Save output style
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function DeleteForm({ bot, setBots }: { bot: Bot; setBots: (f: (l: Bot[]) => Bot[]) => void }) {
+  const navigate = useNavigate();
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  async function remove() {
+    const confirmed = await Modal.confirm<boolean>({
+      title: `Delete ${bot.name}?`,
+      description:
+        "It loses its plugins, accounts, computer access, inbound channels, routines and team places, and all its running work stops. Its chats stay.",
+      confirm: { text: "Delete bot", theme: "danger" },
+    });
+    if (!confirmed) return;
+    setError(undefined);
+    setBusy(true);
+    try {
+      await chatClient.deleteBot(bot.id);
+      setBots((list) => list.filter((b) => b.id !== bot.id));
+      toast.success(`${bot.name} was deleted.`);
+      void navigate({ to: "/chat/{-$chatId}", params: { chatId: undefined }, search: {} });
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
+  }
+  return (
+    <div className={saveRow}>
+      <Failure error={error} />
+      <Button
+        type="button"
+        size="sm"
+        variant="destructive"
+        disabled={busy}
+        onClick={() => void remove()}
+      >
+        Delete bot
+      </Button>
+    </div>
+  );
+}
+
 type Entry = {
   id: string;
   title: string;
@@ -222,10 +301,11 @@ type Entry = {
 
 /** Order and grouping of the page. A registered section missing here lands in "More", so a new one still shows up. */
 const GROUPS: { label: string; ids: string[] }[] = [
-  { label: "Profile", ids: ["general", "picture", "personality"] },
+  { label: "Profile", ids: ["general", "picture", "personality", "output-style"] },
   { label: "Behavior", ids: ["claude", "hooks", "decision"] },
   { label: "Capabilities", ids: ["code", "computer", "plugins", "database"] },
   { label: "Connections", ids: ["accounts", "inbound", "teams", "peers"] },
+  { label: "Danger zone", ids: ["delete"] },
 ];
 
 function useActiveSection(root: React.RefObject<HTMLElement | null>, ids: string[]) {
@@ -252,7 +332,14 @@ function useActiveSection(root: React.RefObject<HTMLElement | null>, ids: string
   return [active, setActive] as const;
 }
 
-function SettingsBody({ bot, bots, spaces, onBotChange, notify }: Common) {
+function SettingsBody({
+  bot,
+  bots,
+  spaces,
+  onBotChange,
+  notify,
+  setBots,
+}: Common & { setBots: (f: (l: Bot[]) => Bot[]) => void }) {
   const scroller = useRef<HTMLDivElement>(null);
   const common = { bot, bots, spaces, onBotChange, notify };
   const entries: Entry[] = [
@@ -271,8 +358,14 @@ function SettingsBody({ bot, bots, spaces, onBotChange, notify }: Common) {
     {
       id: "personality",
       title: "Personality",
-      description: "Tone and standing instructions the bot follows in every chat.",
+      description: "Who the bot is and the standing instructions it follows in every chat.",
       node: <PersonalityForm {...common} />,
+    },
+    {
+      id: "output-style",
+      title: "Output style",
+      description: "How the bot writes: its tone of voice and the shape of its answers.",
+      node: <OutputStyleForm key={`${bot.id}-${bot.version}`} {...common} />,
     },
     {
       id: "accounts",
@@ -287,6 +380,17 @@ function SettingsBody({ bot, bots, spaces, onBotChange, notify }: Common) {
       bare: true,
       node: <BotDecision bot={bot} bots={bots} />,
     },
+    ...(bot.kind === "specialist"
+      ? [
+          {
+            id: "delete",
+            title: "Delete bot",
+            description:
+              "Removes the bot from your lists and detaches everything it could use. Its chats stay.",
+            node: <DeleteForm bot={bot} setBots={setBots} />,
+          },
+        ]
+      : []),
     ...registeredBotSections().map((s) => ({
       id: s.id,
       title: s.title,
@@ -443,6 +547,13 @@ export function BotSettingsPage({ botId }: { botId: string }) {
       </div>
     );
   return (
-    <SettingsBody bot={bot} bots={bots} spaces={spaces} onBotChange={onBotChange} notify={notify} />
+    <SettingsBody
+      bot={bot}
+      bots={bots}
+      spaces={spaces}
+      onBotChange={onBotChange}
+      notify={notify}
+      setBots={setBots}
+    />
   );
 }

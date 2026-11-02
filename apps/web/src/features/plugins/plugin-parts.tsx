@@ -71,6 +71,7 @@ export function FieldInput({
   const required = !editing && !f.optional;
   if (f.kind === "textarea")
     return (
+      // Plain on purpose: plugin setup values (lists, keys, JSON), not text for people or bots.
       <Textarea
         title={f.label}
         name={f.key}

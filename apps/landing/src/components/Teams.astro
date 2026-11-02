@@ -1,0 +1,226 @@
+---
+// One workspace, drawn: its people with their roles, its bots, and one bot that stays private.
+// The scene is one image for assistive tech; the three points below carry the meaning.
+import BotArt from "./BotArt.astro";
+import { CAST } from "../cast";
+import { getCopy, type Locale } from "../i18n";
+import { DOCS } from "../links";
+
+interface Props {
+  locale: Locale;
+}
+
+const copy = getCopy(Astro.props.locale);
+const t = copy.teams;
+const s = t.scene;
+const people = ["A", "M", "J"];
+const bots = [
+  { bot: CAST.writer, kind: "team" },
+  { bot: CAST.reviewer, kind: "team" },
+  { bot: CAST.researcher, kind: "private" },
+] as const;
+---
+
+<section class="section" id="teams">
+  <div class="wrap">
+    <div class="head">
+      <h2>{t.title}</h2>
+      <p class="lead">{t.lead}</p>
+      <div class="row">
+        <a class="btn btn-primary" href="#self-host">{copy.hero.primary}</a>
+        <a class="btn" href={DOCS} target="_blank" rel="noopener noreferrer">{copy.cta.secondary}</a>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="scene" role="img" aria-label={`${t.items[2].title}. ${copy.how.demo.illustrated}.`}>
+        <div class="ws">
+          <p class="wshead"><span class="mark">{s.workspace[0]}</span><b>{s.workspace}</b></p>
+          <div class="groups">
+            <div class="group">
+              <p class="label">{s.people}</p>
+              <ul class="list">
+                {people.map((initial, i) => (
+                  <li><span class="person">{initial}</span><span class="chip">{s.roles[i]}</span></li>
+                ))}
+              </ul>
+            </div>
+            <div class="group">
+              <p class="label">{s.bots}</p>
+              <ul class="list">
+                {bots.map(({ bot, kind }) => (
+                  <li class={kind}>
+                    <BotArt art={bot.art} size={32} />
+                    <b>{bot.name}</b>
+                    <span class="chip">
+                      {kind === "private" ? (
+                        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M5.5 7V5a2.5 2.5 0 015 0v2" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+                      ) : null}
+                      {kind === "private" ? s.private : s.team}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <ul class="cells">
+        {t.items.map((item) => (
+          <li>
+            <h3>{item.title}</h3>
+            <p>{item.body}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
+</section>
+
+<style>
+  .head .row {
+    margin-top: 12px;
+  }
+  .panel {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    background: var(--card);
+  }
+
+  .scene {
+    display: grid;
+    place-items: center;
+    padding: 40px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--sidebar);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .ws {
+    width: min(100%, 640px);
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--card);
+  }
+  .wshead {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    font-size: 16px;
+  }
+  .mark {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-md);
+    background: var(--foreground);
+    color: var(--background);
+    font-weight: 600;
+  }
+  .groups {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    gap: 24px;
+  }
+  .label {
+    margin-bottom: 8px;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+  }
+  .list {
+    display: grid;
+    gap: 8px;
+  }
+  .list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 6px 10px 6px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+  .list li b {
+    font-weight: 500;
+  }
+  /* People are circles, bots are their own art (DESIGN.md), so the two never read alike. */
+  .person {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--accent);
+    font-weight: 600;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    height: 20px;
+    padding-inline: 6px;
+    border-radius: var(--radius-sm);
+    background: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .private {
+    border-style: dashed;
+    border-color: var(--input);
+  }
+
+  .cells {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .cells li {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    padding: 32px;
+  }
+  .cells li + li {
+    border-left: 1px solid var(--border);
+  }
+  h3 {
+    font-size: 22px;
+    line-height: 28px;
+    letter-spacing: -0.02em;
+  }
+  .cells p {
+    color: var(--muted-foreground);
+    font-size: 16px;
+    line-height: 24px;
+  }
+  @media (max-width: 860px) {
+    .cells {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .cells li + li {
+      border-top: 1px solid var(--border);
+      border-left: 0;
+    }
+    .cells li {
+      padding: 24px;
+    }
+    .groups {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+    }
+    .scene {
+      padding: 20px 16px;
+    }
+    .ws {
+      padding: 16px;
+    }
+  }
+</style>

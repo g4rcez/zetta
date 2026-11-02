@@ -1,0 +1,342 @@
+---
+import Logo from "./Logo.astro";
+import BotArt from "./BotArt.astro";
+import { getCopy, type Locale } from "../i18n";
+import { DOCS, REPO } from "../links";
+
+interface Props {
+  locale: Locale;
+}
+
+const copy = getCopy(Astro.props.locale);
+const t = copy.selfHost;
+const hub = copy.hero.hub;
+const demo = copy.how.demo;
+const sample = demo.tabs[2];
+
+// Commands come from docker-compose.yml, apps/server/.env.schema, apps/web/.env.schema and the docker:up script in package.json.
+// The secrets are made with `openssl rand -base64 32`, as the schema comments say. DATABASE_URL and CORS_ORIGIN are set by docker-compose.yml.
+const commands = [
+  `git clone ${REPO}.git\ncd zetta`,
+  [
+    "cat > apps/server/.env <<EOF",
+    "BETTER_AUTH_SECRET=$(openssl rand -base64 32)",
+    "BETTER_AUTH_URL=http://localhost:3000",
+    "ZETTA_CONNECTION_KEY=$(openssl rand -base64 32)",
+    "ZETTA_SETUP_KEY=$(openssl rand -base64 32)",
+    "EOF",
+    'echo "VITE_SERVER_URL=http://localhost:3000" > apps/web/.env',
+  ].join("\n"),
+  "docker compose up -d --build",
+  null,
+];
+---
+
+<section class="section band" id="self-host">
+  <div class="wrap">
+    <div class="head">
+      <h2>{t.title}</h2>
+      <p class="lead">{t.lead}</p>
+      <a href={DOCS} target="_blank" rel="noopener noreferrer">{t.docs}</a>
+    </div>
+
+    <div class="panel">
+      <ol class="steps">
+        {t.steps.map((step, i) => (
+          <li>
+            <span class="n">{i + 1}</span>
+            <div class="body">
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+              {commands[i] ? (
+                <div class="code">
+                  <pre><code>{commands[i]}</code></pre>
+                  <button type="button" data-copy data-copied={t.copied} data-label={t.copy}>{t.copy}</button>
+                </div>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <figure class="mock">
+        <div class="window" role="img" aria-label={`${t.mock.address}. ${sample.chief} ${sample.outcome.body} ${demo.illustrated}.`}>
+          <p class="address"><span>{t.mock.address}</span></p>
+          <div class="app">
+            <div class="side">
+              <p class="mark"><Logo size={20} tile id="mock" /><b>Zetta</b></p>
+              <p class="row inbox"><span>{t.mock.inbox}</span><span class="count">1</span></p>
+              <p class="group">{t.mock.bots}</p>
+              <p class="row selected"><Logo size={20} tile id="mock-side" />{hub.chief}</p>
+              {hub.bots.map((bot) => <p class="row"><BotArt name={bot.name} size={20} />{bot.name}</p>)}
+            </div>
+            <div class="chat">
+              <div class="msg"><Logo size={28} tile id="mock-chat" /><div><b>{hub.chief}</b><p>{sample.chief}</p></div></div>
+              <div class="needs">
+                <b class="badge">{hub.needs}</b>
+                <p>{sample.outcome.body}</p>
+                {sample.outcome.actions ? <div class="acts"><span class="ok">{sample.outcome.actions[0]}</span><span class="no">{sample.outcome.actions[1]}</span></div> : null}
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>{demo.illustrated}</figcaption>
+      </figure>
+    </div>
+  </div>
+  <p class="sr-only" role="status" aria-live="polite" data-copy-status></p>
+</section>
+
+<style>
+  .head a {
+    font-size: 15px;
+  }
+  .panel {
+    display: grid;
+    grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+    gap: 48px;
+    align-items: start;
+    padding: 40px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    background: var(--card);
+  }
+  .steps {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+  .steps li {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 16px;
+  }
+  .n {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--input);
+    border-radius: 50%;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    min-width: 0;
+  }
+  .body p {
+    color: var(--muted-foreground);
+    font-size: 15px;
+    line-height: 22px;
+  }
+  .code {
+    position: relative;
+    margin-top: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--muted);
+  }
+  pre {
+    padding: 14px 96px 14px 16px;
+    overflow-x: auto;
+  }
+  .code button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    height: 28px;
+    padding-inline: 12px;
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .code button:hover {
+    background: var(--accent);
+  }
+
+  .mock {
+    position: sticky;
+    top: 96px;
+    display: grid;
+    gap: 12px;
+  }
+  .window {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--background);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .address {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--sidebar);
+  }
+  .address span {
+    display: block;
+    padding: 2px 12px;
+    border-radius: var(--radius-md);
+    background: var(--card);
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .app {
+    display: grid;
+    grid-template-columns: 136px minmax(0, 1fr);
+  }
+  .side {
+    display: grid;
+    align-content: start;
+    gap: 2px;
+    padding: 12px 8px;
+    border-right: 1px solid var(--border);
+    background: var(--sidebar);
+  }
+  .mark {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px 8px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    height: 32px;
+    padding-inline: 8px;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+  }
+  .row.selected {
+    background: var(--accent);
+  }
+  .group {
+    padding: 8px 8px 2px;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+  }
+  .inbox .count {
+    margin-left: auto;
+  }
+  .count,
+  .badge {
+    padding-inline: 6px;
+    border-radius: var(--radius-sm);
+    background: var(--attention);
+    color: var(--attention-foreground);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  .chat {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    padding: 16px;
+  }
+  .msg {
+    display: flex;
+    gap: 10px;
+  }
+  .msg b {
+    font-weight: 500;
+  }
+  .needs {
+    display: grid;
+    justify-items: start;
+    gap: 4px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--attention) 60%, transparent);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--attention) 12%, var(--background));
+  }
+  .acts {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .acts span {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding-inline: 12px;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+  }
+  .ok {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .no {
+    border: 1px solid var(--input);
+    background: var(--card);
+  }
+  figcaption {
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 16px;
+    text-align: right;
+  }
+
+  /* On narrow screens the button sits under the command, so scrolling text never slides beneath it. */
+  @media (max-width: 720px) {
+    .panel {
+      padding: 20px;
+    }
+    pre {
+      padding-right: 16px;
+    }
+    .code button {
+      position: static;
+      display: block;
+      margin: 0 8px 8px auto;
+    }
+    .app {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .side {
+      display: none;
+    }
+  }
+  @media (max-width: 960px) {
+    .panel {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 40px;
+    }
+    .mock {
+      position: static;
+    }
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const code = button.parentElement?.querySelector("code")?.textContent ?? "";
+      const status = document.querySelector("[data-copy-status]");
+      try {
+        await navigator.clipboard.writeText(code);
+      } catch {
+        return; // Clipboard blocked (for example on plain http): the text stays selectable.
+      }
+      button.textContent = button.dataset.copied ?? "";
+      if (status) status.textContent = button.dataset.copied ?? "";
+      setTimeout(() => {
+        button.textContent = button.dataset.label ?? "";
+        if (status) status.textContent = "";
+      }, 2000);
+    });
+  });
+</script>

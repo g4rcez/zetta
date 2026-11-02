@@ -1,0 +1,238 @@
+---
+// Four promises, each with a small UI scene drawn in code. Status never relies on color alone: every chip has a word.
+import BotArt from "./BotArt.astro";
+import { getCopy, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const t = getCopy(Astro.props.locale).control;
+const s = t.scenes;
+---
+
+<section class="section" id="control">
+  <div class="wrap">
+    <div class="head">
+      <h2>{t.title}</h2>
+      <p class="lead">{t.lead}</p>
+    </div>
+
+    <ul class="cards">
+      {t.points.map((p, i) => (
+        <li>
+          <div class="scene" role="img" aria-label={p.title}>
+            {i === 0 ? (
+              <ul class="rows">
+                {s.honest.rows.map((r) => (
+                  <li>
+                    <b class={`chip ${r.kind}`}>{r.label}</b>
+                    <span>{r.text}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {i === 1 ? (
+              <ul class="rows">
+                {s.approval.rows.map((r) => (
+                  <li>
+                    <span>{r.text}</span>
+                    <b class={`chip ${r.kind === "ran" ? "ok" : "needs"}`}>
+                      {r.kind === "ran" ? (
+                        <svg viewBox="0 0 16 16" width="14" height="14"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                      ) : null}
+                      {r.kind === "ran" ? s.approval.ran : s.approval.waits}
+                    </b>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {i === 2 ? (
+              <div class="share">
+                <p class="bot"><BotArt name={s.sharing.bot} size={28} /><b>{s.sharing.bot}</b><span class="chip muted">{s.sharing.shared}</span></p>
+                <p class="label">{s.sharing.stays}</p>
+                <ul class="locks">
+                  {s.sharing.items.map((item) => (
+                    <li>
+                      <svg viewBox="0 0 16 16" width="14" height="14"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M5.5 7V5a2.5 2.5 0 015 0v2" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {i === 3 ? (
+              <div class="share">
+                <p class="label">{s.server.title}</p>
+                <ul class="rows">
+                  {s.server.rows.map((r) => (
+                    <li>
+                      <span>{r.text}</span>
+                      <b class={`chip ${r.kind === "allowed" ? "ok" : "blocked"}`}>
+                        {r.kind === "allowed" ? (
+                          <svg viewBox="0 0 16 16" width="14" height="14"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                        ) : (
+                          <svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" /></svg>
+                        )}
+                        {r.kind === "allowed" ? s.server.allowed : s.server.denied}
+                      </b>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+
+          <div class="body">
+            <h3>{p.title}</h3>
+            <p>{p.body}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+    max-width: 1040px;
+    margin-inline: auto;
+  }
+  .cards > li {
+    display: grid;
+    grid-template-rows: 232px auto;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    background: var(--card);
+  }
+  .scene {
+    display: grid;
+    align-content: center;
+    padding: 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--sidebar);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .body {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    padding: 24px;
+  }
+  .body h3 {
+    font-size: 22px;
+    line-height: 28px;
+    letter-spacing: -0.02em;
+  }
+  .body p {
+    color: var(--muted-foreground);
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  .rows {
+    display: grid;
+    gap: 8px;
+  }
+  .rows li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+  }
+  /* The first scene lists the label first, then the text. */
+  .cards > li:first-child .rows li {
+    justify-content: flex-start;
+  }
+  .chip {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    padding-inline: 6px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 20px;
+    white-space: nowrap;
+  }
+  /* Failed, blocked and allowed are 10% tints with colored text and a word. Amber is the loudest and means a person is needed. */
+  .chip.blocked {
+    background: color-mix(in srgb, var(--destructive) 10%, var(--card));
+    color: var(--destructive);
+  }
+  .chip.ok {
+    background: color-mix(in srgb, var(--success) 10%, var(--card));
+    color: var(--success);
+  }
+  .chip.needs {
+    background: var(--attention);
+    color: var(--attention-foreground);
+  }
+  .chip.result,
+  .chip.muted {
+    background: var(--muted);
+    color: var(--foreground);
+  }
+
+  .share {
+    display: grid;
+    gap: 12px;
+  }
+  .bot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+  }
+  .bot .chip {
+    margin-left: auto;
+  }
+  .label {
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+  }
+  .locks {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .locks li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 6px 12px;
+    border: 1px dashed var(--input);
+    border-radius: var(--radius-lg);
+    color: var(--muted-foreground);
+  }
+
+  @media (max-width: 860px) {
+    .cards {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .cards > li {
+      grid-template-rows: auto auto;
+    }
+  }
+</style>

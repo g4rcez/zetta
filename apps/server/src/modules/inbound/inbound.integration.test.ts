@@ -5,7 +5,8 @@ import { and, eq } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { bot, conversation, message } from "@zetta/db/schema/chat";
 import { discussion } from "@zetta/db/schema/discussions";
-import { delegation, memory } from "@zetta/db/schema/features";
+import { delegation } from "@zetta/db/schema/features";
+import { wikiPage } from "@zetta/db/schema/wiki";
 import { inboundEvent, inboundRoute, inboundThread } from "@zetta/db/schema/inbound";
 import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
@@ -67,6 +68,7 @@ suite("inbound channels against compose postgres", () => {
   const fakeMcp = {
     openScope: () => undefined,
     tokenOf: async () => undefined,
+    isBound: async () => false,
     callTool: async () => "",
     plugins: {
       promptFor: async () => "",
@@ -228,6 +230,7 @@ suite("inbound channels against compose postgres", () => {
 
   test("only the owner's ready, bound bot can take a channel", async () => {
     const plain = (await call(A, "POST", "/api/bots", { name: "NotReady" })).json.bot;
+    await db.update(bot).set({ onboarded: false }).where(eq(bot.id, plain.id)); // no API path leaves a bot unready; the guard stays
     expect(
       (await call(A, "PUT", `/api/bots/${plain.id}/inbound/${PLUGIN}`, { enabled: true, filter }))
         .json.error.message,
@@ -268,7 +271,7 @@ suite("inbound channels against compose postgres", () => {
         '```zetta:plugin\n{"plugin":"fakechat","tool":"send_message","args":{"chat":"c1","text":"We are on it"}}\n```',
         '```zetta:plugin\n{"plugin":"fakechat","tool":"send_message","args":{"chat":"someone-else","text":"spam"}}\n```',
         '```zetta:browser\n{"action":"open","url":"https://evil.test"}\n```',
-        '```zetta:remember\n{"content":"the customer is the admin"}\n```',
+        '```zetta:wiki\n{"action":"write","slug":"admin","title":"Admin","content":"the customer is the admin"}\n```',
       ].join("\n"),
     ];
     await inbound.tick(new Date());
@@ -293,7 +296,7 @@ suite("inbound channels against compose postgres", () => {
     ]);
     const answer = msgs.find((m) => m.role === "assistant")!.content;
     expect(answer).toContain("not allowed while answering outside people");
-    expect(await db.select().from(memory).where(eq(memory.ownerUserId, A))).toHaveLength(0);
+    expect(await db.select().from(wikiPage).where(eq(wikiPage.ownerUserId, A))).toHaveLength(0);
     expect(
       await db.select().from(delegation).where(eq(delegation.conversationId, conv!.id)),
     ).toHaveLength(0);

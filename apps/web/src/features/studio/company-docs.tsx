@@ -3,6 +3,7 @@ import { Button } from "@/components/ui";
 
 import { call, errorMessage } from "../chat/chat-client";
 import { Badge, ConfirmButton, Panel, when } from "../shared/ui";
+import { useTimeFormat } from "@/features/preferences/preferences";
 
 type DocsStatus = {
   enabled: boolean;
@@ -26,6 +27,7 @@ const STATE: Record<
 
 /** Turns on the index of the user's Google Drive documents. Bots then answer from them and cite them; only this user's chats can read them. */
 export function CompanyDocs({ onError }: { onError: (m: string) => void }) {
+  const tf = useTimeFormat();
   const [s, setS] = useState<DocsStatus>();
   const [busy, setBusy] = useState(false);
   const load = useCallback(
@@ -70,7 +72,7 @@ export function CompanyDocs({ onError }: { onError: (m: string) => void }) {
               {s.pending ? `, ${s.pending} waiting` : ""}
             </span>
             {s.lastSyncedAt && (
-              <span className="text-muted-foreground">Last read {when(s.lastSyncedAt)}</span>
+              <span className="text-muted-foreground">Last read {when(s.lastSyncedAt, tf)}</span>
             )}
           </p>
           {s.lastError && (

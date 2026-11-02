@@ -316,6 +316,104 @@ suite("teams against compose postgres", () => {
     expect(again.json.error.code).toBe("NAME_TAKEN");
   });
 
+  test("a plain room moves into a team and back, and its bots then read the team context", async () => {
+    const teamId = await teamOf("Move team", ["Move Lead", "Move Dev"]);
+    const extra = await makeBot("Move Extra");
+    const saved = (await call("GET", `/api/teams/${teamId}`)).json.team;
+    const lead = saved.members.find((m: { kind: string }) => m.kind === "chief");
+    const dev = saved.members.find((m: { kind: string }) => m.kind === "member");
+    const plain = await call("POST", "/api/discussions", {
+      title: "Move me",
+      goal: "a goal",
+      members: [{ bot: extra.id }, { bot: dev.botId }],
+      firstMessage: "@MoveExtra hello",
+    });
+    expect(plain.status).toBe(201);
+    await worker.drain();
+    const roomId = plain.json.discussion.id as string;
+    expect(plain.json.discussion).toMatchObject({ teamId: null, createdByBotId: null });
+
+    const moved = await call("PUT", `/api/discussions/${roomId}/team`, { teamId });
+    expect(moved.status).toBe(200);
+    expect(moved.json.discussion).toMatchObject({ teamId, createdByBotId: lead.botId });
+    const inTeam = await call("GET", `/api/discussions/${roomId}`);
+    expect(inTeam.json.members.map((m: { name: string }) => m.name).sort()).toEqual([
+      "Move Dev",
+      "Move Extra",
+      "Move Lead",
+    ]);
+
+    const withContext = await call("PUT", `/api/teams/${teamId}`, {
+      expectedVersion: saved.version,
+      name: "Move team",
+      goal: "",
+      context: "Stack: bun and postgres",
+      canvas: saved.canvas,
+      members: saved.members.map(
+        (m: { botId: string; kind: string; roleId: null; canvas: unknown }) => ({
+          botId: m.botId,
+          kind: m.kind,
+          roleId: m.roleId,
+          canvas: m.canvas,
+        }),
+      ),
+    });
+    expect(withContext.json.team.context).toBe("Stack: bun and postgres");
+    await call("POST", `/api/discussions/${roomId}/messages`, { content: "start the work" });
+    await worker.drain();
+    expect(runs.at(-1)!.prompt).toContain("Stack: bun and postgres");
+
+    const out = await call("PUT", `/api/discussions/${roomId}/team`, { teamId: null });
+    expect(out.json.discussion).toMatchObject({ teamId: null, createdByBotId: null });
+    expect((await call("GET", `/api/discussions/${roomId}`)).json.members).toHaveLength(3);
+  });
+
+  test("a team save without a context keeps the context", async () => {
+    const teamId = await teamOf("Keep team", ["Keep Lead", "Keep Dev"]);
+    const t = (await call("GET", `/api/teams/${teamId}`)).json.team;
+    const body = {
+      name: "Keep team",
+      goal: "",
+      canvas: t.canvas,
+      members: t.members.map(
+        (m: { botId: string; kind: string; roleId: null; canvas: unknown }) => ({
+          botId: m.botId,
+          kind: m.kind,
+          roleId: m.roleId,
+          canvas: m.canvas,
+        }),
+      ),
+    };
+    const first = await call("PUT", `/api/teams/${teamId}`, {
+      ...body,
+      expectedVersion: t.version,
+      context: "Shared rules",
+    });
+    const second = await call("PUT", `/api/teams/${teamId}`, {
+      ...body,
+      expectedVersion: first.json.team.version,
+    });
+    expect(second.json.team.context).toBe("Shared rules");
+  });
+
+  test("a room cannot move into a team that already has a room with that name", async () => {
+    const teamId = await teamOf("Clash team", ["Clash Lead", "Clash Dev"]);
+    const dev = (await call("GET", `/api/teams/${teamId}`)).json.team.members[1];
+    await call("POST", `/api/teams/${teamId}/rooms`, { title: "Taken name" });
+    const plain = await call("POST", "/api/discussions", {
+      title: "taken NAME",
+      goal: "",
+      members: [{ bot: dev.botId }],
+      firstMessage: "hello",
+    });
+    await worker.drain();
+    const moved = await call("PUT", `/api/discussions/${plain.json.discussion.id}/team`, {
+      teamId,
+    });
+    expect(moved.status).toBe(409);
+    expect(moved.json.error.code).toBe("NAME_TAKEN");
+  });
+
   test("a goal loop in a room makes the team discuss step after step until the chief reports done", async () => {
     const id = await teamOf("Loop team", ["Loop Lead", "Loop Dev"]);
     runs.length = 0;

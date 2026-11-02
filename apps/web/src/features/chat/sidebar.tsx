@@ -1,5 +1,6 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { RoomsSection } from "../discussions/rooms-section";
+import { RoutinesSection } from "../routines/routines-section";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -15,9 +16,10 @@ import {
   PlusIcon,
   PushPinIcon,
   PushPinSlashIcon,
+  TrashIcon,
   StarIcon,
 } from "@phosphor-icons/react";
-import { Reorder, motion, useDragControls, useReducedMotion } from "motion/react";
+import { AnimatePresence, Reorder, motion, useDragControls, useReducedMotion } from "motion/react";
 import {
   useCallback,
   useEffect,
@@ -26,6 +28,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactElement,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -38,6 +41,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
 import { Input, Select } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
@@ -121,6 +125,29 @@ function bucketByDay(chats: Conversation[]) {
 
 const NO_CHATS: Conversation[] = [];
 
+/** Hover and focus popover with a title and a description. `children` is the element that opens it. */
+function Hint({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactElement;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent className="flex-col items-start gap-0.5">
+        <span className="font-medium">{title}</span>
+        <span className="opacity-70">{description}</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+const fullDate = (iso: string) => new Date(iso).toLocaleString();
+
 /** Short relative time for a row: "now", "5m", "3h", "2d", then a calendar date. */
 function ago(iso: string) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -186,8 +213,9 @@ export function useSidebarNavigation() {
 }
 
 type UpdateChat = ReturnType<typeof useSidebarData>["updateChat"];
+type DeleteChat = (c: Conversation) => void;
 
-/** A conversation row. With `bot` it is the two-line form (avatar, title, bot name) for lists that mix bots; without it, the one-line form nested under its bot. The hover menu renames (inline), pins and favorites. */
+/** A conversation row. With `bot` it is the two-line form (avatar, title, bot name) for lists that mix bots; without it, the one-line form nested under its bot. The hover menu renames (inline), pins, favorites and deletes (with Undo). */
 function ChatRow({
   c,
   bot,
@@ -195,6 +223,7 @@ function ChatRow({
   current,
   onOpen,
   onUpdate,
+  onDelete,
 }: {
   c: Conversation;
   bot?: Bot | undefined;
@@ -203,8 +232,10 @@ function ChatRow({
   current: boolean;
   onOpen: (id: string) => void;
   onUpdate: UpdateChat;
+  onDelete: DeleteChat;
 }) {
   const [editing, setEditing] = useState(false);
+  const reduce = useReducedMotion();
   const commit = (value: string) => {
     setEditing(false);
     const title = value.trim();
@@ -235,7 +266,11 @@ function ChatRow({
     );
   }
   return (
-    <li className="group/chat relative">
+    <motion.li
+      exit={reduce ? { opacity: 0 } : { opacity: 0, x: -8, height: 0 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+      className="group/chat relative"
+    >
       <button
         type="button"
         data-chat-row
@@ -272,26 +307,30 @@ function ChatRow({
         {c.favorite && <StarIcon aria-label="Favorite" className="size-3 shrink-0" />}
         {/* Nested rows give the title the whole width; the bot row carries the latest time. */}
         {bot && (
-          <time
-            dateTime={c.updatedAt}
-            className="w-8 shrink-0 text-right text-xs text-muted-foreground tabular-nums group-focus-within/chat:opacity-0 group-hover/chat:opacity-0"
-          >
-            {ago(c.updatedAt)}
-          </time>
+          <Hint title="Last activity" description={fullDate(c.updatedAt)}>
+            <time
+              dateTime={c.updatedAt}
+              className="w-8 shrink-0 text-right text-xs text-muted-foreground tabular-nums group-focus-within/chat:opacity-0 group-hover/chat:opacity-0"
+            >
+              {ago(c.updatedAt)}
+            </time>
+          </Hint>
         )}
       </button>
       <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <button
-              type="button"
-              aria-label={`Actions for ${c.title}`}
-              className="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring group-hover/chat:opacity-100 data-popup-open:opacity-100"
-            />
-          }
-        >
-          <DotsThreeIcon aria-hidden="true" className="size-4" />
-        </DropdownMenuTrigger>
+        <Hint title="Chat actions" description="Rename, pin, favorite or delete this chat.">
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                aria-label={`Actions for ${c.title}`}
+                className="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring group-hover/chat:opacity-100 data-popup-open:opacity-100"
+              />
+            }
+          >
+            <DotsThreeIcon aria-hidden="true" className="size-4" />
+          </DropdownMenuTrigger>
+        </Hint>
         <DropdownMenuContent align="start" className="w-44">
           <DropdownMenuItem onClick={() => setEditing(true)}>
             <PencilSimpleIcon />
@@ -306,9 +345,13 @@ function ChatRow({
             <StarIcon />
             {c.favorite ? "Remove from favorites" : "Add to favorites"}
           </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onClick={() => onDelete(c)}>
+            <TrashIcon />
+            Delete
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    </li>
+    </motion.li>
   );
 }
 
@@ -359,6 +402,7 @@ function BotSection({
   onChat,
   onNewChat,
   onUpdateChat,
+  onDeleteChat,
 }: {
   bot: Bot;
   chats: Conversation[];
@@ -375,6 +419,7 @@ function BotSection({
   onChat: (id: string) => void;
   onNewChat: (id: string) => void;
   onUpdateChat: UpdateChat;
+  onDeleteChat: DeleteChat;
 }) {
   const controls = useDragControls();
   const reduce = useReducedMotion();
@@ -473,28 +518,31 @@ function BotSection({
         )}
       </button>
       <span className="flex h-7 shrink-0 items-center gap-0.5 pr-1">
-        <button
-          type="button"
-          disabled={blocked}
-          aria-label={`New chat with ${bot.name}`}
-          title="New chat"
-          onClick={() => onNewChat(bot.id)}
-          className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-sidebar hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
-        >
-          <PlusIcon aria-hidden="true" className="size-3.5" />
-        </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                aria-label={`Actions for ${bot.name}`}
-                className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-sidebar hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-              />
-            }
+        <Hint title="New chat" description={`Start a new conversation with ${bot.name}.`}>
+          <button
+            type="button"
+            disabled={blocked}
+            aria-label={`New chat with ${bot.name}`}
+            onClick={() => onNewChat(bot.id)}
+            className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-sidebar hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
           >
-            <DotsThreeIcon aria-hidden="true" className="size-4" />
-          </DropdownMenuTrigger>
+            <PlusIcon aria-hidden="true" className="size-3.5" />
+          </button>
+        </Hint>
+        <DropdownMenu>
+          <Hint title="Bot actions" description="Reorder this bot or open its settings.">
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={`Actions for ${bot.name}`}
+                  className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-sidebar hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                />
+              }
+            >
+              <DotsThreeIcon aria-hidden="true" className="size-4" />
+            </DropdownMenuTrigger>
+          </Hint>
           <DropdownMenuContent align="start" className="w-48">
             {reordering && (
               <>
@@ -529,12 +577,14 @@ function BotSection({
         ) : (
           latest &&
           !setup && (
-            <time
-              dateTime={latest.updatedAt}
-              className="pl-1 text-xs text-muted-foreground tabular-nums"
-            >
-              {ago(latest.updatedAt)}
-            </time>
+            <Hint title="Last activity" description={fullDate(latest.updatedAt)}>
+              <time
+                dateTime={latest.updatedAt}
+                className="pl-1 text-xs text-muted-foreground tabular-nums"
+              >
+                {ago(latest.updatedAt)}
+              </time>
+            </Hint>
           )
         )}
       </span>
@@ -549,15 +599,18 @@ function BotSection({
       transition={{ duration: 0.16, ease: "easeOut" }}
       className="space-y-px pb-1"
     >
-      {shown.map((c) => (
-        <ChatRow
-          key={c.id}
-          c={c}
-          current={c.id === chatId}
-          onOpen={onChat}
-          onUpdate={onUpdateChat}
-        />
-      ))}
+      <AnimatePresence initial={false}>
+        {shown.map((c) => (
+          <ChatRow
+            key={c.id}
+            c={c}
+            current={c.id === chatId}
+            onOpen={onChat}
+            onUpdate={onUpdateChat}
+            onDelete={onDeleteChat}
+          />
+        ))}
+      </AnimatePresence>
       {chats.length > shown.length && (
         <li>
           <button
@@ -616,10 +669,19 @@ function GroupTitle({ children }: { children: string }) {
  * time, each showing its bot. `children` (the More group) scroll after the bots.
  */
 export function SidebarTree({ children }: { children?: ReactNode }) {
-  const { bots, spaces, chats, chatsLoaded, updateChat, addSpace } = useSidebarData();
+  const { bots, spaces, chats, chatsLoaded, updateChat, deleteChat, addSpace } = useSidebarData();
   const { botId, chatId } = useSidebarLocation();
   const { toBot, toChat, toDraft, toNewBot } = useSidebarNavigation();
   const navigate = useNavigate();
+  // Deleting the open chat moves to the bot's next chat, or to an empty draft.
+  const onDeleteChat = (c: Conversation) => {
+    if (c.id === chatId) {
+      const next = chats.find((x) => x.botId === c.botId && x.id !== c.id);
+      if (next) toChat(next.id);
+      else toDraft(c.botId);
+    }
+    deleteChat(c.id);
+  };
   const { preferences, set: setPreferences } = usePreferences();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -708,6 +770,7 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
         onChat={toChat}
         onNewChat={toDraft}
         onUpdateChat={updateChat}
+        onDeleteChat={onDeleteChat}
       />
     );
   };
@@ -742,6 +805,7 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
       current={c.id === chatId}
       onOpen={toChat}
       onUpdate={updateChat}
+      onDelete={onDeleteChat}
     />
   );
   const loading = !chatsLoaded && bots.length === 0;
@@ -809,6 +873,7 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
         aria-label="Rooms and bots"
       >
         <RoomsSection query={q} />
+        <RoutinesSection query={q} />
         <div className="flex items-center gap-1 pt-3 pb-1 pl-1">
           <button
             type="button"
@@ -825,32 +890,41 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
             />
             Bots
           </button>
-          <button
-            type="button"
-            aria-pressed={mode === "recent"}
-            aria-label="Show chats by time"
-            title={mode === "recent" ? "Showing chats by time" : "Show chats by time"}
-            onClick={() => setMode((m) => (m === "recent" ? "bots" : "recent"))}
-            className={cn(
-              "ml-auto flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
-              mode === "recent" && "bg-sidebar-accent text-foreground",
-            )}
+          <Hint
+            title="Recent chats"
+            description={
+              mode === "recent"
+                ? "Showing chats by time. Click to group them by bot."
+                : "List every chat by time instead of by bot."
+            }
           >
-            <ClockCounterClockwiseIcon aria-hidden="true" className="size-4" />
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label="Add a chat, bot or workspace"
-                  title="Add"
-                  className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-                />
-              }
+            <button
+              type="button"
+              aria-pressed={mode === "recent"}
+              aria-label="Show chats by time"
+              onClick={() => setMode((m) => (m === "recent" ? "bots" : "recent"))}
+              className={cn(
+                "ml-auto flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
+                mode === "recent" && "bg-sidebar-accent text-foreground",
+              )}
             >
-              <PlusIcon aria-hidden="true" className="size-4" />
-            </DropdownMenuTrigger>
+              <ClockCounterClockwiseIcon aria-hidden="true" className="size-4" />
+            </button>
+          </Hint>
+          <DropdownMenu>
+            <Hint title="Add" description="Create a chat, bot, workspace or room.">
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="Add a chat, bot or workspace"
+                    className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                  />
+                }
+              >
+                <PlusIcon aria-hidden="true" className="size-4" />
+              </DropdownMenuTrigger>
+            </Hint>
             <DropdownMenuContent align="start" className="w-52">
               {newChatBot && (
                 <DropdownMenuItem onClick={() => toDraft(newChatBot)}>
@@ -886,7 +960,9 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
             recent.map((g) => (
               <section key={g.title}>
                 <GroupTitle>{g.title}</GroupTitle>
-                <ul className="space-y-px">{g.list.map(rowOf)}</ul>
+                <ul className="space-y-px">
+                  <AnimatePresence initial={false}>{g.list.map(rowOf)}</AnimatePresence>
+                </ul>
               </section>
             ))
           ) : (
@@ -894,7 +970,9 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
               {favorites.length > 0 && (
                 <section aria-label="Favorites">
                   <GroupTitle>Favorites</GroupTitle>
-                  <ul className="space-y-px">{favorites.map(rowOf)}</ul>
+                  <ul className="space-y-px">
+                    <AnimatePresence initial={false}>{favorites.map(rowOf)}</AnimatePresence>
+                  </ul>
                 </section>
               )}
               <ul className="space-y-px">

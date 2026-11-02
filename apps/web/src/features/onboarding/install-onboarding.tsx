@@ -15,12 +15,12 @@ import { Button, Input } from "@/components/ui";
 import { Logo } from "@/components/logo";
 import { getIdentityError, identityClient } from "@/lib/identity-client";
 import { EngineStep, IdentityStep, InstructionsStep, type Draft } from "../bots/bot-onboarding";
+import { LayaSwitch } from "../studio/laya-switch";
 import { Plugins } from "../studio/plugins";
 import { reviewInstructions } from "../bots/instruction-review";
 import { FRESH_INTERVIEW, type InterviewState } from "../bots/interview-flow";
 import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
 import { type AvatarValue } from "@/components/bot-avatar";
-import { TestDrive } from "./test-drive";
 import { installationApi, type NetworkMode } from "./installation-api";
 import { isOnboardingStep, PRE_ACCOUNT_STEPS, type OnboardingStep } from "./steps";
 
@@ -66,12 +66,6 @@ const STEPS: readonly { id: StepId; title: string; question: string; lede: strin
     title: "Plugins",
     question: "Connect your tools (optional)",
     lede: "Plugins let your Chief search, read files, use calendars and more. Install what you need now, or skip and add them later in Studio.",
-  },
-  {
-    id: "test",
-    title: "Test drive",
-    question: "Take your Chief for a test drive",
-    lede: "Send one real message. After its answer, confirm you are happy with it: that finishes the setup.",
   },
 ] as const;
 type StepId = OnboardingStep;
@@ -119,6 +113,8 @@ const draftOf = (b: Bot): Draft => ({
   model: b.model ?? "",
   personality: b.personality,
   instructions: b.instructions,
+  outputStyle: b.outputStyle ?? "default",
+  outputStyleId: b.outputStyleId ?? null,
   visibility: "private",
 });
 
@@ -143,7 +139,6 @@ export function InstallOnboarding() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [chief, setChief] = useState<Bot>();
-  const [bots, setBots] = useState<Bot[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [avatar, setAvatar] = useState<AvatarValue | null>(null);
   const [interview, setInterview] = useState<InterviewState>(FRESH_INTERVIEW);
@@ -167,7 +162,6 @@ export function InstallOnboarding() {
     const all = await chatClient.bots();
     const found = all.find((b) => b.kind === "chief");
     if (!found) throw new Error("Your Chief could not be created. Reload and try again.");
-    setBots(all);
     setChief(found);
     setDraft(draftOf(found));
     setAvatar(found.avatar ?? null);
@@ -277,9 +271,10 @@ export function InstallOnboarding() {
         model: draft.model.trim() || null,
         personality: draft.personality,
         instructions: draft.instructions,
+        outputStyle: draft.outputStyle,
+        outputStyleId: draft.outputStyleId,
       });
       setChief(saved);
-      setBots((l) => l.map((b) => (b.id === saved.id ? saved : b)));
       go("plugins");
     });
 
@@ -529,9 +524,11 @@ export function InstallOnboarding() {
             checks={checks}
           />
         )}
-        {step === "plugins" && <Plugins bots={bots} onError={setError} />}
-        {chief && step === "test" && (
-          <TestDrive chief={chief} onChief={setChief} onAdjust={() => go("instructions")} />
+        {step === "plugins" && (
+          <div className="space-y-4">
+            <LayaSwitch onError={setError} submitLabel="Turn on Laya" />
+            <Plugins onError={setError} />
+          </div>
         )}
 
         {index >= 3 && (
@@ -555,37 +552,10 @@ export function InstallOnboarding() {
               </Button>
             )}
             {step === "plugins" && (
-              <>
-                <Button type="button" variant="ghost" onClick={() => go("test")}>
-                  Skip
-                </Button>
-                <Button type="button" onClick={() => go("test")}>
-                  Continue
-                  <ArrowRightIcon />
-                </Button>
-              </>
-            )}
-            {step === "test" && (
-              <>
-                {!chief?.onboarded && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={busy}
-                    onClick={() => void finish()}
-                  >
-                    Skip for now
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  disabled={busy || !chief?.onboarded}
-                  onClick={() => void finish()}
-                >
-                  {busy ? "Finishing…" : "Start chatting"}
-                  <ArrowRightIcon />
-                </Button>
-              </>
+              <Button type="button" disabled={busy} onClick={() => void finish()}>
+                {busy ? "Finishing…" : "Start chatting"}
+                <ArrowRightIcon />
+              </Button>
             )}
           </Nav>
         )}

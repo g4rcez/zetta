@@ -12,7 +12,7 @@ type Extras = {
   parentMessageId?: string;
   attachmentIds?: string[];
   fileRefs?: string[];
-  instructionIds?: string[];
+  wikiIds?: string[];
 };
 const url = (path: string) => new URL(path, ENV.VITE_SERVER_URL).toString();
 
@@ -70,7 +70,7 @@ export function useZettaChat({
               ...(extras.parentMessageId ? { parentMessageId: extras.parentMessageId } : {}),
               ...(extras.attachmentIds?.length ? { attachmentIds: extras.attachmentIds } : {}),
               ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
-              ...(extras.instructionIds?.length ? { instructionIds: extras.instructionIds } : {}),
+              ...(extras.wikiIds?.length ? { wikiIds: extras.wikiIds } : {}),
             },
           };
         },
@@ -193,7 +193,7 @@ export function useZettaChat({
             : {}),
           ...(extras.attachmentIds?.length ? { attachmentIds: extras.attachmentIds } : {}),
           ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
-          ...(extras.instructionIds?.length ? { instructionIds: extras.instructionIds } : {}),
+          ...(extras.wikiIds?.length ? { wikiIds: extras.wikiIds } : {}),
         });
         await handlers.current.onSettled(id);
         return;

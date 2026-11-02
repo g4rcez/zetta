@@ -110,6 +110,7 @@ export const CATALOG: PluginDef[] = [
     url: "https://api.githubcopilot.com/mcp/",
     docsUrl: "https://github.com/github/github-mcp-server",
     guide: () => [
+      "If the server has the GitHub CLI logged in (gh auth login), bots use it for git and gh and no token is needed. Add a token for the GitHub tools or when there is no CLI login.",
       "Open https://github.com/settings/personal-access-tokens/new to create a fine-grained token.",
       "Pick only the repositories the bot may touch.",
       "Grant read access to Contents, Issues and Pull requests (add write access only if the bot must change things).",
@@ -117,8 +118,9 @@ export const CATALOG: PluginDef[] = [
     ],
     fields: token(
       "Personal access token",
-      "Use a fine-grained token scoped to the repositories the bot may touch.",
+      "Optional when the server has the GitHub CLI logged in. Use a fine-grained token scoped to the repositories the bot may touch.",
       "github_pat_...",
+      true,
     ),
   }),
   remote({

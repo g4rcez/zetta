@@ -7,6 +7,9 @@ import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess } from "../identity/access";
 import { createRouting } from "./routing";
+import { createTurnRunner } from "./pipeline";
+import { bot } from "@zetta/db/schema/chat";
+import { eq } from "@zetta/db/query";
 import { createChatService } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
@@ -73,18 +76,16 @@ suite("decision routing against compose postgres", () => {
   };
   beforeAll(async () => {
     const now = new Date();
-    await db
-      .insert(user)
-      .values(
-        ids.map((id) => ({
-          id,
-          name: id,
-          email: `${id}@t.test`,
-          emailVerified: true,
-          createdAt: now,
-          updatedAt: now,
-        })),
-      );
+    await db.insert(user).values(
+      ids.map((id) => ({
+        id,
+        name: id,
+        email: `${id}@t.test`,
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
     await db
       .insert(membership)
       .values(
@@ -161,6 +162,92 @@ suite("decision routing against compose postgres", () => {
     expect(
       (await call(B, "POST", `/api/bots/${front}/decision/preview`, { text: "x" })).status,
     ).toBe(404);
+  });
+
+  test("a decision-only bot sends the chosen option's reply and never runs an AI", async () => {
+    const sorter = (
+      await call(A, "POST", "/api/bots", { name: "Sorter", harness: "decision", model: "laya" })
+    ).json.bot.id as string;
+    const cfg = {
+      enabled: false,
+      question: "What is this about?",
+      minConfidencePct: 60,
+      options: [
+        { label: "hours", description: "opening hours", action: "respond", reply: "We open at 9." },
+        {
+          label: "abuse",
+          description: "abusive content",
+          action: "stop",
+          reply: "I can't help with that.",
+        },
+      ],
+    };
+    const noReply = { ...cfg, options: [{ ...cfg.options[0], reply: undefined }, cfg.options[1]] };
+    expect((await call(A, "PUT", `/api/bots/${sorter}/decision`, noReply)).status).toBe(400);
+    expect((await call(A, "PUT", `/api/bots/${sorter}/decision`, cfg)).status).toBe(200);
+    const conv = (await call(A, "POST", "/api/conversations", { botId: sorter })).json.conversation
+      .id as string;
+    const say = (t: string) =>
+      call(A, "POST", `/api/conversations/${conv}/messages`, { content: t });
+
+    next = { choice: "hours" };
+    expect((await say("when do you open?")).json.assistant.content).toBe("We open at 9.");
+    next = { choice: "abuse" };
+    expect((await say("rude")).json.assistant.content).toBe("I can't help with that.");
+    next = { choice: null, uncertain: true, confidence: 0.4 };
+    expect((await say("hmm")).json.assistant.content).toBe(
+      "I'm not sure how to help with that. Could you rephrase it?",
+    );
+    next = new Error("model down");
+    expect((await say("again")).json.assistant.content).toBe(
+      "I'm not sure how to help with that. Could you rephrase it?",
+    );
+
+    // The model "jev" asks Jev, not Laya.
+    const jev = {
+      choose: async () => ({
+        choice: "hours",
+        uncertain: false,
+        probabilities: {},
+        confidence: 0.9,
+        provenance: { model: "jev", at: "", ms: 1 },
+      }),
+    };
+    const laya = {
+      choose: async () => {
+        throw new Error("laya must not run");
+      },
+    };
+    expect(
+      await createRouting(db, laya as never, jev as never).reply(
+        { id: sorter, harness: "decision", model: "jev" },
+        "when do you open?",
+        { userId: A, isAdmin: false },
+      ),
+    ).toBe("We open at 9.");
+
+    // A turn through the shared runner (mention, routine, workflow) answers the same way and calls no AI.
+    const [row] = await db.select().from(bot).where(eq(bot.id, sorter));
+    const noAi = async () => {
+      throw new Error("no AI for a decision bot");
+    };
+    const run = createTurnRunner(
+      db,
+      noAi as never,
+      noAi as never,
+      undefined,
+      undefined,
+      (b, t, userId) =>
+        createRouting(db, laya as never, jev as never).reply(
+          { id: b.id, harness: b.harness, model: "jev" },
+          t,
+          userId ? { userId, isAdmin: false } : undefined,
+        ),
+    );
+    expect(await run({ userId: A, bot: row!, history: [], prompt: "when do you open?" })).toEqual({
+      text: "We open at 9.",
+      stopped: false,
+    });
   });
 
   describe("mentionMode: do the bots mentioned together work side by side or one after another", () => {

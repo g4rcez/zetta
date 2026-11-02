@@ -9,6 +9,7 @@ import {
 } from "../attention/summary";
 import { call, errorMessage, type Bot } from "../chat/chat-client";
 import { Badge, Empty, useList, when } from "../shared/ui";
+import { useTimeFormat } from "@/features/preferences/preferences";
 
 type Status = "open" | "acknowledged" | "resolved" | "cancelled";
 type Action = "read" | "acknowledge" | "resolve" | "cancel" | "reopen";
@@ -139,6 +140,7 @@ function Card({
 }
 
 export function Attention({ bots, onError }: { bots: Bot[]; onError: (m: string) => void }) {
+  const tf = useTimeFormat();
   const [rows, reload] = useList<Item>("/api/attention", "items", onError);
   const [busy, setBusy] = useState<string>();
   const [permission, setPermission] = useState(nativeNotificationState);
@@ -212,7 +214,10 @@ export function Attention({ bots, onError }: { bots: Bot[]; onError: (m: string)
       {rows?.some((i) => i.updatedAt) && (
         <p className="text-xs text-muted-foreground">
           Last change{" "}
-          {when(rows.reduce((a, i) => ((i.updatedAt ?? "") > a ? (i.updatedAt ?? a) : a), ""))}
+          {when(
+            rows.reduce((a, i) => ((i.updatedAt ?? "") > a ? (i.updatedAt ?? a) : a), ""),
+            tf,
+          )}
         </p>
       )}
     </section>

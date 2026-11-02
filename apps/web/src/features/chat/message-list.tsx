@@ -12,13 +12,17 @@ import {
 
 import { cn } from "@zetta/ui/lib/utils";
 
+import { BotsContext } from "@/components/bot-identity";
+
+import type { Bot } from "./chat-client";
 import { groupMessages, type Row } from "./chat-rows";
+import { repoByRow } from "./github-refs";
 import { MessageRow, type Author } from "./message-row";
 
 export type RowActions = {
   onReact: (row: Row, emoji: string) => void;
   onReply: (row: Row) => void;
-  onSaveInstruction: (row: Row) => void;
+  onSaveToWiki: (row: Row) => void;
   onQueue?: (row: Row, action: "remove" | "retry") => void;
   /** Open a published file beside the chat. Without it, an artifact receipt is a plain link to the artifact page. */
   onOpenArtifact?: (id: string) => void;
@@ -40,6 +44,7 @@ type LineProps = {
   row: Row;
   author: Author;
   continued: boolean;
+  repo: string | undefined;
   day: string | undefined;
   inThread: boolean;
   threads: boolean;
@@ -53,6 +58,7 @@ const Line = memo(function Line({
   row,
   author,
   continued,
+  repo,
   day,
   inThread,
   threads,
@@ -85,6 +91,7 @@ const Line = memo(function Line({
             row={row}
             author={author}
             continued={continued}
+            repo={repo}
             inThread={inThread || !threads}
             readOnly={readOnly}
             {...actions}
@@ -102,6 +109,7 @@ const Line = memo(function Line({
  */
 export function MessageList({
   rows,
+  bots,
   authorOf,
   fallbackBotId,
   inThread = false,
@@ -115,6 +123,8 @@ export function MessageList({
   followToken = 0,
 }: {
   rows: Row[];
+  /** The bots of this conversation: their names in a message are drawn as tags. */
+  bots: Bot[];
   authorOf: (row: Row) => Author;
   fallbackBotId?: string | undefined;
   inThread?: boolean;
@@ -128,39 +138,44 @@ export function MessageList({
   followToken?: number;
 }) {
   const grouped = useMemo(() => groupMessages(rows, fallbackBotId), [rows, fallbackBotId]);
+  const botsById = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
+  const repos = useMemo(() => repoByRow(rows), [rows]);
   return (
-    <MessageScrollerProvider autoScroll>
-      <FollowOnSend token={followToken} />
-      <MessageScroller className="flex-1">
-        <MessageScrollerViewport role="log" aria-label={label} aria-live="polite" tabIndex={0}>
-          <MessageScrollerContent
-            aria-busy={busy}
-            // DESIGN.md "Sizes": the chat and a thread fill the panel's width.
-            className={cn("gap-0 pb-4", inThread ? "justify-start" : "w-full justify-end")}
-          >
-            {intro}
-            {grouped.map(({ row, continued, day }, i) => (
-              <Line
-                key={row.id}
-                row={row}
-                author={authorOf(row)}
-                continued={continued}
-                day={day}
-                inThread={inThread}
-                threads={threads}
-                readOnly={readOnly}
-                recent={i >= grouped.length - RENDERED_TAIL}
-                actions={actions}
-              />
-            ))}
-            {footer}
-          </MessageScrollerContent>
-        </MessageScrollerViewport>
-        <MessageScrollerButton
-          aria-label="Jump to latest message"
-          className="rounded-full shadow-md"
-        />
-      </MessageScroller>
-    </MessageScrollerProvider>
+    <BotsContext.Provider value={botsById}>
+      <MessageScrollerProvider autoScroll>
+        <FollowOnSend token={followToken} />
+        <MessageScroller className="flex-1">
+          <MessageScrollerViewport role="log" aria-label={label} aria-live="polite" tabIndex={0}>
+            <MessageScrollerContent
+              aria-busy={busy}
+              // DESIGN.md "Sizes": the chat and a thread fill the panel's width.
+              className={cn("gap-0 pb-4", inThread ? "justify-start" : "w-full justify-end")}
+            >
+              {intro}
+              {grouped.map(({ row, continued, day }, i) => (
+                <Line
+                  key={row.id}
+                  row={row}
+                  author={authorOf(row)}
+                  continued={continued}
+                  repo={repos.get(row.id)}
+                  day={day}
+                  inThread={inThread}
+                  threads={threads}
+                  readOnly={readOnly}
+                  recent={i >= grouped.length - RENDERED_TAIL}
+                  actions={actions}
+                />
+              ))}
+              {footer}
+            </MessageScrollerContent>
+          </MessageScrollerViewport>
+          <MessageScrollerButton
+            aria-label="Jump to latest message"
+            className="rounded-full shadow-md"
+          />
+        </MessageScroller>
+      </MessageScrollerProvider>
+    </BotsContext.Provider>
   );
 }

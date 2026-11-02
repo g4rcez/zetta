@@ -1,12 +1,6 @@
 import { call } from "../chat/chat-client";
 
-export type SearchKind =
-  | "conversation"
-  | "message"
-  | "memory"
-  | "instruction"
-  | "artifact"
-  | "task";
+export type SearchKind = "conversation" | "message" | "wiki" | "artifact" | "task";
 export type SearchHit = {
   kind: SearchKind;
   id: string;
@@ -21,8 +15,7 @@ export type SearchHit = {
 export const KIND_LABEL: Record<SearchKind, string> = {
   conversation: "Chat",
   message: "Message",
-  memory: "Memory",
-  instruction: "Instruction",
+  wiki: "Wiki",
   artifact: "Artifact",
   task: "Task",
 };
@@ -38,7 +31,11 @@ export const searchApi = {
 export const plainSnippet = (s: string) => s.replace(/\[\[|\]\]/g, "");
 
 /** Where a hit opens: a router path and its params, ready for `<Link>` or `navigate`. */
-export function hitTarget(h: SearchHit): { to: string; params?: Record<string, string> } {
+export function hitTarget(h: SearchHit): {
+  to: string;
+  params?: Record<string, string>;
+  search?: Record<string, string>;
+} {
   switch (h.kind) {
     case "conversation":
     case "message":
@@ -49,8 +46,8 @@ export function hitTarget(h: SearchHit): { to: string; params?: Record<string, s
       return { to: "/tasks" };
     case "artifact":
       return { to: "/artifacts/$artifactId", params: { artifactId: h.id } };
-    case "memory":
-    case "instruction":
-      return { to: "/studio/$tab", params: { tab: "knowledge" } };
+    case "wiki":
+      // The id of a wiki hit is its slug.
+      return { to: "/wiki/$slug", params: { slug: h.id } };
   }
 }

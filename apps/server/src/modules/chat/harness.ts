@@ -313,23 +313,87 @@ export async function writePluginDir(files: Record<string, string>, root = claud
 }
 
 /**
- * Git identity and credentials for a code run, as environment variables (values never reach argv). A GitHub token the user bound to
- * the bot is offered to github.com only, through a credential helper that reads it from the environment; it is never written to disk.
+ * Who a code run's commits are signed as. `fixed` signs as `name` and `email`. `git-config` leaves the identity to git (the global
+ * configuration of the run's HOME) and uses `name` and `email` only when that has none, so `git commit` never fails for lack of one.
  */
-export function gitEnv(author: string, extra: Record<string, string> = {}): Record<string, string> {
-  const name =
-      author
-        .replace(/[\r\n<>]/g, " ")
-        .trim()
-        .slice(0, 80) || "Zetta bot",
-    email = "bot@zetta.invalid";
-  const env: Record<string, string> = {
-    GIT_AUTHOR_NAME: name,
-    GIT_COMMITTER_NAME: name,
-    GIT_AUTHOR_EMAIL: email,
-    GIT_COMMITTER_EMAIL: email,
-    GIT_TERMINAL_PROMPT: "0",
-  };
+export type GitIdentity = { name: string; email: string; mode: "fixed" | "git-config" };
+
+/** The bot's own address: `Code Reviewer` becomes `code_reviewer@zettabot.app`. */
+export function botEmail(name: string): string {
+  const slug = name
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64)
+    .replace(/_+$/, "");
+  return `${slug || "bot"}@zettabot.app`;
+}
+
+const oneLine = (v: string, max: number) =>
+  v
+    .replace(/[\r\n<>]/g, " ")
+    .trim()
+    .slice(0, max);
+
+const gitCache = new Map<string, { at: number; value: boolean }>();
+/**
+ * Whether git has a global `user.name` and `user.email` for `home` (the run's own HOME). A container does not see the host
+ * configuration, so Docker mode is always false.
+ */
+export async function gitIdentity(
+  home?: string,
+  resolve: (n: string) => string | null = Bun.which,
+): Promise<boolean> {
+  if (dockerConfig()) return false;
+  const path = resolve("git");
+  if (!path) return false;
+  const key = home ?? "";
+  const hit = gitCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.value;
+  let value = false;
+  try {
+    const p = Bun.spawn([path, "config", "--global", "--get-regexp", "^user\\.(name|email)$"], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "ignore",
+      env: passEnv(home),
+      detached: true,
+    } as never);
+    const t = setTimeout(() => killGroup(p.pid), 5000);
+    const out = await new Response(p.stdout as ReadableStream).text();
+    clearTimeout(t);
+    const keys = out.split("\n").map((l) => l.trim().split(/\s+/)[0]);
+    value = keys.includes("user.name") && keys.includes("user.email");
+  } catch {
+    /* git could not start: no identity */
+  }
+  gitCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+/**
+ * Git identity and credentials for a code run, as environment variables (values never reach argv). With `globalIdentity` and the
+ * `git-config` mode no identity is set, so git signs with the global configuration. A GitHub token the user bound to the bot is
+ * offered to github.com only, through a credential helper that reads it from the environment; it is never written to disk.
+ */
+export function gitEnv(
+  who: GitIdentity,
+  extra: Record<string, string> = {},
+  globalIdentity = false,
+): Record<string, string> {
+  const env: Record<string, string> = { GIT_TERMINAL_PROMPT: "0" };
+  if (!(who.mode === "git-config" && globalIdentity)) {
+    const name = oneLine(who.name, 80) || "Zetta bot";
+    const email = oneLine(who.email, 254).replace(/\s+/g, "") || "bot@zettabot.app";
+    Object.assign(env, {
+      GIT_AUTHOR_NAME: name,
+      GIT_COMMITTER_NAME: name,
+      GIT_AUTHOR_EMAIL: email,
+      GIT_COMMITTER_EMAIL: email,
+    });
+  }
   if (extra.GITHUB_TOKEN)
     Object.assign(env, {
       GH_TOKEN: extra.GITHUB_TOKEN,
@@ -338,7 +402,54 @@ export function gitEnv(author: string, extra: Record<string, string> = {}): Reco
       GIT_CONFIG_VALUE_0:
         '!f() { test "$1" = get && echo username=x-access-token && echo "password=$GITHUB_TOKEN"; }; f',
     });
+  // No token: git asks the logged-in gh CLI, which reads its own login (nothing is copied into the run's environment).
+  else if (extra[GITHUB_CLI_ENV] === "cli")
+    Object.assign(env, {
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "credential.https://github.com.helper",
+      GIT_CONFIG_VALUE_0: "!gh auth git-credential",
+    });
   return env;
+}
+
+/**
+ * Marker the chat service puts in a run's `extraEnv` when the server's own `gh` login serves this run (see `ghLoggedIn`).
+ * `streamCli` removes it before the process starts. It travels in `extraEnv` because that already reaches every run of a turn.
+ */
+export const GITHUB_CLI_ENV = "ZETTA_GITHUB_AUTH";
+
+const ghCache = new Map<string, { at: number; value: boolean }>();
+/**
+ * Whether the GitHub CLI is installed on the host and logged in to github.com for `home` (the user's own HOME when
+ * ZETTA_HARNESS_HOME_ROOT is set, else the server OS user's). A container cannot see the host login, so Docker mode is always false.
+ */
+export async function ghLoggedIn(
+  home?: string,
+  resolve: (n: string) => string | null = Bun.which,
+): Promise<boolean> {
+  if (dockerConfig()) return false;
+  const path = resolve("gh");
+  if (!path) return false;
+  const key = home ?? "";
+  const hit = ghCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.value;
+  let value = false;
+  try {
+    const p = Bun.spawn([path, "auth", "status", "--hostname", "github.com"], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+      env: passEnv(home),
+      detached: true,
+    } as never);
+    const t = setTimeout(() => killGroup(p.pid), 5000);
+    value = (await p.exited) === 0;
+    clearTimeout(t);
+  } catch {
+    /* gh could not start: not logged in */
+  }
+  ghCache.set(key, { at: Date.now(), value });
+  return value;
 }
 
 /** Only what CLIs need to find their own login (keychain on macOS needs USER/LOGNAME); no app secrets or DB URLs. */
@@ -519,9 +630,7 @@ export type CliInput = {
   prompt: string;
   model: string | null;
   userId?: string;
-  /** Run in the user's persistent code workspace with git and file permissions pre-approved. `author` signs commits. */ code?: {
-    author: string;
-  };
+  /** Run in the user's persistent code workspace with git and file permissions pre-approved. The identity signs commits. */ code?: GitIdentity;
   /** Claude Code and Hermes: this bot's own permissions, prompt, effort, skills (and, for Claude Code, budget and sub-agents). */ profile?: AgentProfile;
   extraEnv?: Record<string, string>;
   /** Claude Code: the MCP servers zetta bound to this bot (see McpRun). */ mcp?: McpRun;
@@ -633,7 +742,7 @@ export const streamCli: StreamCli = async function* ({
   prompt,
   model,
   userId,
-  extraEnv: baseEnv,
+  extraEnv: givenEnv,
   signal,
   timeoutMs,
   resolve = Bun.which,
@@ -646,7 +755,19 @@ export const streamCli: StreamCli = async function* ({
   const docker = dockerConfig();
   const workspace = code && userId ? codeWorkspace(userId) : undefined;
   const profile = harness === "claude-code" || harness === "hermes" ? given : undefined;
-  const extraEnv = workspace ? { ...baseEnv, ...gitEnv(code!.author, baseEnv) } : baseEnv;
+  const { [GITHUB_CLI_ENV]: viaCli, ...baseEnv } = givenEnv ?? {};
+  const extraEnv = workspace
+    ? {
+        ...baseEnv,
+        ...gitEnv(
+          code!,
+          givenEnv,
+          code!.mode === "git-config" && (await gitIdentity(harnessHome(userId, harness))),
+        ),
+      }
+    : givenEnv
+      ? baseEnv
+      : undefined;
   const exe = docker ? docker.bin : resolve(harnessCommands[harness]("x", null)[0]!);
   if (!exe) throw new HarnessError("not_installed");
   const release = await defaultLimiter.acquire(userId ?? "anonymous", signal);
@@ -694,11 +815,11 @@ export const streamCli: StreamCli = async function* ({
       imagePaths.length ? prompt + imageNote(imagePaths) : prompt,
       model,
       workspace ? (docker ? "full" : "git") : undefined,
-      profile || mcp || (workspace && baseEnv?.GITHUB_TOKEN)
+      profile || mcp || (workspace && (baseEnv.GITHUB_TOKEN || viaCli))
         ? {
             profile,
             ...(mcp ? { mcp } : {}),
-            ...(workspace && baseEnv?.GITHUB_TOKEN ? { github: true } : {}),
+            ...(workspace && (baseEnv.GITHUB_TOKEN || viaCli) ? { github: true } : {}),
             ...(pluginDir ? { pluginDir: docker ? CONTAINER_PLUGIN_DIR : pluginDir } : {}),
             ...(workspace && session ? { session } : {}),
           }

@@ -30,24 +30,27 @@ import { Tooltip } from "@g4rcez/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotIdentity, BotsContext, useBotIdentity } from "@/components/bot-identity";
 import { Drawer } from "@/components/drawer";
-import { Button, Input, Textarea } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
+import { MentionTextarea } from "../chat/mention";
 import { useTheme } from "../../components/theme-provider";
 import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
 import {
   addBot,
+  arrange,
   BOT_SIZE,
   dropBot,
   dropTarget,
   flowToTeams,
   groupsOf,
   makeChief,
-  normalizeChiefs,
+  removeBot,
+  TEAM_DEFAULT_SIZE,
   teamsToFlow,
   type BotNode,
   type TeamNode,
   type TeamsNode,
 } from "./team-graph";
-import { RoleField, RolesContext, RolesDialog, useRoleLabel, useTeamRoles } from "./team-roles";
+import { RoleField, RolesContext, useRoleLabel, useTeamRoles } from "./team-roles";
 import { TEAM_SIZE_WARNING, TEAM_SIZE_WARNING_AT, teamsApi, type TeamSave } from "./teams-api";
 
 /** What the server holds for a team, apart from its version. */
@@ -81,7 +84,9 @@ const TeamActions = createContext<{
   roster: (teamNodeId: string) => Roster;
   /** Makes the bot with this node id the team lead. */
   setChief: (botNodeId: string) => void;
-}>({ configure: () => {}, roster: () => [], setChief: () => {} });
+  /** Fits the bots to the group after a resize. */
+  relayout: () => void;
+}>({ configure: () => {}, roster: () => [], setChief: () => {}, relayout: () => {} });
 const titleButton =
   "nodrag grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50";
 
@@ -91,7 +96,12 @@ function TeamGroup({ id, data, selected }: NodeProps<TeamNode>) {
   const lead = roster.find((m) => m.chief);
   return (
     <>
-      <NodeResizer minWidth={260} minHeight={180} isVisible={selected} />
+      <NodeResizer
+        minWidth={260}
+        minHeight={180}
+        isVisible={selected}
+        onResizeEnd={actions.relayout}
+      />
       <div
         className={cn(
           "flex h-full w-full flex-col rounded-lg border-2 border-dashed bg-card/40",
@@ -128,8 +138,11 @@ function TeamGroup({ id, data, selected }: NodeProps<TeamNode>) {
             </button>
           </Tip>
         </div>
+        {/* Padding sits on the wrapper: on the clamped text it would show a sliver of the third line. */}
         {data.goal && (
-          <p className="line-clamp-2 px-3 py-1 text-xs text-muted-foreground">{data.goal}</p>
+          <div className="px-3 py-1">
+            <p className="line-clamp-2 text-xs text-muted-foreground">{data.goal}</p>
+          </div>
         )}
       </div>
     </>
@@ -170,8 +183,7 @@ function Editor() {
   const navigate = useNavigate();
   const [nodes, setNodes, onNodesChange] = useNodesState<TeamsNode>([]);
   const [bots, setBots] = useState<Bot[]>([]);
-  const { roles, reload: reloadRoles } = useTeamRoles();
-  const [rolesOpen, setRolesOpen] = useState(false);
+  const { roles } = useTeamRoles();
   const [drawerId, setDrawerId] = useState<string>();
   const [busy, setBusy] = useState(false);
   const synced = useRef(new Map<string, { version: number; key: string }>());
@@ -187,7 +199,7 @@ function Editor() {
           { version: t.save.expectedVersion, key: saveKey(t.save) },
         ]),
       );
-      setNodes(flow);
+      setNodes(arrange(flow));
     } catch (e) {
       fail(e);
     }
@@ -259,6 +271,7 @@ function Editor() {
       configure: setDrawerId,
       roster: (teamNodeId: string) => byTeam.get(teamNodeId) ?? [],
       setChief: (botNodeId: string) => setNodes((ns) => makeChief(ns, botNodeId)),
+      relayout: () => setNodes(arrange),
     };
   }, [rosterKey, setNodes]);
 
@@ -330,10 +343,9 @@ function Editor() {
                       void work(async () => {
                         const k = groupsOf(nodes).length;
                         await teamsApi.create(`Team ${k + 1}`, {
-                          x: 40 + (k % 2) * 420,
-                          y: 40 + Math.floor(k / 2) * 320,
-                          w: 360,
-                          h: 280,
+                          x: 40 + (k % 2) * (TEAM_DEFAULT_SIZE.w + 40),
+                          y: 40 + Math.floor(k / 2) * (TEAM_DEFAULT_SIZE.h + 40),
+                          ...TEAM_DEFAULT_SIZE,
                         });
                         await load();
                       })
@@ -437,9 +449,7 @@ function Editor() {
                           size="sm"
                           variant="outline"
                           onClick={() => {
-                            setNodes((ns) =>
-                              normalizeChiefs(ns.filter((n) => n.id !== selected.id)),
-                            );
+                            setNodes((ns) => removeBot(ns, selected.id));
                             setDrawerId(undefined);
                           }}
                         >
@@ -461,14 +471,15 @@ function Editor() {
                         maxLength={80}
                         onChange={(e) => patch(selected.id, { name: e.target.value })}
                       />
-                      <Textarea
+                      <MentionTextarea
                         title="Goal"
                         reportStatus={false}
                         required={false}
                         rows={3}
                         maxLength={1000}
+                        bots={bots}
                         value={selected.data.goal}
-                        onChange={(e) => patch(selected.id, { goal: e.target.value })}
+                        onChange={(goal) => patch(selected.id, { goal })}
                       />
                       <p className="-mt-1 text-xs text-muted-foreground">
                         Optional. Without one, the chief follows each prompt.
@@ -535,14 +546,15 @@ function Editor() {
                         maxLength={120}
                         onChange={(e) => setRoom({ ...room, title: e.target.value })}
                       />
-                      <Textarea
+                      <MentionTextarea
                         title="First order for the chief"
                         reportStatus={false}
                         required={false}
                         rows={4}
                         maxLength={4000}
+                        bots={bots}
                         value={room.firstMessage}
-                        onChange={(e) => setRoom({ ...room, firstMessage: e.target.value })}
+                        onChange={(firstMessage) => setRoom({ ...room, firstMessage })}
                       />
                       <div className="flex flex-wrap items-center gap-3">
                         <Tip tip="Open a room: the chief gets your first order and coordinates the team">
@@ -601,7 +613,6 @@ function Editor() {
                       roles={roles}
                       value={selected.data.roleId}
                       onChange={(roleId) => patch(selected.id, { roleId })}
-                      onManage={() => setRolesOpen(true)}
                     />
                     <Tip
                       tip="Make this bot the chief: it gets your orders first and coordinates the others"
@@ -623,9 +634,6 @@ function Editor() {
             )}
           </div>
         </TeamActions.Provider>
-        {rolesOpen && (
-          <RolesDialog roles={roles} onChanged={reloadRoles} onClose={() => setRolesOpen(false)} />
-        )}
       </RolesContext.Provider>
     </BotsContext.Provider>
   );

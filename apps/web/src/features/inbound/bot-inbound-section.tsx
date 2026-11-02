@@ -4,17 +4,18 @@ import { Button, Checkbox, Input } from "@/components/ui";
 
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { inboundApi, type InboundOption } from "./inbound-api";
+import { useTimeFormat } from "@/features/preferences/preferences";
+import { formatTime, type TimeFormat } from "@/features/preferences/time-format";
 
-const when = (iso: string | null) =>
-  iso
-    ? new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-    : "never";
+const when = (iso: string | null, f: TimeFormat) =>
+  iso ? formatTime(iso, f, { hour: "numeric", minute: "2-digit" }) : "never";
 
 /**
  * Incoming messages: this bot answers new messages that outside people send through a channel plugin (WhatsApp, Telegram...). Each
  * chat gets its own conversation; the bot can only read, reply to that chat, hand off to you or open a room with pre-approved bots.
  */
 export function BotInboundSection({ bot }: { bot: Bot }) {
+  const tf = useTimeFormat();
   const [options, setOptions] = useState<InboundOption[]>();
   const [status, setStatus] = useState<string>();
   const [busy, setBusy] = useState<string>();
@@ -155,7 +156,7 @@ export function BotInboundSection({ bot }: { bot: Bot }) {
               )}
               {mine && (
                 <p className="text-xs text-muted-foreground">
-                  Last checked: {when(o.route!.lastPolledAt)}
+                  Last checked: {when(o.route!.lastPolledAt, tf)}
                   {o.route!.lastError ? (
                     <span className="text-destructive"> · {o.route!.lastError}</span>
                   ) : null}

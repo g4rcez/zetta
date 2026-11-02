@@ -1,0 +1,125 @@
+---
+// The close: the bot cast gathers around the call to action. These are the app's personality presets and the bots from the examples,
+// each with its own character art. Decorative, so hidden from assistive tech.
+import BotArt from "./BotArt.astro";
+import { CAST } from "../cast";
+import { getCopy, type Locale } from "../i18n";
+import { DOCS } from "../links";
+
+interface Props {
+  locale: Locale;
+}
+
+const t = getCopy(Astro.props.locale).cta;
+const left = [CAST.coach, CAST.editor, CAST.analyst];
+const right = [CAST.coder, CAST.concierge, CAST.researcher];
+---
+
+<section class="section band cta">
+  <div class="wrap grid">
+    <ul class="cast left" aria-hidden="true">
+      {left.map((bot, i) => <li style={`--i:${i}`}><BotArt art={bot.art} size={44} />{bot.name}</li>)}
+    </ul>
+
+    <div class="mid">
+      <ul class="faces" aria-hidden="true">
+        {[...left, ...right].map((bot) => <li><BotArt art={bot.art} size={48} /></li>)}
+      </ul>
+      <h2>{t.title}</h2>
+      <p class="lead">{t.lead}</p>
+      <div class="row">
+        <a class="btn btn-primary" href="#self-host">{t.primary}</a>
+        <a class="btn" href={DOCS} target="_blank" rel="noopener noreferrer">{t.secondary}</a>
+      </div>
+    </div>
+
+    <ul class="cast right" aria-hidden="true">
+      {right.map((bot, i) => <li style={`--i:${i}`}><BotArt art={bot.art} size={44} />{bot.name}</li>)}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .cta {
+    padding-block: 128px;
+    overflow: hidden;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 560px) minmax(0, 1fr);
+    gap: 32px;
+    align-items: center;
+  }
+  .mid {
+    display: grid;
+    justify-items: center;
+    gap: 20px;
+    text-align: center;
+  }
+  .mid .row {
+    margin-top: 12px;
+  }
+  .cast {
+    display: grid;
+    gap: 20px;
+  }
+  .faces {
+    display: none;
+  }
+  .cast li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: max-content;
+    padding: 8px 16px 8px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--card);
+    font-size: 16px;
+    font-weight: 600;
+  }
+  /* Pinned like stickers: a little tilt and stagger, no motion. */
+  .left {
+    justify-items: end;
+  }
+  .left li:nth-child(1) {
+    transform: translateX(-32px) rotate(-4deg);
+  }
+  .left li:nth-child(2) {
+    transform: rotate(2deg);
+  }
+  .left li:nth-child(3) {
+    transform: translateX(-48px) rotate(-2deg);
+  }
+  .right li:nth-child(1) {
+    transform: translateX(24px) rotate(3deg);
+  }
+  .right li:nth-child(2) {
+    transform: rotate(-3deg);
+  }
+  .right li:nth-child(3) {
+    transform: translateX(40px) rotate(2deg);
+  }
+  @media (max-width: 1000px) {
+    .cta {
+      padding-block: 80px;
+    }
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .cast {
+      display: none;
+    }
+    .faces {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .faces li:nth-child(odd) {
+      transform: rotate(-4deg);
+    }
+    .faces li:nth-child(even) {
+      transform: translateY(6px) rotate(3deg);
+    }
+  }
+</style>

@@ -9,7 +9,10 @@ import { eq } from "@zetta/db/query";
 
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
+import { createChatService } from "../chat/service";
+import { audit } from "../features/audit";
 import { createMembershipLookup, issueBackgroundActor } from "../identity/access";
+import { createOutputStyles } from "../output-styles/service";
 import { createTaskStore } from "../tasks/store";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
@@ -109,8 +112,10 @@ suite("Zetta MCP server: OAuth 2.1 sign-in and tools against compose postgres", 
         resource,
         actorFor: (id) => issueBackgroundActor(lookup, id),
         tasks,
-        // Only the task tools run in this suite; the other services are never reached.
-        chat: {} as never,
+        // Only the task, bot and output style tools run in this suite; the other services are never reached.
+        chat: createChatService(db),
+        outputStyles: createOutputStyles(db),
+        audit: (owner, event) => audit(db, owner, event),
         mcp: {} as never,
         connections: {} as never,
         features: {} as never,
@@ -210,6 +215,160 @@ suite("Zetta MCP server: OAuth 2.1 sign-in and tools against compose postgres", 
       title: string;
     }[];
     expect(listed.map((t) => t.title)).toEqual(["Migrate the CRM bot"]);
+    await client.close();
+  });
+
+  test("the client sees each bot's output style and the styles it can pick", async () => {
+    const actor = (await issueBackgroundActor(lookup, userId))!;
+    const style = await createOutputStyles(db).create(userId, {
+      name: "Rhymer",
+      description: "Speaks in rhyme",
+      body: "Always answer in rhyme.",
+    });
+    await createChatService(db).createBot(actor, { name: "Voice", outputStyle: "concise" });
+    await createChatService(db).createBot(actor, {
+      name: "Poet",
+      outputStyle: "custom",
+      outputStyleId: style.id,
+    });
+    const client = await connect(await exchange(await authorize("mcp:read")));
+    const read = async (name: string) =>
+      JSON.parse(
+        ((await client.callTool({ name, arguments: {} })).content as { text: string }[])[0]!.text,
+      );
+    const bots = (await read("list_bots")) as {
+      name: string;
+      outputStyle: string;
+      outputStyleId: string | null;
+    }[];
+    expect(bots.find((b) => b.name === "Voice")).toMatchObject({
+      outputStyle: "concise",
+      outputStyleId: null,
+    });
+    expect(bots.find((b) => b.name === "Poet")).toMatchObject({
+      outputStyle: "custom",
+      outputStyleId: style.id,
+    });
+    const styles = (await read("list_output_styles")) as {
+      builtins: { key: string }[];
+      styles: { id: string; name: string; mine: boolean }[];
+    };
+    expect(styles.builtins.map((b) => b.key)).toEqual([
+      "default",
+      "proactive",
+      "concise",
+      "explanatory",
+      "learning",
+    ]);
+    expect(styles.styles).toMatchObject([{ id: style.id, name: "Rhymer", mine: true }]);
+    await client.close();
+  });
+
+  test("a read-only token cannot create, change or delete a style", async () => {
+    const client = await connect(await exchange(await authorize("mcp:read")));
+    await expect(
+      client.callTool({ name: "create_output_style", arguments: { name: "Blocked", body: "No." } }),
+    ).rejects.toThrow();
+    const styles = JSON.parse(
+      (
+        (await client.callTool({ name: "list_output_styles", arguments: {} })).content as {
+          text: string;
+        }[]
+      )[0]!.text,
+    ) as { styles: { name: string }[] };
+    expect(styles.styles.map((x) => x.name)).not.toContain("Blocked");
+    await client.close();
+  });
+
+  test("a token with the write scope manages styles and bot styles, and every write is audited", async () => {
+    const page = await authorize("mcp:read mcp:write");
+    const client = await connect(await exchange(await consent(page)));
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const r = await client.callTool({ name, arguments: args });
+      const text = (r.content as { text: string }[])[0]!.text;
+      return { isError: r.isError === true, text, json: r.isError ? undefined : JSON.parse(text) };
+    };
+    const actor = (await issueBackgroundActor(lookup, userId))!;
+    const bot = (await createChatService(db).createBot(actor, { name: "Writer" }))!;
+
+    const created = await call("create_output_style", {
+      name: "Calm",
+      body: "Speak slowly.",
+      scope: "installation",
+    });
+    const id = created.json.style.id as string;
+    expect(created.json.style).toMatchObject({ name: "Calm", scope: "installation", version: 1 });
+
+    const updated = await call("update_output_style", {
+      id,
+      expectedVersion: 1,
+      body: "Speak slowly and kindly.",
+    });
+    expect(updated.json.style).toMatchObject({ body: "Speak slowly and kindly.", version: 2 });
+
+    const set = await call("set_bot_output_style", {
+      botId: bot.id,
+      expectedVersion: 1,
+      outputStyle: "custom",
+      outputStyleId: id,
+    });
+    expect(set.json.bot).toMatchObject({ outputStyle: "custom", outputStyleId: id });
+
+    const missingId = await call("set_bot_output_style", {
+      botId: bot.id,
+      expectedVersion: 2,
+      outputStyle: "custom",
+    });
+    expect(missingId).toMatchObject({ isError: true, text: "INVALID" });
+
+    const builtin = await call("set_bot_output_style", {
+      botId: bot.id,
+      expectedVersion: 2,
+      outputStyle: "learning",
+    });
+    expect(builtin.json.bot).toMatchObject({ outputStyle: "learning", outputStyleId: null });
+
+    expect((await call("export_output_style", { id })).json).toEqual({
+      filename: "calm.md",
+      markdown: '---\nname: "Calm"\ndescription: ""\n---\n\nSpeak slowly and kindly.\n',
+    });
+    expect((await call("export_output_style", { builtin: "learning" })).text).toContain(
+      'name: \\"Learning\\"',
+    );
+    expect((await call("export_output_style", {})).isError).toBe(true);
+
+    const imported = await call("import_output_style", {
+      markdown: "---\nname: Imported\n---\nBe brief.",
+    });
+    expect(imported.json.style).toMatchObject({
+      name: "Imported",
+      scope: "private",
+      body: "Be brief.",
+    });
+    expect((await call("archive_output_style", { id: imported.json.style.id })).json).toEqual({
+      id: imported.json.style.id,
+    });
+    const listed = JSON.parse((await call("list_output_styles", {})).text) as {
+      styles: { name: string }[];
+    };
+    expect(listed.styles.map((x) => x.name)).toContain("Calm");
+    expect(listed.styles.map((x) => x.name)).not.toContain("Imported");
+
+    const rows = (
+      await db.$client.query(
+        "select detail, outcome from audit_event where owner_user_id = $1 and detail like 'mcp:%' order by id",
+        [userId],
+      )
+    ).rows as { detail: string; outcome: string }[];
+    expect(rows).toEqual([
+      { detail: "mcp:create_output_style", outcome: "ok" },
+      { detail: "mcp:update_output_style", outcome: "ok" },
+      { detail: "mcp:set_bot_output_style", outcome: "ok" },
+      { detail: "mcp:set_bot_output_style", outcome: "failed" },
+      { detail: "mcp:set_bot_output_style", outcome: "ok" },
+      { detail: "mcp:import_output_style", outcome: "ok" },
+      { detail: "mcp:archive_output_style", outcome: "ok" },
+    ]);
     await client.close();
   });
 

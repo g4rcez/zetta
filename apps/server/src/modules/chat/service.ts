@@ -1,3 +1,4 @@
+import { isReservedBotName, mentionsUser } from "@zetta/core/mentions";
 import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import {
@@ -20,11 +21,16 @@ import { createBotClaude } from "../bot-claude/store";
 import { bot, botRevision, conversation, message, workspace } from "@zetta/db/schema/chat";
 import {
   attachment,
+  botConnection,
+  botIntegration,
+  browserProfile,
   configProposal,
   delegation,
   reaction,
   routineRun,
 } from "@zetta/db/schema/features";
+import { inboundRoute } from "@zetta/db/schema/inbound";
+import { team as teamTable, teamMember } from "@zetta/db/schema/teams";
 import { chatQueue, goalLoop } from "@zetta/db/schema/chat";
 import {
   parseTools,
@@ -42,16 +48,21 @@ import { FileAccessError, type FileStore } from "./files";
 import {
   codeWorkspace,
   dockerConfig,
+  ghLoggedIn,
+  GITHUB_CLI_ENV,
   HarnessError,
+  harnessHome,
   harnessMessage,
   runCli,
   type CliImage,
   type McpRun,
+  type NativeHarness,
   type RunCli,
 } from "./harness";
 import { imagePath, isImageType, MAX_IMAGE_BYTES, saveImage, sniffImage } from "./images";
 import { CONTEXT_BYTES, HISTORY_ROWS } from "./context";
 import { asksToKeep } from "./intent";
+import { touchedRepos } from "./repos";
 import {
   codeEnabled,
   createTurnRunner,
@@ -60,23 +71,19 @@ import {
   type Used,
 } from "./pipeline";
 import { isTransient, TURN_RETRY_MS, withRetry } from "./retry";
-import { raiseAttention } from "../features/attention";
-import {
-  createKnowledge,
-  KnowledgeError,
-  unsafeMemory,
-  type MemorySnapshot,
-} from "../features/knowledge";
+import { closeAttentionKey, raiseAttention } from "../features/attention";
+import { createKnowledge, type MemorySnapshot } from "../features/knowledge";
 import { configHash, looksSecret } from "../features/safety";
 import { createLiveBots, loadBotStatus, phaseAfterRound, type RunPhase } from "./bot-status";
 import { createTurnRegistry, mergeAll, TurnBusyError } from "./turns";
-import { createRouting, type Route } from "./routing";
+import { createRouting, DECISION_FALLBACK, type Route } from "./routing";
 import { clip, insertMessage } from "./messages";
 import { HARNESS_LABELS, harnessReadiness } from "./harnesses";
 import { audit, outcomeOf } from "../features/audit";
 import type { DecisionService } from "../decisions/service";
 import type { Mcp } from "../integrations/mcp";
 import { getPlugin, PluginError } from "../integrations/plugins/registry";
+import { homeFastPath } from "../integrations/plugins/homeassistant-fast";
 import { fieldFits, originAllowed } from "../integrations/plugins/credentials";
 import { explain, problemBlock, problemForBot } from "./explain";
 import type { VmService } from "../computer/vm";
@@ -84,11 +91,16 @@ import type { JevDecider } from "../decisions/jev";
 import { ConnectionRequiredError, type ConnectionsService } from "../connections/service";
 import { createHash } from "node:crypto";
 import { isAllowedModel } from "@zetta/harness/models";
+import { assertStyleChoice } from "../output-styles/service";
 import { AccessError, requireOwned, type ActiveActor } from "../identity/access";
 import { AgendaError, type AgendaService } from "../agenda/service";
-import { untrustedList } from "../integrations/plugins/untrusted";
+import { untrustedDoc, untrustedList } from "../integrations/plugins/untrusted";
 import { DiscussionError, type Claimed, type DiscussionStore } from "../discussions/store";
-import { discussion as discussionTable, type TurnStep } from "@zetta/db/schema/discussions";
+import {
+  botPeer,
+  discussion as discussionTable,
+  type TurnStep,
+} from "@zetta/db/schema/discussions";
 import { insertWithSlug, isUniqueViolation } from "../bot-database/allocate";
 import { user } from "@zetta/db/schema/auth";
 import type { TeamStore } from "../teams/store";
@@ -156,6 +168,8 @@ export type BotInput = {
   avatar?: (typeof bot.$inferInsert)["avatar"];
   computerMode?: "off" | "browser" | "desktop";
   codeAccess?: boolean;
+  commitIdentity?: (typeof bot.$inferInsert)["commitIdentity"];
+  commitEmail?: string | null;
   requiredConnections?: { key: string; provider: string }[];
   name: string;
   description?: string;
@@ -164,6 +178,9 @@ export type BotInput = {
   model?: string | null;
   personality?: string;
   instructions?: string;
+  /** A built-in key, or `custom` together with `outputStyleId`. A patch sends both or neither. */
+  outputStyle?: (typeof bot.$inferInsert)["outputStyle"];
+  outputStyleId?: string | null;
 };
 
 export class AttachmentError extends Error {
@@ -177,6 +194,17 @@ export class ModelError extends Error {
     super("MODEL_NOT_ALLOWED");
   }
 }
+/** The name is one of the mentions that address people (`@user`, `@all`...), so no bot may have it. */
+export class BotNameError extends Error {
+  constructor() {
+    super(
+      "BOT_NAME_RESERVED: user, channel, here and all are reserved for mentions. Choose another name.",
+    );
+  }
+}
+const assertBotName = (name: string | undefined) => {
+  if (name !== undefined && isReservedBotName(name)) throw new BotNameError();
+};
 /** Checks the model the bot ends up with: a patch may change only the harness or only the model, so missing fields come from the current row. */
 const assertModel = (harness: string, model: string | null | undefined) => {
   if (!isAllowedModel(harness, model)) throw new ModelError();
@@ -219,9 +247,11 @@ export type Converse = {
   parentMessageId?: string | undefined;
   attachmentIds?: string[];
   fileRefs?: string[];
-  /** Instructions (ids) the user picked with `/`; the bot follows them for this turn. */
-  instructionIds?: string[];
+  /** Wiki items (ids) the user picked with `/`; the bot follows them for this turn. */
+  wikiIds?: string[];
   external?: External;
+  /** Internal only (no HTTP route sets it). "previous_turn": the bot reads just the newest earlier user message and what followed it, not the whole chat. A routine run uses it, so each run sees only the run before. */
+  history?: "full" | "previous_turn";
   /** A step of an approved goal loop (modules/chat/loops.ts): `content` is the short label saved as a system message, `prompt` is what the bot gets. */
   loop?: { id: string; prompt: string };
   /** A run a server restart cut off, picked up again on boot: `content` is the short label, `prompt` what the bot gets, `sessionId` the Claude Code session to continue. */
@@ -257,7 +287,12 @@ export type ChatEvent =
   | {
       type: "user";
       message: typeof message.$inferSelect & {
-        attachments?: { id: string; name: string; size: number; mimeType: string }[];
+        attachments?: {
+          id: string;
+          name: string;
+          size: number;
+          mimeType: string;
+        }[];
       };
     }
   | {
@@ -282,9 +317,22 @@ export type ChatEvent =
       step?: string;
     }
   /** What the bot is doing between text chunks (running a tool, waiting on the model), so the chat never looks frozen. */
-  | { type: "activity"; messageId: string; botId: string; label: string; at: number }
+  | {
+      type: "activity";
+      messageId: string;
+      botId: string;
+      label: string;
+      at: number;
+    }
   /** A file the bot just published, announced while the turn still runs so the chat can show it (and open it) at once. */
-  | { type: "artifact"; messageId: string; botId: string; id: string; title: string; at: number }
+  | {
+      type: "artifact";
+      messageId: string;
+      botId: string;
+      id: string;
+      title: string;
+      at: number;
+    }
   /** Messages the person sent while the bot worked were handed to its next step: the chat reloads them (they are no longer queued). */
   | { type: "steer"; messageId: string; botId: string; noteIds: string[] }
   /** The checklist the bot announced with zetta:plan; each event carries the whole list, so the last one wins. */
@@ -301,6 +349,9 @@ export type ChatDeps = {
   /** The shared task board (modules/tasks): bots add and move tasks with zetta:task. */ tasks?: TaskStore;
   /** Files bots deliver (modules/artifacts): published with zetta:artifact. */ artifacts?: ArtifactStore;
   /** The user's wiki (modules/wiki): bots search, read and write it with zetta:wiki. */ wiki?: Wiki;
+  /** Routines (modules/features): a deleted bot's routines are archived and disarmed. */ routines?: {
+    removeForBot(botId: string): Promise<void>;
+  };
   /** Goal loops (modules/chat/loops.ts): started on approval, fed by goal_progress / goal_done. */ loops?: LoopStore;
   /** Runs the done check of a loop's goal_done (see checkDone); the real CLI unless a test passes a fake. */ checkCli?: RunCli;
   /** Provisions each new bot's private database (modules/bot-database). */ botDatabase?: {
@@ -345,6 +396,8 @@ export function createChatService(
     model: r.model,
     personality: r.personality,
     instructions: r.instructions,
+    outputStyle: r.outputStyle,
+    outputStyleId: r.outputStyleId,
     visibility: r.visibility,
   });
   /** Memory is frozen per conversation and bot at its first turn (stable prompt prefix); writes show in tool results and in the next conversation. */
@@ -375,6 +428,7 @@ export function createChatService(
     "model",
     "personality",
     "instructions",
+    "outputStyle",
   ] as const;
   /**
    * The signal a computer step runs with: the turn's (Stop) plus its own deadline, a little after withTimeout's, so a hung call is really
@@ -460,7 +514,7 @@ export function createChatService(
         : "";
     /** A memory, instruction or wiki write the user did not ask for in a turn that may have read outside text: shown as a card, applied on approval. */
     const askBeforeSaving = async (
-      kind: "create_memory" | "create_instruction" | "create_wiki_page",
+      kind: "create_wiki_page",
       field: string,
       title: string,
       patch: Record<string, unknown>,
@@ -480,7 +534,11 @@ export function createChatService(
           ],
         })
         .returning();
-      receipts.push({ kind: "proposal", id: row!.id, text: title.slice(0, 120) });
+      receipts.push({
+        kind: "proposal",
+        id: row!.id,
+        text: title.slice(0, 120),
+      });
       proposals.push(row!.id);
       notes.push(
         `🔐 ${who.name} wants to save “${title.slice(0, 80)}”. It waits for your approval because this message did not ask to save anything and the bot may have read outside text.`,
@@ -541,127 +599,7 @@ export function createChatService(
               ? `${c.kind}:${c.args.action}`.replace(/[^a-z0-9_:.-]/gi, "").slice(0, 40)
               : c.kind,
         });
-      if (c.kind === "remember") {
-        if (writes === "ask") {
-          await askBeforeSaving(
-            "create_memory",
-            "memory",
-            c.args.ops
-              .map((o) => (o.op === "remove" ? `forget “${o.match}”` : o.content))
-              .join("; "),
-            { ...c.args, botId: who.id },
-          );
-          continue;
-        }
-        try {
-          const r = await knowledge.applyMemory(actor.userId, {
-            target: c.args.target,
-            botId: who.id,
-            ops: c.args.ops,
-            source: "bot",
-          });
-          const pct = Math.round((r.usage.used / r.usage.limit) * 100);
-          if (!r.noop)
-            receipts.push({
-              kind: "memory",
-              id: r.added[0] ?? r.changed[0] ?? r.removed[0] ?? "",
-              text: c.args.ops
-                .map((o) => (o.op === "remove" ? `forgot "${o.match}"` : o.content))
-                .join("; ")
-                .slice(0, 120),
-              created: r.added.length > 0,
-            });
-          notes.push(
-            r.noop
-              ? "💾 Already remembered."
-              : `💾 Remembered (${c.args.target === "user" ? "your profile" : "bot notes"}, ${pct}% full): ${c.args.ops.map((o) => (o.op === "remove" ? `forgot "${o.match}"` : o.content)).join("; ")}`,
-          );
-        } catch (e) {
-          const k = e instanceof KnowledgeError ? e : undefined;
-          notes.push(
-            k?.code === "SECRET_REJECTED"
-              ? "⚠️ Not remembered: it looked like a secret."
-              : k?.code === "UNSAFE"
-                ? "⚠️ Not remembered: it looked like an instruction aimed at an AI, not a fact."
-                : k?.code === "OVERFLOW"
-                  ? `⚠️ Memory is full (${k.usage?.used}/${k.usage?.limit}). Nothing was saved. Current entries:\n${(k.entries ?? []).map((x) => `- ${x}`).join("\n")}\nShorten or remove some in one batch, then add.`
-                  : k?.code === "AMBIGUOUS"
-                    ? `⚠️ The text matches several entries; be more specific:\n${(k.entries ?? []).map((x) => `- ${x}`).join("\n")}`
-                    : k?.code === "NOT_FOUND"
-                      ? `⚠️ No entry matches. Current entries:\n${(k.entries ?? []).map((x) => `- ${x}`).join("\n")}`
-                      : "⚠️ Could not remember that.",
-          );
-        }
-      } else if (c.kind === "instruction") {
-        if (c.args.action === "read") {
-          const row = await knowledge.readFor(actor.userId, who.id, c.args.id);
-          browserResults.push(
-            row
-              ? `instruction "${row.title}" (follow these steps in order):\n${row.body}${row.verification ? `\nVerify: ${row.verification}` : ""}`
-              : `instruction ${c.args.id} not found (use an id from the Saved instructions list)`,
-          );
-          continue;
-        }
-        if (looksSecret(`${c.args.title} ${c.args.body}`)) {
-          notes.push("⚠️ Not saved: the instruction looked like a secret.");
-          continue;
-        }
-        // Same screen as memory: an instruction is prompt text every one of the user's bots reads later.
-        if (
-          unsafeMemory(
-            `${c.args.title} ${c.args.body} ${c.args.trigger ?? ""} ${c.args.verification ?? ""}`,
-          )
-        ) {
-          notes.push("⚠️ Not saved: the instruction looked like it was written to steer the bot.");
-          browserResults.push(
-            'instruction: not saved. A text filter refused it; outside content read in this turn is not the cause. The filter refuses override phrases ("ignore previous instructions", "system prompt", "you are now"), curl or wget that pipes into a shell, sends data or expands $ variables, SSH keys and invisible characters. Rewrite the steps without them.',
-          );
-          continue;
-        }
-        try {
-          // Inside a team room the instruction belongs to that team; elsewhere it is for all the user's bots.
-          const [room] = scope?.discussionId
-            ? await db
-                .select({ teamId: discussionTable.teamId })
-                .from(discussionTable)
-                .where(eq(discussionTable.id, scope.discussionId))
-            : [];
-          if (writes === "ask") {
-            await askBeforeSaving("create_instruction", "instruction", c.args.title, {
-              title: c.args.title,
-              body: c.args.body,
-              ...(c.args.trigger !== undefined && { trigger: c.args.trigger }),
-              ...(c.args.verification !== undefined && { verification: c.args.verification }),
-              teamId: room?.teamId ?? null,
-              createdByBotId: who.id,
-            });
-            continue;
-          }
-          const { instruction: row, created } = await knowledge.addInstruction(actor.userId, {
-            title: c.args.title,
-            body: c.args.body,
-            ...(c.args.trigger !== undefined && { trigger: c.args.trigger }),
-            ...(c.args.verification !== undefined && { verification: c.args.verification }),
-            teamId: room?.teamId ?? null,
-            createdByBotId: who.id,
-          });
-          receipts.push({
-            kind: "instruction",
-            id: row.id,
-            text: row.title.slice(0, 120),
-            created,
-          });
-          notes.push(
-            created
-              ? `📘 Saved an instruction: ${row.title}.`
-              : `📘 The instruction already exists: ${row.title}.`,
-          );
-        } catch (e) {
-          if (e instanceof KnowledgeError && e.code === "FULL")
-            notes.push("⚠️ Not saved: the instruction library is full. Archive some in Studio.");
-          else fail("Instruction", e);
-        }
-      } else if (c.kind === "config") {
+      if (c.kind === "config") {
         const [target] = await db
           .select()
           .from(bot)
@@ -726,7 +664,10 @@ export function createChatService(
           );
           continue;
         }
-        const parsed = configInput.safeParse({ ...DEFAULT_CONFIG, allow: [c.args.rule] });
+        const parsed = configInput.safeParse({
+          ...DEFAULT_CONFIG,
+          allow: [c.args.rule],
+        });
         if (!parsed.success) {
           browserResults.push(`permission: ${parsed.error.issues[0]?.message ?? "invalid rule"}`);
           continue;
@@ -750,7 +691,10 @@ export function createChatService(
             c.args.reason,
             // Only an ordinary chat turn can be run again later; a discussion turn has no single user message to repeat.
             !scope?.discussionId && scope?.origin?.messageId
-              ? { conversationId: scope.origin.conversationId, messageId: scope.origin.messageId }
+              ? {
+                  conversationId: scope.origin.conversationId,
+                  messageId: scope.origin.messageId,
+                }
               : undefined,
           );
           receipts.push({ kind: "discussion", id: d.id, text: d.title });
@@ -853,16 +797,34 @@ export function createChatService(
               diff: [
                 { field: "bot", from: null, to: target.name },
                 ...(c.args.preset
-                  ? [{ field: "preset", from: plan.cur.preset, to: next.preset }]
+                  ? [
+                      {
+                        field: "preset",
+                        from: plan.cur.preset,
+                        to: next.preset,
+                      },
+                    ]
                   : []),
                 ...(c.args.allow?.length
-                  ? [{ field: "allow", from: null, to: c.args.allow.join(", ") }]
+                  ? [
+                      {
+                        field: "allow",
+                        from: null,
+                        to: c.args.allow.join(", "),
+                      },
+                    ]
                   : []),
                 ...(c.args.deny?.length
                   ? [{ field: "deny", from: null, to: c.args.deny.join(", ") }]
                   : []),
                 ...(c.args.revoke?.length
-                  ? [{ field: "revoke", from: null, to: c.args.revoke.join(", ") }]
+                  ? [
+                      {
+                        field: "revoke",
+                        from: null,
+                        to: c.args.revoke.join(", "),
+                      },
+                    ]
                   : []),
               ],
             })
@@ -931,8 +893,6 @@ export function createChatService(
             harness: a.harness ?? (who.harness as never),
             model: a.harness ? (a.model ?? null) : (a.model ?? who.model),
           });
-          // Made on the user's request, so it is ready at once: no test drive.
-          await db.update(bot).set({ onboarded: true }).where(eq(bot.id, created!.id));
           receipts.push({
             kind: "bot",
             id: created!.id,
@@ -977,7 +937,10 @@ export function createChatService(
               botId: p.botId,
               kind: "member" as const,
               roleId: p.roleId,
-              canvas: { x: 20 + ((i + 1) % 3) * 110, y: 40 + Math.floor((i + 1) / 3) * 90 },
+              canvas: {
+                x: 20 + ((i + 1) % 3) * 110,
+                y: 40 + Math.floor((i + 1) / 3) * 90,
+              },
             })),
           ];
           const h = Math.max(280, 80 + (Math.floor(members.length / 3) + 1) * 90);
@@ -1047,7 +1010,10 @@ export function createChatService(
             botId: p.botId,
             kind: "member" as const,
             roleId: p.roleId,
-            canvas: { x: 20 + ((base + i) % 3) * 110, y: 40 + Math.floor((base + i) / 3) * 90 },
+            canvas: {
+              x: 20 + ((base + i) % 3) * 110,
+              y: 40 + Math.floor((base + i) / 3) * 90,
+            },
           }));
           const members = [
             ...found.members.map(({ botId, kind, roleId, canvas }) => ({
@@ -1066,7 +1032,12 @@ export function createChatService(
             canvas: { ...found.canvas, h },
             members,
           });
-          receipts.push({ kind: "team", id: found.id, text: found.name, created: false });
+          receipts.push({
+            kind: "team",
+            id: found.id,
+            text: found.name,
+            created: false,
+          });
           browserResults.push(
             `add_to_team: added ${fresh.length} bot${fresh.length === 1 ? "" : "s"} to "${found.name}".${roleNote(unknownRoles)}`,
           );
@@ -1086,7 +1057,11 @@ export function createChatService(
         const nodeList =
           kind === "create_workflow"
             ? Object.entries(
-                (args.graph as { nodes?: Record<string, Record<string, unknown>> })?.nodes ?? {},
+                (
+                  args.graph as {
+                    nodes?: Record<string, Record<string, unknown>>;
+                  }
+                )?.nodes ?? {},
               )
                 .slice(0, 20)
                 .map(
@@ -1180,7 +1155,9 @@ export function createChatService(
               return {
                 vm,
                 out: await withTimeout(
-                  vms.read(actor.userId, vm.id, { signal: stepSignal(signal, 65_000) }),
+                  vms.read(actor.userId, vm.id, {
+                    signal: stepSignal(signal, 65_000),
+                  }),
                   60_000,
                 ),
               };
@@ -1208,7 +1185,10 @@ export function createChatService(
             // Bots run through text-only harnesses: the last action of the reply returns what the screen now shows.
             if (i !== lastDesktop) return { vm, out: `${a.action} ok` };
             const screen = await withTimeout(
-              vms.read(actor.userId, vm.id, { settle: true, signal: stepSignal(signal, 65_000) }),
+              vms.read(actor.userId, vm.id, {
+                settle: true,
+                signal: stepSignal(signal, 65_000),
+              }),
               60_000,
             ).catch(
               () => "(the screen could not be read just now: send a read action to look again)",
@@ -1284,22 +1264,40 @@ export function createChatService(
           browserResults.push("wiki unavailable");
           continue;
         }
+        // Inside a team room a new item is for that team's bots; elsewhere it is for all the user's bots.
+        const [room] = scope?.discussionId
+          ? await db
+              .select({ teamId: discussionTable.teamId })
+              .from(discussionTable)
+              .where(eq(discussionTable.id, scope.discussionId))
+          : [];
+        const teamId = room?.teamId ?? null;
         if (
           writes === "ask" &&
           c.args.action !== "search" &&
           c.args.action !== "read" &&
+          c.args.action !== "links" &&
+          c.args.action !== "checks" &&
           c.args.action !== "suggest"
         ) {
-          await askBeforeSaving("create_wiki_page", "wiki", c.args.slug, {
-            args: c.args,
-            botId: who.id,
-            conversationId: conversationId ?? null,
-          });
+          await askBeforeSaving(
+            "create_wiki_page",
+            "wiki",
+            c.args.action === "write" ? c.args.title : c.args.slug,
+            {
+              args: c.args,
+              botId: who.id,
+              conversationId: conversationId ?? null,
+              teamId,
+            },
+          );
           continue;
         }
         try {
           // The asker's own wiki, never the bot owner's (same rule as memory).
-          const r = await runWikiTool(deps.wiki, actor.userId, who.id, conversationId, c.args);
+          const r = await runWikiTool(deps.wiki, actor.userId, who.id, conversationId, c.args, {
+            teamId,
+          });
           if (r.note) notes.push(r.note);
           if (r.result) browserResults.push(r.result);
           if (r.saved)
@@ -1568,7 +1566,11 @@ export function createChatService(
           source: "bot",
           sourceKey: `proposal:${row!.id}`,
         });
-        receipts.push({ kind: "proposal", id: row!.id, text: c.args.goal.slice(0, 120) });
+        receipts.push({
+          kind: "proposal",
+          id: row!.id,
+          text: c.args.goal.slice(0, 120),
+        });
         proposals.push(row!.id);
         notes.push(
           `🔁 ${who.name} asks to start a loop: ${c.args.goal}. Approve it below to begin.`,
@@ -1591,11 +1593,21 @@ export function createChatService(
         const byKey = new Map(
           room.members.filter((m) => m.botId !== who.id).map((m) => [mentionKey(m.name), m]),
         );
-        const goals: { botId: string; name: string; goal: string; doneWhen: string }[] = [];
+        const goals: {
+          botId: string;
+          name: string;
+          goal: string;
+          doneWhen: string;
+        }[] = [];
         const bad = c.args.goals.find((g) => {
           const m = byKey.get(mentionKey(g.bot));
           if (!m || goals.some((x) => x.botId === m.botId)) return true;
-          goals.push({ botId: m.botId, name: m.name, goal: g.goal, doneWhen: g.done_when });
+          goals.push({
+            botId: m.botId,
+            name: m.name,
+            goal: g.goal,
+            doneWhen: g.done_when,
+          });
           return false;
         });
         if (bad) {
@@ -1641,7 +1653,11 @@ export function createChatService(
           source: "bot",
           sourceKey: `proposal:${row!.id}`,
         });
-        receipts.push({ kind: "proposal", id: row!.id, text: `${goals.length} member goals` });
+        receipts.push({
+          kind: "proposal",
+          id: row!.id,
+          text: `${goals.length} member goals`,
+        });
         proposals.push(row!.id);
         notes.push(
           `👥 ${who.name} proposes goals for ${goals.length} members. Approve them below.`,
@@ -1656,7 +1672,7 @@ export function createChatService(
         if (c.kind === "goal_done") {
           const loop = await deps.loops.get(scope.loopId);
           const check =
-            loop && who.harness !== "fixture"
+            loop && who.harness !== "fixture" && who.harness !== "decision"
               ? await checkDone(runCheck, {
                   harness: who.harness,
                   model: who.model,
@@ -1950,7 +1966,11 @@ export function createChatService(
           scope?.policy === "inbound",
         );
         if (r.kind === "proposed") {
-          receipts.push({ kind: "proposal", id: r.proposalId, text: a.title.slice(0, 120) });
+          receipts.push({
+            kind: "proposal",
+            id: r.proposalId,
+            text: a.title.slice(0, 120),
+          });
           proposals.push(r.proposalId);
           return say(`👥 Asked to open the room "${a.title}": review and approve it below.`);
         }
@@ -1967,6 +1987,56 @@ export function createChatService(
                 .map((m) => m.name)
                 .join(", ")}.`
             : `👥 The room "${r.discussion.title}" is already running.`,
+        );
+      }
+      if (a.action === "delete") {
+        const ref = a.discussionId ?? a.room;
+        if (!ref)
+          return say(
+            "👥 Name the room to delete (room).",
+            "discussion.delete: room is required (its title, #name or id).",
+          );
+        const room = await store.findForBot(actor, who.id, ref);
+        if (!room) {
+          const withdrawn = await store.withdrawRequest(actor, who.id, ref);
+          if (withdrawn)
+            return say(
+              `👥 Withdrew the room request "${withdrawn.title}".`,
+              `discussion.delete ok: the request "${withdrawn.title}" was withdrawn before it opened.`,
+            );
+          return say(
+            "👥 No room of yours matches that name.",
+            "discussion.delete failed: no room with that title, #name or id where you are the facilitator or a member.",
+          );
+        }
+        if (who.kind !== "chief" && room.createdByBotId !== who.id)
+          return say(
+            "👥 Only the bot that opened a room, or the Chief, can delete it.",
+            "discussion.delete refused: only the bot that opened the room or the Chief may delete it.",
+          );
+        if (scope?.discussionId === room.id)
+          return say(
+            "👥 A room cannot delete itself; ask in the chat instead.",
+            "discussion.delete refused: you are inside this room.",
+          );
+        const r = await store.remove(actor, room.id, who, {
+          ...(a.reason ? { reason: a.reason } : {}),
+          ...(scope?.origin ? { moveTo: scope.origin.conversationId } : {}),
+        });
+        const lines = r.transcript
+          .filter((m) => m.role !== "system")
+          .map((m) => `${m.role}: ${m.content}`.slice(0, 600))
+          .join("\n")
+          .replaceAll("```", "'''");
+        receipts.push({ kind: "discussion", id: room.id, text: room.title });
+        return say(
+          `🗑 Deleted the room "${room.title}". Its work continues here.`,
+          `discussion.delete ok: the room "${room.title}" is cancelled and hidden. Its tasks moved to this chat. Continue its goal here, in this chat.\n` +
+            untrustedDoc(
+              "Room",
+              { goal: room.goal, context: room.context },
+              `last messages:\n${lines}`,
+            ).replaceAll("```", "'''"),
         );
       }
       const id = a.discussionId ?? scope?.discussionId;
@@ -2048,7 +2118,12 @@ export function createChatService(
         },
         { botId: who.id, conversationId: conversationId ?? null },
       );
-      receipts.push({ kind: "task", id: row.id, text: row.title.slice(0, 120), created: true });
+      receipts.push({
+        kind: "task",
+        id: row.id,
+        text: row.title.slice(0, 120),
+        created: true,
+      });
       return {
         note: `📋 Added task “${row.title}” (${row.status}).`,
         result: `task.add ok: id ${row.id}`,
@@ -2056,7 +2131,12 @@ export function createChatService(
     }
     const { action: _a, id, ...fields } = a;
     const row = await board.update(actor, id, fields);
-    receipts.push({ kind: "task", id: row.id, text: row.title.slice(0, 120), created: false });
+    receipts.push({
+      kind: "task",
+      id: row.id,
+      text: row.title.slice(0, 120),
+      created: false,
+    });
     return {
       note: `📋 Task “${row.title}” is now ${row.status}.`,
       result: `task.update ok: id ${row.id}`,
@@ -2095,7 +2175,12 @@ export function createChatService(
       },
       { botId: who.id, conversationId: conversationId ?? null },
     );
-    receipts.push({ kind: "artifact", id: row.id, text: row.title.slice(0, 120), created: true });
+    receipts.push({
+      kind: "artifact",
+      id: row.id,
+      text: row.title.slice(0, 120),
+      created: true,
+    });
     return {
       note: `📎 Published “${row.title}” (${row.kind}) in Artifacts.`,
       result: `artifact ok: id ${row.id}`,
@@ -2162,10 +2247,24 @@ export function createChatService(
     if (a.action === "add") {
       const item = await agenda.create(
         actor,
-        clean({ ...fields, kind: a.kind, title: a.title, startAt: new Date(a.start) }) as never,
-        { source: "bot", botId: who.id, conversationId: conversationId ?? null },
+        clean({
+          ...fields,
+          kind: a.kind,
+          title: a.title,
+          startAt: new Date(a.start),
+        }) as never,
+        {
+          source: "bot",
+          botId: who.id,
+          conversationId: conversationId ?? null,
+        },
       );
-      receipts.push({ kind: "agenda", id: item.id, text: item.title.slice(0, 120), created: true });
+      receipts.push({
+        kind: "agenda",
+        id: item.id,
+        text: item.title.slice(0, 120),
+        created: true,
+      });
       return {
         note: `📅 Added to your Agenda: ${item.kind} “${item.title}” on ${when(item.startAt, item.allDay)}${item.syncToGoogle ? " (will sync to Google Calendar)" : ""}`,
         result: `agenda.add ok: id ${item.id}`,
@@ -2178,7 +2277,12 @@ export function createChatService(
         : a.action === "complete"
           ? await agenda.complete(actor, a.id)
           : await agenda.remove(actor, a.id);
-    receipts.push({ kind: "agenda", id: item.id, text: item.title.slice(0, 120), created: false });
+    receipts.push({
+      kind: "agenda",
+      id: item.id,
+      text: item.title.slice(0, 120),
+      created: false,
+    });
     const verb =
       a.action === "update" ? "Updated" : a.action === "complete" ? "Marked done" : "Removed";
     return {
@@ -2194,8 +2298,6 @@ export function createChatService(
     (/^(I'll|I will|I'm going to|Let me|Now I'll|Next,? I'll|Going to)\b/i.test(text.trim()) ||
       /:\s*$/.test(text));
   const PERSISTENT_WRITES = new Set([
-    "remember",
-    "instruction",
     "wiki",
     "config",
     "create_bot",
@@ -2214,13 +2316,18 @@ export function createChatService(
    * `permission` request is not here: it only asks, and the grant waits for the user's click (see bot_claude), so a page cannot grant
    * anything through it. */
   const writes = (c: ToolCall) =>
-    PERSISTENT_WRITES.has(c.kind) &&
-    !(
-      ((c.kind === "agenda" || c.kind === "task") && c.args.action === "list") ||
-      (c.kind === "instruction" && c.args.action === "read") ||
-      (c.kind === "wiki" && (c.args.action === "search" || c.args.action === "read")) ||
-      (c.kind === "artifact" && c.args.path === undefined)
-    );
+    // Deleting a room hides it for good, so outside content cannot trigger it either.
+    (c.kind === "discussion" && c.args.action === "delete") ||
+    (PERSISTENT_WRITES.has(c.kind) &&
+      !(
+        ((c.kind === "agenda" || c.kind === "task") && c.args.action === "list") ||
+        (c.kind === "wiki" &&
+          (c.args.action === "search" ||
+            c.args.action === "read" ||
+            c.args.action === "links" ||
+            c.args.action === "checks")) ||
+        (c.kind === "artifact" && c.args.path === undefined)
+      ));
   /** A message as the turn context reads it (see `buildHistory`), with the names of its pictures. */
   type HistRow = Pick<
     typeof message.$inferSelect,
@@ -2425,7 +2532,10 @@ export function createChatService(
           ctx.signal,
           ctx.onComputer,
           ctx.conversationId,
-          ctx.scope && { ...ctx.scope, tainted: ctx.scope.tainted || untrusted },
+          ctx.scope && {
+            ...ctx.scope,
+            tainted: ctx.scope.tainted || untrusted,
+          },
           // The CLI can read pages, repositories and MCP results without the server seeing it, so a write only applies at once when the
           // person's own chat message asked for it. Loops, rooms and anything else the server wrote itself always ask.
           reach &&
@@ -2494,6 +2604,8 @@ export function createChatService(
     untrusted: boolean;
     proposals: string[];
     signal?: AbortSignal | undefined;
+    /** In-app path of the thread. With it, a reply that says `@user` raises an attention card pointing here. */
+    link?: string | undefined;
     /** A fixed reply (decision routing, unconfigured chief) instead of running the bot. */ canned?:
       | string
       | undefined;
@@ -2564,6 +2676,8 @@ export function createChatService(
       status: "complete" | "failed" | "cancelled" = "complete",
       lastFlush = Date.now();
     let used: Used | undefined;
+    // A second of slack: file times are coarser than the clock.
+    const runStart = Date.now() - 1000;
     const receipts: Receipt[] = [];
     let errCode: string | undefined;
     let envHandle: Awaited<ReturnType<NonNullable<typeof connections>["envFor"]>> | undefined;
@@ -2597,18 +2711,33 @@ export function createChatService(
             : undefined;
       runEnv = envHandle?.env;
       // The GitHub plugin is the user's consent for this bot to use their account from the CLI (git and gh).
+      // The server's own gh login comes first; the plugin's token is read only when there is none.
+      const needsGithub = a.canned === undefined && !envHandle?.env.GITHUB_TOKEN;
+      const githubViaCli =
+        needsGithub &&
+        (await mcp?.isBound(actor, who.id, "github").catch(() => false)) &&
+        (await ghLoggedIn(harnessHome(actor.userId, who.harness as NativeHarness)));
       const githubToken =
-        a.canned === undefined && !envHandle?.env.GITHUB_TOKEN
+        needsGithub && !githubViaCli
           ? await mcp?.tokenOf(actor, who.id, "github").catch(() => undefined)
           : undefined;
-      runEnv = githubToken ? { ...envHandle?.env, GITHUB_TOKEN: githubToken } : envHandle?.env;
+      runEnv = githubViaCli
+        ? { ...envHandle?.env, [GITHUB_CLI_ENV]: "cli" }
+        : githubToken
+          ? { ...envHandle?.env, GITHUB_TOKEN: githubToken }
+          : envHandle?.env;
       if (bound?.mcp) {
         mcpRun = bound.mcp;
         runEnv = { ...runEnv, ...bound.env };
       }
       if (a.canned !== undefined) {
         reply = a.canned;
-        yield { type: "delta", messageId: row.id, botId: who.id, text: a.canned };
+        yield {
+          type: "delta",
+          messageId: row.id,
+          botId: who.id,
+          text: a.canned,
+        };
       } else {
         // A failed start is tried again after a short wait, but never once text has reached the user (a retry would repeat it).
         for (let attempt = 0; ; attempt++) {
@@ -2643,7 +2772,12 @@ export function createChatService(
               },
             })) {
               reply += chunk;
-              yield { type: "delta", messageId: row.id, botId: who.id, text: chunk };
+              yield {
+                type: "delta",
+                messageId: row.id,
+                botId: who.id,
+                text: chunk,
+              };
               if (Date.now() - lastFlush > FLUSH_MS) {
                 lastFlush = Date.now();
                 await db.update(message).set({ content: reply }).where(eq(message.id, row.id));
@@ -2717,7 +2851,13 @@ export function createChatService(
             timeline.push({ at, label });
             if (timeline.length > TIMELINE_MAX) timeline.shift();
           }
-          live.push({ type: "activity", messageId: row.id, botId: who.id, label, at });
+          live.push({
+            type: "activity",
+            messageId: row.id,
+            botId: who.id,
+            label,
+            at,
+          });
           wake?.();
         },
         ...(a.takeNotes && {
@@ -2737,7 +2877,12 @@ export function createChatService(
         }),
         onPlan: (steps) => {
           plan = steps;
-          live.push({ type: "plan", messageId: row.id, botId: who.id, steps });
+          live.push({
+            type: "plan",
+            messageId: row.id,
+            botId: who.id,
+            steps,
+          });
           wake?.();
         },
         onArtifact: ({ id, title }) => {
@@ -2774,8 +2919,12 @@ export function createChatService(
     envHandle?.dispose();
     reply = clip(reply);
     if (status === "complete" && a.suffixIfComplete) reply += a.suffixIfComplete;
+    // The GitHub repositories a code run worked in: the web app turns `#47` and commit ids of this reply into links.
+    const repos = codeEnabled(who, actor.userId, a.noCode)
+      ? await touchedRepos(codeWorkspace(actor.userId), runStart).catch(() => [])
+      : [];
     const meta =
-      used || receipts.length || a.decision || errCode || timeline.length || plan
+      used || receipts.length || a.decision || errCode || timeline.length || plan || repos.length
         ? {
             used: used ?? { memories: [], instructions: [] },
             receipts,
@@ -2784,6 +2933,7 @@ export function createChatService(
             // The checklist as the bot last announced it, kept after the answer.
             ...(plan ? { plan } : {}),
             ...(a.decision ? { decision: a.decision } : {}),
+            ...(repos.length ? { repos } : {}),
             // Loops and routines read this to decide how long to wait before the next try.
             ...(errCode ? { error: errCode } : {}),
           }
@@ -2793,6 +2943,15 @@ export function createChatService(
       .set({ content: reply, status, meta })
       .where(eq(message.id, row.id))
       .returning();
+    // The bot is calling the person (`@user`): one card per reply, which also becomes an OS notification in the browser.
+    if (status === "complete" && !a.untrusted && a.link && mentionsUser(reply))
+      await raiseAttention(db, actor.userId, {
+        botId: who.id,
+        title: `${who.name} needs you`,
+        detail: (reply.split(/\n{2,}/).find(mentionsUser) ?? reply).slice(0, 500),
+        resultLink: a.link,
+        source: "bot",
+      });
     await audit(db, actor.userId, {
       kind: "harness_run",
       botId: who.id,
@@ -2833,7 +2992,10 @@ export function createChatService(
       if (!hit) skipped.push({ name: t, reason: "no such bot you can use" });
       else if (hit.id === exclude) continue;
       else if (!hit.onboarded)
-        skipped.push({ name: hit.name, reason: "not ready yet; finish its setup first" });
+        skipped.push({
+          name: hit.name,
+          reason: "not ready yet; finish its setup first",
+        });
       else if (chosen.length >= 3)
         skipped.push({ name: hit.name, reason: "at most 3 bots per message" });
       else chosen.push(hit);
@@ -2872,12 +3034,27 @@ export function createChatService(
     return requireOwned(actor, row);
   }
 
+  // No memorySnapshot: it is the frozen memory prompt of every bot in the chat, large and only read by the server.
+  const conversationRow = {
+    id: conversation.id,
+    ownerUserId: conversation.ownerUserId,
+    botId: conversation.botId,
+    kind: conversation.kind,
+    title: conversation.title,
+    pinned: conversation.pinned,
+    favorite: conversation.favorite,
+    archived: conversation.archived,
+    archivedAt: conversation.archivedAt,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+  };
+
   /** Ends a conversation's running turn and its active goal loop, so archiving or deleting a thread leaves nothing running behind it. */
-  async function stopConversationWork(actor: ActiveActor, id: string) {
+  async function stopConversationWork(userId: string, id: string) {
     for (const loop of (await deps.loops?.activeAll(id)) ?? [])
-      await deps.loops?.setStatus(actor.userId, loop.id, "cancelled");
+      await deps.loops?.setStatus(userId, loop.id, "cancelled");
     await db.delete(chatQueue).where(eq(chatQueue.conversationId, id));
-    turns.cancel(`${actor.userId}:${id}`);
+    turns.cancel(`${userId}:${id}`);
   }
 
   // Messages sent while a chat is busy are saved at once and answered here, one turn each, oldest first. A queue row lives until its
@@ -2918,7 +3095,7 @@ export function createChatService(
           .select({ content: message.content })
           .from(message)
           .where(eq(message.id, row.messageId));
-        const options = (row.input ?? {}) as Pick<Converse, "fileRefs" | "instructionIds">;
+        const options = (row.input ?? {}) as Pick<Converse, "fileRefs" | "wikiIds">;
         try {
           const { rec } = await service.startTurn(actor, conversationId, {
             content: asked?.content ?? "",
@@ -2996,8 +3173,11 @@ export function createChatService(
         ).map((r) => r.id),
       );
       const plain = pending.filter((p) => {
-        const o = (p.input ?? {}) as { fileRefs?: unknown[]; instructionIds?: unknown[] };
-        return !withFiles.has(p.messageId) && !o.fileRefs?.length && !o.instructionIds?.length;
+        const o = (p.input ?? {}) as {
+          fileRefs?: unknown[];
+          wikiIds?: unknown[];
+        };
+        return !withFiles.has(p.messageId) && !o.fileRefs?.length && !o.wikiIds?.length;
       });
       if (!plain.length) return [];
       // The delete decides who gets a note when two runs ask at once: a row it did not return belongs to someone else.
@@ -3062,7 +3242,9 @@ export function createChatService(
       mine.find((x) => x.id === ref) ??
       mine.find((x) => x.name.replace(/\s+/g, "").toLowerCase() === ref.replace(/\s+/g, ""));
     if (!target)
-      return { error: `no bot called "${args.bot}". Use a name or id from the bots list.` };
+      return {
+        error: `no bot called "${args.bot}". Use a name or id from the bots list.`,
+      };
     if (target.harness !== "claude-code" && target.harness !== "hermes")
       return {
         error: `${target.name} runs on ${target.harness}, which has no per-bot permissions.`,
@@ -3110,7 +3292,12 @@ export function createChatService(
   async function resumeAfterHelp(
     actor: ActiveActor,
     discussionId: string,
-    help: { botId: string; conversationId: string; messageId: string | null; loopId?: string },
+    help: {
+      botId: string;
+      conversationId: string;
+      messageId: string | null;
+      loopId?: string;
+    },
     answer: string,
   ) {
     if (help.loopId) return deps.loops?.resumeWith(help.loopId, answer);
@@ -3186,7 +3373,10 @@ export function createChatService(
           const run = await self!.startTurn(actor, conversationId, {
             content: notice,
             clientRequestId: r.key,
-            retry: { prompt: retryPrompt(original.content), requestId: r.messageId },
+            retry: {
+              prompt: retryPrompt(original.content),
+              requestId: r.messageId,
+            },
           });
           for await (const _ of run.follow());
           return;
@@ -3285,7 +3475,16 @@ export function createChatService(
       );
     },
     async createBot(actor: ActiveActor, input: BotInput) {
+      assertBotName(input.name);
       assertModel(input.harness ?? "fixture", input.model);
+      // A new bot may send a built-in key alone; a patch must send the key and the id together.
+      await assertStyleChoice(
+        db,
+        actor.userId,
+        input.outputStyle !== undefined
+          ? { ...input, outputStyleId: input.outputStyleId ?? null }
+          : input,
+      );
       const row = await insertWithSlug(
         db,
         input.name,
@@ -3304,9 +3503,13 @@ export function createChatService(
                 model: input.model ?? null,
                 personality: input.personality ?? "",
                 instructions: input.instructions ?? "",
+                outputStyle: input.outputStyle ?? "default",
+                outputStyleId: input.outputStyleId ?? null,
                 avatar: input.avatar ?? null,
                 computerMode: input.computerMode ?? "off",
                 codeAccess: input.codeAccess ?? true,
+                commitIdentity: input.commitIdentity ?? "git-config",
+                commitEmail: input.commitEmail ?? null,
                 requiredConnections: input.requiredConnections ?? [],
               })
               .returning()
@@ -3328,14 +3531,8 @@ export function createChatService(
       expectedVersion: number,
       patch: Partial<BotInput>,
     ) {
-      // Meaningful configuration changes invalidate prior onboarding evidence (RFC-021).
-      const reconfigured = [
-        "harness",
-        "model",
-        "personality",
-        "instructions",
-        "requiredConnections",
-      ].some((k) => k in patch);
+      assertBotName(patch.name);
+      await assertStyleChoice(db, actor.userId, patch);
       if ("harness" in patch || "model" in patch) {
         const [current] = await db
           .select({ harness: bot.harness, model: bot.model })
@@ -3352,7 +3549,6 @@ export function createChatService(
         .set({
           ...patch,
           name: patch.name?.trim(),
-          ...(reconfigured ? { onboarded: false } : {}),
           version: sql`${bot.version} + 1`,
           updatedAt: new Date(),
         })
@@ -3372,13 +3568,43 @@ export function createChatService(
         .onConflictDoNothing();
       return row;
     },
+    /**
+     * Deletes a specialist: the row stays (archived) with its chats, wiki and memories, but everything that lets it act is removed:
+     * plugin and account bindings, inbound channels, team places, peers, computer use, routines and running work. Safe to repeat.
+     */
     async archiveBot(actor: ActiveActor, id: string) {
-      const [row] = await db
-        .update(bot)
-        .set({ archived: true, updatedAt: new Date() })
-        .where(and(eq(bot.id, id), eq(bot.ownerUserId, actor.userId), eq(bot.kind, "specialist")))
-        .returning();
+      const row = await db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(bot)
+          .set({ archived: true, computerMode: "off", updatedAt: new Date() })
+          .where(and(eq(bot.id, id), eq(bot.ownerUserId, actor.userId), eq(bot.kind, "specialist")))
+          .returning();
+        if (!updated) return undefined;
+        await tx.delete(botIntegration).where(eq(botIntegration.botId, id));
+        await tx.delete(botConnection).where(eq(botConnection.botId, id));
+        await tx
+          .update(inboundRoute)
+          .set({ enabled: false, updatedAt: new Date() })
+          .where(eq(inboundRoute.botId, id));
+        await tx.delete(teamMember).where(eq(teamMember.botId, id));
+        await tx.delete(botPeer).where(or(eq(botPeer.botId, id), eq(botPeer.peerBotId, id)));
+        return updated;
+      });
       if (!row) throw new AccessError("NOT_FOUND");
+      // Runtime state lives outside the transaction: running turns, goal loops, queued messages, browsers and armed routine jobs.
+      const chats = await db
+        .select({ id: conversation.id, ownerUserId: conversation.ownerUserId })
+        .from(conversation)
+        .where(eq(conversation.botId, id));
+      for (const c of chats) await stopConversationWork(c.ownerUserId, c.id);
+      const profile = `b-${id}`;
+      const profiles = await db
+        .select({ ownerUserId: browserProfile.ownerUserId })
+        .from(browserProfile)
+        .where(eq(browserProfile.name, profile));
+      for (const p of profiles) await computer?.revokeProfile(p.ownerUserId, profile);
+      await computer?.close(actor.userId, profile);
+      await deps.routines?.removeForBot(id);
       return row;
     },
     /** Persists the satisfaction question as a system message in the setup conversation. It needs a completed real answer at the current version. */
@@ -3492,7 +3718,11 @@ export function createChatService(
       }
       const [row] = await db
         .insert(workspace)
-        .values({ ownerUserId: actor.userId, name: name.trim(), parentId: parentId ?? null })
+        .values({
+          ownerUserId: actor.userId,
+          name: name.trim(),
+          parentId: parentId ?? null,
+        })
         .returning();
       return row;
     },
@@ -3556,7 +3786,10 @@ export function createChatService(
       const res = await db.transaction(async (tx) => {
         const [p] = await tx
           .update(configProposal)
-          .set({ status: approve ? "approved" : "rejected", decidedAt: new Date() })
+          .set({
+            status: approve ? "approved" : "rejected",
+            decidedAt: new Date(),
+          })
           .where(
             and(
               eq(configProposal.id, id),
@@ -3567,9 +3800,15 @@ export function createChatService(
           .returning();
         if (!p) throw new AccessError("NOT_FOUND");
         if (!approve)
-          return { status: "rejected" as const, rejected: { kind: p.kind, args: p.patch } };
+          return {
+            status: "rejected" as const,
+            rejected: { kind: p.kind, args: p.patch },
+          };
         if (p.kind !== "config")
-          return { status: "approved" as const, create: { kind: p.kind, args: p.patch } };
+          return {
+            status: "approved" as const,
+            create: { kind: p.kind, args: p.patch },
+          };
         const [target] = await tx
           .select()
           .from(bot)
@@ -3591,6 +3830,7 @@ export function createChatService(
           return { status: "stale" as const };
         }
         if (
+          (patch.name !== undefined && isReservedBotName(patch.name)) ||
           !isAllowedModel(
             patch.harness ?? target.harness,
             "model" in patch ? patch.model : target.model,
@@ -3599,14 +3839,12 @@ export function createChatService(
           await tx.update(configProposal).set({ status: "stale" }).where(eq(configProposal.id, id));
           return { status: "stale" as const };
         }
-        const reconfigured = ["harness", "model", "personality", "instructions"].some(
-          (k) => k in patch,
-        );
         const [row] = await tx
           .update(bot)
           .set({
             ...patch,
-            ...(reconfigured ? { onboarded: false } : {}),
+            // A bot can only name a built-in style, so the bot stops pointing at a custom one.
+            ...(patch.outputStyle ? { outputStyleId: null } : {}),
             version: sql`${bot.version} + 1`,
             updatedAt: new Date(),
           })
@@ -3629,6 +3867,13 @@ export function createChatService(
         outcome: res.status === "rejected" ? "denied" : res.status === "stale" ? "failed" : "ok",
         detail: res.status,
       });
+      // The decision ends the situation the card asked about, whatever the outcome (applied, rejected or stale).
+      await closeAttentionKey(
+        db,
+        actor.userId,
+        `proposal:${id}`,
+        res.status === "rejected" ? "cancelled" : "resolved",
+      );
       if ("rejected" in res && res.rejected?.kind === "discussion_brief")
         await deps.discussions
           ?.declineBrief(actor, res.rejected.args as Record<string, unknown>)
@@ -3638,25 +3883,23 @@ export function createChatService(
       try {
         const a = res.create.args as Record<string, unknown>;
         if (res.create.kind === "create_bot") await this.createBot(actor, a as never);
-        else if (res.create.kind === "create_instruction")
-          await knowledge.addInstruction(actor.userId, a as never);
-        else if (res.create.kind === "create_memory") {
-          const m = a as { target: "user" | "memory"; ops: never; botId: string };
-          await knowledge.applyMemory(actor.userId, {
-            target: m.target,
-            botId: m.botId,
-            ops: m.ops,
-            source: "bot",
-          });
-        } else if (res.create.kind === "create_wiki_page") {
+        else if (res.create.kind === "create_wiki_page") {
           if (!deps.wiki) throw new Error("wiki unavailable");
-          const w = a as { args: never; botId: string; conversationId: string | null };
+          const w = a as {
+            args: never;
+            botId: string;
+            conversationId: string | null;
+            teamId?: string | null;
+          };
           await runWikiTool(
             deps.wiki,
             actor.userId,
             w.botId,
             w.conversationId ?? undefined,
             w.args,
+            {
+              teamId: w.teamId ?? null,
+            },
           );
         } else if (res.create.kind === "create_routine") await creators!.routine(actor, a as never);
         else if (res.create.kind === "open_discussion") {
@@ -3707,6 +3950,14 @@ export function createChatService(
         return { status: "stale" as const };
       }
     },
+    /** One conversation of the owner, also a routine's chat that the list leaves out. */
+    async getConversation(actor: ActiveActor, id: string) {
+      const [row] = await db
+        .select(conversationRow)
+        .from(conversation)
+        .where(and(eq(conversation.id, id), eq(conversation.ownerUserId, actor.userId)));
+      return requireOwned(actor, row);
+    },
     /** Group discussion transcripts are listed on their own page, so they are left out unless asked for. */
     async listConversations(
       actor: ActiveActor,
@@ -3714,22 +3965,9 @@ export function createChatService(
       kind?: "chat" | "discussion" | "inbound",
       archived = false,
     ) {
-      // No memorySnapshot: it is the frozen memory prompt of every bot in the chat, large and only read by the server.
       return (
         db
-          .select({
-            id: conversation.id,
-            ownerUserId: conversation.ownerUserId,
-            botId: conversation.botId,
-            kind: conversation.kind,
-            title: conversation.title,
-            pinned: conversation.pinned,
-            favorite: conversation.favorite,
-            archived: conversation.archived,
-            archivedAt: conversation.archivedAt,
-            createdAt: conversation.createdAt,
-            updatedAt: conversation.updatedAt,
-          })
+          .select(conversationRow)
           .from(conversation)
           .where(
             and(
@@ -3737,6 +3975,10 @@ export function createChatService(
               eq(conversation.archived, archived),
               botId ? eq(conversation.botId, botId) : undefined,
               kind ? eq(conversation.kind, kind) : ne(conversation.kind, "discussion"),
+              // A routine's chat is opened from Routines, not from a bot's list.
+              sql`not exists (select 1 from routine_run rr where rr.conversation_id = ${conversation.id})`,
+              // The chat of a wiki review ("Ask the chief to fix") is opened from the Wiki page.
+              sql`not exists (select 1 from wiki_job wj where wj.conversation_id = ${conversation.id} and wj.kind = 'review')`,
             ),
           )
           // Pinned and favorite first, so the limit never hides them behind newer chats.
@@ -3753,19 +3995,29 @@ export function createChatService(
     async updateConversation(
       actor: ActiveActor,
       id: string,
-      patch: { title?: string; pinned?: boolean; favorite?: boolean; archived?: boolean },
+      patch: {
+        title?: string;
+        pinned?: boolean;
+        favorite?: boolean;
+        archived?: boolean;
+      },
     ) {
       const set = {
-        ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+        ...(patch.title !== undefined
+          ? { title: patch.title.trim(), titleSource: "manual" as const }
+          : {}),
         ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
         ...(patch.favorite !== undefined ? { favorite: patch.favorite } : {}),
         ...(patch.archived !== undefined
-          ? { archived: patch.archived, archivedAt: patch.archived ? new Date() : null }
+          ? {
+              archived: patch.archived,
+              archivedAt: patch.archived ? new Date() : null,
+            }
           : {}),
       };
       if (!Object.keys(set).length) return loadConversation(actor, id);
       // Archiving ends whatever the thread is doing: its running turn and its goal loops.
-      if (patch.archived) await stopConversationWork(actor, id);
+      if (patch.archived) await stopConversationWork(actor.userId, id);
       const [row] = await db
         .update(conversation)
         .set(set)
@@ -3778,7 +4030,7 @@ export function createChatService(
     async deleteConversation(actor: ActiveActor, id: string) {
       const row = await loadConversation(actor, id);
       if (row.kind !== "chat") throw new AccessError("NOT_FOUND");
-      await stopConversationWork(actor, id);
+      await stopConversationWork(actor.userId, id);
       await db.transaction(async (tx) => {
         const ids = (
           await tx.select({ id: message.id }).from(message).where(eq(message.conversationId, id))
@@ -3848,7 +4100,10 @@ export function createChatService(
       const queued = new Map(
         (rows.length
           ? await db
-              .select({ messageId: chatQueue.messageId, status: chatQueue.status })
+              .select({
+                messageId: chatQueue.messageId,
+                status: chatQueue.status,
+              })
               .from(chatQueue)
               .where(eq(chatQueue.conversationId, conversationId))
           : []
@@ -3857,7 +4112,11 @@ export function createChatService(
       return rows.map((m) => {
         const counts = new Map<string, { emoji: string; count: number; mine: boolean }>();
         for (const r of reacts.filter((x) => x.messageId === m.id)) {
-          const c = counts.get(r.emoji) ?? { emoji: r.emoji, count: 0, mine: false };
+          const c = counts.get(r.emoji) ?? {
+            emoji: r.emoji,
+            count: 0,
+            mine: false,
+          };
           c.count++;
           if (r.ownerUserId === actor.userId) c.mine = true;
           counts.set(r.emoji, c);
@@ -3875,7 +4134,12 @@ export function createChatService(
     /** Uploads a text attachment (<=256KB). Binary content is rejected. */
     async addAttachment(
       actor: ActiveActor,
-      v: { name: string; mimeType: string; text: string; conversationId?: string },
+      v: {
+        name: string;
+        mimeType: string;
+        text: string;
+        conversationId?: string;
+      },
     ) {
       if (v.conversationId) await loadConversation(actor, v.conversationId);
       if (v.text.includes("\0") || Buffer.byteLength(v.text) > 256 * 1024)
@@ -3901,7 +4165,12 @@ export function createChatService(
     /** Uploads a picture (png, jpeg, webp, gif; <=10MB). The bytes are kept on disk for good, content-addressed, so a restored chat still shows them. */
     async addImageAttachment(
       actor: ActiveActor,
-      v: { name: string; mimeType: string; dataBase64: string; conversationId?: string },
+      v: {
+        name: string;
+        mimeType: string;
+        dataBase64: string;
+        conversationId?: string;
+      },
     ) {
       if (v.conversationId) await loadConversation(actor, v.conversationId);
       if (!isImageType(v.mimeType)) throw new AttachmentError();
@@ -3920,7 +4189,12 @@ export function createChatService(
           path: rel,
         })
         .returning();
-      return { id: row!.id, name: row!.name, size: row!.size, mimeType: row!.mimeType };
+      return {
+        id: row!.id,
+        name: row!.name,
+        size: row!.size,
+        mimeType: row!.mimeType,
+      };
     },
     /** The stored picture behind one of your attachments (sent or not), for the thumbnail and the viewer. */
     async imageFile(actor: ActiveActor, id: string) {
@@ -3929,7 +4203,11 @@ export function createChatService(
         .from(attachment)
         .where(and(eq(attachment.id, id), eq(attachment.ownerUserId, actor.userId)));
       if (!row?.path || !isImageType(row.mimeType)) throw new AccessError("NOT_FOUND");
-      return { path: imagePath(row.path), mimeType: row.mimeType, name: row.name };
+      return {
+        path: imagePath(row.path),
+        mimeType: row.mimeType,
+        name: row.name,
+      };
     },
     /** Removes an attachment that has not been sent yet. Sent attachments stay with their message. */
     async deleteAttachment(actor: ActiveActor, id: string) {
@@ -4066,6 +4344,10 @@ export function createChatService(
                 ? or(mainLine, eq(message.id, thread), eq(message.parentMessageId, thread))
                 : mainLine,
               asked ? ne(message.id, asked.id) : undefined,
+              // The current prompt is not saved yet, so the newest user message is the one before it: keep that and what followed.
+              input.history === "previous_turn"
+                ? sql`${message.seq} >= (select coalesce(max(p.seq), 0) from message p where p.conversation_id = ${conv.id} and p.role = 'user' and p.parent_message_id is null)`
+                : undefined,
             ),
           )
           .orderBy(desc(message.seq))
@@ -4127,9 +4409,11 @@ export function createChatService(
       for (const a of earlier.reverse())
         if (a.path && isImageType(a.mimeType))
           images.push({ name: a.name, path: imagePath(a.path) });
-      const referenced = await knowledge.byIds(actor.userId, input.instructionIds ?? []);
-      if (referenced.length !== new Set(input.instructionIds ?? []).size)
-        throw new AccessError("NOT_FOUND");
+      const pickedIds = [...new Set(input.wikiIds ?? [])];
+      const referenced = pickedIds.length
+        ? ((await deps.wiki?.byIds(actor.userId, pickedIds)) ?? [])
+        : [];
+      if (referenced.length !== pickedIds.length) throw new AccessError("NOT_FOUND");
       const fileHashes: { path: string; sha256: string }[] = [];
       for (const ref of input.fileRefs ?? []) {
         try {
@@ -4195,11 +4479,18 @@ export function createChatService(
                 },
               }
             : input.fileRefs?.length || browseUrl
-              ? { fileRefs: input.fileRefs ?? [], fileHashes, browse: Boolean(browseUrl) }
+              ? {
+                  fileRefs: input.fileRefs ?? [],
+                  fileHashes,
+                  browse: Boolean(browseUrl),
+                }
               : null,
           mentions:
             mentioned.length || skipped.length
-              ? { asked: mentioned.map((m) => ({ botId: m.id, name: m.name })), skipped }
+              ? {
+                  asked: mentioned.map((m) => ({ botId: m.id, name: m.name })),
+                  skipped,
+                }
               : null,
         }));
       if (picked.length && !asked)
@@ -4229,23 +4520,50 @@ export function createChatService(
           ? undefined
           : /^remember(?: that|:)?\s+(.{3,500})$/is.exec(input.content.trim())?.[1];
       if (fact)
-        await knowledge
-          .applyMemory(actor.userId, {
-            target: "memory",
-            botId: b.id,
-            ops: [{ op: "add", content: fact }],
-            source: "chat",
-          })
+        await deps.wiki
+          ?.remember(actor.userId, { content: fact, botId: b.id, target: "memory" }, { by: "user" })
           .catch(() => undefined);
 
       // Decision routing (Laya): may answer directly, ask for more, stop, or hand the turn to another bot.
-      const route: Route =
-        external || step
+      // A decision-only bot is its routing, so it also answers inbound chats and steps; but it never hands an outside message to another bot.
+      const decisionOnly = b.harness === "decision";
+      let route: Route =
+        (external || step) && !decisionOnly
           ? { action: "respond", reason: "disabled" }
           : await routing.decide(b, input.content, false, actor);
+      if (route.action === "delegate" && (external || step))
+        route = { action: "respond", reason: "disabled" };
       let primary = { bot: b, delegated: false };
       let canned: string | undefined;
+      let homeConfidence: number | undefined;
+      // Home Assistant fast path: Laya spots a simple home command and Home Assistant's own Assist engine answers it, with no AI call.
+      // Only the owner's plain, direct turns qualify: never outside people, loop steps, attachments or @mentions.
+      if (
+        route.action === "respond" &&
+        !decisionOnly &&
+        !untrustedConv &&
+        !step &&
+        !mentioned.length &&
+        !files.length &&
+        b.onboarded &&
+        mcp &&
+        decisions
+      ) {
+        const fast = await homeFastPath(
+          { plugins: mcp.plugins, decisions, db },
+          actor,
+          b.id,
+          input.content,
+        ).catch(() => undefined);
+        if (fast) {
+          canned = fast.reply;
+          homeConfidence = fast.confidence;
+        }
+      }
       if (route.action === "ask_user" || route.action === "stop") canned = route.reply;
+      // A decision-only bot never calls an AI: the chosen option's text (or the fallback) is the whole answer.
+      else if (decisionOnly && route.action !== "delegate")
+        canned = ("reply" in route && route.reply) || DECISION_FALLBACK;
       // A chief without a real harness cannot work: guide setup instead of echoing a fixture reply.
       if (b.kind === "chief" && b.harness === "fixture" && canned === undefined)
         canned =
@@ -4292,16 +4610,26 @@ export function createChatService(
         ? {
             policy: "inbound",
             tainted: true,
-            inbound: { plugin: external.plugin, chat: external.chat, chatName: external.chatName },
+            inbound: {
+              plugin: external.plugin,
+              chat: external.chat,
+              chatName: external.chatName,
+            },
             origin: { conversationId: conv.id, messageId: userMsg.id },
           }
         : {
             policy: conv.kind === "inbound" ? "inbound" : "default",
             tainted: untrustedConv || files.length > 0,
-            origin: { conversationId: conv.id, messageId: input.retry?.requestId ?? userMsg.id },
+            origin: {
+              conversationId: conv.id,
+              messageId: input.retry?.requestId ?? userMsg.id,
+            },
             ...(input.loop ? { loopId: input.loop.id } : {}),
           };
-      type Where = { parentMessageId: string | null; historyRoot?: string | null };
+      type Where = {
+        parentMessageId: string | null;
+        historyRoot?: string | null;
+      };
       // One bot's answer: its delegation row, the reply, and the events that follow it. `where` says which thread the reply lands in.
       const answerOne = async function* (
         who: typeof bot.$inferSelect,
@@ -4323,6 +4651,7 @@ export function createChatService(
           : [];
         const { saved, status } = yield* answerAs(actor, {
           convId: conv.id,
+          link: `/chat/${conv.id}`,
           who,
           hist: botHist,
           prompt,
@@ -4339,8 +4668,18 @@ export function createChatService(
               : undefined,
           decision:
             route.action !== "respond"
-              ? { action: route.action, choice: route.choice, confidence: route.confidence }
-              : undefined,
+              ? {
+                  action: route.action,
+                  choice: route.choice,
+                  confidence: route.confidence,
+                }
+              : homeConfidence !== undefined && who.id === b.id
+                ? {
+                    action: "home_control",
+                    choice: "home_control",
+                    confidence: homeConfidence,
+                  }
+                : undefined,
           scope,
           noCode: untrustedConv,
           extraTools: await discussionToolsFor(actor, who, scope),
@@ -4375,7 +4714,10 @@ export function createChatService(
           });
         yield { type: "message", message: saved, botName: who.name } as const;
         while (newProposals.length)
-          yield { type: "proposal", proposalId: newProposals.shift()! } as const;
+          yield {
+            type: "proposal",
+            proposalId: newProposals.shift()!,
+          } as const;
         return status;
       };
       const mainWhere: Where = {
@@ -4420,11 +4762,18 @@ export function createChatService(
           text: `Delegation: ${rows.map(line).join(", ")}${skipped.length ? `; not asked: ${skipped.map((x) => x.name).join(", ")}` : ""}`,
         };
       }
-      const title =
-        !hasMessages && conv.kind === "chat" && !step ? input.content.slice(0, 60) : conv.title;
+      // The title is decided in SQL, not from `conv.title` read at turn start: a rename during the turn must win.
+      const firstTitle = !hasMessages && conv.kind === "chat" && !step;
       await db
         .update(conversation)
-        .set({ updatedAt: new Date(), title })
+        .set({
+          updatedAt: new Date(),
+          ...(firstTitle
+            ? {
+                title: sql`case when ${conversation.titleSource} = 'auto' then ${input.content.slice(0, 60)} else ${conversation.title} end`,
+              }
+            : {}),
+        })
         .where(eq(conversation.id, conv.id));
       yield { type: "done" };
     },
@@ -4461,12 +4810,7 @@ export function createChatService(
       conversationId: string,
       input: Pick<
         Converse,
-        | "content"
-        | "clientRequestId"
-        | "parentMessageId"
-        | "attachmentIds"
-        | "fileRefs"
-        | "instructionIds"
+        "content" | "clientRequestId" | "parentMessageId" | "attachmentIds" | "fileRefs" | "wikiIds"
       >,
     ) {
       const conv = await loadConversation(actor, conversationId);
@@ -4493,8 +4837,11 @@ export function createChatService(
           .where(and(eq(message.id, input.parentMessageId), eq(message.conversationId, conv.id)));
         if (!parent) throw new AccessError("NOT_FOUND");
       }
-      const instructionIds = [...new Set(input.instructionIds ?? [])];
-      if ((await knowledge.byIds(actor.userId, instructionIds)).length !== instructionIds.length)
+      const wikiIds = [...new Set(input.wikiIds ?? [])];
+      if (
+        wikiIds.length &&
+        (await deps.wiki?.byIds(actor.userId, wikiIds))?.length !== wikiIds.length
+      )
         throw new AccessError("NOT_FOUND");
       const attachmentIds = input.attachmentIds ?? [];
       const saved = await db.transaction(async (tx) => {
@@ -4528,7 +4875,7 @@ export function createChatService(
           ownerUserId: actor.userId,
           conversationId: conv.id,
           messageId: m.id,
-          input: { fileRefs: input.fileRefs ?? [], instructionIds },
+          input: { fileRefs: input.fileRefs ?? [], wikiIds },
         });
         return m;
       });
@@ -4677,8 +5024,11 @@ export function createChatService(
         .select()
         .from(bot)
         .where(and(eq(bot.id, t.botId), visibleBot(actor), eq(bot.archived, false)));
-      if (!who || !who.onboarded) {
-        await store.finishTurn(t.id, "skipped", { reasonCode: "bot_unavailable" });
+      // The owner may use their own bot before its setup is done (as in a chat); only another person's bot must be ready.
+      if (!who || (!who.onboarded && who.ownerUserId !== actor.userId)) {
+        await store.finishTurn(t.id, "skipped", {
+          reasonCode: "bot_unavailable",
+        });
         return "skipped";
       }
       const members = await store.membersOf(d);
@@ -4700,10 +5050,12 @@ export function createChatService(
       const pickedIds =
         (
           rawTranscript.findLast((m) => m.role === "user")?.meta as {
-            instructionIds?: string[];
+            wikiIds?: string[];
           } | null
-        )?.instructionIds ?? [];
-      const referenced = await knowledge.byIds(actor.userId, pickedIds);
+        )?.wikiIds ?? [];
+      const referenced = pickedIds.length
+        ? ((await deps.wiki?.byIds(actor.userId, pickedIds)) ?? [])
+        : [];
       type Pic = { id: string; name: string };
       const picsOf = (m: { meta: unknown }) => (m.meta as { images?: Pic[] } | null)?.images ?? [];
       // The newest pictures of this discussion stay in view for the bot; older ones are only named.
@@ -4754,11 +5106,20 @@ export function createChatService(
         : trigger.role === "user"
           ? "The user"
           : (names.get(trigger.botId ?? "") ?? "A member");
+      const [roomTeam] = d.teamId
+        ? await db
+            .select({ name: teamTable.name, context: teamTable.context })
+            .from(teamTable)
+            .where(and(eq(teamTable.id, d.teamId), eq(teamTable.ownerUserId, d.ownerUserId)))
+        : [];
       const prompt = discussionPrompt({
         you,
         ...(d.teamId
-          ? { teamRole: who.id === d.createdByBotId ? ("chief" as const) : ("member" as const) }
+          ? {
+              teamRole: who.id === d.createdByBotId ? ("chief" as const) : ("member" as const),
+            }
           : {}),
+        ...(roomTeam ? { team: roomTeam } : {}),
         title: d.title,
         goal: d.goal,
         context: d.context,
@@ -4804,17 +5165,24 @@ export function createChatService(
         discussionId: d.id,
         ...(runningLoop ? { loopId: runningLoop.id } : {}),
         inbound: d.originInbound ?? undefined,
-        origin: { conversationId: d.conversationId, messageId: t.triggerMessageId },
+        origin: {
+          conversationId: d.conversationId,
+          messageId: t.triggerMessageId,
+        },
       };
       const proposals: string[] = [];
       let result:
-        | { saved: typeof message.$inferSelect; status: "complete" | "failed" | "cancelled" }
+        | {
+            saved: typeof message.$inferSelect;
+            status: "complete" | "failed" | "cancelled";
+          }
         | undefined;
       let rec;
       try {
         rec = turns.start(`${actor.userId}:${d.conversationId}`, async function* (signal) {
           result = yield* answerAs(actor, {
             convId: d.conversationId,
+            link: `/rooms?id=${d.id}`,
             who,
             hist: [],
             prompt,
@@ -4912,7 +5280,9 @@ export function createChatService(
         });
       }
       if (result.status === "cancelled") {
-        await store.finishTurn(t.id, "cancelled", { resultMessageId: saved.id });
+        await store.finishTurn(t.id, "cancelled", {
+          resultMessageId: saved.id,
+        });
         return "cancelled";
       }
       if (result.status === "failed") {

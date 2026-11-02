@@ -50,6 +50,7 @@ export function BotAvatarPicker({
   const character = value?.kind === "preset" ? characterOf(value.preset) : undefined;
   const color =
     value?.kind === "preset" ? (value.colors[0] ?? AVATAR_SWATCHES[0]!) : AVATAR_SWATCHES[0]!;
+  const custom = !AVATAR_SWATCHES.includes(color);
   const bot = (avatar: AvatarValue | null) => ({ id: botId, avatar, kind });
 
   async function upload(f: File | undefined) {
@@ -179,14 +180,24 @@ export function BotAvatarPicker({
               style={{ backgroundColor: c }}
             />
           ))}
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <input
-              type="color"
-              aria-label="Custom color"
-              value={color}
-              onChange={(e) => onChange({ ...value, colors: [e.target.value] })}
-              className="size-7 cursor-pointer rounded border bg-transparent p-0"
-            />
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span
+              className={`relative size-7 rounded-full has-focus-visible:outline-2 has-focus-visible:outline-ring ${custom ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : ""}`}
+              // A rainbow wheel until a color is picked, then the picked color.
+              style={{
+                background: custom
+                  ? color
+                  : "radial-gradient(circle, #fff, transparent 65%), conic-gradient(red, yellow, lime, aqua, blue, magenta, red)",
+              }}
+            >
+              <input
+                type="color"
+                aria-label="Custom color"
+                value={color}
+                onChange={(e) => onChange({ ...value, colors: [e.target.value] })}
+                className="absolute inset-0 size-full cursor-pointer opacity-0"
+              />
+            </span>
             Custom
           </label>
         </div>

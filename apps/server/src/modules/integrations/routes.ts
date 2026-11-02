@@ -290,7 +290,16 @@ export function createIntegrationRoutes(
       )
       .post(
         "/plugins/:id/disconnect",
-        g(async (c) => mcp.plugins.disconnect(c.actor, pluginId.parse(c.params.id), c.scope)),
+        g(async (c) =>
+          mcp.plugins.disconnect(
+            c.actor,
+            pluginId.parse(c.params.id),
+            c.scope,
+            z
+              .strictObject({ options: z.record(z.string().max(40), z.unknown()).optional() })
+              .parse(c.body ?? {}).options,
+          ),
+        ),
       )
       // Browser navigation from the plugin's OAuth provider: no JSON, no token in the URL; always ends in a redirect to the plugin's page with a status flag.
       .get("/plugins/:id/callback", async ({ request, params }) => {

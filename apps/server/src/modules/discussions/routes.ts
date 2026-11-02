@@ -34,7 +34,7 @@ const schemas = {
       content: z.string().trim().max(4000),
       attachmentIds: z.array(uuid).max(5).optional(),
       fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
-      instructionIds: z.array(uuid).max(5).optional(),
+      wikiIds: z.array(uuid).max(5).optional(),
     })
     .refine((v) => v.content || v.attachmentIds?.length || v.fileRefs?.length),
   loop: z.strictObject({
@@ -191,6 +191,19 @@ export function createDiscussionRoutes(
       g(async (c) => ({
         discussion: publicRoom(await store.setStatus(c.actor, id(c), "cancel")),
       })),
+    )
+    .post(
+      "/discussions/:id/delete",
+      g(async (c) => ({
+        discussion: publicRoom((await store.remove(c.actor, id(c), null)).discussion),
+      })),
+    )
+    .post(
+      "/discussions/:id/seen",
+      g(async (c) => {
+        await store.markSeen(c.actor, id(c));
+        return { ok: true };
+      }),
     )
     .post(
       "/discussions/:id/resolve",

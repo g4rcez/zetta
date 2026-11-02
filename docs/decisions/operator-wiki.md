@@ -1,6 +1,6 @@
 # Operator wiki
 
-Status: implemented 2026-10-29. Code: `apps/server/src/modules/wiki`, schema `packages/db/src/schema/wiki.ts`, Studio > Wiki.
+Status: implemented 2026-10-29 as a page store; extended 2026-11-02 into the unified wiki below. Code: `apps/server/src/modules/wiki`, schema `packages/db/src/schema/wiki.ts`, web `apps/web/src/features/wiki` (`/wiki`, `/wiki/<slug>`).
 
 ## Problem
 
@@ -31,3 +31,15 @@ A wiki of Markdown pages, one topic per page, in Postgres. The ideas come from [
 - Search is per page: embeddings come from title, summary and the start of the body (2000 characters). Keyword search needs every word. With `ZETTA_EMBEDDING=off`, the prompt index only finds pages that contain every word of the message.
 - URLs are kept as evidence but never fetched again.
 - The review job sees at most 30 pages; contradictions in older pages are found only through the checks list.
+
+## Unified wiki (2026-11-02)
+
+Memory, instructions, Drive documents and wiki pages are one concept: a **wiki item**. The old `memory`, `instruction` and `knowledge_chunk` tables, `/api/memories`, `/api/instructions`, `zetta:remember`, `zetta:instruction` and the Knowledge and Instructions tabs are gone. Rows kept their ids, so old answers and citations still resolve.
+
+- **Fields.** `title`, `content` (Markdown), `howto` (when and how to use it, shown in search results and embedded with every chunk), `tags`, `score` (0 to 100, how important), `type`, `status`, the author bot, and a version history.
+- **Who reads it (`type`).** `solo`: only the bot that wrote it (a bot's own notes). `owner`: all of the owner's bots. `teams`: bots in the listed teams (`wiki_page_team`). `all`: every active member of the installation; only a person publishes, never a bot.
+- **Graph.** `[[slug]]` is a `related` link; `[[depends-on:slug]]`, `[[part-of:slug]]` and `[[supersedes:slug]]` are typed. Links are rebuilt from the content on every save (`wiki_link`) and resolve by slug against what the reader can see, so a graph never shows an item the reader may not read. `GET /api/wiki-graph` returns every readable item and link; the Wiki page draws it.
+- **What goes in every prompt.** The bot's `solo` items and the person's `owner` items tagged `profile`, best score first, within 2200 and 1375 characters (at most 64 each). Everything else is found by search.
+- **Search.** Keywords (any content word for a long message), tags, and the nearest chunks by meaning, fused by reciprocal rank and scaled by score. Filters (type, tags, status, whose, author, team, score, age) apply before ranking. Each result says why it matched (words, tag, meaning) with the passage. Procedures (tag `instruction`) that fit a message are shown in full.
+- **Drive.** Each indexed document is an `owner` item tagged `drive`, linked back through `knowledge_doc.page_id` so a sync updates the same item. Its title and text are the document's and cannot be edited or shared; the whole text stays in the chunks. The same file reached through two Google accounts is one item.
+- **Wiki page.** `/wiki` has filters, "Ask the wiki" (the chief answers in place with cited items), a health panel with one fix per problem, a graph view, and the Drive and feed settings. `/wiki/<slug>` has the item, its links by relation, sources and versions, `[[` autocomplete, an Add link panel, and editor help that suggests tags, a how-to line, a score, links or a tidier text. Help runs on the chief, never receives a draft that looks like a secret, and changes nothing until the person accepts and saves.

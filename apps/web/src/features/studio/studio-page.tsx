@@ -1,12 +1,9 @@
 import {
   PulseIcon as ActivityIcon,
-  BookOpenIcon,
-  CalendarDotsIcon,
+  ChatTeardropTextIcon,
   GitBranchIcon,
-  ListChecksIcon,
   TrayIcon,
   KeyIcon,
-  BooksIcon,
   DevicesIcon,
   PlugIcon,
   SignpostIcon,
@@ -27,22 +24,18 @@ const Activity = lazy(() => import("./activity").then((m) => ({ default: m.Activ
 const Attention = lazy(() => import("./attention").then((m) => ({ default: m.Attention })));
 const Computer = lazy(() => import("./computer").then((m) => ({ default: m.Computer })));
 const Decisions = lazy(() => import("./decisions").then((m) => ({ default: m.Decisions })));
-const Wiki = lazy(() => import("./wiki").then((m) => ({ default: m.Wiki })));
 const Plugins = lazy(() => import("./plugins").then((m) => ({ default: m.Plugins })));
-const Routines = lazy(() => import("./routines").then((m) => ({ default: m.Routines })));
 const Snapshots = lazy(() => import("./snapshots").then((m) => ({ default: m.Snapshots })));
 const Workflows = lazy(() => import("./workflows").then((m) => ({ default: m.Workflows })));
-const Knowledge = lazy(() => import("./knowledge").then((m) => ({ default: m.Knowledge })));
-const Instructions = lazy(() => import("./knowledge").then((m) => ({ default: m.Instructions })));
+const OutputStyles = lazy(() =>
+  import("./output-styles").then((m) => ({ default: m.OutputStyles })),
+);
 
 const tabs = studioTabs.filter((t) => !isRailTab(t.slug)).map((t) => t.label);
 type Tab = (typeof studioTabs)[number]["label"];
 const ICON: Record<Tab, Icon> = {
-  Routines: CalendarDotsIcon,
   Inbox: TrayIcon,
-  Knowledge: BookOpenIcon,
-  Wiki: BooksIcon,
-  Instructions: ListChecksIcon,
+  "Output styles": ChatTeardropTextIcon,
   Workflows: GitBranchIcon,
   Decisions: SignpostIcon,
   Accounts: KeyIcon,
@@ -53,11 +46,8 @@ const ICON: Record<Tab, Icon> = {
 };
 const BLURB: Record<Tab, string> = {
   Plugins: "Connect tools and MCP servers, then choose which bots may use them.",
-  Routines: "Schedule bots to work for you.",
   Inbox: "Things that need you, with the actions to deal with them.",
-  Knowledge: "What your bots remember and the sources they can read.",
-  Wiki: "Pages your bots share about what they learned, so no bot does the same work twice.",
-  Instructions: "Saved steps your bots follow. Type / in a chat to use one.",
+  "Output styles": "How your bots write: tone of voice templates you can share.",
   Workflows: "Chain steps across bots and sources.",
   Decisions: "How messages are routed.",
   Accounts: "Engines and provider keys.",
@@ -168,11 +158,8 @@ export function StudioPage() {
             className="min-w-0"
           >
             <Suspense fallback={<Loading />}>
-              {tab === "Routines" && <Routines bots={bots} onError={setError} />}
               {tab === "Inbox" && <Attention bots={bots} onError={setError} />}
-              {tab === "Knowledge" && <Knowledge onError={setError} />}
-              {tab === "Wiki" && <Wiki onError={setError} />}
-              {tab === "Instructions" && <Instructions onError={setError} />}
+              {tab === "Output styles" && <OutputStyles onError={setError} />}
               {tab === "Workflows" && <Workflows bots={bots} onError={setError} />}
               {tab === "Decisions" && <Decisions onError={setError} />}
               {tab === "Accounts" && <Accounts onError={setError} />}

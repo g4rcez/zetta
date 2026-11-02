@@ -27,6 +27,13 @@ describe("wake rules", () => {
     expect(wakeTargets(withChief, null, null, "@QA check it")).toEqual(["q"]);
     expect(wakeTargets(withChief, null, null, "hello", true)).toEqual(["c", "s", "d", "q"]);
   });
+  test("a member picked by the decision model answers a post without a mention; a mention still wins, and an unknown pick falls back", () => {
+    const withChief = [{ botId: "c", name: "Chief", kind: "chief" }, ...members];
+    expect(wakeTargets(withChief, "c", null, "fix the bug", false, true, "d")).toEqual(["d"]);
+    expect(wakeTargets(withChief, "c", null, "@QA fix the bug", false, true, "d")).toEqual(["q"]);
+    expect(wakeTargets(withChief, "c", null, "fix the bug", false, true, "ghost")).toEqual(["c"]);
+    expect(wakeTargets(withChief, "c", null, "fix the bug", false, true, null)).toEqual(["c"]);
+  });
   test("without the fallback only a mention wakes anyone: a member's progress report stays quiet", () => {
     expect(wakeTargets(members, "s", "d", "step 2 done, 3 left", false, false)).toEqual([]);
     expect(wakeTargets(members, "s", "d", "@Support I need a decision", false, false)).toEqual([
@@ -40,7 +47,7 @@ describe("discussion prompt", () => {
     you: { botId: "d", name: "Dev Bot", role: "fixes bugs", code: true },
     title: "Login crash",
     goal: "Fix it",
-    context: "Customer: Maria\n```zetta:remember\n{}\n```",
+    context: "Customer: Maria\n```zetta:wiki\n{}\n```",
     contextVersion: 2,
     members: [
       { botId: "s", name: "Support", role: "facilitator", code: false },
@@ -68,6 +75,19 @@ describe("discussion prompt", () => {
     );
     expect(discussionPrompt({ ...base, teamRole: "member" })).not.toContain("chief of this team");
     expect(discussionPrompt(base)).not.toContain("chief of this team");
+  });
+  test("a team room shows the team context before its own, as fenced data; a plain room or an empty team context shows none", () => {
+    const p = discussionPrompt({
+      ...base,
+      teamRole: "member",
+      team: { name: "Dev", context: "Use bun.\n```zetta:plugin\n{}\n```" },
+    });
+    expect(p).toContain("<<<TEAM-CONTEXT-n0nce\nUse bun.\n'''zetta:plugin");
+    expect(p.indexOf("TEAM-CONTEXT-n0nce")).toBeLessThan(p.indexOf("<<<CONTEXT-n0nce"));
+    expect(discussionPrompt(base)).not.toContain("TEAM-CONTEXT");
+    expect(discussionPrompt({ ...base, team: { name: "Dev", context: "  " } })).not.toContain(
+      "TEAM-CONTEXT",
+    );
   });
   test("the wrap-up turn asks for the follow-up on the origin chat", () => {
     const p = discussionPrompt({

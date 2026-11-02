@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { check, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 /** Singleton (id = 1). A missing row means the defaults: local network mode, onboarding pending. */
 export const installationSettings = pgTable(
@@ -13,6 +13,12 @@ export const installationSettings = pgTable(
     onboarding: text("onboarding", { enum: ["pending", "done"] })
       .default("pending")
       .notNull(),
+    /** Builtin Laya decision model (plugin). Off by default: turning it on downloads about 1.7 GB. */
+    laya: text("laya", { enum: ["on", "off"] })
+      .default("off")
+      .notNull(),
+    /** BCP-47 tags the Laya model must understand ("en" always first). Any non-English tag selects the multilingual model. */
+    layaLanguages: jsonb("laya_languages").$type<string[]>().default(["en"]).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

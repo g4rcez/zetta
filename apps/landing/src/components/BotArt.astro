@@ -1,0 +1,25 @@
+---
+// A bot's face: the product's own character art (see src/cast.ts). Decorative; the bot's name is always written next to it.
+import { artFor, artOf, type ArtId } from "../cast";
+
+interface Props {
+  /** A bot named on the page ("Writer") or a character id. */
+  name?: string;
+  art?: ArtId;
+  size?: number;
+  class?: string;
+}
+
+const { name, art, size = 32, class: className } = Astro.props;
+const body = artOf(art ?? artFor(name ?? ""));
+---
+
+<svg class:list={["bot-art", className]} viewBox="0 0 64 64" width={size} height={size} aria-hidden="true" focusable="false" set:html={body} />
+
+<style>
+  .bot-art {
+    flex: none;
+    display: block;
+    border-radius: 22%;
+  }
+</style>

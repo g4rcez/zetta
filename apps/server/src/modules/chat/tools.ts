@@ -1,14 +1,13 @@
 import { uiPrompt } from "@zetta/render/prompt";
-import { WIKI_PAGE_TYPES } from "@zetta/db/schema/wiki";
+import { WIKI_SCORE_MAX } from "@zetta/db/schema/wiki";
 import { z } from "zod";
 import { designSystemPrompt } from "../artifacts/design-system";
+import { BUILTIN_KEYS } from "../output-styles/builtins";
 
 /**
  * Text protocol for bots (works with any harness that only returns text). A bot reply may contain fenced blocks:
- *   ```zetta:remember   {"target": "user"|"memory", "action": "add"|"patch"|"remove", "content": "...", "match": "..."} or {"target", "operations": [...]}
- *   ```zetta:instruction {"title": "...", "body": "..."} -> saved at once, for every bot of the user (or the room's team) | {"action": "read", "id"} loads a saved one
- *   ```zetta:wiki        {"action": "search", "query"} | read {slug} | write {slug, title, body, ...} | patch {slug, match, content} | mark_stale {slug} | suggest {slug, body, reason} -> the user's wiki and pages other members shared (modules/wiki)
- *   ```zetta:config      {"botId": "<id>", "patch": {"personality": "..."}}   -> becomes a proposal the user must approve
+ *   ```zetta:wiki        {"action": "search", "query"} | read {slug} | links {slug, depth?} | write {slug, title, content, howto?, tags?, type?, teams?, score?, ...} | patch {slug, match, content} | mark_stale {slug} | archive {slug} | checks {problem?} | link {slug, to, relation?} | confirm {slug} | sources {slug, sources} | suggest {slug, content, reason} -> the user's wiki (a graph of items) and items other members shared (modules/wiki)
+ *   ```zetta:config      {"botId": "<id>", "patch": {"personality": "...", "outputStyle": "concise"}}   -> becomes a proposal the user must approve
  *   ```zetta:create_bot / create_routine / create_workflow / create_vm  -> proposals shown as a creation summary; nothing exists until the user approves (the chief's create_bot, create_team and add_to_team run at once, see CHIEF_TOOLS)
  *   ```zetta:browser     {"action": "open", "url": "https://..."} | click_text | type | key | read
  *   ```zetta:handoff     {"reason": "I need you to sign in"}                 -> attention item; the human takes over
@@ -22,26 +21,20 @@ import { designSystemPrompt } from "../artifacts/design-system";
  *   ```zetta:bot_claude  {"bot": "<name or id>", "allow": ["Bash(gh pr create:*)"], "deny": [...], "revoke": [...], "preset": "git"} -> chief only: edits another bot's Claude Code permissions (answering a bot's request in the Permissions room shows the user Approve / Deny buttons first)
  *   ```zetta:permission  {"rule": "Bash(pnpm:*)", "reason": "run the tests"}                -> any other bot: asks the chief, in the Permissions room, for a rule
  *   ```zetta:escalate    {"problem": "...", "tried": "..."}                              -> any other bot: asks the chief to solve a blocker in a help room; the answer resumes the bot, the user is asked only if the chief cannot
- *   ```zetta:discussion  {"action": "open", "title", "goal", "context", "members": [{"bot": "Dev"}], "firstMessage"} | post | update_context | resolve -> group of bots (modules/discussions)
+ *   ```zetta:discussion  {"action": "open", "title", "goal", "context", "members": [{"bot": "Dev"}], "firstMessage"} | post | update_context | resolve | delete -> group of bots (modules/discussions)
  *   ```zetta:plan        {"steps": [{"id": "1", "title": "Read the sheet", "status": "active"}, ...]} -> not a tool: nothing runs and it never causes a rerun. The web chat shows it as a checklist; each block replaces the whole list
  *   ```zetta:ui          JSON-patch lines building a view from @zetta/render's catalog -> not a tool: it stays in the reply and the web chat draws it
  */
 /** Shared by the tool preamble and the loop prompts: a bot never makes the user choose how to do the work. */
-export const AUTONOMY = `The user's request sets hard limits: the sources, sites, accounts, scope and output they named. Every method you pick stays inside them. Another method means another way to the same source (another page, the browser, an API or a script), never a source or site the user did not ask for. If no method works inside the limits, say so and name the blocker; never swap in another source. Never ask the user to choose a method or to approve one. Pick it yourself. If a method fails, try the next one. Prefer the quiet method (WebFetch, search, an API, your own computer) over the user's screen, keyboard or focus. A result from public sources is acceptable: say that it is public when it differs from what the user sees signed in. When a step fails, read the error and change approach instead of repeating the same call. When you solve a problem another bot could meet, save it as a zetta:wiki page of type gotcha. If every method fails, report the best partial result and what failed. If you are stuck, solve it yourself first. A bot that is not the Chief then sends zetta:escalate and stops: the Chief decides for it. Only the Chief asks the user, with zetta:handoff, and only for a blocker that only a person can clear (sign-in, CAPTCHA, payment).`;
+export const AUTONOMY = `The user's request sets hard limits: the sources, sites, accounts, scope and output they named. Every method you pick stays inside them. Another method means another way to the same source (another page, the browser, an API or a script), never a source or site the user did not ask for. If no method works inside the limits, say so and name the blocker; never swap in another source. Never ask the user to choose a method or to approve one. Pick it yourself. If a method fails, try the next one. Prefer the quiet method (WebFetch, search, an API, your own computer) over the user's screen, keyboard or focus. A result from public sources is acceptable: say that it is public when it differs from what the user sees signed in. When a step fails, read the error and change approach instead of repeating the same call. When you solve a problem another bot could meet, save it as a zetta:wiki item tagged gotcha. If every method fails, report the best partial result and what failed. If you are stuck, solve it yourself first. A bot that is not the Chief then sends zetta:escalate and stops: the Chief decides for it. Only the Chief asks the user, with zetta:handoff, and only for a blocker that only a person can clear (sign-in, CAPTCHA, payment).`;
 
 export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks in your reply (the block name follows the opening backticks):
-\`\`\`zetta:remember
-{"target":"user","action":"add","content":"a durable preference or fact about the user"}
-\`\`\`   (memory is small and bounded. target "user" = who the user is, shared by all their bots (1375 chars); target "memory" = your own notes about working for them (2200 chars). Actions: add{content}, patch{match,content} replaces a unique span inside one entry, remove{match}. Several changes go in one block as {"target":"memory","operations":[{"action":"remove","match":"..."},{"action":"add","content":"..."}]}. If memory is full you get an error with the current entries: shorten or remove some in one batch. Save preferences, corrections, conventions and explicit "remember this"; skip trivia, secrets, one-off details and anything easy to look up again.)
-\`\`\`zetta:instruction
-{"title":"when to use this","body":"1. first step\\n2. second step\\n3. last step","trigger":"optional words that should bring it up","verification":"how to check the result"}
-\`\`\`   (saves an instruction at once: ordered, numbered steps you or another bot must follow next time. Write one after a task that was hard or took several tries and will come back; never put secrets in it. To use a saved one, send {"action":"read","id":"<id>"} with an id from the "Saved instructions" list, then follow its steps in order. When the user names an instruction, follow it exactly.)
 \`\`\`zetta:wiki
 {"action":"search","query":"words about the task"}
-\`\`\`   (the user's wiki: pages that all their bots share about clients, systems, accounts, decisions and known problems. Before work that may have been done before, search it, then load a page with {"action":"read","slug":"..."}. When you finish work and learned something another bot will need (where a thing is, how a system behaves, why a choice was made, a problem and its fix), save it: {"action":"write","slug":"acme-billing","title":"Acme billing","type":"entity|system|decision|howto|gotcha|reference|note","summary":"one line","body":"Markdown; link other pages as [[slug]]","sources":["task:<id>","doc:<id>","artifact:<id>","url:https://..."]} replaces the whole page, so read it first and keep what is still true. List in "sources" where the facts came from (ids from the task board, the Company documents list or published artifacts): when one changes, the page is marked stale. {"action":"patch","slug","match":"exact text","content":"new text"} changes one unique span. {"action":"mark_stale","slug"} flags a page that is wrong or old when you cannot fix it now. Pages "shared by" another member are read only: to change one, send {"action":"suggest","slug","body":"the full new text","reason":"why"} and its owner decides. One topic per page. Never save secrets or one-off details. Ordered steps go in zetta:instruction, facts about the user in zetta:remember.)
+\`\`\`   (the user's wiki: a graph of items that their bots share about clients, systems, accounts, decisions, procedures and known problems. Before work that may have been done before, search it, then load an item with {"action":"read","slug":"..."}; a search hit lists linked items, and {"action":"links","slug","depth":2} walks the graph around an item. When you finish work and learned something another bot will need (where a thing is, how a system behaves, why a choice was made, a problem and its fix, steps that worked), save it: {"action":"write","slug":"acme-billing","title":"Acme billing","howto":"one line: when to use this item and how","tags":["system","billing"],"score":50,"type":"owner|teams|solo","content":"Markdown; link other items as [[slug]] or with a relation: [[depends-on:slug]], [[part-of:slug]], [[supersedes:slug]]","sources":["task:<id>","doc:<id>","artifact:<id>","url:https://..."]} replaces the whole item, so read it first and keep what is still true. "howto" is what a bot reads in a search result to decide whether to open the item: say when it applies. "tags" are short labels (gotcha, instruction, decision, profile...). "score" (0-100) is how important it is; 50 is normal, 80+ only for what every bot must know. "type" says who reads it: "owner" (all the user's bots, the default), "teams" with "teams":[team ids] (only bots in those teams; inside a team room the default is that team), "solo" (only you: your own notes about working for this user, at most 64; keep each one short, tag it memory). Facts about the user that every bot should know (who they are, how they like to work) are items of type "owner" tagged profile, with score 90; the best ones of both kinds are shown to you at the start of every message, so keep them short and true, and archive the ones that no longer apply. Ordered steps you or another bot must follow next time go in an item tagged instruction, written as numbered steps in "content", with "howto" saying when to use them. List in "sources" where the facts came from (ids from the task board, the Company documents list or published artifacts): when one changes, the item is marked stale. {"action":"patch","slug","match":"exact text","content":"new text"} changes one unique span. {"action":"mark_stale","slug"} flags an item that is wrong or old when you cannot fix it now. {"action":"archive","slug"} hides one that no longer applies. Upkeep of the wiki: {"action":"checks"} lists what the automatic checks found (broken links, items linked to nothing, stale, not saved for 90 days, without sources; add "problem" to list one kind); {"action":"link","slug","to":"other-slug","relation":"related|depends-on|part-of|supersedes"} adds a link from an item to another with no rewrite; {"action":"confirm","slug"} says an item was checked and is still true (clears stale and the 90-day flag); {"action":"sources","slug","sources":["task:<id>","doc:<id>","artifact:<id>","url:https://..."]} adds the evidence behind an item. Items "shared by" another member are read only: to change one, send {"action":"suggest","slug","content":"the full new text","reason":"why"} and its owner decides. One topic per item. Never save secrets or one-off details.)
 \`\`\`zetta:config
 {"botId":"<id of one of the user's bots>","patch":{"personality":"...","instructions":"..."}}
-\`\`\`   (only a proposal: the user approves the exact change)
+\`\`\`   (only a proposal: the user approves the exact change. "outputStyle" is how a bot writes its answers: ${BUILTIN_KEYS.join(", ")}. Users choose their own custom styles themselves.)
 \`\`\`zetta:agenda
 {"action":"add","kind":"task","title":"Call Ana about the contract","start":"2026-10-27T09:00:00-03:00"}
 \`\`\`   (the user's Agenda, a calendar they see in Zetta. Add what the conversation commits them to: kind task (something to do), reminder (a nudge at a time), event (a meeting or appointment, give "end"), note (context for a day). Fields: title, start, end, allDay, remindAt (defaults to start for tasks and reminders; null for none), description, location, timezone (IANA), syncToGoogle. Dates are ISO 8601 with the user's UTC offset. Other actions: list{from?,to?} (default next 7 days; returns ids), update{id,...fields}, complete{id}, remove{id}. Add only what the user asked for or clearly agreed to; tell them what you added.)
@@ -81,7 +74,7 @@ const DESKTOP_TOOLS = `
 {"name":"Banking","purpose":"why a separate computer is needed"}
 \`\`\`   (only a proposal: asks the user for another computer, e.g. to keep a second account signed in. Use the default computer unless a separate one is really needed.)`;
 const CODE_TOOLS = `
-Code access is enabled for you. Your shell and file tools run in a persistent workspace folder that belongs to the current user (your current directory): it survives between turns and holds their cloned repositories. Use git directly, no zetta block is needed: run ls first, \`git clone <url>\` if the repository is not there yet, then read, edit, run tests, create branches, commit and push. Commands, scripts, git, file edits and web fetches are already approved, so do not ask for permission to run them. Only deleting files (rm, rmdir, shred, unlink), sudo and sending mail are refused until the user grants them. Work on a branch unless asked to change the default branch, and never force-push or rewrite history unless the user asks for it. Private repositories and pushes need a GitHub token the user bound to this bot (it is in GITHUB_TOKEN when present); if clone or push fails with an authentication error, say so instead of retrying. Never print, commit or store tokens. Finish by reporting the branch, the commits and what you ran.`;
+Code access is enabled for you. Your shell and file tools run in a persistent workspace folder that belongs to the current user (your current directory): it survives between turns and holds their cloned repositories. Use git directly, no zetta block is needed: run ls first, \`git clone <url>\` if the repository is not there yet, then read, edit, run tests, create branches, commit and push. Commands, scripts, git, file edits and web fetches are already approved, so do not ask for permission to run them. Only deleting files (rm, rmdir, shred, unlink), sudo and sending mail are refused until the user grants them. Work on a branch unless asked to change the default branch, and never force-push or rewrite history unless the user asks for it. Private repositories and pushes need the GitHub login of the server (the gh CLI is signed in) or a GitHub token the user bound to this bot (it is in GITHUB_TOKEN when present); if clone or push fails with an authentication error, say so instead of retrying. Commits are signed with the identity the owner chose for you, so never change user.name or user.email. Never print, commit or store tokens. Finish by reporting the branch, the commits and what you ran.`;
 const CHIEF_TOOLS = `
 You are the user's chief: you lead the other bots and manage what they may do. You have the same permissions as they do. Other bots already run commands and use the web without asking; only deletes (rm), sudo and sending mail need a rule. When a bot asks for one, grant it:
 \`\`\`zetta:bot_claude
@@ -90,7 +83,7 @@ You are the user's chief: you lead the other bots and manage what they may do. Y
 When the user asks for a new bot or a team, create it yourself right away, without asking for approval. Derive the details from the conversation; ask only when something essential is missing:
 \`\`\`zetta:create_bot
 {"name":"Researcher","description":"what it is good at","personality":"You are a ...","instructions":"the job, the steps, what it must never do"}
-\`\`\`   (the bot exists at once and is private to the user. It uses your engine unless you add "harness" and "model". Write a real personality and instructions from what the user said.)
+\`\`\`   (the bot exists at once and is private to the user. It uses your engine unless you add "harness" and "model". Write a real personality and instructions from what the user said. Add "outputStyle" (${BUILTIN_KEYS.join(", ")}) when the user said how it should write; leave it out otherwise.)
 \`\`\`zetta:create_team
 {"name":"Launch team","goal":"what the team is for","members":[{"bot":"Researcher","role":"Researcher"},{"bot":"Writer","role":"Writer"}]}
 \`\`\`   (you lead the team. "bot" is a name or id of an existing bot, so create the bots first, in the same reply when needed. "role" is optional: a name from the team roles list. Then tell the user what you created. If the team already exists (see the user's teams list), use add_to_team instead.)
@@ -143,73 +136,35 @@ const agendaFields = {
   syncToGoogle: z.boolean().optional(),
 };
 export const toolSchemas = {
-  remember: z
-    .strictObject({
-      target: z.enum(["user", "memory"]).default("memory"),
-      action: z.enum(["add", "patch", "remove"]).default("add"),
-      content: z.string().trim().min(1).max(600).optional(),
-      match: z.string().trim().min(1).max(600).optional(),
-      operations: z
-        .array(
-          z.strictObject({
-            action: z.enum(["add", "patch", "remove"]),
-            content: z.string().trim().min(1).max(600).optional(),
-            match: z.string().trim().min(1).max(600).optional(),
-          }),
-        )
-        .min(1)
-        .max(16)
-        .optional(),
-    })
-    .transform((v, ctx) => {
-      const raw = v.operations ?? [{ action: v.action, content: v.content, match: v.match }];
-      const ops: (
-        | { op: "add"; content: string }
-        | { op: "patch"; match: string; content: string }
-        | { op: "remove"; match: string }
-      )[] = [];
-      for (const r of raw) {
-        if (r.action === "add" && r.content) ops.push({ op: "add", content: r.content });
-        else if (r.action === "patch" && r.match && r.content)
-          ops.push({ op: "patch", match: r.match, content: r.content });
-        else if (r.action === "remove" && r.match) ops.push({ op: "remove", match: r.match });
-        else {
-          ctx.addIssue({ code: "custom", message: "operation is missing fields" });
-          return z.NEVER;
-        }
-      }
-      return { target: v.target, ops };
-    }),
-  instruction: z.union([
-    z.strictObject({
-      action: z.literal("add").optional(),
-      title: bounded(120),
-      body: bounded(8000),
-      trigger: z.string().max(300).optional(),
-      verification: z.string().max(500).optional(),
-    }),
-    z.strictObject({ action: z.literal("read"), id: z.string().uuid() }),
-  ]),
   wiki: z.discriminatedUnion("action", [
     z.strictObject({ action: z.literal("search"), query: bounded(300) }),
     z.strictObject({ action: z.literal("read"), slug: bounded(80) }),
     z.strictObject({
+      action: z.literal("links"),
+      slug: bounded(80),
+      depth: z.number().int().min(1).max(2).optional(),
+    }),
+    z.strictObject({
       action: z.literal("write"),
       slug: bounded(80),
       title: bounded(160),
-      type: z.enum(WIKI_PAGE_TYPES).optional(),
-      summary: z.string().trim().max(300).optional(),
-      body: bounded(20_000),
+      content: bounded(20_000),
+      howto: z.string().trim().max(300).optional(),
+      tags: z.array(z.string().trim().min(1).max(40)).max(12).optional(),
+      // `all` (published to every member) is a person's choice and has no value here.
+      type: z.enum(["solo", "owner", "teams"]).optional(),
+      teams: z.array(z.string().uuid()).max(20).optional(),
+      score: z.number().int().min(0).max(WIKI_SCORE_MAX).optional(),
       version: z.number().int().min(0).optional(),
       sources: z.array(z.string().trim().min(3).max(2000)).max(12).optional(),
     }),
     z.strictObject({
       action: z.literal("suggest"),
       slug: bounded(80),
-      body: bounded(20_000),
+      content: bounded(20_000),
       title: bounded(160).optional(),
-      type: z.enum(WIKI_PAGE_TYPES).optional(),
-      summary: z.string().trim().max(300).optional(),
+      howto: z.string().trim().max(300).optional(),
+      tags: z.array(z.string().trim().min(1).max(40)).max(12).optional(),
       reason: z.string().trim().max(500).optional(),
     }),
     z.strictObject({
@@ -219,6 +174,24 @@ export const toolSchemas = {
       content: z.string().max(8000),
     }),
     z.strictObject({ action: z.literal("mark_stale"), slug: bounded(80) }),
+    z.strictObject({ action: z.literal("archive"), slug: bounded(80) }),
+    // Upkeep: what the wiki checks found, and one-call fixes that never rewrite an item's text.
+    z.strictObject({
+      action: z.literal("checks"),
+      problem: z.enum(["brokenLinks", "unlinked", "old", "stale", "unsourced"]).optional(),
+    }),
+    z.strictObject({
+      action: z.literal("link"),
+      slug: bounded(80),
+      to: bounded(80),
+      relation: z.enum(["related", "depends-on", "part-of", "supersedes"]).optional(),
+    }),
+    z.strictObject({ action: z.literal("confirm"), slug: bounded(80) }),
+    z.strictObject({
+      action: z.literal("sources"),
+      slug: bounded(80),
+      sources: z.array(z.string().trim().min(3).max(2000)).min(1).max(12),
+    }),
   ]),
   config: z.strictObject({
     botId: z.string().uuid(),
@@ -229,9 +202,20 @@ export const toolSchemas = {
         description: z.string().max(2048).optional(),
         name: bounded(80).optional(),
         harness: z
-          .enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "hermes", "fixture"])
+          .enum([
+            "pi",
+            "codex",
+            "omp",
+            "claude-code",
+            "opencode",
+            "cursor",
+            "hermes",
+            "fixture",
+            "decision",
+          ])
           .optional(),
         model: z.string().max(128).nullable().optional(),
+        outputStyle: z.enum(BUILTIN_KEYS).optional(),
       })
       .refine((p) => Object.keys(p).length > 0),
   }),
@@ -323,11 +307,22 @@ export const toolSchemas = {
     name: bounded(80),
     description: z.string().max(2048).optional(),
     harness: z
-      .enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "hermes", "fixture"])
+      .enum([
+        "pi",
+        "codex",
+        "omp",
+        "claude-code",
+        "opencode",
+        "cursor",
+        "hermes",
+        "fixture",
+        "decision",
+      ])
       .optional(),
     model: z.string().max(128).nullable().optional(),
     personality: z.string().max(4096).optional(),
     instructions: z.string().max(16384).optional(),
+    outputStyle: z.enum(BUILTIN_KEYS).optional(),
     visibility: z.enum(["private", "team"]).optional(),
   }),
   /** Chief only. Members are names or ids of the user's bots; the chief itself always leads the team. */
@@ -384,6 +379,13 @@ export const toolSchemas = {
       action: z.literal("resolve"),
       discussionId: z.string().uuid().optional(),
       summary: bounded(2000),
+    }),
+    // A room opened by mistake: cancel and hide it (history kept). `room` is its id, title or #name.
+    z.strictObject({
+      action: z.literal("delete"),
+      discussionId: z.string().uuid().optional(),
+      room: bounded(200).optional(),
+      reason: z.string().trim().max(500).optional(),
     }),
   ]),
   bot_claude: z.strictObject({
@@ -478,7 +480,7 @@ export function parseTools(reply: string): {
   let plan: PlanStep[] | undefined;
   const text = reply
     .replace(
-      /```zetta:(remember|instruction|wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal|team_goals|artifact|setup)\s*\n([\s\S]*?)```/g,
+      /```zetta:(wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal|team_goals|artifact|setup)\s*\n([\s\S]*?)```/g,
       (_, kind: keyof typeof toolSchemas, body: string) => {
         let json: unknown;
         try {

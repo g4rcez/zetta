@@ -71,6 +71,8 @@ export const team = pgTable(
     ownerUserId: owner(),
     name: text("name").notNull(),
     goal: text("goal").default("").notNull(),
+    /** Shared by every room of the team; each room adds its own context. */
+    context: text("context").default("").notNull(),
     canvas: jsonb("canvas").$type<TeamBox>().default({ x: 0, y: 0, w: 360, h: 280 }).notNull(),
     version: integer("version").default(1).notNull(),
     status: text("status", { enum: TEAM_STATUSES }).default("active").notNull(),
@@ -83,6 +85,7 @@ export const team = pgTable(
       .where(sql`${t.status} = 'active'`),
     check("team_name_check", sql`length(btrim(${t.name})) between 1 and 80`),
     check("team_goal_check", sql`length(${t.goal}) <= 1000`),
+    check("team_context_check", sql`length(${t.context}) <= 8000`),
   ],
 );
 

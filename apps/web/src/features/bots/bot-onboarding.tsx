@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
@@ -16,7 +16,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { BotAvatar, type AvatarValue } from "@/components/bot-avatar";
-import { Button, Input, Select, Textarea } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 import "../code/register";
 import "../computer/register";
 import "../plugins/register";
@@ -33,8 +33,12 @@ import {
   modelOptions,
 } from "../chat/bot-presets";
 import { registeredBotSections } from "../chat/bot-sections";
-import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
-import { field } from "../shared/ui";
+import { chatClient, errorMessage, type Bot, type OutputStyleKey } from "../chat/chat-client";
+import { OutputStylePicker } from "../output-styles/output-style-picker";
+import { styleLabel } from "../output-styles/output-styles-api";
+import { MentionTextarea } from "../chat/mention";
+import { useSidebarData } from "../chat/sidebar-data";
+import { Choice, field } from "../shared/ui";
 import { extractActions, reviewInstructions, reviewScore } from "./instruction-review";
 import { FRESH_INTERVIEW, type InterviewState } from "./interview-flow";
 import { InstructionsInterview } from "./instructions-interview";
@@ -48,6 +52,8 @@ export type Draft = {
   model: string;
   personality: string;
   instructions: string;
+  outputStyle: OutputStyleKey;
+  outputStyleId: string | null;
   visibility: "private" | "team";
 };
 const BLANK: Draft = {
@@ -57,6 +63,8 @@ const BLANK: Draft = {
   model: "",
   personality: "",
   instructions: "",
+  outputStyle: "default",
+  outputStyleId: null,
   visibility: "team",
 };
 
@@ -114,7 +122,7 @@ const STEPS = [
     id: "done",
     title: "Test drive",
     question: "Take it for a test drive",
-    lede: "Send it a real task. After its first answer you'll be asked if you're satisfied: that finishes setup.",
+    lede: "Send it a real task and see how it answers. You can change its settings at any time.",
   },
 ] as const;
 const CREATE_AT = STEPS.findIndex((s) => s.id === "review");
@@ -126,6 +134,12 @@ const PRIMARY_HARNESSES = [
     name: "Claude Code",
     badge: "Recommended",
     blurb: "Verified. Strong at reasoning, code and tool use.",
+  },
+  {
+    id: "decision",
+    name: "Decision model",
+    badge: undefined,
+    blurb: "Laya or Jev pick one of your answers. Fast and zero tokens; no free text.",
   },
   {
     id: "fixture",
@@ -157,7 +171,8 @@ const EXPERIMENTAL_HARNESSES = ["codex", "pi", "omp", "opencode", "cursor", "her
 /** Full-page, step-by-step "new bot" experience: explains each choice, reviews the instructions, then wires plugins, accounts and extras. */
 export function BotOnboarding() {
   const navigate = useNavigate();
-  const [bots, setBots] = useState<Bot[]>([]);
+  // The sidebar's list: a bot added here shows in the sidebar at once.
+  const { bots, setBots } = useSidebarData();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Draft>(BLANK);
   const [origin, setOrigin] = useState<string>("blank");
@@ -167,12 +182,6 @@ export function BotOnboarding() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
-  useEffect(() => {
-    chatClient
-      .bots()
-      .then(setBots)
-      .catch((e) => setError(errorMessage(e)));
-  }, []);
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
   const checks = useMemo(
     () => reviewInstructions(draft.personality, draft.instructions),
@@ -217,6 +226,8 @@ export function BotOnboarding() {
         model: draft.model.trim() || null,
         personality: draft.personality,
         instructions: draft.instructions,
+        outputStyle: draft.outputStyle,
+        outputStyleId: draft.outputStyleId,
       });
       setBot(created);
       setBots((l) => [...l, created]);
@@ -236,9 +247,15 @@ export function BotOnboarding() {
   };
   const replaceBot = (b: Bot) => {
     setBot((prev) => ({ ...prev, ...b, canEdit: true }));
+    setBots((l) => l.map((x) => (x.id === b.id ? { ...x, ...b, canEdit: true } : x)));
   };
+  // "new" opens an empty chat with this bot; a bare /chat ignores ?bot= and reopens the last chat.
   const finish = () =>
-    void navigate({ to: "/chat/{-$chatId}", search: bot ? { bot: bot.id } : {} });
+    void navigate(
+      bot
+        ? { to: "/chat/{-$chatId}", params: { chatId: "new" }, search: { bot: bot.id } }
+        : { to: "/chat/{-$chatId}" },
+    );
   const reachable = (i: number) =>
     bot ? i > CREATE_AT : i <= step || (i <= CREATE_AT && draft.name.trim().length > 0);
   const progress = Math.round(((step + 1) / STEPS.length) * 100);
@@ -502,57 +519,6 @@ function Group({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-/** A selectable tile backed by a real radio input, so arrow keys, focus and screen readers behave natively. */
-function Choice({
-  name,
-  value,
-  checked,
-  onSelect,
-  title,
-  art,
-  children,
-  className = "",
-}: {
-  name: string;
-  value: string;
-  checked: boolean;
-  onSelect: (v: string) => void;
-  title: ReactNode;
-  art?: ReactNode;
-  children?: ReactNode;
-  className?: string;
-}) {
-  return (
-    <label
-      className={`relative flex cursor-pointer gap-4 rounded-lg border p-4 text-sm transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring ${checked ? "border-primary bg-primary/[0.06]" : "bg-card hover:border-foreground/25"} ${className}`}
-    >
-      <input
-        type="radio"
-        name={name}
-        value={value}
-        checked={checked}
-        onChange={() => onSelect(value)}
-        className="sr-only"
-      />
-      {art}
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex items-center justify-between gap-2 font-medium">
-          {title}
-          <span
-            aria-hidden="true"
-            className={`grid size-4 shrink-0 place-items-center rounded-full ${checked ? "bg-primary text-primary-foreground" : "ring-1 ring-border"}`}
-          >
-            {checked && <CheckIcon className="size-3" />}
-          </span>
-        </span>
-        {children && (
-          <span className="text-sm leading-snug text-pretty text-muted-foreground">{children}</span>
-        )}
-      </span>
-    </label>
-  );
-}
-
 function StartStep({
   origin,
   bots,
@@ -797,6 +763,7 @@ export function InstructionsStep({
   setInterview: (s: InterviewState | ((s: InterviewState) => InterviewState)) => void;
   checks: ReturnType<typeof reviewInstructions>;
 }) {
+  const { bots } = useSidebarData();
   const [editing, setEditing] = useState(false);
   const [details, setDetails] = useState(false);
   const actions = useMemo(
@@ -810,6 +777,9 @@ export function InstructionsStep({
   return (
     <div className="max-w-3xl space-y-8 text-sm">
       <InstructionsInterview
+        interviewer={
+          draft.harness === "decision" ? bots.find((b) => b.kind === "chief") : undefined
+        }
         engine={{
           harness: draft.harness,
           model: draft.model || null,
@@ -819,11 +789,16 @@ export function InstructionsStep({
         }}
         state={interview}
         setState={setInterview}
-        draft={{ personality: draft.personality, instructions: draft.instructions }}
+        draft={{
+          personality: draft.personality,
+          instructions: draft.instructions,
+          outputStyle: draft.outputStyle,
+        }}
         onDraft={(d) =>
           set({
             instructions: d.instructions,
             ...(d.personality !== undefined ? { personality: d.personality } : {}),
+            ...(d.outputStyle ? { outputStyle: d.outputStyle, outputStyleId: null } : {}),
           })
         }
       />
@@ -848,20 +823,22 @@ export function InstructionsStep({
           )}
           {edit ? (
             <div className="space-y-6">
-              <Textarea
+              <MentionTextarea
                 title="Personality"
                 required={false}
+                bots={bots}
                 value={draft.personality}
-                onChange={(e) => set({ personality: e.target.value })}
+                onChange={(personality) => set({ personality })}
                 rows={4}
                 maxLength={4096}
                 placeholder="You are a precise, friendly … who …"
               />
-              <Textarea
+              <MentionTextarea
                 title="Instructions"
                 required={false}
+                bots={bots}
                 value={draft.instructions}
-                onChange={(e) => set({ instructions: e.target.value })}
+                onChange={(instructions) => set({ instructions })}
                 rows={16}
                 maxLength={16384}
                 placeholder="Start by … then … Answer with … Never …"
@@ -917,6 +894,19 @@ export function InstructionsStep({
           </div>
         </section>
       )}
+      <section aria-label="Output style" className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold">Output style</h2>
+          <p className="text-muted-foreground">
+            How the bot writes its answers. You can change it later in its settings.
+          </p>
+        </div>
+        <OutputStylePicker
+          name="output-style-new-bot"
+          value={{ outputStyle: draft.outputStyle, outputStyleId: draft.outputStyleId }}
+          onChange={set}
+        />
+      </section>
     </div>
   );
 }
@@ -1027,6 +1017,7 @@ export function ReviewStep({
             ),
             idx("instructions"),
           )}
+          {row("Output style", styleLabel(draft.outputStyle), idx("instructions"))}
         </dl>
         {draft.harness === "fixture" && (
           <Alert theme="warn">

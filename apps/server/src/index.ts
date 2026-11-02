@@ -12,6 +12,7 @@ import {
   searchServices,
   knowledgeServices,
   wikiServices,
+  outputStyleServices,
   artifactServices,
   botDatabaseServices,
   chatServices,
@@ -57,6 +58,7 @@ createApp({
   search: searchServices,
   knowledge: knowledgeServices,
   wiki: wikiServices,
+  outputStyles: outputStyleServices,
   artifacts: artifactServices,
   discussions: discussionServices,
   teams: teamServices,
@@ -99,21 +101,23 @@ ticker.zettaTick = setInterval(() => {
   void chatServices.chat.drainQueues().catch(() => {});
 }, 30_000);
 
-// Laya runs inside the server process; warm it in the background (set ZETTA_LAYA_PRELOAD=0 to load on first use).
-if (process.env.ZETTA_LAYA_PRELOAD !== "0") void decisionServices.decisions.warm();
-
 // Generations that were running when the previous process died are marked interrupted (never silently "complete").
-// Then discussion turns that were running stall (the owner decides to resume) and inbound chats being delivered are retried.
+// Then discussion turns that were running are queued again and inbound chats being delivered are retried.
+// A `bun --hot` reload keeps the process (and its running turns) alive, so discussion turns are recovered once per process.
+const recovered = globalThis as { zettaDiscussionsRecovered?: boolean };
 void chatServices.chat
   .recoverInterrupted()
   .then(() =>
     Promise.all([
-      discussionServices.store.recover(),
+      recovered.zettaDiscussionsRecovered ? 0 : discussionServices.store.recover(),
       inboundServices.inbound.recover(),
       chatServices.chat.recoverQueue(),
     ]),
   )
-  .then(() => loopServices.driver.tick())
+  .then(() => {
+    recovered.zettaDiscussionsRecovered = true;
+    return loopServices.driver.tick();
+  })
   .then(() => {
     // Once per process: a `bun --hot` reload re-runs this file while the runs it would "resume" are still alive.
     const g = globalThis as { zettaResumed?: boolean };

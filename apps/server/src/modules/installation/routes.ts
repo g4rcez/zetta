@@ -1,7 +1,13 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
-import { InvalidInstallationError, type InstallationService, type NetworkMode } from "./service";
+import { isLayaTag } from "@zetta/core/laya-languages";
+import {
+  InvalidInstallationError,
+  withLayaModel,
+  type InstallationService,
+  type NetworkMode,
+} from "./service";
 
 export type InstallationServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -22,6 +28,8 @@ const patchInput = z.strictObject({
     .nullable()
     .optional(),
   onboarding: z.enum(["pending", "done"]).optional(),
+  laya: z.enum(["on", "off"]).optional(),
+  layaLanguages: z.array(z.string().refine(isLayaTag)).max(64).optional(),
 });
 
 export function createInstallationRoutes(
@@ -29,7 +37,7 @@ export function createInstallationRoutes(
   trustedOrigins: readonly string[],
 ) {
   const body = async (settings: Awaited<ReturnType<typeof installation.load>>) => ({
-    ...settings,
+    ...withLayaModel(settings),
     restartRequired: settings.networkMode !== runningMode,
   });
   function mapError(e: unknown) {
@@ -39,8 +47,10 @@ export function createInstallationRoutes(
         e.code,
         e.message,
       );
-    if (e instanceof z.ZodError || e instanceof InvalidInstallationError)
+    if (e instanceof InvalidInstallationError)
       return fail(400, "INVALID_REQUEST", "Network mode needs an https public URL.");
+    if (e instanceof z.ZodError)
+      return fail(400, "INVALID_REQUEST", "Check the details and try again.");
     return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
   }
   return new Elysia({ prefix: "/api/installation", normalize: false })

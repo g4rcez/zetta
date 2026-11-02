@@ -1,8 +1,14 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, redirect } from "@tanstack/react-router";
 
 import { Logo } from "@/components/logo";
+import { authClient } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/")({
+  // Signed-in people land on the dashboard; everyone else sees the hero.
+  beforeLoad: async () => {
+    const session = await authClient.getSession().catch(() => undefined);
+    if (session?.data) throw redirect({ to: "/dashboard" });
+  },
   component: HomeComponent,
 });
 
@@ -13,8 +19,8 @@ function HomeComponent() {
         <Logo size={96} className="mx-auto" />
         <h1 className="text-4xl font-semibold tracking-tight">Your team of bots, in one place.</h1>
         <p className="mx-auto max-w-xl text-base text-muted-foreground">
-          Chat with a chief of staff and specialists, give them memory, schedule routines and build
-          workflows. Everything stays private to you.
+          Chat with a chief of staff and specialists, give them a shared wiki, schedule routines and
+          build workflows. Everything stays private to you.
         </p>
       </div>
       <div className="flex justify-center gap-3">
@@ -25,11 +31,10 @@ function HomeComponent() {
           Open chat
         </Link>
         <Link
-          to="/studio/$tab"
-          params={{ tab: "routines" }}
+          to="/routines"
           className="rounded-md border bg-card px-5 py-2.5 font-medium transition-colors hover:bg-muted"
         >
-          Studio
+          Routines
         </Link>
       </div>
     </div>

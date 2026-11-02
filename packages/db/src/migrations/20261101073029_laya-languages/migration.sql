@@ -1,0 +1,1 @@
+ALTER TABLE "installation_settings" ADD COLUMN "laya_languages" jsonb DEFAULT '["en"]' NOT NULL;

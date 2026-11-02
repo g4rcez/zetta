@@ -33,6 +33,8 @@ type Value = {
   loadChats: () => Promise<Conversation[]>;
   /** Optimistic: the row changes at once and is put back when the server refuses. */
   updateChat: (id: string, patch: ChatPatch) => void;
+  /** Optimistic: the row leaves at once and the server delete waits 6 seconds, so the Undo toast can bring it back. */
+  deleteChat: (id: string) => void;
   spaces: Workspace[];
   addSpace: (name: string, parentId?: string) => void;
   rooms: DiscussionListItem[] | undefined;
@@ -44,6 +46,8 @@ type Value = {
 };
 
 const Ctx = createContext<Value | null>(null);
+
+const UNDO_MS = 6000;
 
 /**
  * What the shared sidebar shows (bots, chats, workspaces, rooms), kept above the pages so moving between Chat and Rooms does not
@@ -102,6 +106,32 @@ export function SidebarDataProvider({ children }: { children: ReactNode }) {
     },
     [fail],
   );
+  const deleteChat = useCallback(
+    (id: string) => {
+      const gone = chatsRef.current.find((c) => c.id === id);
+      if (!gone) return;
+      setChats((all) => all.filter((c) => c.id !== id));
+      const timer = setTimeout(
+        () =>
+          void chatClient.deleteConversation(id).catch((e) => {
+            setChats((all) => (all.some((c) => c.id === id) ? all : [gone, ...all]));
+            fail(e);
+          }),
+        UNDO_MS,
+      );
+      toast(`Deleted “${gone.title}”`, {
+        duration: UNDO_MS,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            clearTimeout(timer);
+            setChats((all) => (all.some((c) => c.id === id) ? all : [gone, ...all]));
+          },
+        },
+      });
+    },
+    [fail],
+  );
   const addSpace = useCallback(
     (name: string, parentId?: string) =>
       void chatClient
@@ -157,6 +187,7 @@ export function SidebarDataProvider({ children }: { children: ReactNode }) {
       chatsLoaded,
       loadChats,
       updateChat,
+      deleteChat,
       spaces,
       addSpace,
       rooms,
@@ -171,6 +202,7 @@ export function SidebarDataProvider({ children }: { children: ReactNode }) {
       chatsLoaded,
       loadChats,
       updateChat,
+      deleteChat,
       spaces,
       addSpace,
       rooms,

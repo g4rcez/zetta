@@ -9,7 +9,10 @@ import {
   codeWorkspace,
   createLimiter,
   defaultLimiter,
+  botEmail,
   dockerArgs,
+  ghLoggedIn,
+  gitIdentity,
   gitEnv,
   harnessCommands,
   harnessHome,
@@ -326,16 +329,75 @@ describe("code access", () => {
     expect(codeWorkspace("../evil", "/data/code")).toBe("/data/code/___evil");
   });
   test("git env carries identity, and the token only through a github.com credential helper", () => {
-    const plain = gitEnv("Dev <bot>");
+    const dev = { name: "Dev", email: "dev@example.invalid", mode: "fixed" } as const;
+    const plain = gitEnv({ ...dev, name: "Dev <bot>" });
     expect(plain.GIT_AUTHOR_NAME).toBe("Dev  bot");
     expect(plain.GIT_CONFIG_COUNT).toBeUndefined();
-    const withToken = gitEnv("Dev", { GITHUB_TOKEN: "ghp_secret" });
+    const withToken = gitEnv(dev, { GITHUB_TOKEN: "ghp_secret" });
     expect(withToken.GIT_CONFIG_KEY_0).toBe("credential.https://github.com.helper");
     expect(
       Object.entries(withToken)
         .filter(([k]) => k !== "GH_TOKEN")
         .some(([, v]) => v.includes("ghp_secret")),
     ).toBe(false);
+  });
+  test("a fixed identity signs author and committer with it, one line each", () => {
+    const env = gitEnv({ name: "Ana\nEvil", email: "ana@example.invalid\nX", mode: "fixed" });
+    expect(env).toMatchObject({
+      GIT_AUTHOR_NAME: "Ana Evil",
+      GIT_COMMITTER_NAME: "Ana Evil",
+      GIT_AUTHOR_EMAIL: "ana@example.invalidX",
+      GIT_COMMITTER_EMAIL: "ana@example.invalidX",
+    });
+  });
+  test("git-config mode leaves the identity to git when it has one, else uses the bot's", () => {
+    const who = { name: "Dev", email: "dev@zettabot.app", mode: "git-config" } as const;
+    const withGlobal = gitEnv(who, {}, true);
+    expect(withGlobal.GIT_AUTHOR_EMAIL).toBeUndefined();
+    expect(withGlobal.GIT_COMMITTER_NAME).toBeUndefined();
+    expect(gitEnv(who, {}, false).GIT_AUTHOR_EMAIL).toBe("dev@zettabot.app");
+    // A fixed identity ignores the global one.
+    expect(gitEnv({ ...who, mode: "fixed" }, {}, true).GIT_AUTHOR_EMAIL).toBe("dev@zettabot.app");
+  });
+  test("the bot address is its name as a lower-case slug", () => {
+    expect(botEmail("Code Reviewer")).toBe("code_reviewer@zettabot.app");
+    expect(botEmail("Ünïcode Bot!")).toBe("unicode_bot@zettabot.app");
+    expect(botEmail("!!!")).toBe("bot@zettabot.app");
+  });
+  test("gitIdentity needs both a global name and email in the run's home", async () => {
+    const both = await mkdtemp(join(tmpdir(), "zetta-home-"));
+    await writeFile(
+      join(both, ".gitconfig"),
+      "[user]\n\tname = Ana\n\temail = ana@example.invalid\n",
+    );
+    const nameOnly = await mkdtemp(join(tmpdir(), "zetta-home-"));
+    await writeFile(join(nameOnly, ".gitconfig"), "[user]\n\tname = Ana\n");
+    const none = await mkdtemp(join(tmpdir(), "zetta-home-"));
+    expect(await gitIdentity(both)).toBe(true);
+    expect(await gitIdentity(nameOnly)).toBe(false);
+    expect(await gitIdentity(none)).toBe(false);
+  });
+  test("gitIdentity is false when git is not installed", async () => {
+    expect(await gitIdentity("/nowhere-no-git", () => null)).toBe(false);
+  });
+  test("with the server's gh login, git asks the gh CLI and no token is set", () => {
+    const env = gitEnv(
+      { name: "Dev", email: "dev@example.invalid", mode: "fixed" },
+      { ZETTA_GITHUB_AUTH: "cli" },
+    );
+    expect(env.GIT_CONFIG_KEY_0).toBe("credential.https://github.com.helper");
+    expect(env.GIT_CONFIG_VALUE_0).toBe("!gh auth git-credential");
+    expect(env.GH_TOKEN).toBeUndefined();
+    // An account token still wins over the CLI login.
+    expect(
+      gitEnv(
+        { name: "Dev", email: "dev@example.invalid", mode: "fixed" },
+        { ZETTA_GITHUB_AUTH: "cli", GITHUB_TOKEN: "ghp_x" },
+      ).GH_TOKEN,
+    ).toBe("ghp_x");
+  });
+  test("ghLoggedIn is false when the gh CLI is not installed", async () => {
+    expect(await ghLoggedIn("/nowhere-no-gh", () => null)).toBe(false);
   });
   test("the docker command mounts the user's workspace instead of a tmpfs", () => {
     const cfg = { image: "i", network: "bridge", memory: "1g", cpus: "1", pids: 64, bin: "docker" };
@@ -359,7 +421,7 @@ describe("code access", () => {
       prompt: "hi",
       model: null,
       userId: "alice",
-      code: { author: "dev" },
+      code: { name: "dev", email: "dev@example.invalid", mode: "fixed" },
       resolve: () => fake,
     });
     delete process.env.ZETTA_CODE_ROOT;

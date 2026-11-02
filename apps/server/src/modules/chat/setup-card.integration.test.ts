@@ -86,6 +86,7 @@ suite("setup cards against compose postgres", () => {
       openScope: () => undefined,
       runConfig: async () => undefined,
       tokenOf: async () => undefined,
+      isBound: async () => false,
     } as never,
   );
   const features = createFeaturesService(db, fakeRun as never);

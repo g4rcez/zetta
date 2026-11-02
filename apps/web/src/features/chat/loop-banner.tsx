@@ -11,6 +11,8 @@ import { Button } from "@zetta/ui/components/button";
 import { cn } from "@zetta/ui/lib/utils";
 
 import { errorMessage, loopsOf, setLoop, type GoalLoop } from "./chat-client";
+import { useTimeFormat } from "@/features/preferences/preferences";
+import { formatTime } from "@/features/preferences/time-format";
 
 /**
  * The conversation's goal loop, if any: polls while one is running or paused so each new step shows up, and calls `onStep` on every poll
@@ -91,6 +93,7 @@ export function LoopBanner({
   onChange: (loop: GoalLoop) => void;
   onError: (message: string) => void;
 }) {
+  const tf = useTimeFormat();
   const [busy, setBusy] = useState(false);
   if (!loop || (loop.status !== "running" && loop.status !== "paused" && loop.status !== "done"))
     return null;
@@ -140,7 +143,7 @@ export function LoopBanner({
         {(loop.reason || loop.progress) && (
           <p className="truncate text-xs text-muted-foreground">
             {waiting
-              ? `${loop.reason ?? "Retrying"} · next try at ${retryAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+              ? `${loop.reason ?? "Retrying"} · next try at ${formatTime(retryAt, tf)}`
               : loop.status === "paused" && loop.reason
                 ? loop.reason
                 : loop.progress}

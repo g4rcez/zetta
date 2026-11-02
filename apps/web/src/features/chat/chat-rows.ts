@@ -195,6 +195,33 @@ export const isSavedUserEcho = (live: Row, saved: Row[], now = Date.now()) =>
       now - new Date(s.createdAt).getTime() < 60_000,
   );
 
+// A saved message keeps the same Row object while it is unchanged, so memoized rows skip rendering after a reaction or reload.
+const rowCache = new WeakMap<Message, Row>();
+export const asRow = (m: Message): Row => {
+  let row = rowCache.get(m);
+  if (!row) {
+    row = { ...m, createdAt: m.createdAt ?? new Date(0).toISOString() };
+    rowCache.set(m, row);
+  }
+  return row;
+};
+
+/**
+ * The rows of a transcript: saved top-level messages, then the live rows that are not saved yet. Every screen that shows a bot
+ * conversation builds its rows here. A saved reply still "running" (the page reloaded mid-turn) yields to its live row, which
+ * carries the activity, timeline and plan. A live user row already saved under another id is dropped.
+ */
+export function transcriptRows(saved: Message[], live: Row[]): Row[] {
+  const top = saved.filter((m) => !m.parentMessageId).map(asRow);
+  const streaming = new Set(live.map((r) => r.id));
+  const settled = new Set(top.filter((r) => r.status !== "running").map((r) => r.id));
+  const base = top.filter((r) => r.status !== "running" || !streaming.has(r.id));
+  const extra = live.filter(
+    (r) => !r.parentMessageId && !settled.has(r.id) && !isSavedUserEcho(r, top),
+  );
+  return extra.length ? [...base, ...extra] : base;
+}
+
 export const summaryOf = (messages: ZettaUIMessage[]) => {
   for (const m of messages)
     for (const p of m.parts) if (p.type === "data-summary") return p.data.text;

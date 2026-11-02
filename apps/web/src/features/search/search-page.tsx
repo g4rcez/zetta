@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { errorMessage } from "../chat/chat-client";
 import { Empty, list, listItem, when } from "../shared/ui";
 import { hitTarget, KIND_LABEL, searchApi, type SearchHit } from "./search-api";
+import { useTimeFormat } from "@/features/preferences/preferences";
 
 /** The snippet with the matched words in <mark>. */
 const Snippet = ({ text }: { text: string }) => (
@@ -20,8 +21,9 @@ const Snippet = ({ text }: { text: string }) => (
   </>
 );
 
-/** Full-page search over the user's chats, messages, memory, instructions, artifacts and tasks (`/search?q=`). */
+/** Full-page search over the user's chats, messages, wiki items (what bots remember too), artifacts and tasks (`/search?q=`). */
 export function SearchPage({ initial }: { initial: string }) {
+  const tf = useTimeFormat();
   const [text, setText] = useState(initial);
   const [hits, setHits] = useState<SearchHit[]>();
   const [error, setError] = useState<string>();
@@ -57,7 +59,7 @@ export function SearchPage({ initial }: { initial: string }) {
         value={text}
         maxLength={200}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Search chats, messages, memory, tasks and artifacts"
+        placeholder="Search chats, messages, wiki, tasks and artifacts"
         aria-label="Search"
         className="w-full rounded-lg border bg-card px-3 py-2 text-sm"
       />
@@ -75,7 +77,7 @@ export function SearchPage({ initial }: { initial: string }) {
               <Link
                 to={t.to as never}
                 params={t.params as never}
-                search={{} as never}
+                search={(t.search ?? {}) as never}
                 className="flex items-start gap-3"
               >
                 <span className="mt-0.5 shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
@@ -93,7 +95,7 @@ export function SearchPage({ initial }: { initial: string }) {
                   dateTime={h.updatedAt}
                   className="shrink-0 text-xs tabular-nums text-muted-foreground"
                 >
-                  {when(h.updatedAt)}
+                  {when(h.updatedAt, tf)}
                 </time>
               </Link>
             </li>

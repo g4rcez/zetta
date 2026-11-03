@@ -4,7 +4,7 @@
 
 - codeQualityStatus: BLOCK
 - recommendation: REQUEST_CHANGES
-- reportPath: .omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G001-preserve-all-existing-tracked-untrac/a1/identity-review/G001-preserve-all-existing-tracked-untrac-code-review.md
+- reportPath: local evidence
 - blockers: H1 raw session-error logging on identity requests; M1 incorrect identity response statuses in observability.
 
 ## CRITICAL
@@ -21,14 +21,28 @@ Independent minimal reproduction, no actual auth context/network/database:
 import { createAuthMiddleware } from "./node_modules/.bun/evlog@2.33.1+4cc2464a3407e6c5/node_modules/evlog/dist/better-auth/index.mjs";
 const seen: unknown[][] = [];
 const original = console.warn;
-console.warn = (...args) => { seen.push(args); };
-const middleware = createAuthMiddleware({ api: { getSession: async () => {
-  throw Error("SYNTHETIC_PRIVATE_SENTINEL");
-} } }, { maskEmail: true });
+console.warn = (...args) => {
+  seen.push(args);
+};
+const middleware = createAuthMiddleware(
+  {
+    api: {
+      getSession: async () => {
+        throw Error("SYNTHETIC_PRIVATE_SENTINEL");
+      },
+    },
+  },
+  { maskEmail: true },
+);
 await middleware({ set: () => {} }, new Headers(), "/api/identity/status");
 console.warn = original;
-console.log(JSON.stringify({ rawErrorLogged: seen.some(args => args.some(arg =>
-  arg instanceof Error && arg.message === "SYNTHETIC_PRIVATE_SENTINEL")) }));
+console.log(
+  JSON.stringify({
+    rawErrorLogged: seen.some((args) =>
+      args.some((arg) => arg instanceof Error && arg.message === "SYNTHETIC_PRIVATE_SENTINEL"),
+    ),
+  }),
+);
 ```
 
 Executed with `bun --no-env-file -e` and the above script: exit 0, `{"rawErrorLogged":true}`. A first broader eval with Elysia composition crashed Bun 1.3.14 (exit 133); it supplies no behavioral evidence. The narrowed installed-middleware reproduction above succeeded. No real secret was used.

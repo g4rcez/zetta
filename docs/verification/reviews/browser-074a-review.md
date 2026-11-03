@@ -29,7 +29,7 @@ eadaafc26b5e8e7c53a3c95a9015a0b514930885169ef0f21ba8f509026674c2  browser-comput
 e46ee7f0b12c5cd9f6d164b49873428a59e9076539523ed90577e02ce33aad27  browser-computer/viewer-sources.json
 ```
 
-The receipt root is `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1`. A separate read-only Bun check independently resolved all seven local Markdown links with zero missing targets and counted 36 source entries. The author's `check.ts` was read rather than executed because it writes its existing receipt; these checks establish document integrity only.
+The receipt root is `local evidence`. A separate read-only Bun check independently resolved all seven local Markdown links with zero missing targets and counted 36 source entries. The author's `check.ts` was read rather than executed because it writes its existing receipt; these checks establish document integrity only.
 
 ## Technical assessment
 

@@ -26,7 +26,7 @@ Changed paths:
 - `packages/auth/src/operator-provisioning.test.ts`
 - `tasks/004e4-provision-operator-credentials.md`
 
-Evidence manifest: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G001-preserve-all-existing-tracked-untrac/a1/credential-source-evidence.md`.
+Evidence manifest: `local evidence`.
 
 Focused invocation:
 

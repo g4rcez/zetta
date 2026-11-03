@@ -22,7 +22,7 @@ The proposal specifies bounds, normalized mutation replay/CAS, safe visible/priv
 
 Status: design accepted. [Independent CLEAR review](../docs/reviews/bot-configuration-020a-review.md) and coordinator source inspection permit a separately assigned pure020b slice. Team-service locking, epoch, native readiness and public producer integration remain gated. Parent020 is incomplete.
 
-Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/bot-020a/`.
+Evidence: `local evidence`.
 
 No tests, database, browser or real-harness scenarios were executed: this assignment produces an architecture proposal. The document names the future binary observables and integration gates rather than claiming those proofs. Existing accepted005/006/007/009 contracts and010's membership-epoch gate are reused; no future schema field is assumed to exist.
 

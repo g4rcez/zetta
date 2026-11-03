@@ -16,4 +16,4 @@ Validation performed:13 focused tests/57 assertions pass; strict TypeScript and 
 
 Next coordinator step: review the fixture delta and use the existing fixed identity-lock-order launcher mode for a fresh dedicated target run. C2 session-FK and C3 future020 controls remain a separate slice. No production fix is included.
 
-Evidence: [fixture-correction report](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/identity-005f2/utf8-fixture-correction/report.md), [initial source receipt](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/identity-005f2/report.md), [coordinator run1 transcript](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/identity-005f2/coordinator-run1.md).
+Evidence: fixture-correction report, initial source receipt, coordinator run1 transcript.

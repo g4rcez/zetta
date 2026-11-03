@@ -17,7 +17,7 @@ Five functions/ten triggers reject singleton mutation, history DELETE/TRUNCATE, 
 
 ## Evidence and limitations
 
-[Evidence report](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/dispatch-010c2/report.md) contains command/scenario/artifact mapping, generator receipts, diagnostics and final source hashes.
+Evidence report contains command/scenario/artifact mapping, generator receipts, diagnostics and final source hashes.
 
 Red-first focused import failed before implementation. Final focused invocation `bun --no-env-file test packages/db/src/schema/dispatch.test.ts`:7 pass,0 fail,215 assertions. Scoped strict TypeScript and DB package check-types both exit0. Four source LSP requests returned no diagnostics; the automatic JSON evidence hook reports unavailable Biome and no installation was attempted. Repeat installed generator reports no schema changes. Generated-object inspection found exactly three dispatch tables,22 checks, three FKs/three indexes, five guard functions/ten triggers; no existing table DDL. The accepted009 custom migration hash remains unchanged.
 

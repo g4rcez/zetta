@@ -14,7 +14,7 @@ Code preparation first: failing-first inert/target/mode tests, focused existing 
 
 ## Prepared source handoff
 
-Source preparation is complete and frozen for coordinator review; no actual DB run yet. Final focused38tests/455assertions, strict TypeScript and shell syntax exit0. Evidence root: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-009c3/`.
+Source preparation is complete and frozen for coordinator review; no actual DB run yet. Final focused38tests/455assertions, strict TypeScript and shell syntax exit0. Evidence root: `local evidence`.
 
 `run-readback-proof-client` opens one explicitly configured pool/client, reserves it with the existing lifecycle owner, calls the unchanged existing service verifier through its new test-only alias, then checks exact15tables and the exact parent backend PID's database/role/application and granted40042/2 advisory lock. The parent owns that lock throughout. It does not apply migrations, reset fixtures, acquire another baseline lock or construct a database view before these checks. The URL is restricted to the dedicated loopback endpoint/role/database with launcher-generated64hex password and no URL options. All setup failures suppress private URL/SQL/driver detail and close the owned pool/client.
 

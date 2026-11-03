@@ -20,6 +20,6 @@ Terminal replay compares normalized status/effect/result (including result seque
 
 ## Verification and remaining gates
 
-[Evidence report](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-contract-009b2/report.md): red-first missing-module failures, then19 passing tests/138 assertions; focused strict TypeScript exit0; four TypeScript files LSP-clean, including final changed test recheck. Modules130/107 lines and tests91/103 lines, below250. Source hashes bind evidence. No installs, provider calls, DB/server/container starts or Git mutations.
+Evidence report: red-first missing-module failures, then19 passing tests/138 assertions; focused strict TypeScript exit0; four TypeScript files LSP-clean, including final changed test recheck. Modules130/107 lines and tests91/103 lines, below250. Source hashes bind evidence. No installs, provider calls, DB/server/container starts or Git mutations.
 
 009c still owns issued ActiveActor plus fresh membership locks, owner-scoped real row parsing, exact snapshot comparison and atomic persistence.009b1 owns schema/migration constraints. Actual concurrent terminal races, restart storage and dispatcher capacity remain unproved. Parent009 is not completed by these pure tests. Freeze these files for review; any schema mismatch must be coordinated rather than patched across ownership.

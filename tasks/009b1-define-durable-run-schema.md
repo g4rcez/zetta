@@ -26,7 +26,7 @@ No cross-row status projection trigger is added; service parsing and transitions
 
 ## Offline verification
 
-Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-009b1/`.
+Evidence: `local evidence`.
 
 - `tests.log`: `bun --no-env-file test packages/db/src/schema/runs.test.ts packages/db/src/schema/connections.test.ts packages/db/src/schema/identity.test.ts` exits0;20 tests/299 assertions. Isolated imports deny network/startup/timers. SQL parameter preservation, typed bounds, ownership/unique graph, generated table scope/snapshot ordering and custom trigger source structure are checked. These are offline checks, not SQL enforcement tests.
 - `strict.log`: scoped TS6 compilation with strict/exactOptionalPropertyTypes/noUncheckedIndexedAccess/noUnusedLocals/noUnusedParameters/noFallthroughCasesInSwitch exits0. `package-types.log`: standard package check-types exits0.

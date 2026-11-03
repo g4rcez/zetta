@@ -34,6 +34,7 @@ Unexpected mutation transaction rejection is fixed outcome_unknown; read rejecti
 ## Independently repeated checks
 
 All exit0:
+
 - bun --no-env-file test apps/server/src/modules/runtime/runs.test.ts apps/server/src/modules/runtime/run-rows.test.ts apps/server/src/modules/runtime/run-contract.test.ts apps/server/src/modules/runtime/run-state.test.ts: **42 pass,0 fail,273 assertions**.
 - Exact strict command in run-009c1/strict-final.log (strict,exactOptionalPropertyTypes,noUncheckedIndexedAccess,noUnused,noFallthrough,verbatimModuleSyntax): zero diagnostics.
 - SHA256 recomputation matches all four frozen entries below.
@@ -49,6 +50,7 @@ No deletion/prose assertion, unsafe type escape, generic repository layer or nee
 ## Required009c2 proof
 
 Use the separately approved dedicated PostgreSQL proof, not a competing service:
+
 - Issued A/B/admin/forged/removed identities; fresh membership lock behavior for every method and replay, including removal ordering.
 - Same-owner/key identical and conflicting submit; another-owner independent key; concurrent duplicate submit produces exactly one run/attempt; exact canonical immutable snapshot readback.
 - Real deferred constraints and atomic rollback of run+attempt insert/update failures; owner/current-generation/revision predicates.
@@ -66,5 +68,4 @@ Public producer resource/readiness authorization, actual backend fact provenance
 - runs.test.ts: 44b5329bf2f26f40f1af257e6bbb7282def95143a054489e949bff957f019bd3
 - run-rows.test.ts: 6a5cee88874c8898fd41716e6a6d454dec61dff3b21c8b1a975989eb10cf1591
 
-Evidence root: .omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-009c1/. Review made no product/schema/launcher/environment/Git edits.
-
+Evidence root: local evidence Review made no product/schema/launcher/environment/Git edits.

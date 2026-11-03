@@ -24,6 +24,6 @@ Model selector is a dedicated1..128 ASCII string: `[A-Za-z0-9][A-Za-z0-9._:/-]*`
 - The optional skill audit script failed to resolve its TypeScript dependency from both root and server working directories; no install was attempted and no audit pass is claimed. Strict compiler/LSP results are independent and recorded.
 - All runtime values are copied/frozen through readonly schemas. Unsupported slots, malformed Unicode, byte overflow, duplicate keys, unknown fields, altered canonical bytes and invalid CAS arguments fail with fixed BotContractError codes without input/cause metadata.
 
-Evidence and exact commands: [bot-020b report](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/bot-020b/report.md). Source hashes and bounded line counts are retained there.
+Evidence and exact commands: bot-020b report. Source hashes and bounded line counts are retained there.
 
 Next consumer: a separately assigned020c schema design may use these value types/canonical encodings; future020d must enforce actual issued actors, membership/owner visibility, resource queries, transactional CAS and same-operation repair. Epoch, normalized identity locking, actual native evidence, human satisfaction, same-transaction009 producer and010 action gates remain blocked until separately implemented/proved. No DB/schema, routes/UI, provider/credential, environment, VM/service, package or Git work occurred; no runtime resources require cleanup.

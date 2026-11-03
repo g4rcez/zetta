@@ -40,10 +40,9 @@ bash -n scripts/verify-identity-auth.sh
 
 Final exit 0. Initial strict diagnostics identified a redundant Promise truthiness assertion and inferred optional fixture keys; both were corrected without type assertions. Source LSP reports no diagnostics.
 
-Artifacts: current attempt directory `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G001-preserve-all-existing-tracked-untrac/a1/`, prefix `credential-cli-proof-`: `red.log`, `tests.log`, `types.log`, `validation.log`, and `evidence.md`. Final runtime receipt is `credential-cli-proof-runtime.log`: all six named checks, owned cleanup and launcher exit 0. `credential-cli-proof-source.sha256` fingerprints final proof, command, launcher and relevant dependency source.
+Artifacts: current attempt directory `local evidence`, prefix `credential-cli-proof-`: `red.log`, `tests.log`, `types.log`, `validation.log`, and `evidence.md`. Final runtime receipt is `credential-cli-proof-runtime.log`: all six named checks, owned cleanup and launcher exit 0. `credential-cli-proof-source.sha256` fingerprints final proof, command, launcher and relevant dependency source.
 
 Limits: actual CLI source uses no route. The proof uses real in-process Better Auth handler for authentication, not browser transport. Cookie-cache-enabled mode, in-flight cancellation and production targets are outside this proof. Root RFC-004/004e completion remains coordinator-owned.
-
 
 ### Actual runtime handoff
 

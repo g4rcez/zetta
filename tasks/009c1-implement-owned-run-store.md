@@ -34,7 +34,7 @@ RunStoreError codes are `not_found`, `request_conflict`, `result_pending`, `outc
 
 ## Offline evidence and limits
 
-Evidence root: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-009c1/`.
+Evidence root: `local evidence`.
 
 - Red-first row/store tests failed on missing implementation modules; retained `red-rows.log`/`red-store.log`.
 - Final focused tests42pass/273assertions across runs, run-rows, accepted run-contract and run-state; `focused-final.log` includes exact invocation and exit0. New tests cover canonical/date/link/state/result corruption, safe frozen projections, positive pending cases, historical own-facts negatives, syntax/provenance before transaction, fixed outer failure classification, inert imports and installed Drizzle parameter binding.

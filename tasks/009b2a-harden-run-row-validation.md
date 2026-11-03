@@ -8,7 +8,7 @@ M1: `parseRunState` and `parseRunDto` now reject nonnull owner cancellation inte
 
 Added individual negative tests for all six incompatible cancellation reader cases and all four missing-result cases, with running/cancelled intent, completion-first null intent, complete results and cancelled/interrupted null results as positive controls. Added explicit preservation of normalized terminal replay: after cancellation, equal cancelled/known/result facts replay across differing raw succeeded/failed outcomes while preserving original timestamp/revision. No new terminal receipt identity was introduced.
 
-[Evidence](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-contract-009b2a/report.md): red-first20 pass/10 fail; final30 pass/179 assertions; strict TS with exactOptionalPropertyTypes exit0; four-file LSP clean; original independent M1/M2 probes exit0 after correction. Prior failure artifacts remain untouched. Frozen hashes recorded for the next reviewer.
+Evidence: red-first20 pass/10 fail; final30 pass/179 assertions; strict TS with exactOptionalPropertyTypes exit0; four-file LSP clean; original independent M1/M2 probes exit0 after correction. Prior failure artifacts remain untouched. Frozen hashes recorded for the next reviewer.
 
 No database/runtime/native proof performed. Actual owner membership, row mapping, persistence CAS and producer/resource authorization remain009c/010 and downstream work.
 

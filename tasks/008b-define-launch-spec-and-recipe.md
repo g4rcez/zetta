@@ -17,6 +17,7 @@ Implemented strict version-1 fixture-v1 LaunchSpec using the existing RunContext
 Implemented trusted FixtureLaunchPolicy construction for installation identity, exact lowercase sha256 image and policy version. expandFixtureRecipe produces an immutable Docker-shaped expected configuration with fixed Bun entrypoint, bounded fixture-case argv, fixed environment, non-root UID, private scratch, read-only root, dropped capabilities, no-new-privileges, finite CPU/RAM/PID/scratch policy and network none. No caller path/mount/env/CLI choice is admitted. identityDigest additionally binds installation/image/policy; it is not an authentication token.
 
 Exports:
+
 - launch-spec.ts: LaunchSpec, LaunchAdmission, LaunchSpecError, parseLaunchSpec, digestLaunchSpec.
 - launch-recipe.ts: FixtureLaunchPolicy, createFixtureLaunchPolicy, expandFixtureRecipe, FixtureLaunchRecipe.
 
@@ -24,7 +25,8 @@ Exports:
 
 Final-source acceptance: [008b1](008b1-fix-writable-fixture-bootstrap.md) corrects the independently reproduced unwritable initial cwd. The initial directory is now `/scratch`; the trusted fixed fixture must create owned0700 home/work and change into work before untrusted input. Root and [independent reviewer](../docs/verification/reviews/runtime-008b-review.md) observed62tests90assertions, strict diagnostics and pure driver pass. Root also independently repeated actual old/fixed container controls: old directory unwritable, fixed owned/private work/home writable, cleanupVerified true and quarantineRequired false, exit0. Recipe SHA256 `b71067c2cf05258b2f4ae72e97f02e8f0e67559efd7e6fb06a1257cbb97cbb64`. This accepts descriptor policy, not the unbuilt final image/bootstrap or a running supervisor. Historical62/88 evidence below predates that correction.
 
-[Exact scenario matrix, commands, source hashes, tooling limits and cleanup](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008b/report.md).
+Exact scenario matrix, commands, source hashes, tooling limits and cleanup.
+
 - Red first: missing modules, exit 1.
 - Final: `bun --no-env-file test apps/server/src/modules/runtime/launch-spec.test.ts apps/server/src/modules/runtime/launch-recipe.test.ts` => 62 pass, 0 fail, 88 assertions.
 - Strict TypeScript no-emit passes; LSP on all four files reports no diagnostics.

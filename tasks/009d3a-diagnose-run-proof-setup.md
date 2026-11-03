@@ -1,6 +1,6 @@
 # RFC-009d3a: Diagnose observed current run setup failure
 
-Status: source frozen for coordinator review, 2026-10-22. Offline regression61 tests/899 assertions, strict and five TypeScript diagnostics passed. Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-009d3a/`. Coordinator reports actual run-schema85600 failed before scenarios with exact service cleanup passed; this worker did not execute that run. Cause remains unobserved. 009d5b preparation remains paused, with no new producer proof files created.
+Status: source frozen for coordinator review, 2026-10-22. Offline regression61 tests/899 assertions, strict and five TypeScript diagnostics passed. Evidence: `local evidence`. Coordinator reports actual run-schema85600 failed before scenarios with exact service cleanup passed; this worker did not execute that run. Cause remains unobserved. 009d5b preparation remains paused, with no new producer proof files created.
 
 Own packages/db/src/run-proof-client.ts, run-provenance-proof.ts and its test, plus NEW runtime/run-provenance-diagnostic.integration.ts/test (five), and task/evidence run-009d3a. Other writers own role/crash preparation; preserve all their edits, old migrations and accepted product source. No actual DB operation before concrete source review.
 

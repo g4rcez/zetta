@@ -12,7 +12,7 @@ For each READ COMMITTED and REPEATABLE READ isolation level, pointer-first and d
 
 Fixture cleanup explicitly deletes attempts/runs/memberships/users in one transaction and verifies zero remaining fixtures; old eight-table cleanup is never called. Finally rolls back reserved clients then closes them even if rollback fails. The launcher removes only its own fresh tmpfs Compose container/network; no volume deletion/prune. Existing resources or unsafe selectors deny before startup.
 
-Evidence root: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-009b1a/`. Red-first launcher tests recorded18pass/2fail before new mode/entry; green tests and exact strict invocation are recorded separately. Shell fixtures are not a live database proof. Actual command after source freeze: `bash scripts/verify-identity-auth.sh run-schema`, only the existing local PG18 image and owned `zetta-identity-tests` tmpfs project, with approved Docker escalation. No other runtime resources, installation, environment file, real account, provider or Git mutation.
+Evidence root: `local evidence`. Red-first launcher tests recorded18pass/2fail before new mode/entry; green tests and exact strict invocation are recorded separately. Shell fixtures are not a live database proof. Actual command after source freeze: `bash scripts/verify-identity-auth.sh run-schema`, only the existing local PG18 image and owned `zetta-identity-tests` tmpfs project, with approved Docker escalation. No other runtime resources, installation, environment file, real account, provider or Git mutation.
 
 ## Actual worker result
 

@@ -4,7 +4,7 @@ Date: 2026-10-22. Scope: existing-account operator CLI proof and the recorded ru
 
 - codeQualityStatus: WATCH
 - recommendation: APPROVE
-- reportPath: .omo/evidence/004e3-code-review.md
+- reportPath: local evidence
 - blockers: None. M1 resolved in followup below; M2 remains nonblocking.
 
 ## Findings
@@ -25,7 +25,7 @@ None found.
 
 ### LOW
 
-The reviewed working files contain pre-existing non-null assertions in `packages/db/src/identity-proof-client.ts:74,90,99` and `scripts/verify-identity-auth.test.ts:129`, contrary to the programming skill. The 004e3 completion record says no *new* assertions were introduced; no pre-slice Git baseline was supplied to independently determine introduction. Do not conflate these existing style issues with a correctness failure in the ownership-helper reuse.
+The reviewed working files contain pre-existing non-null assertions in `packages/db/src/identity-proof-client.ts:74,90,99` and `scripts/verify-identity-auth.test.ts:129`, contrary to the programming skill. The 004e3 completion record says no _new_ assertions were introduced; no pre-slice Git baseline was supplied to independently determine introduction. Do not conflate these existing style issues with a correctness failure in the ownership-helper reuse.
 
 ## Evidence inspected and scope limits
 
@@ -65,7 +65,7 @@ Loaded `omo:programming` SKILL.md and its TypeScript reference, and `omo:remove-
 
 Source/runtime design is otherwise suitable for the bounded proof, and no CRITICAL/HIGH issue was found. Fix M1 and rerun its focused offline check before accepting the independent verification gate. M2 and existing assertion cleanup are nonblocking follow-ups. Historical runtime evidence remains scoped to its recorded execution; neither this review nor passing offline tests completes parent RFC-004/004e.
 
-Artifact placement: `omo-agent-toolkit ulw-loop status --json` reported evidence-layout v1 with no `currentAttemptDir`; this report is mirrored to the fallback `.omo/evidence/004e3-code-review.md` as required.
+Artifact placement: `omo-agent-toolkit ulw-loop status --json` reported evidence-layout v1 with no `currentAttemptDir`; this report is mirrored to the fallback `local evidence` as required.
 
 ## Followup acceptance, 2026-10-22
 

@@ -5,7 +5,7 @@
 - codeQualityStatus: WATCH
 - recommendation: APPROVE
 - blockers: none in this reviewed correction delta.
-- reportPath: .omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G001-preserve-all-existing-tracked-untrac/a1/G001-preserve-all-existing-tracked-untrac-code-review.md
+- reportPath: local evidence
 - Final browser condition resolved: inspected the coordinator's durable correction-delta receipt in docs/verification/identity-browser/walkthrough.md. This approval does not mark v1 or unrelated resource/native integration goals complete.
 
 ## Current severity and resolution
@@ -107,6 +107,7 @@ Executed by this reviewer:
 78 pass, 0 fail, 380 assertions across five files; exit0. This is offline test evidence, not a live DB or browser run.
 
 Inspected:
+
 - `docs/verification/reviews/identity-access-provisioning-review.md`
 - `docs/verification/reviews/004e3-review.md` and accepted sticky-guard correction
 - `docs/verification/identity-browser/walkthrough.md` including final 320/768/1280 widths and fixture exit0
@@ -144,4 +145,3 @@ db6e3e56b6b0c9480d3f82e65b0a2307b4116b5029f077642ea17ef070383823 apps/web/src/li
 e1b411902aeba8cbb11e2919bf804862c577bd92e7a22dbde62cba1824e9deaf apps/web/src/components/user-menu.tsx
 fa510319d7045b30e50a8525f0915848001c8ae59075c9d38eadd20d3ef12d8d apps/web/src/components/theme-provider.tsx
 ```
-

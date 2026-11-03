@@ -16,4 +16,4 @@ Constructor limitation accepted by coordinator: openJournalStore waits for initi
 
 Validation:73focused tests/223assertions across new boundary/queue/lifecycle tests and accepted journal/transition controls; strict TypeScript exit0 and all five source LSP checks clean. Real5second timeout exercised; unstarted-expiry control uses a restored test-only monotonic-clock observer. No fake Linux lock/profile, VM, filesystem composition, DB/provider/daemon/install/environment/Git operations. Pure lifecycle tests prove serialization/disposal logic, not real descriptor exclusion. Whole-store Linux read/write, simultaneous inventory/owner behavior, failure seams and C0..C8 remain008d3d gates.
 
-Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008d3c/`.
+Evidence: `local evidence`.

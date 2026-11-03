@@ -18,9 +18,10 @@ The new tests meaningfully exercise invalid siblings/extras on both operations (
 `store.ts:24-26` passes the optional trusted third constructor argument to `createStoreKeys`, which forwards it to the existing crypto seam (`store-keys.ts:7-8`). Omitted/undefined retains crypto's randomBytes default. Strict JSON options and request schemas admit no nonce source. Tests observe injected twelve-byte nonce values in key-check and seal and reject nonceSource in options/request data. The seam does not add a resolver, request authority or fake transaction implementation. Actual ledger collision/retry and constructor-to-DB behavior still require RFC-007c3.
 
 Independently repeated:
+
 - Focused store, contract and crypto command recorded below: **66 pass, 0 fail, 159 assertions**, exit 0.
 - Exact targeted strict command recorded below: exit 0, zero diagnostics.
-- `bun --no-env-file run .omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/connection-007c2a/allocation-probe.ts`: exit 0; denied=true, copyAllocated=false, copyRemainsNonzero=false, callerUnchanged=true.
+- `bun --no-env-file run local evidence`: exit 0; denied=true, copyAllocated=false, copyRemainsNonzero=false, callerUnchanged=true.
 - All five current SHA256 values match the author's manifest:
 
 ```text
@@ -77,7 +78,7 @@ TS
 Observed exit 0, stdout:
 
 ```json
-{"denied":true,"copyAllocated":true,"copyRemainsNonzero":true,"callerUnchanged":true}
+{ "denied": true, "copyAllocated": true, "copyRemainsNonzero": true, "callerUnchanged": true }
 ```
 
 ### LOW
@@ -98,7 +99,7 @@ c8553a0e9d65712f49483684ca2774a179ccae75f4dbb3259d01fb3a94b5c8ae  store-contract
 cefd4dc1a1be5f8c226b4e14ccfac5b94d8135621d354c1e614915d32b5f279e  store-contract.test.ts
 ```
 
-Files are under `apps/server/src/modules/connections/`. Evidence directory: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/connection-007c2/`.
+Files are under `apps/server/src/modules/connections/`. Evidence directory: `local evidence`.
 
 ## Contract assessment
 

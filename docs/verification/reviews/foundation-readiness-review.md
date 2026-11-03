@@ -22,21 +22,21 @@ RFC-002 is explicitly a research/decision task: its goal is to choose a verifiab
 
 ### Options and trade-offs
 
-| Option | Consequence | Verdict |
-| --- | --- | --- |
-| Hold002 until every native/network/browser integration works | Requires consumers before their own prerequisite contracts; obscures actual next work | Reject |
-| Declare operational isolation complete from the13 synthetic cases | Overstates credential, egress, native state and takeover evidence | Reject |
+| Option                                                                                                      | Consequence                                                                           | Verdict   |
+| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------- |
+| Hold002 until every native/network/browser integration works                                                | Requires consumers before their own prerequisite contracts; obscures actual next work | Reject    |
+| Declare operational isolation complete from the13 synthetic cases                                           | Overstates credential, egress, native state and takeover evidence                     | Reject    |
 | Accept002's supported no-network design/probe boundary; keep capability-specific operational gates explicit | Allows pure006 while every real execution path must still prove its required boundary | Recommend |
 
 ### Recommendation
 
 The coordinator can accept RFC-002 as a **research/design prerequisite for RFC-006 only**, after M1 is corrected and the acceptance wording expressly identifies the supported scope. This does not complete the broader aggregate isolation objective or permit networked/native execution. No acceptance criterion should be deleted or weakened; map each criterion to its actual research artifact and retain every operational proof in its owning task/release gate.
 
-| RFC-002 criterion | Supported conclusion |
-| --- | --- |
+| RFC-002 criterion                                                                     | Supported conclusion                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Accepted design excludes foreign/host filesystem, environment and shared native state | The selected Linux boundary excludes host authority and selects actor-owned state with exclusive leases. Synthetic mounted-state/process/environment controls pass. Actual native login/session behavior remains a per-harness gate. |
-| Approved adversarial plan; unproved containment blocks real runs | The plan and13-case receipts cover the implemented no-network fixture, including previous containment cases, lifecycle/resource enforcement and bounded recovery. Uncertain daemon outcomes remain quarantined. |
-| Deployment requirements and questions for074 | CLI, browser, desktop, profile, clipboard, takeover and secret-observation requirements are recorded. A viable concrete browser/desktop backend is still required in074-078 and at release. |
+| Approved adversarial plan; unproved containment blocks real runs                      | The plan and13-case receipts cover the implemented no-network fixture, including previous containment cases, lifecycle/resource enforcement and bounded recovery. Uncertain daemon outcomes remain quarantined.                      |
+| Deployment requirements and questions for074                                          | CLI, browser, desktop, profile, clipboard, takeover and secret-observation requirements are recorded. A viable concrete browser/desktop backend is still required in074-078 and at release.                                          |
 
 RFC-006 may now define actor/run/attempt-bound input/events/tools, explicit unsupported capabilities, terminal-once behavior, bounded errors and cancellation using synthetic fixtures. It must import no production probe, invoke no real CLI/provider, and emulate no unsupported capability as success. Native transport, credential and egress fields are requirements/capability declarations until their implementations are accepted.
 
@@ -50,14 +50,14 @@ This is conditional acceptance guidance, not a fresh final identity approval. Th
 
 ## Next-work readiness
 
-| Work | Readiness after coordinator integration |
-| --- | --- |
-|006 typed harness contract and fixture | Ready once002's supported research acceptance is recorded;003 is already accepted. |
-|007 connection storage | Still requires accepted004/005 plus a concrete approved secret-store/schema strategy (`tasks/007-store-user-owned-connection-references.md:30`).002 research acceptance supplies no secret persistence mechanism. |
-|008 supervisor /010 recovery | Require their listed prerequisites and actual owned-process lifecycle/uncertain-operation proofs. Synthetic research helpers are not production implementations. |
-|013-018 real adapters | Require accepted contracts/supervisor/connections, version-matched protocols, actual native state/host-tool/cancel/resume proof and approved enforceable egress. All six remain required. |
-|074-078 browser/computer/takeover | Concrete viable backends, per-user profile/desktop/input boundaries and credential-entry observation suppression remain required. |
-|Release | All real integration, privacy/recovery and connected user-journey gates remain required. No fixture or research status passes release. |
+| Work                                   | Readiness after coordinator integration                                                                                                                                                                           |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 006 typed harness contract and fixture | Ready once002's supported research acceptance is recorded;003 is already accepted.                                                                                                                                |
+| 007 connection storage                 | Still requires accepted004/005 plus a concrete approved secret-store/schema strategy (`tasks/007-store-user-owned-connection-references.md:30`).002 research acceptance supplies no secret persistence mechanism. |
+| 008 supervisor /010 recovery           | Require their listed prerequisites and actual owned-process lifecycle/uncertain-operation proofs. Synthetic research helpers are not production implementations.                                                  |
+| 013-018 real adapters                  | Require accepted contracts/supervisor/connections, version-matched protocols, actual native state/host-tool/cancel/resume proof and approved enforceable egress. All six remain required.                         |
+| 074-078 browser/computer/takeover      | Concrete viable backends, per-user profile/desktop/input boundaries and credential-entry observation suppression remain required.                                                                                 |
+| Release                                | All real integration, privacy/recovery and connected user-journey gates remain required. No fixture or research status passes release.                                                                            |
 
 ## Verification and evidence limits
 
@@ -67,7 +67,7 @@ Independently executed:
 bun --no-env-file test scripts/execution-isolation-probe.test.ts scripts/execution-isolation-recovery.test.ts apps/server/src/modules/identity/access.test.ts
 ```
 
-20 pass,0 fail,123 assertions across three files, exit0. These are offline tests; no Docker, database, server or browser was started by this reviewer. The coordinator's13-case Docker receipt, cleanup:true and actual source identities were inspected in `.omo/evidence/isolation-lifecycle/coordinator-002d.md`; the worker's first failed PID run and corrected final run remain recorded in `docs/verification/execution-isolation-002d.md`. Existing strict-TypeScript receipts were inspected, not rerun. No source mutation experiment was performed under the assigned read-only scope.
+20 pass,0 fail,123 assertions across three files, exit0. These are offline tests; no Docker, database, server or browser was started by this reviewer. The coordinator's13-case Docker receipt, cleanup:true and actual source identities were inspected in `local evidence`; the worker's first failed PID run and corrected final run remain recorded in `docs/verification/execution-isolation-002d.md`. Existing strict-TypeScript receipts were inspected, not rerun. No source mutation experiment was performed under the assigned read-only scope.
 
 Reviewed correctness, security, architecture, readability and bounded-resource behavior using the code-review-and-quality skill. Existing probe `any` types, local endpoint coupling and incidental source assertions remain maintenance limits; they are not new002d containment findings and should not be copied into production boundaries. No package install, Git mutation or source edit was performed.
 

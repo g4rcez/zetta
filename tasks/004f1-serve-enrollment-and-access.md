@@ -28,17 +28,17 @@ Production `services.ts` now injects `createInvitationSignupPreflight(db)` into 
 
 ### Verification and evidence
 
-Evidence directory: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G001-preserve-all-existing-tracked-untrac/a1/identity-routes/`.
+Evidence directory: `local evidence`.
 
-| Scenario | Exact invocation | Binary observable | Artifact |
-| --- | --- | --- | --- |
-| Existing app baseline | `bun test apps/server/src/app.test.ts` | 16 pass, 0 fail, 126 assertions before edits | `baseline.txt` |
-| Current member resolution, anonymous/expired/removed denial, A/B/admin/forged/nested isolation, bound installed Drizzle read | Combined command below | 4 access tests pass, denial/immutability/query assertions hold | `tests.txt`, `access.test.ts` |
-| Status/admin issuance/acceptance/replay/revoke, origins/authority fields, parser and token-log privacy | Combined command below | 5 route tests pass, expected HTTP statuses and no secret in captured evlog | `tests.txt`, `routes.test.ts` |
-| Actual ephemeral loopback listener → fetch → close | Combined command below, test `actual loopback HTTP listener preserves fixture contract` | status 200, issue 201/no-store, accept 200, replay 409, nonadmin issue 403, revoke 200; listener closed in finally | `tests.txt` explicit HTTP receipt |
-| Existing auth/cookie/CORS/health and secret-free import regression | Combined command below | 16 app tests pass | `tests.txt` |
-| Strict changed-source diagnostics | Strict command below | exit 0 | `types.txt` |
-| LSP identity module diagnostics | `mcp__lsp__diagnostics` filePath identity directory, severity error | 19 files scanned, 0 errors | `lsp.json` |
+| Scenario                                                                                                                     | Exact invocation                                                                        | Binary observable                                                                                                  | Artifact                          |
+| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| Existing app baseline                                                                                                        | `bun test apps/server/src/app.test.ts`                                                  | 16 pass, 0 fail, 126 assertions before edits                                                                       | `baseline.txt`                    |
+| Current member resolution, anonymous/expired/removed denial, A/B/admin/forged/nested isolation, bound installed Drizzle read | Combined command below                                                                  | 4 access tests pass, denial/immutability/query assertions hold                                                     | `tests.txt`, `access.test.ts`     |
+| Status/admin issuance/acceptance/replay/revoke, origins/authority fields, parser and token-log privacy                       | Combined command below                                                                  | 5 route tests pass, expected HTTP statuses and no secret in captured evlog                                         | `tests.txt`, `routes.test.ts`     |
+| Actual ephemeral loopback listener → fetch → close                                                                           | Combined command below, test `actual loopback HTTP listener preserves fixture contract` | status 200, issue 201/no-store, accept 200, replay 409, nonadmin issue 403, revoke 200; listener closed in finally | `tests.txt` explicit HTTP receipt |
+| Existing auth/cookie/CORS/health and secret-free import regression                                                           | Combined command below                                                                  | 16 app tests pass                                                                                                  | `tests.txt`                       |
+| Strict changed-source diagnostics                                                                                            | Strict command below                                                                    | exit 0                                                                                                             | `types.txt`                       |
+| LSP identity module diagnostics                                                                                              | `mcp__lsp__diagnostics` filePath identity directory, severity error                     | 19 files scanned, 0 errors                                                                                         | `lsp.json`                        |
 
 Final test command (Bun 1.3.14):
 

@@ -31,7 +31,7 @@ b8ac4e508db60a20a6823820bdf80a5ddc83b24094a6fd5f7f2e859d6837cdf7  snapshot.json
 145d6578835d6405f9d952d1e1ad8c67f0d8d88ed490681f216b6eb27f65f9ed  tasks/007c1-define-connection-storage-schema.md
 ```
 
-Migration/snapshot names above are relative to the generated migration directory. Evidence root: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/connection-007c1/`.
+Migration/snapshot names above are relative to the generated migration directory. Evidence root: `local evidence`.
 
 ## Contract assessment
 

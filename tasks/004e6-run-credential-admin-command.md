@@ -18,7 +18,7 @@ Applied programming and Better Auth skills; read local task plan/intent/decision
 
 Owned files: the three new identity credential-operator files, this RFC, appended runbook section, minimal DB annotation removal and corresponding existing source assertion narrowing. All unrelated dirty work preserved. No manifests/schema/app services/routes/auth source/shared launchers, production, installs, staging or commits changed.
 
-Evidence manifest: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G001-preserve-all-existing-tracked-untrac/a1/credential-cli-evidence.md`.
+Evidence manifest: `local evidence`.
 
 Focused command: `bun --no-env-file test apps/server/src/modules/identity/credential-operator.test.ts apps/server/src/modules/identity/admin-operator.test.ts packages/db/src/admin-operator-client.test.ts`: 31 pass, 0 fail, 412 assertions. Initial new test fails on missing module; a later combined run exposed the old annotation spelling assertion, then the full focused command passed after narrowing that assertion to actual reserved construction.
 

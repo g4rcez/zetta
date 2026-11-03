@@ -40,7 +40,7 @@ Fresh coordinator browser session99641 and web session81189 used the corrected h
 
 After signout, session99641 printed READY, fixture cleanup/close PASS and exact Compose container/network cleanup PASS, then exited0. Web session81189 stopped with Ctrl-C. Temporary viewport override was reset and the test tab closed. This resolves the prior coordination/lifecycle failure for the fixed source; it does not erase the failed receipt.
 
-Coordinator independently verified the new credential-operator CLI's six actual scenarios with exit0 and exact cleanup; see `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G001-preserve-all-existing-tracked-untrac/a1/coordinator-identity-receipt.md`. Cross-owner domain-resource access remains a requirement of its real consumers.
+Coordinator independently verified the new credential-operator CLI's six actual scenarios with exit0 and exact cleanup; see `local evidence`. Cross-owner domain-resource access remains a requirement of its real consumers.
 
 ## Final privacy, transaction and transport corrections
 

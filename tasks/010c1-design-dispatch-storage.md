@@ -18,6 +18,6 @@ The ADR defines every column, null/time/status check, composite FK/unique index,
 2. Separately assigned010c2 schema-only source with a feature-only offline Drizzle generator and explicitly approved custom guard migration. No existing007/009 schema changes or migration rewrites by assumption.
 3. Separately reviewed guarded actual PostgreSQL proof source and exact target authorization. The ADR's S1..S5 and R1..R5 distinguish schema enforcement from later service/race proof; neither is claimed complete here.
 
-[Evidence, inspected source hashes and design checks](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/dispatch-010c1/report.md).
+Evidence, inspected source hashes and design checks.
 
 No schema/code, migration generation/apply, database, service, container, environment, credential, provider, package or Git mutation occurred. Only the owned documents/evidence were written. No runtime resources were created; there is no operational cleanup claim.

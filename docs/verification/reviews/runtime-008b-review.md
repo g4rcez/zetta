@@ -54,9 +54,10 @@ The recipe specifies network none, non-root UID/GID, read-only root, dropped cap
 ## Verification and test quality
 
 Independently executed from repository root, all exit 0:
+
 - `bun --no-env-file test apps/server/src/modules/runtime/launch-spec.test.ts apps/server/src/modules/runtime/launch-recipe.test.ts`: 62 pass, 0 fail, 88 assertions.
 - The exact strict no-emit invocation in runtime-008b/report.md, including both source files, both tests and verify-pure-launch.ts: zero diagnostics.
-- `bun --no-env-file run .omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008b/verify-pure-launch.ts`: all seven checks, injectionExpirySecretDenied and passed true.
+- `bun --no-env-file run local evidence`: all seven checks, injectionExpirySecretDenied and passed true.
 
 Read the actual pure driver and tests, not just receipts. The driver only imports pure modules and hashes/describes synthetic requests. Writer LSP receipts are recorded in lsp.json; not independently rerun here.
 
@@ -69,6 +70,7 @@ WorkingDir /scratch/work (launch-recipe.ts:47) lies under the tmpfs mount. The i
 The smallest fix is WorkingDir /scratch plus trusted fixed fixture bootstrap creating owned private work/home children and changing directory before input/work. Do not weaken the non-root user, root filesystem or mount isolation. Repeat the actual write probe for the corrected bootstrap and update the descriptor assertion/ADR before approval. Final-image entry program, inherited defaults, architecture and containment remain additional unexecuted gates.
 
 Next RFC-008c should remain a journal contract/transition slice with injected I/O:
+
 1. Closed versioned historical record containing immutable context, lease/fence, spec and recipe identities, exact generated name, random ownership token, acknowledged full resource ID, runner unit, deadline, pending operation identity, cancellation, input sequence, terminal and cleanup facts.
 2. Closed phases intent/creating/prepared/starting/running/stopping/stopped/quarantined; terminal-once and retained tombstones. Same attempt plus same identity is idempotent; mismatches and stale fences deny.
 3. Durable intent-before-effect contract (atomic write, file fsync, rename, directory fsync for the later persistence adapter), exclusive writer and validated historical records without bypassing fresh launch admission.
@@ -80,10 +82,10 @@ No systemd/daemon/control transport/DB/native provider/credential execution was 
 ## Source identity
 
 SHA256 independently checked against writer source-sha256.txt:
+
 - launch-spec.ts: 0a64ef91ceca1a1764f90a10897e5b907035307c4eed8a0ddf6697717108807d
 - launch-recipe.ts: e083d1a59b230677cd0d469060318129b9155280fb94aa29014fb1ba193490bd
 - launch-spec.test.ts: e96f12061862a24b46aa825ecf581e53ec772fad7bab56c733b11aac1acb75b2
 - launch-recipe.test.ts: 31a0411be7ddfc808388b384c0e098c8962fdb7617c99c2813bfa9043d82090a
 
-Evidence root: .omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008b. Current attempt resolved with omo-agent-toolkit ulw-loop status --json. This unique scoped copy does not replace the aggregate G002 lane.
-
+Evidence root: local evidence Current attempt resolved with omo-agent-toolkit ulw-loop status --json. This unique scoped copy does not replace the aggregate G002 lane.

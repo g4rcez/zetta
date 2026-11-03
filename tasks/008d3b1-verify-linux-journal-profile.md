@@ -8,4 +8,4 @@ Tiny read-only no-child fixture imports actual journal-layout implementation. Fi
 
 Proposal spells out fixed UUID paths, exclusive fixture provisioning/sync, one invocation, three success rows, process settlement, evidence capture and exact authorized cleanup. No new mount, service, Docker, network, provider or installation. Actual Linux jobE11C50FA-FB4F-4DAF-8EDD-67F958E88EDE passed all three rows/exit0; separate namespace/inode/hash/process readback and cleanup/absence passed. Parent008 remains incomplete.
 
-Build/strict exit0, source LSP clean, local guarded bundle exit1 with only guard denied. Source/bundle/frozen imported-source hashes recorded. Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008d3b1/`.
+Build/strict exit0, source LSP clean, local guarded bundle exit1 with only guard denied. Source/bundle/frozen imported-source hashes recorded. Evidence: `local evidence`.

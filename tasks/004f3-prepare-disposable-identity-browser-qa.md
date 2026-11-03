@@ -52,15 +52,15 @@ stop
 
 ### Evidence and verification
 
-Evidence directory: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G001-preserve-all-existing-tracked-untrac/a1/identity-browser/`.
+Evidence directory: `local evidence`.
 
-| Scenario | Invocation | Binary observable | Artifact |
-| --- | --- | --- | --- |
-| Reproduce telemetry leak and wrong status | `bun --no-env-file test apps/server/src/app.test.ts` before fix | 3 failing tests: two statuses, one console warning | `red.txt` |
-| Fix private auth exception while preserving 503; forwarded/identity statuses and privacy | Combined test command below | All status and no-warning/no-token assertions pass | `tests.txt` |
-| Harness inert import and missing target | Same combined command; subprocess guards timers/sockets/fetch | exit 1, fixed target-validation stderr, empty stdout; no startup | `tests.txt` |
-| Fixed browser launcher, existing-resource/unsafe-env refusal, teardown success/failure and existing modes | Same combined command | Shell-control and actual metadata-predicate assertions pass; no Docker spawned by fixtures | `tests.txt` |
-| Strict source diagnostics | Command below | exit 0 | `types.txt` |
+| Scenario                                                                                                  | Invocation                                                      | Binary observable                                                                          | Artifact    |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------- |
+| Reproduce telemetry leak and wrong status                                                                 | `bun --no-env-file test apps/server/src/app.test.ts` before fix | 3 failing tests: two statuses, one console warning                                         | `red.txt`   |
+| Fix private auth exception while preserving 503; forwarded/identity statuses and privacy                  | Combined test command below                                     | All status and no-warning/no-token assertions pass                                         | `tests.txt` |
+| Harness inert import and missing target                                                                   | Same combined command; subprocess guards timers/sockets/fetch   | exit 1, fixed target-validation stderr, empty stdout; no startup                           | `tests.txt` |
+| Fixed browser launcher, existing-resource/unsafe-env refusal, teardown success/failure and existing modes | Same combined command                                           | Shell-control and actual metadata-predicate assertions pass; no Docker spawned by fixtures | `tests.txt` |
+| Strict source diagnostics                                                                                 | Command below                                                   | exit 0                                                                                     | `types.txt` |
 
 ```sh
 bun --no-env-file test apps/server/src/app.test.ts apps/server/src/modules/identity/routes.test.ts apps/server/src/test-support/identity-browser-server.test.ts scripts/verify-identity-auth.test.ts

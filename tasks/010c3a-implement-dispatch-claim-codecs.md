@@ -8,4 +8,4 @@ The parser is an internal structural read, not a public DTO or authority. Future
 
 Verification: red-first missing-module failures retained; final Bun focused/regression run62 tests/279 assertions passed, scoped strict TypeScript exit0 and all four LSP diagnostics clean. A test independently hashes literal canonical bytes using node:crypto and checks existing008 digest equality; substitutions and recomputed-hash corruption cannot bypass current-row checks. Tests include Unicode, byte/identifier/numeric boundaries, nullable/state/time controls, expired historical reads, repeated-read stability and frozen outputs. No DB or native execution was performed or claimed.
 
-[Evidence and exact invocations](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/dispatch-010c3a/report.md). Next: independent review/root acceptance; required005/009 prerequisites and real store/transaction proof remain separate slices.
+Evidence and exact invocations. Next: independent review/root acceptance; required005/009 prerequisites and real store/transaction proof remain separate slices.

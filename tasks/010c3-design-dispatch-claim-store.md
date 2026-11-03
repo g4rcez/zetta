@@ -8,7 +8,7 @@ Critical inspected limits:009 has no real bot/conversation ownership queries or 
 
 The selected durable prerequisite adds a005 monotonic positive-int32 activationRevision and immutable009 producer kind/version/actorActivationRevision, stamped solely by the trusted submission transaction. Legacy all-null provenance remains ineligible and request replay never rewrites it. There is no transient ticket protocol. Private backend reservation derives its owner from locked stored provenance; owner get/cancel require issued actors. ExecutionAuthority is privately issued/verified inside the concrete transaction and invalidated in finally, never returned or serialized. Separate005/009 migration/integration, codec, store and actual proof children stay bounded to at most five files each.
 
-[Evidence](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/dispatch-010c3/report.md) records inspected inputs, document hashes and local-link validation. No implementation test or live scenario was run; future actual proof cases are a plan, not results.
+Evidence records inspected inputs, document hashes and local-link validation. No implementation test or live scenario was run; future actual proof cases are a plan, not results.
 
 Next: root/independent design review, including durable producer/activation-revision migration scope, private issuer boundary, stricter fixture budget mapping and the separately gated no-effect terminal extension and cancellation/release integration. Implementation requires separately accepted bounded assignments. Parent status remains root-owned.
 

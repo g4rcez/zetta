@@ -31,4 +31,4 @@ The code-review, programming and remove-ai-slops perspectives were consulted/app
 
 Approval covers the owned store's actual disposable PostgreSQL persistence/authorization/race proof. Controlled sessions are not HTTP/sign-in proof; synthetic claimed/admitted/completed facts are not native launcher or worker authority; new factory is not fresh-process restart. RFC009c3 fresh-process readback, RFC010 claim/grant/worker integration and real native/provider/systemd execution remain separate required gates. No production deployment or parent009 completion is implied.
 
-Evidence directory: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-store-009c2-review`.
+Evidence directory: `local evidence`.

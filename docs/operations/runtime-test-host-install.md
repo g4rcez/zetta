@@ -6,12 +6,12 @@ The approved VM is installed and its read-only inventory passed: Pop!_OS24.04/aa
 
 ## Exact proposed additions
 
-| Artifact | Version / size | SHA256 |
-| --- | --- | --- |
-| Bun Linux aarch64 zip | 1.3.14 /35700603 bytes | a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b |
-| docker.io arm64 deb | 29.1.3-0ubuntu3~24.04.2 /32026672 bytes | fb0b4f8f4738d3d610b511f50808abd49376ee715a81364e7dbd8a2c60c580d6 |
-| containerd arm64 deb | 2.2.1-0ubuntu1~24.04.4 /25161630 bytes | c5639c3caf03800717867c45580b93a2db54465c5c1d861aac82d875fe286824 |
-| runc arm64 deb | 1.3.4-0ubuntu1~24.04.1 /8578418 bytes | 725a27bbdd5f58d7059ed25d88f14f2d45f6a1ce089585eddc715e04d4a3f79f |
+| Artifact              | Version / size                          | SHA256                                                           |
+| --------------------- | --------------------------------------- | ---------------------------------------------------------------- |
+| Bun Linux aarch64 zip | 1.3.14 /35700603 bytes                  | a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b |
+| docker.io arm64 deb   | 29.1.3-0ubuntu3~24.04.2 /32026672 bytes | fb0b4f8f4738d3d610b511f50808abd49376ee715a81364e7dbd8a2c60c580d6 |
+| containerd arm64 deb  | 2.2.1-0ubuntu1~24.04.4 /25161630 bytes  | c5639c3caf03800717867c45580b93a2db54465c5c1d861aac82d875fe286824 |
+| runc arm64 deb        | 1.3.4-0ubuntu1~24.04.1 /8578418 bytes   | 725a27bbdd5f58d7059ed25d88f14f2d45f6a1ce089585eddc715e04d4a3f79f |
 
 Bun source: [official pinned release](https://github.com/oven-sh/bun/releases/tag/bun-v1.3.14), [exact zip](https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-aarch64.zip). Its official release API reports the digest and size above. No install script is used.
 
@@ -25,7 +25,7 @@ Package configuration may create local Docker/containerd system services. Inspec
 
 Approval covers these downloads, file transfer and installation in this fresh test VM only. It does not authorize provider accounts, harness installs, model calls, image pulls/builds, project execution, host account access, production changes or deletion of the VM. Installation failure is recorded and stops; no automatic uninstall or scope expansion. Missing runtime-image/runner/mTLS/egress policies remain later explicit gates.
 
-Evidence: currentattempt/runtime-vm/capabilities.json and package-candidates.json under `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/`.
+Evidence: currentattempt/runtime-vm/capabilities.json and package-candidates.json under `local evidence`.
 
 ## Actual installation receipt
 

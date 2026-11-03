@@ -14,7 +14,7 @@ readJournalSnapshot shares the accepted bounded canonical file reader, returns o
 
 Validation:48 focused tests/243 assertions pass, including original31 file/codec cases; strict TypeScript exit0 and four source LSP checks clean. Actual Mac filesystem fixtures record exact paths, unrelated-byte preservation and confirmed removal in tests.log. Fault observers simulate failures around real syscalls, not real EIO/power loss. Red-first missing-module failure captured. No VM/Docker/DB/install/Git/environment operations.
 
-Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008d3b/`.
+Evidence: `local evidence`.
 
 ## Coordinator race correction
 

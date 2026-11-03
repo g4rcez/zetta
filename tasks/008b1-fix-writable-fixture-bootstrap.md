@@ -10,7 +10,7 @@ The actual pinned Bun base-image control showed that Docker creates `/scratch/wo
 
 ## Validation
 
-[Evidence report](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008b1/report.md) records exact commands, source hashes and cleanup.
+Evidence report records exact commands, source hashes and cleanup.
 
 - Red first: updated recipe expectations fail against the old descriptor, 60 pass / 2 fail.
 - Actual Docker control: old cwd is root-owned 0755 and unwritable by UID 65534.

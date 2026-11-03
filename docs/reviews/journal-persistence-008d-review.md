@@ -25,4 +25,4 @@ Linux [flock(2)](https://man7.org/linux/man-pages/man2/flock.2.html) specifies s
 
 Before claiming persistence works, provision the separately authorized Linux/ext4/dedicated-UID environment, pin and record Bun/flock binary identities, and execute every stated scenario with retained artifacts. In particular, L1/L2/L3 must establish descriptor sharing and SIGKILL release with an unrelated child still alive, and F1/F2/F3 must establish directory-sync and unknown-outcome behavior. Process-crash tests do not establish power-loss guarantees. Later authenticated control transport, once-only effect submission and systemd/Docker lifecycle integration remain separate operational gates. RFC008 and RFC010 remain incomplete.
 
-Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/journal-persistence-008d-review/`.
+Evidence: `local evidence`.

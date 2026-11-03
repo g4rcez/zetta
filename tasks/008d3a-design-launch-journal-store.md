@@ -10,7 +10,7 @@ Only this task, decision and unique evidence are edited. Implementation children
 
 Acceptance: independent review of exact API/lock graph, fresh-vs-historical admission, staging recovery and late-I/O ownership; coordinator accepts child scopes. Actual store implementation and Linux crash proof follow, not part of this design task.
 
-Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008d3a-design/`.
+Evidence: `local evidence`.
 
 ## Root review corrections
 

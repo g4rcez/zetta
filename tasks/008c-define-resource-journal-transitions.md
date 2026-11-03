@@ -19,7 +19,7 @@ Input metadata admits only the next sequence within frame/aggregate budgets. Adm
 
 ## Evidence
 
-[Exact scenario matrix, commands, diagnostics, source hashes and limitations](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008c/report.md).
+Exact scenario matrix, commands, diagnostics, source hashes and limitations.
 
 - Red first: missing new modules; additional red reproduction caught an injected container ID lacking any acknowledged ownership operation, then the parser was corrected.
 - 121 focused spec/recipe/journal tests pass with 235 assertions; this includes the existing 62 spec/recipe tests.

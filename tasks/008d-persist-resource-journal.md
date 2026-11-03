@@ -28,6 +28,6 @@ Use a disposable private owned root and synthetic records; tests never issue pro
 
 [Independent review](../docs/reviews/journal-persistence-008d-review.md) is CLEAR for the corrected per-receipt ownership design. Coordinator accepted the same scope after correcting the original global-lock conflict. Implementation is split by actual responsibility:008d1 bounded codec/protected file commit primitives,008d2 Linux descriptor locks/cross-process proof,008d3 installation/per-receipt store. Each child retains a small explicit path boundary; no full five-path monolith or framework is required. No child may claim deployment readiness without all selected Linux capability and matching-surface proofs.
 
-[Design verification report and primary-source inventory](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008d-design/report.md).
+Design verification report and primary-source inventory.
 
 This assignment researched and specified the protocol only. It did not run filesystem persistence experiments, Linux flock, process-crash tests, Docker, systemd, DB, provider calls, dependency installation, VM provisioning or Git mutation. Existing product source hashes were captured for scope verification. Implementation and operational evidence remain future work.

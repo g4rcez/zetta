@@ -4,7 +4,7 @@ Snapshot: **2026-10-22 UTC**. This is a resume handoff, not a second task-status
 
 ## Current checkpoint
 
-The user subsequently authorized continuing all remaining work through v1, superseding the previous bounded stop. The pi checkpoint and dirty working tree were preserved. Durable aggregate objective and current resources are tracked in `.omo/v1-brief.md`, `.omo/v1-notepad.md` and the scoped loop ledger.
+The user subsequently authorized continuing all remaining work through v1, superseding the previous bounded stop. The pi checkpoint and dirty working tree were preserved. Durable aggregate objective and current resources are tracked in `local evidence`, `local evidence` and the scoped loop ledger.
 
 Since the previous checkpoint, independent 004e3 review and its sticky attempted-I/O regression fix passed. Trusted credential provisioning, actual seven-case password/rollback/revocation proof, the usable credential-admin command and its six-case actual CLI proof are implemented; both live proofs passed independently under the coordinator with exact disposable cleanup. Server status/invitation/access composition and web signin/signup/enrollment repair are implemented. Actual Chromium admin-invite/member-signup, invalid/replayed token denial, removal/session invalidation, fresh invitation repair, revocation, theme and320/768/1280px header checks passed. [Browser receipts](../verification/identity-browser/walkthrough.md) retain both failures and corrections.
 

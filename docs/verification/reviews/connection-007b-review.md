@@ -7,7 +7,7 @@ blockers: []
 
 ## Scope and evidence identity
 
-Reviewed the complete new source in apps/server/src/modules/connections/crypto.ts, crypto.test.ts, and scripts/verify-connection-crypto.ts, plus tasks/007b-implement-connection-secret-crypto.md, docs/decisions/connection-secrets.md and .omo/evidence/connection-007b artifacts. These source files are untracked additions in the dirty working tree; the review is of their full contents, not a claim that HEAD contains them. Consulted .omo/v1-notepad.md. No implementation edits, dependency installs, database, provider, server or Git mutations were performed.
+Reviewed the complete new source in apps/server/src/modules/connections/crypto.ts, crypto.test.ts, and scripts/verify-connection-crypto.ts, plus tasks/007b-implement-connection-secret-crypto.md, docs/decisions/connection-secrets.md and local evidence artifacts. These source files are untracked additions in the dirty working tree; the review is of their full contents, not a claim that HEAD contains them. Consulted local evidence No implementation edits, dependency installs, database, provider, server or Git mutations were performed.
 
 Independently computed SHA-256 values match the executor's source-hashes.txt:
 

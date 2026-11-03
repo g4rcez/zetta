@@ -22,7 +22,7 @@ Scenarios cover valid owner graphs/shared cross-owner operation IDs, user/owner/
 
 ## Completion record
 
-Preparation evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/connection-007c1a/report.md`. Exact invocations, outcomes and artifact paths are in `commands.json`.
+Preparation evidence: `local evidence`. Exact invocations, outcomes and artifact paths are in `commands.json`.
 
 - `bash -n scripts/verify-identity-auth.sh`: exit 0.
 - Focused launcher and existing target tests: 28 pass, 0 fail, 923 assertions. Includes actual inert-import/unsafe-target subprocess, shell dispatch/cleanup fixtures, ownership refusal and unchanged target-selector checks. These are not Docker/PostgreSQL integration evidence.
@@ -36,4 +36,4 @@ Actual database outcome after explicit coordinator go: `bash scripts/verify-iden
 
 Failure evidence retained: run 1 could not access the Docker socket under sandbox and created no resources. Approved escalation runs 2 and 3 rejected the ledger-delete oracle because the expected SQLSTATE was wrong; run 4 captured only safe booleans proving actual state `23001` and the exact expected constraint matched. PostgreSQL RESTRICT deletion reports `23001`, while the insert/update foreign-key cases report `23503`. Corrected only that deletion oracle, kept the exact constraint requirement, and reran the full scenario as run 5. Runs 2–4 each completed dedicated teardown before any source edit/retry. No schema, migration, crypto, store or historical identity helper was changed.
 
-Coordinator acceptance: independent session81769 passed all63checks, fixture readback, client close and exact dedicated teardown, exit0. [Coordinator source-bound receipt](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/coordinator-connection-007c1a.md). This accepts actual schema enforcement; final release review still audits the integrated source/evidence. This proof does not implement or certify service authorization, cryptography, race ordering, restart, readiness or dispatch.
+Coordinator acceptance: independent session81769 passed all63checks, fixture readback, client close and exact dedicated teardown, exit0. Coordinator source-bound receipt. This accepts actual schema enforcement; final release review still audits the integrated source/evidence. This proof does not implement or certify service authorization, cryptography, race ordering, restart, readiness or dispatch.

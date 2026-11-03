@@ -30,7 +30,7 @@ Status: implemented and actual disposable runtime verified; independent review r
 
 Changed paths: `apps/server/src/modules/identity/credential-provisioning.integration.ts`, its `.test.ts`, `scripts/verify-identity-auth.sh`, its `.test.ts`, and this RFC. The auth/database/lifecycle source was reused unchanged by this worker. Another worker narrowed `createAuthOptions`' database parameter to omit `$client`, allowing the reserved PoolClient database without casts. The proof uses the actual production cookie/invitation configuration; only logger/telemetry are disabled. No extra helper, manifest, dependency, schema, route or product factory behavior changed here.
 
-Artifacts are under `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G001-preserve-all-existing-tracked-untrac/a1/`:
+Artifacts are under `local evidence`:
 
 - `credential-proof-runtime.log`: exact actual seven-check receipt and Compose ownership/tmpfs/cleanup output, exit 0.
 - `credential-proof-tests.log`: final 76 pass, 0 fail, 568 assertions across seven files, exit 0.

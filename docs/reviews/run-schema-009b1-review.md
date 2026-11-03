@@ -2,7 +2,7 @@
 
 Verdict: **CLEAR for the bounded offline schema slice; actual SQL/RC/RR proof remains required.** Reviewed2026-10-22. Reviewer did not author009b1 and did not modify its files or review009b2. No blocking defect found in the scoped ordinary INSERT/UPDATE/DELETE design.
 
-Evidence: [independent report](../../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-schema-009b1-review/report.md), source hashes,20 tests/299 assertions and strict TS exit0. Independent correspondence check matched16 CHECK expressions,35 column types/nullability,4 unique shapes and2 restrictive FK shapes between runtime metadata/snapshot; CHECK SQL also matches generated DDL after whitespace normalization. Both snapshots have identical DDL and the custom snapshot points to the initial snapshot. SQL columns, PKs, unique/FK clauses and index were additionally read directly. No generator or migration was run by this reviewer.
+Evidence: independent report, source hashes,20 tests/299 assertions and strict TS exit0. Independent correspondence check matched16 CHECK expressions,35 column types/nullability,4 unique shapes and2 restrictive FK shapes between runtime metadata/snapshot; CHECK SQL also matches generated DDL after whitespace normalization. Both snapshots have identical DDL and the custom snapshot points to the initial snapshot. SQL columns, PKs, unique/FK clauses and index were additionally read directly. No generator or migration was run by this reviewer.
 
 ## Findings and limits
 

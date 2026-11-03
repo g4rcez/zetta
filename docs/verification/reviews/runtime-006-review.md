@@ -37,15 +37,15 @@ Independently repeated on the final hashes:
 4. `bun --no-env-file run apps/server/src/modules/runtime/fixture-run.ts`: exit 0, all eight existing checks true.
 5. Repeated the exact strict TypeScript command from `runtime-006a-outcome/report.md`, including `verify-outcome.ts`: exit 0, no diagnostics. LSP receipt was inspected, not rerun. Optional skill checker incompatibility with installed TypeScript and unavailable Biome remain transparently reported by the writer, not claimed passing.
 
-Here `<attempt>` is `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1`. Only review artifacts were edited. No production edits, installations, Git mutations, services, accounts, providers or containers were used. All effects in this proof are in-memory counters. Native transport/provider execution, durable replay/recovery and OS containment remain unverified and required separately. Recommendation: APPROVE with WATCH for M2; blockers: none.
+Here `<attempt>` is `local evidence`. Only review artifacts were edited. No production edits, installations, Git mutations, services, accounts, providers or containers were used. All effects in this proof are in-memory counters. Native transport/provider execution, durable replay/recovery and OS containment remain unverified and required separately. Recommendation: APPROVE with WATCH for M2; blockers: none.
 
 ## Scope and provenance
 
 Read all five new, untracked files in `apps/server/src/modules/runtime`: `harness.ts`, `host-tools.ts`, `fixture-adapter.ts`, `fixture-run.ts`, `harness.test.ts`. Their complete contents constitute the new-file diff; ordinary `git diff` omits them. No source changes made by this reviewer.
 
-Read `tasks/006-define-harness-contract-and-fixture-adapter.md`, `docs/decisions/ownership.md`, `docs/decisions/execution-isolation.md`, the six-harness compatibility research, `.omo/v1-notepad.md`, and `.omo/evidence/runtime-006/report.md` with its referenced receipts/import guard/source hash manifest. Supported no-network RFC-002 research is the accepted prerequisite for this pure slice. This review does not require or claim native transport, databases, provider execution, credential storage, durable grants, egress or OS process termination.
+Read `tasks/006-define-harness-contract-and-fixture-adapter.md`, `docs/decisions/ownership.md`, `docs/decisions/execution-isolation.md`, the six-harness compatibility research, `local evidence`, and `local evidence` with its referenced receipts/import guard/source hash manifest. Supported no-network RFC-002 research is the accepted prerequisite for this pure slice. This review does not require or claim native transport, databases, provider execution, credential storage, durable grants, egress or OS process termination.
 
-`shasum -a 256 -c .omo/evidence/runtime-006/source-sha256.txt` independently returned OK for every scoped source file:
+`shasum -a 256 -c local evidence` independently returned OK for every scoped source file:
 
 ```text
 5996555e153bec4afbf63085f8b670be1415174eefff216ac59c42bd1b2c0c6e  fixture-adapter.ts
@@ -81,7 +81,7 @@ M1's meaningful-regression-test violation in both programming and remove-ai-slop
 
 ## Narrow correction verification
 
-Read `.omo/evidence/runtime-006/capability-test-fix.md` and its four underlying logs in the active attempt's `capability-test-fix/` directory: `focused-test.log`, `strict-diagnostics.log`, `before-mutation.log`, `after-mutation.log`. These record 40 passing tests/89 assertions, strict diagnostics exit 0, the original test's false pass under allowlist removal, and the corrected test's expected failure because `imaginary` did not throw under that mutation. The positive control succeeds in the mutation log. The report also retains the exact temporary-directory cleanup/ENOENT receipt. The coordinator independently repeated 40 tests/89 assertions; this reviewer performed the requested source/artifact delta review without another suite run.
+Read `local evidence` and its four underlying logs in the active attempt's `capability-test-fix/` directory: `focused-test.log`, `strict-diagnostics.log`, `before-mutation.log`, `after-mutation.log`. These record 40 passing tests/89 assertions, strict diagnostics exit 0, the original test's false pass under allowlist removal, and the corrected test's expected failure because `imaginary` did not throw under that mutation. The positive control succeeds in the mutation log. The report also retains the exact temporary-directory cleanup/ENOENT receipt. The coordinator independently repeated 40 tests/89 assertions; this reviewer performed the requested source/artifact delta review without another suite run.
 
 Independently recomputed all five source hashes: the test hash is the updated value above; all four production hashes are unchanged. The original `source-sha256.txt` remains a historical pre-correction manifest, while `capability-test-fix.md` binds the final test hash. The original independent 40/88 run below is retained as historical evidence, not mislabeled as final-source execution. Native/provider and operational limits remain unchanged.
 
@@ -91,7 +91,7 @@ All commands ran without services, installations, containers, provider calls or 
 
 1. `bun --no-env-file test apps/server/src/modules/runtime/harness.test.ts`: exit 0; Bun 1.3.14; 40 pass, 0 fail, 88 expect calls, 115 ms.
 2. `bun --no-env-file run apps/server/src/modules/runtime/fixture-run.ts`: exit 0; scope `synthetic-contract-only`; `ordered`, `roundTrip`, `success`, `terminalOnce`, `foreignDenied`, `orderRejected`, `cancelled`, `cleanup` all true; `passed: true`.
-3. `bun --no-env-file run .omo/evidence/runtime-006/import-check.ts`: exit 0; `importWithoutIo: true`, `modules: 4`. Source inspection also found no import-time I/O. This guard covers its named APIs, not all possible OS I/O; a future guard should not be represented as general containment.
+3. `bun --no-env-file run local evidence`: exit 0; `importWithoutIo: true`, `modules: 4`. Source inspection also found no import-time I/O. This guard covers its named APIs, not all possible OS I/O; a future guard should not be represented as general containment.
 4. Strict no-emit TypeScript invocation below: exit 0, no diagnostics.
 5. Additional read-only Bun stdin probe: `unrelatedMissingFieldsReject: true`, `completeUnknownReject: true`, `issuedFrozen: true`, `toolFrozen: true`, `issuedMutationRejected: true` (Reflect.set of issued actorId returned false).
 
@@ -111,4 +111,4 @@ Consumers must drain or cancel and close the iterator; execution deadlines begin
 
 ## Artifact placement
 
-`omo-agent-toolkit ulw-loop status --json` reported current attempt `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1`. The scoped copy is `runtime-006/G002-use-bun-typescript-and-the-installed-code-review.md` below that directory. This uses a unique runtime subdirectory at the coordinator's direction to preserve another reviewer's existing generic G002 receipt; neither report represents aggregate G002 approval.
+`omo-agent-toolkit ulw-loop status --json` reported current attempt `local evidence`. The scoped copy is `runtime-006/G002-use-bun-typescript-and-the-installed-code-review.md` below that directory. This uses a unique runtime subdirectory at the coordinator's direction to preserve another reviewer's existing generic G002 receipt; neither report represents aggregate G002 approval.

@@ -24,7 +24,7 @@ Capacity projection validates at most1024 complete claim facts and fixed policy2
 
 ## Evidence and exports
 
-[Scenario matrix, exact invocations, red-first failures, source hashes and limitations](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/dispatch-010b1/report.md).
+Scenario matrix, exact invocations, red-first failures, source hashes and limitations.
 
 - 223 tests /543 assertions across eight dispatch/run/launch/journal files pass. The new dispatch suite contains72 tests.
 - Strict TypeScript including the native driver passes; all four source/test files have no LSP diagnostics.

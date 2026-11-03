@@ -26,9 +26,10 @@ Input receipt/sequence is the identity boundary, with ID bound to that admission
 ## Independent verification
 
 All exit0:
+
 - bun --no-env-file test apps/server/src/modules/runtime/launch-spec.test.ts apps/server/src/modules/runtime/launch-recipe.test.ts apps/server/src/modules/runtime/launch-journal.test.ts apps/server/src/modules/runtime/journal-transitions.test.ts: 121 pass,0 fail,235 assertions.
 - Exact strict no-emit invocation from runtime-008c/report.md, including native proof: zero diagnostics.
-- bun --no-env-file .omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-008c/verify-pure-journal.ts: all nine named checks true; daemonEffectsIssued=false,durableWritesClaimed=false.
+- bun --no-env-file local evidence all nine named checks true; daemonEffectsIssued=false,durableWritesClaimed=false.
 - Recomputed all five source hashes; exact matches below.
 
 Writer's LSP receipts are not independently rerun; strict diagnostics were. Tests invoke the actual pure functions and include positive controls, changed identity/fact rejections, late unknown acknowledgments, input accounting, cleanup separation, immutability and historical roundtrips. A fixed fixture acknowledgment is only a synthetic backend fact; it is not proof of daemon completion.
@@ -50,4 +51,3 @@ Add actual crash/failure proof at the filesystem and daemon boundaries when thos
 - journal-transitions.test.ts: a4af0f9958a59fd6b7de3718f8aa41b731a4e23d038b8cf8c367ba9c8fe77018
 
 Evidence: current G002a1/runtime-008c/report.md, tests.log, strict.log and verify-pure-journal.ts/native-pure.log. This scoped approval does not complete parent008 or supersede unrelated review lanes.
-

@@ -18,7 +18,8 @@ Changed paths: `apps/server/src/modules/runtime/host-tools.ts`, `apps/server/src
 
 Implementation: private InvalidToolArguments plus private defineHostTool membership distinguish the validation boundary. The callback/result phase converts every thrown error to fixed outcome_uncertain. Exported names and signatures remain HostInvocation, ToolContext, HostTool, boundedText, defineHostTool, createHostToolGate. Duplicate/forged/foreign/cancellation behavior and the existing capability test correction are preserved.
 
-Evidence: [complete scenario matrix, commands, source hashes and cleanup](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/runtime-006a-outcome/report.md).
+Evidence: complete scenario matrix, commands, source hashes and cleanup.
+
 - Failing first: 42 pass / 4 fail / 100 assertions. Captured pre-fix native counterexample confirms one effect followed by tool_denied and isUncertain false.
 - Final focused command: `bun --no-env-file test apps/server/src/modules/runtime/harness.test.ts`; 47 pass / 0 fail / 112 assertions.
 - Strict no-emit diagnostics pass; source LSP scans five files with zero diagnostics.

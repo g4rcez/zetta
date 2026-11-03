@@ -15,6 +15,7 @@ Inspected the exact guards: run-state.ts:22 rejects nonnull owner intent outside
 Regression tests include all six M1 negatives and four M2 negatives, plus valid running/cancelled intent, null intent after completion-first, complete success/failure results, and cancelled/interrupted null result controls. The normalized cancellation replay case confirms different raw succeeded/failed outcomes with identical cancelled/known/result payload remain idempotent and preserve timestamp/revision. No new hidden raw-outcome storage or authority was introduced.
 
 Independently executed on frozen current source:
+
 - Focused two-file Bun suite: **30 pass,0 fail,179 assertions**, exit0.
 - Exact strict command in run-contract-009b2a/report.md including exactOptionalPropertyTypes: exit0,zero diagnostics.
 - Original cancel-precedence-probe.ts: exit0; all six invalid combinations rejected. Captured cancel-precedence-009b2a-green.log beside original red log.
@@ -23,6 +24,7 @@ Independently executed on frozen current source:
 - Inspected retained failing-first red.log:10 failures,exit1 before correction. Writer LSP receipts are recorded but not independently rerun.
 
 Current SHA256:
+
 - run-contract.ts: a165b61b221c3ee5644f750cd7dd1486e70344c227aff3deafc9fb73c2004d25
 - run-state.ts: 14e60117b37c7603d281784dfbe28bbeeac6d3ea27aa87bf4e5e5b3bbd05f757
 - run-contract.test.ts: c96a4c629846c82b155f0bad8f9ad52c4c177048ab03d208d16522d8c406f400
@@ -50,17 +52,18 @@ Required narrow correction: add the status restriction in both readers. Add nega
 
 MEDIUM M2 — **Success/failure must carry the validated result.** run-state.ts:24-38 and run-contract.ts:111-117 accept succeeded/failed with result=null. Completed facts always require the complete result, and the coordinator confirmed no resultless success/failure is intended. Reject null result for those two statuses in parseRunState and parseRunResultDto, preserving legitimate cancelled/interrupted-null controls. parseRunDto intentionally contains no result and cannot enforce this field; the row assembler must validate the full state before projecting it.
 
-Independent missing-result-probe.ts in the same review evidence directory exits1 and missing-result-red.log records all four invalid state/resultDto combinations accepted, while four cancelled/interrupted-null positive controls remain accepted. Exact invocation: `bun --no-env-file run .omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-contract-009b2-review/missing-result-probe.ts`. Same frozen source hashes as M1. No production edits.
+Independent missing-result-probe.ts in the same review evidence directory exits1 and missing-result-red.log records all four invalid state/resultDto combinations accepted, while four cancelled/interrupted-null positive controls remain accepted. Exact invocation: `bun --no-env-file run local evidence`. Same frozen source hashes as M1. No production edits.
 
 LOW: none.
 
 ## Independent red reproduction
 
-Artifact: .omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-contract-009b2-review/cancel-precedence-probe.ts
+Artifact: local evidence
 
 Exact invocation from repository root:
+
 ```sh
-bun --no-env-file run .omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-contract-009b2-review/cancel-precedence-probe.ts
+bun --no-env-file run local evidence
 ```
 
 Exit1, retained cancel-precedence-red.log: each state/dto case for succeeded, failed and interrupted emits accepted=true, expectedAccepted=false. Synthetic identifiers only; no DB/service/native effect. The probe exits0 only when all six are rejected, so the reproduction is not a success-message-only assertion.
@@ -91,4 +94,3 @@ No product code edited. No DB/native/provider/launcher/process-restart proof per
 - run-state.test.ts: a72cb9799750f8b24feac669d6d21daa52776031d011efc1a83142c740cffafe
 
 All four independently matched the writer manifest. Context read: accepted durable-runs ADR,009b2 task/evidence and current schema cancellation constraint. Source frozen for this verdict.
-

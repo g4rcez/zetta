@@ -18,16 +18,16 @@ A temporary account-table constraint also exposed non-transactional public signu
 
 ## Verification
 
-Evidence directory: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G001-preserve-all-existing-tracked-untrac/a1/signup-privacy/`.
+Evidence directory: `local evidence`.
 
-| Scenario and invocation | Binary observable | Artifact |
-| --- | --- | --- |
-| Before fix: `bash scripts/verify-identity-auth.sh auth` | Exit 1 at expanded signup denial scenario; cleanup PASS | `red-runtime.log` |
-| Before transaction fix: same invocation with forced account constraint | Exit 1 at credential no-orphan/retry scenario; cleanup PASS; raw synthetic diagnostic removed | `rollback-red-runtime.log` |
-| Final: same invocation, fresh database | Exit 0, seven PASS scenarios, cleanup PASS | `green-runtime.log` |
-| `bun --no-env-file test packages/auth/src apps/server/src/modules/identity/signup.integration.test.ts` | Exit 0, 50 tests pass | `unit.log` |
-| Strict TypeScript check of six touched source/test files | Exit 0, no diagnostics | `verification.md` (full invocation), `strict-ts.log` (empty compiler output) |
-| Source LSP diagnostics for six touched source/test files | No error diagnostics on each | `lsp.json` |
+| Scenario and invocation                                                                                | Binary observable                                                                             | Artifact                                                                     |
+| ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Before fix: `bash scripts/verify-identity-auth.sh auth`                                                | Exit 1 at expanded signup denial scenario; cleanup PASS                                       | `red-runtime.log`                                                            |
+| Before transaction fix: same invocation with forced account constraint                                 | Exit 1 at credential no-orphan/retry scenario; cleanup PASS; raw synthetic diagnostic removed | `rollback-red-runtime.log`                                                   |
+| Final: same invocation, fresh database                                                                 | Exit 0, seven PASS scenarios, cleanup PASS                                                    | `green-runtime.log`                                                          |
+| `bun --no-env-file test packages/auth/src apps/server/src/modules/identity/signup.integration.test.ts` | Exit 0, 50 tests pass                                                                         | `unit.log`                                                                   |
+| Strict TypeScript check of six touched source/test files                                               | Exit 0, no diagnostics                                                                        | `verification.md` (full invocation), `strict-ts.log` (empty compiler output) |
+| Source LSP diagnostics for six touched source/test files                                               | No error diagnostics on each                                                                  | `lsp.json`                                                                   |
 
 The final real-handler proof asserts known/unknown denial status and body equality; missing cookies; unchanged user/account/session/membership/consumption/audit counts; an identical denied trailing-slash alias; valid signup and credential persistence; revoked acceptance rejection and fresh acceptance; trusted web/desktop login and session invalidation; untrusted origin/CSRF rejection; and forced credential insert failure with zero observed console.error attempts, rollback, and successful retry. Test-only console observation is restored in `finally`.
 

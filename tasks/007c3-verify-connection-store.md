@@ -4,7 +4,7 @@ Status: done for scoped metadata-store database proof; coordinator independently
 
 ## Accepted dependencies and scope
 
-Final acceptance: [independent review](../docs/verification/reviews/connection-007c3-review.md), no blockers; [coordinator final source-bound receipt](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/coordinator-connection-007c3.md). Historical session38813 passed behavior but emitted a shared-client setup warning; only initial actor-fixture queries were made sequential, with real race clients remaining independent. Final proof SHA256 `ca687bed6a733db4ec285e75fec3fdb40f8507b8a1695b34166dc4cdc9e1d931`. No warning suppression or production-service fix was involved.
+Final acceptance: [independent review](../docs/verification/reviews/connection-007c3-review.md), no blockers; coordinator final source-bound receipt. Historical session38813 passed behavior but emitted a shared-client setup warning; only initial actor-fixture queries were made sequential, with real race clients remaining independent. Final proof SHA256 `ca687bed6a733db4ec285e75fec3fdb40f8507b8a1695b34166dc4cdc9e1d931`. No warning suppression or production-service fix was involved.
 
 Consumes [007c2 store contract](007c2-implement-connection-store.md), coordinator-accepted 007c2a parser-buffer fixes/trusted third nonce-source argument, [007c1 schema](007c1-define-connection-storage-schema.md) and independently repeated [007c1a disposable proof](007c1a-verify-connection-schema.md). No service, crypto, schema, migration, identity helper, production composition, environment schema, dependency or provider changes.
 
@@ -37,7 +37,7 @@ Scenario output contains only fixed PASS names/counts or fixed failure phases. E
 
 ## Preparation completion record
 
-Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/connection-007c3/report.md` and `commands.json`.
+Evidence: `local evidence` and `commands.json`.
 
 - `bash -n scripts/verify-identity-auth.sh`: exit 0.
 - `bun --no-env-file test scripts/verify-identity-auth.test.ts apps/server/src/test-support/identity-proof-target.test.ts apps/server/src/test-support/identity-test-target.test.ts`: 31 pass, 0 fail, 948 assertions. Includes actual inert store-entry import and unsafe-target denial without IO plus fixed shell dispatch/cleanup/refusal fixtures. No database claim.

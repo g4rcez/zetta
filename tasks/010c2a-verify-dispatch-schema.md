@@ -28,7 +28,7 @@ Expect fixed PASS scenario names, final structural count/no-new-IO statement and
 
 ## Offline preparation evidence
 
-[Evidence report](../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/dispatch-010c2a/report.md): red-first failure retained; final4 tests/18 assertions pass; scoped strict exit0; all five LSP responses no diagnostics. An initial strict narrowing error was corrected by binding the validated ID before its async closure; its failed receipt remains retained. Actual SQL statements, trigger enforcement, server oracle ordering and service disposal are unexecuted and unclaimed.
+Evidence report: red-first failure retained; final4 tests/18 assertions pass; scoped strict exit0; all five LSP responses no diagnostics. An initial strict narrowing error was corrected by binding the validated ID before its async closure; its failed receipt remains retained. Actual SQL statements, trigger enforcement, server oracle ordering and service disposal are unexecuted and unclaimed.
 
 ## Actual worker run
 

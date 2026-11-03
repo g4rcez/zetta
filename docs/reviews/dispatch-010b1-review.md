@@ -35,4 +35,4 @@ Code-review, programming and remove-ai-slops perspectives were consulted/applied
 
 Approve the pure drafts only. They do not issue ExecutionAuthority, authenticate structural inputs, commit grants or authorize I/O. Future source/schema work must prove private live-transaction provenance, fresh membership/current claim checks, full ordered lock/claim/grant snapshots, semantic-action anti-reminting and uniqueness, immutable bindings, aggregate input budget, real commit-before-send and unknown-result no-resend. Actual database races, removal/reenrollment, launcher delivery and native/provider readiness remain required later gates. Parent010 is incomplete.
 
-Evidence directory: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/dispatch-010b1-review`.
+Evidence directory: `local evidence`.

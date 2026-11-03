@@ -35,4 +35,4 @@ Code-review, programming and remove-ai-slops perspectives were consulted/applied
 
 Approve this actual service-proof-process death/readback criterion. Reader is behaviorally read-only through normal transactions required by FOR UPDATE, not a SQL least-privilege deployment. Controlled sessions are not HTTP sign-in. This does not restart PostgreSQL, the host, a deployed HTTP service or native launcher; synthetic backend facts do not verify native deadline policy, dispatch authority or provider execution. Those broader operational gates remain outstanding.
 
-Evidence directory: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-restart-009c3-review`.
+Evidence directory: `local evidence`.

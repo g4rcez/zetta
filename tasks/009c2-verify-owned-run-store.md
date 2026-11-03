@@ -17,15 +17,15 @@ Actors are issued sequentially through createIdentityAccess with a controlled Se
 7. A narrow temporary attempt-insert trigger forces real transaction failure, leaving no inserted run/attempt. Trigger/function removed before following cases.
 8. Wrapper waits for real transaction commit, then throws a synthetic lost acknowledgement. Independent readback proves persistence before same-key repair on second client; no extra attempt. This is a post-commit exception boundary, not a real TCP drop.
 9. Duplicate same-key submissions serialize behind observed membership locks and commit exactly one run/attempt.
-10–11. Cancel-first and completion-first use a narrowly scoped update-trigger advisory barrier. Owner observes actual pg_blocking_pids before release. Completion-first retains terminal outcome; cancel-first settles cancelled with actual effects and one terminal timestamp.
-12–13. Identical/conflicting competing completions wait, retaining first terminal outcome/timestamp; stale generation/lease tokens deny. Backend helper re-reads revision under locks to consume committed owner intent.
-14–15. Removal waits behind earlier cancellation then denies repair/read; earlier committed removal denies waiting cancellation without changing status/revision/intent.
+   10–11. Cancel-first and completion-first use a narrowly scoped update-trigger advisory barrier. Owner observes actual pg_blocking_pids before release. Completion-first retains terminal outcome; cancel-first settles cancelled with actual effects and one terminal timestamp.
+   12–13. Identical/conflicting competing completions wait, retaining first terminal outcome/timestamp; stale generation/lease tokens deny. Backend helper re-reads revision under locks to consume committed owner intent.
+   14–15. Removal waits behind earlier cancellation then denies repair/read; earlier committed removal denies waiting cancellation without changing status/revision/intent.
 
 Races use first/second clients, observed by owner with a1500ms finite query loop and inherited bounded lock/query timeouts. Pending promises settle after barrier release before trigger removal and close. Each scenario emits only a fixed PASS label; errors emit fixed phase only, no private rows/SQL/cause. Fixtures are removed with explicit ordered deletes, not legacy eight-table cleanup. Launcher checks exact owned fresh tmpfs container, local existing PG18 image, loopback and health, then removes only that container/network; no volume deletion/prune.
 
 ## Preparation evidence and next gate
 
-Evidence: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-009c2/`.
+Evidence: `local evidence`.
 
 `red-launcher.log` retains failing fixed-mode/inert-entry tests before implementation. `focused.log` exits0 with35tests/301assertions; `strict.log` exact TS6 strict command exits0; `shell.log` bash syntax exits0. These tests prove shell dispatch/guards and accepted offline row/store behavior, not PostgreSQL transactions. `source-sha256.txt` pins the prepared proof/launcher sources. LSP query outputs are recorded separately; Biome hooks unavailable, no install.
 

@@ -2,7 +2,7 @@
 
 **CLEAR / APPROVE for the tested disposable PostgreSQL schema constraints and four race scenarios.** No blocking finding. Reviewed2026-10-22; reviewer did not author the proof and made no product edits or DB starts. Parent009 service completion is not established.
 
-[Independent evidence](../../.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/run-schema-009b1a-review/report.md): focused schema/launcher rerun27 pass/281 assertions, strict TypeScript exit0 and shell syntax exit0. Six proof/launcher source hashes match the worker's frozen manifest. Migration pin verification matches all four actual SQL/snapshot files. Inspected worker session47959's retained actual log/status:69 checks, four RC/RR races, fixture/client/container/network cleanup and no warnings/oracle mismatches. Root separately reported its successful session57029 repeat; this reviewer did not rerun a third database or claim independent observation of that session's raw output.
+Independent evidence: focused schema/launcher rerun27 pass/281 assertions, strict TypeScript exit0 and shell syntax exit0. Six proof/launcher source hashes match the worker's frozen manifest. Migration pin verification matches all four actual SQL/snapshot files. Inspected worker session47959's retained actual log/status:69 checks, four RC/RR races, fixture/client/container/network cleanup and no warnings/oracle mismatches. Root separately reported its successful session57029 repeat; this reviewer did not rerun a third database or claim independent observation of that session's raw output.
 
 ## Audited boundaries
 

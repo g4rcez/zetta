@@ -18,6 +18,7 @@ Inspected the complete 11-case and eight-race source, integration entry, connect
 The corrected actual command was bash scripts/verify-identity-auth.sh connection-store, executed by the owning worker. postgres-run-2-sequential.log contains 19 distinct scenario PASS lines, final fixture clearing, reserved-client closure with zero new-network attempts, owned container/network teardown and EXIT_CODE 0. No warning/deprecation appears. sequential-cleanup-readback.json records exit0/empty container, network and volume inventories for the dedicated project. No prune or volume removal is used. This reviewer audited actual receipts/source and did not start a competing database. Coordinator's fresh independent repeat is separately owned and must retain its own receipt.
 
 All entries in sequential-source-hashes.json independently match current files. Principal hashes:
+
 - store.integration.ts: ca687bed6a733db4ec285e75fec3fdb40f8507b8a1695b34166dc4cdc9e1d931
 - store-proof-cases.ts: 058481c5560cca5f7d60dd58f1bc5880f0f40fc376340b7a80b12d4baeea92dc
 - store-proof-races.ts: 4db41ce5f793ce2b3a25abac2259cb7ca9d8120c0694311c03e6f7825aea3745
@@ -47,6 +48,7 @@ The whole-proof120-second deadline includes close. Driver statement/query/lock t
 ## Independently repeated offline checks
 
 On corrected source:
+
 - bun --no-env-file test scripts/verify-identity-auth.test.ts apps/server/src/test-support/identity-proof-target.test.ts apps/server/src/test-support/identity-test-target.test.ts: 31 pass, 0 fail, 948 assertions, exit0.
 - Exact scoped strict invocation from commands.json, covering three proof modules and launcher tests: exit0, zero diagnostics.
 - Recomputed every sequential manifest hash: no mismatches.
@@ -59,5 +61,4 @@ Programming, TypeScript, remove-ai-slops and code-review perspectives applied. N
 
 These are controlled sessions, not HTTP/sign-in; fresh factory, not process/host restart; post-real-commit wrapper loss, not TCP loss; injected near-capacity counter, not a million-row ledger; and native profiles/readiness/dispatch/decryption delivery remain unimplemented. HTTP producer authorization, actual process/network interruption where required, RFC008/010 grant issuance and delivery/reconciliation still need their own proof. No additional blocking case is missing for the bounded metadata-store behaviors claimed here.
 
-Evidence directory: .omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/connection-007c3.
-
+Evidence directory: local evidence

@@ -33,4 +33,4 @@ Code-review, programming and remove-ai-slops perspectives were consulted/applied
 
 Approve only008d1. Permanent-inode Linux descriptor locks/inheritance, Linux/ext4 directory durability, bounded inventory/allocation, transition-only serialized owners, timeout poison and retained lock lifetime, restart/crash cuts and operational composition remain008d2/008d3 or later. A successful local commit returns void, not execution authority. Mac fsync success does not establish Linux readiness or power-loss durability.
 
-Evidence directory: `.omo/evidence/ulw/01a1643f-531d-7590-aec8-a8624a8fa202/G002-use-bun-typescript-and-the-installed/a1/journal-files-008d1-review`.
+Evidence directory: `local evidence`.

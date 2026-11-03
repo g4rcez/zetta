@@ -25,7 +25,7 @@ The egress comparison prefers a trusted provider-specific gateway where native p
 
 ## Design acceptance evidence
 
-[Evidence report and review matrix](../.omo/evidence/runtime-008a/report.md) lists the exact source inventory, current hashes, primary documents fetched on 2026-10-22, static link-check invocation and captured output. It distinguishes observed code, cited upstream facts, proposed contracts and unexecuted acceptance scenarios.
+Evidence report and review matrix lists the exact source inventory, current hashes, primary documents fetched on 2026-10-22, static link-check invocation and captured output. It distinguishes observed code, cited upstream facts, proposed contracts and unexecuted acceptance scenarios.
 
 Design criteria covered: authenticated transport; closed bounded recipe; non-root/no host authority; durable resource journal and conservative uncertainty; deadline/output/cancel/tree lifecycle; startup reconciliation; single DB dispatch/grant owner; source-supported egress/TLS comparison; separate GUI broker; concrete native/image/toolchain provisioning blockers.
 

@@ -22,11 +22,19 @@ import { MessageRow, type Author } from "./message-row";
 export type RowActions = {
   onReact: (row: Row, emoji: string) => void;
   onReply: (row: Row) => void;
+  /** Reply in the channel: the next message quotes this one. Without it the toolbar has no Reply button (threads, rooms). */
+  onQuote?: (row: Row) => void;
   onSaveToWiki: (row: Row) => void;
   onQueue?: (row: Row, action: "remove" | "retry") => void;
   /** Open a published file beside the chat. Without it, an artifact receipt is a plain link to the artifact page. */
   onOpenArtifact?: (id: string) => void;
 };
+
+/** Who wrote the message `row` quotes, found the same way as the author of a row. */
+export function quoteAuthorOf(row: Row, authorOf: (row: Row) => Author): Author | undefined {
+  const q = row.meta?.quote;
+  return q ? authorOf({ ...row, role: q.role, botId: q.botId } as Row) : undefined;
+}
 
 /** Sending always brings you back to the newest message, even after reading history. */
 function FollowOnSend({ token }: { token: number }) {
@@ -83,6 +91,8 @@ const RENDERED_TAIL = 30;
 type LineProps = {
   row: Row;
   author: Author;
+  /** Who wrote the message this row quotes. */
+  quoteAuthor: Author | undefined;
   continued: boolean;
   repo: string | undefined;
   day: string | undefined;
@@ -97,6 +107,7 @@ type LineProps = {
 const Line = memo(function Line({
   row,
   author,
+  quoteAuthor,
   continued,
   repo,
   day,
@@ -130,6 +141,7 @@ const Line = memo(function Line({
           <MessageRow
             row={row}
             author={author}
+            quoteAuthor={quoteAuthor}
             continued={continued}
             repo={repo}
             inThread={inThread || !threads}
@@ -197,6 +209,7 @@ export function MessageList({
                   key={row.id}
                   row={row}
                   author={authorOf(row)}
+                  quoteAuthor={quoteAuthorOf(row, authorOf)}
                   continued={continued}
                   repo={repos.get(row.id)}
                   day={day}

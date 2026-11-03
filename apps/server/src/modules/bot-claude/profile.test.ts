@@ -50,8 +50,17 @@ const skill = (o: Partial<Asset> = {}): Asset => ({
 });
 
 describe("claudeArgs", () => {
-  test("without a profile it is exactly the original command", () => {
-    expect(claudeArgs("hi", null)).toEqual(["claude", "-p", "hi"]);
+  test("without a profile it is the original command plus the progress stream", () => {
+    expect(claudeArgs("hi", null)).toEqual([
+      "claude",
+      "-p",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--append-system-prompt",
+      "Before each group of tool calls, write one short sentence that says what you will do next.",
+      "hi",
+    ]);
     const host = claudeArgs("hi", "m", "git");
     expect(host.slice(0, 5)).toEqual(["claude", "-p", "--model", "m", "--permission-mode"]);
     expect(flag(host, "--allowedTools")).toEqual([
@@ -133,7 +142,16 @@ describe("claudeArgs", () => {
   });
   test("without code access the preset and allow rules grant nothing", () => {
     const a = claudeArgs("hi", null, undefined, { ...base, preset: "full", allow: ["Bash"] });
-    expect(a).toEqual(["claude", "-p", "hi"]);
+    expect(a).toEqual([
+      "claude",
+      "-p",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--append-system-prompt",
+      "Before each group of tool calls, write one short sentence that says what you will do next.",
+      "hi",
+    ]);
   });
   test("prompt, effort, budget and plugin dir are added; the user's prompt stays last and is never split", () => {
     const a = claudeArgs(
@@ -148,7 +166,9 @@ describe("claudeArgs", () => {
       "--plugin-dir",
       "/p",
     ]);
-    expect(a[a.indexOf("--append-system-prompt") + 1]).toBe("Be brief");
+    expect(a[a.indexOf("--append-system-prompt") + 1]).toBe(
+      "Before each group of tool calls, write one short sentence that says what you will do next.\n\nBe brief",
+    );
     expect(a[a.indexOf("--effort") + 1]).toBe("high");
     expect(a[a.indexOf("--max-budget-usd") + 1]).toBe("2.50");
     expect(flag(a, "--allowedTools")).toContain("Skill");

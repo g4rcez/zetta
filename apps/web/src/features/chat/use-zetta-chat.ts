@@ -10,6 +10,7 @@ import { liveRows, reuseRows, summaryOf, type Row, type ZettaUIMessage } from ".
 
 type Extras = {
   parentMessageId?: string;
+  quotedMessageId?: string;
   attachmentIds?: string[];
   fileRefs?: string[];
   wikiIds?: string[];
@@ -48,6 +49,8 @@ export function useZettaChat({
 }) {
   const conv = useRef(conversationId);
   conv.current = conversationId;
+  const turnId = useRef(attachKey); // a room runs several bots at once: the stream to follow is the one of this turn
+  turnId.current = attachKey;
   const handlers = useRef({ onSettled, onProposal, onArtifact, onSteer });
   handlers.current = { onSettled, onProposal, onArtifact, onSteer };
   const leaving = useRef(false); // a stop() we issued while switching away from a chat: not a user abort, nothing to settle
@@ -69,6 +72,7 @@ export function useZettaChat({
               clientRequestId: last.id,
               content,
               ...(extras.parentMessageId ? { parentMessageId: extras.parentMessageId } : {}),
+              ...(extras.quotedMessageId ? { quotedMessageId: extras.quotedMessageId } : {}),
               ...(extras.attachmentIds?.length ? { attachmentIds: extras.attachmentIds } : {}),
               ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
               ...(extras.wikiIds?.length ? { wikiIds: extras.wikiIds } : {}),
@@ -77,7 +81,9 @@ export function useZettaChat({
           };
         },
         prepareReconnectToStreamRequest: () => ({
-          api: url(`/api/conversations/${conv.current}/chat/stream`),
+          api: url(
+            `/api/conversations/${conv.current}/chat/stream${turnId.current ? `?turn=${turnId.current}` : ""}`,
+          ),
         }),
       }),
     [],
@@ -193,6 +199,7 @@ export function useZettaChat({
           ...(extras.parentMessageId || parentMessageId
             ? { parentMessageId: extras.parentMessageId ?? parentMessageId }
             : {}),
+          ...(extras.quotedMessageId ? { quotedMessageId: extras.quotedMessageId } : {}),
           ...(extras.attachmentIds?.length ? { attachmentIds: extras.attachmentIds } : {}),
           ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
           ...(extras.wikiIds?.length ? { wikiIds: extras.wikiIds } : {}),

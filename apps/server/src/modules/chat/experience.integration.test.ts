@@ -204,6 +204,72 @@ suite("chat experience against compose postgres", () => {
     expect(list[0].attachments[0].name).toBe("report.txt");
   });
 
+  test("a reply in the channel keeps a quote, tells the bot, and stays out of threads", async () => {
+    const bot = await newBot(A, "Quoter", false);
+    const c = await conv(A, bot.id);
+    const first = await call(A, "POST", `/api/conversations/${c}/messages`, {
+      content: "the deploy runs at noon",
+    });
+    const sent = await call(A, "POST", `/api/conversations/${c}/messages`, {
+      content: "why noon?",
+      quotedMessageId: first.json.assistant.id,
+    });
+    expect(sent.status).toBe(201);
+    expect(sent.json.user.parentMessageId).toBeNull();
+    expect(sent.json.user.meta.quote).toMatchObject({
+      id: first.json.assistant.id,
+      role: "assistant",
+    });
+    expect(sent.json.user.meta.quote.excerpt).toContain("the deploy runs at noon");
+    expect(sent.json.user.content).toBe("why noon?"); // the quote is not pasted into the text
+    expect(sent.json.assistant.content).toContain("The user replies to an earlier bot reply");
+    expect(sent.json.assistant.content).toContain("the deploy runs at noon");
+    expect(sent.json.assistant.content).toContain("why noon?");
+  });
+
+  test("a queued reply in the channel keeps its quote", async () => {
+    const bot = await newBot(A, "Queue quoter", false);
+    const c = await conv(A, bot.id);
+    const first = await call(A, "POST", `/api/conversations/${c}/messages`, { content: "ship it" });
+    const queued = await call(A, "POST", `/api/conversations/${c}/queue`, {
+      clientRequestId: `queued-quote-${uuidv7()}`,
+      content: "when?",
+      quotedMessageId: first.json.user.id,
+    });
+    expect(queued.status).toBe(201);
+    expect(queued.json.message.meta.quote).toMatchObject({ id: first.json.user.id, role: "user" });
+    expect(queued.json.message.meta.quote.excerpt).toBe("ship it");
+  });
+
+  test("a reply inside a thread can quote a message and keeps both links", async () => {
+    const bot = await newBot(A, "Thread quoter", false);
+    const c = await conv(A, bot.id);
+    const first = await call(A, "POST", `/api/conversations/${c}/messages`, { content: "root" });
+    const sent = await call(A, "POST", `/api/conversations/${c}/messages`, {
+      content: "more on that",
+      parentMessageId: first.json.user.id,
+      quotedMessageId: first.json.assistant.id,
+    });
+    expect(sent.status).toBe(201);
+    expect(sent.json.user.parentMessageId).toBe(first.json.user.id);
+    expect(sent.json.user.meta.quote.id).toBe(first.json.assistant.id);
+    expect(sent.json.assistant.content).toContain("The user replies to an earlier bot reply");
+  });
+
+  test("a quoted message must belong to the same chat", async () => {
+    const bot = await newBot(A, "Strict quoter", false);
+    const one = await conv(A, bot.id);
+    const two = await conv(A, bot.id);
+    const other = await call(A, "POST", `/api/conversations/${one}/messages`, {
+      content: "elsewhere",
+    });
+    const denied = await call(A, "POST", `/api/conversations/${two}/messages`, {
+      content: "hello",
+      quotedMessageId: other.json.user.id,
+    });
+    expect(denied.status).toBe(404);
+  });
+
   test("images are checked by content, served to their owner only, and survive as an image-only message", async () => {
     process.env.ZETTA_ATTACHMENTS_ROOT = await mkdtemp(join(tmpdir(), "zetta-att-"));
     const bot = await newBot(A, "Viewer", false);

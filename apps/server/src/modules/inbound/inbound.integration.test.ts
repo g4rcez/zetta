@@ -122,7 +122,7 @@ suite("inbound channels against compose postgres", () => {
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: { access, chat },
-    discussions: { access, store, worker },
+    discussions: { access, store, worker, chat },
     inbound: { access, inbound },
     webOrigin: "http://web.test",
     desktopOrigins: [],
@@ -436,5 +436,28 @@ suite("inbound channels against compose postgres", () => {
     ]);
     await settle(t!.conversationId);
     slow = undefined;
+  });
+
+  test("deleting an outside chat removes its thread, events and messages; a new message opens a fresh chat", async () => {
+    const a = (await issueBackgroundActor(lookup, A))!;
+    const [t] = await db.select().from(inboundThread).where(eq(inboundThread.chatKey, "c3"));
+    await chat.deleteConversation(a, t!.conversationId);
+    expect(
+      await db.select().from(conversation).where(eq(conversation.id, t!.conversationId)),
+    ).toHaveLength(0);
+    expect(await db.select().from(inboundThread).where(eq(inboundThread.id, t!.id))).toHaveLength(
+      0,
+    );
+    expect(
+      await db.select().from(inboundEvent).where(eq(inboundEvent.threadId, t!.id)),
+    ).toHaveLength(0);
+    expect(
+      await db.select().from(message).where(eq(message.conversationId, t!.conversationId)),
+    ).toHaveLength(0);
+    inbox = [ev("k-after-delete", "hello again", "c3")];
+    await inbound.tick(new Date(Date.now() + 1_200_000));
+    const [fresh] = await db.select().from(inboundThread).where(eq(inboundThread.chatKey, "c3"));
+    expect(fresh!.conversationId).not.toBe(t!.conversationId);
+    await settle(fresh!.conversationId);
   });
 });

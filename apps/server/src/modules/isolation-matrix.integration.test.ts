@@ -87,6 +87,7 @@ suite("cross-user isolation matrix", () => {
       access: realAccess,
       store: discussions,
       worker: { kick: () => {}, tick: async () => {}, drain: async () => {} },
+      chat,
     },
     inbound: { access: realAccess, inbound },
     wiki: { access: realAccess, wiki },

@@ -8,8 +8,12 @@ export class TurnBusyError extends Error {
 export type TurnRecord<E> = {
   id: string;
   key: string;
+  /** When the turn started (ms since epoch). */
+  startedAt: number;
   events: E[];
   done: boolean;
+  /** When the turn last produced an event (or started): a long silence means it waits on something slow. */
+  lastEventAt: number;
   error?: unknown;
   abort: AbortController;
   /** Resolves when the first event exists or the turn failed/finished before emitting anything. */
@@ -40,8 +44,10 @@ export function createTurnRegistry<E>(
       const rec: TurnRecord<E> = {
         id: uuidv7(),
         key,
+        startedAt: Date.now(),
         events: [],
         done: false,
+        lastEventAt: Date.now(),
         abort: new AbortController(),
         ready: new Promise<void>((r) => {
           markReady = r;
@@ -60,6 +66,7 @@ export function createTurnRegistry<E>(
         try {
           for await (const ev of work(rec.abort.signal)) {
             if (rec.events.length < maxEvents || !droppable(ev)) rec.events.push(ev);
+            rec.lastEventAt = Date.now();
             markReady();
             wake();
           }
@@ -77,11 +84,22 @@ export function createTurnRegistry<E>(
       return rec;
     },
     get: (key: string) => turns.get(key),
+    running: () => [...turns.values()].filter((r) => !r.done),
     cancel(key: string) {
       const r = turns.get(key);
       if (!r || r.done) return false;
       r.abort.abort();
       return true;
+    },
+    /** Cancels the turn of `key` and every parallel turn under it (`key:<turn id>`, room turns started by a person's post). */
+    cancelAll(key: string) {
+      let any = false;
+      for (const [k, r] of turns)
+        if ((k === key || k.startsWith(`${key}:`)) && !r.done) {
+          r.abort.abort();
+          any = true;
+        }
+      return any;
     },
     /** Yields events with index > after (1-based cursor), waiting for new ones until the turn is done. */
     async *follow(rec: TurnRecord<E>, after = 0): AsyncGenerator<{ n: number; event: E }, void> {

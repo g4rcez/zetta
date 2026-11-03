@@ -181,6 +181,12 @@ export type MessageMeta = {
     chat: string;
     chatName: string;
   };
+  /** The message this one replies to in the channel (a snapshot, not a thread). */ quote?: {
+    id: string;
+    role: "user" | "assistant";
+    botId: string | null;
+    excerpt: string;
+  };
   /** A group discussion this chat started reported back. */ discussion?: {
     id: string;
     title: string;
@@ -429,6 +435,7 @@ export const chatClient = {
       clientRequestId: string;
       content: string;
       parentMessageId?: string;
+      quotedMessageId?: string;
       attachmentIds?: string[];
       fileRefs?: string[];
       wikiIds?: string[];

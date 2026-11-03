@@ -22,6 +22,15 @@ describe("turn registry", () => {
     expect((await collect(reg.follow(rec, 0))).map((x) => x.event)).toEqual(["a", "b", "c"]);
     expect((await collect(reg.follow(rec, 2))).map((x) => [x.n, x.event])).toEqual([[3, "c"]]); // resume after cursor, no duplicates
   });
+  test("a running turn reports when it last spoke, and a finished one is not listed", async () => {
+    const reg = createTurnRegistry<string>();
+    const rec = reg.start("c1", () => gen(["a"], 30));
+    const startedAt = rec.lastEventAt;
+    expect(reg.running().map((r) => r.key)).toEqual(["c1"]);
+    await Bun.sleep(80);
+    expect(rec.lastEventAt).toBeGreaterThan(startedAt);
+    expect(reg.running()).toEqual([]);
+  });
   test("one active turn per key; other keys are independent", async () => {
     const reg = createTurnRegistry<string>();
     reg.start("c1", () => gen(["x"], 30));
@@ -53,6 +62,22 @@ describe("turn registry", () => {
     await bad.ready;
     expect(bad.events).toHaveLength(0);
     expect((bad.error as Error).message).toBe("boom");
+  });
+  test("cancelAll stops a conversation's turn and its parallel turns, and nothing of another conversation", async () => {
+    const reg = createTurnRegistry<string>();
+    const wait = async function* (signal: AbortSignal) {
+      yield "a";
+      await new Promise((r) => signal.addEventListener("abort", r));
+    };
+    const main = reg.start("u1:c1", wait);
+    const parallel = reg.start("u1:c1:t1", wait);
+    const other = reg.start("u1:c10:t1", wait);
+    await Promise.all([main.ready, parallel.ready, other.ready]);
+    expect(reg.cancelAll("u1:c1")).toBe(true);
+    await Bun.sleep(20);
+    expect([main.done, parallel.done, other.done]).toEqual([true, true, false]);
+    expect(reg.cancelAll("u1:c1")).toBe(false);
+    reg.cancelAll("u1:c10");
   });
   test("finished resolves once the turn is done, also after a failure, and the key is free by then", async () => {
     const reg = createTurnRegistry<string>();

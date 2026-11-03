@@ -11,6 +11,13 @@ export const friendly = (activity?: string) => {
   return m ? `Running ${m[1]}${m[2] ? ` · ${m[2]}` : ""}` : activity;
 };
 
+/**
+ * No concrete step: nothing yet, "Thinking", or the server's "Still working" after a silence (which may name the last step). The
+ * status line then runs a real timer from the start of the reply.
+ */
+export const isGeneric = (activity?: string) =>
+  !activity || activity === "Thinking" || activity.startsWith("Still working");
+
 export const elapsed = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
@@ -142,7 +149,7 @@ export function WorkTimeline({ row, working }: { row: Row; working: boolean }) {
       : working
         ? now - new Date(row.createdAt).getTime()
         : undefined;
-  const live = row.activity && row.activity !== "Thinking" ? friendly(row.activity) : undefined;
+  const live = isGeneric(row.activity) ? undefined : friendly(row.activity);
   const items: Item[] = plan
     ? planStates(plan, working, row.status).map((state, i) => ({
         key: plan[i]!.id,

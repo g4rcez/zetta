@@ -111,6 +111,7 @@ const sendBody = z.strictObject({
   clientRequestId: z.string().min(8).max(100).optional(),
   content: z.string().trim().max(32768),
   parentMessageId: uuid.optional(),
+  quotedMessageId: uuid.optional(),
   attachmentIds: z.array(uuid).max(5).optional(),
   fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
   wikiIds: z.array(uuid).max(5).optional(),
@@ -297,7 +298,12 @@ export function createChatRoutes(
         .min(0)
         .default(0)
         .parse(query.after ?? 0);
-      const turn = await chat.resumeTurn(actor, parse(uuid, params.id), after);
+      const turn = await chat.resumeTurn(
+        actor,
+        parse(uuid, params.id),
+        after,
+        query.turn ? parse(uuid, query.turn) : undefined,
+      );
       if (!turn) return ok({ resumable: false });
       return sse(turn.follow(), () => {});
     } catch (error) {
@@ -361,13 +367,21 @@ export function createChatRoutes(
   async function resumeChat({
     request,
     params,
+    query,
   }: {
     request: Request;
     params: Record<string, string>;
+    query: Record<string, string | undefined>;
   }) {
     try {
       const actor = await access.requireActive(request.headers);
-      const turn = await chat.resumeTurn(actor, parse(uuid, params.id), 0);
+      // `turn`: a room runs several bots at once, each turn has its own stream.
+      const turn = await chat.resumeTurn(
+        actor,
+        parse(uuid, params.id),
+        0,
+        query.turn ? parse(uuid, query.turn) : undefined,
+      );
       if (!turn || turn.rec.done)
         return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
       return uiStream(turn);
@@ -482,6 +496,14 @@ export function createChatRoutes(
       guarded(async ({ actor, params }) => ({
         cancelled: await chat.cancelTurn(actor, parse(uuid, params.id)),
       })),
+    )
+    .get(
+      "/conversations/:id/turn",
+      guarded(async ({ actor, params }) => chat.turnState(actor, parse(uuid, params.id))),
+    )
+    .post(
+      "/conversations/:id/turn/wait",
+      guarded(async ({ actor, params }) => chat.keepWaiting(actor, parse(uuid, params.id))),
     )
     .get(
       "/conversations/:id/loops",
@@ -795,6 +817,7 @@ export function createChatRoutes(
       guarded(async ({ actor, body, params }) => {
         const v = parse(send, body);
         return chat.sendMessage(actor, parse(uuid, params.id), v.content, v.parentMessageId, {
+          quotedMessageId: v.quotedMessageId,
           attachmentIds: v.attachmentIds,
           fileRefs: v.fileRefs,
           wikiIds: v.wikiIds,

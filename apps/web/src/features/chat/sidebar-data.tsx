@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 
 import { discussionsApi, type DiscussionListItem } from "../discussions/discussions-api";
+import { teamsApi, type Team } from "../teams/teams-api";
 import {
   chatClient,
   errorMessage,
@@ -39,6 +40,9 @@ type Value = {
   addSpace: (name: string, parentId?: string) => void;
   rooms: DiscussionListItem[] | undefined;
   reloadRooms: () => Promise<void>;
+  /** The user's teams, listed in the sidebar next to the rooms. Call `reloadTeams` after a team is created, saved or deleted. */
+  teams: Team[];
+  reloadTeams: () => Promise<void>;
   /** Starts loading the sidebar data (once) and returns nothing to clean up. */
   load: () => void;
   /** Keeps the room list fresh until the returned function is called. */
@@ -59,6 +63,7 @@ export function SidebarDataProvider({ children }: { children: ReactNode }) {
   const [chatsLoaded, setChatsLoaded] = useState(false);
   const [spaces, setSpaces] = useState<Workspace[]>([]);
   const [rooms, setRooms] = useState<DiscussionListItem[]>();
+  const [teams, setTeams] = useState<Team[]>([]);
   const [watchers, setWatchers] = useState(0);
   const chatsRef = useRef(chats);
   chatsRef.current = chats;
@@ -156,6 +161,7 @@ export function SidebarDataProvider({ children }: { children: ReactNode }) {
       ),
     [fail],
   );
+  const reloadTeams = useCallback(() => teamsApi.list().then(setTeams, () => {}), []);
   const watchRooms = useCallback(() => {
     setWatchers((n) => n + 1);
     return () => setWatchers((n) => n - 1);
@@ -163,8 +169,11 @@ export function SidebarDataProvider({ children }: { children: ReactNode }) {
   const live = rooms?.some((d) => d.running || d.queued > 0);
   const watching = watchers > 0;
   useEffect(() => {
-    if (watching) void reloadRooms();
-  }, [watching, reloadRooms]);
+    if (watching) {
+      void reloadRooms();
+      void reloadTeams();
+    }
+  }, [watching, reloadRooms, reloadTeams]);
   // Bots work in the background: refresh often while one is working, slowly otherwise.
   useEffect(() => {
     if (!watching) return;
@@ -192,6 +201,8 @@ export function SidebarDataProvider({ children }: { children: ReactNode }) {
       addSpace,
       rooms,
       reloadRooms,
+      teams,
+      reloadTeams,
       load,
       watchRooms,
     }),
@@ -207,6 +218,8 @@ export function SidebarDataProvider({ children }: { children: ReactNode }) {
       addSpace,
       rooms,
       reloadRooms,
+      teams,
+      reloadTeams,
       load,
       watchRooms,
     ],
@@ -232,4 +245,9 @@ export function useRooms() {
   const { rooms, reloadRooms, watchRooms } = useValue();
   useEffect(() => watchRooms(), [watchRooms]);
   return { rooms, reload: reloadRooms };
+}
+
+/** The user's teams, kept fresh by the sidebar provider (see `reloadTeams`). */
+export function useTeams() {
+  return useValue().teams;
 }

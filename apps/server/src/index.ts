@@ -101,6 +101,7 @@ ticker.zettaTick = setInterval(() => {
   void inboundServices.inbound.tick().catch(() => {});
   void loopServices.driver.tick().catch(() => {});
   void chatServices.chat.drainQueues().catch(() => {});
+  void chatServices.chat.flagSlowTurns().catch(() => {});
 }, 30_000);
 
 // Generations that were running when the previous process died are marked interrupted (never silently "complete").

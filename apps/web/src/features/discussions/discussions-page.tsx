@@ -12,6 +12,8 @@ import {
   PlayIcon,
   PlusIcon,
   RepeatIcon,
+  SpeakerSlashIcon,
+  StopCircleIcon,
   TargetIcon,
   TrashIcon,
   UsersIcon,
@@ -52,7 +54,7 @@ import { BotAvatar } from "@/components/bot-avatar";
 import { Drawer } from "@/components/drawer";
 import { ComputerActivity } from "../computer/computer-activity";
 import { refreshAttention } from "../attention/summary";
-import { MentionTextarea, mentionedBots, withMention, withoutMention } from "../chat/mention";
+import { MentionTextarea, mentionedBots, withoutMention } from "../chat/mention";
 import { MessageList } from "../chat/message-list";
 import { useZettaChat } from "../chat/use-zetta-chat";
 import type { Author } from "../chat/message-row";
@@ -477,6 +479,11 @@ function RoomView({
   );
   const rows = useMemo(() => transcriptRows(messages, liveChat.rows), [messages, liveChat.rows]);
 
+  // The message the next post replies to. It belongs to one room, so it goes when the room changes.
+  const [quoting, setQuoting] = useState<Row>();
+  const [sent, setSent] = useState(0); // bumps on every send so the list jumps to the newest message
+  useEffect(() => setQuoting(undefined), [id]);
+
   async function act(work: () => Promise<unknown>, done?: string) {
     setBusy(true);
     try {
@@ -490,12 +497,12 @@ function RoomView({
     }
     setBusy(false);
   }
-  const [sent, setSent] = useState(0); // bumps on every send so the list jumps to the newest message
   async function send(out: Outgoing) {
     setBusy(true);
     try {
-      await discussionsApi.post(id, out.text, out);
+      await discussionsApi.post(id, out.text, { ...out, quotedMessageId: quoting?.id });
       draft.current?.clear();
+      setQuoting(undefined);
       setSent((n) => n + 1);
       await load();
       onChanged();
@@ -596,90 +603,123 @@ function RoomView({
             <InfoIcon />
           </IconButton>
           {!isClosed && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <IconButton
-                    size="icon-sm"
-                    variant="ghost"
-                    title="Room actions"
-                    aria-label="Room actions"
-                    disabled={busy}
-                  />
-                }
-              >
-                <DotsThreeIcon />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                {d.createdByBotId && detail.members.length > 1 && goalLoop.loops.length === 0 && (
-                  <DropdownMenuItem onClick={() => setLoopForm({ goal: d.goal, doneWhen: "" })}>
-                    <RepeatIcon />
-                    Pursue goal
-                  </DropdownMenuItem>
-                )}
-                {d.teamId && (
-                  <DropdownMenuItem onClick={() => setTeamGoal(d.goal)}>
-                    <TargetIcon />
-                    Set team goal
-                  </DropdownMenuItem>
-                )}
-                {d.status === "open" ? (
-                  <DropdownMenuItem onClick={() => void act(() => discussionsApi.act(id, "pause"))}>
-                    <PauseIcon />
-                    Pause
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem
-                    onClick={() => void act(() => discussionsApi.act(id, "resume"))}
-                  >
-                    <PlayIcon />
-                    Resume
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  onClick={() => {
-                    const summary = window.prompt("What was the outcome?");
-                    if (summary?.trim())
-                      void act(() => discussionsApi.resolve(id, summary.trim()), "Resolved.");
-                  }}
-                >
-                  <CheckCircleIcon />
-                  Resolve
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={() => {
-                    if (window.confirm("Cancel this room? Queued bot turns are dropped."))
-                      void act(() => discussionsApi.act(id, "cancel"));
-                  }}
-                >
-                  <XCircleIcon />
-                  Cancel room
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "Delete this room? It stops and leaves your lists. Its history is kept.",
-                      )
-                    )
-                      void act(
-                        () =>
-                          discussionsApi
-                            .remove(id)
-                            .then(() => navigate({ to: "/rooms", search: {} })),
-                        "Room deleted.",
-                      );
-                  }}
-                >
-                  <TrashIcon />
-                  Delete room
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <IconButton
+              size="icon-sm"
+              variant="ghost"
+              title="Silence the bots: stop their messages and goal loops until you post"
+              aria-label="Silence bots"
+              disabled={busy || d.status === "paused"}
+              onClick={() =>
+                void act(
+                  () => discussionsApi.silence(id).then(goalLoop.refresh),
+                  "Bots silenced. They wait until you post.",
+                )
+              }
+            >
+              <SpeakerSlashIcon />
+            </IconButton>
           )}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <IconButton
+                  size="icon-sm"
+                  variant="ghost"
+                  title="Room actions"
+                  aria-label="Room actions"
+                  disabled={busy}
+                />
+              }
+            >
+              <DotsThreeIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              {!isClosed && (
+                <>
+                  {d.createdByBotId && detail.members.length > 1 && goalLoop.loops.length === 0 && (
+                    <DropdownMenuItem onClick={() => setLoopForm({ goal: d.goal, doneWhen: "" })}>
+                      <RepeatIcon />
+                      Pursue goal
+                    </DropdownMenuItem>
+                  )}
+                  {d.teamId && (
+                    <DropdownMenuItem onClick={() => setTeamGoal(d.goal)}>
+                      <TargetIcon />
+                      Set team goal
+                    </DropdownMenuItem>
+                  )}
+                  {d.status === "open" ? (
+                    <DropdownMenuItem
+                      onClick={() => void act(() => discussionsApi.act(id, "pause"))}
+                    >
+                      <PauseIcon />
+                      Pause
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      onClick={() => void act(() => discussionsApi.act(id, "resume"))}
+                    >
+                      <PlayIcon />
+                      Resume
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    onClick={() => {
+                      if (window.confirm("Stop all goals? The room and its history stay."))
+                        void act(
+                          () => discussionsApi.stopGoals(id).then(goalLoop.refresh),
+                          "Goals stopped.",
+                        );
+                    }}
+                  >
+                    <StopCircleIcon />
+                    Stop goals
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      const summary = window.prompt("What was the outcome?");
+                      if (summary?.trim())
+                        void act(() => discussionsApi.resolve(id, summary.trim()), "Resolved.");
+                    }}
+                  >
+                    <CheckCircleIcon />
+                    Resolve
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => {
+                      if (window.confirm("Cancel this room? Queued bot turns are dropped."))
+                        void act(() => discussionsApi.act(id, "cancel"));
+                    }}
+                  >
+                    <XCircleIcon />
+                    Cancel room
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Delete this room? It stops and leaves your lists. Its history is kept.",
+                    )
+                  )
+                    void act(
+                      () =>
+                        discussionsApi
+                          .remove(id)
+                          .then(() => navigate({ to: "/rooms", search: {} })),
+                      "Room deleted.",
+                    );
+                }}
+              >
+                <TrashIcon />
+                Delete room
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </PageHeader>
         {(goalLoop.loops.length ? goalLoop.loops : goalLoop.loop ? [goalLoop.loop] : []).map(
           (l) => (
@@ -803,6 +843,7 @@ function RoomView({
               actions={{
                 onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
                 onReply: () => {},
+                onQuote: setQuoting,
                 onSaveToWiki: (row) =>
                   void chatClient
                     .saveToWiki(d.title, row.content)
@@ -851,6 +892,14 @@ function RoomView({
                   conversationId={d.conversationId}
                   wiki
                   skillBots={detail.members.map((m) => m.botId)}
+                  replyTo={
+                    quoting && {
+                      id: quoting.id,
+                      name: authorOf(quoting).name,
+                      excerpt: quoting.content,
+                      onCancel: () => setQuoting(undefined),
+                    }
+                  }
                   onSubmit={send}
                   onError={fail}
                 />
@@ -1085,7 +1134,10 @@ function NewRoom({
   const [busy, setBusy] = useState(false);
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamId, setTeamId] = useState("");
-  const picked = mentionedBots(task, ready);
+  // Ticked bots stay apart from the goal text, so a room can start with members and no goal.
+  const [ticked, setTicked] = useState<string[]>([]);
+  const mentioned = mentionedBots(task, ready);
+  const picked = ready.filter((b) => ticked.includes(b.id) || mentioned.some((m) => m.id === b.id));
   useEffect(() => {
     // A team can start a room only with a chief and one more bot.
     teamsApi
@@ -1164,7 +1216,7 @@ function NewRoom({
           ]}
         />
         <MentionTextarea
-          title="What should the bots do?"
+          title="What should the bots do? (optional)"
           value={task}
           onChange={setTask}
           bots={ready}
@@ -1189,11 +1241,12 @@ function NewRoom({
                       type="checkbox"
                       className="peer sr-only"
                       checked={picked.some((p) => p.id === b.id)}
-                      onChange={(e) =>
-                        setTask((t) =>
-                          e.target.checked ? withMention(t, b) : withoutMention(t, b),
-                        )
-                      }
+                      onChange={(e) => {
+                        setTicked((t) =>
+                          e.target.checked ? [...t, b.id] : t.filter((id) => id !== b.id),
+                        );
+                        if (!e.target.checked) setTask((t) => withoutMention(t, b));
+                      }}
                     />
                     <BotAvatar bot={b} size={32} />
                     <span className="min-w-0 flex-1">

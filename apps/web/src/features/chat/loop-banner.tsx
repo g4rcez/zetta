@@ -1,3 +1,4 @@
+import { mentionsAsText } from "@zetta/core/mentions";
 import { useEffect, useRef, useState } from "react";
 import {
   CircleNotchIcon,
@@ -26,6 +27,7 @@ export function useGoalLoop(
   const [all, setAll] = useState<GoalLoop[]>([]);
   const handlers = useRef({ onTick, onChanged });
   handlers.current = { onTick, onChanged };
+  const pollNow = useRef<() => void>(() => {});
   useEffect(() => {
     setAll([]);
     if (!conversationId) return;
@@ -50,6 +52,7 @@ export function useGoalLoop(
       timer = setTimeout(() => void poll(), active ? 3_000 : 20_000);
     };
     const onVisible = () => void poll();
+    pollNow.current = onVisible;
     document.addEventListener("visibilitychange", onVisible);
     void poll();
     return () => {
@@ -69,6 +72,8 @@ export function useGoalLoop(
     loop: all[0],
     loops: all.filter((l) => l.status === "running" || l.status === "paused"),
     update,
+    /** Fetch the loops now, without waiting for the next poll (after the room stops its goals). */
+    refresh: () => pollNow.current(),
   };
 }
 
@@ -137,7 +142,7 @@ export function LoopBanner({
           <span className="font-normal text-muted-foreground">
             {" "}
             · {owner ? `${owner}: ` : ""}
-            {loop.goal}
+            {mentionsAsText(loop.goal)}
           </span>
         </p>
         {(loop.reason || loop.progress) && (

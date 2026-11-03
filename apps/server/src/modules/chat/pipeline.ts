@@ -33,6 +33,7 @@ import {
   type StreamCli,
 } from "./harness";
 import { toolPreamble } from "./tools";
+import type { CliProgress } from "./claude-stream";
 
 type Bot = typeof bot.$inferSelect;
 type Hook = typeof hooks.$inferSelect;
@@ -99,6 +100,8 @@ export type Turn = {
   resumeSession?: string | undefined;
   /** Called with the Claude Code session id when the run is one that can be resumed (a code workspace), so the caller can record it. */
   onSession?: ((id: string) => void) | undefined;
+  /** Progress while a non-streaming run works: a step the bot took, or "Still working" after a silence. */
+  onActivity?: ((label: string) => void) | undefined;
 };
 export type TurnResult = { text: string; stopped: boolean };
 
@@ -264,6 +267,7 @@ export function createTurnRunner(
     images?: CliImage[],
     mcp?: McpRun,
     lookup?: ReturnType<typeof claudeFor>,
+    onActivity?: (label: string) => void,
   ) {
     if (b.harness === "fixture") return fixtureResponder({ bot: b, history, prompt });
     if (b.harness === "decision") return decide ? decide(b, prompt, userId) : DECISION_FALLBACK;
@@ -273,12 +277,14 @@ export function createTurnRunner(
       prompt,
       model: b.model,
       userId,
+      botId: b.id,
       ...(await codeFor(db, b, userId, noCode)),
       ...(profile.profile ? profile : {}),
       ...(extraEnv ? { extraEnv } : {}),
       ...(mcp ? { mcp } : {}),
       ...(signal ? { signal } : {}),
       ...(images?.length ? { images } : {}),
+      ...(onActivity ? { onActivity } : {}),
     });
   }
   async function prepare({
@@ -394,7 +400,7 @@ export function createTurnRunner(
           .map((x) => `${x.name} (${x.id})`)
           .join(
             ", ",
-          )}${teams.length ? `\nThe user's teams: ${teams.map((x) => `${x.name} (${x.id})`).join(", ")}` : ""}${roles.length ? `\nThe team roles: ${roles.map((x) => (x.description ? `${x.name} (${x.description})` : x.name)).join(", ")}` : ""}\nCurrent time: ${new Date().toISOString()} (UTC). Resolve relative dates such as "tomorrow at 9" from it and the user's timezone when you know it.` +
+          )}\nTo mention a bot, write [@Name](bot:<id>) with its id from this list.${teams.length ? `\nThe user's teams: ${teams.map((x) => `${x.name} (${x.id})`).join(", ")}` : ""}${roles.length ? `\nThe team roles: ${roles.map((x) => (x.description ? `${x.name} (${x.description})` : x.name)).join(", ")}` : ""}\nCurrent time: ${new Date().toISOString()} (UTC). Resolve relative dates such as "tomorrow at 9" from it and the user's timezone when you know it.` +
         (b.computerMode === "desktop"
           ? `\nThe user's computers (desktop "vm" ids): ${
               vms
@@ -479,12 +485,13 @@ export function createTurnRunner(
       turn.images,
       turn.mcp,
       lookup,
+      turn.onActivity,
     );
     startBackground(turn.userId, turn.bot, p.background);
     return { text: reply, stopped: false };
   }
-  /** Same pipeline, but yields reply text as it is produced. */
-  async function* streamTurn(turn: Turn): AsyncGenerator<string, void> {
+  /** Same pipeline, but yields reply text as it is produced, and progress lines (`{ activity }`) while the bot works. */
+  async function* streamTurn(turn: Turn): AsyncGenerator<string | CliProgress, void> {
     const lookup = lookupWhilePreparing(turn.bot, turn.skills);
     const p = await prepare(turn);
     if ("stop" in p) {
@@ -510,6 +517,7 @@ export function createTurnRunner(
         prompt: p.text,
         model: turn.bot.model,
         userId: turn.userId,
+        botId: turn.bot.id,
         ...(await codeFor(db, turn.bot, turn.userId, turn.noCode)),
         ...(await lookup),
         ...(turn.extraEnv ? { extraEnv: turn.extraEnv } : {}),

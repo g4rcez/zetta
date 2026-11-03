@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { elapsed, planProgress, planStates, stepStates } from "./work-timeline";
+import { elapsed, isGeneric, planProgress, planStates, stepStates } from "./work-timeline";
 
 describe("stepStates", () => {
   test("the last step runs while the bot works", () => {
@@ -30,6 +30,16 @@ describe("elapsed", () => {
 
   test("never goes negative", () => {
     expect(elapsed(-5_000)).toBe("0s");
+  });
+});
+
+describe("isGeneric", () => {
+  test("no step, Thinking and the silence heartbeat keep the timer; a real step does not", () => {
+    expect(isGeneric(undefined)).toBe(true);
+    expect(isGeneric("Thinking")).toBe(true);
+    expect(isGeneric("Still working")).toBe(true);
+    expect(isGeneric('Still working · Searching "TODO"')).toBe(true);
+    expect(isGeneric("Reading notes.md")).toBe(false);
   });
 });
 

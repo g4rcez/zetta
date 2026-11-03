@@ -49,12 +49,6 @@ type RoutedBot = { id: string; harness?: string; model?: string | null };
 const backendOf = (b: RoutedBot, configured: "laya" | "jev"): "laya" | "jev" =>
   b.harness === "decision" ? (b.model === "jev" ? "jev" : "laya") : configured;
 
-const MENTION_MIN_CONFIDENCE = 0.6;
-const PICK_QUESTION =
-  "A person wrote in a team room and mentioned nobody. Which member is best placed to answer this message?";
-/** The longest a room post waits for the model before the Chief answers instead. */
-const MENTION_GUARD_MS = 5000;
-
 /** Per-bot decision routing: the builtin Laya model picks one configured option; each option maps to a bounded action. Fails open to a normal reply. */
 export function createRouting(db: Database, decisions?: DecisionService, jev?: JevDecider) {
   async function get(botId: string) {
@@ -81,44 +75,6 @@ export function createRouting(db: Database, decisions?: DecisionService, jev?: J
           ...(actor ? { owner: actor.userId } : {}),
           ...opts,
         });
-  }
-  /**
-   * Which room member answers a message that mentions nobody: the model picks one member by name. Returns its bot id, or null when the
-   * model is unavailable, slow, unsure or fails (the caller then falls back to the Chief). Uses the Chief's decision backend, else Laya.
-   */
-  async function pickBot(
-    chief: RoutedBot | undefined,
-    text: string,
-    candidates: readonly { botId: string; name: string; description: string }[],
-    actor?: ActiveActor,
-    guardMs = MENTION_GUARD_MS,
-  ): Promise<string | null> {
-    if (candidates.length < 2) return null;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const backend = chief ? backendOf(chief, (await get(chief.id))?.backend ?? "laya") : "laya";
-      if ((backend === "laya" && !decisions) || (backend === "jev" && (!jev || !actor)))
-        return null;
-      const slow = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("slow")), guardMs);
-      });
-      const r = await Promise.race([
-        choose(
-          backend,
-          actor,
-          text,
-          PICK_QUESTION,
-          candidates.map((c) => ({ label: c.name, description: c.description || c.name })),
-          MENTION_MIN_CONFIDENCE,
-        ),
-        slow,
-      ]);
-      return candidates.find((c) => c.name === r.choice)?.botId ?? null;
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timer);
-    }
   }
   async function decide(
     b: RoutedBot,
@@ -179,7 +135,6 @@ export function createRouting(db: Database, decisions?: DecisionService, jev?: J
   return {
     decide,
     reply,
-    pickBot,
     async get(a: ActiveActor, botId: string) {
       const [b] = await db
         .select()

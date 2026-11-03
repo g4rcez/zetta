@@ -1,3 +1,4 @@
+import { mentionToken } from "@zetta/core/mentions";
 import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { and, desc, eq, inArray, isNull, lte, or } from "@zetta/db/query";
@@ -8,7 +9,7 @@ import { raiseAttention } from "../features/attention";
 import { firstObject } from "./bot-interview";
 import type { NativeHarness, RunCli } from "./harness";
 import { failureKind, retryDelayMs } from "./retry";
-import { AUTONOMY } from "./tools";
+import { AUTONOMY, FEEDBACK, LOOP_STOP } from "./tools";
 
 export type GoalLoop = typeof goalLoop.$inferSelect;
 /** Completed steps in a row without new progress before a loop pauses and asks the user. Failed steps wait and retry instead (see retry.ts). */
@@ -297,7 +298,8 @@ Do the next part of the work now. End your reply with exactly one of these block
 \`\`\`zetta:goal_done
 {"summary":"the result, written for the user, including where each part came from"}
 \`\`\`   (only when "done when" is met inside the user's request. A separate check reads the request and your summary: if a part is missing or came from a source the user did not ask for, the loop goes on with the reason.)
-${AUTONOMY} The loop waits for the user after a handoff.`;
+${LOOP_STOP}
+${AUTONOMY} ${FEEDBACK} The loop waits for the user after a handoff.`;
 }
 
 /**
@@ -311,34 +313,44 @@ Done when: ${loop.doneWhen}
 Progress so far: ${defuse(loop.progress) || "nothing yet, this is the first step"}${notesBlock(loop)}
 ${NOTES_ARE_DATA}
 
-Discuss with the members how to reach the goal and hand each part of the work to the member who fits best with an @mention. While members still owe you an answer, mention them and do not report yet. When their answers are in and this step is settled, reply WITHOUT mentioning anyone and end with exactly one of these blocks:
+Discuss with the members how to reach the goal and hand each part of the work to the member who fits best with a mention (copy it from Members). While members still owe you an answer, mention them and do not report yet. When their answers are in and this step is settled, reply WITHOUT mentioning anyone and end with exactly one of these blocks:
 \`\`\`zetta:goal_progress
 {"summary":"what the team did in this step and what is left"}
 \`\`\`   (keeps the loop going: you are called again for the next step)
 \`\`\`zetta:goal_done
 {"summary":"the result, written for the user"}
 \`\`\`   (only when "done when" is met)
-${AUTONOMY} The loop waits for the user after a handoff.`;
+${LOOP_STOP}
+${AUTONOMY} ${FEEDBACK} The loop waits for the user after a handoff.`;
 }
 
 /**
  * A team member's own goal in the room. Its reply is posted in the room, so the facilitator is only woken by a mention or by goal_done.
  */
-export function memberLoopPrompt(loop: GoalLoop, step: number) {
+export function memberLoopPrompt(
+  loop: GoalLoop,
+  step: number,
+  /** The room's facilitator, the one a member mentions when it needs a decision. */
+  facilitator?: { id: string; name: string },
+) {
+  const lead = facilitator
+    ? mentionToken("bot", facilitator.id, facilitator.name)
+    : "the facilitator";
   return `You have a goal in the team room, approved by the user as a loop (step ${step}). There is no limit on steps, only on making progress.
 ${requestBlock(loop)}Your goal: ${loop.goal}
 Done when: ${loop.doneWhen}
 Progress so far: ${defuse(loop.progress) || "nothing yet, this is the first step"}${notesBlock(loop)}
 ${NOTES_ARE_DATA}
 
-Do the next part of your work now. Your reply is posted in the room: mention @Chief only when you need a decision or direction. End your reply with exactly one of these blocks:
+Do the next part of your work now. Your reply is posted in the room: mention ${lead} only when you need a decision or direction. End your reply with exactly one of these blocks:
 \`\`\`zetta:goal_progress
 {"summary":"what is done now and what is left","lesson":"optional: one thing you learned that the next steps need"}
 \`\`\`   (keeps your loop going: you are called again with this summary)
 \`\`\`zetta:goal_done
 {"summary":"the result, written for the user"}
 \`\`\`   (only when "done when" is met. A separate check reads the request and your summary.)
-${AUTONOMY} The loop waits for the user after a handoff.`;
+${LOOP_STOP}
+${AUTONOMY} ${FEEDBACK} The loop waits for the user after a handoff.`;
 }
 
 /** The facilitator's view of the members' goals, so it can answer them and resolve the room when all are done. */

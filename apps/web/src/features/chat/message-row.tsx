@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import {
+  ArrowBendUpLeftIcon,
   BookmarkSimpleIcon,
   CaretRightIcon,
   CalendarPlusIcon,
@@ -38,7 +39,7 @@ import { PictureStrip } from "./attachment-image";
 import { CopyButton } from "./chat-copy";
 import { EmojiPicker } from "./emoji-picker";
 import { computersOf, type Row } from "./chat-rows";
-import { elapsed, friendly, useNow, WorkTimeline } from "./work-timeline";
+import { elapsed, friendly, isGeneric, useNow, WorkTimeline } from "./work-timeline";
 import { VmCard } from "./vm-card";
 import { Response } from "./response";
 import { splitActionNotes } from "./action-notes";
@@ -213,13 +214,14 @@ function ReactionPicker({ onReact }: { onReact: (emoji: string) => void }) {
   );
 }
 
-/** Floating Slack toolbar: quick reactions, the full emoji picker, reply in thread, copy, more. */
+/** Floating Slack toolbar: quick reactions, the full emoji picker, reply in the channel, reply in thread, copy, more. */
 function HoverBar({
   row,
   inThread,
   entry,
   onReact,
   onReply,
+  onQuote,
   onSaveToWiki,
 }: {
   row: Row;
@@ -228,6 +230,7 @@ function HoverBar({
   entry: "pointer" | "keyboard";
   onReact: (emoji: string) => void;
   onReply: () => void;
+  onQuote: (() => void) | undefined;
   onSaveToWiki: () => void;
 }) {
   const bar = useRef<HTMLDivElement>(null);
@@ -254,6 +257,13 @@ function HoverBar({
         </Tip>
       ))}
       <ReactionPicker onReact={onReact} />
+      {onQuote && (
+        <Tip label="Reply">
+          <Button size="icon-xs" variant="ghost" aria-label="Reply" onClick={onQuote}>
+            <ArrowBendUpLeftIcon />
+          </Button>
+        </Tip>
+      )}
       {!inThread && (
         <Tip label="Reply in thread">
           <Button size="icon-xs" variant="ghost" aria-label="Reply in thread" onClick={onReply}>
@@ -283,8 +293,42 @@ function HoverBar({
   );
 }
 
-/** A concrete step ("Running postgres · db_overview") is shown as is; with none, the label is "Thinking" and a real timer runs. */
-const isGeneric = (activity?: string) => !activity || activity === "Thinking";
+/** Brings the quoted message into view and flashes it. Nothing happens when it is not loaded in this list. */
+function showMessage(id: string) {
+  const el = document.getElementById(`message-${id}`);
+  if (!el) return;
+  const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ block: "center", behavior: calm ? "auto" : "smooth" });
+  if (!calm)
+    el.animate([{ backgroundColor: "var(--accent)" }, { backgroundColor: "transparent" }], {
+      duration: 1200,
+      easing: "ease-out",
+    });
+}
+
+/** The message a channel reply answers: author and the first lines of it. Click goes to the original. */
+function QuoteBlock({
+  quote,
+  author,
+}: {
+  quote: NonNullable<NonNullable<Row["meta"]>["quote"]>;
+  author: Author | undefined;
+}) {
+  const name = author?.name ?? "Message";
+  return (
+    <button
+      type="button"
+      aria-label={`Go to the message from ${name}`}
+      onClick={() => showMessage(quote.id)}
+      className="flex w-fit max-w-full flex-col items-start gap-0.5 rounded-r-md border-l-2 border-primary/60 py-0.5 pr-2 pl-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      <span className="font-semibold text-foreground">{name}</span>
+      <span className="line-clamp-2 break-words whitespace-pre-line text-muted-foreground">
+        {quote.excerpt}
+      </span>
+    </button>
+  );
+}
 
 /** Live feedback line for a reply that is not ready yet: the label, plus the time since `since` (when known) and bouncing dots. */
 function WorkingStatus({ label, since }: { label: string; since?: string }) {
@@ -320,18 +364,22 @@ function WorkingStatus({ label, since }: { label: string; since?: string }) {
 export const MessageRow = memo(function MessageRow({
   row,
   author,
+  quoteAuthor,
   continued,
   repo,
   inThread = false,
   readOnly = false,
   onReact,
   onReply,
+  onQuote,
   onSaveToWiki,
   onQueue,
   onOpenArtifact,
 }: {
   row: Row;
   author: Author;
+  /** Who wrote the message `row.meta.quote` points at. */
+  quoteAuthor?: Author | undefined;
   continued: boolean;
   /** `owner/repo` the `#12` and commit ids of this message belong to (see github-refs). */
   repo?: string | undefined;
@@ -339,6 +387,8 @@ export const MessageRow = memo(function MessageRow({
   /** No reactions, replies or saving: for a log that only shows the conversation (the setup interview). */ readOnly?: boolean;
   onReact: (row: Row, emoji: string) => void;
   onReply: (row: Row) => void;
+  /** Reply in the channel. Without it the toolbar has no Reply button. */
+  onQuote?: (row: Row) => void;
   onSaveToWiki: (row: Row) => void;
   /** A queued message: drop it before it is answered, or put a failed one back in line. */
   onQueue?: (row: Row, action: "remove" | "retry") => void;
@@ -365,6 +415,7 @@ export const MessageRow = memo(function MessageRow({
   const replies = row.replyCount ?? 0;
   return (
     <Message
+      id={`message-${row.id}`}
       aria-label={`${author.name} at ${time(row.createdAt, tf)}`}
       className={cn(
         "gap-3 px-4 py-0.5 text-sm hover:bg-accent/60 has-aria-expanded:bg-accent/60",
@@ -394,6 +445,7 @@ export const MessageRow = memo(function MessageRow({
             entry={bar}
             onReact={(e) => onReact(row, e)}
             onReply={() => onReply(row)}
+            onQuote={onQuote && (() => onQuote(row))}
             onSaveToWiki={() => onSaveToWiki(row)}
           />
         ))}
@@ -433,6 +485,7 @@ export const MessageRow = memo(function MessageRow({
             </time>
           </MessageHeader>
         )}
+        {row.meta?.quote && <QuoteBlock quote={row.meta.quote} author={quoteAuthor} />}
         <PictureStrip pics={(row.attachments ?? []).filter(isImage)} />
         {row.attachments?.some((a) => !isImage(a)) ? (
           <ul className="flex flex-wrap gap-1.5" aria-label="Attachments">

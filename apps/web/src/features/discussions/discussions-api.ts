@@ -121,6 +121,8 @@ export const discussionsApi = {
       fileRefs?: string[];
       wikiIds?: string[];
       skills?: { botId: string; name: string }[];
+      /** A message of this room the post replies to. */
+      quotedMessageId?: string;
     } = {},
   ) =>
     call(`/api/discussions/${id}/messages`, "POST", {
@@ -129,9 +131,18 @@ export const discussionsApi = {
       ...(files.fileRefs?.length ? { fileRefs: files.fileRefs } : {}),
       ...(files.wikiIds?.length ? { wikiIds: files.wikiIds } : {}),
       ...(files.skills?.length ? { skills: files.skills } : {}),
+      ...(files.quotedMessageId ? { quotedMessageId: files.quotedMessageId } : {}),
     }),
   act: (id: string, action: "pause" | "resume" | "cancel") =>
     call<{ discussion: Discussion }>(`/api/discussions/${id}/${action}`, "POST", {}).then(
+      (r) => r.discussion,
+    ),
+  silence: (id: string) =>
+    call<{ discussion: Discussion }>(`/api/discussions/${id}/silence`, "POST", {}).then(
+      (r) => r.discussion,
+    ),
+  stopGoals: (id: string) =>
+    call<{ discussion: Discussion }>(`/api/discussions/${id}/stop-goals`, "POST", {}).then(
       (r) => r.discussion,
     ),
   remove: (id: string) =>

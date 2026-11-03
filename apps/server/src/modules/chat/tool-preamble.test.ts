@@ -14,6 +14,12 @@ describe("toolPreamble", () => {
     expect(toolPreamble("off")).toContain("Never ask the user to choose a method");
     expect(toolPreamble("desktop", true, true)).toContain("Pick it yourself");
   });
+  test("every bot is told to split long work into small tasks and report each one", () => {
+    expect(toolPreamble("off")).toContain("Split work of more than 2 steps into small tasks");
+    expect(toolPreamble("desktop", true)).toContain(
+      "send its tool block in your reply so the user sees the action",
+    );
+  });
   test("code access is only described when the owner enabled it", () => {
     expect(toolPreamble("off")).not.toContain("Code access");
     expect(toolPreamble("off", true)).toContain("git clone");

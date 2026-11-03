@@ -14,6 +14,7 @@ import { BUILTIN_KEYS } from "../output-styles/builtins";
  *   ```zetta:goal        {"goal": "...", "done_when": "..."}                 -> proposal to start a loop; once approved, the bot keeps working turn after turn
  *   ```zetta:team_goals  {"goals": [{"bot": "Dev", "goal": "...", "done_when": "..."}]} -> team room chief only: proposal to give each member its own goal loop; nothing runs until the user approves
  *   ```zetta:goal_progress / goal_done {"summary": "...", "lesson": "..."}   -> inside an approved loop only: report progress (with an optional lesson for the next steps), or finish it
+ *   ```zetta:goal_stop   {"action": "pause"|"stop", "reason": "..."}          -> inside an approved loop only: the user asked to pause (resumable) or stop (ends) the loop
  *   ```zetta:credential  {"ref": "1password:<item>", "field": "password"}    -> Zetta types a shared login into the focused input (value never shown to the bot)
  *   ```zetta:agenda      {"action": "add", "kind": "task", "title": "...", "start": "<ISO>"} | list | update | complete | remove -> the user's Agenda
  *   ```zetta:task        {"action": "add", "title": "...", "status": "backlog"} | list | update {"id", "status": "in_progress"|"blocked"|"review"|"done"} -> the shared task board
@@ -28,6 +29,13 @@ import { BUILTIN_KEYS } from "../output-styles/builtins";
  *   ```zetta:ui          JSON-patch lines building a view from @zetta/render's catalog -> not a tool: it stays in the reply and the web chat draws it
  */
 /** Shared by the tool preamble and the loop prompts: a bot never makes the user choose how to do the work. */
+/** Shared by the tool preamble and the loop prompts: long work is split into small steps, and the user sees each step as it happens. */
+export const FEEDBACK = `Keep the user informed. Split work of more than 2 steps into small tasks: send a zetta:plan, do one task at a time, and update the plan when a task starts and when it ends. Before each task write one short line about what you do now, and after it one line about the result. A command that can run longer than about 2 minutes (a loop with sleep or retry back-off, many downloads, a slow build) never runs as one job that you wait for: run it in small batches, check each batch, and tell the user the progress between batches. When you use the computer, send its tool block in your reply so the user sees the action in the chat, and say what you see. Tell the user at once when a step is slow or blocked, not at the end.`;
+/** Loop steps only: the user's words outrank the goal. Without this block a bot can only say it paused, and the driver calls it again. */
+export const LOOP_STOP = `If the user asked to pause or stop this loop (in any language), do no more work and mention nobody. End your reply with only this block:
+\`\`\`zetta:goal_stop
+{"action":"pause","reason":"the user's words"}
+\`\`\`   (action "pause": the user can resume the loop; action "stop": the loop ends. The server then stops calling you. Never repeat "I am paused" instead.)`;
 export const AUTONOMY = `The user's request sets hard limits: the sources, sites, accounts, scope and output they named. Every method you pick stays inside them. Another method means another way to the same source (another page, the browser, an API or a script), never a source or site the user did not ask for. If no method works inside the limits, say so and name the blocker; never swap in another source. Never ask the user to choose a method or to approve one. Pick it yourself. If a method fails, try the next one. Prefer the quiet method (WebFetch, search, an API, your own computer) over the user's screen, keyboard or focus. A result from public sources is acceptable: say that it is public when it differs from what the user sees signed in. When a step fails, read the error and change approach instead of repeating the same call. When you solve a problem another bot could meet, save it as a zetta:wiki item tagged gotcha. If every method fails, report the best partial result and what failed. If you are stuck, solve it yourself first. A bot that is not the Chief then sends zetta:escalate and stops: the Chief decides for it. Only the Chief asks the user, with zetta:handoff, and only for a blocker that only a person can clear (sign-in, CAPTCHA, payment).`;
 
 export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks in your reply (the block name follows the opening backticks):
@@ -54,6 +62,7 @@ export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks i
 \`\`\`   (not a tool: nothing runs. It shows the user your steps as a checklist while you work. Use it only for work of 3 or more steps, in the reply where you start. status is pending (default), active or done. Each block replaces the whole list, so send the full list again with the new statuses in the reply that starts or finishes a step, together with that step's tool blocks. At most 12 steps, titles under 120 characters.)
 ${uiPrompt()}
 ${AUTONOMY}
+${FEEDBACK}
 Only use a tool when it is needed.`;
 
 export type ComputerMode = "off" | "browser" | "desktop";
@@ -286,6 +295,7 @@ export const toolSchemas = {
   }),
   goal_progress: z.strictObject({ summary: bounded(1500), lesson: bounded(300).optional() }),
   goal_done: z.strictObject({ summary: bounded(1500) }),
+  goal_stop: z.strictObject({ action: z.enum(["pause", "stop"]), reason: bounded(300) }),
   create_vm: z.strictObject({
     name: z
       .string()
@@ -529,7 +539,7 @@ export function parseTools(reply: string): {
   let plan: PlanStep[] | undefined;
   const text = reply
     .replace(
-      /```zetta:(wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal|team_goals|artifact|setup|inbound|skills)\s*\n([\s\S]*?)```/g,
+      /```zetta:(wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal_stop|goal|team_goals|artifact|setup|inbound|skills)\s*\n([\s\S]*?)```/g,
       (_, kind: keyof typeof toolSchemas, body: string) => {
         let json: unknown;
         try {

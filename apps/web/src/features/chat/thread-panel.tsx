@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { XIcon } from "@phosphor-icons/react";
 
 import { Button } from "@zetta/ui/components/button";
@@ -6,7 +6,7 @@ import { Button } from "@zetta/ui/components/button";
 import { errorMessage, type Bot } from "./chat-client";
 import { isSavedUserEcho, type Row } from "./chat-rows";
 import { Composer } from "./composer";
-import { MessageList, type RowActions } from "./message-list";
+import { MessageList, quoteAuthorOf, type RowActions } from "./message-list";
 import { MessageRow, type Author } from "./message-row";
 import { draftKey, useDraft } from "./use-draft";
 import { useZettaChat } from "./use-zetta-chat";
@@ -20,7 +20,7 @@ export function ThreadPanel({
   bots,
   bot,
   authorOf,
-  actions,
+  actions: pageActions,
   onClose,
   onSettled,
   onProposal,
@@ -43,6 +43,9 @@ export function ThreadPanel({
   const chat = useZettaChat({ conversationId, parentMessageId: parent.id, onSettled, onProposal });
   const draft = useDraft(draftKey(undefined, `${conversationId}:t:${parent.id}`));
   const [sent, setSent] = useState(0);
+  // A reply in the thread quotes inside the thread, so the thread keeps its own choice (the page's would fill the main box).
+  const [quoting, setQuoting] = useState<Row>();
+  const actions = useMemo(() => ({ ...pageActions, onQuote: setQuoting }), [pageActions]);
   const live = [...chat.rows, ...streamed].filter(
     (r) => !replies.some((x) => x.id === r.id) && !isSavedUserEcho(r, replies),
   );
@@ -74,6 +77,7 @@ export function ThreadPanel({
               <MessageRow
                 row={parent}
                 author={authorOf(parent)}
+                quoteAuthor={quoteAuthorOf(parent, authorOf)}
                 continued={false}
                 inThread
                 {...actions}
@@ -108,12 +112,23 @@ export function ThreadPanel({
           conversationId={conversationId}
           onError={onError}
           autoFocus
+          replyTo={
+            quoting && {
+              id: quoting.id,
+              name: authorOf(quoting).name,
+              excerpt: quoting.content,
+              onCancel: () => setQuoting(undefined),
+            }
+          }
           onStop={() => void chat.stop()}
           onSubmit={async ({ text, attachmentIds, fileRefs, wikiIds, skills }) => {
             draft.clear();
             setSent((n) => n + 1);
+            const quotedMessageId = quoting?.id;
+            setQuoting(undefined);
             try {
               await chat.send(text, {
+                ...(quotedMessageId ? { quotedMessageId } : {}),
                 attachmentIds,
                 fileRefs,
                 wikiIds,

@@ -41,6 +41,8 @@ import { SetupActionsContext, type SetupActions } from "./setup-actions";
 import type { Author } from "./message-row";
 import { ProposalsPanel } from "./proposals-panel";
 import { LoopBanner, useGoalLoop } from "./loop-banner";
+import { SlowTurnCard, useTurnState } from "./slow-turn-card";
+import { runSlowTurnCommand, slowTurnCommand } from "./slow-turn";
 import { PublishDialog } from "./publish-dialog";
 import { toggleReaction } from "./reactions";
 import { useSidebarData } from "./sidebar-data";
@@ -48,6 +50,7 @@ import { ThreadPanel } from "./thread-panel";
 import { draftKey } from "./use-draft";
 import { useZettaChat } from "./use-zetta-chat";
 import { Alert } from "@g4rcez/components/alert";
+import { discussionsApi } from "../discussions/discussions-api";
 
 const SUGGESTIONS = [
   "What can you help me with?",
@@ -128,6 +131,23 @@ export function ChatPage() {
       live = false;
     };
   }, [chatId, chatsLoaded, listedRow, lookedUp]);
+  // A room's conversation is where bots talk: the server refuses posts into it, so the page shows it read-only.
+  const roomChat = openChatRow?.kind === "discussion";
+  const [room, setRoom] = useState<{ chatId: string; id?: string }>();
+  useEffect(() => {
+    if (!chatId || !roomChat) return;
+    let live = true;
+    discussionsApi
+      .list()
+      .then((rooms) => {
+        if (live) setRoom({ chatId, id: rooms.find((r) => r.conversationId === chatId)?.id });
+      })
+      .catch(() => live && setRoom({ chatId }));
+    return () => {
+      live = false;
+    };
+  }, [chatId, roomChat]);
+  const roomId = room?.chatId === chatId ? room?.id : undefined;
   const defaultBot =
     bots.find((b) => b.id === search.bot) ?? bots.find((b) => b.kind === "chief") ?? bots[0];
   // A conversation decides its bot; a draft (or a bare /chat) takes the bot from ?bot=, falling back to the chief.
@@ -299,6 +319,7 @@ export function ChatPage() {
     },
   );
 
+  const turn = useTurnState(chatId);
   const current = bots.find((b) => b.id === botId);
   const meName = session?.user.name ?? "You",
     meImage = session?.user.image;
@@ -334,6 +355,10 @@ export function ChatPage() {
     [saved, threadId],
   );
 
+  // The message the next send replies to in the channel. It belongs to one chat, so it goes when the chat changes.
+  const [quoting, setQuoting] = useState<Row>();
+  useEffect(() => setQuoting(undefined), [chatId]);
+
   async function send({
     text,
     attachmentIds,
@@ -349,6 +374,19 @@ export function ChatPage() {
   }) {
     if (!botId) return false;
     setError(undefined);
+    // `/stop`, `/wrap-up` and `/wait` act on the running turn of this chat instead of being sent as a message.
+    const command = slowTurnCommand(text);
+    if (command && chatId) {
+      draft.current?.clear();
+      try {
+        await runSlowTurnCommand(chatId, command);
+        await turn.refresh();
+        await reload(chatId);
+      } catch (e) {
+        fail(e);
+      }
+      return true;
+    }
     try {
       let id = chatId;
       if (!id) {
@@ -360,9 +398,12 @@ export function ChatPage() {
       }
       draft.current?.clear();
       setSent((n) => n + 1);
+      const quotedMessageId = quoting?.id;
+      setQuoting(undefined);
       void main
         .send(text, {
           conversationId: id,
+          ...(quotedMessageId ? { quotedMessageId } : {}),
           attachmentIds,
           fileRefs,
           wikiIds,
@@ -408,6 +449,7 @@ export function ChatPage() {
   latestActions.current = {
     onReact: (row, emoji) => void toggleReact(row, emoji),
     onReply: (row) => setThread(row.id),
+    onQuote: (row) => setQuoting(row),
     onOpenArtifact: (id) => setArtifact(id),
     onSaveToWiki: (row) =>
       void chatClient
@@ -426,6 +468,7 @@ export function ChatPage() {
     () => ({
       onReact: (row, emoji) => latestActions.current.onReact(row, emoji),
       onReply: (row) => latestActions.current.onReply(row),
+      onQuote: (row) => latestActions.current.onQuote?.(row),
       onSaveToWiki: (row) => latestActions.current.onSaveToWiki(row),
       onQueue: (row, action) => latestActions.current.onQueue?.(row, action),
       onOpenArtifact: (id) => latestActions.current.onOpenArtifact?.(id),
@@ -787,27 +830,62 @@ export function ChatPage() {
                 </Alert>
               )}
               <LoopBanner loop={goal.loop} onChange={goal.update} onError={setError} />
+              {chatId && (
+                <SlowTurnCard
+                  conversationId={chatId}
+                  botName={current?.name}
+                  state={turn.state}
+                  onDone={() => void turn.refresh().then(() => reload(chatId))}
+                  onError={setError}
+                />
+              )}
               {botId && <ComputerActivity botId={botId} botName={current?.name} />}
-              <DraftComposer
-                wiki
-                skillBots={botId ? [botId] : []}
-                storageKey={draftKey(botId, chatId)}
-                handle={draft}
-                placeholder={
-                  main.busy
-                    ? "Queue a follow-up…"
-                    : current
-                      ? `Message ${current.visibility === "private" ? "" : "#"}${current.name}`
-                      : "Message your bot"
-                }
-                bots={bots}
-                busy={main.busy}
-                disabled={!botId}
-                conversationId={chatId}
-                onSubmit={send}
-                onStop={() => void main.stop()}
-                onError={fail}
-              />
+              {roomChat ? (
+                <div
+                  role="status"
+                  className="flex items-center justify-between gap-3 rounded-xl border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+                >
+                  <p>
+                    This is a room where bots talk. You can read it here; post in it from Rooms.
+                  </p>
+                  <Link
+                    to="/rooms"
+                    search={roomId ? { id: roomId } : {}}
+                    className="shrink-0 font-medium text-foreground underline underline-offset-4"
+                  >
+                    Open in Rooms
+                  </Link>
+                </div>
+              ) : (
+                <DraftComposer
+                  wiki
+                  skillBots={botId ? [botId] : []}
+                  replyTo={
+                    quoting && {
+                      id: quoting.id,
+                      name: authorOf(quoting).name,
+                      excerpt: quoting.content,
+                      onCancel: () => setQuoting(undefined),
+                    }
+                  }
+                  storageKey={draftKey(botId, chatId)}
+                  handle={draft}
+                  placeholder={
+                    main.busy
+                      ? "Queue a follow-up…"
+                      : current
+                        ? `Message ${current.visibility === "private" ? "" : "#"}${current.name}`
+                        : "Message your bot"
+                  }
+                  bots={bots}
+                  busy={main.busy}
+                  disabled={!botId}
+                  conversationId={chatId}
+                  onSubmit={send}
+                  onStop={() => void main.stop()}
+                  onError={fail}
+                />
+              )}
             </div>
           </section>
           {sidePane && desktop && (

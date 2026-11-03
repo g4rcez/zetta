@@ -42,7 +42,7 @@ describe("cli harness", () => {
     );
     process.env.ZETTA_SECRET = "leak";
     const out = await runCli({
-      harness: "claude-code",
+      harness: "pi",
       prompt: "hi",
       model: null,
       resolve: () => fake,
@@ -235,6 +235,77 @@ describe("cli harness", () => {
     expect(await out("bob")).toBe(`home=${root}/bob/pi`);
     delete process.env.ZETTA_HARNESS_HOME_ROOT;
   });
+  test("claude code: steps reach onActivity, the result is the reply, and the notes are not", async () => {
+    const fake = await script(`cat <<'JSON'
+{"type":"system","subtype":"init"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"I will look at the file."},{"type":"tool_use","name":"Read","input":{"file_path":"/srv/a/notes.md"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"All done."}]}}
+{"type":"result","subtype":"success","is_error":false,"result":"All done."}
+JSON`);
+    const steps: string[] = [];
+    const out = await runCli({
+      harness: "claude-code",
+      prompt: "x",
+      model: null,
+      resolve: () => fake,
+      onActivity: (l) => steps.push(l),
+    });
+    expect(out).toBe("All done.");
+    expect(steps).toEqual(["I will look at the file.", "Reading notes.md"]);
+  });
+  test("claude code: an error result is classified from its text", async () => {
+    const fake = await script(`cat <<'JSON'
+{"type":"result","subtype":"success","is_error":true,"result":"Invalid API key · Please run /login"}
+JSON
+exit 1`);
+    const err = await runCli({
+      harness: "claude-code",
+      prompt: "x",
+      model: null,
+      resolve: () => fake,
+    }).then(
+      () => undefined,
+      (e: HarnessError) => e.code,
+    );
+    expect(err).toBe("auth_required");
+  });
+  test("a silent run reports 'Still working' once, then still returns its reply", async () => {
+    const fake = await script("sleep 1.2; echo done");
+    const items: unknown[] = [];
+    for await (const c of streamCli({
+      harness: "pi",
+      prompt: "x",
+      model: null,
+      heartbeatMs: 500,
+      resolve: () => fake,
+    }))
+      items.push(c);
+    expect(items).toEqual([{ activity: "Still working" }, "done\n"]);
+  });
+  test("a claude code run that goes quiet after a step repeats that step in the heartbeat", async () => {
+    const fake = await script(`cat <<'JSON'
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Grep","input":{"pattern":"TODO"}}]}}
+JSON
+sleep 1.2
+cat <<'JSON'
+{"type":"result","subtype":"success","is_error":false,"result":"Found 3."}
+JSON`);
+    const items: unknown[] = [];
+    for await (const c of streamCli({
+      harness: "claude-code",
+      prompt: "x",
+      model: null,
+      heartbeatMs: 500,
+      resolve: () => fake,
+    }))
+      items.push(c);
+    expect(items).toEqual([
+      { activity: 'Searching "TODO"' },
+      { activity: 'Still working · Searching "TODO"' },
+      "Found 3.",
+    ]);
+  });
   test("streams chunks as they arrive", async () => {
     const fake = await script("echo one; sleep 0.2; echo two");
     const parts: string[] = [];
@@ -244,7 +315,7 @@ describe("cli harness", () => {
       model: null,
       resolve: () => fake,
     }))
-      parts.push(c);
+      if (typeof c === "string") parts.push(c);
     expect(parts.join("")).toContain("one");
     expect(parts.join("")).toContain("two");
   });
@@ -305,7 +376,16 @@ describe("code access", () => {
         a.startsWith("--allowedTools="),
       ),
     ).toContain(",Bash");
-    expect(harnessCommands["claude-code"]("x", null)).toEqual(["claude", "-p", "x"]);
+    expect(harnessCommands["claude-code"]("x", null)).toEqual([
+      "claude",
+      "-p",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--append-system-prompt",
+      "Before each group of tool calls, write one short sentence that says what you will do next.",
+      "x",
+    ]);
     expect(harnessCommands.codex("x", null, "git")).toContain(
       "sandbox_workspace_write.network_access=true",
     );

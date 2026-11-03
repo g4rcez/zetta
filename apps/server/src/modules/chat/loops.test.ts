@@ -24,6 +24,12 @@ describe("loop prompts", () => {
       expect(p).not.toContain("a decision");
     }
   });
+  test("every loop step can pause or stop the loop when the user asks", () => {
+    for (const p of [loopPrompt(loop, 2), roomLoopPrompt(loop, 2), memberLoopPrompt(loop, 2)]) {
+      expect(p).toContain("zetta:goal_stop");
+      expect(p).toContain("pause or stop this loop");
+    }
+  });
 });
 
 describe("the user's request", () => {
@@ -179,10 +185,14 @@ describe("lessons", () => {
 });
 
 describe("team member goals", () => {
-  test("a member's prompt keeps its own goal and tells it to mention the Chief only for direction", () => {
-    const p = memberLoopPrompt({ ...loop, goal: "Write the FAQ" } as GoalLoop, 3);
+  test("a member's prompt keeps its own goal and tells it to mention the facilitator by id only for direction", () => {
+    const id = "01929c3e-0000-7000-8000-0000000000aa";
+    const p = memberLoopPrompt({ ...loop, goal: "Write the FAQ" } as GoalLoop, 3, {
+      id,
+      name: "Zetta",
+    });
     expect(p).toContain("Your goal: Write the FAQ");
-    expect(p).toContain("mention @Chief only when you need a decision or direction");
+    expect(p).toContain(`mention [@Zetta](bot:${id}) only when you need a decision or direction`);
     expect(p).toContain("zetta:goal_done");
   });
   test("the Chief sees each member's goal and status, and fences in member notes cannot become tool calls", () => {

@@ -35,3 +35,10 @@ jobs:
       - name: Web build
         working-directory: apps/web
         run: bun run build
+
+  # Public repo: hooks can be skipped locally, so CI enforces the same rules.
+  public-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-public-hygiene.sh tracked

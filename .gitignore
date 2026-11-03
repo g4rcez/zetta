@@ -13,9 +13,21 @@ apps/web/src/routeTree.gen.ts
 local.db
 local.db-*
 
-# Environment variables
+# Environment variables (only .env.schema is tracked: names, no values)
 .env
-.env*.local
+.env.*
+!.env.schema
+
+# Keys, certificates and local databases
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.sqlite
+*.sqlite3
+*.db
 
 # IDEs and editors
 .vscode/*
@@ -73,3 +85,12 @@ temp
 
 # Local design-review screenshots (hold personal data)
 .impeccable/review/
+
+# Local agent and tool state (paths, caches, lock files)
+**/.claude/settings.local.json
+**/.claude/scheduled_tasks.lock
+**/.claude/worktrees/
+**/.impeccable/hook.cache.json
+**/.impeccable/questions/
+**/.hutch/
+lsp.json

@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useMemo, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useMemo, type ComponentProps, type ReactNode } from "react";
 
 import {
   MessageScroller,
@@ -35,6 +35,46 @@ function FollowOnSend({ token }: { token: number }) {
     if (token) requestAnimationFrame(() => scrollToEnd({ behavior: "smooth" }));
   }, [token, scrollToEnd]);
   return null;
+}
+
+const DOWN_KEYS = new Set(["ArrowDown", "PageDown", "End", " "]);
+/** Same distance the scroller uses to call a log "at the bottom". */
+const BOTTOM_EDGE = 8;
+
+/**
+ * The scroller stops following the bottom on any wheel, touch or key event, even when the log already sits at the bottom. No scroll
+ * event follows there, so nothing starts the following again and new messages arrive out of sight. A gesture that cannot leave the
+ * bottom (wheel down, a down key, a touch that ends there) puts the log back in follow mode.
+ */
+function PinnedViewport({
+  onWheel,
+  onKeyDown,
+  onTouchEnd,
+  ...props
+}: ComponentProps<typeof MessageScrollerViewport>) {
+  const { scrollToEnd } = useMessageScroller();
+  const repin = (el: HTMLElement) =>
+    requestAnimationFrame(() => {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_EDGE)
+        scrollToEnd({ behavior: "auto" });
+    });
+  return (
+    <MessageScrollerViewport
+      {...props}
+      onWheel={(e) => {
+        if (e.deltaY >= 0) repin(e.currentTarget);
+        onWheel?.(e);
+      }}
+      onKeyDown={(e) => {
+        if (DOWN_KEYS.has(e.key)) repin(e.currentTarget);
+        onKeyDown?.(e);
+      }}
+      onTouchEnd={(e) => {
+        repin(e.currentTarget);
+        onTouchEnd?.(e);
+      }}
+    />
+  );
 }
 
 /** The newest rows stay fully rendered so following the bottom measures real heights; older ones keep the scroller's `content-visibility: auto`. */
@@ -145,7 +185,7 @@ export function MessageList({
       <MessageScrollerProvider autoScroll>
         <FollowOnSend token={followToken} />
         <MessageScroller className="flex-1">
-          <MessageScrollerViewport role="log" aria-label={label} aria-live="polite" tabIndex={0}>
+          <PinnedViewport role="log" aria-label={label} aria-live="polite" tabIndex={0}>
             <MessageScrollerContent
               aria-busy={busy}
               // DESIGN.md "Sizes": the chat and a thread fill the panel's width.
@@ -169,7 +209,7 @@ export function MessageList({
               ))}
               {footer}
             </MessageScrollerContent>
-          </MessageScrollerViewport>
+          </PinnedViewport>
           <MessageScrollerButton
             aria-label="Jump to latest message"
             className="rounded-full shadow-md"

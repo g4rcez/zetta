@@ -488,11 +488,13 @@ function RoomView({
     }
     setBusy(false);
   }
+  const [sent, setSent] = useState(0); // bumps on every send so the list jumps to the newest message
   async function send(out: Outgoing) {
     setBusy(true);
     try {
       await discussionsApi.post(id, out.text, out);
       setDraft("");
+      setSent((n) => n + 1);
       await load();
       onChanged();
       return true;
@@ -789,6 +791,7 @@ function RoomView({
           <>
             <MessageList
               key={d.conversationId}
+              followToken={sent}
               rows={rows}
               bots={bots}
               authorOf={authorOf}

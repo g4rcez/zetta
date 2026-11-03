@@ -7,6 +7,7 @@ import { discussion } from "@zetta/db/schema/discussions";
 import { membership } from "@zetta/db/schema/identity";
 import { AccessError, type ActiveActor } from "../identity/access";
 import { insertMessage } from "../chat/messages";
+import { normalizeMentionText } from "../chat/mention-text";
 import { failureKind, retryDelayMs } from "../chat/retry";
 import { raiseAttention } from "./attention";
 import { audit } from "./audit";
@@ -552,7 +553,8 @@ export function createRoutines(
             originDiscussionId: origin?.id ?? null,
             botId: v.botId,
             title: v.title,
-            prompt: v.prompt,
+            // Stored with mention tokens: a routine runs for months, and a rename must not break its prompt.
+            prompt: await normalizeMentionText(db, a.userId, v.prompt),
             timezone: v.timezone,
             dailyAt: v.dailyAt ?? null,
             everyMinutes: v.everyMinutes ?? null,
@@ -579,6 +581,9 @@ export function createRoutines(
       if (v.timezone && !validTimezone(v.timezone)) throw new RoutineError("INVALID");
       const next = {
         ...v,
+        ...(v.prompt !== undefined
+          ? { prompt: await normalizeMentionText(db, a.userId, v.prompt) }
+          : {}),
         archived: v.archived,
         onceAt: v.onceAt ? new Date(v.onceAt) : undefined,
       };

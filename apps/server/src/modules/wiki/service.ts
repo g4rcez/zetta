@@ -1,3 +1,4 @@
+import { normalizeMentionText } from "../chat/mention-text";
 import { createHash } from "node:crypto";
 import type { Database } from "@zetta/db";
 import { and, desc, eq, inArray, lt, ne, sql } from "@zetta/db/query";
@@ -374,6 +375,11 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
           if (managed && (c.title !== cur.title || c.content !== cur.content || type === "all"))
             throw new WikiError("MANAGED");
         }
+        // Mentions are stored by id (`[@Dev](bot:<id>)`), so a rename never breaks a page. Only text that is new is changed: an unchanged
+        // text stays as it is, which also keeps a synced document equal to its source.
+        if (!cur || c.content !== cur.content)
+          c.content = await normalizeMentionText(tx, owner, c.content);
+        if (!cur || c.howto !== cur.howto) c.howto = await normalizeMentionText(tx, owner, c.howto);
         // What goes into every prompt is bounded (features/knowledge.ts): one bot keeps at most this many notes of its own, a person this
         // many profile items. The check runs when an item enters one of the two sets.
         const profile = type === "owner" && c.tags.includes("profile");
@@ -1178,8 +1184,8 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
       throw new WikiError(looksSecret(reason) ? "SECRET_REJECTED" : "UNSAFE");
     const fields = {
       title: c.title,
-      howto: c.howto,
-      content: c.content,
+      howto: await normalizeMentionText(db, p.ownerUserId, c.howto),
+      content: await normalizeMentionText(db, p.ownerUserId, c.content),
       tags: c.tags,
       reason,
       baseVersion: p.version,

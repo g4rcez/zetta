@@ -6,12 +6,14 @@ import { splitReply, UI_FENCE } from "@zetta/render/reply";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotsContext } from "@/components/bot-identity";
 import { BotTag } from "@/components/bot-tag";
+import { MentionTag } from "@/components/mention-tag";
 
 import { RELATION } from "@/features/wiki/wiki-api";
 import type { Relation } from "@/features/wiki/wiki-api";
 import { rehypeWikiLinks } from "@/features/wiki/wiki-markdown";
 import { rehypeBotTags } from "./bot-tags";
 import { rehypeGithubRefs } from "./github-refs";
+import { rehypeMentionLinks } from "./mention-tags";
 import { tagPatches } from "./code-fence";
 import { codePlugins } from "./highlighted-code";
 import { InboundCard } from "./inbound-card";
@@ -21,6 +23,28 @@ import { parseSetupCard } from "./setup-card-data";
 import { stripToolFences } from "./tool-fences";
 import { UiSkeleton, UiView } from "./ui-registry";
 import { parseWhatsapp, WhatsappView } from "./whatsapp-view";
+
+/**
+ * Streamdown's sanitize step drops a link whose protocol it does not know. A mention is the link `[@Dev](bot:<id>)` (`team:` and `room:`
+ * too), so those protocols are allowed here and `rehypeMentionLinks` turns them into tags.
+ */
+const [sanitizer, sanitizeSchema] = defaultRehypePlugins.sanitize as unknown as [
+  unknown,
+  { protocols?: { href?: string[] } } & Record<string, unknown>,
+];
+const withMentionProtocols = {
+  ...defaultRehypePlugins,
+  sanitize: [
+    sanitizer,
+    {
+      ...sanitizeSchema,
+      protocols: {
+        ...sanitizeSchema.protocols,
+        href: [...(sanitizeSchema.protocols?.href ?? []), "bot", "team", "room"],
+      },
+    },
+  ] as unknown as typeof defaultRehypePlugins.sanitize,
+};
 
 const BODY = "chat-response min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
 
@@ -97,7 +121,8 @@ const Markdown = memo(function Markdown({
     const list = [...bots.values()];
     return {
       rehypePlugins: [
-        ...Object.values(defaultRehypePlugins),
+        ...Object.values(withMentionProtocols),
+        rehypeMentionLinks,
         rehypeGithubRefs(repo),
         ...(wikiLinks ? [rehypeWikiLinks] : []),
         ...(list.length ? [rehypeBotTags(list)] : []),
@@ -105,6 +130,7 @@ const Markdown = memo(function Markdown({
       components: {
         ...NO_REMOTE_IMAGES,
         "gh-ref": GithubRef,
+        "mention-tag": (props: { children?: ReactNode }) => <MentionTag bots={bots} {...props} />,
         ...(wikiLinks && {
           "wiki-link": (props: { children?: ReactNode }) => <WikiRef info={wikiLinks} {...props} />,
         }),

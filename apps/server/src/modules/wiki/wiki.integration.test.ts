@@ -234,6 +234,35 @@ suite("operator wiki against compose postgres", () => {
     ).toBe("ok");
   });
 
+  test("a bot named in a page is stored by id, so a rename keeps the mention; saving the same text again is not a new version", async () => {
+    const saved = await wiki.write(
+      A,
+      {
+        slug: "handoff",
+        title: "Handoff",
+        howto: "Ask @Scribe",
+        content: "Tell @Scribe, not @ghost.",
+      },
+      person,
+    );
+    expect(saved.page).toMatchObject({
+      howto: `Ask [@Scribe](bot:${botA})`,
+      content: `Tell [@Scribe](bot:${botA}), not @ghost.`,
+      version: 1,
+    });
+    const again = await wiki.write(
+      A,
+      {
+        slug: "handoff",
+        title: "Handoff",
+        howto: "Ask @Scribe",
+        content: "Tell @Scribe, not @ghost.",
+      },
+      person,
+    );
+    expect(again).toMatchObject({ changed: false, page: { version: 1 } });
+  });
+
   test("patch changes one unique span; missing or repeated text is refused", async () => {
     await wiki.write(
       A,

@@ -1,0 +1,1 @@
+DROP INDEX "zetta"."discussion_turn_one_running";

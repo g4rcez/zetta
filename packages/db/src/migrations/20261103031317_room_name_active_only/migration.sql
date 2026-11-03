@@ -1,0 +1,2 @@
+DROP INDEX "zetta"."discussion_room_name_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "discussion_room_name_unique" ON "zetta"."discussion" ("owner_user_id",lower("title")) WHERE "team_id" is not null and "status" in ('open', 'paused', 'stalled');

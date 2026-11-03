@@ -113,10 +113,10 @@ export const discussion = zetta.table(
     index("discussion_open_updated_idx")
       .on(t.updatedAt)
       .where(sql`${t.status} = 'open'`),
-    /** Room names (discussions of a team) are unique per owner, whatever their status. */
+    /** Names of active rooms (discussions of a team) are unique per owner; a closed room frees its name. */
     uniqueIndex("discussion_room_name_unique")
       .on(t.ownerUserId, sql`lower(${t.title})`)
-      .where(sql`${t.teamId} is not null`),
+      .where(sql`${t.teamId} is not null and ${t.status} in ('open', 'paused', 'stalled')`),
     uniqueIndex("discussion_open_key")
       .on(t.ownerUserId, t.openKey)
       .where(sql`${t.status} in ('open', 'paused', 'stalled')`),
@@ -202,9 +202,6 @@ export const discussionTurn = zetta.table(
       t.triggerMessageId,
       t.kind,
     ),
-    uniqueIndex("discussion_turn_one_running")
-      .on(t.discussionId)
-      .where(sql`${t.status} = 'running'`),
     index("discussion_turn_status_idx").on(t.status, t.createdAt),
   ],
 );

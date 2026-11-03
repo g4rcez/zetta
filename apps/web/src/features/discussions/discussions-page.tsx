@@ -19,7 +19,7 @@ import {
   XCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@zetta/ui/components/badge";
@@ -43,7 +43,9 @@ import {
   type Proposal,
 } from "../chat/chat-client";
 import { transcriptRows, type Row } from "../chat/chat-rows";
-import { Composer, type Outgoing } from "../chat/composer";
+import type { Outgoing } from "../chat/composer";
+import { DraftComposer, type DraftHandle } from "../chat/draft-composer";
+import { draftKey } from "../chat/use-draft";
 import { LoopBanner, useGoalLoop } from "../chat/loop-banner";
 import { useRooms, useSidebarData } from "../chat/sidebar-data";
 import { BotAvatar } from "@/components/bot-avatar";
@@ -382,7 +384,7 @@ function RoomView({
   const [detail, setDetail] = useState<DiscussionDetail>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [briefs, setBriefs] = useState<Proposal[]>([]);
-  const [draft, setDraft] = useState("");
+  const draft = useRef<DraftHandle | null>(null);
   const [edit, setEdit] = useState<{ title: string; goal: string; context: string }>();
   const [teams, setTeams] = useState<Team[]>([]);
   const [busy, setBusy] = useState(false);
@@ -493,7 +495,7 @@ function RoomView({
     setBusy(true);
     try {
       await discussionsApi.post(id, out.text, out);
-      setDraft("");
+      draft.current?.clear();
       setSent((n) => n + 1);
       await load();
       onChanged();
@@ -840,9 +842,9 @@ function RoomView({
                 <ComputerActivity botId={running.botId} botName={names.get(running.botId)} />
               )}
               {!isClosed && (
-                <Composer
-                  value={draft}
-                  onChange={setDraft}
+                <DraftComposer
+                  storageKey={draftKey(undefined, d.conversationId)}
+                  handle={draft}
                   placeholder={`Message the room, e.g. @${detail.members[0]?.name.replace(/\s+/g, "") ?? "Bot"}`}
                   bots={bots.filter((b) => names.has(b.id))}
                   busy={busy}

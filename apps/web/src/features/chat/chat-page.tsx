@@ -1,13 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentProps,
-  type CSSProperties,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ComputerActivity } from "../computer/computer-activity";
 import { DesktopButton } from "../computer/desktop-button";
@@ -44,7 +35,7 @@ import {
   type Proposal,
 } from "./chat-client";
 import { asRow, shouldAutoOpen, transcriptRows, type Row } from "./chat-rows";
-import { Composer } from "./composer";
+import { DraftComposer, type DraftHandle } from "./draft-composer";
 import { MessageList, type RowActions } from "./message-list";
 import { SetupActionsContext, type SetupActions } from "./setup-actions";
 import type { Author } from "./message-row";
@@ -54,7 +45,7 @@ import { PublishDialog } from "./publish-dialog";
 import { toggleReaction } from "./reactions";
 import { useSidebarData } from "./sidebar-data";
 import { ThreadPanel } from "./thread-panel";
-import { draftKey, useDraft } from "./use-draft";
+import { draftKey } from "./use-draft";
 import { useZettaChat } from "./use-zetta-chat";
 import { Alert } from "@g4rcez/components/alert";
 
@@ -63,21 +54,6 @@ const SUGGESTIONS = [
   "Summarize what you remember about me.",
   "Plan my week.",
 ];
-
-type DraftHandle = ReturnType<typeof useDraft>;
-/** The composer owns its draft text, so each keystroke renders this component and not the whole page. `handle` gives the page adopt/clear. */
-function DraftComposer({
-  storageKey,
-  handle,
-  ...props
-}: Omit<ComponentProps<typeof Composer>, "value" | "onChange"> & {
-  storageKey: string | undefined;
-  handle: RefObject<DraftHandle | null>;
-}) {
-  const draft = useDraft(storageKey);
-  handle.current = draft;
-  return <Composer {...props} value={draft.value} onChange={draft.set} />;
-}
 
 const NEW_CHAT = "new";
 const LAST_CHAT_KEY = "zetta:last-chat";

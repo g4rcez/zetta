@@ -13,6 +13,20 @@ The product is for people who want useful work done, not another technical syste
 - [Small-model task execution rules](tasks/README.md)
 - [Repository stack and development setup](TECH.md)
 
+## See it in action
+
+<video src="docs/demo/zetta-demo-chat-workflow.mp4" poster="docs/demo/zetta-demo-poster.png" controls muted playsinline width="100%">
+  <a href="docs/demo/zetta-demo-chat-workflow.mp4"><img src="docs/demo/zetta-demo-poster.png" alt="Zetta: a chat with Chief that hands work to two bots in a room"></a>
+</video>
+
+_Demo video (62 s): mention two bots in a chat with your chief, read their answers in a shared room, then build, view and run a two-step workflow. The bot replies are scripted by a stand-in `claude` command, so the demo makes no model call. If the player does not load, select the image to open the file._
+
+| Mention a bot with `@`                                                                         | Bots answer together in a room                                                                 |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| ![The @ picker lists bots with their avatar and name](docs/demo/zetta-mention-picker.png)      | ![A room where Researcher and Writer answer the same request](docs/demo/zetta-room.png)        |
+| **Workflow on the canvas**                                                                     | **Workflow run with each step's output**                                                       |
+| ![Workflow canvas: two Ask a bot steps and a Finish step](docs/demo/zetta-workflow-canvas.png) | ![Workflow result: output of each step and the final answer](docs/demo/zetta-workflow-run.png) |
+
 ## The experience
 
 1. **Configure a bot** through guided forms or a conversation with any bot—not only the chief. Explain its job and connect the accounts it needs. Use the same validation and authorization for both paths.

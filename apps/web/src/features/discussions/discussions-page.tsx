@@ -456,10 +456,12 @@ function RoomView({
   }, [working, load]);
 
   const runningTurn = detail?.turns.find((t) => t.status === "running");
+  // A team member who does not own the room reads it. The live stream is the owner's, so a member sees new messages by polling.
+  const readOnly = !!detail && !!session && detail.owner.userId !== session.user.id;
   // The turn that is running streams here live, exactly like a chat reply, and the page reloads when it settles.
   const liveChat = useZettaChat({
     conversationId: detail?.discussion.conversationId,
-    attachKey: runningTurn?.id,
+    attachKey: readOnly ? undefined : runningTurn?.id,
     onSettled: async () => {
       await load();
       onChanged();
@@ -469,13 +471,13 @@ function RoomView({
   const me: Author = { name: session?.user.name ?? "You", image: session?.user.image };
   const authorOf = useCallback(
     (row: Row): Author => {
-      if (row.role === "user") return me;
+      if (row.role === "user") return readOnly && detail ? { name: detail.owner.name } : me;
       if (row.role === "system") return { name: "Zetta" };
       const bot = bots.find((b) => b.id === row.botId);
       return { name: bot?.name ?? row.botName ?? "Bot", bot };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [bots, session?.user.name, session?.user.image],
+    [bots, session?.user.name, session?.user.image, readOnly, detail?.owner.name],
   );
   const rows = useMemo(() => transcriptRows(messages, liveChat.rows), [messages, liveChat.rows]);
 
@@ -521,7 +523,8 @@ function RoomView({
       </p>
     );
   const d = detail.discussion,
-    isClosed = closed(d.status),
+    // Gates every control that writes: a closed room, or a team member who only reads it.
+    isClosed = closed(d.status) || readOnly,
     roomTeam = d.teamId ? teams.find((t) => t.id === d.teamId) : undefined;
   const running = detail.turns.find((t) => t.status === "running");
   const names = new Map(detail.members.map((m) => [m.botId, m.name]));
@@ -619,107 +622,113 @@ function RoomView({
               <SpeakerSlashIcon />
             </IconButton>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <IconButton
-                  size="icon-sm"
-                  variant="ghost"
-                  title="Room actions"
-                  aria-label="Room actions"
-                  disabled={busy}
-                />
-              }
-            >
-              <DotsThreeIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              {!isClosed && (
-                <>
-                  {d.createdByBotId && detail.members.length > 1 && goalLoop.loops.length === 0 && (
-                    <DropdownMenuItem onClick={() => setLoopForm({ goal: d.goal, doneWhen: "" })}>
-                      <RepeatIcon />
-                      Pursue goal
-                    </DropdownMenuItem>
-                  )}
-                  {d.teamId && (
-                    <DropdownMenuItem onClick={() => setTeamGoal(d.goal)}>
-                      <TargetIcon />
-                      Set team goal
-                    </DropdownMenuItem>
-                  )}
-                  {d.status === "open" ? (
-                    <DropdownMenuItem
-                      onClick={() => void act(() => discussionsApi.act(id, "pause"))}
-                    >
-                      <PauseIcon />
-                      Pause
-                    </DropdownMenuItem>
-                  ) : (
-                    <DropdownMenuItem
-                      onClick={() => void act(() => discussionsApi.act(id, "resume"))}
-                    >
-                      <PlayIcon />
-                      Resume
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    onClick={() => {
-                      if (window.confirm("Stop all goals? The room and its history stay."))
-                        void act(
-                          () => discussionsApi.stopGoals(id).then(goalLoop.refresh),
-                          "Goals stopped.",
-                        );
-                    }}
-                  >
-                    <StopCircleIcon />
-                    Stop goals
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      const summary = window.prompt("What was the outcome?");
-                      if (summary?.trim())
-                        void act(() => discussionsApi.resolve(id, summary.trim()), "Resolved.");
-                    }}
-                  >
-                    <CheckCircleIcon />
-                    Resolve
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={() => {
-                      if (window.confirm("Cancel this room? Queued bot turns are dropped."))
-                        void act(() => discussionsApi.act(id, "cancel"));
-                    }}
-                  >
-                    <XCircleIcon />
-                    Cancel room
-                  </DropdownMenuItem>
-                </>
-              )}
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Delete this room? It stops and leaves your lists. Its history is kept.",
-                    )
-                  )
-                    void act(
-                      () =>
-                        discussionsApi
-                          .remove(id)
-                          .then(() => navigate({ to: "/rooms", search: {} })),
-                      "Room deleted.",
-                    );
-                }}
+          {!readOnly && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <IconButton
+                    size="icon-sm"
+                    variant="ghost"
+                    title="Room actions"
+                    aria-label="Room actions"
+                    disabled={busy}
+                  />
+                }
               >
-                <TrashIcon />
-                Delete room
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <DotsThreeIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {!isClosed && (
+                  <>
+                    {d.createdByBotId &&
+                      detail.members.length > 1 &&
+                      goalLoop.loops.length === 0 && (
+                        <DropdownMenuItem
+                          onClick={() => setLoopForm({ goal: d.goal, doneWhen: "" })}
+                        >
+                          <RepeatIcon />
+                          Pursue goal
+                        </DropdownMenuItem>
+                      )}
+                    {d.teamId && (
+                      <DropdownMenuItem onClick={() => setTeamGoal(d.goal)}>
+                        <TargetIcon />
+                        Set team goal
+                      </DropdownMenuItem>
+                    )}
+                    {d.status === "open" ? (
+                      <DropdownMenuItem
+                        onClick={() => void act(() => discussionsApi.act(id, "pause"))}
+                      >
+                        <PauseIcon />
+                        Pause
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        onClick={() => void act(() => discussionsApi.act(id, "resume"))}
+                      >
+                        <PlayIcon />
+                        Resume
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (window.confirm("Stop all goals? The room and its history stay."))
+                          void act(
+                            () => discussionsApi.stopGoals(id).then(goalLoop.refresh),
+                            "Goals stopped.",
+                          );
+                      }}
+                    >
+                      <StopCircleIcon />
+                      Stop goals
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        const summary = window.prompt("What was the outcome?");
+                        if (summary?.trim())
+                          void act(() => discussionsApi.resolve(id, summary.trim()), "Resolved.");
+                      }}
+                    >
+                      <CheckCircleIcon />
+                      Resolve
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => {
+                        if (window.confirm("Cancel this room? Queued bot turns are dropped."))
+                          void act(() => discussionsApi.act(id, "cancel"));
+                      }}
+                    >
+                      <XCircleIcon />
+                      Cancel room
+                    </DropdownMenuItem>
+                  </>
+                )}
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Delete this room? It stops and leaves your lists. Its history is kept.",
+                      )
+                    )
+                      void act(
+                        () =>
+                          discussionsApi
+                            .remove(id)
+                            .then(() => navigate({ to: "/rooms", search: {} })),
+                        "Room deleted.",
+                      );
+                  }}
+                >
+                  <TrashIcon />
+                  Delete room
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </PageHeader>
         {(goalLoop.loops.length ? goalLoop.loops : goalLoop.loop ? [goalLoop.loop] : []).map(
           (l) => (
@@ -881,6 +890,12 @@ function RoomView({
               )}
               {running && (
                 <ComputerActivity botId={running.botId} botName={names.get(running.botId)} />
+              )}
+              {readOnly && (
+                <p role="note" className="text-sm text-muted-foreground">
+                  You are reading this room as a member of its team. Only {detail.owner.name} can
+                  post here for now.
+                </p>
               )}
               {!isClosed && (
                 <DraftComposer

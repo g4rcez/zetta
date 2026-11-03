@@ -15,7 +15,9 @@ import { attachment, configProposal, routine } from "@zetta/db/schema/features";
 import { task } from "@zetta/db/schema/tasks";
 import { wikiPage } from "@zetta/db/schema/wiki";
 import { closeAttention, closeAttentionKey, raiseAttention } from "../features/attention";
-import { AccessError, requireOwned, type ActiveActor } from "../identity/access";
+import { AccessError, requireOwned, requireTeamMember, type ActiveActor } from "../identity/access";
+import { createTeamPeople } from "../teams/people";
+import { user } from "@zetta/db/schema/auth";
 import { dockerConfig } from "../chat/harness";
 import type { FileStore } from "../chat/files";
 import { insertMessage, quoteOf } from "../chat/messages";
@@ -118,6 +120,16 @@ export function createDiscussionStore(
       .from(discussion)
       .where(and(eq(discussion.id, id), eq(discussion.ownerUserId, a.userId)));
     return requireOwned(a, row);
+  }
+  const people = createTeamPeople(db);
+  /** Read access: the owner, or a person of the room's team. Every write still goes through `loadOwned`. */
+  async function loadReadable(a: ActiveActor, id: string) {
+    const [row] = await db.select().from(discussion).where(eq(discussion.id, id));
+    const member =
+      !!row &&
+      (row.ownerUserId === a.userId ||
+        (!!row.teamId && (await people.isPerson(a.userId, row.teamId))));
+    return requireTeamMember(a, row, member);
   }
   /** A cancelled room runs nothing more: queued and waiting turns stop and its attention item closes. */
   async function dropQueuedTurns(tx: Tx, d: Pick<Discussion, "id" | "ownerUserId">) {
@@ -1371,7 +1383,10 @@ export function createDiscussionStore(
           .innerJoin(conversation, eq(conversation.id, discussion.conversationId))
           .where(
             and(
-              eq(discussion.ownerUserId, a.userId),
+              or(
+                eq(discussion.ownerUserId, a.userId),
+                inArray(discussion.teamId, people.teamIds(a.userId)),
+              ),
               eq(conversation.archived, false),
               status ? eq(discussion.status, status) : undefined,
             ),
@@ -1622,7 +1637,7 @@ export function createDiscussionStore(
     },
     /** Turns of a room with their saved steps, and the tasks its bots put on the board. */
     async steps(a: ActiveActor, id: string) {
-      const d = await loadOwned(a, id);
+      const d = await loadReadable(a, id);
       const rows = await db
         .select({ turn: discussionTurn, data: turnStep.data })
         .from(discussionTurn)
@@ -1649,7 +1664,7 @@ export function createDiscussionStore(
       };
     },
     async get(a: ActiveActor, id: string) {
-      const d = await loadOwned(a, id);
+      const d = await loadReadable(a, id);
       const members = (await membersOf(d)).map((r) => ({
         botId: r.m.botId,
         name: r.name,
@@ -1675,7 +1690,17 @@ export function createDiscussionStore(
           ),
         )
         .orderBy(asc(routine.createdAt));
-      return { discussion: publicRoom(d), members, turns, routines };
+      const [owner] = await db
+        .select({ name: user.name })
+        .from(user)
+        .where(eq(user.id, d.ownerUserId));
+      return {
+        discussion: publicRoom(d),
+        owner: { userId: d.ownerUserId, name: owner?.name ?? "" },
+        members,
+        turns,
+        routines,
+      };
     },
     /** Owner toggle: whether a member must wait for an approved brief while outside content is in play. */
     async setRequireApproval(a: ActiveActor, id: string, botId: string, on: boolean) {

@@ -52,6 +52,8 @@ export const TEAM_ROLE_ICONS = [
 export type TeamRoleIcon = (typeof TEAM_ROLE_ICONS)[number];
 export const TEAM_STATUSES = ["active", "archived"] as const;
 export type TeamStatus = (typeof TEAM_STATUSES)[number];
+export const TEAM_PERSON_ROLES = ["owner", "member"] as const;
+export type TeamPersonRole = (typeof TEAM_PERSON_ROLES)[number];
 
 /** Where a team group sits on the teams canvas. */
 export type TeamBox = { x: number; y: number; w: number; h: number };
@@ -86,6 +88,33 @@ export const team = zetta.table(
     check("team_name_check", sql`length(btrim(${t.name})) between 1 and 80`),
     check("team_goal_check", sql`length(${t.goal}) <= 1000`),
     check("team_context_check", sql`length(${t.context}) <= 8000`),
+  ],
+);
+
+/**
+ * A human in a team: every person reads the team's rooms. The team owner has the `owner` row and manages the others.
+ * `activation_revision` is the installation membership revision when the person joined. A removed member who is enrolled again has a
+ * newer revision, so the old row stays inert and access never comes back by itself.
+ */
+export const teamPerson = zetta.table(
+  "team_person",
+  {
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => team.id, restrict),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, restrict),
+    role: text("role", { enum: TEAM_PERSON_ROLES }).default("member").notNull(),
+    activationRevision: integer("activation_revision").notNull(),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.teamId, t.userId] }),
+    index("team_person_user_id_idx").on(t.userId),
+    uniqueIndex("team_person_one_owner")
+      .on(t.teamId)
+      .where(sql`${t.role} = 'owner'`),
   ],
 );
 

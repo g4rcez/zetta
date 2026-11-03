@@ -56,6 +56,8 @@ export type DiscussionTurn = {
 };
 export type DiscussionDetail = {
   discussion: Discussion;
+  /** Who owns the room. A team member who is not the owner reads the room and cannot change it. */
+  owner: { userId: string; name: string };
   members: DiscussionMember[];
   turns: DiscussionTurn[];
   /** Routines made in this room: their work runs in their own chat, not in the room. */

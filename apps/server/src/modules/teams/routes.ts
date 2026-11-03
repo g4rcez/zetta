@@ -44,6 +44,7 @@ const schemas = {
     icon: z.enum(TEAM_ROLE_ICONS).default("user"),
   }),
   roomTeam: z.strictObject({ teamId: uuid.nullable() }),
+  person: z.strictObject({ userId: z.string().trim().min(1).max(200) }),
   room: z.strictObject({
     title: z.string().trim().min(1).max(120),
     goal: z.string().trim().max(1000).default(""),
@@ -174,6 +175,33 @@ export function createTeamRoutes(
         await store.archive(c.actor, id(c));
         return { ok: true };
       }),
+    )
+    .get(
+      "/teams/:id/people",
+      g(async (c) => ({ people: await store.people(c.actor, id(c)) })),
+    )
+    .get(
+      "/teams/:id/candidates",
+      g(async (c) => ({ candidates: await store.candidates(c.actor, id(c)) })),
+    )
+    .post(
+      "/teams/:id/people",
+      g(
+        async (c) => ({
+          people: await store.addPerson(c.actor, id(c), schemas.person.parse(c.body).userId),
+        }),
+        201,
+      ),
+    )
+    .delete(
+      "/teams/:id/people/:userId",
+      g(async (c) => ({
+        people: await store.removePerson(
+          c.actor,
+          id(c),
+          schemas.person.shape.userId.parse(c.params.userId),
+        ),
+      })),
     )
     .post(
       "/teams/:id/rooms",

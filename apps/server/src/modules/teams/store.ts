@@ -6,6 +6,7 @@ import { discussion, discussionMember } from "@zetta/db/schema/discussions";
 import {
   team,
   teamMember,
+  teamPerson,
   teamRole,
   type TeamBox,
   type TeamKind,
@@ -13,7 +14,8 @@ import {
   type TeamRoleColor,
   type TeamRoleIcon,
 } from "@zetta/db/schema/teams";
-import { requireOwned, type ActiveActor } from "../identity/access";
+import { requireOwned, requireTeamMember, type ActiveActor } from "../identity/access";
+import { createTeamPeople } from "./people";
 import { DiscussionError, type DiscussionStore } from "../discussions/store";
 import { insertMessage } from "../chat/messages";
 
@@ -88,6 +90,7 @@ export function createTeamStore(
   discussions: Pick<DiscussionStore, "open" | "postAsOwner">,
 ) {
   const visible = (a: ActiveActor) => or(eq(bot.ownerUserId, a.userId), eq(bot.visibility, "team"));
+  const people = createTeamPeople(db);
   async function loadOwned(a: ActiveActor, id: string) {
     const [row] = await db
       .select()
@@ -184,11 +187,22 @@ export function createTeamStore(
     },
     async create(a: ActiveActor, v: { name: string; goal: string; canvas: TeamBox }) {
       try {
-        const [row] = await db
-          .insert(team)
-          .values({ ownerUserId: a.userId, name: v.name, goal: v.goal, canvas: v.canvas })
-          .returning();
-        return { ...row!, members: [] };
+        const revision = await people.activeRevision(a.userId);
+        if (revision === undefined) throw new TeamError("NOT_FOUND", "Team not found.");
+        const row = await db.transaction(async (tx) => {
+          const [created] = await tx
+            .insert(team)
+            .values({ ownerUserId: a.userId, name: v.name, goal: v.goal, canvas: v.canvas })
+            .returning();
+          await tx.insert(teamPerson).values({
+            teamId: created!.id,
+            userId: a.userId,
+            role: "owner",
+            activationRevision: revision,
+          });
+          return created!;
+        });
+        return { ...row, members: [] };
       } catch (e) {
         if (isUnique(e)) throw new TeamError("INVALID", "You already have a team with this name.");
         throw e;
@@ -255,6 +269,35 @@ export function createTeamStore(
       const [t] = await db.select().from(team).where(eq(team.id, id));
       await refreshMentionLabels(db, "team", id, t!.name);
       return { ...t!, members: shape(await membersOf([id]), id) };
+    },
+    /** The people of a team, for the owner and for every member. */
+    async people(a: ActiveActor, id: string) {
+      const [row] = await db
+        .select()
+        .from(team)
+        .where(and(eq(team.id, id), eq(team.status, "active")));
+      requireTeamMember(a, row, row ? await people.isPerson(a.userId, id) : false);
+      return people.list(id);
+    },
+    /** Active installation members the owner can still add. */
+    async candidates(a: ActiveActor, id: string) {
+      await loadOwned(a, id);
+      return people.candidates(id);
+    },
+    async addPerson(a: ActiveActor, id: string, userId: string) {
+      await loadOwned(a, id);
+      if (!(await people.add(id, userId)))
+        throw new TeamError("NOT_FOUND", "That person is not a member of this installation.");
+      return people.list(id);
+    },
+    async removePerson(a: ActiveActor, id: string, userId: string) {
+      await loadOwned(a, id);
+      if (!(await people.remove(id, userId)))
+        throw new TeamError(
+          "INVALID",
+          "The owner stays in the team, and only a member can be removed.",
+        );
+      return people.list(id);
     },
     async archive(a: ActiveActor, id: string) {
       await loadOwned(a, id);

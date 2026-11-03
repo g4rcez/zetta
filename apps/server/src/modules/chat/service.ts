@@ -105,7 +105,8 @@ import { ConnectionRequiredError, type ConnectionsService } from "../connections
 import { createHash } from "node:crypto";
 import { isAllowedModel } from "@zetta/harness/models";
 import { assertStyleChoice } from "../output-styles/service";
-import { AccessError, requireOwned, type ActiveActor } from "../identity/access";
+import { AccessError, requireOwned, requireTeamMember, type ActiveActor } from "../identity/access";
+import { createTeamPeople } from "../teams/people";
 import { AgendaError, type AgendaService } from "../agenda/service";
 import { untrustedDoc, untrustedList } from "../integrations/plugins/untrusted";
 import { DiscussionError, type Claimed, type DiscussionStore } from "../discussions/store";
@@ -3405,6 +3406,17 @@ export function createChatService(
     return requireOwned(actor, row);
   }
 
+  const teamPeople = createTeamPeople(db);
+  /** True when the user may read this conversation as a person of its room's team. Only a room transcript is ever shared this way. */
+  async function readableViaTeam(userId: string, c: { id: string; kind: string }) {
+    if (c.kind !== "discussion") return false;
+    const [d] = await db
+      .select({ teamId: discussionTable.teamId })
+      .from(discussionTable)
+      .where(eq(discussionTable.conversationId, c.id));
+    return !!d?.teamId && teamPeople.isPerson(userId, d.teamId);
+  }
+
   // No memorySnapshot: it is the frozen memory prompt of every bot in the chat, large and only read by the server.
   const conversationRow = {
     id: conversation.id,
@@ -4411,12 +4423,15 @@ export function createChatService(
       }
     },
     /** One conversation of the owner, also a routine's chat that the list leaves out. */
+    /** The owner, or a person of the room's team for a room transcript (read only). */
     async getConversation(actor: ActiveActor, id: string) {
       const [row] = await db
         .select(conversationRow)
         .from(conversation)
-        .where(and(eq(conversation.id, id), eq(conversation.ownerUserId, actor.userId)));
-      return requireOwned(actor, row);
+        .where(eq(conversation.id, id));
+      const member =
+        !!row && (row.ownerUserId === actor.userId || (await readableViaTeam(actor.userId, row)));
+      return requireTeamMember(actor, row, member);
     },
     /** Group discussion transcripts are listed on their own page, so they are left out unless asked for. */
     async listConversations(
@@ -4535,7 +4550,7 @@ export function createChatService(
       conversationId: string,
       opts: { beforeSeq?: number; limit?: number } = {},
     ) {
-      await loadConversation(actor, conversationId);
+      await this.getConversation(actor, conversationId);
       const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
       const page = await db
         .select()
@@ -4543,7 +4558,6 @@ export function createChatService(
         .where(
           and(
             eq(message.conversationId, conversationId),
-            eq(message.ownerUserId, actor.userId),
             opts.beforeSeq ? sql`${message.seq} < ${opts.beforeSeq}` : undefined,
           ),
         )

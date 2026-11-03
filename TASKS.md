@@ -283,6 +283,22 @@ The integrated identity scope passed actual operator CLI, public-auth/DB and [br
 
 **Module checkpoint:** Every text pair is 7:1 or more in light and dark (the token test passes), components use only tokens, the sidebar order follows the user on every device, and the finish review says "ship".
 
+### 22. Multiplayer rooms
+
+Intent: [multiplayer rooms](docs/intent/multiplayer-rooms.md). The phases are defined in RFC-089; each child file is written when its phase starts.
+
+| RFC                                       | Task                                            | Prerequisites      | Status      |
+| ----------------------------------------- | ----------------------------------------------- | ------------------ | ----------- |
+| [RFC-089](tasks/089-multiplayer-rooms.md) | Design multiplayer rooms (parent of 089a–089f)  | RFC-001, RFC-023   | In progress |
+| RFC-089a                                  | Team human members                              | RFC-089            | Done        |
+| RFC-089b                                  | Authored messages and acting user               | RFC-089a           | Proposed    |
+| RFC-089c                                  | Cross-user approval and room trust              | RFC-089b           | Proposed    |
+| RFC-089d                                  | Team accounts and Team Bots                     | RFC-089b           | Proposed    |
+| RFC-089e                                  | Team memory                                     | RFC-089d           | Proposed    |
+| RFC-089f                                  | Fork a chat into a room, and the Team Bot nudge | RFC-089c, RFC-089d | Proposed    |
+
+**Module checkpoint:** A team member reads and posts in every team room and a non-member cannot. A request to another member's personal bot waits for that owner, and "always allow" is per teammate and per room. A Team Bot uses only team accounts and team memory. A forked chat leaves the source chat unchanged and carries no file reference or credential-looking text.
+
 ## Requirement coverage
 
 | Confirmed requirement                                            | Owning RFCs                      |

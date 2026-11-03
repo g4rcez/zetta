@@ -9,6 +9,7 @@ import { errorMessage } from "../chat/chat-client";
 import { MentionTextarea } from "../chat/mention";
 import { useSidebarData } from "../chat/sidebar-data";
 import { Badge, Empty, list, listItem, Loading, Panel } from "../shared/ui";
+import { TeamPeoplePanel } from "./team-people";
 import { RoleField, useTeamRoles } from "./team-roles";
 import {
   TEAM_SIZE_WARNING,
@@ -247,6 +248,7 @@ export function TeamSettingsPage({
               ))}
             </ul>
           </Panel>
+          <TeamPeoplePanel teamId={team.id} />
         </div>
         <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur md:px-8">
           {error && (

@@ -89,6 +89,9 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
     "delete from bot_revision where bot_id in (select id from bot where owner_user_id = any($1))",
   );
   await q(
+    "delete from team_person where user_id = any($1) or team_id in (select id from team where owner_user_id = any($1))",
+  );
+  await q(
     "delete from team_member where team_id in (select id from team where owner_user_id = any($1))",
   );
   await q("delete from team where owner_user_id = any($1)");

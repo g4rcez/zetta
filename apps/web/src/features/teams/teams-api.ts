@@ -68,6 +68,9 @@ export type TeamSave = {
   members: Omit<TeamMember, "name" | "role">[];
 };
 
+export type TeamPerson = { userId: string; name: string; role: "owner" | "member" };
+export type TeamCandidate = { userId: string; name: string };
+
 export const teamsApi = {
   roles: () => call<{ roles: TeamRole[] }>("/api/team-roles").then((r) => r.roles),
   createRole: (v: TeamRoleInput) =>
@@ -85,6 +88,19 @@ export const teamsApi = {
   /** The team's chat: its open room, or a new one. Opening it does not wake the chief. */
   chat: (id: string) =>
     call<{ discussionId: string }>(`/api/teams/${id}/chat`, "POST").then((r) => r.discussionId),
+  people: (id: string) =>
+    call<{ people: TeamPerson[] }>(`/api/teams/${id}/people`).then((r) => r.people),
+  candidates: (id: string) =>
+    call<{ candidates: TeamCandidate[] }>(`/api/teams/${id}/candidates`).then((r) => r.candidates),
+  addPerson: (id: string, userId: string) =>
+    call<{ people: TeamPerson[] }>(`/api/teams/${id}/people`, "POST", { userId }).then(
+      (r) => r.people,
+    ),
+  removePerson: (id: string, userId: string) =>
+    call<{ people: TeamPerson[] }>(
+      `/api/teams/${id}/people/${encodeURIComponent(userId)}`,
+      "DELETE",
+    ).then((r) => r.people),
   startRoom: (id: string, v: { title: string; firstMessage?: string; goal?: string }) =>
     call<{ discussionId: string }>(`/api/teams/${id}/rooms`, "POST", v).then((r) => r.discussionId),
 };

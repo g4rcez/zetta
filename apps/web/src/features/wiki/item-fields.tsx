@@ -1,6 +1,7 @@
 import { useState } from "react";
 
-import { Input, Select, Textarea } from "@/components/ui";
+import { EditorField } from "@/components/editor/editor";
+import { Input, Select } from "@/components/ui";
 
 import { WikiLinkTextarea } from "./wiki-link-textarea";
 import { TYPE, type Bot, type Item, type Page, type TeamName, type WikiType } from "./wiki-api";
@@ -56,7 +57,7 @@ export function Fields({
         />
       ) : (
         // Plain on purpose: Markdown that links with `[[`, which has its own picker in `WikiLinkTextarea`.
-        <Textarea
+        <EditorField
           title="Content (Markdown; link other items as [[slug]], [[depends-on:slug]], [[part-of:slug]] or [[supersedes:slug]])"
           name="content"
           required

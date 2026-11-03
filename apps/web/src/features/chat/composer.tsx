@@ -1,5 +1,6 @@
 import { Alert } from "@g4rcez/components/alert";
 import { looksSecret } from "@zetta/core/secrets";
+import type { EditorView } from "@codemirror/view";
 import { uuidv7 } from "@zetta/core/uuid";
 import { Link } from "@tanstack/react-router";
 import {
@@ -8,12 +9,11 @@ import {
   useMemo,
   useRef,
   useState,
-  type ClipboardEvent,
   type DragEvent,
   type FormEvent,
-  type KeyboardEvent,
 } from "react";
 import {
+  ArrowBendUpLeftIcon,
   ArrowUpIcon,
   AtIcon,
   TextBIcon,
@@ -39,12 +39,8 @@ import {
   AttachmentMedia,
   AttachmentTitle,
 } from "@zetta/ui/components/attachment";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupTextarea,
-} from "@zetta/ui/components/input-group";
+import { InputGroup, InputGroupAddon, InputGroupButton } from "@zetta/ui/components/input-group";
+import { Button } from "@zetta/ui/components/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
 import { Separator } from "@zetta/ui/components/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
@@ -64,6 +60,7 @@ import {
 import { matchTrigger } from "./triggers";
 import { useMention } from "./mention";
 import { BotAvatar } from "@/components/bot-avatar";
+import { Editor } from "@/components/editor/editor";
 import { BotIdentity, BotsContext } from "@/components/bot-identity";
 import { Response } from "./response";
 
@@ -146,6 +143,7 @@ export function Composer({
   minimal,
   wiki,
   skillBots = [],
+  replyTo,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -163,8 +161,10 @@ export function Composer({
   /** Bots whose skills the `/` picker lists (the chat's bot; in a room, its members). Needs `wiki`, since both share the picker. */
   skillBots?: readonly string[];
   /** Text only: no attachments, server files or @mentions (the setup interview). */ minimal?: boolean;
+  /** The message the next send replies to in this channel (not a thread): shown as a chip, and the cursor moves into the box when it changes. */
+  replyTo?: { id: string; name: string; excerpt: string; onCancel: () => void } | undefined;
 }) {
-  const input = useRef<HTMLTextAreaElement>(null);
+  const input = useRef<EditorView>(null);
   const file = useRef<HTMLInputElement>(null);
   const [attached, setAttached] = useState<Attached[]>([]);
   const [staged, setStaged] = useState<Staged[]>([]);
@@ -175,13 +175,17 @@ export function Composer({
   const secretWarning = flagged !== undefined && flagged === value.trim();
   const previews = useRef(new Set<string>());
   useEffect(() => () => previews.current.forEach((u) => URL.revokeObjectURL(u)), []);
+  const replyId = replyTo?.id;
+  useEffect(() => {
+    if (replyId) input.current?.focus();
+  }, [replyId]);
   const [fileRefs, setFileRefs] = useState<string[]>([]);
   const [picker, setPicker] = useState<{
     path: string;
     entries: { name: string; kind: "file" | "dir" }[];
   }>();
   const [previewing, setPreviewing] = useState(false);
-  const mention = useMention({ value, onChange, bots, inputRef: input, onError });
+  const mention = useMention({ bots, viewRef: input, onError });
   const botsById = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
   const [slash, setSlash] = useState<{ query: string; at: number; index: number }>();
   const [library, setLibrary] = useState<WikiItem[]>();
@@ -272,23 +276,25 @@ export function Composer({
     }
   }
   const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer.types).includes("Files");
-  function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
-    const pics = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+  function onPaste(e: ClipboardEvent) {
+    const pics = Array.from(e.clipboardData?.files ?? []).filter((f) =>
+      f.type.startsWith("image/"),
+    );
     if (!pics.length) return;
-    if (!e.clipboardData.getData("text/plain")) e.preventDefault();
+    if (!e.clipboardData?.getData("text/plain")) e.preventDefault();
     void addFiles(pics);
   }
 
   function wrap(before: string, after = before) {
-    const el = input.current;
-    if (!el) return;
-    const { selectionStart: s, selectionEnd: e } = el,
-      picked = value.slice(s, e) || "text";
-    onChange(value.slice(0, s) + before + picked + after + value.slice(e));
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(s + before.length, s + before.length + picked.length);
+    const view = input.current;
+    if (!view) return;
+    const { from, to } = view.state.selection.main,
+      picked = view.state.sliceDoc(from, to) || "text";
+    view.dispatch({
+      changes: { from, to, insert: before + picked + after },
+      selection: { anchor: from + before.length, head: from + before.length + picked.length },
     });
+    view.focus();
   }
   function trackMention(text: string, caret: number) {
     mention.track(text, caret);
@@ -323,29 +329,29 @@ export function Composer({
       );
   }
   function openPicker() {
-    const el = input.current;
-    if (!el) return;
-    const at = el.selectionStart,
-      pad = at > 0 && !/\s/.test(value[at - 1]!) ? " " : "",
-      next = value.slice(0, at) + pad + "/" + value.slice(el.selectionEnd),
-      caret = at + pad.length + 1;
-    onChange(next);
-    trackMention(next, caret);
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(caret, caret);
+    const view = input.current;
+    if (!view) return;
+    const { from, to } = view.state.selection.main,
+      pad = from > 0 && !/\s/.test(view.state.sliceDoc(from - 1, from)) ? " " : "";
+    // The editor reports the new caret, and `trackMention` opens the list from it.
+    view.dispatch({
+      changes: { from, to, insert: `${pad}/` },
+      selection: { anchor: from + pad.length + 1 },
     });
+    view.focus();
   }
   function pickItem(i: Candidate) {
     if (!slash) return;
+    const view = input.current;
+    if (!view) return;
     const end = slash.at + 1 + slash.query.length;
-    onChange(value.slice(0, slash.at) + value.slice(end).replace(/^ /, ""));
+    view.dispatch({
+      changes: { from: slash.at, to: end + (view.state.sliceDoc(end, end + 1) === " " ? 1 : 0) },
+      selection: { anchor: slash.at },
+    });
     setChosen((l) => (l.length < MAX_PICKED ? [...l, i] : l));
     setSlash(undefined);
-    requestAnimationFrame(() => {
-      input.current?.focus();
-      input.current?.setSelectionRange(slash.at, slash.at);
-    });
+    view.focus();
   }
   const wikiPicks = chosen.filter((c) => c.kind === "wiki");
   const skillPicks = chosen.filter((c) => c.kind === "skill");
@@ -377,7 +383,7 @@ export function Composer({
       setStaged([]);
     }
   }
-  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+  function onKeyDown(e: KeyboardEvent) {
     if (slash && candidates.length) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -400,13 +406,14 @@ export function Composer({
       }
     }
     if (mention.onKeyDown(e)) return;
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       void submit();
     } else if (e.key === "Escape") {
       if (picker) setPicker(undefined);
       else if (previewing) setPreviewing(false);
-      else e.currentTarget.blur();
+      else if (replyTo) replyTo.onCancel();
+      else input.current?.contentDOM.blur();
     } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
       e.preventDefault();
       wrap("**");
@@ -540,7 +547,27 @@ export function Composer({
         </ul>
       )}
       {mention.popup("above")}
-      <InputGroup className="h-auto rounded-xl border-border bg-card">
+      <InputGroup className="h-auto rounded-xl border-border bg-card focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
+        {replyTo && (
+          <InputGroupAddon align="block-start" className="border-b px-2 py-1.5">
+            <div className="flex w-full min-w-0 items-center gap-2 text-xs">
+              <ArrowBendUpLeftIcon aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">
+                Replying to <b className="font-semibold">{replyTo.name}</b>
+                <span className="text-muted-foreground"> · {replyTo.excerpt}</span>
+              </span>
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label="Cancel reply"
+                onClick={replyTo.onCancel}
+              >
+                <XIcon />
+              </Button>
+            </div>
+          </InputGroupAddon>
+        )}
         <InputGroupAddon align="block-start" className="gap-0.5 border-b px-1.5 py-1">
           <Tool label="Bold (⌘B)" onClick={() => wrap("**")}>
             <TextBIcon />
@@ -692,21 +719,18 @@ export function Composer({
             )}
           </div>
         ) : (
-          <InputGroupTextarea
-            ref={input}
+          <Editor
+            viewRef={input}
+            extensions={mention.extensions}
             aria-label="Message"
             enterKeyHint="send"
             autoFocus={autoFocus}
             value={value}
             placeholder={placeholder}
-            rows={1}
             disabled={disabled}
-            className="field-sizing-content max-h-[40dvh] min-h-10 px-3 py-2 text-sm"
-            onChange={(e) => {
-              onChange(e.target.value);
-              trackMention(e.target.value, e.target.selectionStart);
-            }}
-            onSelect={(e) => trackMention(e.currentTarget.value, e.currentTarget.selectionStart)}
+            className="min-h-10 w-full px-3 py-2 text-sm [--editor-max-height:40dvh]"
+            onChange={onChange}
+            onSelect={trackMention}
             onBlur={mention.close}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
@@ -793,15 +817,16 @@ export function Composer({
               <Tool
                 label="Mention a bot"
                 onClick={() => {
-                  onChange(`${value}${value && !value.endsWith(" ") ? " " : ""}@`);
-                  requestAnimationFrame(() => {
-                    const el = input.current;
-                    if (!el) return;
-                    el.focus();
-                    const end = el.value.length;
-                    el.setSelectionRange(end, end);
-                    trackMention(el.value, end);
+                  const view = input.current;
+                  if (!view) return;
+                  const end = view.state.doc.length,
+                    pad = end && view.state.sliceDoc(end - 1, end) !== " " ? " " : "";
+                  // The editor reports the new caret, and `trackMention` opens the list from it.
+                  view.dispatch({
+                    changes: { from: end, insert: `${pad}@` },
+                    selection: { anchor: end + pad.length + 1 },
                   });
+                  view.focus();
                 }}
               >
                 <AtIcon />

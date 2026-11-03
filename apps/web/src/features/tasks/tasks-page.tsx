@@ -1,3 +1,4 @@
+import { mentionsAsText } from "@zetta/core/mentions";
 import { Link } from "@tanstack/react-router";
 import {
   ChatIcon,
@@ -336,7 +337,9 @@ function TaskCard({
         </DropdownMenu>
       </div>
       {task.description && (
-        <p className="line-clamp-2 break-words text-xs text-muted-foreground">{task.description}</p>
+        <p className="line-clamp-2 break-words text-xs text-muted-foreground">
+          {mentionsAsText(task.description)}
+        </p>
       )}
       {(task.priority !== "none" || task.labels.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5">

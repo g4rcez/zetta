@@ -7,7 +7,6 @@ import {
   ModalConfirmProvider as LibModalConfirmProvider,
   Radiobox as LibRadiobox,
   Select as LibSelect,
-  Textarea as LibTextarea,
 } from "@g4rcez/components";
 import type { ComponentProps } from "react";
 
@@ -54,7 +53,6 @@ export function Button({
   );
 }
 export const Input = LibInput;
-export const Textarea = LibTextarea;
 export const Modal = LibModal;
 /** Mounted once in the root layout: it renders the dialog behind `Modal.confirm(...)`, which replaces `window.confirm`. */
 export const ModalConfirmProvider = LibModalConfirmProvider;

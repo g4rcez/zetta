@@ -21,14 +21,17 @@ test("@ offers the bots in MentionTextarea (form and controlled) and MentionFiel
     form: {
       start: "Check the news",
       opened: "BotsDa Vinci@DaVinci",
-      picked: "Check the news with @DaVinci ",
+      picked: "Check the news with [@Da Vinci](bot:00000000-0000-7000-8000-000000000001) ",
     },
     controlled: {
       opened: "BotsDa Vinci@DaVinci",
-      pickedValue: "Goal @DaVinci ",
+      pickedValue: "Goal [@Da Vinci](bot:00000000-0000-7000-8000-000000000001) ",
       keysWhileOpen: [],
       keysAfter: ["Enter"],
     },
-    field: { opened: "BotsDa Vinci@DaVinci", picked: "Who is @DaVinci " },
+    field: {
+      opened: "BotsDa Vinci@DaVinci",
+      picked: "Who is [@Da Vinci](bot:00000000-0000-7000-8000-000000000001) ",
+    },
   });
 }, 30_000);

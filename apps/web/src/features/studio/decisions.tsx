@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Button, Input, Textarea } from "@/components/ui";
+import { EditorField } from "@/components/editor/editor";
+import { Button, Input } from "@/components/ui";
 
 import { call } from "../chat/chat-client";
 import { Badge } from "../shared/ui";
@@ -101,7 +102,7 @@ export function Decisions({ onError }: { onError: (m: string) => void }) {
       />
       <form onSubmit={(e) => void decide(e)} className="space-y-3 rounded-xl border bg-card p-5">
         {/* Plain on purpose: pasted external text (a ticket, an email), where `@` appears in addresses and handles. */}
-        <Textarea
+        <EditorField
           title="Situation"
           name="subject"
           required

@@ -532,7 +532,7 @@ function ReplyBox({ bots, onSend }: { bots: Bot[]; onSend: (content: string) => 
             void submit();
           }
         }}
-        className={`${field} resize-y`}
+        className={field}
       />
       <Button type="submit" size="sm" className="self-end" disabled={!text.trim() || sending}>
         <PaperPlaneRightIcon /> Reply
@@ -576,7 +576,7 @@ function EditableText({
     maxLength,
     value: draft,
     onBlur: save,
-    className: `w-full min-w-0 rounded-md bg-transparent px-1 -mx-1 placeholder:text-muted-foreground hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring/40 ${className}`,
+    className: `w-full min-w-0 rounded-md bg-transparent px-1 -mx-1 placeholder:text-muted-foreground hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring/40 focus-within:bg-muted/40 focus-within:outline-2 focus-within:outline-ring/40 ${className}`,
   };
   return multiline ? (
     <MentionField

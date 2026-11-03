@@ -13,11 +13,13 @@ Always use TanStack Router components for navigation; never a plain `<a href>` t
 
 Every free-text input is the chat's text box, so `@bot` and `#team`/`#room` mentions work the same way across the whole system. Never build a second text box for free text. Take the text box only: the full `Composer` (toolbar, attachments, `/` picker) belongs to chat screens.
 
-- A text box with its own layout (a question, a reply, an inline field): `<MentionField>` from `features/chat/mention.tsx`. It is a bare `<textarea>` with the chat's picker; add your own button and Enter handling. Example: `features/wiki/ask-box.tsx`.
+- Every multi-line text box is the CodeMirror `Editor` from `components/editor/editor.tsx` (our own integration, no React wrapper). It edits Markdown and highlights a fenced block in its language. It is not a `<textarea>`: read and write the text through `value`/`onChange`, or `view.state` and `view.dispatch` (`viewRef`). In a `<form>`, `name`, `required` and `defaultValue` work as on a textarea.
+- A text box with its own layout (a question, a reply, an inline field): `<MentionField>` from `features/chat/mention.tsx`. It is a bare `Editor` with the chat's picker; add your own button and Enter handling (`onKeyDown` gets the native event: call `e.preventDefault()` to take the key). Example: `features/wiki/ask-box.tsx`.
 - A labeled field inside a form (description, prompt, note, goal): `<MentionTextarea>` from the same file. It works controlled (`value`, `onChange`) or in a `<form>` (`name`, `defaultValue`).
 - No bare `<textarea>`, `<Textarea>` or `<input>` for natural-language text. Short structured fields (name, title, email, number, date, search filter) may stay `Input`.
-- Keep a plain `Textarea` where a picker would get in the way: patterns and config (tool allow lists, plugin values), pasted external content, files for other tools (SKILL.md, agent files), templates shared with other users (output styles) and Markdown with its own link picker (wiki content). Put `Plain on purpose: <why>` in a comment right above it.
-- `src/free-text.test.ts` fails for a plain `<Textarea>` or `<textarea>` without that comment. `src/features/chat/mention-typing.test.ts` types `@` and picks a bot in both components.
+- Keep a plain `<EditorField>` (or `<Editor>`) without the picker where a picker would get in the way: patterns and config (tool allow lists, plugin values), pasted external content, files for other tools (SKILL.md, agent files), templates shared with other users (output styles) and Markdown with its own link picker (wiki content). Put `Plain on purpose: <why>` in a comment right above it.
+- All CodeMirror styles live in `components/editor/codemirror.css`, nowhere else. Keep them to small layout fixes and the `tok-*` colors.
+- `src/free-text.test.ts` fails for any `<Textarea>` or `<textarea>` outside the editor, and for a bare `<Editor>` or `<EditorField>` without that comment. `src/features/chat/mention-typing.test.ts` types `@` and picks a bot in both components.
 
 ## Filters live in the URL (`apps/web`)
 

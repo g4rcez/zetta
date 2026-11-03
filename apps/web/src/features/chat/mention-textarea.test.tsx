@@ -5,7 +5,16 @@ import { createRoot } from "react-dom/client";
 
 // React DOM reads these globals. This test file does not run in a browser.
 const win = new Window();
-const globals = ["window", "document", "navigator", "IS_REACT_ACT_ENVIRONMENT"] as const;
+// CodeMirror reads `MutationObserver`, `getComputedStyle` and `requestAnimationFrame` as globals.
+const globals = [
+  "window",
+  "document",
+  "navigator",
+  "MutationObserver",
+  "getComputedStyle",
+  "requestAnimationFrame",
+  "IS_REACT_ACT_ENVIRONMENT",
+] as const;
 const saved = globals.map(
   (key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const,
 );
@@ -13,6 +22,9 @@ Object.assign(globalThis, {
   window: win,
   document: win.document,
   navigator: win.navigator,
+  MutationObserver: win.MutationObserver,
+  getComputedStyle: win.getComputedStyle.bind(win),
+  requestAnimationFrame: (cb: () => void) => setTimeout(cb, 0),
   IS_REACT_ACT_ENVIRONMENT: true,
 });
 // `src/env.ts` reads the app env once a window exists.
@@ -53,21 +65,28 @@ test("in a form it keeps its default value and submits it as a named field", asy
   await unmount();
 });
 
-test("the bare chat text box shows its value and passes plain textarea props through", async () => {
+test("the bare chat text box shows its value and passes its props to the editable element", async () => {
+  const { MentionField } = await import("./mention");
+  const { host, unmount } = await render(
+    <MentionField aria-label="Ask" rows={1} value="hello" onChange={() => {}} bots={bots} />,
+  );
+  const box = host.querySelector("[role=textbox]") as unknown as HTMLElement;
+  expect(box.textContent).toBe("hello");
+  expect(box.getAttribute("aria-label")).toBe("Ask");
+  await unmount();
+});
+
+test("an empty chat text box shows its placeholder", async () => {
   const { MentionField } = await import("./mention");
   const { host, unmount } = await render(
     <MentionField
       aria-label="Ask"
-      rows={1}
-      value="hello"
+      value=""
       onChange={() => {}}
       bots={bots}
       placeholder="Ask the wiki"
     />,
   );
-  const area = host.querySelector("textarea") as unknown as HTMLTextAreaElement;
-  expect(area.value).toBe("hello");
-  expect(area.getAttribute("aria-label")).toBe("Ask");
-  expect(area.getAttribute("placeholder")).toBe("Ask the wiki");
+  expect(host.querySelector(".cm-placeholder")?.textContent).toBe("Ask the wiki");
   await unmount();
 });

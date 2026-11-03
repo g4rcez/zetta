@@ -7,6 +7,8 @@ Object.assign(globalThis, {
   window: win,
   document: win.document,
   navigator: win.navigator,
+  Window,
+  MutationObserver: win.MutationObserver,
   getComputedStyle: win.getComputedStyle.bind(win),
   requestAnimationFrame: (cb: () => void) => setTimeout(cb, 0),
   IS_REACT_ACT_ENVIRONMENT: true,
@@ -20,13 +22,12 @@ globalThis.fetch = (async () => new Response("{}", { status: 200 })) as unknown 
 
 const { act, useState } = await import("react");
 const { createRoot } = await import("react-dom/client");
+const { EditorView } = await import("@codemirror/view");
 const { MentionField, MentionTextarea } = await import("./mention");
 
 const bots = [
   { id: "00000000-0000-7000-8000-000000000001", name: "Da Vinci", onboarded: true, kind: "bot" },
 ] as never;
-const native = Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, "value")!.set!;
-
 const mount = async (element: unknown) => {
   const host = win.document.createElement("div");
   win.document.body.append(host);
@@ -34,21 +35,26 @@ const mount = async (element: unknown) => {
   await act(async () => root.render(element as never));
   return host as unknown as HTMLElement;
 };
-// React ignores a plain `area.value = …`: it tracks the value through the prototype setter.
-const type = async (area: HTMLTextAreaElement, text: string) =>
+const contentOf = (host: HTMLElement) =>
+  host.querySelector(".cm-content") as unknown as HTMLElement;
+const viewOf = (host: HTMLElement) => EditorView.findFromDOM(contentOf(host) as never)!;
+const textOf = (host: HTMLElement) => viewOf(host).state.doc.toString();
+// Typing is a user-event transaction at the end of the text, as the browser's input handling makes it.
+const type = async (host: HTMLElement, text: string) =>
   act(async () => {
-    native.call(area, text);
-    area.setSelectionRange(text.length, text.length);
-    area.dispatchEvent(new win.Event("input", { bubbles: true }) as never);
+    const view = viewOf(host);
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: text },
+      selection: { anchor: text.length },
+      userEvent: "input.type",
+    });
   });
-const press = (area: HTMLTextAreaElement, key: string) =>
+const press = (host: HTMLElement, key: string) =>
   act(async () => {
-    area.dispatchEvent(
+    contentOf(host).dispatchEvent(
       new win.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }) as never,
     );
   });
-const areaOf = (host: HTMLElement) =>
-  host.querySelector("textarea") as unknown as HTMLTextAreaElement;
 const list = (host: HTMLElement) => host.querySelector("[role=listbox]")?.textContent ?? null;
 
 const out: Record<string, unknown> = {};
@@ -60,12 +66,11 @@ const out: Record<string, unknown> = {};
       <MentionTextarea title="Prompt" name="prompt" defaultValue="Check the news" bots={bots} />
     </form>,
   );
-  const area = areaOf(host);
   const field = () => new win.FormData(host.querySelector("form") as never).get("prompt");
   const start = field();
-  await type(area, "Check the news with @Da");
+  await type(host, "Check the news with @Da");
   const opened = list(host);
-  await press(area, "Enter");
+  await press(host, "Enter");
   out.form = { start, opened, picked: field() };
 }
 
@@ -87,14 +92,13 @@ const out: Record<string, unknown> = {};
     );
   }
   const host = await mount(<Controlled />);
-  const area = areaOf(host);
-  await type(area, "Goal @Da");
+  await type(host, "Goal @Da");
   const opened = list(host);
-  await press(area, "Enter");
-  const pickedValue = area.value;
+  await press(host, "Enter");
+  const pickedValue = textOf(host);
   const keysWhileOpen = [...keys];
-  await type(area, `${pickedValue}now`);
-  await press(area, "Enter");
+  await type(host, `${pickedValue}now`);
+  await press(host, "Enter");
   out.controlled = { opened, pickedValue, keysWhileOpen, keysAfter: [...keys] };
 }
 
@@ -105,11 +109,10 @@ const out: Record<string, unknown> = {};
     return <MentionField aria-label="Ask" bots={bots} value={v} onChange={setV} rows={1} />;
   }
   const host = await mount(<Bare />);
-  const area = areaOf(host);
-  await type(area, "Who is @Da");
+  await type(host, "Who is @Da");
   const opened = list(host);
-  await press(area, "Enter");
-  out.field = { opened, picked: area.value };
+  await press(host, "Enter");
+  out.field = { opened, picked: textOf(host) };
 }
 
 console.log("RESULT " + JSON.stringify(out));

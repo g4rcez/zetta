@@ -2,6 +2,7 @@
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 @import "@g4rcez/components/index.css";
+@import "./components/editor/codemirror.css";
 @source "../node_modules/streamdown/dist/*.js";
 
 /* The shell owns every scroll: the page itself never scrolls, only panels inside the shell do. */

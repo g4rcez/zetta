@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 
-import { Button, Input, Textarea } from "@/components/ui";
+import { EditorField } from "@/components/editor/editor";
+import { Button, Input } from "@/components/ui";
 import { parseMarkdown } from "../claude/claude-api";
 import { toSkillName, type SkillDraft } from "./skills-api";
 
@@ -70,13 +71,13 @@ export function SkillForm({
         placeholder="Use when the user asks for release notes"
       />
       {/* Plain on purpose: a skill is a SKILL.md file that other tools read, so a mention of one of my bots would mean nothing there. */}
-      <Textarea
+      <EditorField
         title="Instructions"
         required
         rows={8}
         maxLength={24000}
         value={draft.body}
-        onChange={(e) => set({ body: e.target.value })}
+        onChange={(body) => set({ body })}
         placeholder="1) List the merged pull requests. 2) Group them by area. 3) Write one line each."
       />
       <div className="flex gap-2">

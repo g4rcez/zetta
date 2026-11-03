@@ -1,12 +1,12 @@
 import { useNavigate } from "@tanstack/react-router";
 import { HashIcon } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { cn } from "@zetta/ui/lib/utils";
 
 import { errorMessage } from "../chat/chat-client";
-import { teamsApi, type Team } from "./teams-api";
+import { useTeams } from "../chat/sidebar-data";
+import { teamsApi } from "./teams-api";
 
 /**
  * Sidebar rows for the teams that can hold a room (a chief and one more bot) and have no live room yet. Opening one starts the
@@ -23,13 +23,7 @@ export function TeamRoomRows({
   rowClass: string;
 }) {
   const navigate = useNavigate();
-  const [teams, setTeams] = useState<Team[]>([]);
-  useEffect(() => {
-    void teamsApi
-      .list()
-      .then(setTeams)
-      .catch(() => setTeams([]));
-  }, []);
+  const teams = useTeams();
   const open = async (id: string) => {
     try {
       await navigate({ to: "/rooms", search: { id: await teamsApi.chat(id) } });

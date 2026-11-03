@@ -7,7 +7,7 @@ import { call, errorMessage } from "../chat/chat-client";
 import { formatDateTime, type TimeFormat } from "@/features/preferences/time-format";
 
 export const field =
-  "w-full min-w-0 rounded-md border border-input bg-muted/40 px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring/40";
+  "w-full min-w-0 rounded-md border border-input bg-muted/40 px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring/40 focus-within:border-ring focus-within:outline focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-ring/40";
 export const card = "rounded-lg border bg-card p-4 text-sm";
 
 export const Empty = ({ children }: { children: ReactNode }) => (

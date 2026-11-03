@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Button, Input, Select, Textarea } from "@/components/ui";
+import { EditorField } from "@/components/editor/editor";
+import { Button, Input, Select } from "@/components/ui";
 import { errorMessage } from "../chat/chat-client";
 import {
   exportUrl,
@@ -73,7 +74,7 @@ export function OutputStyles({ onError }: { onError: (m: string) => void }) {
         placeholder="One line that tells people what it sounds like"
       />
       {/* Plain on purpose: a style is shared with other users, so a mention of one of my bots would mean nothing to them. */}
-      <Textarea
+      <EditorField
         title="How the bot should write"
         name="body"
         required

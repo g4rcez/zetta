@@ -1,14 +1,16 @@
-import { useId, useRef, useState, type KeyboardEvent } from "react";
-
+import type { EditorView } from "@codemirror/view";
 import { cn } from "@zetta/ui/lib/utils";
+import { useId, useRef, useState } from "react";
+
+import { Editor } from "@/components/editor/editor";
 import { field } from "../shared/ui";
 import { RELATION, type Item, type Relation } from "./wiki-api";
 import { RELATIONS, insertLink, linkCandidates, matchWikiLink } from "./wiki-links";
 
 /**
  * The content field of an item. Typing `[[` offers the wiki's items (and `[[depends-on:` a typed link); Enter or a click writes the
- * link. A name with no item can still be linked: the link points to an item that does not exist yet. It stays a plain textarea in a
- * form (`name="content"`), so the form reads it as before.
+ * link. A name with no item can still be linked: the link points to an item that does not exist yet. It stays a form field
+ * (`name="content"`), so the form reads it as before.
  */
 export function WikiLinkTextarea({
   title,
@@ -21,7 +23,7 @@ export function WikiLinkTextarea({
   items: readonly Item[];
   self?: string | undefined;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const ref = useRef<EditorView>(null);
   const id = useId();
   const [open, setOpen] = useState<
     { at: number; query: string; relation?: Relation } | undefined
@@ -38,24 +40,23 @@ export function WikiLinkTextarea({
   ];
   const chosen = open?.relation ?? relation;
 
-  const sync = () => {
-    const el = ref.current;
-    if (!el) return;
-    setOpen(matchWikiLink(el.value, el.selectionStart));
+  const sync = (text: string, caret: number) => {
+    setOpen(matchWikiLink(text, caret));
     setIndex(0);
   };
   const pick = (slug: string) => {
-    const el = ref.current;
-    if (!el || !open) return;
-    const next = insertLink(el.value, el.selectionStart, open.at, chosen, slug);
-    el.value = next.text;
-    // The form listens to input to know it has unsaved edits.
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.focus();
-    el.setSelectionRange(next.caret, next.caret);
+    const view = ref.current;
+    if (!view || !open) return;
+    const text = view.state.doc.toString();
+    const next = insertLink(text, view.state.selection.main.head, open.at, chosen, slug);
+    view.dispatch({
+      changes: { from: 0, to: text.length, insert: next.text },
+      selection: { anchor: next.caret },
+    });
+    view.focus();
     setOpen(undefined);
   };
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  const onKeyDown = (e: KeyboardEvent) => {
     if (!open) return;
     if (e.key === "Escape") {
       e.preventDefault();
@@ -71,29 +72,28 @@ export function WikiLinkTextarea({
   const listId = `${id}-list`;
   return (
     <div className="space-y-1">
-      <label htmlFor={`${id}-field`} className="text-sm font-medium">
+      <div id={`${id}-label`} className="text-sm font-medium">
         {title}
-      </label>
-      {/* Plain on purpose: Markdown with its own `[[` picker for wiki links; `@` and `#` are ordinary text here. */}
-      <textarea
+      </div>
+      {/* Plain on purpose: Markdown with its own `[[` picker for wiki links; `@` and `#` are ordinary text here. The list is a combobox of the editable element. */}
+      <Editor
         id={`${id}-field`}
-        ref={ref}
+        viewRef={ref}
         name="content"
         required
         rows={10}
         maxLength={20000}
         defaultValue={defaultValue}
         className={cn(field, "font-mono")}
-        role="combobox"
-        aria-expanded={Boolean(open)}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        aria-activedescendant={open && rows.length ? `${id}-row-${index}` : undefined}
-        onChange={sync}
-        onKeyUp={(e) => {
-          if (!["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(e.key)) sync();
+        attributes={{
+          role: "combobox",
+          "aria-labelledby": `${id}-label`,
+          "aria-expanded": String(Boolean(open)),
+          "aria-controls": listId,
+          "aria-autocomplete": "list",
+          "aria-activedescendant": open && rows.length ? `${id}-row-${index}` : undefined,
         }}
-        onClick={sync}
+        onSelect={sync}
         onKeyDown={onKeyDown}
         onBlur={() => setOpen(undefined)}
       />
@@ -105,7 +105,7 @@ export function WikiLinkTextarea({
                 key={r}
                 type="button"
                 aria-pressed={chosen === r}
-                // The textarea keeps focus: mouse down must not blur it.
+                // The editor keeps focus: mouse down must not blur it.
                 onMouseDown={(e) => {
                   e.preventDefault();
                   setRelation(r);

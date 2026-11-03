@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 
-import { Input, Select, Textarea } from "@/components/ui";
+import { EditorField } from "@/components/editor/editor";
+import { Input, Select } from "@/components/ui";
 import { ASSIST_LOCALES } from "../studio/laya-locales";
 import { LanguagePicker } from "../studio/language-picker";
 import { errorMessage } from "../chat/chat-client";
@@ -75,7 +76,7 @@ export function FieldInput({
   if (f.kind === "textarea")
     return (
       // Plain on purpose: plugin setup values (lists, keys, JSON), not text for people or bots.
-      <Textarea
+      <EditorField
         title={f.label}
         name={f.key}
         required={required}

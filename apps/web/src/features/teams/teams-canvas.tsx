@@ -1,3 +1,4 @@
+import { mentionsAsText } from "@zetta/core/mentions";
 import "@xyflow/react/dist/style.css";
 import {
   Background,
@@ -32,6 +33,7 @@ import { BotIdentity, BotsContext, useBotIdentity } from "@/components/bot-ident
 import { Drawer } from "@/components/drawer";
 import { Button, Input } from "@/components/ui";
 import { MentionTextarea } from "../chat/mention";
+import { useSidebarData } from "../chat/sidebar-data";
 import { useTheme } from "../../components/theme-provider";
 import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
 import {
@@ -141,7 +143,9 @@ function TeamGroup({ id, data, selected }: NodeProps<TeamNode>) {
         {/* Padding sits on the wrapper: on the clamped text it would show a sliver of the third line. */}
         {data.goal && (
           <div className="px-3 py-1">
-            <p className="line-clamp-2 text-xs text-muted-foreground">{data.goal}</p>
+            <p className="line-clamp-2 text-xs text-muted-foreground">
+              {mentionsAsText(data.goal)}
+            </p>
           </div>
         )}
       </div>
@@ -181,6 +185,7 @@ function Editor() {
   const { resolvedTheme } = useTheme();
   const rf = useReactFlow();
   const navigate = useNavigate();
+  const { reloadTeams } = useSidebarData();
   const [nodes, setNodes, onNodesChange] = useNodesState<TeamsNode>([]);
   const [bots, setBots] = useState<Bot[]>([]);
   const { roles } = useTeamRoles();
@@ -232,6 +237,7 @@ function Editor() {
     } catch (e) {
       fail(e);
     }
+    void reloadTeams();
     setBusy(false);
   }
   // Every change is saved as it happens: `sync` sends each team that differs from what the server holds. Saves run one at a time so each carries the version the last one returned.
@@ -547,11 +553,11 @@ function Editor() {
                         onChange={(e) => setRoom({ ...room, title: e.target.value })}
                       />
                       <MentionTextarea
-                        title="First order for the chief"
+                        title="What should the bots do? (optional)"
                         reportStatus={false}
                         required={false}
                         rows={4}
-                        maxLength={4000}
+                        maxLength={1000}
                         bots={bots}
                         value={room.firstMessage}
                         onChange={(firstMessage) => setRoom({ ...room, firstMessage })}
@@ -560,15 +566,19 @@ function Editor() {
                         <Tip tip="Open a room: the chief gets your first order and coordinates the team">
                           <Button
                             size="sm"
-                            disabled={
-                              busy || members < 2 || !room.title.trim() || !room.firstMessage.trim()
-                            }
+                            disabled={busy || members < 2 || !room.title.trim()}
                             onClick={() =>
                               void work(async () => {
                                 await sync(nodes);
                                 const id = await teamsApi.startRoom(teamOf.data.teamId, {
                                   title: room.title.trim(),
-                                  firstMessage: room.firstMessage.trim(),
+                                  // The text is the goal and the first order, as in the New room page.
+                                  ...(room.firstMessage.trim()
+                                    ? {
+                                        goal: room.firstMessage.trim(),
+                                        firstMessage: room.firstMessage.trim(),
+                                      }
+                                    : {}),
                                 });
                                 await navigate({
                                   to: "/rooms",

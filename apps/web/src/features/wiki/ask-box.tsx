@@ -1,3 +1,4 @@
+import { mentionsAsText } from "@zetta/core/mentions";
 import { Link } from "@tanstack/react-router";
 import { PaperPlaneRightIcon, SparkleIcon, StopIcon } from "@phosphor-icons/react";
 import { useEffect, useState, type FormEvent } from "react";
@@ -125,11 +126,11 @@ export function AskBox({
             wrapperClassName="min-w-0 flex-1"
             // Enter asks and Shift+Enter adds a line, like the chat.
             onKeyDown={(e) => {
-              if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+              if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
               e.preventDefault();
-              e.currentTarget.form?.requestSubmit();
+              (e.target as HTMLElement).closest("form")?.requestSubmit();
             }}
-            className="block max-h-40 min-h-9 w-full resize-none bg-transparent py-2 text-sm leading-5 [field-sizing:content] placeholder:text-muted-foreground focus-visible:outline-none"
+            className="block min-h-9 w-full bg-transparent py-2 text-sm leading-5 [--editor-max-height:10rem]"
           />
           <span className="flex h-9 shrink-0 items-center">
             {chat.busy ? (
@@ -174,7 +175,9 @@ export function AskBox({
         )}
         {answer && sources && (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">Answer to: {answer.question}</p>
+            <p className="text-xs text-muted-foreground">
+              Answer to: {mentionsAsText(answer.question)}
+            </p>
             <div className="rounded-lg bg-muted/50 p-3 text-sm">
               <Response text={answer.text} wikiLinks={wikiLinks} />
             </div>

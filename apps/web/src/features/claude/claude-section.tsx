@@ -7,7 +7,8 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
-import { Button, Input, Select, Textarea } from "@/components/ui";
+import { EditorField } from "@/components/editor/editor";
+import { Button, Input, Select } from "@/components/ui";
 import { MentionTextarea } from "../chat/mention";
 import { useSidebarData } from "../chat/sidebar-data";
 import { errorMessage, type Bot } from "../chat/chat-client";
@@ -135,7 +136,7 @@ function PermissionsForm({
           : ""}
       </p>
       {/* Plain on purpose: tool and command patterns, not text for people. A mention picker would only get in the way. */}
-      <Textarea
+      <EditorField
         title={hermes ? "Also turn on these toolsets" : "Also allow"}
         name="allow"
         defaultValue={c.allow.join("\n")}
@@ -153,7 +154,7 @@ function PermissionsForm({
             : "Without containers only plain tools (WebFetch, WebSearch...) and git commands are honoured."}
       </p>
       {/* Plain on purpose: tool and command patterns (see above). */}
-      <Textarea
+      <EditorField
         title={hermes ? "Always turn off these toolsets" : "Never allow"}
         name="deny"
         defaultValue={c.deny.join("\n")}
@@ -365,6 +366,7 @@ function AssetDialog({
   const [error, setError] = useState<string>();
   const set = (k: keyof typeof v) => (e: { target: { value: string } }) =>
     setV((p) => ({ ...p, [k]: e.target.value }));
+  const setText = (k: keyof typeof v) => (text: string) => setV((p) => ({ ...p, [k]: text }));
   function fill() {
     const p = parseMarkdown(paste);
     setV((cur) => ({
@@ -422,12 +424,7 @@ function AssetDialog({
             </summary>
             <div className="mt-2 space-y-2">
               {/* Plain on purpose: a pasted file for another tool, where `@` has its own meaning. */}
-              <Textarea
-                title="Paste the file"
-                value={paste}
-                onChange={(e) => setPaste(e.target.value)}
-                rows={5}
-              />
+              <EditorField title="Paste the file" value={paste} onChange={setPaste} rows={5} />
               <Button
                 type="button"
                 size="sm"
@@ -453,20 +450,20 @@ function AssetDialog({
           autoComplete="off"
         />
         {/* Plain on purpose: this is written into a SKILL.md or agent file for Claude Code, where `@` means a file reference, not a bot. */}
-        <Textarea
+        <EditorField
           title={
             kind === "skill" ? "When should it be used?" : "When should the bot hand work to it?"
           }
           value={v.description}
-          onChange={set("description")}
+          onChange={setText("description")}
           rows={2}
           maxLength={data.options.limits.description}
         />
         {/* Plain on purpose: the body of a SKILL.md or agent file (see above). */}
-        <Textarea
+        <EditorField
           title="Instructions"
           value={v.body}
-          onChange={set("body")}
+          onChange={setText("body")}
           rows={6}
           maxLength={data.options.limits.body}
         />

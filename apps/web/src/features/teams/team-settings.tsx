@@ -45,7 +45,7 @@ export function TeamSettingsPage({
   teamId: string;
   roomId?: string | undefined;
 }) {
-  const { reloadRooms, bots } = useSidebarData();
+  const { reloadRooms, reloadTeams, bots } = useSidebarData();
   const [team, setTeam] = useState<Team>();
   const [name, setName] = useState("");
   const [goal, setGoal] = useState("");
@@ -100,6 +100,7 @@ export function TeamSettingsPage({
       fill(saved);
       toast.success("Team saved.");
       void reloadRooms();
+      void reloadTeams();
     } catch (e) {
       setError(errorMessage(e));
     } finally {

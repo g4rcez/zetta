@@ -1,99 +1,60 @@
 import { ChatsIcon, UsersIcon } from "@phosphor-icons/react";
 import { cn } from "@zetta/ui/lib/utils";
-import {
-  useRef,
-  useState,
-  type ComponentProps,
-  type CSSProperties,
-  type KeyboardEvent,
-  type RefObject,
-} from "react";
+import type { EditorView } from "@codemirror/view";
+import { legacyMentions, mentionIds, mentionToken, parseMentions } from "@zetta/core/mentions";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotStatusDot } from "@/components/bot-status";
-import { Textarea } from "@/components/ui";
+import {
+  Editor,
+  EditorField,
+  type EditorFieldProps,
+  type EditorProps,
+} from "@/components/editor/editor";
+import { mentionChips, refreshMentionChips } from "@/components/editor/mention-chips";
 
 import { discussionsApi } from "../discussions/discussions-api";
 import { teamsApi } from "../teams/teams-api";
 import type { Bot } from "./chat-client";
 import { matchTrigger } from "./triggers";
 
-/** The word that follows `@` for a bot: its name without spaces. */
+/** The word that follows `@` for a bot: its name without spaces. Only the picker's hint and a hand-typed `@Name` use it; the text names a bot by id. */
 export const mentionKey = (name: string) => name.replace(/\s+/g, "");
 
-const MENTION = /@([\p{L}\p{N}_-]{1,40})/gu;
-
-/** The bots that `text` tags with `@Name`, in the order of `bots`. Same matching as the server (`mentionKey` in discussions/prompt.ts). */
+/**
+ * The bots that `text` tags, in the order of `bots`: by the id in a mention token (`[@Dev](bot:<id>)`), so a rename keeps working,
+ * or by a hand-typed `@Name` (the server turns it into a token when it stores the text).
+ */
 export function mentionedBots(text: string, bots: Bot[]): Bot[] {
-  const keys = new Set([...text.matchAll(MENTION)].map((m) => m[1]!.toLowerCase()));
-  return bots.filter((b) => keys.has(mentionKey(b.name).toLowerCase()));
+  const ids = new Set(mentionIds(text, "bot"));
+  const keys = new Set(
+    legacyMentions(text)
+      .filter((m) => m.sigil === "@")
+      .map((m) => m.key),
+  );
+  return bots.filter((b) => ids.has(b.id) || keys.has(mentionKey(b.name).toLowerCase()));
 }
 
-/** `text` with every `@Name` tag of `bot` removed. */
+/** `text` with every tag of `bot` removed, token or hand-typed `@Name`. */
 export function withoutMention(text: string, bot: Bot): string {
   const key = mentionKey(bot.name).toLowerCase();
-  return text
-    .replace(MENTION, (tag, k: string) => (k.toLowerCase() === key ? "" : tag))
+  const found = [
+    ...parseMentions(text).filter((m) => m.kind === "bot" && m.id === bot.id),
+    ...legacyMentions(text).filter((m) => m.sigil === "@" && m.key === key),
+  ].sort((a, b) => b.index - a.index);
+  return found
+    .reduce((out, m) => out.slice(0, m.index) + out.slice(m.index + m.length), text)
     .replace(/ {2,}/g, " ")
     .trim();
 }
 
-/** `text` with `@Name` added at the end, unless the bot is already tagged. */
+/** `text` with the mention token of `bot` added at the end, unless the bot is already tagged. */
 export function withMention(text: string, bot: Bot): string {
   if (mentionedBots(text, [bot]).length) return text;
   const pad = text && !/\s$/.test(text) ? " " : "";
-  return `${text}${pad}@${mentionKey(bot.name)} `;
+  return `${text}${pad}${mentionToken("bot", bot.id, bot.name)} `;
 }
-
-/** Where the caret of a textarea is on screen (viewport pixels): a hidden copy of the text up to the caret, styled like the textarea, tells the offset. */
-function caretPoint(el: HTMLTextAreaElement, caret: number) {
-  const style = getComputedStyle(el),
-    mirror = document.createElement("div"),
-    marker = document.createElement("span");
-  for (const p of MIRRORED) mirror.style.setProperty(p, style.getPropertyValue(p));
-  Object.assign(mirror.style, {
-    position: "absolute",
-    visibility: "hidden",
-    top: "0",
-    left: "-9999px",
-    whiteSpace: "pre-wrap",
-    overflowWrap: "break-word",
-    overflow: "hidden",
-    width: `${el.clientWidth}px`,
-  });
-  mirror.textContent = el.value.slice(0, caret);
-  marker.textContent = "\u200b";
-  mirror.append(marker);
-  document.body.append(mirror);
-  const rect = el.getBoundingClientRect(),
-    lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.4,
-    x = rect.left + el.clientLeft + marker.offsetLeft - el.scrollLeft,
-    y = rect.top + el.clientTop + marker.offsetTop - el.scrollTop;
-  mirror.remove();
-  return { x, y, lineHeight };
-}
-
-const MIRRORED = [
-  "boxSizing",
-  "borderTopWidth",
-  "borderRightWidth",
-  "borderBottomWidth",
-  "borderLeftWidth",
-  "paddingTop",
-  "paddingRight",
-  "paddingBottom",
-  "paddingLeft",
-  "fontFamily",
-  "fontSize",
-  "fontStyle",
-  "fontWeight",
-  "letterSpacing",
-  "lineHeight",
-  "tabSize",
-  "textIndent",
-  "textTransform",
-  "wordSpacing",
-].map((p) => p.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`));
 
 /** The picker is about six rows tall; below this much room it opens above the caret. */
 const POPUP_HEIGHT = 260;
@@ -116,20 +77,23 @@ type State = {
  * The chat composer and the new-room form share it, so `@` and `#` behave the same everywhere.
  */
 export function useMention({
-  value,
-  onChange,
   bots,
-  inputRef,
+  viewRef,
   onError,
 }: {
-  value: string;
-  onChange: (v: string) => void;
   bots: Bot[];
-  inputRef: RefObject<HTMLTextAreaElement | null>;
+  viewRef: RefObject<EditorView | null>;
   onError?: (e: unknown) => void;
 }) {
   const [state, setState] = useState<State>();
   const [tags, setTags] = useState<Tag[]>();
+  // Mention tokens in the text are drawn as chips with the current name of the bot, team or room.
+  const names = useRef(new Map<string, string>());
+  names.current = new Map([...bots, ...(tags ?? [])].map((x) => [x.id, x.name]));
+  const extensions = useMemo(() => mentionChips((id) => names.current.get(id)), []);
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: refreshMentionChips.of(null) });
+  }, [bots, tags, viewRef]);
   const startsWith = (name: string) =>
     mentionKey(name).toLowerCase().startsWith(state!.query.toLowerCase());
   const botCandidates =
@@ -141,8 +105,10 @@ export function useMention({
     const bot = matchTrigger(text, caret, "@"),
       team = bot ? undefined : matchTrigger(text, caret, "#");
     const m = bot ? { ...bot, char: "@" as const } : team && { ...team, char: "#" as const };
-    const el = inputRef.current;
-    setState(m ? { ...m, index: 0, point: el ? caretPoint(el, caret) : undefined } : undefined);
+    // `coordsAtPos` is null when the caret is out of view (or the editor has no layout): the list then sits under the box.
+    const c = viewRef.current?.coordsAtPos(caret);
+    const point = c ? { x: c.left, y: c.top, lineHeight: c.bottom - c.top } : undefined;
+    setState(m ? { ...m, index: 0, point } : undefined);
     if (team && !tags)
       Promise.all([teamsApi.list(), discussionsApi.list()]).then(([teams, rooms]) => {
         setTags([
@@ -154,16 +120,16 @@ export function useMention({
       }, onError);
   };
   function pick(b: Bot | Tag) {
-    if (!state) return;
+    const view = viewRef.current;
+    if (!state || !view) return;
     const end = state.at + 1 + state.query.length,
-      insert = `${state.char}${mentionKey(b.name)} `;
-    onChange(value.slice(0, state.at) + insert + value.slice(end));
-    setState(undefined);
-    requestAnimationFrame(() => {
-      const el = inputRef.current;
-      el?.focus();
-      el?.setSelectionRange(state.at + insert.length, state.at + insert.length);
+      insert = `${mentionToken(isTag(b) ? b.kind : "bot", b.id, b.name)} `;
+    view.dispatch({
+      changes: { from: state.at, to: end, insert },
+      selection: { anchor: state.at + insert.length },
     });
+    view.focus();
+    setState(undefined);
   }
   /** Handles the arrows, Enter, Tab and Escape while the list is open. Returns true when it took the key. */
   function onKeyDown(e: KeyboardEvent): boolean {
@@ -251,59 +217,42 @@ export function useMention({
       </ul>
     ) : null;
   };
-  return { track, close, onKeyDown, popup };
+  return { track, close, onKeyDown, popup, extensions };
 }
 
-type TextareaProps = Omit<ComponentProps<typeof Textarea>, "value" | "defaultValue" | "onChange">;
+type MentionProps = {
+  bots: Bot[];
+  onKeyDown?: ((e: KeyboardEvent) => void) | undefined;
+  onBlur?: (() => void) | undefined;
+};
 
 /**
  * A form text box where typing `@` offers the bots and `#` the teams and rooms, like the chat message box.
  * Controlled with `value` and `onChange`, or uncontrolled in a `<form>` with `name` and `defaultValue` (the form reads it as before).
  */
 export function MentionTextarea({
-  value,
-  defaultValue,
-  onChange,
   bots,
   className,
   onKeyDown,
   onBlur,
   ...rest
-}: TextareaProps & {
-  value?: string;
-  defaultValue?: string | undefined;
-  onChange?: (v: string) => void;
-  bots: Bot[];
-}) {
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const [own, setOwn] = useState(defaultValue ?? "");
-  const text = value ?? own;
-  const change = (v: string) => {
-    if (value === undefined) setOwn(v);
-    onChange?.(v);
-  };
-  const mention = useMention({ value: text, onChange: change, bots, inputRef });
+}: Omit<EditorFieldProps, "viewRef" | "onSelect" | "onBlur" | "onKeyDown"> & MentionProps) {
+  const viewRef = useRef<EditorView | null>(null);
+  const mention = useMention({ bots, viewRef });
   return (
     <div className={cn("relative", className)}>
-      <Textarea
+      <EditorField
         {...rest}
-        value={text}
-        onChange={(e) => {
-          inputRef.current = e.currentTarget;
-          change(e.currentTarget.value);
-          mention.track(e.currentTarget.value, e.currentTarget.selectionStart);
-        }}
-        onSelect={(e) => {
-          inputRef.current = e.currentTarget;
-          mention.track(e.currentTarget.value, e.currentTarget.selectionStart);
-        }}
+        viewRef={viewRef}
+        extensions={mention.extensions}
+        onSelect={mention.track}
+        // While the list is open it owns the arrows, Enter, Tab and Escape.
         onKeyDown={(e) => {
-          // While the list is open it owns the arrows, Enter, Tab and Escape.
           if (!mention.onKeyDown(e)) onKeyDown?.(e);
         }}
-        onBlur={(e) => {
+        onBlur={() => {
           mention.close();
-          onBlur?.(e);
+          onBlur?.();
         }}
       />
       {mention.popup("caret")}
@@ -311,46 +260,34 @@ export function MentionTextarea({
   );
 }
 
-type FieldProps = Omit<ComponentProps<"textarea">, "value" | "defaultValue" | "onChange" | "ref">;
-
 /**
- * The chat's text box and nothing else: a bare `<textarea>` where `@` offers the bots and `#` the teams and rooms. Style it with
- * `className` (the textarea) and `wrapperClassName` (the box around it and its list); the caller adds its own button and shortcuts.
+ * The chat's text box and nothing else: the editor where `@` offers the bots and `#` the teams and rooms. Style it with
+ * `className` (the editor) and `wrapperClassName` (the box around it and its list); the caller adds its own button and shortcuts.
  */
 export function MentionField({
-  value,
-  onChange,
   bots,
   wrapperClassName,
   onKeyDown,
   onBlur,
   ...rest
-}: FieldProps & {
-  value: string;
-  onChange: (v: string) => void;
-  bots: Bot[];
-  wrapperClassName?: string;
-}) {
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const mention = useMention({ value, onChange, bots, inputRef });
+}: Omit<EditorProps, "viewRef" | "onSelect" | "onBlur" | "onKeyDown"> &
+  MentionProps & { wrapperClassName?: string }) {
+  const viewRef = useRef<EditorView | null>(null);
+  const mention = useMention({ bots, viewRef });
   return (
     <div className={cn("relative", wrapperClassName)}>
-      <textarea
+      <Editor
         {...rest}
-        ref={inputRef}
-        value={value}
-        onChange={(e) => {
-          onChange(e.currentTarget.value);
-          mention.track(e.currentTarget.value, e.currentTarget.selectionStart);
-        }}
-        onSelect={(e) => mention.track(e.currentTarget.value, e.currentTarget.selectionStart)}
+        viewRef={viewRef}
+        extensions={mention.extensions}
+        onSelect={mention.track}
+        // While the list is open it owns the arrows, Enter, Tab and Escape.
         onKeyDown={(e) => {
-          // While the list is open it owns the arrows, Enter, Tab and Escape.
           if (!mention.onKeyDown(e)) onKeyDown?.(e);
         }}
-        onBlur={(e) => {
+        onBlur={() => {
           mention.close();
-          onBlur?.(e);
+          onBlur?.();
         }}
       />
       {mention.popup("caret")}

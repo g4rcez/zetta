@@ -1,3 +1,4 @@
+import { refreshMentionLabels } from "../chat/mention-text";
 import { createHash } from "node:crypto";
 import type { Database } from "@zetta/db";
 import { and, asc, desc, eq, inArray, lt, ne, or, sql } from "@zetta/db/query";
@@ -17,12 +18,13 @@ import { closeAttention, closeAttentionKey, raiseAttention } from "../features/a
 import { AccessError, requireOwned, type ActiveActor } from "../identity/access";
 import { dockerConfig } from "../chat/harness";
 import type { FileStore } from "../chat/files";
-import { insertMessage } from "../chat/messages";
+import { insertMessage, quoteOf } from "../chat/messages";
 import { codeEnabled } from "../chat/pipeline";
 import type { LoopStore } from "../chat/loops";
 import { createBotClaude, skillsOf } from "../bot-claude/store";
 import { visibleTo } from "../wiki/service";
-import { HELP_PREFIX, mentionKey, wakeTargets } from "./prompt";
+import { legacyMentions, mentionIds, mentionToken } from "@zetta/core/mentions";
+import { HELP_PREFIX, isIdleChatter, mentionKey, wakeTargets } from "./prompt";
 
 type Bot = typeof bot.$inferSelect;
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -82,6 +84,8 @@ export type PostFiles = {
   wikiIds?: string[] | undefined;
   /** Skills picked with `/`; each belongs to one member bot, which is the only one that uses it. */
   skills?: { botId: string; name: string }[] | undefined;
+  /** A message of this room the post replies to: saved as `meta.quote`, and the bot that wrote it is woken. */
+  quotedMessageId?: string | undefined;
 };
 const FILE_CLIP = 12_000;
 
@@ -102,13 +106,7 @@ const MAX_RESTART_ATTEMPTS = 3;
 export function createDiscussionStore(
   db: Database,
   files?: Pick<FileStore, "readWithHash">,
-  loops?: Pick<LoopStore, "start" | "active" | "kick">,
-  /** Chooses the member that answers a person's post without a mention (a decision model); null means the fallback answers. */
-  pickResponder?: (
-    a: ActiveActor,
-    text: string,
-    members: readonly { botId: string; name: string; kind: string; description: string }[],
-  ) => Promise<string | null>,
+  loops?: Pick<LoopStore, "start" | "active" | "activeAll" | "kick" | "setStatus">,
 ) {
   let onEnqueue: (() => void) | undefined;
   const claude = createBotClaude(db);
@@ -133,6 +131,29 @@ export function createDiscussionStore(
         ),
       );
     await closeAttention(tx, d.ownerUserId, `/rooms?id=${d.id}`, "cancelled");
+  }
+  /** Silence: the room waits (paused) with nothing queued, until a person posts. A person's post reopens it. */
+  async function silenceRoom(
+    tx: Tx,
+    d: Pick<Discussion, "id" | "ownerUserId" | "conversationId">,
+    by: "user" | "auto",
+  ) {
+    const [r] = await tx
+      .update(discussion)
+      .set({ status: "paused", updatedAt: new Date(), version: sql`${discussion.version} + 1` })
+      .where(eq(discussion.id, d.id))
+      .returning();
+    await dropQueuedTurns(tx, d);
+    await insertMessage(tx, d.conversationId, {
+      ownerUserId: d.ownerUserId,
+      role: "system",
+      content:
+        by === "user"
+          ? "🤫 Silenced by the user. The bots wait until you post."
+          : "🤫 Silenced: the bots were repeating themselves. They wait until you post.",
+      meta: { discussionEvent: "silenced" },
+    });
+    return r!;
   }
   async function membersOf(d: Pick<Discussion, "id">) {
     return db
@@ -197,8 +218,7 @@ export function createDiscussionStore(
     messageId: string,
     opening = false,
     fallback = true,
-    picked: string | null = null,
-    /** Bots that own a skill the person picked: they are woken even without a mention, and then the fallback answer is not needed. */
+    /** Bots the person addressed without a mention (owners of a picked skill, the author of a quoted message): they are woken, and then the fallback answer is not needed. */
     skillOwners: readonly string[] = [],
   ) {
     const members = await tx
@@ -215,7 +235,6 @@ export function createDiscussionStore(
           text,
           opening,
           fallback && !skillOwners.length,
-          picked,
         ),
         ...skillOwners.filter((id) => id !== authorBotId),
       ]),
@@ -339,7 +358,7 @@ export function createDiscussionStore(
           : { ownerUserId: a.userId, role: "user", content: input.firstMessage },
       );
       if (input.wake !== false)
-        await enqueueWakes(tx, d!, input.createdBy?.id ?? null, input.firstMessage, first.id, true);
+        await enqueueWakes(tx, d!, input.createdBy?.id ?? null, first.content, first.id, true);
       return { discussion: d!, created: true };
     });
     if (res.created && input.wake !== false) onEnqueue?.();
@@ -359,7 +378,7 @@ export function createDiscussionStore(
       botId: author.id,
       botVersion: author.version,
     });
-    const n = d.status === "open" ? await enqueueWakes(tx, d, author.id, text, row.id) : 0;
+    const n = d.status === "open" ? await enqueueWakes(tx, d, author.id, row.content, row.id) : 0;
     if (n) onEnqueue?.();
     return row;
   }
@@ -505,7 +524,7 @@ export function createDiscussionStore(
           .returning();
         d = again ?? d;
       }
-      const text = `@${chief.name.replace(/\s+/g, "")} ${requester.name} asks to be allowed: ${rule}\nWhy: ${reason}`;
+      const text = `${mentionToken("bot", chief.id, chief.name)} ${requester.name} asks to be allowed: ${rule}\nWhy: ${reason}`;
       const row = await post(db, d, requester, text);
       if (stoppedAt)
         await db
@@ -552,7 +571,7 @@ export function createDiscussionStore(
         db,
         opened.discussion,
         requester,
-        `@${chief.name.replace(/\s+/g, "")} I am blocked: ${problem}\nTried: ${tried}`,
+        `${mentionToken("bot", chief.id, chief.name)} I am blocked: ${problem}\nTried: ${tried}`,
       );
       await db
         .update(message)
@@ -774,12 +793,15 @@ export function createDiscussionStore(
       if (!targets.length) return null;
       const names = targets.map((b) => b.name);
       // The opening post must name the targets, or the Chief (facilitator of a person's room) would answer instead of them.
-      const named = new Set(
-        [...v.text.matchAll(/@([\p{L}\p{N}_-]{1,40})/gu)].map((m) => m[1]!.toLowerCase()),
+      const namedIds = new Set(mentionIds(v.text, "bot"));
+      const namedKeys = new Set(
+        legacyMentions(v.text)
+          .filter((m) => m.sigil === "@")
+          .map((m) => m.key),
       );
       const tags = targets
-        .filter((b) => !named.has(mentionKey(b.name)))
-        .map((b) => `@${mentionKey(b.name)}`);
+        .filter((b) => !namedIds.has(b.id) && !namedKeys.has(mentionKey(b.name)))
+        .map((b) => mentionToken("bot", b.id, b.name));
       const firstMessage = (tags.length ? `${tags.join(" ")} ${v.text}` : v.text).slice(0, 8000);
       const room = async (d: Discussion) => {
         await this.postAsOwner(a, d.id, firstMessage);
@@ -841,15 +863,35 @@ export function createDiscussionStore(
     ) {
       const [cur] = await db.select().from(discussion).where(eq(discussion.id, d.id));
       if (cur?.status !== "open") return 0;
+      // Bots that only repeat themselves are silenced; a goal loop keeps its state and goes on when a person posts.
+      const recent = await db
+        .select({ authorBotId: message.botId, role: message.role, content: message.content })
+        .from(message)
+        .where(
+          and(
+            eq(message.conversationId, cur.conversationId),
+            inArray(message.role, ["user", "assistant"]),
+          ),
+        )
+        .orderBy(desc(message.createdAt))
+        .limit(12);
+      const sinceUser = recent.findIndex((m) => m.role === "user");
+      const posts = (sinceUser < 0 ? recent : recent.slice(0, sinceUser)).reverse();
+      if (isIdleChatter(posts)) {
+        await db.transaction((tx) => silenceRoom(tx, cur, "auto"));
+        return 0;
+      }
       const n = await enqueueWakes(db, cur, authorBotId, text, messageId, false, !mentionsOnly);
       if (n) onEnqueue?.();
       return n;
     },
     /** A person posts into the discussion (wakes who they mention, else the facilitator). Posting reopens a stalled one. */
     async postAsOwner(a: ActiveActor, id: string, text: string, attached: PostFiles = {}) {
-      const d = await loadOwned(a, id);
+      let d = await loadOwned(a, id);
       if (d.status === "resolved" || d.status === "cancelled")
         throw new DiscussionError("CLOSED", `This room is ${d.status}.`);
+      // A person's post always reaches the room: it reopens a paused one (as it does a stalled one).
+      if (d.status === "paused") d = await this.setStatus(a, id, "resume");
       // Everything the post will carry is checked before anything is written (same rule as a chat message).
       const ids = attached.attachmentIds ?? [],
         refs = attached.fileRefs ?? [];
@@ -928,28 +970,37 @@ export function createDiscussionStore(
         if (skills.some((k) => !have.get(k.botId)?.has(k.name)))
           throw new DiscussionError("NOT_FOUND", "A skill is no longer available.");
       }
-      // No mention: a decision model picks the member to answer; without a pick the fallback (facilitator or Chief) answers.
-      const roster = await db
-        .select({
-          botId: discussionMember.botId,
-          name: bot.name,
-          kind: bot.kind,
-          role: discussionMember.role,
-          about: bot.description,
-        })
-        .from(discussionMember)
-        .innerJoin(bot, eq(bot.id, discussionMember.botId))
-        .where(eq(discussionMember.discussionId, d.id));
-      const routed =
-        pickResponder &&
-        !skillOwners.length &&
-        !wakeTargets(roster, d.createdByBotId, null, text, false, false).length
-          ? await pickResponder(
-              a,
-              text,
-              roster.map((m) => ({ ...m, description: m.role || m.about })),
-            ).catch(() => null)
-          : null;
+      // A reply quotes a message of this room. The bot that wrote it, if it is a member, answers without a mention.
+      const [quoted] = attached.quotedMessageId
+        ? await db
+            .select({
+              id: message.id,
+              role: message.role,
+              botId: message.botId,
+              content: message.content,
+            })
+            .from(message)
+            .where(
+              and(
+                eq(message.id, attached.quotedMessageId),
+                eq(message.conversationId, d.conversationId),
+              ),
+            )
+        : [];
+      if (attached.quotedMessageId && !quoted)
+        throw new DiscussionError("NOT_FOUND", "That message is no longer available.");
+      const quote = quoted ? quoteOf(quoted) : null;
+      const [quotedMember] = quote?.botId
+        ? await db
+            .select({ botId: discussionMember.botId })
+            .from(discussionMember)
+            .where(
+              and(eq(discussionMember.discussionId, d.id), eq(discussionMember.botId, quote.botId)),
+            )
+        : [];
+      const addressed = [
+        ...new Set([...skillOwners, ...(quotedMember ? [quotedMember.botId] : [])]),
+      ];
       const res = await db.transaction(async (tx) => {
         const cur =
           d.status === "stalled"
@@ -969,8 +1020,9 @@ export function createDiscussionStore(
           role: "user",
           content: text,
           meta:
-            carried.length || images.length || wikiIds.length || skills.length
+            carried.length || images.length || wikiIds.length || skills.length || quote
               ? {
+                  ...(quote ? { quote } : {}),
                   ...(wikiIds.length ? { wikiIds } : {}),
                   ...(skills.length ? { skills } : {}),
                   ...(carried.length ? { files: carried } : {}),
@@ -991,7 +1043,7 @@ export function createDiscussionStore(
             );
         const n =
           cur.status === "open"
-            ? await enqueueWakes(tx, cur, null, text, row.id, false, true, routed, skillOwners)
+            ? await enqueueWakes(tx, cur, null, row.content, row.id, false, true, addressed)
             : 0;
         return { row, n };
       });
@@ -1014,6 +1066,7 @@ export function createDiscussionStore(
           "CONFLICT",
           "The room changed meanwhile. Reload it and try again.",
         );
+      const retitled = patch.title !== undefined;
       const brief =
         (patch.goal !== undefined && patch.goal !== d.goal) ||
         (patch.context !== undefined && patch.context !== d.context);
@@ -1046,6 +1099,8 @@ export function createDiscussionStore(
           "CONFLICT",
           "The room changed meanwhile. Reload it and try again.",
         );
+      if (retitled && row.kind === "room")
+        await refreshMentionLabels(db, "room", row.id, row.title);
       return row;
     },
     /** A member rewrites the shared context (bumps the version, so pending approvals must be given again). */
@@ -1177,6 +1232,41 @@ export function createDiscussionStore(
       if (action === "resume") onEnqueue?.();
       return row;
     },
+    /** Stops the bots talking: ends the goal loops, drops queued turns and pauses the room until a person posts. */
+    async silence(a: ActiveActor, id: string) {
+      const d = await loadOwned(a, id);
+      if (d.status === "resolved" || d.status === "cancelled")
+        throw new DiscussionError("CLOSED", `This room is ${d.status}.`);
+      for (const l of (await loops?.activeAll(d.conversationId)) ?? [])
+        await loops?.setStatus(a.userId, l.id, "cancelled");
+      return db.transaction((tx) => silenceRoom(tx, d, "user"));
+    },
+    /**
+     * Ends every goal loop of the room and drops the queued turns, but keeps the room, its messages and its context.
+     * A paused or stalled room opens again, so the bots answer the next question.
+     */
+    async stopGoals(a: ActiveActor, id: string) {
+      const d = await loadOwned(a, id);
+      if (d.status === "resolved" || d.status === "cancelled")
+        throw new DiscussionError("CLOSED", `This room is ${d.status}.`);
+      for (const l of (await loops?.activeAll(d.conversationId)) ?? [])
+        await loops?.setStatus(a.userId, l.id, "cancelled");
+      return db.transaction(async (tx) => {
+        const [r] = await tx
+          .update(discussion)
+          .set({ status: "open", updatedAt: new Date(), version: sql`${discussion.version} + 1` })
+          .where(eq(discussion.id, d.id))
+          .returning();
+        await dropQueuedTurns(tx, d);
+        await insertMessage(tx, d.conversationId, {
+          ownerUserId: d.ownerUserId,
+          role: "system",
+          content: "🎯 Goals stopped by the user. The room goes on with its history.",
+          meta: { discussionEvent: "goals_stopped" },
+        });
+        return r!;
+      });
+    },
     /**
      * "Delete" a room: it is cancelled and hidden from every list (its conversation is archived), history kept. Work attached to it
      * (its tasks) moves to `moveTo`, the chat the person asked to continue in. Returns what a caller needs to carry the work on.
@@ -1222,6 +1312,7 @@ export function createDiscussionStore(
     /** A room of the owner where `botId` is the creator or a member, found by id, title or `#mention` key. The newest match wins. */
     async findForBot(a: ActiveActor, botId: string, ref: string) {
       const key = mentionKey(ref.replace(/^#/, ""));
+      const tokenId = mentionIds(ref, "room")[0]; // a bot may copy `[#Title](room:<id>)`
       const rows = await db
         .select({ d: discussion })
         .from(discussion)
@@ -1240,7 +1331,7 @@ export function createDiscussionStore(
         .orderBy(desc(discussion.createdAt));
       return rows
         .map((r) => r.d)
-        .find((d) => d.id === ref || mentionKey(d.title) === key || d.title === ref);
+        .find((d) => d.id === (tokenId ?? ref) || mentionKey(d.title) === key || d.title === ref);
     },
     /** A room request still waiting for approval, withdrawn by the bot that made it (found by title). */
     async withdrawRequest(a: ActiveActor, botId: string, ref: string) {
@@ -1628,17 +1719,26 @@ export function createDiscussionStore(
       return rows.reverse().filter((m) => m.status === "complete");
     },
     /**
-     * Claims the oldest runnable turn: its discussion is open (or it is a wrap-up), and its owner has no other turn running (members share
-     * the owner's code workspace). Gated turns go to the owner for approval; a spent budget stalls the discussion.
+     * Claims the oldest runnable turn: its discussion is open (or it is a wrap-up). Gated turns go to the owner for approval; a spent
+     * budget stalls the discussion. Lane "any": the owner has no other turn running (members share the owner's code workspace).
+     * Lane "user": only turns woken by the person's own post, and they start at once beside running turns, so the person is never
+     * kept waiting for a busy bot (the harness limiter still caps the processes).
      */
-    async claimNext(names: (botId: string) => Promise<string>): Promise<Claimed | undefined> {
+    async claimNext(
+      names: (botId: string) => Promise<string>,
+      lane: "any" | "user" = "any",
+    ): Promise<Claimed | undefined> {
       for (let i = 0; i < 10; i++) {
         const out = await db.transaction(async (tx): Promise<Claimed | "again" | undefined> => {
           const picked = await tx.execute<{
             id: string;
           }>(sql`select t.id from discussion_turn t join discussion d on d.id = t.discussion_id
             where t.status = 'queued' and (d.status = 'open' or (t.kind = 'wrapup' and d.status = 'resolved'))
-              and not exists (select 1 from discussion_turn r where r.owner_user_id = t.owner_user_id and r.status = 'running')
+              and ${
+                lane === "user"
+                  ? sql`t.kind = 'reply' and exists (select 1 from message m where m.id = t.trigger_message_id and m.role = 'user')`
+                  : sql`not exists (select 1 from discussion_turn r where r.owner_user_id = t.owner_user_id and r.status = 'running')`
+              }
             order by t.created_at limit 1 for update of t skip locked`);
           const id =
             (picked as unknown as { rows?: { id: string }[] }).rows?.[0]?.id ??

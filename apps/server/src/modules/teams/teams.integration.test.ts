@@ -81,7 +81,7 @@ suite("teams against compose postgres", () => {
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: { access, chat },
-    discussions: { access, store: discussions, worker },
+    discussions: { access, store: discussions, worker, chat },
     teams: { access, store: createTeamStore(db, discussions) },
     webOrigin: "http://web.test",
     desktopOrigins: [],
@@ -269,7 +269,7 @@ suite("teams against compose postgres", () => {
     expect(first.steps.at(-1)).toMatchObject({
       kind: "post",
       label: "Posted to the room",
-      detail: "Splitting the work. @DevCoder please build the page",
+      detail: `Splitting the work. [@Dev Coder](bot:${coder.id}) please build the page`,
     });
   });
 
@@ -314,6 +314,22 @@ suite("teams against compose postgres", () => {
     });
     expect(again.status).toBe(409);
     expect(again.json.error.code).toBe("NAME_TAKEN");
+  });
+
+  test("a cancelled room frees its name, and it can be deleted", async () => {
+    const id = await teamOf("Freed team", ["F1", "F2"]);
+    const first = await call("POST", `/api/teams/${id}/rooms`, { title: "Components" });
+    expect(first.status).toBe(201);
+    await worker.drain();
+    const old = first.json.discussionId;
+    expect((await call("POST", `/api/discussions/${old}/cancel`)).status).toBe(200);
+    const again = await call("POST", `/api/teams/${id}/rooms`, { title: "components" });
+    expect(again.status).toBe(201);
+    expect(again.json.discussionId).not.toBe(old);
+    expect((await call("POST", `/api/discussions/${old}/delete`)).status).toBe(200);
+    const dup = await call("POST", `/api/teams/${id}/rooms`, { title: "COMPONENTS" });
+    expect(dup.status).toBe(409);
+    expect(dup.json.error.code).toBe("NAME_TAKEN");
   });
 
   test("a plain room moves into a team and back, and its bots then read the team context", async () => {

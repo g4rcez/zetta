@@ -1,3 +1,4 @@
+import { refreshMentionLabels } from "../chat/mention-text";
 import type { Database } from "@zetta/db";
 import { and, asc, desc, eq, inArray, or, sql } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
@@ -252,6 +253,7 @@ export function createTeamStore(
         throw e;
       }
       const [t] = await db.select().from(team).where(eq(team.id, id));
+      await refreshMentionLabels(db, "team", id, t!.name);
       return { ...t!, members: shape(await membersOf([id]), id) };
     },
     async archive(a: ActiveActor, id: string) {
@@ -288,6 +290,7 @@ export function createTeamStore(
             eq(discussion.ownerUserId, a.userId),
             sql`${discussion.teamId} is not null`,
             sql`lower(${discussion.title}) = lower(${v.title})`,
+            inArray(discussion.status, ["open", "paused", "stalled"]),
           ),
         );
       if (taken)
@@ -299,7 +302,7 @@ export function createTeamStore(
       const opened = await discussions
         .open(a, {
           title: v.title,
-          goal: v.goal || t.goal,
+          goal: v.goal,
           context: "",
           members: members
             .filter((m) => m !== chief)
@@ -430,14 +433,10 @@ export function createTeamStore(
         .limit(1);
       if (live) return { discussionId: live.id };
       const name = t.name.slice(0, 100);
-      const [closed] = await db
-        .update(discussion)
-        .set({
-          status: "open",
-          resolvedAt: null,
-          updatedAt: new Date(),
-          version: sql`${discussion.version} + 1`,
-        })
+      // Several closed rooms may share the name: only the newest one is reopened, so the active-name index holds.
+      const [newest] = await db
+        .select({ id: discussion.id })
+        .from(discussion)
         .where(
           and(
             eq(discussion.teamId, t.id),
@@ -446,8 +445,26 @@ export function createTeamStore(
             inArray(discussion.status, ["resolved", "cancelled"]),
           ),
         )
-        .returning({ id: discussion.id });
-      if (closed) return { discussionId: closed.id };
+        .orderBy(desc(discussion.updatedAt))
+        .limit(1);
+      if (newest) {
+        const [closed] = await db
+          .update(discussion)
+          .set({
+            status: "open",
+            resolvedAt: null,
+            updatedAt: new Date(),
+            version: sql`${discussion.version} + 1`,
+          })
+          .where(
+            and(
+              eq(discussion.id, newest.id),
+              inArray(discussion.status, ["resolved", "cancelled"]),
+            ),
+          )
+          .returning({ id: discussion.id });
+        if (closed) return { discussionId: closed.id };
+      }
       return this.startRoom(a, id, { title: name, goal: "" });
     },
   };

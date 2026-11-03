@@ -26,8 +26,9 @@ const ids = [
   `disc-c-${uuidv7()}`,
   `disc-d-${uuidv7()}`,
   `disc-e-${uuidv7()}`,
+  `disc-f-${uuidv7()}`,
 ];
-const [A, B, C, D, E] = ids as [string, string, string, string, string];
+const [A, B, C, D, E, F] = ids as [string, string, string, string, string, string];
 
 suite("group discussions against compose postgres", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
@@ -71,20 +72,33 @@ suite("group discussions against compose postgres", () => {
     });
     return replies[t.bot.name]?.shift() ?? "ok";
   };
+  /** A bot with a gate here does not answer until the gate opens: it stands for a long task. */
+  const gates: Record<string, Promise<void>> = {};
   const fakeRun = Object.assign(async (t: never) => ({ text: reply(t), stopped: false }), {
-    stream: async function* (t: never) {
-      yield reply(t);
+    stream: async function* (t: { bot: { name: string } }) {
+      const text = reply(t as never);
+      await gates[t.bot.name];
+      yield text;
     },
   });
   const features = createFeaturesService(db, fakeRun as never);
   const store = createDiscussionStore(db);
   const wiki = createWiki(db);
+  /** Stands for Laya (the model is the one thing not run here): a reply that says "Aguardando" waits for the user, the rest keeps working. */
+  const laya = {
+    status: () => ({ state: "ready" }),
+    choose: async (subject: string) => ({
+      probabilities: subject.includes("Aguardando")
+        ? { working: 0.02, waiting_user: 0.95, nothing_to_do: 0.02, finished: 0.01 }
+        : { working: 0.9, waiting_user: 0.04, nothing_to_do: 0.03, finished: 0.03 },
+    }),
+  };
   const chat = createChatService(
     db,
     fakeRun as never,
     undefined,
     undefined,
-    undefined,
+    laya as never,
     undefined,
     { routine: features.routines.create as never, workflow: features.workflows.save as never },
     undefined,
@@ -100,7 +114,7 @@ suite("group discussions against compose postgres", () => {
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: { access, chat },
     features: { access, features },
-    discussions: { access, store, worker },
+    discussions: { access, store, worker, chat },
     webOrigin: "http://web.test",
     desktopOrigins: [],
     drain: () => {},
@@ -141,6 +155,7 @@ suite("group discussions against compose postgres", () => {
   };
   const messagesOf = async (as: string, conv: string) =>
     (await call(as, "GET", `/api/conversations/${conv}/messages`)).json.messages as {
+      id: string;
       role: string;
       content: string;
       botId: string | null;
@@ -206,12 +221,16 @@ suite("group discussions against compose postgres", () => {
     // Dev saw the shared context and who said what; its turn got the member tools.
     const devRun = runs.find((x) => x.bot === "Dev")!;
     expect(devRun.prompt).toContain("Customer Maria: login crashes");
-    expect(devRun.prompt).toContain("Support: @Dev please fix the Android login crash");
+    expect(devRun.prompt).toMatch(
+      /Support: \[@Dev\]\(bot:[0-9a-f-]{36}\) please fix the Android login crash/,
+    );
     expect(devRun.extraTools).toContain('"action":"resolve"');
     const transcript = await messagesOf(A, d.conversationId);
     expect(transcript.map((m) => m.content)).toEqual([
-      "@Dev please fix the Android login crash",
-      "Fixed in PR #12. @Support you can tell the customer.",
+      expect.stringMatching(/^\[@Dev\]\(bot:[0-9a-f-]{36}\) please fix the Android login crash$/),
+      expect.stringMatching(
+        /^Fixed in PR #12\. \[@Support\]\(bot:[0-9a-f-]{36}\) you can tell the customer\.$/,
+      ),
       expect.stringContaining("Resolved the room"),
       "✅ Resolved by Support: Fixed in PR #12",
     ]);
@@ -298,11 +317,76 @@ suite("group discussions against compose postgres", () => {
     expect(again).toMatchObject({ created: false, discussion: { id: d.id } });
   });
 
+  test("a mention follows the bot's id: after a rename the old token wakes the same bot, and the prompt shows its new name", async () => {
+    const x = await makeBot(A, "Anna"),
+      y = await makeBot(A, "Bruno");
+    replies.Anna = ["ok"];
+    replies.Bruno = ["ok"];
+    replies.Leo = ["done"];
+    const created = await call(A, "POST", "/api/discussions", {
+      title: "Rename",
+      goal: "x",
+      members: [{ bot: x.id }, { bot: y.id }],
+      firstMessage: `[@Anna](bot:${x.id}) start`,
+    });
+    expect(created.status).toBe(201);
+    await worker.drain();
+    await db.update(bot).set({ name: "Leo" }).where(eq(bot.id, x.id));
+    const before = runs.length;
+    const posted = await call(
+      A,
+      "POST",
+      `/api/discussions/${created.json.discussion.id}/messages`,
+      {
+        content: `[@Anna](bot:${x.id}) status?`,
+      },
+    );
+    expect(posted.status).toBe(201);
+    await worker.drain();
+    const after = runs.slice(before);
+    expect(after.map((r) => r.bot)).toEqual(["Leo"]);
+    expect(after[0]!.prompt).toContain(`[@Leo](bot:${x.id}) status?`);
+  });
+
+  test("renaming a bot rewrites the label of its mentions in stored chat text", async () => {
+    const lead = await makeBot(A, "Rn1"),
+      target = (await call(A, "POST", "/api/bots", { name: "Rn2" })).json.bot as {
+        id: string;
+        version: number;
+      };
+    await db.update(bot).set({ onboarded: true }).where(eq(bot.id, target.id));
+    const { c, say } = await chatWith(A, lead.id);
+    await say(`Please ask [@Rn2](bot:${target.id}) about it`);
+    await worker.drain();
+    const renamed = await call(A, "PATCH", `/api/bots/${target.id}`, {
+      expectedVersion: target.version,
+      patch: { name: "Renamed Bot" },
+    });
+    expect(renamed.status).toBe(200);
+    const mine = (await messagesOf(A, c)).filter((m) => m.role === "user");
+    expect(mine.map((m) => m.content)).toEqual([
+      `Please ask [@Renamed Bot](bot:${target.id}) about it`,
+    ]);
+  });
+
   test("a room has no turn limit: bots keep talking until a person pauses it", async () => {
     const x = await makeBot(A, "Ping"),
       y = await makeBot(A, "Pong");
-    replies.Ping = Array(5).fill("@Pong your turn");
-    replies.Pong = Array(5).fill("@Ping back to you");
+    // Different words each time: identical replies would count as idle chatter and silence the room.
+    replies.Ping = [
+      "@Pong read the login logs",
+      "@Pong now write the fix",
+      "@Pong add a regression test",
+      "@Pong open the pull request",
+      "@Pong update the changelog",
+    ];
+    replies.Pong = [
+      "@Ping the logs show a null token",
+      "@Ping the fix is ready in a branch",
+      "@Ping the test covers Android 14",
+      "@Ping pull request 12 is open",
+      "@Ping changelog entry written",
+    ];
     // An old client may still send turnBudget: it is accepted and ignored.
     const created = await call(A, "POST", "/api/discussions", {
       title: "Loop",
@@ -347,6 +431,102 @@ suite("group discussions against compose postgres", () => {
         })
       ).status,
     ).toBe(409);
+  });
+
+  test("a member that replies NO_REPLY posts nothing and wakes nobody", async () => {
+    const x = await makeBot(A, "Talker"),
+      y = await makeBot(A, "Listener");
+    replies.Talker = ["@Listener FYI the build is green"];
+    replies.Listener = ["NO_REPLY"];
+    const created = await call(A, "POST", "/api/discussions", {
+      title: "Quiet",
+      goal: "stay quiet when there is nothing to add",
+      members: [{ bot: x.id }, { bot: y.id }],
+      firstMessage: "@Talker start",
+    });
+    expect(created.status).toBe(201);
+    await worker.drain();
+    const g = (await call(A, "GET", `/api/discussions/${created.json.discussion.id}`)).json;
+    const listener = g.turns.filter((t: { botId: string }) => t.botId === y.id);
+    expect(
+      listener.map((t: { status: string; reasonCode: string }) => [t.status, t.reasonCode]),
+    ).toEqual([["done", "silent"]]);
+    expect(g.turns.length).toBe(2);
+    const posts = await messagesOf(A, g.discussion.conversationId);
+    expect(posts.some((m) => m.botId === y.id)).toBe(false);
+  });
+
+  test("a reply that only says the bot waits for the user wakes nobody (Laya reads it)", async () => {
+    const x = await makeBot(A, "Chief1"),
+      y = await makeBot(A, "Worker1");
+    replies.Chief1 = ["[@Worker1](bot:W) Aguardando mensagem do usuário."];
+    replies.Worker1 = ["I will report back"];
+    const created = await call(A, "POST", "/api/discussions", {
+      title: "Waiting",
+      goal: "wait for the user",
+      members: [{ bot: x.id }, { bot: y.id }],
+      firstMessage: "@Chief1 start",
+    });
+    await worker.drain();
+    const g = (await call(A, "GET", `/api/discussions/${created.json.discussion.id}`)).json;
+    expect(g.turns.map((t: { reasonCode: string | null }) => t.reasonCode)).toEqual([
+      "waiting_user",
+    ]);
+    const posts = await messagesOf(A, g.discussion.conversationId);
+    expect(posts.filter((m) => m.botId === x.id).length).toBe(1);
+    expect(posts.some((m) => m.botId === y.id)).toBe(false);
+  });
+
+  test("bots that only repeat themselves are silenced until a person posts", async () => {
+    const x = await makeBot(A, "Echo1"),
+      y = await makeBot(A, "Echo2");
+    replies.Echo1 = Array(6).fill("@Echo2 nothing new on #70, the merge waits for Allan");
+    replies.Echo2 = Array(6).fill("@Echo1 nothing new on #70, the merge waits for Allan too");
+    const created = await call(A, "POST", "/api/discussions", {
+      title: "Echo",
+      goal: "wait",
+      members: [{ bot: x.id }, { bot: y.id }],
+      firstMessage: "@Echo1 start",
+    });
+    await worker.drain();
+    const id = created.json.discussion.id as string;
+    const g = (await call(A, "GET", `/api/discussions/${id}`)).json;
+    expect(g.discussion.status).toBe("paused");
+    const shown = await messagesOf(A, g.discussion.conversationId);
+    expect(shown.at(-1)).toMatchObject({
+      role: "system",
+      content: "🤫 Silenced: the bots were repeating themselves. They wait until you post.",
+    });
+    replies.Echo1 = ["NO_REPLY"];
+    expect(
+      (await call(A, "POST", `/api/discussions/${id}/messages`, { content: "@Echo1 any news?" }))
+        .status,
+    ).toBe(201);
+    await worker.drain();
+    expect((await call(A, "GET", `/api/discussions/${id}`)).json.discussion.status).toBe("open");
+  });
+
+  test("the Silence button pauses the room and a closed room cannot be silenced", async () => {
+    const x = await makeBot(A, "Mute1");
+    const created = await call(A, "POST", "/api/discussions", {
+      title: "Mute",
+      goal: "silence me",
+      members: [{ bot: x.id }],
+      firstMessage: "@Mute1 start",
+    });
+    await worker.drain();
+    const id = created.json.discussion.id as string;
+    const silenced = await call(A, "POST", `/api/discussions/${id}/silence`);
+    expect(silenced.status).toBe(200);
+    expect(silenced.json.discussion.status).toBe("paused");
+    const shown = await messagesOf(A, silenced.json.discussion.conversationId);
+    expect(shown.at(-1)).toMatchObject({
+      role: "system",
+      content: "🤫 Silenced by the user. The bots wait until you post.",
+    });
+    expect((await call(B, "POST", `/api/discussions/${id}/silence`)).status).toBe(404);
+    await call(A, "POST", `/api/discussions/${id}/cancel`);
+    expect((await call(A, "POST", `/api/discussions/${id}/silence`)).status).toBe(409);
   });
 
   test("outside content: a code bot waits for an approved brief; a changed brief asks again; secrets never reach the group", async () => {
@@ -451,7 +631,7 @@ suite("group discussions against compose postgres", () => {
     expect(run.prompt).toContain("the secret plan is blue");
     const shown = (await call(A, "GET", `/api/conversations/${d.conversationId}/messages`)).json
       .messages as { content: string; attachments: { name: string }[] }[];
-    const mine = shown.find((m) => m.content === "@Files2 read this")!;
+    const mine = shown.find((m) => m.content === `[@Files2](bot:${q.id}) read this`)!;
     expect(mine.attachments.map((a) => a.name)).toEqual(["notes.txt"]);
     // An attachment belongs to one message; someone else's or an unknown one is refused before anything is written.
     expect(
@@ -724,6 +904,119 @@ suite("group discussions against compose postgres", () => {
     expect(runs.map((r) => r.bot)).toEqual(["QA1"]);
   });
 
+  test("a reply in the room keeps its quote, shows it to the bots, and wakes only the bot it quotes", async () => {
+    const dev = await makeBot(E, "Quote dev");
+    const qa = await makeBot(E, "Quote QA");
+    const created = await call(E, "POST", "/api/discussions", {
+      title: "Quote room",
+      goal: "",
+      members: [{ bot: dev.id }, { bot: qa.id }],
+      firstMessage: "Hello both",
+    });
+    const roomId = created.json.discussion.id as string;
+    const conv = created.json.discussion.conversationId as string;
+    replies["Quote QA"] = ["QA found the cause"];
+    await worker.drain();
+    const qaMessage = (await messagesOf(E, conv)).find((m) => m.botId === qa.id)!;
+    expect(qaMessage).toBeDefined();
+    runs.length = 0;
+    const post = await call(E, "POST", `/api/discussions/${roomId}/messages`, {
+      content: "can you show the fix?",
+      quotedMessageId: qaMessage.id,
+    });
+    expect(post.status).toBe(201);
+    expect(post.json.message.meta.quote).toMatchObject({
+      role: "assistant",
+      botId: qa.id,
+    });
+    await worker.drain();
+    expect(runs.map((r) => r.bot)).toEqual(["Quote QA"]);
+    expect(runs[0]!.prompt).toContain("The user replies to a message from Quote QA");
+    expect(runs[0]!.prompt).toContain("QA found the cause");
+    expect(runs[0]!.prompt).toContain("can you show the fix?");
+  });
+
+  test("a quoted message from another chat is refused in a room", async () => {
+    const dev = await makeBot(E, "Quote stranger");
+    const created = await call(E, "POST", "/api/discussions", {
+      title: "Quote refuse",
+      goal: "",
+      members: [{ bot: dev.id }],
+      firstMessage: "Hi",
+    });
+    await worker.drain();
+    const other = await chatWith(E, dev.id);
+    const said = await other.say("elsewhere");
+    const denied = await call(
+      E,
+      "POST",
+      `/api/discussions/${created.json.discussion.id}/messages`,
+      {
+        content: "hello",
+        quotedMessageId: said.json.user.id,
+      },
+    );
+    expect(denied.status).toBe(404);
+  });
+
+  test("a person's post gets the Chief at once while a member is still busy; a turn started by a bot waits for its turn; a post reopens a paused room", async () => {
+    const chief = await makeBot(F, "Lead", { kind: "chief", visibility: "private" });
+    const worker1 = await makeBot(F, "Builder");
+    const helper = await makeBot(F, "Helper");
+    const created = await call(F, "POST", "/api/discussions", {
+      title: "Busy room",
+      goal: "",
+      members: [{ bot: worker1.id }, { bot: helper.id }],
+      firstMessage: "Hello all",
+    });
+    const roomId = created.json.discussion.id as string;
+    await worker.drain();
+    const turnOf = async (botId: string) =>
+      (
+        await db
+          .select({ status: discussionTurn.status })
+          .from(discussionTurn)
+          .where(and(eq(discussionTurn.discussionId, roomId), eq(discussionTurn.botId, botId)))
+          .orderBy(discussionTurn.createdAt)
+      ).map((t) => t.status);
+    const until = async (check: () => Promise<boolean>) => {
+      for (let i = 0; i < 400 && !(await check()); i++) await Bun.sleep(25);
+      expect(await check()).toBe(true);
+    };
+
+    let release!: () => void;
+    gates.Builder = new Promise<void>((r) => (release = r));
+    replies.Builder = ["Done, @Lead."];
+    await call(F, "POST", `/api/discussions/${roomId}/messages`, { content: "@Builder build it" });
+    await until(async () => (await turnOf(worker1.id)).at(-1) === "running");
+
+    replies.Lead = ["Plan: Builder builds. @Helper please review later."];
+    runs.length = 0;
+    await call(F, "POST", `/api/discussions/${roomId}/messages`, { content: "status?" });
+    await until(async () => (await turnOf(chief.id)).at(-1) === "done");
+    expect(runs.map((r) => r.bot)).toEqual(["Lead"]);
+    expect((await turnOf(worker1.id)).at(-1)).toBe("running");
+    // The Chief woke Helper, but a bot's turn waits while the person's bots are busy.
+    await Bun.sleep(100);
+    expect((await turnOf(helper.id)).at(-1)).toBe("queued");
+
+    release();
+    await worker.drain();
+    expect((await turnOf(helper.id)).at(-1)).toBe("done");
+
+    await call(F, "POST", `/api/discussions/${roomId}/pause`);
+    runs.length = 0;
+    const post = await call(F, "POST", `/api/discussions/${roomId}/messages`, {
+      content: "wake up",
+    });
+    expect(post.status).toBe(201);
+    await worker.drain();
+    expect((await call(F, "GET", `/api/discussions/${roomId}`)).json.discussion.status).toBe(
+      "open",
+    );
+    expect(runs.map((r) => r.bot)).toEqual(["Lead"]);
+  });
+
   test("nothing caps how many rooms run or how many bots join: the person decides", async () => {
     const crew = await Promise.all(
       ["Crew1", "Crew2", "Crew3", "Crew4", "Crew5", "Crew6", "Crew7", "Crew8"].map((n) =>
@@ -858,9 +1151,11 @@ suite("group discussions against compose postgres", () => {
     const talk = await messagesOf(B, perms[0]!.conversationId);
     const said = talk.map((m) => m.content).join("\n---\n");
     expect(said).toContain(
-      "@Zetta Components asks to be allowed: Bash(pnpm:*)\nWhy: run the routine",
+      `[@Zetta](bot:${chief.id}) Components asks to be allowed: Bash(pnpm:*)\nWhy: run the routine`,
     );
-    expect(said).toContain("@Zetta Docs asks to be allowed: WebFetch\nWhy: run the routine");
+    expect(said).toContain(
+      `[@Zetta](bot:${chief.id}) Docs asks to be allowed: WebFetch\nWhy: run the routine`,
+    );
     expect(await rulesOf(comps.id)).toEqual([]);
     expect(await rulesOf(other.id)).toEqual([]);
     const pending = (await call(B, "GET", "/api/proposals")).json.proposals as {
@@ -1186,7 +1481,7 @@ suite("group discussions against compose postgres", () => {
       const inRoom = await messagesOf(A, rooms[0].conversationId);
       expect(inRoom[0]).toMatchObject({
         role: "user",
-        content: "@Treinador prepare me for the interview",
+        content: `[@Treinador](bot:${coach.id}) prepare me for the interview`,
       });
       expect(inRoom.some((m) => m.botId === coach.id && m.content === "Hello from the room.")).toBe(
         true,
@@ -1209,7 +1504,7 @@ suite("group discussions against compose postgres", () => {
 
     test("a second @mention of the same bot goes to the room that is already open", async () => {
       const lead = await makeBot(A, "Maestro3");
-      await makeBot(A, "Treinador3");
+      const coach = await makeBot(A, "Treinador3");
       const { c, say } = await chatWith(A, lead.id);
       await say("@Treinador3 first question");
       await worker.drain();
@@ -1221,7 +1516,10 @@ suite("group discussions against compose postgres", () => {
         (await messagesOf(A, rooms[0].conversationId))
           .filter((m) => m.role === "user")
           .map((m) => m.content),
-      ).toEqual(["@Treinador3 first question", "@Treinador3 second question"]);
+      ).toEqual([
+        `[@Treinador3](bot:${coach.id}) first question`,
+        `[@Treinador3](bot:${coach.id}) second question`,
+      ]);
     });
   });
 });

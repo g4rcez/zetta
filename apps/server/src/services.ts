@@ -180,11 +180,7 @@ const agenda = createAgenda(db);
 const tasks = createTaskStore(db);
 const artifacts = createArtifactStore(db);
 const loops = createLoopStore(db);
-// A room post without a mention goes to the member the decision model picks (the Chief's backend, else Laya).
-const discussions = createDiscussionStore(db, files, loops, (a, text, members) => {
-  const chief = members.find((m) => m.kind === "chief");
-  return decisionRouting.pickBot(chief && { id: chief.botId }, text, members, a);
-});
+const discussions = createDiscussionStore(db, files, loops);
 // Each bot's private Postgres schema (modules/bot-database). Bot passwords are derived from this key; the app's database user needs CREATEROLE.
 const botDbKey = process.env.ZETTA_BOT_DATABASE_KEY || ENV.ZETTA_CONNECTION_KEY;
 const botDatabase = botDbKey
@@ -411,6 +407,7 @@ export const discussionServices = {
   access: identity.access,
   store: discussions,
   worker: discussionWorker,
+  chat: chatServices.chat,
 };
 export const botDatabaseServices = { access: identity.access, db, database: botDatabase };
 export const botClaudeServices = { access: identity.access, db, claude: createBotClaude(db) };

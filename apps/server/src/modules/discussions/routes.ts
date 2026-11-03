@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { skillName } from "../bot-claude/profile";
-import { AccessError, type createIdentityAccess } from "../identity/access";
+import { AccessError, type ActiveActor, type createIdentityAccess } from "../identity/access";
 import { DiscussionError, publicRoom, type DiscussionStore } from "./store";
 import type { DiscussionWorker } from "./worker";
 
@@ -9,6 +9,8 @@ export type DiscussionServices = {
   access: ReturnType<typeof createIdentityAccess>;
   store: DiscussionStore;
   worker: DiscussionWorker;
+  /** Silence also aborts the turns that are running now. */
+  chat: { cancelTurn(actor: ActiveActor, conversationId: string): Promise<unknown> };
 };
 const uuid = z.string().uuid();
 const schemas = {
@@ -19,7 +21,7 @@ const schemas = {
     members: z
       .array(z.strictObject({ bot: uuid, role: z.string().trim().max(200).optional() }))
       .min(1),
-    /** Optional: without it the room opens with its goal (or title), so the bots have something to start on. */
+    /** Optional: without it the room opens with its goal, so the bots have something to start on. With no goal either, the room opens quiet. */
     firstMessage: z.string().trim().min(1).max(4000).optional(),
     /** Rooms have no turn limit; older clients still send this, so it is accepted and ignored. */
     turnBudget: z.number().int().min(1).max(50).optional(),
@@ -40,6 +42,7 @@ const schemas = {
         .array(z.strictObject({ botId: uuid, name: skillName }))
         .max(5)
         .optional(),
+      quotedMessageId: uuid.optional(),
     })
     .refine((v) => v.content || v.attachmentIds?.length || v.fileRefs?.length),
   loop: z.strictObject({
@@ -65,7 +68,7 @@ const STATUS: Record<DiscussionError["code"], number> = {
 };
 
 export function createDiscussionRoutes(
-  { access, store }: DiscussionServices,
+  { access, store, chat }: DiscussionServices,
   trustedOrigins: readonly string[],
 ) {
   type Ctx = {
@@ -139,11 +142,14 @@ export function createDiscussionRoutes(
       "/discussions",
       g(async (c) => {
         const { turnBudget: _ignored, ...v } = schemas.create.parse(c.body);
+        // No goal and no first message: the room opens quiet and the bots wait for the first post.
+        const quiet = !v.goal && !v.firstMessage;
         const r = await store.open(c.actor, {
           ...v,
-          firstMessage: v.firstMessage ?? (v.goal || v.title),
+          firstMessage: v.firstMessage ?? (v.goal || "Room open. Waiting for the first message."),
           createdBy: null,
           tainted: false,
+          ...(quiet ? { wake: false } : {}),
         });
         return { discussion: publicRoom(r.discussion), created: r.created };
       }, 201),
@@ -190,6 +196,18 @@ export function createDiscussionRoutes(
       g(async (c) => ({
         discussion: publicRoom(await store.setStatus(c.actor, id(c), "resume")),
       })),
+    )
+    .post(
+      "/discussions/:id/silence",
+      g(async (c) => {
+        const room = await store.silence(c.actor, id(c));
+        await chat.cancelTurn(c.actor, room.conversationId);
+        return { discussion: publicRoom(room) };
+      }),
+    )
+    .post(
+      "/discussions/:id/stop-goals",
+      g(async (c) => ({ discussion: publicRoom(await store.stopGoals(c.actor, id(c))) })),
     )
     .post(
       "/discussions/:id/cancel",

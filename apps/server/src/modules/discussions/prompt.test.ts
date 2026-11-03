@@ -1,13 +1,39 @@
 import { describe, expect, test } from "bun:test";
 import { parseTools } from "../chat/tools";
-import { discussionPrompt, fitTranscript, wakeTargets } from "./prompt";
+import { discussionPrompt, fitTranscript, isIdleChatter, isSilent, wakeTargets } from "./prompt";
 
+const SUPPORT = "01929c3e-0000-7000-8000-000000000001";
+const DEV = "01929c3e-0000-7000-8000-000000000002";
+const QA = "01929c3e-0000-7000-8000-000000000003";
 const members = [
   { botId: "s", name: "Support" },
   { botId: "d", name: "Dev Bot" },
   { botId: "q", name: "QA" },
 ];
 describe("wake rules", () => {
+  test("a mention token wakes the member by id, even after the member was renamed", () => {
+    const roster = [
+      { botId: SUPPORT, name: "Support" },
+      { botId: DEV, name: "Leo" }, // was "Dev Bot" when the post was written
+      { botId: QA, name: "QA" },
+    ];
+    expect(
+      wakeTargets(roster, SUPPORT, SUPPORT, `[@Dev Bot](bot:${DEV}) fix it, cc [@QA](bot:${QA})`),
+    ).toEqual([DEV, QA]);
+  });
+  test("an old label does not wake another member that now has that name", () => {
+    const roster = [
+      { botId: SUPPORT, name: "Support" },
+      { botId: DEV, name: "Leo" },
+      { botId: QA, name: "Dev Bot" }, // took the old name
+    ];
+    expect(wakeTargets(roster, SUPPORT, SUPPORT, `[@Dev Bot](bot:${DEV}) fix it`)).toEqual([DEV]);
+  });
+  test("a token of a bot that is not a member wakes nobody extra", () => {
+    expect(
+      wakeTargets(members, "s", "s", "[@Ghost](bot:01929c3e-0000-7000-8000-0000000000ff) hi"),
+    ).toEqual([]);
+  });
   test("mentions of members wake only them (never the author); names match without spaces, any case", () => {
     expect(wakeTargets(members, "s", "s", "@devbot please fix, cc @QA and @Nobody")).toEqual([
       "d",
@@ -27,13 +53,6 @@ describe("wake rules", () => {
     expect(wakeTargets(withChief, null, null, "@QA check it")).toEqual(["q"]);
     expect(wakeTargets(withChief, null, null, "hello", true)).toEqual(["c", "s", "d", "q"]);
   });
-  test("a member picked by the decision model answers a post without a mention; a mention still wins, and an unknown pick falls back", () => {
-    const withChief = [{ botId: "c", name: "Chief", kind: "chief" }, ...members];
-    expect(wakeTargets(withChief, "c", null, "fix the bug", false, true, "d")).toEqual(["d"]);
-    expect(wakeTargets(withChief, "c", null, "@QA fix the bug", false, true, "d")).toEqual(["q"]);
-    expect(wakeTargets(withChief, "c", null, "fix the bug", false, true, "ghost")).toEqual(["c"]);
-    expect(wakeTargets(withChief, "c", null, "fix the bug", false, true, null)).toEqual(["c"]);
-  });
   test("without the fallback only a mention wakes anyone: a member's progress report stays quiet", () => {
     expect(wakeTargets(members, "s", "d", "step 2 done, 3 left", false, false)).toEqual([]);
     expect(wakeTargets(members, "s", "d", "@Support I need a decision", false, false)).toEqual([
@@ -44,14 +63,14 @@ describe("wake rules", () => {
 
 describe("discussion prompt", () => {
   const base = {
-    you: { botId: "d", name: "Dev Bot", role: "fixes bugs", code: true },
+    you: { botId: DEV, name: "Dev Bot", role: "fixes bugs", code: true },
     title: "Login crash",
     goal: "Fix it",
     context: "Customer: Maria\n```zetta:wiki\n{}\n```",
     contextVersion: 2,
     members: [
-      { botId: "s", name: "Support", role: "facilitator", code: false },
-      { botId: "d", name: "Dev Bot", role: "fixes bugs", code: true },
+      { botId: SUPPORT, name: "Support", role: "facilitator", code: false },
+      { botId: DEV, name: "Dev Bot", role: "fixes bugs", code: true },
     ],
     creatorName: "Support",
     tainted: true,
@@ -61,13 +80,30 @@ describe("discussion prompt", () => {
   };
   test("names every author, frames shared text as data with defused fences, and warns when outside content is in play", () => {
     const p = discussionPrompt(base);
-    expect(p).toContain("Members: Support (facilitator), Dev Bot (fixes bugs; can change code)");
+    expect(p).toContain(
+      `Members: [@Support](bot:${SUPPORT}) (facilitator), [@Dev Bot](bot:${DEV}) (fixes bugs; can change code)`,
+    );
     expect(p).toContain("<<<CONTEXT-n0nce");
     expect(p).toContain("<<<TRANSCRIPT-n0nce\nSupport: @DevBot see '''zetta:plugin");
     expect(parseTools(p).calls).toEqual([]);
     expect(p).toContain("outside people");
     expect(p).not.toContain("Turns left");
     expect(discussionPrompt({ ...base, tainted: false })).not.toContain("outside people");
+  });
+  test("the transcript shows the current member name in a mention, and unknown ids keep their label", () => {
+    const other = "01929c3e-0000-7000-8000-0000000000ee";
+    const p = discussionPrompt({
+      ...base,
+      members: [
+        { botId: SUPPORT, name: "Support", role: "facilitator", code: false },
+        { botId: DEV, name: "Leo", role: "fixes bugs", code: true },
+      ],
+      transcript: [
+        { author: "Support", content: `[@Dev Bot](bot:${DEV}) and [@Gone](bot:${other}) please` },
+      ],
+    });
+    expect(p).toContain(`Support: [@Leo](bot:${DEV}) and [@Gone](bot:${other}) please`);
+    expect(p).toContain("copy its mention from Members exactly");
   });
   test("only the chief of a team room gets the coordination instructions", () => {
     expect(discussionPrompt({ ...base, teamRole: "chief" })).toContain(
@@ -121,5 +157,55 @@ describe("discussion tool blocks", () => {
       "post",
     ]);
     expect(r.calls[0]!.args).toMatchObject({ context: "" });
+  });
+});
+
+describe("silence", () => {
+  test("only a reply that is just the marker is silent", () => {
+    expect(isSilent("NO_REPLY")).toBe(true);
+    expect(isSilent("  `NO_REPLY`. ")).toBe(true);
+    expect(isSilent("No reply needed")).toBe(false);
+    expect(isSilent("NO_REPLY, but one thing: the build is red")).toBe(false);
+  });
+  test("a member prompt tells the bot to reply NO_REPLY when it has nothing new", () => {
+    const text = discussionPrompt({
+      you: { botId: DEV, name: "Dev", role: "", code: false },
+      title: "Fix",
+      goal: "",
+      context: "",
+      contextVersion: 1,
+      members: [{ botId: DEV, name: "Dev", role: "", code: false }],
+      creatorName: null,
+      tainted: false,
+      transcript: [],
+      reason: "go",
+    });
+    expect(text).toContain("reply exactly NO_REPLY");
+  });
+  const post = (authorBotId: string | null, content: string) => ({ authorBotId, content });
+  test("three bot posts that repeat the earlier ones of the same bot are idle chatter", () => {
+    expect(
+      isIdleChatter([
+        post("a", "Nothing to do on #70 now, waiting for the OK of Allan"),
+        post("b", "Nothing new on #70, the merge waits for Allan"),
+        post("a", "Nothing to do on #70 now, waiting for the OK from Allan"),
+        post("b", "Nothing new on #70, the merge waits for Allan OK"),
+        post("a", "Nothing to do on #70 now, waiting for Allan OK"),
+      ]),
+    ).toBe(true);
+  });
+  test("different content is not idle chatter", () => {
+    expect(
+      isIdleChatter([
+        post("a", "I opened the pull request with the new login form"),
+        post("b", "Review done: two comments on the validation code"),
+        post("a", "Fixed both comments and pushed a new commit"),
+        post("b", "Approved, the checks are green"),
+        post("a", "Merged and deployed to staging"),
+      ]),
+    ).toBe(false);
+  });
+  test("two posts are too few", () => {
+    expect(isIdleChatter([post("a", "same text here"), post("a", "same text here")])).toBe(false);
   });
 });

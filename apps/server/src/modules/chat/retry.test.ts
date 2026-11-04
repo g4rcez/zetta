@@ -46,7 +46,8 @@ describe("retry delays", () => {
   });
 });
 
-describe("withRetry", () => {
+// The fake CLIs are shell scripts, which Windows cannot execute.
+describe.skipIf(process.platform === "win32")("withRetry", () => {
   test("a CLI that fails once and then answers gives the answer", async () => {
     const fake = await script(
       (m) => `if [ -f "${m}" ]; then echo ok; else touch "${m}"; exit 3; fi`,

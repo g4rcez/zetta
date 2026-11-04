@@ -28,7 +28,8 @@ async function script(body: string) {
   await chmod(path, 0o755);
   return path;
 }
-describe("cli harness", () => {
+// The fake CLIs are shell scripts, which Windows cannot execute.
+describe.skipIf(process.platform === "win32")("cli harness", () => {
   test("every native harness builds an argv with the prompt as one element", () => {
     for (const h of Object.keys(harnessCommands) as (keyof typeof harnessCommands)[]) {
       const argv = harnessCommands[h]("hello; rm -rf /", "m1");
@@ -321,7 +322,8 @@ JSON`);
   });
 });
 
-describe("code access", () => {
+// The fake CLIs are shell scripts, which Windows cannot execute.
+describe.skipIf(process.platform === "win32")("code access", () => {
   test("a bot with a bound GitHub token may run gh without a second grant", () => {
     const withToken = claudeArgs("go", null, "git", undefined, undefined, undefined, true).join(
       " ",

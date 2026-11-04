@@ -17,7 +17,8 @@ const cfg = {
   bin: "docker",
 };
 
-describe("image uploads", () => {
+// Stored paths use the platform separator, and the fake CLI is a shell script.
+describe.skipIf(process.platform === "win32")("image uploads", () => {
   test("the type comes from the bytes, not the declared mime type", () => {
     expect(sniffImage(png)).toBe("image/png");
     expect(sniffImage(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 0]))).toBe("image/jpeg");

@@ -1,4 +1,5 @@
 import { describe, expect, test, spyOn } from "bun:test";
+import { fileURLToPath } from "node:url";
 import { createApp } from "./app";
 import { createIdentityAccess } from "./modules/identity/access";
 import type { DrainContext } from "evlog";
@@ -25,7 +26,7 @@ describe("createApp", () => {
       console.log("isolated import OK");
     `;
     const child = Bun.spawn([process.execPath, "--eval", script], {
-      cwd: new URL("../../..", import.meta.url).pathname,
+      cwd: fileURLToPath(new URL("../../..", import.meta.url)),
       env: { NODE_ENV: "test" },
       stdout: "pipe",
       stderr: "pipe",

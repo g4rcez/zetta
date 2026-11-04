@@ -82,7 +82,8 @@ describe("trackRun", () => {
   });
 });
 
-describe("listProcesses", () => {
+// It runs ps and pkill, which Windows does not have.
+describe.skipIf(process.platform === "win32")("listProcesses", () => {
   test("shows the CLI by name and the command it runs, from the real process table", async () => {
     const child = Bun.spawn(["sh", "-c", "sleep 30 & wait"], { detached: true, stdout: "ignore" });
     try {

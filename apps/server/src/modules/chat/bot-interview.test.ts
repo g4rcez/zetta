@@ -18,7 +18,8 @@ const base = {
   description: "",
 };
 
-describe("bot interview", () => {
+// The fake CLIs are shell scripts, which Windows cannot execute.
+describe.skipIf(process.platform === "win32")("bot interview", () => {
   test("asks the next question with suggestions", async () => {
     const deps = await engine(
       `echo '{"kind":"question","question":"Who reads the notes?","suggestions":["Customers","Engineers"]}'`,

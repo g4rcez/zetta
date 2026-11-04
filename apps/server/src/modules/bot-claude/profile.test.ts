@@ -1,5 +1,6 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { readFile, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
@@ -252,10 +253,10 @@ describe("plugin files", () => {
     expect(front).not.toMatch(/^allowed-tools/m);
   });
   test("writePluginDir writes under its own directory and refuses escapes", async () => {
-    const root = join(process.env.TMPDIR ?? "/tmp", `zetta-plugin-test-${uuidv7()}`);
+    const root = join(tmpdir(), `zetta-plugin-test-${uuidv7()}`);
     const dir = await writePluginDir({ "skills/a/SKILL.md": "hi" }, root);
     expect(await readFile(join(dir, "skills/a/SKILL.md"), "utf8")).toBe("hi");
-    expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect((await stat(dir)).mode & 0o777).toBe(0o700); // Windows has no mode bits
     await expect(writePluginDir({ "../escape.txt": "x" }, root)).rejects.toThrow();
     await rm(root, { recursive: true, force: true });
   });

@@ -214,7 +214,8 @@ describe("vm service (fake docker + fake spacesd)", () => {
     await vm.act("alice", a.id, "agent", { type: "key", key: "Return" });
     const first = m.calls.at(-1)!.token;
     expect(await readFile(join(tokenRoot, a.id, "token"), "utf8")).toBe(first);
-    expect((await stat(join(tokenRoot, a.id))).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32")
+      expect((await stat(join(tokenRoot, a.id))).mode & 0o777).toBe(0o700); // Windows has no mode bits
     await vm.stop("alice", a.id);
     await vm.start("alice", a.id);
     await vm.act("alice", a.id, "agent", { type: "key", key: "Return" });

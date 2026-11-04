@@ -1,9 +1,16 @@
 import { expect, test } from "bun:test";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { generateTransportKeyPair, open } from "@zetta/core/sealed-transport";
 
 import { setupDom } from "../skills/dom-env";
+
+const withQuery = (element: unknown) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {element as never}
+  </QueryClientProvider>
+);
 
 const win = setupDom();
 // happy-dom has no ResizeObserver, which the error Alert of the component library reads.
@@ -83,7 +90,7 @@ const mount = async (data: object) => {
   const host = win.document.createElement("div");
   win.document.body.append(host);
   const root = createRoot(host as unknown as Element);
-  await act(async () => root.render(<InboundCard data={data as never} />));
+  await act(async () => root.render(withQuery(<InboundCard data={data as never} />)));
   await settle();
   return () => act(async () => root.unmount());
 };

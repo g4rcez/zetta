@@ -6,7 +6,7 @@ import {
   type AgentProfile,
   HarnessError,
   claudeArgs,
-  codeWorkspace,
+  codeDir,
   createLimiter,
   defaultLimiter,
   botEmail,
@@ -31,11 +31,21 @@ async function script(body: string) {
 // The fake CLIs are shell scripts, which Windows cannot execute.
 describe.skipIf(process.platform === "win32")("cli harness", () => {
   test("every native harness builds an argv with the prompt as one element", () => {
-    for (const h of Object.keys(harnessCommands) as (keyof typeof harnessCommands)[]) {
+    // dsh reads its model from its own config, so it has no model flag to check here.
+    for (const h of (Object.keys(harnessCommands) as (keyof typeof harnessCommands)[]).filter(
+      (k) => k !== "deepseek",
+    )) {
       const argv = harnessCommands[h]("hello; rm -rf /", "m1");
       expect(argv.at(-1)).toBe("hello; rm -rf /");
       expect(argv).toContain("m1");
     }
+  });
+  test("deepseek runs dsh headless with the prompt as the last argument", () => {
+    expect(harnessCommands.deepseek("hello; rm -rf /", null)).toEqual([
+      "dsh",
+      "headless",
+      "hello; rm -rf /",
+    ]);
   });
   test("returns stdout, runs in an empty cwd with a minimal env", async () => {
     const fake = await script(
@@ -111,7 +121,7 @@ describe.skipIf(process.platform === "win32")("cli harness", () => {
       delete process.env.ZETTA_HARNESS_SLOT_MS;
     }
   });
-  test("claude code resumes a workspace session by id and names new ones", () => {
+  test("claude code resumes a code directory session by id and names new ones", () => {
     const fresh = claudeArgs("go", null, "git", undefined, undefined, {
       id: "sess-1",
       resume: false,
@@ -338,7 +348,7 @@ describe.skipIf(process.platform === "win32")("code access", () => {
     expect(without).not.toContain("Bash(gh:*)");
   });
 
-  test("without a workspace, GitHub through the gh login allows gh and nothing else of the shell", () => {
+  test("without a code directory, GitHub through the gh login allows gh and nothing else of the shell", () => {
     const chat = claudeArgs("go", null, undefined, undefined, undefined, undefined, true).join(" ");
     expect(chat).toContain("--allowedTools=Bash(gh:*)");
     expect(chat).not.toContain("Bash(git:*)");
@@ -413,9 +423,9 @@ describe.skipIf(process.platform === "win32")("code access", () => {
       "x",
     ]);
   });
-  test("workspaces are per user and cannot escape the root", () => {
-    expect(codeWorkspace("u1", "/data/code")).toBe("/data/code/u1");
-    expect(codeWorkspace("../evil", "/data/code")).toBe("/data/code/___evil");
+  test("code directories are per user and cannot escape the root", () => {
+    expect(codeDir("u1", "/data/code")).toBe("/data/code/u1");
+    expect(codeDir("../evil", "/data/code")).toBe("/data/code/___evil");
   });
   test("git env carries identity, and the token only through a github.com credential helper", () => {
     const dev = { name: "Dev", email: "dev@example.invalid", mode: "fixed" } as const;
@@ -488,12 +498,12 @@ describe.skipIf(process.platform === "win32")("code access", () => {
   test("ghLoggedIn is false when the gh CLI is not installed", async () => {
     expect(await ghLoggedIn("/nowhere-no-gh", () => null)).toBe(false);
   });
-  test("the docker command mounts the user's workspace instead of a tmpfs", () => {
+  test("the docker command mounts the user's code directory instead of a tmpfs", () => {
     const cfg = { image: "i", network: "bridge", memory: "1g", cpus: "1", pids: 64, bin: "docker" };
     const code = dockerArgs(cfg, {
         name: "n",
         argv: ["claude"],
-        workspace: "/data/code/u1",
+        codeDir: "/data/code/u1",
         env: {},
       }),
       plain = dockerArgs(cfg, { name: "n", argv: ["claude"], env: {} });
@@ -501,7 +511,7 @@ describe.skipIf(process.platform === "win32")("code access", () => {
     expect(code.some((a) => a.startsWith("/work:rw"))).toBe(false);
     expect(plain.some((a) => a.startsWith("/work:rw,size="))).toBe(true);
   });
-  test("a code run executes in the user's persistent workspace and keeps it", async () => {
+  test("a code run executes in the user's persistent code directory and keeps it", async () => {
     const root = await mkdtemp(join(tmpdir(), "zetta-code-"));
     process.env.ZETTA_CODE_ROOT = root;
     const fake = await script('echo "cwd=$(pwd -P) author=$GIT_AUTHOR_NAME arg=$*"; touch kept');

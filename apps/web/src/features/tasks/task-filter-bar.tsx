@@ -7,6 +7,7 @@ import {
   MagnifyingGlassIcon,
   TagIcon,
   UserCircleDashedIcon,
+  UserCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
@@ -17,6 +18,7 @@ import { LabelChip, PriorityIcon, StatusIcon } from "./task-badges";
 import {
   activeCount,
   DEFAULT_STATE,
+  FOR_ME,
   NO_BOT,
   SORT_OPTIONS,
   THREAD_OPTIONS,
@@ -155,7 +157,7 @@ export const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
   { value: "assignee", label: "Assignee" },
 ];
 
-/** The assignee of a task is its bot, so the avatar row filters by bot. */
+/** The avatar row filters by bot, by the tasks nobody owns, and by the tasks a bot asked of the viewer. */
 function AssigneeRow({
   bots,
   selected,
@@ -184,6 +186,7 @@ function AssigneeRow({
   };
   return (
     <div role="group" aria-label="Filter by assignee" className="flex flex-wrap items-center gap-1">
+      {avatar(FOR_ME, "For me", <UserCircleIcon aria-hidden className="size-6 text-foreground" />)}
       {bots.map((b) => avatar(b.id, b.name, <BotAvatar bot={b} size={24} square />))}
       {avatar(
         NO_BOT,

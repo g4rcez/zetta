@@ -11,7 +11,7 @@ import {
   TreeStructureIcon,
   PlugIcon,
   HashIcon,
-  BooksIcon,
+  BrainIcon,
   LightningIcon,
 } from "@phosphor-icons/react";
 
@@ -53,7 +53,7 @@ export const appLinks = [
   { to: "/teams", group: "Oversee", label: "Teams", icon: TreeStructureIcon },
   { to: "/artifacts", group: "Oversee", label: "Artifacts", icon: FileArchiveIcon },
   // Last, so adding it did not move the Alt+N hotkeys of the pages above. The sidebar shows it in its fixed block.
-  { to: "/wiki", group: "Oversee", label: "Wiki", icon: BooksIcon },
+  { to: "/memory", group: "Oversee", label: "Memory", icon: BrainIcon },
   // Also last, for the same reason. The sidebar shows it under More, next to Plugins.
   { to: "/skills", group: "Build", label: "Skills", icon: LightningIcon },
 ] as const;

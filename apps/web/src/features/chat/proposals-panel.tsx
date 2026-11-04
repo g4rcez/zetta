@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ShieldWarningIcon } from "@phosphor-icons/react";
@@ -33,8 +34,9 @@ const KIND_LABEL: Record<ProposalKind, string> = {
   start_loop: "Start a loop",
   team_goals: "Give the team goals",
   bot_permission: "Change what a bot may do",
-  create_wiki_page: "Save to the wiki",
+  create_wiki_page: "Save to memory",
   install_skills: "Install skills",
+  chief_action: "Change your setup",
 };
 const FIELD_LABEL: Record<string, string> = {
   outputStyle: "Output style",
@@ -42,7 +44,7 @@ const FIELD_LABEL: Record<string, string> = {
   goal: "Goal",
   members: "Bots",
   context: "Shared context",
-  wiki: "Wiki item",
+  wiki: "Memory item",
   request: "What it was asked",
   bot: "Bot",
   preset: "Preset",
@@ -65,7 +67,23 @@ const FIELD_LABEL: Record<string, string> = {
   steps: "Steps",
   body: "Steps",
   verification: "How to check",
+  computerMode: "Computer",
+  codeAccess: "Code access",
+  visibility: "Visibility",
+  commitIdentity: "Commit identity",
+  commitEmail: "Commit email",
+  requiredConnections: "Accounts it needs",
+  folder: "Folder",
+  workspace: "Folder", // cards stored before the rename
+  schedule: "Schedule",
+  routine: "Routine",
+  team: "Team",
+  style: "Style",
+  artifact: "Artifact",
+  scope: "Who can use it",
+  conversationMode: "Chat per run",
 };
+const fieldLabel = (f: string) => FIELD_LABEL[f] ?? f.charAt(0).toUpperCase() + f.slice(1);
 export function showValue(v: unknown, max = 240): string {
   if (v === null || v === undefined || v === "") return "(empty)";
   const text = typeof v === "string" ? v : JSON.stringify(v);
@@ -73,6 +91,7 @@ export function showValue(v: unknown, max = 240): string {
 }
 /** One-line plain summary for create_* proposals. */
 export function summarize(p: Proposal): string {
+  if (p.kind === "chief_action" && typeof p.patch?.title === "string") return p.patch.title;
   const name = p.diff.find(
     (d) =>
       d.field === "name" || d.field === "title" || d.field === "discussion" || d.field === "goal",
@@ -132,6 +151,7 @@ export function ProposalsPanel({
   onBotsChanged: () => void;
   notify: (m: string) => void;
 }) {
+  const qc = useQueryClient();
   const [busy, setBusy] = useState<string>();
   const [errors, setErrors] = useState<Record<string, string>>({});
   async function decide(p: Proposal, approve: boolean, choice?: SkillsChoice) {
@@ -140,13 +160,22 @@ export function ProposalsPanel({
     try {
       const r = await chatClient.decide(p.id, approve, choice);
       onResolved(p.id);
+      // An approved change can touch the bot's hooks, skills, accounts, decision routing or plugins. The bot list itself is `onBotsChanged`'s.
+      void qc.invalidateQueries({
+        queryKey: ["bots"],
+        predicate: (q) => q.queryKey.length > 1,
+      });
+      void qc.invalidateQueries({ queryKey: ["plugins"] });
       if (r.status === "stale") notify(STALE);
       else if (r.status === "rejected")
         notify(
           p.kind === "install_skills" ? "Nothing was installed." : "Rejected. Nothing was changed.",
         );
       else if (r.skills) notify(skillsResult(r.skills));
-      else {
+      else if (r.note) {
+        notify(`Done: ${summarize(p)}. ${r.note}`);
+        onBotsChanged();
+      } else {
         notify(
           p.kind === "start_loop" || p.kind === "team_goals"
             ? "Loop started. The bot keeps working until the goal is done; press Stop to end it."
@@ -214,17 +243,14 @@ export function ProposalsPanel({
                 )}
               </ItemTitle>
               <ul className="space-y-0.5 text-xs text-muted-foreground">
-                {p.diff.map((d) => (
-                  <li key={d.field} className="break-words">
-                    <span className="font-medium text-foreground">
-                      {FIELD_LABEL[d.field] ?? d.field}
-                    </span>
-                    :{" "}
+                {p.diff.map((d, i) => (
+                  <li key={`${d.field}-${i}`} className="break-words">
+                    <span className="font-medium text-foreground">{fieldLabel(d.field)}</span>:{" "}
                     {creating &&
                     (d.field === "bot" || d.field === "members") &&
                     typeof d.to === "string" ? (
                       <BotNames names={d.to.split(", ")} bots={bots} />
-                    ) : creating ? (
+                    ) : creating && !(p.kind === "chief_action" && d.from != null) ? (
                       <span>{showValue(d.to)}</span>
                     ) : (
                       <>
@@ -237,7 +263,7 @@ export function ProposalsPanel({
               </ul>
               {draft && (
                 <Link
-                  to="/wiki-draft"
+                  to="/memory-draft"
                   search={{ d: draft }}
                   className="text-xs underline underline-offset-2"
                 >
@@ -275,13 +301,15 @@ export function ProposalsPanel({
                     ? "Start loop"
                     : p.kind === "discussion_brief"
                       ? "Approve this brief"
-                      : p.kind === "create_wiki_page"
-                        ? "Save it"
-                        : p.kind === "open_discussion"
-                          ? "Approve and open"
-                          : creating
-                            ? "Approve and create"
-                            : "Approve"}
+                      : p.kind === "chief_action"
+                        ? "Approve"
+                        : p.kind === "create_wiki_page"
+                          ? "Save it"
+                          : p.kind === "open_discussion"
+                            ? "Approve and open"
+                            : creating
+                              ? "Approve and create"
+                              : "Approve"}
               </Button>
             </ItemActions>
           </Item>

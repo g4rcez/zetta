@@ -34,7 +34,7 @@ export function createDecisionService(
     maxPerOwner = caps.perOwner ?? 4;
   let pending = 0;
   const owners = new Map<string, number>();
-  // Laya is a builtin plugin, off until the administrator turns it on (see setMode). Off: nothing loads and every call is refused.
+  // The service starts off; the installation setting (on by default, see services.ts) turns it on with setMode. Off: nothing loads and every call is refused.
   let mode: "on" | "off" = caps.mode ?? "off";
   // English: the English checkpoint. Any other language: the multilingual checkpoint, which replaces it. Changing it discards the loaded model.
   let variant: LayaModel = caps.variant ?? "english";

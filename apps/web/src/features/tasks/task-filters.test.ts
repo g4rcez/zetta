@@ -4,6 +4,7 @@ import {
   applyFilters,
   DEFAULT_FILTERS,
   DEFAULT_STATE,
+  FOR_ME,
   groupTasks,
   NO_BOT,
   parseTaskSearch,
@@ -19,6 +20,10 @@ const task = (over: Partial<Task> & Pick<Task, "id" | "title">): Task => ({
   status: "backlog",
   priority: "none",
   labels: [],
+  ownerUserId: "owner",
+  assignee: "bot",
+  assigneeUserId: null,
+  assigneeName: null,
   botId: null,
   conversationId: null,
   createdAt: "2026-10-01T12:00:00.000Z",
@@ -128,6 +133,68 @@ describe("applyFilters", () => {
   test("sorting does not change the input array", () => {
     applyFilters(tasks, { ...DEFAULT_FILTERS, sort: "title" }, now);
     expect(tasks.map((t) => t.id)).toEqual(["a", "b", "c", "d"]);
+  });
+});
+
+describe("tasks a bot asked of a person", () => {
+  const asked: Task[] = [
+    task({
+      id: "p1",
+      title: "Sign in to the CRM",
+      botId: "writer",
+      assignee: "person",
+      assigneeUserId: "ana",
+      assigneeName: "Ana",
+    }),
+    task({
+      id: "p2",
+      title: "Approve the budget",
+      botId: "reviewer",
+      assignee: "person",
+      assigneeUserId: "leo",
+      assigneeName: "Leo",
+    }),
+    task({
+      id: "p3",
+      title: "Send the export",
+      botId: null,
+      assignee: "person",
+      assigneeUserId: "ana",
+      assigneeName: "Ana",
+    }),
+    task({ id: "b1", title: "Tidy the wiki", botId: "writer" }),
+    task({ id: "b2", title: "Loose task" }),
+  ];
+  const forViewer = (botIds: string[], viewer: string) =>
+    applyFilters(asked, { ...DEFAULT_FILTERS, botIds }, now, viewer).map((t) => t.id);
+
+  test("the For me choice keeps only the tasks assigned to the viewer", () => {
+    expect(forViewer([FOR_ME], "ana")).toEqual(["p1", "p3"]);
+    expect(forViewer([FOR_ME], "leo")).toEqual(["p2"]);
+    expect(forViewer([FOR_ME], "nobody")).toEqual([]);
+  });
+
+  test("For me combines with bot choices like the no-bot choice does", () => {
+    expect(forViewer([FOR_ME, "writer"], "leo")).toEqual(["p1", "p2", "b1"]);
+    expect(forViewer([FOR_ME, NO_BOT], "ana")).toEqual(["p1", "p3", "b2"]);
+  });
+
+  test("For me survives the address of the page", () => {
+    expect(parseTaskSearch({ botIds: ["me", "writer"] })).toEqual({ botIds: ["me", "writer"] });
+  });
+
+  test("a bot choice also finds the person tasks that bot asked for", () => {
+    expect(forViewer(["reviewer"], "ana")).toEqual(["p2"]);
+  });
+
+  test("grouping by assignee gives each person a group before the bots, and the bot tasks stay with their bot", () => {
+    const groups = groupTasks(asked, "assignee", [{ id: "writer", name: "Writer" }], []);
+    expect(groups.map((g) => [g.key, g.label, g.tasks.map((t) => t.id)])).toEqual([
+      ["person:ana", "Ana", ["p1", "p3"]],
+      ["person:leo", "Leo", ["p2"]],
+      ["writer", "Writer", ["b1"]],
+      [NO_BOT, "Unassigned", ["b2"]],
+    ]);
   });
 });
 

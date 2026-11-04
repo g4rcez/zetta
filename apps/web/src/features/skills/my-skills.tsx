@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
 import { Button, Checkbox } from "@/components/ui";
 import { BotIdentity } from "@/components/bot-identity";
@@ -6,7 +7,7 @@ import { errorMessage, type Bot } from "../chat/chat-client";
 import { Badge, ConfirmButton, Empty, list, listItem, Panel } from "../shared/ui";
 import { BotPicker } from "./bot-picker";
 import { SkillForm } from "./skill-form";
-import { skillsApi, type Skill, type SkillWithText } from "./skills-api";
+import { skillsApi, skillsQueries, type SkillWithText } from "./skills-api";
 
 /** The person's skill library: write or paste a skill, choose which bots bring it, edit, remove. An admin can also list everyone's and remove any. */
 export function MySkills({
@@ -25,19 +26,18 @@ export function MySkills({
   onScope: (scope: "mine" | "all") => void;
   onError: (m?: string) => void;
 }) {
-  const [skills, setSkills] = useState<Skill[]>();
+  const qc = useQueryClient();
   const [status, setStatus] = useState<string>();
   const [editing, setEditing] = useState<SkillWithText>();
   const [attaching, setAttaching] = useState<{ id: string; botIds: string[] }>();
   const botsById = new Map(bots.map((b) => [b.id, b]));
   const mine = bots.filter((b) => b.canEdit);
-  const reload = useCallback(
-    () => skillsApi.list(scope).then(setSkills, (e) => onError(errorMessage(e))),
-    [scope, onError],
-  );
+  const { data: skills, error: loadError } = useQuery(skillsQueries.list(scope));
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    if (loadError) onError(errorMessage(loadError));
+    // `onError` is the page's setter; the message only matters when the error changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadError]);
 
   const run = async (work: () => Promise<unknown>, done: string) => {
     onError();
@@ -48,7 +48,7 @@ export function MySkills({
     } catch (e) {
       onError(errorMessage(e));
     }
-    await reload();
+    await qc.invalidateQueries({ queryKey: ["skills", "list"] });
   };
 
   return (

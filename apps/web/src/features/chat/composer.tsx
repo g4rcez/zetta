@@ -17,7 +17,7 @@ import {
   ArrowUpIcon,
   AtIcon,
   TextBIcon,
-  BookOpenIcon,
+  BrainIcon,
   CodeIcon,
   EyeIcon,
   FolderOpenIcon,
@@ -42,6 +42,7 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@zetta/ui/components/input-group";
 import { Button } from "@zetta/ui/components/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
+import { useQueryClient } from "@tanstack/react-query";
 import { Separator } from "@zetta/ui/components/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
@@ -54,11 +55,11 @@ import {
   uploadImage,
   type Attachment as Attached,
   type Bot,
-  call,
-  chatClient,
 } from "./chat-client";
 import { matchTrigger } from "./triggers";
 import { useMention } from "./mention";
+import { chatQueries } from "./chat-queries";
+import { wikiQueries } from "../wiki/wiki-api";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Editor } from "@/components/editor/editor";
 import { BotIdentity, BotsContext } from "@/components/bot-identity";
@@ -164,6 +165,7 @@ export function Composer({
   /** The message the next send replies to in this channel (not a thread): shown as a chip, and the cursor moves into the box when it changes. */
   replyTo?: { id: string; name: string; excerpt: string; onCancel: () => void } | undefined;
 }) {
+  const qc = useQueryClient();
   const input = useRef<EditorView>(null);
   const file = useRef<HTMLInputElement>(null);
   const [attached, setAttached] = useState<Attached[]>([]);
@@ -305,15 +307,15 @@ export function Composer({
       skillsAsked.current = true;
       void Promise.all(
         skillBots.map((id) =>
-          chatClient
-            .botSkills(id)
+          qc
+            .fetchQuery(chatQueries.skills(id))
             .then((l) => l.map((k) => ({ botId: id, ...k })))
             .catch(() => []),
         ),
       ).then((l) => setSkillLib(l.flat()));
     }
     if (s && !library && chosen.length < MAX_PICKED)
-      void call<{ pages: WikiItem[]; shared: WikiItem[] }>("/api/wiki").then(
+      void qc.fetchQuery(wikiQueries.index()).then(
         (r) =>
           setLibrary(
             [...r.pages, ...r.shared]
@@ -473,7 +475,7 @@ export function Composer({
       {slash && (library || skillLib) && (
         <ul
           role="listbox"
-          aria-label="Use a skill or follow a wiki item"
+          aria-label="Use a skill or follow a memory item"
           className="absolute bottom-full left-0 z-20 mb-1 w-80 overflow-hidden rounded-lg border bg-popover p-1 shadow-md"
         >
           {candidates.length === 0 && (
@@ -481,11 +483,11 @@ export function Composer({
               {!skillLib?.length && library?.length === 0 ? "Nothing to pick yet. " : "No match."}
               {!skillLib?.length && library?.length === 0 && (
                 <Link
-                  to="/wiki"
+                  to="/memory"
                   onMouseDown={(e) => e.preventDefault()}
                   className="underline hover:text-foreground"
                 >
-                  Create a wiki item
+                  Create a memory item
                 </Link>
               )}
             </li>
@@ -499,9 +501,9 @@ export function Composer({
                 >
                   {c.kind === "wiki" ? (
                     <>
-                      Wiki
+                      Memory
                       <Link
-                        to="/wiki"
+                        to="/memory"
                         onMouseDown={(e) => e.preventDefault()}
                         className="underline hover:text-foreground"
                       >
@@ -529,7 +531,7 @@ export function Composer({
                 )}
               >
                 {c.kind === "wiki" ? (
-                  <BookOpenIcon className="size-4 shrink-0" />
+                  <BrainIcon className="size-4 shrink-0" />
                 ) : (
                   <LightningIcon className="size-4 shrink-0" />
                 )}
@@ -660,7 +662,7 @@ export function Composer({
                     title={c.kind === "wiki" ? c.item.howto : c.description}
                   >
                     <AttachmentMedia>
-                      {c.kind === "wiki" ? <BookOpenIcon /> : <LightningIcon />}
+                      {c.kind === "wiki" ? <BrainIcon /> : <LightningIcon />}
                     </AttachmentMedia>
                     <AttachmentContent>
                       <AttachmentTitle className="flex max-w-40 items-center gap-1 truncate">
@@ -755,8 +757,8 @@ export function Composer({
                 }}
               />
               {wiki && (
-                <Tool label="Use a wiki item (/)" onClick={openPicker}>
-                  <BookOpenIcon />
+                <Tool label="Use a memory item (/)" onClick={openPicker}>
+                  <BrainIcon />
                 </Tool>
               )}
               <Popover

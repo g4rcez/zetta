@@ -1,0 +1,136 @@
+# Several servers behind one load balancer: `docker compose -f docker-compose.scale.yml up --build --scale api=2`.
+# api instances serve reads, events and auth; the one worker runs turns, schedulers, recovery and the sweeps of its own containers.
+# See docs/operations/scaling.md before using it: what is shared, what stays single-owner, and what is not covered yet.
+name: zetta-scale
+
+x-server: &server
+  build:
+    context: .
+    dockerfile: apps/server/Dockerfile
+    secrets:
+      - web_env
+      - server_env
+  init: true
+  env_file:
+    - path: apps/server/.env
+      required: false
+  environment: &server-env
+    CORS_ORIGIN: http://localhost:3001
+    ZETTA_HOST: 0.0.0.0
+    DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/zetta
+    # Events and worker kicks cross instances over Postgres NOTIFY.
+    ZETTA_EVENT_BUS: pg
+    # The sign-in limit is counted in the database, so it is per client and not per server.
+    ZETTA_AUTH_RATE_LIMIT_STORAGE: database
+    # The balancer adds the client address as the last entry of this header (the auth rate limiter counts it).
+    ZETTA_TRUSTED_IP_HEADER: x-forwarded-for
+    # Every instance sees the same files: one volume at the same paths.
+    ZETTA_FILES_ROOT: /srv/zetta/files
+    ZETTA_ATTACHMENTS_ROOT: /srv/zetta/attachments
+    ZETTA_ARTIFACTS_ROOT: /srv/zetta/artifacts
+  volumes:
+    - zetta_data:/srv/zetta
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  lb:
+    image: caddy:2
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./docker/scale/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - api
+      - worker
+    restart: unless-stopped
+
+  api:
+    <<: *server
+    environment:
+      <<: *server-env
+      ZETTA_ROLE: api
+      # Connections per instance: see the budget in docs/operations/scaling.md.
+      ZETTA_DB_POOL_MAX: "10"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "fetch('http://localhost:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    <<: *server
+    environment:
+      <<: *server-env
+      ZETTA_ROLE: worker
+      ZETTA_DB_POOL_MAX: "20"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "fetch('http://localhost:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      secrets:
+        - web_env
+        - server_env
+      args:
+        # The browser talks to the balancer, never to one instance.
+        VITE_SERVER_URL: http://localhost:3000
+    init: true
+    ports:
+      - "3001:80"
+    env_file:
+      - path: apps/web/.env
+        required: false
+    depends_on:
+      - lb
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg18-trixie
+    environment:
+      POSTGRES_DB: zetta
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+    # Two api (10 each + 1 listener each) + worker (20 + 1 + up to 20 for bot databases) + admin: raise the default of 100 with room.
+    command: ["postgres", "-c", "max_connections=200"]
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - zetta_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  zetta_postgres_data:
+  zetta_data:
+
+secrets:
+  web_env:
+    file: apps/web/.env
+  server_env:
+    file: apps/server/.env

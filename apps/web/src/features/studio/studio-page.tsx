@@ -8,14 +8,18 @@ import {
   PlugIcon,
   SignpostIcon,
   UsersIcon,
+  SquaresFourIcon,
   type Icon,
 } from "@phosphor-icons/react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Suspense, lazy, useRef, useState } from "react";
 
-import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { type Bot } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { Loading } from "../shared/ui";
 import { isRailTab, isStudioTab, studioTabs } from "./studio-tabs";
+import { useLoadError } from "./studio-queries";
 import { Alert } from "@g4rcez/components/alert";
 
 // Each tab is its own chunk: opening Studio no longer downloads every tab (the workflow canvas alone pulls in @xyflow/react).
@@ -24,6 +28,7 @@ const Activity = lazy(() => import("./activity").then((m) => ({ default: m.Activ
 const Attention = lazy(() => import("./attention").then((m) => ({ default: m.Attention })));
 const Computer = lazy(() => import("./computer").then((m) => ({ default: m.Computer })));
 const Decisions = lazy(() => import("./decisions").then((m) => ({ default: m.Decisions })));
+const Overview = lazy(() => import("./overview").then((m) => ({ default: m.Overview })));
 const Plugins = lazy(() => import("./plugins").then((m) => ({ default: m.Plugins })));
 const Snapshots = lazy(() => import("./snapshots").then((m) => ({ default: m.Snapshots })));
 const Workflows = lazy(() => import("./workflows").then((m) => ({ default: m.Workflows })));
@@ -34,6 +39,7 @@ const OutputStyles = lazy(() =>
 const tabs = studioTabs.filter((t) => !isRailTab(t.slug)).map((t) => t.label);
 type Tab = (typeof studioTabs)[number]["label"];
 const ICON: Record<Tab, Icon> = {
+  Overview: SquaresFourIcon,
   Inbox: TrayIcon,
   "Output styles": ChatTeardropTextIcon,
   Workflows: GitBranchIcon,
@@ -44,31 +50,18 @@ const ICON: Record<Tab, Icon> = {
   "Team snapshots": UsersIcon,
   Activity: ActivityIcon,
 };
-const BLURB: Record<Tab, string> = {
-  Plugins: "Connect tools and MCP servers, then choose which bots may use them.",
-  Inbox: "Things that need you, with the actions to deal with them.",
-  "Output styles": "How your bots write: tone of voice templates you can share.",
-  Workflows: "Chain steps across bots and sources.",
-  Decisions: "How messages are routed.",
-  Accounts: "Engines and provider keys.",
-  Computer: "Browser and desktop sessions.",
-  "Team snapshots": "Read-only copies shared with your team.",
-  Activity: "A privacy-safe trail of what happened.",
-};
+const NO_BOTS: Bot[] = [];
 
 export function StudioPage() {
   const { tab: slug } = useParams({ from: "/_auth/studio/$tab" });
   const navigate = useNavigate();
-  const tab: Tab = (studioTabs.find((t) => t.slug === slug) ?? studioTabs[0]).label;
-  const [bots, setBots] = useState<Bot[]>([]);
+  const current = studioTabs.find((t) => t.slug === slug) ?? studioTabs[0];
+  const tab: Tab = current.label;
+  const { data, error: botsError } = useQuery(chatQueries.bots());
+  const bots = data ?? NO_BOTS;
   const [error, setError] = useState<string>();
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  useEffect(() => {
-    chatClient
-      .bots()
-      .then(setBots)
-      .catch((e) => setError(errorMessage(e)));
-  }, []);
+  useLoadError(botsError, setError);
   const select = (t: Tab) => {
     setError(undefined);
     const next = studioTabs.find((x) => x.label === t)!.slug;
@@ -90,7 +83,6 @@ export function StudioPage() {
     select(tabs[to]!);
     tabRefs.current[to]?.focus();
   };
-  const Current = ICON[tab];
   // The plugin catalog is a full-width page: no section nav, no width cap.
   const full = tab === "Plugins";
   return (
@@ -137,17 +129,9 @@ export function StudioPage() {
           </div>
         </nav>
         <div className="min-w-0 space-y-6">
-          <header className="flex items-start gap-3 border-b pb-5">
-            <span
-              aria-hidden="true"
-              className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"
-            >
-              <Current className="size-5" />
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-2xl text-balance">{tab}</h2>
-              <p className="text-sm text-pretty text-muted-foreground">{BLURB[tab]}</p>
-            </div>
+          <header>
+            <h2 className="text-2xl text-balance">{tab}</h2>
+            <p className="text-sm text-pretty text-muted-foreground">{current.blurb}</p>
           </header>
           {error && <Alert theme="danger">{error}</Alert>}
           <div
@@ -158,6 +142,7 @@ export function StudioPage() {
             className="min-w-0"
           >
             <Suspense fallback={<Loading />}>
+              {tab === "Overview" && <Overview onError={setError} />}
               {tab === "Inbox" && <Attention bots={bots} onError={setError} />}
               {tab === "Output styles" && <OutputStyles onError={setError} />}
               {tab === "Workflows" && <Workflows bots={bots} onError={setError} />}

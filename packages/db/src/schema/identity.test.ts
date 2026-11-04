@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { getTableName } from "drizzle-orm";
 import { getTableConfig, PgDialect, type PgTable } from "drizzle-orm/pg-core";
 
+import { user } from "./auth";
 import { identityAudit, installationIdentity, invitation, membership } from "./identity";
 import * as schema from "./index";
 
@@ -209,6 +210,12 @@ describe("identity schema definitions (metadata, not PostgreSQL enforcement)", (
         '"zetta"."invitation"."expires_at" > "zetta"."invitation"."created_at"',
       invitation_consumption_check:
         '("zetta"."invitation"."consumed_at" is null) = ("zetta"."invitation"."consumed_by_user_id" is null)',
+    });
+  });
+
+  test("user email must be stored in lower case", () => {
+    expect(checks(user)).toEqual({
+      user_email_canonical_check: '"zetta"."user"."email" = lower("zetta"."user"."email")',
     });
   });
 

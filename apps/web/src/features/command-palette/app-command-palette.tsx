@@ -1,3 +1,4 @@
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { CommandPalette, type CommandItemTypes } from "@g4rcez/components";
@@ -23,14 +24,16 @@ import { BotAvatar } from "@/components/bot-avatar";
 import { appLinks } from "@/components/app-links";
 import { useTheme } from "@/components/theme-provider";
 
-import { chatClient, type Bot, type Conversation } from "../chat/chat-client";
+import type { Bot } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import {
   hitTarget,
   KIND_LABEL,
   plainSnippet,
-  searchApi,
+  searchQueries,
   type SearchHit,
 } from "../search/search-api";
+import { useDebounced } from "../search/use-debounced";
 import { isRailTab, studioTabs, type StudioTab } from "../studio/studio-tabs";
 
 /**
@@ -40,6 +43,7 @@ import { isRailTab, studioTabs, type StudioTab } from "../studio/studio-tabs";
  */
 type Action = Extract<CommandItemTypes, { type: "shortcut" }>["action"];
 
+const NO_HITS: SearchHit[] = [];
 const RECENT = 8; // conversations listed before typing; searching looks through all of them
 const isMac = () => /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
 const icon = (Icon: PhosphorIcon) => <Icon className="size-4" aria-hidden="true" />;
@@ -62,30 +66,19 @@ export function AppCommandPalette({
 }) {
   const navigate = useNavigate();
   const { resolvedTheme, setTheme } = useTheme();
-  const [data, setData] = useState<{ bots: Bot[]; chats: Conversation[] }>();
+  const qc = useQueryClient();
   const [text, setText] = useState("");
-  const [hits, setHits] = useState<SearchHit[]>([]);
   const searching = text.trim() !== "";
 
-  // Server search over everything the user owns, once they stop typing. Results of an older query are dropped.
-  useEffect(() => {
-    const q = text.trim();
-    if (!open || q.length < 2) {
-      setHits([]);
-      return;
-    }
-    let live = true;
-    const t = setTimeout(() => {
-      searchApi.search(q, 12).then(
-        (h) => live && setHits(h),
-        () => live && setHits([]),
-      );
-    }, 250);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-  }, [open, text]);
+  // Server search over everything the user owns, once they stop typing. The old results stay until the new ones come.
+  const q = useDebounced(text.trim(), 250);
+  const searchOn = open && q.length >= 2;
+  const found = useQuery({
+    ...searchQueries.hits(q, 12),
+    enabled: searchOn,
+    placeholderData: keepPreviousData,
+  });
+  const hits = searchOn ? (found.data ?? NO_HITS) : NO_HITS;
 
   // The library's own Mod+K binding ignores inputs and textareas; this one also works from the chat composer and closes the palette.
   useEffect(() => {
@@ -105,26 +98,17 @@ export function AppCommandPalette({
     return () => window.removeEventListener("keydown", onKey, { capture: true });
   }, [open, onOpenChange]);
 
-  // Bots and conversations load once up front (so per-bot hotkeys work before the first open) and refresh on every open;
-  // the previous list stays visible meanwhile.
-  const load = open || data === undefined;
+  // Bots and conversations load once up front (so per-bot hotkeys work before the first open) and load again on every open
+  // when they are older than the query's stale time; the previous list stays visible meanwhile.
+  const botsQuery = useQuery(chatQueries.bots());
+  const chatsQuery = useQuery(chatQueries.conversations());
   useEffect(() => {
-    if (!load) return;
-    let live = true;
-    // A failed list keeps what was loaded before, so one failing endpoint doesn't empty the other group.
-    void Promise.allSettled([chatClient.bots(), chatClient.conversations()]).then(
-      ([bots, chats]) => {
-        if (!live) return;
-        setData((d) => ({
-          bots: bots.status === "fulfilled" ? bots.value : (d?.bots ?? []),
-          chats: chats.status === "fulfilled" ? chats.value : (d?.chats ?? []),
-        }));
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [load]);
+    if (!open) return;
+    void qc.prefetchQuery(chatQueries.bots());
+    void qc.prefetchQuery(chatQueries.conversations());
+  }, [open, qc]);
+  const botRows = botsQuery.data;
+  const chatRows = chatsQuery.data;
 
   const commands = useMemo((): CommandItemTypes[] => {
     const go =
@@ -133,10 +117,10 @@ export function AppCommandPalette({
         setOpen(false);
         void to();
       };
-    const bots = [...(data?.bots ?? [])].sort(
+    const bots = [...(botRows ?? [])].sort(
       (a, b) => Number(b.kind === "chief") - Number(a.kind === "chief"),
     );
-    const chats = (data?.chats ?? [])
+    const chats = (chatRows ?? [])
       .filter((c) => !c.kind || c.kind === "chat")
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     const botName = new Map(bots.map((b) => [b.id, b.name]));
@@ -324,12 +308,12 @@ export function AppCommandPalette({
         ],
       },
     ];
-  }, [data, searching, text, hits, navigate, resolvedTheme, setTheme]);
+  }, [botRows, chatRows, searching, text, hits, navigate, resolvedTheme, setTheme]);
 
   return (
     <CommandPalette
       open={open}
-      loading={open && !data}
+      loading={open && (botsQuery.isPending || chatsQuery.isPending)}
       commands={commands}
       onChangeVisibility={onOpenChange}
       onChangeText={setText}

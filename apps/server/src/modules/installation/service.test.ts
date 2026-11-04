@@ -19,8 +19,18 @@ function fakeDb(row?: Record<string, unknown>) {
 }
 
 describe("installation service", () => {
-  test("Laya is off when nothing is saved", async () => {
-    expect((await createInstallationService(fakeDb()).load()).laya).toBe("off");
+  test("Laya is on when nothing is saved", async () => {
+    expect((await createInstallationService(fakeDb()).load()).laya).toBe("on");
+  });
+  test("a saved choice is kept: an administrator who turned Laya off keeps it off", async () => {
+    const saved = {
+      networkMode: "local",
+      publicUrl: null,
+      onboarding: "done",
+      laya: "off",
+      layaLanguages: ["en"],
+    };
+    expect((await createInstallationService(fakeDb(saved)).load()).laya).toBe("off");
   });
   test("turning Laya on is saved and announced once", async () => {
     const seen: string[] = [];

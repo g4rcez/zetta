@@ -15,16 +15,19 @@ import {
   TableIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { BotIdentity } from "@/components/bot-identity";
-import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { errorMessage, type Bot } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { Badge, ConfirmButton, Empty, field, list, listItem } from "../shared/ui";
 import {
   ago,
   ARTIFACT_KINDS,
   artifactsApi,
+  artifactsQueries,
   formatSize,
   kindLabel,
   type Artifact,
@@ -36,6 +39,9 @@ import {
 import { groupVersions } from "./versions";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
+
+const NO_BOTS: Bot[] = [];
+const NO_ARTIFACTS: Artifact[] = [];
 
 export const KIND_ICON: Record<ArtifactKind, PhosphorIcon> = {
   html: GlobeIcon,
@@ -55,35 +61,26 @@ export const KIND_ICON: Record<ArtifactKind, PhosphorIcon> = {
 /** Everything the bots delivered. The list never loads file content: a row opens the preview page. */
 export function ArtifactsPage({ filter }: { filter: ArtifactFilter }) {
   const navigate = useNavigate();
-  const [rows, setRows] = useState<Artifact[]>();
-  const [bots, setBots] = useState<Bot[]>([]);
+  const qc = useQueryClient();
   const [q, setQ] = useState(filter.q ?? "");
-  const [usage, setUsage] = useState<ArtifactUsage>();
   const [manage, setManage] = useState(Boolean(filter.sort));
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const { bot, kind, sort } = filter;
   const search = filter.q ?? "";
 
+  const bots = useQuery(chatQueries.bots()).data ?? NO_BOTS;
+  const listQuery = useQuery({
+    ...artifactsQueries.list({ bot, kind, q: search, sort }),
+    // A new filter keeps the old rows on screen until the new ones arrive.
+    placeholderData: keepPreviousData,
+  });
+  const rows = listQuery.data ?? (listQuery.isError ? NO_ARTIFACTS : undefined);
+  const listError = listQuery.error;
   useEffect(() => {
-    chatClient.bots().then(setBots, () => {});
-  }, []);
-  useEffect(() => {
-    let live = true;
-    artifactsApi.list({ bot, kind, q: search, sort }).then(
-      (r) => live && setRows(r),
-      (e) => {
-        if (live) {
-          setRows([]);
-          toast.error(errorMessage(e));
-        }
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [bot, kind, search, sort]);
-  const loadUsage = () => void artifactsApi.usage().then(setUsage, () => {});
-  useEffect(loadUsage, []);
+    if (listError) toast.error(errorMessage(listError), { id: "artifacts-load" });
+  }, [listError]);
+  const usage = useQuery(artifactsQueries.usage()).data;
+  const listKey = artifactsQueries.list({ bot, kind, q: search, sort }).queryKey;
 
   const set = (next: ArtifactFilter) =>
     void navigate({ to: "/artifacts", search: { ...filter, ...next }, replace: true });
@@ -96,14 +93,17 @@ export function ArtifactsPage({ filter }: { filter: ArtifactFilter }) {
   }, [q]);
   const pin = (a: Artifact) =>
     artifactsApi.pin(a.id, !a.pinnedAt).then(
-      (u) => setRows((all) => all?.map((x) => (x.id === u.id ? u : x))),
+      (u) => {
+        qc.setQueryData<Artifact[]>(listKey, (all) => all?.map((x) => (x.id === u.id ? u : x)));
+        void qc.invalidateQueries({ queryKey: ["artifacts"] });
+      },
       (e) => void toast.error(errorMessage(e)),
     );
   const remove = (a: Artifact) =>
     artifactsApi.remove(a.id).then(
       () => {
-        setRows((all) => all?.filter((x) => x.id !== a.id));
-        loadUsage();
+        qc.setQueryData<Artifact[]>(listKey, (all) => all?.filter((x) => x.id !== a.id));
+        void qc.invalidateQueries({ queryKey: ["artifacts"] });
       },
       (e) => void toast.error(errorMessage(e)),
     );

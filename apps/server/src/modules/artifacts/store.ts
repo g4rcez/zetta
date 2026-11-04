@@ -15,7 +15,7 @@ import {
 } from "./storage";
 
 export type Artifact = typeof artifact.$inferSelect;
-export type ArtifactSource = { path: string; workspace: string } | { content: string };
+export type ArtifactSource = { path: string; codeDir: string } | { content: string };
 export type PublishInput = {
   title: string;
   description?: string | undefined;
@@ -105,7 +105,7 @@ export function createArtifactStore(db: Database, root?: string) {
     async publish(a: ActiveActor, v: PublishInput, origin: ArtifactOrigin = {}) {
       const saved =
         "path" in v.source
-          ? await savePath(a.userId, v.source.path, v.source.workspace, root)
+          ? await savePath(a.userId, v.source.path, v.source.codeDir, root)
           : { ...(await saveContent(a.userId, v.source.content, root)), fileName: "" };
       const unlink = async () => {
         const [other] = await db

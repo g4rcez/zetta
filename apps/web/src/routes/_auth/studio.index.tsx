@@ -8,7 +8,7 @@ export const Route = createFileRoute("/_auth/studio/")({
       throw redirect({ to: "/routines", search: { routine: search.routine }, replace: true });
     throw redirect({
       to: "/studio/$tab",
-      params: { tab: "plugin" in search ? "plugins" : "output-styles" },
+      params: { tab: "plugin" in search ? "plugins" : "overview" },
       search,
       replace: true,
     });

@@ -1,5 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotIdentity } from "@/components/bot-identity";
@@ -9,9 +10,9 @@ import { formatDateTime } from "@/features/preferences/time-format";
 import { ago } from "../artifacts/artifacts-api";
 import { ApiError, call } from "../chat/chat-client";
 import { Badge, Empty, Loading } from "../shared/ui";
-import { RailSection } from "./rail-section";
+import { Fold } from "./fold";
 import { useAction } from "./use-action";
-import { path, type Bot, type Brief, type Checks, type Problem } from "./wiki-api";
+import { path, wikiQueries, type Bot, type Brief, type Checks, type Problem } from "./wiki-api";
 import { savedSlugs } from "./wiki-health";
 
 const SHOWN = 6;
@@ -62,7 +63,7 @@ const Row = ({ children }: { children: ReactNode }) => (
 );
 const itemLink = (b: Brief) => (
   <Link
-    to="/wiki/$slug"
+    to="/memory/$slug"
     params={{ slug: b.slug }}
     className="line-clamp-2 break-words hover:underline"
   >
@@ -116,7 +117,7 @@ function JobRow({ job: j, bots }: { job: Checks["jobs"][number]; bots: Bot[] | u
           {slugs.map((s, i) => (
             <span key={s}>
               {i > 0 && ", "}
-              <Link to="/wiki/$slug" params={{ slug: s }} className="hover:underline">
+              <Link to="/memory/$slug" params={{ slug: s }} className="hover:underline">
                 {s}
               </Link>
             </span>
@@ -142,52 +143,38 @@ function JobRow({ job: j, bots }: { job: Checks["jobs"][number]; bots: Bot[] | u
 
 /** What needs work in the wiki, grouped by problem, with a button for each fix, and what the background jobs changed. */
 export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
-  const [data, setData] = useState<Checks>();
-  const [failed, setFailed] = useState(false);
-  const load = useCallback(
-    () =>
-      call<Checks>("/api/wiki-checks").then(
-        (d) => {
-          setData(d);
-          setFailed(false);
-        },
-        () => setFailed(true),
-      ),
-    [],
-  );
-  const { run, feedback } = useAction(load);
-  useEffect(() => {
-    void load();
-  }, [load]);
   // While the chief works the panel follows: the groups shrink as items are fixed, and the job ends here.
-  const busy = data?.jobs.some((j) => j.kind === "review" && ACTIVE.includes(j.status)) ?? false;
-  useEffect(() => {
-    if (!busy) return;
-    const id = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(id);
-  }, [busy, load]);
+  const working = (d: Checks | undefined) =>
+    d?.jobs.some((j) => j.kind === "review" && ACTIVE.includes(j.status)) ?? false;
+  const checks = useQuery({
+    ...wikiQueries.checks(),
+    refetchInterval: (q) => (working(q.state.data) ? POLL_MS : false),
+  });
+  const data = checks.data;
+  const failed = checks.isError;
+  const { run, feedback } = useAction();
   if (failed && !data)
     return (
-      <RailSection title="Needs work" label="Wiki health">
+      <Fold title="Needs work">
         <p role="alert" className="text-sm text-destructive">
           The checks could not load.{" "}
-          <Button size="xs" variant="outline" onClick={() => void load()}>
+          <Button size="xs" variant="outline" onClick={() => void checks.refetch()}>
             Try again
           </Button>
         </p>
-      </RailSection>
+      </Fold>
     );
   if (!data)
     return (
-      <RailSection title="Needs work" label="Wiki health">
+      <Fold title="Needs work">
         <Loading />
-      </RailSection>
+      </Fold>
     );
   const c = data.checks;
   const total =
     c.brokenLinks.length + c.stale.length + c.old.length + c.unlinked.length + c.unsourced.length;
   const chief = bots?.find((b) => b.kind === "chief");
-  const working = (p: Problem) =>
+  const workingOn = (p: Problem) =>
     data.jobs.some((j) => j.kind === "review" && j.problem === p && ACTIVE.includes(j.status));
   const ask = (problem: Problem) =>
     run(
@@ -207,12 +194,12 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
     <Button
       size="xs"
       variant="outline"
-      disabled={working(problem)}
+      disabled={workingOn(problem)}
       onClick={() => void ask(problem)}
       className="shrink-0"
     >
       {chief && <BotAvatar bot={chief} size={16} />}
-      {working(problem) ? "Working…" : label}
+      {workingOn(problem) ? "Working…" : label}
     </Button>
   );
   const fixLabel = `Ask ${chief?.name ?? "the chief"} to fix`;
@@ -220,13 +207,14 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
     run(() => call(path(slug), "PATCH", { status }), done);
   const small = "shrink-0";
   return (
-    <RailSection
-      title="Needs work"
-      label="Wiki health"
-      count={total}
-      description="Items your bots or the checks flagged. Fix one here, or ask your chief to fix a whole group."
-      action={total > 0 ? fix("all", `${fixLabel} all`) : undefined}
-    >
+    <Fold title="Needs work" count={total}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-pretty text-muted-foreground">
+          Items your bots or the checks flagged. Fix one here, or ask your chief to fix a whole
+          group.
+        </p>
+        {total > 0 && fix("all", `${fixLabel} all`)}
+      </div>
       {total === 0 && <Empty>Nothing to fix.</Empty>}
       <Group
         title="Links to missing items"
@@ -237,21 +225,21 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
         {c.brokenLinks.slice(0, SHOWN).map((l) => (
           <Row key={`${l.slug}:${l.target}`}>
             <span className="line-clamp-2 break-words">
-              <Link to="/wiki/$slug" params={{ slug: l.slug }} className="hover:underline">
+              <Link to="/memory/$slug" params={{ slug: l.slug }} className="hover:underline">
                 {l.slug}
               </Link>{" "}
               → [[{l.target}]]
             </span>
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <Link
-                to="/wiki"
+                to="/memory"
                 search={{ create: l.target } as never}
                 className={`${small} text-xs underline`}
               >
                 Create it
               </Link>
               <Link
-                to="/wiki/$slug"
+                to="/memory/$slug"
                 params={{ slug: l.slug }}
                 search={{ edit: "1", assist: "links" } as never}
                 className={`${small} text-xs underline`}
@@ -280,7 +268,7 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
                 Still true
               </Button>
               <Link
-                to="/wiki/$slug"
+                to="/memory/$slug"
                 params={{ slug: b.slug }}
                 search={{ edit: "1", assist: "tidy" } as never}
                 className={`${small} text-xs underline`}
@@ -309,7 +297,7 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
                 Mark stale
               </Button>
               <Link
-                to="/wiki/$slug"
+                to="/memory/$slug"
                 params={{ slug: b.slug }}
                 search={{ edit: "1", assist: "tidy" } as never}
                 className={`${small} text-xs underline`}
@@ -330,7 +318,7 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
           <Row key={b.slug}>
             {itemLink(b)}
             <Link
-              to="/wiki/$slug"
+              to="/memory/$slug"
               params={{ slug: b.slug }}
               search={{ edit: "1", assist: "links" } as never}
               className={`${small} text-xs underline`}
@@ -367,6 +355,6 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
         </p>
       )}
       {feedback}
-    </RailSection>
+    </Fold>
   );
 }

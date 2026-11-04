@@ -162,6 +162,14 @@ const BY_CODE: Record<string, Entry> = {
     why: "It could not be found.",
     fix: "It may have been removed. Check Studio and ask the bot again.",
   },
+  HOST_KEY_CHANGED: {
+    why: "The machine showed a different host key than the one saved for it. That can mean the machine was rebuilt, or that something is pretending to be it.",
+    fix: "Check with whoever runs the machine. If the change is expected, delete the machine in Studio > Computer and add it again to trust the new key.",
+  },
+  AUTH_FAILED: {
+    why: "The machine refused the saved key or password.",
+    fix: "Open Studio > Computer, replace the key or password of the machine, and check the user name.",
+  },
   CANCELLED: { why: "The action was cancelled.", fix: "Ask the bot again if you still want it." },
   REVOKED: {
     why: "Access to it was taken away.",

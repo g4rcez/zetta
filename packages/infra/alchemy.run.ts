@@ -13,6 +13,8 @@ export default Alchemy.Stack(
     const serverDev = yield* Command.Dev("server-dev", {
       command: "bun run dev:bare",
       cwd: "../../apps/server",
+      // The web dev server owns :3000 and proxies /api here (apps/web/vite.config.ts).
+      env: { PORT: "6000" },
     });
 
     return { server: serverDev.url };

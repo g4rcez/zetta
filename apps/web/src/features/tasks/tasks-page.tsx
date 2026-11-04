@@ -7,7 +7,9 @@ import {
   ListIcon,
   PlusIcon,
   TrashIcon,
+  UserCircleIcon,
 } from "@phosphor-icons/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type DragEvent } from "react";
 import { toast } from "sonner";
 import {
@@ -18,7 +20,9 @@ import {
 } from "@zetta/ui/components/dropdown-menu";
 import { Button, Input } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
-import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { authClient } from "@/lib/auth-client";
+import { errorMessage, type Bot } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { relativeTime } from "../studio/routine-format";
 import { LabelChips, PriorityIcon } from "./task-badges";
 import { GROUP_OPTIONS, Segmented, TaskFilterBar } from "./task-filter-bar";
@@ -35,7 +39,10 @@ import {
 } from "./task-filters";
 import { GroupIcon, openOnClick, TaskList, TaskTitleLink } from "./task-list";
 import { TaskPeek } from "./task-peek";
-import { TASK_COLUMNS, tasksApi, type Task, type TaskStatus } from "./tasks-api";
+import { TASK_COLUMNS, tasksApi, tasksQueries, type Task, type TaskStatus } from "./tasks-api";
+
+const NO_TASKS: Task[] = [];
+const NO_BOTS: Bot[] = [];
 
 const LAYOUTS: { value: TaskLayout; label: string; icon: React.ReactNode }[] = [
   { value: "board", label: "Board", icon: <KanbanIcon aria-hidden className="size-4" /> },
@@ -50,46 +57,56 @@ export function TasksPage({
   search: TaskSearch;
   onSearch: (next: TaskSearch) => void;
 }) {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [bots, setBots] = useState<Bot[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const qc = useQueryClient();
+  const tasksQuery = useQuery(tasksQueries.list());
+  const botsQuery = useQuery(chatQueries.bots());
+  const tasks = tasksQuery.data ?? NO_TASKS;
+  const bots = botsQuery.data ?? NO_BOTS;
+  const loaded = !tasksQuery.isPending;
+  const setTasks = (next: (all: Task[]) => Task[]) =>
+    qc.setQueryData<Task[]>(tasksQueries.list().queryKey, (all) => next(all ?? []));
   const [title, setTitle] = useState("");
   const [over, setOver] = useState<TaskStatus>();
   const [adding, setAdding] = useState<TaskStatus>();
+  const viewerId = authClient.useSession().data?.user.id;
   // The router keeps raw URL keys that `validateSearch` leaves out, so read the search through the parser again.
   const state: TaskState = { ...DEFAULT_STATE, ...parseTaskSearch(search) };
   const setState = (next: TaskState) => onSearch(toTaskSearch(next));
   const now = Date.now();
-  const visible = applyFilters(tasks, state, now);
+  const visible = applyFilters(tasks, state, now, viewerId);
   const groups = groupTasks(visible, state.groupBy, bots, state.statuses);
   const byStatus = state.groupBy === "status";
   const knownLabels = [...new Set(tasks.flatMap((t) => t.labels))].sort();
   const fail = (e: unknown) => toast.error(errorMessage(e));
 
+  const loadError = tasksQuery.error;
   useEffect(() => {
-    tasksApi
-      .list()
-      .then(setTasks, fail)
-      .finally(() => setLoaded(true));
-    chatClient.bots().then(setBots, () => {});
-  }, []);
+    if (loadError) toast.error(errorMessage(loadError), { id: "tasks-load" });
+  }, [loadError]);
+  const settled = () => void qc.invalidateQueries({ queryKey: ["tasks"] });
 
   const move = (id: string, status: TaskStatus) => {
     const before = tasks;
     if (before.find((t) => t.id === id)?.status === status) return;
     setTasks((all) => all.map((t) => (t.id === id ? { ...t, status } : t)));
-    tasksApi.move(id, status).catch((e) => {
-      setTasks(before);
-      fail(e);
-    });
+    tasksApi
+      .move(id, status)
+      .catch((e) => {
+        setTasks(() => before);
+        fail(e);
+      })
+      .finally(settled);
   };
   const remove = (id: string) => {
     const before = tasks;
     setTasks((all) => all.filter((t) => t.id !== id));
-    tasksApi.remove(id).catch((e) => {
-      setTasks(before);
-      fail(e);
-    });
+    tasksApi
+      .remove(id)
+      .catch((e) => {
+        setTasks(() => before);
+        fail(e);
+      })
+      .finally(settled);
   };
   const replace = (saved: Task) =>
     setTasks((all) => all.map((t) => (t.id === saved.id ? saved : t)));
@@ -99,7 +116,10 @@ export function TasksPage({
   const add = (value: string, status?: TaskStatus) => {
     value = value.trim();
     if (!value) return;
-    tasksApi.create(value, status).then((t) => setTasks((all) => [t, ...all]), fail);
+    tasksApi
+      .create(value, status)
+      .then((t) => setTasks((all) => [t, ...all]), fail)
+      .finally(settled);
   };
   const drop = (e: DragEvent, status: TaskStatus) => {
     e.preventDefault();
@@ -248,6 +268,7 @@ export function TasksPage({
                         task={t}
                         now={now}
                         bot={bots.find((b) => b.id === t.botId)}
+                        viewerId={viewerId}
                         draggable={byStatus}
                         selected={t.id === state.task}
                         onOpen={() => open(t.id)}
@@ -284,6 +305,7 @@ function TaskCard({
   task,
   now,
   bot,
+  viewerId,
   draggable,
   selected,
   onOpen,
@@ -293,6 +315,8 @@ function TaskCard({
   task: Task;
   now: number;
   bot: Bot | undefined;
+  /** Who looks at the board. Only the owner deletes a task; a person it is assigned to moves it. */
+  viewerId: string | undefined;
   /** Only on the status board: dropping on a column changes the status. */
   draggable: boolean;
   selected: boolean;
@@ -312,6 +336,14 @@ function TaskCard({
           task={task}
           className="min-w-0 flex-1 break-words font-medium hover:underline"
         />
+        {task.assignee === "person" && (
+          <span
+            title={`Assigned to ${task.assigneeUserId === viewerId ? "you" : (task.assigneeName ?? "a person")}`}
+            className="shrink-0"
+          >
+            <UserCircleIcon aria-hidden className="size-5 text-attention" />
+          </span>
+        )}
         {bot && (
           <span title={bot.name} className="shrink-0">
             <BotAvatar bot={bot} size={20} square />
@@ -330,9 +362,11 @@ function TaskCard({
                 Move to {c.label}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              <TrashIcon /> Delete
-            </DropdownMenuItem>
+            {(!viewerId || task.ownerUserId === viewerId) && (
+              <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                <TrashIcon /> Delete
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

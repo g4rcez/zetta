@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."installation_settings" ALTER COLUMN "laya" SET DEFAULT 'on';

@@ -1,9 +1,11 @@
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useState } from "react";
 
 import { errorMessage } from "../chat/chat-client";
 import { Empty, list, listItem, when } from "../shared/ui";
-import { hitTarget, KIND_LABEL, searchApi, type SearchHit } from "./search-api";
+import { hitTarget, KIND_LABEL, searchQueries } from "./search-api";
+import { useDebounced } from "./use-debounced";
 import { useTimeFormat } from "@/features/preferences/preferences";
 
 /** The snippet with the matched words in <mark>. */
@@ -21,35 +23,19 @@ const Snippet = ({ text }: { text: string }) => (
   </>
 );
 
-/** Full-page search over the user's chats, messages, wiki items (what bots remember too), artifacts and tasks (`/search?q=`). */
+/** Full-page search over the user's chats, messages, memory items (what bots remember too), artifacts and tasks (`/search?q=`). */
 export function SearchPage({ initial }: { initial: string }) {
   const tf = useTimeFormat();
   const [text, setText] = useState(initial);
-  const [hits, setHits] = useState<SearchHit[]>();
-  const [error, setError] = useState<string>();
-  useEffect(() => {
-    const q = text.trim();
-    if (!q) {
-      setHits(undefined);
-      return;
-    }
-    let live = true;
-    const t = setTimeout(() => {
-      setError(undefined);
-      searchApi
-        .search(q, 50)
-        .then((h) => {
-          if (live) setHits(h);
-        })
-        .catch((e) => {
-          if (live) setError(errorMessage(e));
-        });
-    }, 250);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-  }, [text]);
+  const q = useDebounced(text.trim(), 250);
+  // The old results stay on screen while the next ones load.
+  const search = useQuery({
+    ...searchQueries.hits(q, 50),
+    enabled: q !== "",
+    placeholderData: keepPreviousData,
+  });
+  const hits = q ? search.data : undefined;
+  const error = search.isError ? errorMessage(search.error) : undefined;
   return (
     <section aria-label="Search" className="mx-auto w-full max-w-3xl space-y-4 p-4">
       <h1 className="text-xl">Search</h1>
@@ -59,7 +45,7 @@ export function SearchPage({ initial }: { initial: string }) {
         value={text}
         maxLength={200}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Search chats, messages, wiki, tasks and artifacts"
+        placeholder="Search chats, messages, memory, tasks and artifacts"
         aria-label="Search"
         className="w-full rounded-lg border bg-card px-3 py-2 text-sm"
       />

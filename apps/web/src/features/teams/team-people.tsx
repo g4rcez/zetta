@@ -1,31 +1,40 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button, Select } from "@/components/ui";
 
 import { errorMessage } from "../chat/chat-client";
 import { Badge, ConfirmButton, list, listItem, Loading, Panel } from "../shared/ui";
-import { teamsApi, type TeamCandidate, type TeamPerson } from "./teams-api";
+import { teamsApi, teamsQueries, type TeamCandidate, type TeamPerson } from "./teams-api";
+
+const NO_CANDIDATES: TeamCandidate[] = [];
 
 /**
  * The humans of a team. Every person reads all rooms of the team. The owner adds people from the installation's members and
  * removes them. Posting in a room stays with the owner until a later release.
  */
 export function TeamPeoplePanel({ teamId }: { teamId: string }) {
-  const [people, setPeople] = useState<TeamPerson[]>();
-  const [candidates, setCandidates] = useState<TeamCandidate[]>([]);
+  const qc = useQueryClient();
+  const peopleQuery = useQuery(teamsQueries.people(teamId));
+  const candidatesQuery = useQuery(teamsQueries.candidates(teamId));
+  const people = peopleQuery.data;
+  const candidates = candidatesQuery.data ?? NO_CANDIDATES;
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    const [p, c] = await Promise.all([teamsApi.people(teamId), teamsApi.candidates(teamId)]);
-    setPeople(p);
-    setCandidates(c);
-    setPick("");
-  }, [teamId]);
+  const loadError = peopleQuery.error ?? candidatesQuery.error;
   useEffect(() => {
-    load().catch((e) => toast.error(errorMessage(e)));
-  }, [load]);
+    if (loadError) toast.error(errorMessage(loadError), { id: "team-people-load" });
+  }, [loadError]);
+
+  const load = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: teamsQueries.people(teamId).queryKey }),
+      qc.invalidateQueries({ queryKey: teamsQueries.candidates(teamId).queryKey }),
+    ]);
+    setPick("");
+  };
 
   async function change(work: () => Promise<TeamPerson[]>, done: string) {
     setBusy(true);

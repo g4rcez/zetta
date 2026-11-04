@@ -59,6 +59,12 @@ export function parseInboundCard(raw: string): InboundCardData | undefined {
 }
 
 /** Who may start a bot turn through the channel, in words. */
+/** A route's filter comes back from the database with its keys in another order, so it is compared by field, not by its JSON text. */
+export const sameFilter = (a: InboundCardFilter, b: InboundCardFilter) =>
+  a.direct === b.direct &&
+  a.groups === b.groups &&
+  a.chats.length === b.chats.length &&
+  a.chats.every((c, i) => c === b.chats[i]);
 export const reachLabel = (f: InboundCardFilter) =>
   f.chats.length
     ? `only ${f.chats.length} chosen chat${f.chats.length === 1 ? "" : "s"}`

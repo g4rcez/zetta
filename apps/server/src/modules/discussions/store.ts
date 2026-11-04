@@ -28,6 +28,9 @@ import { createBotClaude, skillsOf } from "../bot-claude/store";
 import { visibleTo } from "../wiki/service";
 import { legacyMentions, mentionIds, mentionToken } from "@zetta/core/mentions";
 import { HELP_PREFIX, isIdleChatter, mentionKey, wakeTargets } from "./prompt";
+import { topics } from "@zetta/core/live-topics";
+import { events } from "../events/bus";
+import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
 
 type Bot = typeof bot.$inferSelect;
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -444,7 +447,7 @@ export function createDiscussionStore(
     });
   }
 
-  return {
+  const store = {
     set onEnqueue(fn: (() => void) | undefined) {
       onEnqueue = fn;
     },
@@ -1746,7 +1749,7 @@ export function createDiscussionStore(
     },
     /**
      * Claims the oldest runnable turn: its discussion is open (or it is a wrap-up). Gated turns go to the owner for approval; a spent
-     * budget stalls the discussion. Lane "any": the owner has no other turn running (members share the owner's code workspace).
+     * budget stalls the discussion. Lane "any": the owner has no other turn running (members share the owner's code directory).
      * Lane "user": only turns woken by the person's own post, and they start at once beside running turns, so the person is never
      * kept waiting for a busy bot (the harness limiter still caps the processes).
      */
@@ -1756,6 +1759,9 @@ export function createDiscussionStore(
     ): Promise<Claimed | undefined> {
       for (let i = 0; i < 10; i++) {
         const out = await transaction(db, async (tx): Promise<Claimed | "again" | undefined> => {
+          // One claim at a time across instances: the "one running turn per owner" check below reads rows that a parallel claim could
+          // still be changing. Claims are short, so the wait is not noticed.
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext('zetta:discussion-claim'))`);
           const picked = await tx.execute<{
             id: string;
           }>(sql`select t.id from discussion_turn t join discussion d on d.id = t.discussion_id
@@ -1815,6 +1821,7 @@ export function createDiscussionStore(
             .set({
               status: "running",
               claimedAt: new Date(),
+              ownerInstance: instanceId(),
               attempts: sql`${discussionTurn.attempts} + 1`,
             })
             .where(eq(discussionTurn.id, id))
@@ -1913,14 +1920,16 @@ export function createDiscussionStore(
      * Boot: turns that were running go back to the queue and run again, with no card. A turn that already started `MAX_RESTART_ATTEMPTS`
      * times is interrupted instead (a crash loop), and its room stalls with a card so the owner decides.
      */
-    async recover() {
+    async recover(scope?: RecoveryScope) {
+      const dead = recoverable(discussionTurn.ownerInstance, scope);
       const requeued = await db
         .update(discussionTurn)
-        .set({ status: "queued", reasonCode: null, claimedAt: null })
+        .set({ status: "queued", reasonCode: null, claimedAt: null, ownerInstance: null })
         .where(
           and(
             eq(discussionTurn.status, "running"),
             lt(discussionTurn.attempts, MAX_RESTART_ATTEMPTS),
+            dead,
           ),
         )
         .returning({ id: discussionTurn.id });
@@ -1928,7 +1937,7 @@ export function createDiscussionStore(
       const rows = await db
         .update(discussionTurn)
         .set({ status: "interrupted", reasonCode: "restart", finishedAt: new Date() })
-        .where(eq(discussionTurn.status, "running"))
+        .where(and(eq(discussionTurn.status, "running"), dead))
         .returning();
       for (const id of new Set(rows.map((r) => r.discussionId))) {
         const [d] = await db
@@ -2014,5 +2023,67 @@ export function createDiscussionStore(
       );
     },
   };
+
+  /** Tells the owner and the team readers of a room that it changed (a bot turn moved, a message, the status). */
+  async function roomChanged(id: string) {
+    const [d] = await db
+      .select({ owner: discussion.ownerUserId, teamId: discussion.teamId })
+      .from(discussion)
+      .where(eq(discussion.id, id));
+    if (!d) return;
+    const readers = d.teamId ? (await people.list(d.teamId)).map((p) => p.userId) : [];
+    events.publish(
+      [d.owner, ...readers],
+      topics.discussion(id),
+      topics.rooms,
+      topics.conversations,
+      topics.botStatus,
+    );
+  }
+  type Method = (...args: never[]) => Promise<unknown>;
+  const after = (name: string, notify: (args: unknown[], result: unknown) => unknown) => {
+    const holder = store as unknown as Record<string, Method>;
+    const original = holder[name]!;
+    holder[name] = async function (this: unknown, ...args: never[]) {
+      const result = await original.apply(this, args);
+      try {
+        await notify(args, result);
+      } catch {
+        /* the page falls back to its slow poll */
+      }
+      return result;
+    };
+  };
+  // Methods that take the room id as their second argument, after the actor.
+  for (const name of [
+    "postAsBot",
+    "postAsOwner",
+    "updateContext",
+    "updateContextAsBot",
+    "resolve",
+    "resolveAsBot",
+    "setStatus",
+    "silence",
+    "stopGoals",
+    "remove",
+    "startLoop",
+    "setRequireApproval",
+  ])
+    after(name, (args) => roomChanged(String(args[1])));
+  after("afterReply", (args) => roomChanged((args[0] as Discussion).id));
+  after("claimNext", (_args, claimed) => {
+    if (claimed) return roomChanged((claimed as Claimed).discussion.id);
+  });
+  after("finishTurn", (_args, turn) => {
+    if (turn) return roomChanged((turn as DiscussionTurn).discussionId);
+  });
+  for (const name of ["approveBrief", "declineBrief"])
+    after(name, (_args, turn) => roomChanged((turn as DiscussionTurn).discussionId));
+  // A room opened or requested: the lists change for the actor.
+  for (const name of ["open", "request", "openFromProposal", "redirectMention"])
+    after(name, (args) =>
+      events.publish([(args[0] as ActiveActor).userId], topics.rooms, topics.conversations),
+    );
+  return store;
 }
 export type DiscussionStore = ReturnType<typeof createDiscussionStore>;

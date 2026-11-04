@@ -62,13 +62,13 @@ Initial use cases include:
 
 Bots are autonomous once given the task and access. They do not ask for approval on every ordinary action. They still surface missing information, expired logins, blocked tools, uncertain outcomes, and proposed configuration changes. Autonomy does not mean inventing success or working around access restrictions.
 
-## Users, chiefs and workspaces
+## Users, chiefs and folders
 
 - Each user has a local Zetta login and **one personal chief**. The chief manages orchestration; it is not a shared team chief.
 - **Authentication and authorization are enforced by the Zetta server**, not just used for auditing or UI hiding. External provider logins do not replace Zetta authorization.
 - Bots are team-visible by default and may be private. Shared bot definitions do not share users' conversations, credentials, files or memories.
 - Interactive work uses the requesting user's connections. Routines use their owner's connections. Delegation and visual workflows preserve that execution identity.
-- **Workspaces are visual teams of bots**, with inner groups for sidebar organization. Moving a bot into a workspace does not grant access, transfer ownership, share accounts, or create another chief. Human membership/access is a separate concern.
+- **Folders are visual teams of bots**, with inner groups for sidebar organization. Moving a bot into a folder does not grant access, transfer ownership, share accounts, or create another chief. Human membership/access is a separate concern.
 - There is one installation admin. Administrative duties do not imply unrestricted access to private conversations or credentials.
 
 ## V1 capabilities
@@ -121,7 +121,7 @@ Successful chat work should connect naturally to reusable instructions and routi
 
 - Browser automation through [agent-browser](https://agent-browser.dev/) or an approved equivalent integration path.
 - Computer use through an evidenced harness capability or [CUA](https://github.com/trycua/cua); verify the actual backend before implementation.
-- Persistent browser profiles, configurable per bot: dedicated or explicitly shared among that user's bots. Never share profiles across users or infer sharing from workspace placement.
+- Persistent browser profiles, configurable per bot: dedicated or explicitly shared among that user's bots. Never share profiles across users or infer sharing from folder placement.
 - Isolated user-owned computer sessions, bounded actions and cleanup, with clear unsupported/setup states.
 - Secure user takeover for login, MFA or other human steps, followed by explicit hand-back. Secrets must not enter chat, screenshots retained as results, memory or published snapshots.
 

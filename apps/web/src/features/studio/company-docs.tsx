@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Button } from "@/components/ui";
 
 import { call, errorMessage } from "../chat/chat-client";
 import { Badge, ConfirmButton, Panel, when } from "../shared/ui";
+import { useLoadError } from "./studio-queries";
 import { useTimeFormat } from "@/features/preferences/preferences";
 
 type DocsStatus = {
@@ -28,25 +30,25 @@ const STATE: Record<
 /** Turns on the index of the user's Google Drive documents. Bots then answer from them and cite them; only this user's chats can read them. */
 export function CompanyDocs({ onError }: { onError: (m: string) => void }) {
   const tf = useTimeFormat();
-  const [s, setS] = useState<DocsStatus>();
+  const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const load = useCallback(
-    () => call<DocsStatus>("/api/knowledge").then(setS, (e) => onError(errorMessage(e))),
-    [onError],
-  );
-  useEffect(() => {
-    void load();
-  }, [load]);
-  // While files are being read, keep the counts moving.
-  useEffect(() => {
-    if (!s?.enabled || (s.status !== "syncing" && !s.pending)) return;
-    const t = setInterval(() => void load(), 5000);
-    return () => clearInterval(t);
-  }, [s?.enabled, s?.status, s?.pending, load]);
+  const { data: s, error } = useQuery({
+    queryKey: ["knowledge"],
+    queryFn: () => call<DocsStatus>("/api/knowledge"),
+    // While files are being read, keep the counts moving.
+    refetchInterval: (q) => {
+      const d = q.state.data;
+      return d?.enabled && (d.status === "syncing" || d.pending) ? 5000 : false;
+    },
+  });
+  useLoadError(error, onError);
   const act = async (path: string, method: "PUT" | "DELETE" | "POST") => {
     setBusy(true);
     try {
-      setS(await call<DocsStatus>(path, method, method === "DELETE" ? undefined : {}));
+      qc.setQueryData(
+        ["knowledge"],
+        await call<DocsStatus>(path, method, method === "DELETE" ? undefined : {}),
+      );
     } catch (e) {
       onError(errorMessage(e));
     } finally {

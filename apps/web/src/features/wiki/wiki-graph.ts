@@ -219,7 +219,7 @@ export function neighborhood(
 export function summary(g: Graph, truncated: boolean) {
   const items = g.nodes.filter((n) => !n.missing).length;
   const links = g.links.filter((l) => !l.missing).length;
-  return `${items} ${items === 1 ? "item" : "items"}, ${links} ${links === 1 ? "link" : "links"}, ${g.orphans} not linked${truncated ? ". Showing the first part of a larger wiki" : ""}`;
+  return `${items} ${items === 1 ? "item" : "items"}, ${links} ${links === 1 ? "link" : "links"}, ${g.orphans} not linked${truncated ? ". Showing the first part of a larger memory" : ""}`;
 }
 
 /** The answer of GET /api/wiki/:slug/graph (items keyed by slug) as graph data, for the small graph on an item page. */

@@ -1,6 +1,12 @@
 import type { Database } from "@zetta/db";
 import { and, eq, inArray, sql } from "@zetta/db/query";
 import { attentionItem } from "@zetta/db/schema/features";
+import { topics } from "@zetta/core/live-topics";
+import { events } from "../events/bus";
+
+/** The card list, the rail counts and the bots' "needs you" status change together. */
+const changed = (ownerUserId: string) =>
+  events.publish([ownerUserId], topics.attention, topics.botStatus);
 
 export type AttentionInput = {
   title: string;
@@ -38,6 +44,7 @@ export async function raiseAttention(
   };
   if (!v.sourceKey) {
     const [row] = await db.insert(attentionItem).values(values).returning();
+    changed(ownerUserId);
     return row!;
   }
   const [row] = await db
@@ -56,6 +63,7 @@ export async function raiseAttention(
       },
     })
     .returning();
+  changed(ownerUserId);
   return row!;
 }
 
@@ -76,6 +84,7 @@ export async function closeAttention(
         inArray(attentionItem.status, ["open", "acknowledged"]),
       ),
     );
+  changed(ownerUserId);
 }
 
 /** Closes the live card of one situation by its `sourceKey` (for example `proposal:<id>` once the proposal is decided). */
@@ -95,6 +104,7 @@ export async function closeAttentionKey(
         inArray(attentionItem.status, ["open", "acknowledged"]),
       ),
     );
+  changed(ownerUserId);
 }
 
 /** Read, acknowledge, resolve or cancel. Resolving requires the item to have been seen (acknowledged) first; cancelling is separate from resolving. */
@@ -128,6 +138,7 @@ export async function applyAttentionAction(
     .set(set)
     .where(and(eq(attentionItem.id, id), eq(attentionItem.ownerUserId, ownerUserId)))
     .returning();
+  changed(ownerUserId);
   return row;
 }
 

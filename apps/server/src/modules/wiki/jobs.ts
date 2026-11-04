@@ -280,7 +280,7 @@ export function createWikiJobs(
       return finish(j.id, "skipped", "NO_BOT");
     const input = await learnInput(j);
     if (typeof input === "string") return finish(j.id, "skipped", input);
-    // noCode: a learning run never touches the code workspace, and the prompt already holds the pages it needs.
+    // noCode: a learning run never touches the code directory, and the prompt already holds the pages it needs.
     const reply = await deps.run({
       userId: j.ownerUserId,
       bot: b,
@@ -321,7 +321,7 @@ export function createWikiJobs(
         title: `${b.name} updated your wiki after finished work`,
         detail: notes.join("\n"),
         nextAction: "Check the items in the Wiki. Every change has a version you can restore.",
-        resultLink: "/wiki",
+        resultLink: "/memory",
         source: "bot",
       }).catch(() => {});
   }

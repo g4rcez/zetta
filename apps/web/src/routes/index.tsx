@@ -19,8 +19,8 @@ function HomeComponent() {
         <Logo size={96} className="mx-auto" />
         <h1 className="text-4xl font-semibold tracking-tight">Your team of bots, in one place.</h1>
         <p className="mx-auto max-w-xl text-base text-muted-foreground">
-          Chat with a chief of staff and specialists, give them a shared wiki, schedule routines and
-          build workflows. Everything stays private to you.
+          Chat with a chief of staff and specialists, give them a shared memory, schedule routines
+          and build workflows. Everything stays private to you.
         </p>
       </div>
       <div className="flex justify-center gap-3">

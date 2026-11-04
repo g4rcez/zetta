@@ -1,26 +1,20 @@
 import { Link } from "@tanstack/react-router";
 import { CrownIcon } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { errorMessage } from "../chat/chat-client";
-import { teamsApi, type Team } from "./teams-api";
+import { teamsQueries } from "./teams-api";
 
 /** The teams this bot belongs to, with a crown on the ones it leads. Set the lead on the Teams canvas. */
 export function BotTeamsSection({ botId }: { botId: string }) {
-  const [teams, setTeams] = useState<Team[]>();
-  const [error, setError] = useState<string>();
-  useEffect(() => {
-    teamsApi.list().then(
-      (all) => setTeams(all.filter((t) => t.members.some((m) => m.botId === botId))),
-      (e) => setError(errorMessage(e)),
-    );
-  }, [botId]);
-  if (error)
+  const query = useQuery(teamsQueries.list());
+  if (query.error)
     return (
       <p role="alert" className="text-xs text-destructive">
-        {error}
+        {errorMessage(query.error)}
       </p>
     );
+  const teams = query.data?.filter((t) => t.members.some((m) => m.botId === botId));
   if (!teams) return <p className="text-xs text-muted-foreground">Loading teams…</p>;
   return (
     <section aria-label="Teams" className="space-y-2 text-sm">

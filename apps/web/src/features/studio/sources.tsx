@@ -1,8 +1,10 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Button, Input, Select } from "@/components/ui";
 
 import { call, errorMessage, sendSealed } from "../chat/chat-client";
 import { Empty, list, listItem, Panel, useList } from "../shared/ui";
+import { connectionsQueries } from "./studio-queries";
 
 type Source = {
   id: string;
@@ -14,7 +16,7 @@ type Source = {
 };
 type Briefing = { parts: { label: string; status: string }[]; prompt: string; gaps: string[] };
 
-const MAIL_PRESETS = [
+export const MAIL_PRESETS = [
   {
     id: "gmail",
     name: "Gmail",
@@ -49,6 +51,7 @@ const MAIL_PRESETS = [
 
 /** Sources you follow: public feeds and pages, plus your own mailbox (IMAP) and X. Used by "Read my sources" workflow steps. */
 export function Sources({ onError }: { onError: (m: string) => void }) {
+  const qc = useQueryClient();
   const [rows, reload] = useList<Source>("/api/sources", "sources", onError);
   const [briefing, setBriefing] = useState<Briefing>();
   const [kind, setKind] = useState<"rss" | "web" | "email" | "x">("rss");
@@ -73,6 +76,7 @@ export function Sources({ onError }: { onError: (m: string) => void }) {
               sealed,
             }),
         );
+        void qc.invalidateQueries({ queryKey: connectionsQueries.list().queryKey });
         if (kind === "email")
           await call("/api/sources", "POST", {
             kind,

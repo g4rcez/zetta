@@ -1,20 +1,20 @@
 import { CalendarDotsIcon } from "@phosphor-icons/react";
 import { Alert } from "@g4rcez/components/alert";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
-import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { errorMessage, type Bot } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { Routines } from "./routines";
+
+const NO_BOTS: Bot[] = [];
 
 /** Routines are a main destination: every routine with its status, its one chat and its run history. */
 export function RoutinesPage({ focusId }: { focusId?: string | undefined }) {
-  const [bots, setBots] = useState<Bot[]>([]);
-  const [error, setError] = useState<string>();
-  useEffect(() => {
-    chatClient
-      .bots()
-      .then(setBots)
-      .catch((e) => setError(errorMessage(e)));
-  }, []);
+  const botsQuery = useQuery(chatQueries.bots());
+  const bots = botsQuery.data ?? NO_BOTS;
+  const [actionError, setError] = useState<string>();
+  const error = actionError ?? (botsQuery.error ? errorMessage(botsQuery.error) : undefined);
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-6xl min-w-0 space-y-6 p-4 md:p-8">

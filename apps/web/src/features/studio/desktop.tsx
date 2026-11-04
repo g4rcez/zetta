@@ -1,73 +1,47 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Button, Input, Select } from "@/components/ui";
 
-import { call } from "../chat/chat-client";
+import { call, sendSealed } from "../chat/chat-client";
 
 import { ConfirmButton } from "../shared/ui";
+import {
+  computerQueries,
+  useLoadError,
+  type ComputerDriver,
+  type ComputerOsId,
+  type Vm,
+} from "./studio-queries";
 import { VmDialog, vmError } from "./vm-viewer";
-
-/** What drives a computer: cua (the default) or agent-desktop. The operator decides which are offered (ZETTA_VM_DRIVERS). */
-type ComputerDriver = "cua" | "agent-desktop";
-/** The system a container computer runs. */
-type ComputerOsId = "debian" | "ubuntu";
-/** One entry of the list a person picks from: every system, with whether it can be created and why not. */
-type ComputerOsOption = {
-  id: string;
-  family: "linux" | "windows" | "macos";
-  label: string;
-  browser: boolean;
-  available: boolean;
-  note?: string;
-};
-type Capabilities = {
-  targets?: { vm: ComputerDriver[]; local: ComputerDriver[] };
-  os?: ComputerOsOption[];
-};
-type Vm = {
-  id: string;
-  name: string;
-  kind: "default" | "extra";
-  target: "vm" | "local";
-  driver: ComputerDriver;
-  os: ComputerOsId;
-  purpose: string | null;
-  createdByBotId: string | null;
-  status: "stopped" | "running" | "failed";
-  control: "agent" | "human";
-};
 
 /** Your persistent computers: the default one plus any a bot asked for and you approved. Sign-ins made here stay until you delete it. */
 export function VmPanel({ onError }: { onError: (m: string) => void }) {
-  const [vms, setVms] = useState<Vm[]>();
-  const [caps, setCaps] = useState<Capabilities>();
+  const qc = useQueryClient();
+  const { data: vms, error } = useQuery(computerQueries.vms());
+  const { data: caps } = useQuery(computerQueries.capabilities());
   const drivers = caps?.targets?.vm ?? [];
   const systems = caps?.os ?? [];
   const creatable = systems.filter((o) => o.available);
-  const [draft, setDraft] = useState<{ name: string; driver: ComputerDriver; os: ComputerOsId }>({
+  const remoteOffered = (caps?.targets?.cua?.length ?? 0) > 0;
+  const [draft, setDraft] = useState<{
+    name: string;
+    driver: ComputerDriver;
+    os: ComputerOsId;
+    type: "vm" | "cua";
+  }>({
     name: "",
     driver: "cua",
     os: "debian",
+    type: "vm",
   });
+  const remote = remoteOffered && draft.type === "cua";
+  useLoadError(error, onError, vmError);
   const [open, setOpen] = useState<string>();
   const [busy, setBusy] = useState<{
     id: string;
     doing: "Starting" | "Stopping" | "Deleting" | "Creating" | "Switching";
   }>();
-  const load = useCallback(
-    () =>
-      call<{ vms: Vm[] }>("/api/computer/vms").then(
-        (r) => setVms(r.vms),
-        (e) => onError(vmError(e)),
-      ),
-    [onError],
-  );
-  useEffect(() => {
-    void load();
-  }, [load]);
-  useEffect(() => {
-    // Without the capabilities the panel simply offers no choice of driver or system.
-    call<Capabilities>("/api/computer/capabilities").then(setCaps, () => undefined);
-  }, []);
+  const load = () => qc.invalidateQueries({ queryKey: computerQueries.vms().queryKey });
   const run = async (
     id: string,
     doing: "Starting" | "Stopping" | "Deleting" | "Creating" | "Switching",
@@ -97,6 +71,7 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
           createdByBotId: null,
           status: "stopped",
           control: "agent",
+          epoch: 0,
         } satisfies Vm,
       ];
   return (
@@ -121,10 +96,16 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
                   {systems.find((o) => o.id === vm.os)?.label ?? vm.os}
                 </span>
               )}
-              {drivers.length > 1 && (
-                <span className="text-xs text-muted-foreground">
-                  {vm.driver === "cua" ? "Cua" : "agent-desktop"}
+              {vm.target === "cua" ? (
+                <span className="break-all text-xs text-muted-foreground">
+                  remote Cua · {vm.endpoint}
                 </span>
+              ) : (
+                drivers.length > 1 && (
+                  <span className="text-xs text-muted-foreground">
+                    {vm.driver === "cua" ? "Cua" : "agent-desktop"}
+                  </span>
+                )
               )}
               <span className="text-xs text-muted-foreground">
                 {vm.status === "running"
@@ -137,29 +118,34 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
                 <span className="truncate text-xs text-muted-foreground">· {vm.purpose}</span>
               )}
               <span className="ml-auto flex items-center gap-1">
-                {drivers.length > 1 && vm.status !== "running" && vm.id !== "default" && (
-                  <Select
-                    title={`Driver for ${vm.name}`}
-                    hiddenLabel
-                    required={false}
-                    value={vm.driver}
-                    disabled={busy?.id === vm.id}
-                    onChange={(e) =>
-                      void run(vm.id, "Switching", () =>
-                        call(`/api/computer/vms/${vm.id}`, "PATCH", { driver: e.target.value }),
-                      )
-                    }
-                    options={drivers.map((d) => ({
-                      value: d,
-                      label: d === "cua" ? "Cua" : "agent-desktop",
-                    }))}
-                  />
-                )}
+                {drivers.length > 1 &&
+                  vm.target !== "cua" &&
+                  vm.status !== "running" &&
+                  vm.id !== "default" && (
+                    <Select
+                      title={`Driver for ${vm.name}`}
+                      hiddenLabel
+                      required={false}
+                      value={vm.driver}
+                      disabled={busy?.id === vm.id}
+                      onChange={(e) =>
+                        void run(vm.id, "Switching", () =>
+                          call(`/api/computer/vms/${vm.id}`, "PATCH", { driver: e.target.value }),
+                        )
+                      }
+                      options={drivers.map((d) => ({
+                        value: d,
+                        label: d === "cua" ? "Cua" : "agent-desktop",
+                      }))}
+                    />
+                  )}
                 {vm.status === "running" ? (
                   <>
-                    <Button size="sm" variant="outline" onClick={() => setOpen(vm.id)}>
-                      Open
-                    </Button>
+                    {vm.target !== "cua" && (
+                      <Button size="sm" variant="outline" onClick={() => setOpen(vm.id)}>
+                        Open
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"
@@ -187,7 +173,7 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
                             : `/api/computer/vms/${vm.id}/start`,
                           "POST",
                         );
-                        setOpen(r.vm.id);
+                        if (r.vm.target !== "cua") setOpen(r.vm.id);
                       })
                     }
                   >
@@ -201,7 +187,11 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
                 {vm.id !== "default" && (
                   <ConfirmButton
                     label="Delete"
-                    question={`Delete ${vm.name}? Its sign-ins, downloads and files are destroyed.`}
+                    question={
+                      vm.target === "cua"
+                        ? `Delete ${vm.name}? Its saved token is revoked. Nothing on that machine changes.`
+                        : `Delete ${vm.name}? Its sign-ins, downloads and files are destroyed.`
+                    }
                     confirmLabel="Delete"
                     onConfirm={() =>
                       run(vm.id, "Deleting", () =>
@@ -228,15 +218,37 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
         className="flex flex-wrap items-end gap-2"
         onSubmit={(e) => {
           e.preventDefault();
+          // React clears `currentTarget` after the first await, so the form is kept here.
+          const form = e.currentTarget;
           const name = draft.name.trim();
           if (!name) return;
+          const f = new FormData(form);
           void run("new", "Creating", async () => {
-            await call("/api/computer/vms", "POST", {
-              name,
-              driver: draft.driver,
-              ...(creatable.length > 1 ? { os: draft.os } : {}),
-            });
-            setDraft({ ...draft, name: "" });
+            try {
+              if (remote)
+                // The token is sealed to the server's key before it leaves the page; it is never in a request body.
+                await sendSealed(
+                  "computer.create:cua",
+                  { secret: String(f.get("token")) },
+                  (sealed) =>
+                    call("/api/computer/vms", "POST", {
+                      name,
+                      target: "cua",
+                      endpoint: String(f.get("endpoint")).trim(),
+                      sealed,
+                    }),
+                );
+              else
+                await call("/api/computer/vms", "POST", {
+                  name,
+                  driver: draft.driver,
+                  ...(creatable.length > 1 ? { os: draft.os } : {}),
+                });
+              setDraft({ ...draft, name: "" });
+            } finally {
+              // The token field is always cleared, success or not.
+              form.reset();
+            }
           });
         }}
       >
@@ -248,7 +260,44 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
           required={false}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
         />
-        {creatable.length > 1 && (
+        {remoteOffered && (
+          <Select
+            title="Type"
+            required={false}
+            value={draft.type}
+            onChange={(e) => setDraft({ ...draft, type: e.target.value as "vm" | "cua" })}
+            options={[
+              { value: "vm", label: "Computer in a container" },
+              { value: "cua", label: "Remote Cua computer" },
+            ]}
+          />
+        )}
+        {remote && (
+          <>
+            <Input
+              title="Address"
+              name="endpoint"
+              required
+              maxLength={300}
+              placeholder="https://mac.example.com:3211"
+              inputMode="url"
+              autoComplete="off"
+              info="Where cua-spacesd listens. Must be https."
+            />
+            <Input
+              title="Access token"
+              name="token"
+              type="password"
+              required
+              minLength={8}
+              maxLength={8000}
+              autoComplete="new-password"
+              spellCheck={false}
+              info="Stored encrypted and never shown again."
+            />
+          </>
+        )}
+        {!remote && creatable.length > 1 && (
           <Select
             title="System"
             required={false}
@@ -257,7 +306,7 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
             options={creatable.map((o) => ({ value: o.id, label: o.label }))}
           />
         )}
-        {drivers.length > 1 && (
+        {!remote && drivers.length > 1 && (
           <Select
             title="Driver"
             required={false}

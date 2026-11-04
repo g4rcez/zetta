@@ -1,7 +1,14 @@
 import { afterAll, expect, test } from "bun:test";
 import { Window } from "happy-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+
+const withQuery = (element: unknown) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {element as never}
+  </QueryClientProvider>
+);
 
 // React DOM reads these globals. This test file does not run in a browser.
 const win = new Window();
@@ -48,7 +55,7 @@ const render = async (element: unknown) => {
   const host = win.document.createElement("div");
   win.document.body.append(host);
   const root = createRoot(host as unknown as Element);
-  await act(async () => root.render(element as never));
+  await act(async () => root.render(withQuery(element)));
   return { host, unmount: () => act(async () => root.unmount()) };
 };
 // Typing is not driven here: react-dom decides at import time whether the DOM supports `input` events, and in this shared test process it

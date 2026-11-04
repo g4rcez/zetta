@@ -1,5 +1,8 @@
+import { queryOptions } from "@tanstack/react-query";
+
 import { ENV } from "../../env";
 import { call, type OutputStyleKey } from "../chat/chat-client";
+import { STATIC } from "@/lib/query-policy";
 
 export type StyleScope = "private" | "installation";
 export type BuiltinStyle = {
@@ -41,6 +44,12 @@ export const outputStylesApi = {
     call<{ style: OutputStyle }>("/api/output-styles/import", "POST", { markdown }).then(
       (r) => r.style,
     ),
+};
+
+/** One key for the list: after a write to a style, invalidate `["output-styles"]`. */
+export const outputStylesQueries = {
+  list: () =>
+    queryOptions({ queryKey: ["output-styles"], queryFn: () => outputStylesApi.list(), ...STATIC }),
 };
 
 /** The file itself: the server answers with an attachment, so a plain link downloads it. */

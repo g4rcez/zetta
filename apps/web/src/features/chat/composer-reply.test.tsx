@@ -1,8 +1,15 @@
 import { afterEach, expect, test } from "bun:test";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
 import { setupDom } from "../skills/dom-env";
+
+const withQuery = (element: unknown) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {element as never}
+  </QueryClientProvider>
+);
 
 const win = setupDom();
 Object.assign(globalThis, {
@@ -27,16 +34,18 @@ function mount(replyTo: { id: string; name: string; excerpt: string; onCancel: (
   roots.push(root);
   act(() =>
     root.render(
-      <Composer
-        value=""
-        onChange={() => {}}
-        placeholder="Message"
-        bots={[]}
-        busy={false}
-        onSubmit={() => true}
-        onError={() => {}}
-        replyTo={replyTo}
-      />,
+      withQuery(
+        <Composer
+          value=""
+          onChange={() => {}}
+          placeholder="Message"
+          bots={[]}
+          busy={false}
+          onSubmit={() => true}
+          onError={() => {}}
+          replyTo={replyTo}
+        />,
+      ),
     ),
   );
   return host as unknown as HTMLElement;

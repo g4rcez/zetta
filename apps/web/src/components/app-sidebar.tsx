@@ -38,7 +38,7 @@ import UserMenu from "./user-menu";
 type AppLink = (typeof appLinks)[number];
 const linkOf = (label: AppLink["label"]) => appLinks.find((l) => l.label === label)!;
 /** DESIGN.md "Sidebar structure": the daily destinations stay fixed on top; building and oversight sit under More. */
-const FIXED = [linkOf("Inbox"), linkOf("Tasks"), linkOf("Routines"), linkOf("Wiki")];
+const FIXED = [linkOf("Inbox"), linkOf("Tasks"), linkOf("Routines"), linkOf("Memory")];
 const MORE = [
   linkOf("Agenda"),
   linkOf("Studio"),

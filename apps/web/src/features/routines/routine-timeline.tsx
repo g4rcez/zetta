@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { Badge } from "../shared/ui";
 import { call } from "../chat/chat-client";
 import { layoutTimeline, type TimelineRun } from "./timeline-layout";
@@ -7,6 +8,7 @@ import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatTime, type TimeFormat } from "@/features/preferences/time-format";
 
 const HOUR = 3600_000;
+const NO_RUNS: TimelineRun[] = [];
 const WINDOWS = [3, 12, 24] as const;
 const BAR: Record<TimelineRun["status"], string> = {
   running: "bg-primary animate-pulse",
@@ -37,45 +39,27 @@ function ChatLink({ run }: { run: TimelineRun }) {
 }
 
 /** Live timeline of routine runs: running ones pulse up to now and link to their chat. Refreshes every few seconds. */
-export function RoutineTimeline({ refreshKey }: { refreshKey: number }) {
+export function RoutineTimeline() {
   const tf = useTimeFormat();
   const [hours, setHours] = useState<(typeof WINDOWS)[number]>(3);
-  const [runs, setRuns] = useState<TimelineRun[]>([]);
-  const [now, setNow] = useState(() => Date.now());
-  const [error, setError] = useState<string>();
-  useEffect(() => {
-    let alive = true;
-    const load = () => {
-      const t = Date.now();
-      call<{ runs: TimelineRun[] }>("/api/routines/timeline", "POST", {
-        from: new Date(t - hours * HOUR).toISOString(),
-        to: new Date(t).toISOString(),
-      }).then(
-        (r) => {
-          if (alive) {
-            setRuns(r.runs);
-            setNow(t);
-            setError(undefined);
-          }
-        },
-        () => {
-          if (alive) setError("Could not load the timeline.");
-        },
-      );
-    };
-    load();
-    // Hidden tabs skip the refresh and catch up when they become visible.
-    const tick = () => {
-      if (document.visibilityState === "visible") load();
-    };
-    const timer = setInterval(tick, 5000);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", tick);
-    };
-  }, [hours, refreshKey]);
+  // The window ends "now" when the request runs, so the key holds the window size only; `at` is that moment.
+  const query = useQuery({
+    queryKey: ["routines", "timeline", { hours }],
+    queryFn: async () => {
+      const at = Date.now();
+      const r = await call<{ runs: TimelineRun[] }>("/api/routines/timeline", "POST", {
+        from: new Date(at - hours * HOUR).toISOString(),
+        to: new Date(at).toISOString(),
+      });
+      return { runs: r.runs, at };
+    },
+    refetchInterval: 5000,
+    placeholderData: keepPreviousData,
+  });
+  const runs = query.data?.runs ?? NO_RUNS;
+  const [mountedAt] = useState(() => Date.now());
+  const now = query.data?.at ?? mountedAt;
+  const error = query.error ? "Could not load the timeline." : undefined;
   const to = now,
     from = now - hours * HOUR;
   const lanes = useMemo(() => layoutTimeline(runs, from, to, now), [runs, from, to, now]);

@@ -119,7 +119,7 @@ async function place(
   }
 }
 
-/** Saves text the bot sent in its reply (for bots with no code workspace). */
+/** Saves text the bot sent in its reply (for bots with no code directory). */
 export async function saveContent(userId: string, text: string, root = artifactsRoot()) {
   const bytes = Buffer.from(text, "utf8");
   if (bytes.length === 0) throw new ArtifactFileError("INVALID");
@@ -130,13 +130,13 @@ export async function saveContent(userId: string, text: string, root = artifacts
 }
 
 /**
- * Copies a file from the user's code workspace into the artifact store. The path goes through realpath and must stay inside
- * the workspace, so `..` and symlinks cannot reach other files. The bytes are hashed while they are copied, with a hard size cap.
+ * Copies a file from the user's code directory into the artifact store. The path goes through realpath and must stay inside
+ * the code directory, so `..` and symlinks cannot reach other files. The bytes are hashed while they are copied, with a hard size cap.
  */
 export async function savePath(
   userId: string,
   rel: string,
-  workspace: string,
+  codeDir: string,
   root = artifactsRoot(),
 ) {
   // oxlint-disable-next-line no-control-regex -- rejects control characters on purpose
@@ -144,7 +144,7 @@ export async function savePath(
   let base: string;
   let target: string;
   try {
-    base = await realpath(workspace);
+    base = await realpath(codeDir);
     target = await realpath(resolve(base, rel));
   } catch {
     throw new ArtifactFileError("NOT_FOUND");

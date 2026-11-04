@@ -1,7 +1,10 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useRouterState } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 
 import { ApiError, call, chatClient, type AttentionSummary } from "../chat/chat-client";
+import { queryClient } from "@/lib/query-client";
+import { pollEvery } from "@/lib/query-policy";
 import { discussionsApi } from "../discussions/discussions-api";
 
 /** What one bot needs from the user: open items, and how many of those the user has not seen yet. */
@@ -43,9 +46,7 @@ export const nativeNotificationState = (): NotificationPermission | "unsupported
 /** Needs a user gesture in most browsers: call it from a click handler. */
 export async function enableNativeNotifications() {
   if (nativeNotificationState() === "unsupported") return "unsupported" as const;
-  const result = await Notification.requestPermission();
-  emit();
-  return result;
+  return Notification.requestPermission();
 }
 
 /** One native notification; clicking it focuses the window and opens `link` (an in-app path). */
@@ -73,61 +74,86 @@ function notifyNew(items: Item[]) {
   writeNotified(all);
 }
 
-/** One shared poller for the rail counts: attention (header + sidebar) and running discussions. Polls every 30s while at least one component uses it. */
-let state: AttentionSummary | undefined;
-let byBot: ReadonlyMap<string, BotAttention> = new Map();
-let running = 0;
-let routineUnread = 0;
-let routineUnreadChats: ReadonlySet<string> = new Set();
-let routineAttention: ReadonlySet<string> = new Set();
-let signedOut = false;
-let subscribers = 0;
-let timer: ReturnType<typeof setInterval> | undefined;
-let lastRefresh = 0;
-const listeners = new Set<() => void>();
-const emit = () => listeners.forEach((l) => l());
+/** Everything the rail counts show, fetched together so one request round serves the header, the sidebar and the dashboard. */
+type Snapshot = {
+  /** The server's counts as a string: the item list is fetched again only when it changes. */
+  key: string;
+  summary: AttentionSummary | undefined;
+  byBot: ReadonlyMap<string, BotAttention>;
+  running: number;
+  routineUnread: number;
+  routineUnreadChats: ReadonlySet<string>;
+  routineAttention: ReadonlySet<string>;
+};
+/** What a signed-out person sees: nothing, and no polling until a route change asks again. */
+const EMPTY: Snapshot = {
+  key: "",
+  summary: undefined,
+  byBot: new Map(),
+  running: 0,
+  routineUnread: 0,
+  routineUnreadChats: new Set(),
+  routineAttention: new Set(),
+};
+const KEY = ["attention"] as const;
 
-export async function refreshAttention(force = false) {
-  if (signedOut && !force) return;
-  lastRefresh = Date.now();
+async function fetchSnapshot(): Promise<Snapshot> {
+  const last = queryClient.getQueryData<Snapshot>(KEY) ?? EMPTY;
   try {
-    const [summary, list, discussions, firstRoutines] = await Promise.all([
+    const [summary, discussions, firstRoutines] = await Promise.all([
       chatClient.attentionSummary(),
-      call<{ items: Item[] }>("/api/attention"),
       // A failed count keeps the last one, so it never blocks the attention counts.
-      discussionsApi.running().catch(() => running),
+      discussionsApi.running().catch(() => last.running),
       call<RoutineUnread>("/api/routines/unread").catch(() => undefined),
     ]);
-    // Cards that point at the chat on screen are seen: mark them read now, so no badge or native alert says it is new.
     const here = window.location.pathname;
-    const onScreen = document.hidden
-      ? []
-      : list.items.filter(
-          (i) =>
-            i.status === "open" && !i.readAt && i.resultLink === here && here.startsWith("/chat/"),
-        );
+    const key = `${summary.open}:${summary.unread}:${summary.acknowledged}`;
+    // The item list is the large payload. Fetch it when the counts moved, on a chat (its cards are marked read), or when alerts are on.
+    const needItems =
+      last === EMPTY ||
+      last.key !== key ||
+      here.startsWith("/chat/") ||
+      nativeNotificationState() === "granted";
+    const list = needItems ? await call<{ items: Item[] }>("/api/attention") : undefined;
+    // Cards that point at the chat on screen are seen: mark them read now, so no badge or native alert says it is new.
+    const onScreen =
+      document.hidden || !list
+        ? []
+        : list.items.filter(
+            (i) =>
+              i.status === "open" &&
+              !i.readAt &&
+              i.resultLink === here &&
+              here.startsWith("/chat/"),
+          );
     await Promise.all(
       onScreen.map((i) =>
         call(`/api/attention/${i.id}/action`, "POST", { action: "read" }).catch(() => {}),
       ),
     );
     const readNow = new Date().toISOString();
-    const items = list.items.map((i) => (onScreen.includes(i) ? { ...i, readAt: readNow } : i));
-    const next = new Map<string, BotAttention>();
-    for (const i of items) {
-      if (i.botId === null || i.status !== "open") continue;
-      const n = next.get(i.botId) ?? { open: 0, unread: 0 };
-      next.set(i.botId, { open: n.open + 1, unread: n.unread + (i.readAt ? 0 : 1) });
+    const items = list?.items.map((i) => (onScreen.includes(i) ? { ...i, readAt: readNow } : i));
+    let byBot = last.byBot;
+    let routineAttention = last.routineAttention;
+    if (items) {
+      const bots = new Map<string, BotAttention>();
+      for (const i of items) {
+        if (i.botId === null || i.status !== "open") continue;
+        const n = bots.get(i.botId) ?? { open: 0, unread: 0 };
+        bots.set(i.botId, { open: n.open + 1, unread: n.unread + (i.readAt ? 0 : 1) });
+      }
+      byBot = bots;
+      notifyNew(items);
+      // A routine with an open or seen-but-not-fixed card still needs the user, whatever its run status is now.
+      const needing = new Set<string>();
+      for (const i of items) {
+        if (i.source !== "routine" || (i.status !== "open" && i.status !== "acknowledged"))
+          continue;
+        const id = /^routine:([^:]+):/.exec(i.sourceKey ?? "")?.[1];
+        if (id) needing.add(id);
+      }
+      routineAttention = needing;
     }
-    notifyNew(items);
-    // A routine with an open or seen-but-not-fixed card still needs the user, whatever its run status is now.
-    const needing = new Set<string>();
-    for (const i of items) {
-      if (i.source !== "routine" || (i.status !== "open" && i.status !== "acknowledged")) continue;
-      const id = /^routine:([^:]+):/.exec(i.sourceKey ?? "")?.[1];
-      if (id) needing.add(id);
-    }
-    routineAttention = needing;
     // The routine chat on screen is seen: mark its runs read now, so the badge does not count what the user is looking at.
     let routines = firstRoutines;
     const seen =
@@ -138,58 +164,51 @@ export async function refreshAttention(force = false) {
       await call("/api/routines/read", "POST", { conversationId: seen }).catch(() => {});
       routines = await call<RoutineUnread>("/api/routines/unread").catch(() => undefined);
     }
-    state = { ...summary, unread: Math.max(0, summary.unread - onScreen.length) };
-    byBot = next;
-    running = discussions;
-    routineUnread = routines?.count ?? routineUnread;
-    if (routines) routineUnreadChats = new Set(routines.conversationIds);
-    signedOut = false;
-    emit();
+    return {
+      key,
+      summary: { ...summary, unread: Math.max(0, summary.unread - onScreen.length) },
+      byBot,
+      running: discussions,
+      routineUnread: routines?.count ?? last.routineUnread,
+      routineUnreadChats: routines ? new Set(routines.conversationIds) : last.routineUnreadChats,
+      routineAttention,
+    };
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) {
-      signedOut = true;
-      state = undefined;
-      byBot = new Map();
-      running = 0;
-      routineUnread = 0;
-      routineUnreadChats = new Set();
-      routineAttention = new Set();
-      emit();
-    }
+    if (e instanceof ApiError && e.status === 401) return EMPTY;
+    throw e; // the query keeps the last counts and the next poll tries again
   }
 }
-const onVisible = () => {
-  if (!document.hidden) void refreshAttention();
-};
-function subscribe(l: () => void) {
-  listeners.add(l);
-  if (++subscribers === 1) {
-    void refreshAttention(true);
-    // A hidden tab polls at most once a minute (native alerts for new items still arrive), and catches up as soon as it is visible again.
-    timer = setInterval(() => {
-      if (!document.hidden || Date.now() - lastRefresh >= 55_000) void refreshAttention();
-    }, 30_000);
-    document.addEventListener("visibilitychange", onVisible);
-  }
-  return () => {
-    listeners.delete(l);
-    if (--subscribers === 0 && timer) {
-      clearInterval(timer);
-      timer = undefined;
-      document.removeEventListener("visibilitychange", onVisible);
-    }
-  };
+
+/** Reads one slice of the shared snapshot. It polls every 30s (once a minute in a hidden tab, so native alerts still arrive). */
+function useSnapshot<T>(select: (s: Snapshot) => T): T | undefined {
+  return useQuery({
+    queryKey: KEY,
+    queryFn: fetchSnapshot,
+    select,
+    refetchInterval: (q) =>
+      q.state.data === EMPTY ? false : document.hidden ? 60_000 : pollEvery(30_000, 30_000, false),
+    refetchIntervalInBackground: true,
+  }).data;
 }
+
+/** Fetches fresh counts now. A signed-out snapshot only refreshes when `force` is set (a route change). */
+export function refreshAttention(force = false) {
+  if (!force && queryClient.getQueryData(KEY) === EMPTY) return Promise.resolve();
+  // `cancelRefetch: false` joins a fetch already running, so many callers in one tick send one request round.
+  return queryClient.invalidateQueries({ queryKey: KEY }, { cancelRefetch: false });
+}
+
 /** Number of unread open items (undefined until known or when signed out). */
 export function useAttentionSummary(): AttentionSummary | undefined {
-  const value = useSyncExternalStore(
-    subscribe,
-    () => state,
-    () => undefined,
-  );
+  const value = useSnapshot((s) => s.summary);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const lastPath = useRef(pathname);
+  // Opening a chat clears its badge at once; the first render already fetches, so only a later route change to a chat asks again.
+  // Other pages that change attention (a room opened, a routine run) call `refreshAttention` themselves.
   useEffect(() => {
-    void refreshAttention(true);
+    if (lastPath.current === pathname) return;
+    lastPath.current = pathname;
+    if (pathname.startsWith("/chat/")) void refreshAttention(true);
   }, [pathname]);
   return value;
 }
@@ -198,33 +217,29 @@ export const attentionLabel = (s?: AttentionSummary) =>
 
 /** Discussions the bots are working on now, from the same poll. */
 export function useRunningDiscussions(): number {
-  return useSyncExternalStore(
-    subscribe,
-    () => running,
-    () => 0,
-  );
+  return useSnapshot((s) => s.running) ?? 0;
 }
 
 /** Per-bot attention from the same poll; a bot with nothing open has no entry. */
 export function useBotAttention(): ReadonlyMap<string, BotAttention> {
-  useAttentionSummary(); // subscribes to the poll; every emit re-renders the caller, which then reads the fresh map
-  return byBot;
+  useAttentionSummary(); // keeps the route-change refresh
+  return useSnapshot((s) => s.byBot) ?? EMPTY.byBot;
 }
 
 /** Routine runs the user has not opened yet, from the same poll; opening the run's chat clears them. */
 export function useRoutineUnread(): number {
-  useAttentionSummary(); // subscribes to the poll and refreshes on route change, so opening a run's chat clears it at once
-  return routineUnread;
+  useAttentionSummary();
+  return useSnapshot((s) => s.routineUnread) ?? 0;
 }
 
 /** Ids of the routines that have an open Inbox card (failed, blocked or interrupted and not yet resolved). */
 export function useRoutineAttention(): ReadonlySet<string> {
-  useAttentionSummary(); // subscribes to the poll; every emit re-renders the caller, which then reads the fresh set
-  return routineAttention;
+  useAttentionSummary();
+  return useSnapshot((s) => s.routineAttention) ?? EMPTY.routineAttention;
 }
 
 /** The routine chats that hold runs the user has not opened yet. */
 export function useRoutineUnreadChats(): ReadonlySet<string> {
-  useAttentionSummary(); // subscribes to the poll; every emit re-renders the caller, which then reads the fresh set
-  return routineUnreadChats;
+  useAttentionSummary();
+  return useSnapshot((s) => s.routineUnreadChats) ?? EMPTY.routineUnreadChats;
 }

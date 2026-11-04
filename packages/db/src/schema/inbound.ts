@@ -108,6 +108,8 @@ export const inboundEvent = zetta.table(
     }),
     attempts: integer("attempts").default(0).notNull(),
     createdAt: created(),
+    /** The server instance running this row (see server_instance). Recovery leaves the rows of a live instance alone. */
+    ownerInstance: uuid("owner_instance"),
   },
   (t) => [
     index("inbound_event_thread_id_idx").on(t.threadId),

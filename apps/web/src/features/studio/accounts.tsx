@@ -1,42 +1,55 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
 import { Button, Input, Select } from "@/components/ui";
 
 import {
   call,
-  chatClient,
   errorMessage,
   PROVIDERS,
   sendSealed,
   type Connection,
-  type ConnectionList,
   type Provider,
 } from "../chat/chat-client";
-import { Badge, ConfirmButton, Empty, list, listItem, Panel } from "../shared/ui";
+import { Badge, ConfirmButton, Empty, list, listItem } from "../shared/ui";
 import { Alert } from "@g4rcez/components/alert";
-
-type Harness = {
-  harness: string;
-  label: string;
-  installed: boolean;
-  version?: string | null;
-  status: "ready" | "not_installed" | "needs_login" | "unverified";
-  perUserLogin: boolean;
-  guidance?: string;
-};
+import { connectionsQueries, harnessQueries, useLoadError, type Harness } from "./studio-queries";
 
 const PROVIDER_NAME: Record<Provider, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   google: "Google",
   openrouter: "OpenRouter",
+  deepseek: "DeepSeek",
   github: "GitHub",
 };
-const HARNESS_STATUS: Record<Harness["status"], { label: string; tone: string }> = {
-  ready: { label: "Ready", tone: "border-success/60" },
-  not_installed: { label: "Not installed", tone: "border-destructive/60" },
-  needs_login: { label: "Needs sign-in", tone: "border-warn/60" },
-  unverified: { label: "Not tested yet", tone: "" },
+const HARNESS_STATUS: Record<
+  Harness["status"],
+  { label: string; tone: "success" | "neutral" | "warning" | "danger" }
+> = {
+  ready: { label: "Ready", tone: "success" },
+  not_installed: { label: "Not installed", tone: "danger" },
+  needs_login: { label: "Needs sign-in", tone: "warning" },
+  unverified: { label: "Not tested yet", tone: "neutral" },
 };
+
+/** A titled block without card chrome: its rows carry the border. */
+const Section = ({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) => (
+  <section aria-label={title} className="min-w-0 space-y-3">
+    <header>
+      <h3 className="text-base font-medium">{title}</h3>
+      <p className="text-sm text-pretty text-muted-foreground">{description}</p>
+    </header>
+    {children}
+  </section>
+);
 /** Distinct, plain guidance per status (used when the server sends none). */
 export function harnessGuidance(h: Harness): string {
   if (h.guidance) return h.guidance;
@@ -57,17 +70,11 @@ const CONNECTION_STATE = (s: string) =>
   s === "active" ? "In use" : s === "revoked" ? "Revoked" : s;
 
 function Harnesses({ onError }: { onError: (m: string) => void }) {
-  const [rows, setRows] = useState<Harness[]>();
-  useEffect(() => {
-    call<{ harnesses: Harness[] }>("/api/harnesses").then(
-      (r) => setRows(r.harnesses),
-      (e) => onError(errorMessage(e)),
-    );
-  }, [onError]);
+  const { data: rows, error } = useQuery(harnessQueries.list());
+  useLoadError(error, onError);
   return (
-    <Panel
+    <Section
       title="Bot engines"
-      label="Bot engines"
       description="The tools that run your bots. Each bot picks one in its settings."
     >
       {!rows && (
@@ -75,52 +82,37 @@ function Harnesses({ onError }: { onError: (m: string) => void }) {
           Checking…
         </p>
       )}
-      <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className={list}>
         {rows?.map((h) => {
           const s = HARNESS_STATUS[h.status];
           return (
-            <li
-              key={h.harness}
-              className={`min-w-0 rounded-lg border bg-card p-4 text-sm ${s.tone}`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-medium">{h.label}</p>
-                <Badge
-                  tone={
-                    h.status === "ready"
-                      ? "success"
-                      : h.status === "unverified"
-                        ? "neutral"
-                        : h.status === "needs_login"
-                          ? "warning"
-                          : "danger"
-                  }
-                >
-                  {s.label}
-                </Badge>
+            <li key={h.harness} className={`${listItem} flex items-start justify-between gap-4`}>
+              <div className="min-w-0">
+                <p className="font-medium">
+                  {h.label}
+                  {h.version && (
+                    <span className="font-normal text-muted-foreground"> · {h.version}</span>
+                  )}
+                </p>
+                <p className="break-words text-muted-foreground">{harnessGuidance(h)}</p>
               </div>
-              {h.version && <p className="text-xs text-muted-foreground">Version {h.version}</p>}
-              <p className="mt-1 break-words text-xs text-muted-foreground">{harnessGuidance(h)}</p>
+              <Badge tone={s.tone}>{s.label}</Badge>
             </li>
           );
         })}
       </ul>
-    </Panel>
+    </Section>
   );
 }
 
 function Connections({ onError }: { onError: (m: string) => void }) {
-  const [data, setData] = useState<ConnectionList>();
+  const qc = useQueryClient();
+  const { data, error: loadError } = useQuery(connectionsQueries.list());
+  useLoadError(loadError, onError);
   const [error, setError] = useState<string>();
   const [status, setStatus] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const load = useCallback(
-    () => chatClient.connections().then(setData, (e) => onError(errorMessage(e))),
-    [onError],
-  );
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const load = () => qc.invalidateQueries({ queryKey: connectionsQueries.list().queryKey });
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget,
@@ -136,7 +128,8 @@ function Connections({ onError }: { onError: (m: string) => void }) {
         (sealed) =>
           call("/api/connections", "POST", {
             provider,
-            label: String(f.get("label")).trim(),
+            label:
+              String(f.get("label")).trim() || (PROVIDER_NAME[provider as Provider] ?? provider),
             sealed,
           }),
       );
@@ -161,9 +154,8 @@ function Connections({ onError }: { onError: (m: string) => void }) {
     await load();
   }
   return (
-    <Panel
+    <Section
       title="Connected accounts"
-      label="Connected accounts"
       description="Keys for AI providers that your bots may use. Only you can use yours, and a saved key is never shown again."
     >
       {data && !data.configured && (
@@ -173,44 +165,47 @@ function Connections({ onError }: { onError: (m: string) => void }) {
         </Alert>
       )}
       {data?.configured && (
-        <form
-          onSubmit={(e) => void create(e)}
-          autoComplete="off"
-          className="grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-3"
-          aria-label="Add an account"
-        >
-          <Select
-            title="Provider"
-            required={false}
-            name="provider"
-            options={(data.providers?.length ? data.providers : [...PROVIDERS]).map((p) => ({
-              value: p,
-              label: PROVIDER_NAME[p] ?? p,
-            }))}
-          />
-          <Input
-            title="Name for this account"
-            name="label"
-            required
-            maxLength={100}
-            placeholder="e.g. Work key"
-          />
-          <Input
-            title="Secret key"
-            name="secret"
-            type="password"
-            required
-            minLength={8}
-            maxLength={8000}
-            autoComplete="new-password"
-            spellCheck={false}
-          />
-          <div className="sm:col-span-3">
-            <Button type="submit" size="sm" disabled={busy}>
-              {busy ? "Saving…" : "Save account"}
-            </Button>
-          </div>
-        </form>
+        <details open={data.connections.length === 0} className="rounded-lg border bg-card p-4">
+          <summary className="cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+            Add an account
+          </summary>
+          <form
+            onSubmit={(e) => void create(e)}
+            autoComplete="off"
+            className="mt-4 grid gap-3 sm:grid-cols-3"
+          >
+            <Select
+              title="Provider"
+              required={false}
+              name="provider"
+              options={(data.providers?.length ? data.providers : [...PROVIDERS]).map((p) => ({
+                value: p,
+                label: PROVIDER_NAME[p] ?? p,
+              }))}
+            />
+            <Input
+              title="Secret key"
+              name="secret"
+              type="password"
+              required
+              minLength={8}
+              maxLength={8000}
+              autoComplete="new-password"
+              spellCheck={false}
+            />
+            <Input
+              title="Name (optional)"
+              name="label"
+              maxLength={100}
+              placeholder="Defaults to the provider"
+            />
+            <div className="sm:col-span-3">
+              <Button type="submit" size="sm" disabled={busy}>
+                {busy ? "Saving…" : "Save account"}
+              </Button>
+            </div>
+          </form>
+        </details>
       )}
       {status && <Alert theme="info">{status}</Alert>}
       {error && (
@@ -241,7 +236,7 @@ function Connections({ onError }: { onError: (m: string) => void }) {
           </li>
         ))}
       </ul>
-    </Panel>
+    </Section>
   );
 }
 

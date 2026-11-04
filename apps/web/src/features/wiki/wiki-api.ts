@@ -1,5 +1,8 @@
+import { queryOptions } from "@tanstack/react-query";
+
 import type { AvatarValue } from "@/components/bot-avatar";
 import { ApiError, call, errorMessage } from "../chat/chat-client";
+import type { GraphData } from "./wiki-graph";
 
 export type Status = "current" | "stale" | "archived";
 export type WikiType = "solo" | "owner" | "teams" | "all";
@@ -220,3 +223,48 @@ export type AssistSuggestions = {
 export type AssistResult =
   | { kind: "ok"; suggestions: AssistSuggestions }
   | { kind: "unavailable"; reason: string };
+
+/** What `/api/wiki/:slug/graph` returns: the items one or two links away. */
+export type Neighbors = {
+  slug: string;
+  nodes: { slug: string; title: string }[];
+  edges: { from: string; to: string; relation: Relation }[];
+};
+
+/**
+ * Every wiki read has one key under `["wiki"]`, so a write invalidates the whole prefix and
+ * every screen that shows the wiki (list, item, graph, health) follows.
+ */
+export const wikiQueries = {
+  /** Every item the person can see (own and shared). */
+  index: () =>
+    queryOptions({
+      queryKey: ["wiki", "index"],
+      queryFn: () => call<{ pages: Row[]; shared: SharedRow[] }>("/api/wiki"),
+    }),
+  /** `query` is the search string from the address (see `searchQuery`). */
+  search: (query: string) =>
+    queryOptions({
+      queryKey: ["wiki", "search", query],
+      queryFn: () => call<{ pages: Hit[]; meaning: boolean }>(`/api/wiki?${query}`),
+    }),
+  graph: () =>
+    queryOptions({
+      queryKey: ["wiki", "graph"],
+      queryFn: () => call<GraphData>("/api/wiki-graph"),
+    }),
+  item: (slug: string) =>
+    queryOptions({ queryKey: ["wiki", "item", slug], queryFn: () => call<Detail>(path(slug)) }),
+  neighbors: (slug: string, depth: 1 | 2) =>
+    queryOptions({
+      queryKey: ["wiki", "item", slug, "graph", depth],
+      queryFn: () => call<Neighbors>(`${path(slug)}/graph?depth=${depth}`),
+    }),
+  checks: () =>
+    queryOptions({ queryKey: ["wiki", "checks"], queryFn: () => call<Checks>("/api/wiki-checks") }),
+  suggestions: () =>
+    queryOptions({
+      queryKey: ["wiki", "suggestions"],
+      queryFn: () => call<Suggestions>("/api/wiki-suggestions"),
+    }),
+};

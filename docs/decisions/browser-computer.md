@@ -189,3 +189,25 @@ Each computer row now has a `target` (`vm`, `local`) and a `driver` (`cua`, `age
 - Both drivers work on Ubuntu 24.04: spacesd (glibc build) answers its health check, agent-desktop reports accessibility granted, and a bot opened a terminal and ran `uname -a` on a Debian computer (Cua) and an Ubuntu one (agent-desktop) in one run (`vm-demo.ts machines`).
 - `uname -a` prints the host's kernel in every container, so the two computers show the same kernel line; `/etc/os-release` is what tells them apart.
 - Windows and macOS are in the list the UI shows (`GET /api/computer/capabilities` -> `os`) with `available: false` and a reason. Neither can run in a Linux container. macOS is only possible as the server's own desktop (the local target).
+
+## Amendment 2026-11-04: machines (SSH, SFTP, FTP) and remote Cua computers
+
+Two more ways for a bot to reach a machine. In both, the secret stays on the server: the browser seals it to the server's transport key (`connections/transport.ts`), the connections store encrypts it at rest (`connection`, provider `machine`, per-user key), and no API, list, log, audit row or prompt carries it back. Migration `20261104045356_machine_access`.
+
+**Machines (Studio > Computer > Machines).** Table `machine` holds name, kind (`ssh` | `sftp` | `ftp`), host, port, user, the pinned host key and the id of the sealed secret. A bot names a machine in a `zetta:machine` block (`run`, `list`, `get`, `put`); Zetta runs the call, so the bot never holds the key.
+
+- **Per bot, not for everyone:** a machine is used only by the bots its owner shares it with (table `machine_bot`, migration `20261104054046_machine_bots`; `PUT /machines/:id/bots`, or `botIds` when adding). A machine shared with no bot is used by none. A bot only sees the machines shared with it in its prompt, and a call for any other name gets "not found" (audited as `denied`), so a bot cannot tell which machines exist. Owners can share with their own bots and with team bots they can use.
+- **ssh / sftp:** the private key (unencrypted) goes to a per-call `ssh-agent` on stdin, never argv and never disk, then `ssh` or `sftp` runs with `StrictHostKeyChecking=yes` against the pinned key, no forwarding, no user config and a clean environment. The agent is killed and its folder removed when the call ends. The host key is pinned at creation from a fresh `ssh-keyscan` the person confirms (`POST /machines/scan`); a different key later fails the call with `HOST_KEY_CHANGED`. A key with a passphrase is refused when it is saved.
+- **ftp:** `curl` reads the user and password from a config on stdin. FTP (plain) and SFTP are both accepted. TLS is used when the server offers it (`--ssl`); otherwise the password crosses the network in clear text, and the form says so.
+- **Where:** one lookup per call; the address that passes the private-network check is the one the connection uses (`ZETTA_ALLOW_PRIVATE_NETWORK=1` lifts the check, as for the browser).
+- **What a bot may do:** like its own shell, deletes (`rm`, `rmdir`, `shred`, `unlink`), `sudo` and mail wait for the user: a `run` that names one is refused unless the bot's approved allow list has that exact `Bash(<word>:*)` rule. This is best effort (a command can be obfuscated). The real limit is what the remote account may do, so give a bot a restricted account. `get` and `put` move files only inside the user's code workspace (`codeDir`), never `.ssh`, keys or `.env`. Outside people never reach machines (`inboundAllowed`).
+- **Output:** the secret, and each line of a key, is replaced with `[redacted]` in output, errors and the command shown to the user. Output is capped at 64 KiB. Each call writes an `audit_event` (`machine:<action>`, outcome) without the output.
+- The server image needs `ssh`, `ssh-agent`, `sftp` and `curl` (added to `apps/server/Dockerfile`).
+- Checked against a real `sshd` on loopback (run, exit code, key redaction, wrong key, changed host key, dead port, sftp put/list/get) and against `curl` with a small FTP server (PASV answer pointing at an unroutable address, no TLS). Not checked: FTP over TLS with a real server, and the Docker image build.
+
+**Remote Cua computer (`computer_vm.target = "cua"`).** A machine that already runs `cua-spacesd` is added by https address and bearer token (`POST /vms` with `target: "cua"`, `endpoint`, sealed `token`). Row columns `endpoint` and `connection_id`. It uses the same `cua` driver and the same act/read/screenshot path as a container computer; nothing runs in a container.
+
+- Only `https` (`http` when private networks are allowed), no credentials, path or query in the address; checked again at every start.
+- No browser is assumed on someone else's machine: `navigate` and sign-in fill are off. Keyboard layout, paste and the VNC viewer are not offered. Deleting the computer revokes the token and touches no container.
+- Needs the VM service, so `ZETTA_DESKTOP_RUNTIME=docker` must be set on the server even if only remote computers are used.
+- Not built: replacing a token (delete and add again), a bot proposing a remote computer, FTP/SSH hosts behind a proxy.

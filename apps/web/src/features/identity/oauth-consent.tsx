@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
@@ -8,9 +9,9 @@ import { authClient } from "@/lib/auth-client";
 import { isAppUrl, signedOAuthQuery } from "./oauth";
 
 const SCOPES: Record<string, string> = {
-  "mcp:read": "See your bots, chats, integrations, routines, wiki and tasks",
+  "mcp:read": "See your bots, chats, integrations, routines, memory and tasks",
   "mcp:write":
-    "Create and change bots, chats, integrations, routines, wiki items and tasks for you",
+    "Create and change bots, chats, integrations, routines, memory items and tasks for you",
   openid: "Confirm who you are",
   profile: "See your name",
   email: "See your email address",
@@ -30,7 +31,6 @@ type State =
  */
 export function OAuthConsent() {
   const navigate = useNavigate();
-  const [state, setState] = useState<State>({ kind: "loading" });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -38,21 +38,24 @@ export function OAuthConsent() {
   const clientId = params.get("client_id") ?? "";
   const scopes = (params.get("scope") ?? "").split(" ").filter(Boolean);
 
-  useEffect(() => {
-    if (!clientId || !signedOAuthQuery()) return setState({ kind: "invalid" });
-    let alive = true;
-    authClient
-      .$fetch<Client>("/oauth2/public-client", { query: { client_id: clientId } })
-      .then(({ data, error: failure }) => {
-        if (!alive) return;
-        if (data) setState({ kind: "ready", client: data });
-        else setState({ kind: failure?.status === 401 ? "signed-out" : "invalid" });
-      })
-      .catch(() => alive && setState({ kind: "invalid" }));
-    return () => {
-      alive = false;
-    };
-  }, [clientId]);
+  const valid = !!clientId && !!signedOAuthQuery();
+  const lookup = useQuery({
+    queryKey: ["oauth", "public-client", clientId],
+    queryFn: async (): Promise<State> => {
+      const { data, error: failure } = await authClient.$fetch<Client>("/oauth2/public-client", {
+        query: { client_id: clientId },
+      });
+      if (data) return { kind: "ready", client: data };
+      return { kind: failure?.status === 401 ? "signed-out" : "invalid" };
+    },
+    enabled: valid,
+    // The answer depends on the session, so nothing is kept.
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const state: State =
+    !valid || lookup.isError ? { kind: "invalid" } : (lookup.data ?? { kind: "loading" });
 
   useEffect(() => {
     if (state.kind !== "loading") heading.current?.focus();

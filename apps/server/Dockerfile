@@ -37,6 +37,9 @@ RUN set -eu; [ "$VAULT_CLIS" = "1" ] || exit 0; \
     unzip -o /tmp/bw.zip -d /usr/local/bin bw; unzip -o /tmp/bws.zip -d /usr/local/bin bws; chmod 0755 /usr/local/bin/bw /usr/local/bin/bws; \
     rm -f /tmp/bw.zip /tmp/bws.zip; apt-get purge -y gnupg unzip; apt-get autoremove -y; rm -rf /var/lib/apt/lists/*; \
     op --version; bw --version; bws --version
+# ssh, ssh-agent, sftp and curl: Zetta runs a bot's machine calls (SSH, SFTP, FTP) itself with the key or password the user saved, so the
+# secret never reaches the bot (apps/server/src/modules/computer/machine-runner.ts). No daemon runs; they start for one call.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssh-client && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app /app
 
 EXPOSE 3000

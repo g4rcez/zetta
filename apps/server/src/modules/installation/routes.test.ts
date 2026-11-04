@@ -70,7 +70,7 @@ describe("installation settings", () => {
       restartRequired: true,
     });
   });
-  test("Laya is off until the admin turns it on", async () => {
+  test("only an administrator can turn Laya on, with a valid value", async () => {
     const a = app();
     const read = async () =>
       (

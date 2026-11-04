@@ -1,7 +1,9 @@
 import { mentionsUser } from "@zetta/core/mentions";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-import { call, chatClient } from "../chat/chat-client";
+import { call } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { artifactsApi } from "../artifacts/artifacts-api";
 import { nativeNotificationState, showNative } from "./summary";
 
@@ -17,6 +19,7 @@ const away = () => document.hidden || !document.hasFocus();
  * previous poll saw, so the first poll after load only records a baseline.
  */
 export function useBackgroundNotifications() {
+  const qc = useQueryClient();
   useEffect(() => {
     if (nativeNotificationState() === "unsupported") return;
     const chats = new Map<string, string>();
@@ -24,14 +27,32 @@ export function useBackgroundNotifications() {
     const artifacts = new Set<string>();
     let primed = false;
     let stopped = false;
+    let polling = false;
 
     async function poll() {
-      if (stopped || nativeNotificationState() !== "granted") return;
+      if (stopped || polling || nativeNotificationState() !== "granted") return;
+      // In focus nobody needs an alert: send nothing. The next poll after the window loses focus starts a new baseline.
+      if (!away()) {
+        primed = false;
+        return;
+      }
+      polling = true;
       try {
-        const [conversations, { routines }, list] = await Promise.all([
-          chatClient.conversations(),
-          call<{ routines: Routine[] }>("/api/routines"),
-          artifactsApi.list(),
+        // Each poll needs the answer of now to compare with the last one, so no cached value is good enough (`staleTime: 0`).
+        const fresh = { staleTime: 0 };
+        const [conversations, routines, list] = await Promise.all([
+          qc.fetchQuery({ ...chatQueries.conversations(), ...fresh }),
+          // Same key and shape as the Routines page, so the two share one entry.
+          qc.fetchQuery({
+            queryKey: ["routines", { state: "all" }],
+            queryFn: () => call<{ routines: Routine[] }>("/api/routines").then((r) => r.routines),
+            ...fresh,
+          }),
+          qc.fetchQuery({
+            queryKey: ["artifacts", "notifications"],
+            queryFn: () => artifactsApi.list(),
+            ...fresh,
+          }),
         ]);
         const notify = primed && away();
         const changed = conversations.filter((c) => {
@@ -39,7 +60,9 @@ export function useBackgroundNotifications() {
           chats.set(c.id, c.updatedAt);
           return notify && before !== undefined && before !== c.updatedAt;
         });
-        const histories = await Promise.all(changed.map((c) => chatClient.messages(c.id)));
+        const histories = await Promise.all(
+          changed.map((c) => qc.fetchQuery({ ...chatQueries.messages(c.id), ...fresh })),
+        );
         for (const [i, c] of changed.entries()) {
           const last = histories[i]!.at(-1);
           // A reply that calls `@user` already raised its own attention card, and that card notifies.
@@ -75,8 +98,14 @@ export function useBackgroundNotifications() {
         primed = true;
       } catch {
         /* signed out or offline: try again on the next tick */
+      } finally {
+        polling = false;
       }
     }
+    // The baseline is taken when the window goes away, so a change in the first seconds away still raises an alert.
+    const onAway = () => void poll();
+    window.addEventListener("blur", onAway);
+    document.addEventListener("visibilitychange", onAway);
     let timer: ReturnType<typeof setTimeout>;
     const loop = async () => {
       await poll();
@@ -87,6 +116,8 @@ export function useBackgroundNotifications() {
     return () => {
       stopped = true;
       clearTimeout(timer);
+      window.removeEventListener("blur", onAway);
+      document.removeEventListener("visibilitychange", onAway);
     };
-  }, []);
+  }, [qc]);
 }

@@ -98,7 +98,7 @@ export function BotCodeSection({
       />
       <p className="text-xs text-muted-foreground">
         {on
-          ? "This bot can clone repositories, read and edit code, run git, create branches, commit and push in your own persistent workspace. For private repositories and pushes, add a GitHub account under Accounts and require it for this bot."
+          ? "This bot can clone repositories, read and edit code, run git, create branches, commit and push in your own persistent code directory. For private repositories and pushes, add a GitHub account under Accounts and require it for this bot."
           : "This bot cannot run git or touch code."}
         {!bot.canEdit ? " Only the owner can change this." : ""}
       </p>

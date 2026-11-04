@@ -31,6 +31,7 @@
     "staged": "vp staged",
     "zetta": "bash scripts/zetta.sh",
     "certs": "bash scripts/dev-certs.sh",
+    "setup": "bun apps/cli/src/index.ts setup",
     "dev:web": "vp run --filter web dev",
     "dev:desktop": "vp run --filter desktop dev:hmr",
     "build:desktop": "vp run --filter desktop build:stable",

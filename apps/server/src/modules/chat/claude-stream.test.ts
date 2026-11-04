@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createClaudeStream, toolLabel } from "./claude-stream";
+import { addUsage, createClaudeStream, noUsage, toolLabel } from "./claude-stream";
 
 const line = (o: unknown) => `${JSON.stringify(o)}\n`;
 const assistant = (...content: unknown[]) => line({ type: "assistant", message: { content } });
@@ -155,5 +155,38 @@ describe("tool labels", () => {
   });
   test("an unknown tool shows its name", () => {
     expect(toolLabel("Mystery", {})).toBe("Mystery");
+  });
+
+  test("the result event reports the token counts of the run", () => {
+    const s = createClaudeStream();
+    s.push(
+      line({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "Done.",
+        usage: {
+          input_tokens: 12,
+          cache_read_input_tokens: 31000,
+          cache_creation_input_tokens: 4500,
+          output_tokens: 230,
+        },
+      }),
+    );
+    expect(s.state.usage).toEqual({ input: 12, cacheRead: 31000, cacheWrite: 4500, output: 230 });
+  });
+
+  test("a result with no usage field counts zero, and no result event leaves usage unset", () => {
+    const s = createClaudeStream();
+    expect(s.state.usage).toBeUndefined();
+    s.push(line({ type: "result", subtype: "success", is_error: false, result: "Done." }));
+    expect(s.state.usage).toEqual({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 });
+  });
+
+  test("the usage of several processes of one reply adds up", () => {
+    const total = noUsage();
+    addUsage(total, { input: 10, cacheRead: 100, cacheWrite: 5, output: 20 });
+    addUsage(total, { input: 1, cacheRead: 200, cacheWrite: 0, output: 3 });
+    expect(total).toEqual({ input: 11, cacheRead: 300, cacheWrite: 5, output: 23 });
   });
 });

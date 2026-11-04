@@ -1,3 +1,5 @@
+import { queryOptions } from "@tanstack/react-query";
+
 import { ENV } from "../../env";
 import { call } from "../chat/chat-client";
 
@@ -59,6 +61,23 @@ export const artifactsApi = {
       (r) => r.artifact,
     ),
   usage: () => call<ArtifactUsage>("/api/artifacts/usage"),
+};
+
+/** Every key starts with "artifacts": one invalidation after a pin or a delete refreshes the list, the item and the usage. */
+export const artifactsQueries = {
+  list: (f: ArtifactFilter) =>
+    queryOptions({
+      queryKey: [
+        "artifacts",
+        "list",
+        { bot: f.bot ?? null, kind: f.kind ?? null, q: f.q ?? "", sort: f.sort ?? null },
+      ],
+      queryFn: () => artifactsApi.list(f),
+    }),
+  detail: (id: string) =>
+    queryOptions({ queryKey: ["artifacts", id], queryFn: () => artifactsApi.get(id) }),
+  usage: () =>
+    queryOptions({ queryKey: ["artifacts", "usage"], queryFn: () => artifactsApi.usage() }),
 };
 
 /** The file itself. `download` makes the server answer with an attachment. */

@@ -38,7 +38,7 @@ describe("touchedRepos", () => {
     await mkdir(join(root, "plain-folder"));
     expect(await touchedRepos(root, 1_500_000)).toEqual(["acme/new"]);
   });
-  test("a missing workspace has no repositories", async () => {
+  test("a missing code directory has no repositories", async () => {
     expect(await touchedRepos(join(tmpdir(), "zetta-no-such-dir"), 0)).toEqual([]);
   });
 });

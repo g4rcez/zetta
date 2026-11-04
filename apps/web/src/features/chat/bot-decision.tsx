@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Button, Checkbox, Input, Select } from "@/components/ui";
 import { MentionTextarea } from "./mention";
 import { LayaOffNote } from "../studio/laya-switch";
@@ -12,6 +13,7 @@ import {
   type DecisionOption,
   type Route,
 } from "./chat-client";
+import { chatQueries } from "./chat-queries";
 
 const ACTIONS: Record<DecisionOption["action"], string> = {
   respond: "Answer normally",
@@ -50,31 +52,31 @@ export function describeRoute(r: Route, bots: Bot[]): string {
 
 /** Decision routing (Laya) for a bot the user owns. */
 export function BotDecision({ bot, bots }: { bot: Bot; bots: Bot[] }) {
-  const [cfg, setCfg] = useState<DecisionConfig>();
-  const [status, setStatus] = useState<string>();
-  const [error, setError] = useState<string>();
-  const [text, setText] = useState("");
-  const [route, setRoute] = useState<Route>();
-  useEffect(() => {
-    setCfg(undefined);
-    chatClient.decisionConfig(bot.id).then(
-      (c) => setCfg(c ?? blank),
-      (e) => setError(errorMessage(e)),
-    );
-  }, [bot.id]);
-  if (!cfg)
+  const { data, error } = useQuery(chatQueries.decisionConfig(bot.id));
+  if (data === undefined)
     return (
       <section aria-label="Decision routing" className="rounded-lg border bg-card p-4">
         <h3 className="text-base font-semibold tracking-tight">Decision routing</h3>
         {error ? (
           <p role="alert" className="text-xs text-destructive">
-            {error}
+            {errorMessage(error)}
           </p>
         ) : (
           <p className="text-xs">Loading…</p>
         )}
       </section>
     );
+  // The form keeps its own draft: a refetch must never replace what the person is typing.
+  return <DecisionForm key={bot.id} bot={bot} bots={bots} initial={data ?? blank} />;
+}
+
+function DecisionForm({ bot, bots, initial }: { bot: Bot; bots: Bot[]; initial: DecisionConfig }) {
+  const qc = useQueryClient();
+  const [cfg, setCfg] = useState<DecisionConfig>(initial);
+  const [status, setStatus] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [text, setText] = useState("");
+  const [route, setRoute] = useState<Route>();
   const setOpt = (i: number, p: Partial<DecisionOption>) =>
     setCfg({ ...cfg, options: cfg.options.map((o, k) => (k === i ? { ...o, ...p } : o)) });
   const others = bots.filter((b) => b.id !== bot.id);
@@ -98,10 +100,10 @@ export function BotDecision({ bot, bots }: { bot: Bot; bots: Bot[] }) {
     setError(undefined);
     setStatus(undefined);
     const clean: DecisionConfig = {
-      ...cfg!,
-      enabled: only || cfg!.enabled,
+      ...cfg,
+      enabled: only || cfg.enabled,
       backend: engine,
-      options: cfg!.options.map((o) => ({
+      options: cfg.options.map((o) => ({
         label: o.label.trim(),
         description: o.description.trim(),
         action: o.action,
@@ -112,7 +114,9 @@ export function BotDecision({ bot, bots }: { bot: Bot; bots: Bot[] }) {
       })),
     };
     try {
-      setCfg(await chatClient.saveDecisionConfig(bot.id, clean));
+      const saved = await chatClient.saveDecisionConfig(bot.id, clean);
+      setCfg(saved);
+      qc.setQueryData(chatQueries.decisionConfig(bot.id).queryKey, saved);
       setStatus("Routing saved.");
     } catch (e) {
       setError(errorMessage(e));

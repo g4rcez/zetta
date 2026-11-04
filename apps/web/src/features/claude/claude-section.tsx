@@ -5,7 +5,8 @@ import {
   SparkleIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
 
 import { EditorField } from "@/components/editor/editor";
 import { Button, Input, Select } from "@/components/ui";
@@ -15,6 +16,7 @@ import { errorMessage, type Bot } from "../chat/chat-client";
 import { Badge, ConfirmButton, Empty, list, listItem, Modal } from "../shared/ui";
 import {
   claudeApi,
+  claudeQueries,
   parseMarkdown,
   toRules,
   type ClaudeAsset,
@@ -34,20 +36,11 @@ const EFFORT_OPTIONS = [
  * prompt, effort and a budget per run, plus the skills and sub-agents installed for it alone. Other bots never see them.
  */
 export function ClaudeSection({ bot, notify }: { bot: Bot; notify: (m: string) => void }) {
-  const [data, setData] = useState<ClaudeSettings>();
-  const [error, setError] = useState<string>();
-  const reload = useCallback(async () => {
-    try {
-      setError(undefined);
-      setData(await claudeApi.get(bot.id));
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }, [bot.id]);
-  useEffect(() => {
-    setData(undefined);
-    void reload();
-  }, [reload]);
+  const qc = useQueryClient();
+  const settings = useQuery(claudeQueries.settings(bot.id));
+  const data = settings.data;
+  const error = settings.error ? errorMessage(settings.error) : undefined;
+  const reload = () => qc.invalidateQueries({ queryKey: ["claude", bot.id] });
 
   if (bot.harness !== "claude-code" && bot.harness !== "hermes")
     return (
@@ -67,6 +60,7 @@ export function ClaudeSection({ bot, notify }: { bot: Bot; notify: (m: string) =
             bot={bot}
             data={data}
             notify={notify}
+            onSaved={reload}
           />
           <Assets bot={bot} data={data} onChange={reload} notify={notify} />
         </>
@@ -79,10 +73,12 @@ function PermissionsForm({
   bot,
   data,
   notify,
+  onSaved,
 }: {
   bot: Bot;
   data: ClaudeSettings;
   notify: (m: string) => void;
+  onSaved: () => void;
 }) {
   const c = data.config;
   const { bots } = useSidebarData();
@@ -111,6 +107,7 @@ function PermissionsForm({
         throw new Error("Enter the budget in dollars, for example 2.50.");
       await claudeApi.save(bot.id, next);
       notify("Settings saved.");
+      onSaved();
     } catch (x) {
       setError(errorMessage(x));
     } finally {

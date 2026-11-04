@@ -246,7 +246,8 @@ suite("cross-user isolation matrix", () => {
         "/api/sources",
         "/api/conversations",
         "/api/activity",
-        "/api/workspaces",
+        "/api/folders",
+        "/api/workspaces", // deprecated alias of /api/folders
         "/api/discussions",
         "/api/inbound/routes",
       ]) {

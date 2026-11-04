@@ -8,6 +8,7 @@ import {
   StarIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
 import {
   DropdownMenu,
@@ -18,9 +19,11 @@ import {
 } from "@zetta/ui/components/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
 import { cn } from "@zetta/ui/lib/utils";
-import { chatClient, type Conversation } from "./chat-client";
+import type { Conversation } from "./chat-client";
+import { chatQueries } from "./chat-queries";
 
 type View = "open" | "archived";
+const NONE: Conversation[] = [];
 
 /**
  * The chat switcher in the chat header (DESIGN.md "Chat"): the open chat's title opens a combobox with a search field, the
@@ -49,14 +52,18 @@ export function ThreadTabs({
   const [view, setView] = useState<View>("open");
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const [archived, setArchived] = useState<Conversation[]>();
+  const qc = useQueryClient();
+  const archivedQuery = useQuery({
+    ...chatQueries.archived(botId),
+    enabled: open && view === "archived",
+  });
+  const archived = archivedQuery.isError ? NONE : archivedQuery.data;
   const listId = useId();
   const current = threads.find((t) => t.id === chatId);
   useEffect(() => {
-    if (!open || view !== "archived") return;
-    setArchived(undefined);
-    chatClient.conversations(botId, true).then(setArchived, () => setArchived([]));
-  }, [open, view, botId, threads.length]);
+    // Archiving or restoring a chat changes `threads`: the archived list is then out of date.
+    void qc.invalidateQueries({ queryKey: chatQueries.archived(botId).queryKey });
+  }, [qc, botId, threads.length]);
   useEffect(() => setRenaming(false), [chatId]);
   useEffect(() => {
     if (open) return;

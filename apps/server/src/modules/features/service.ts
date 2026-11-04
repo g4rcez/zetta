@@ -20,6 +20,7 @@ import { createRoutines } from "./routines";
 import { createSnapshots } from "./snapshots";
 import { safeRegex } from "./safety";
 import { createWorkflows } from "./workflows";
+import type { RecoveryScope } from "../runtime/instance";
 
 export class HookError extends Error {
   constructor(readonly code: "INVALID_PATTERN" | "LIMIT") {
@@ -301,17 +302,22 @@ export function createFeaturesService(
           and(eq(delegation.conversationId, conversationId), eq(delegation.ownerUserId, a.userId)),
         )
         .orderBy(asc(delegation.createdAt)),
-    /** One boot hook: reconcile everything left running by a dead process. */
-    async recover() {
-      const interrupted = await routines.recoverInterrupted();
-      const workflowsInterrupted = await workflows.recoverInterrupted();
-      await routines.start();
-      // Once per process: a `bun --hot` reload re-runs boot while the runs it would restart are still alive.
-      const boot = globalThis as { zettaRoutinesRecovered?: boolean };
-      if (!boot.zettaRoutinesRecovered) {
-        boot.zettaRoutinesRecovered = true;
-        void routines.recoverRecent().catch(() => {});
-      }
+    /**
+     * Reconcile what a dead process left running (see runtime/instance.ts for what "dead" means). At boot it also arms the routine jobs;
+     * on the periodic run (`boot` false) it re-runs the routines it just found interrupted.
+     */
+    async recover(scope?: RecoveryScope, boot = true) {
+      const interrupted = await routines.recoverInterrupted(scope);
+      const workflowsInterrupted = await workflows.recoverInterrupted(scope);
+      if (boot) {
+        await routines.start();
+        // Once per process: a `bun --hot` reload re-runs boot while the runs it would restart are still alive.
+        const once = globalThis as { zettaRoutinesRecovered?: boolean };
+        if (!once.zettaRoutinesRecovered) {
+          once.zettaRoutinesRecovered = true;
+          void routines.recoverRecent().catch(() => {});
+        }
+      } else if (interrupted) void routines.recoverRecent().catch(() => {});
       return { routines: interrupted, workflows: workflowsInterrupted };
     },
     // Scheduler tick passthrough (kept for the in-process scheduler and tests).

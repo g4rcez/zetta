@@ -196,4 +196,40 @@ suite("setup cards against compose postgres", () => {
     script = [card("no-such-plugin"), "I could not find that."];
     expect(cards(await say("connect it"))).toBe(0);
   });
+  test("only the chief can set a plugin up for another bot", async () => {
+    const { bot: target } = await newBot("Target");
+    const { say } = await newBot("Pretender");
+    prompts.length = 0;
+    script = [
+      `\`\`\`zetta:setup\n{"plugin":"setup-fake","bot":"${target.id}"}\n\`\`\``,
+      "I could not.",
+    ];
+    expect(cards(await say("set it up for Target"))).toBe(0);
+    expect(prompts.join("\n")).toContain("only the chief can set this up for another bot");
+  });
+
+  test("the chief opens the setup card for the bot it names, not for itself", async () => {
+    const { bot: target } = await newBot("Named");
+    const found = (
+      (await call("GET", "/api/bots")).json.bots as { id: string; kind: string; version: number }[]
+    ).find((b) => b.kind === "chief")!;
+    const chief = (
+      await call("PATCH", `/api/bots/${found.id}`, {
+        expectedVersion: found.version,
+        patch: { harness: "codex" },
+      })
+    ).json.bot as { id: string };
+    await db.$client.query("update bot set onboarded = true where id = $1", [chief.id]);
+    const c = (await call("POST", "/api/conversations", { botId: chief.id })).json.conversation
+      .id as string;
+    script = [`\`\`\`zetta:setup\n{"plugin":"setup-fake","bot":"Named"}\n\`\`\``, "Fill it in."];
+    const reply = (
+      await call("POST", `/api/conversations/${c}/messages`, {
+        content: "set up setup-fake for Named",
+      })
+    ).json.assistant.content as string;
+    expect(cards(reply)).toBe(1);
+    expect(reply).toContain(`"botId":"${target.id}"`);
+    expect(reply).not.toContain(`"botId":"${chief.id}"`);
+  });
 });

@@ -49,13 +49,13 @@ import { BotStatusDot } from "@/components/bot-status";
 import { usePreferences } from "../preferences/preferences";
 import { useBotAttention, type BotAttention } from "../attention/summary";
 
-import type { Bot, Conversation, Workspace } from "./chat-client";
+import type { Bot, Conversation, Folder } from "./chat-client";
 import { ORDER_LIMIT, moveInGroup, orderBots, placeGroup } from "./bot-order";
 import { useSidebarData } from "./sidebar-data";
 
 export { orderBots };
 
-function depthOf(spaces: Workspace[], id: string | null) {
+function depthOf(spaces: Folder[], id: string | null) {
   let d = 0,
     cur = spaces.find((w) => w.id === id);
   while (cur?.parentId && d < 5) {
@@ -841,16 +841,10 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
             }}
             className="flex gap-2 rounded-lg border bg-card p-2"
           >
-            <Input
-              title="New workspace"
-              hiddenLabel
-              name="space"
-              placeholder="New workspace"
-              autoFocus
-            />
+            <Input title="New folder" hiddenLabel name="space" placeholder="New folder" autoFocus />
             {spaces.length > 0 && (
               <Select
-                title="Inside workspace"
+                title="Inside folder"
                 hiddenLabel
                 container="w-24"
                 required={false}
@@ -912,12 +906,12 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
             </button>
           </Hint>
           <DropdownMenu>
-            <Hint title="Add" description="Create a chat, bot, workspace or room.">
+            <Hint title="Add" description="Create a chat, bot, folder or room.">
               <DropdownMenuTrigger
                 render={
                   <button
                     type="button"
-                    aria-label="Add a chat, bot or workspace"
+                    aria-label="Add a chat, bot or folder"
                     className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
                   />
                 }
@@ -938,7 +932,7 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setAdding(true)}>
                 <FolderPlusIcon />
-                New workspace
+                New folder
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => void navigate({ to: "/rooms", search: { new: true } })}
@@ -978,7 +972,7 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
               <ul className="space-y-px">
                 {chief && section(chief)}
                 {spaceGroups.map((group) => {
-                  const members = rest.filter((b) => (b.workspaceId ?? null) === group.id);
+                  const members = rest.filter((b) => (b.folderId ?? null) === group.id);
                   if (!members.length) return null;
                   const ids = members.map((b) => b.id);
                   return (

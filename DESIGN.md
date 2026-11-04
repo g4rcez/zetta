@@ -289,10 +289,10 @@ A theme passes when all these pairs pass. The current values pass. The lowest te
 From top to bottom:
 
 1. **Top row.** The Zetta mark (home), then search (`⌘K`, the command palette) and new chat with the open bot (or the chief).
-2. **Fixed block.** Inbox (the attention model: needs input, blocked, new results; amber count), Tasks (the kanban), Routines, Wiki (what the bots know: the explorer at `/wiki` and one page per item at `/wiki/<slug>`).
+2. **Fixed block.** Inbox (the attention model: needs input, blocked, new results; amber count), Tasks (the kanban), Routines, Memory (what the bots know: the explorer at `/memory` and one page per item at `/memory/<slug>`; the old `/wiki` addresses redirect).
 3. **Filter.** One field that filters rooms, bots and chats.
 4. **Rooms.** Group discussions where several bots and people share one conversation ("rooms" is the product's word for them). Rows start with `#`; the Chief's help and permission rooms sit apart under "Bot issues".
-5. **Bots.** The heading has a clock toggle that lists every chat by time instead of by bot, and a `+` menu (New chat, New bot, New workspace, New room). Favorites come first, then the chief, pinned first and not movable, then the other bots in the user's order, grouped by workspace when the user has workspaces. Each bot row expands to "New chat" and its five most recent chats, then "Show N more". Hover or focus shows "New chat" (`+`) and a menu (`⋯`: New chat, Move up, Move down, Settings) on the row.
+5. **Bots.** The heading has a clock toggle that lists every chat by time instead of by bot, and a `+` menu (New chat, New bot, New folder, New room). Favorites come first, then the chief, pinned first and not movable, then the other bots in the user's order, grouped by folder when the user has folders. Each bot row expands to "New chat" and its five most recent chats, then "Show N more". Hover or focus shows "New chat" (`+`) and a menu (`⋯`: New chat, Move up, Move down, Settings) on the row.
 6. **More.** Agenda, Studio, Plugins, Computer, Dashboard, Teams, Artifacts. Closed by default; open while one of its pages is shown.
 7. **Footer.** Theme, Collapse, and the account menu (name, email, sign out).
 

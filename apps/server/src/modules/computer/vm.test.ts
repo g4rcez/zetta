@@ -47,6 +47,8 @@ function memoryStore(): VmStore & { rows: VmRow[] } {
     createdAt: new Date(),
     lastStartedAt: null,
     deletedAt: null,
+    endpoint: null,
+    connectionId: null,
     ...v,
   });
   const live = (u: string) => rows.filter((r) => r.ownerUserId === u && r.status !== "deleted");
@@ -67,8 +69,11 @@ function memoryStore(): VmStore & { rows: VmRow[] } {
         name: v.name,
         purpose: v.purpose ?? null,
         createdByBotId: v.botId ?? null,
+        ...(v.target ? { target: v.target } : {}),
         ...(v.driver ? { driver: v.driver } : {}),
         ...(v.os ? { os: v.os } : {}),
+        endpoint: v.endpoint ?? null,
+        connectionId: v.connectionId ?? null,
       });
       rows.push(r);
       return r;
@@ -266,7 +271,7 @@ describe("vm service (fake docker + fake spacesd)", () => {
     );
     expect(m.calls.length).toBe(spacesd);
     await vm.stop("alice", made.id);
-    expect(vm.options().targets).toEqual({ vm: ["cua", "agent-desktop"], local: [] });
+    expect(vm.options().targets).toEqual({ vm: ["cua", "agent-desktop"], local: [], cua: [] });
     // The server's own desktop is not offered yet.
     expect(await code(vm.create("alice", { name: "Mine", target: "local" }))).toBe("UNSUPPORTED");
     const def = (await vm.list("alice")).find((x) => x.kind === "default")!;
@@ -721,5 +726,178 @@ describe("page address and links in a read", () => {
       'Window "r/neovim - Chromium" (click_element{n} clicks [n]):\nframe "r/neovim - Chromium"\n[3] link "Inspect your LSP config"',
     );
     await vm.closeAll();
+  });
+});
+
+describe("remote Cua computer (a spacesd on another machine)", () => {
+  const TOKEN = "fake-remote-bearer-token-123";
+  const ENDPOINT = "https://93.184.216.34";
+  /** The sealed-token store: what the connections store does in production. */
+  function fakeSecrets() {
+    const kept = new Map<string, { userId: string; secret: string; revoked: boolean }>();
+    return {
+      kept,
+      create: async (userId: string, _label: string, secret: string) => {
+        const id = uuidv7();
+        kept.set(id, { userId, secret, revoked: false });
+        return id;
+      },
+      read: async (userId: string, id: string) => {
+        const k = kept.get(id);
+        if (!k || k.userId !== userId || k.revoked) throw new ComputerError("REVOKED");
+        return k.secret;
+      },
+      revoke: async (_userId: string, id: string) => {
+        kept.get(id)!.revoked = true;
+      },
+    };
+  }
+  async function remote(opts: Partial<Parameters<typeof createVmService>[0]> = {}) {
+    const secrets = fakeSecrets();
+    const m = fakeMcp();
+    const connected: { endpoint: string; token: string; closed: boolean }[] = [];
+    const base = await setup({
+      allowPrivate: false,
+      secrets,
+      connectRemote: async (endpoint, token) => {
+        const entry = { endpoint, token, closed: false };
+        connected.push(entry);
+        const session = await m.connect(0, token);
+        return {
+          call: session.call,
+          close: async () => {
+            entry.closed = true;
+          },
+        };
+      },
+      ...opts,
+    });
+    return { ...base, secrets, connected, calls: m.calls };
+  }
+
+  test("the token is sealed at once; the row and the view hold the address and an id, never the token", async () => {
+    const { vm, store, secrets } = await remote();
+    const made = await vm.createRemote("alice", {
+      name: "Office Mac",
+      endpoint: ENDPOINT,
+      token: TOKEN,
+    });
+    expect(made).toMatchObject({
+      name: "Office Mac",
+      target: "cua",
+      endpoint: ENDPOINT,
+      status: "stopped",
+    });
+    expect(JSON.stringify(made)).not.toContain(TOKEN);
+    expect(JSON.stringify(store.rows)).not.toContain(TOKEN);
+    expect([...secrets.kept.values()].map((k) => k.secret)).toEqual([TOKEN]);
+    expect(vm.options().targets.cua).toEqual(["cua"]);
+  });
+
+  test("starting connects with the stored token, touches no container, and acting goes through that connection", async () => {
+    const { vm, d, connected, calls } = await remote();
+    const made = await vm.createRemote("alice", {
+      name: "Office Mac",
+      endpoint: ENDPOINT,
+      token: TOKEN,
+    });
+    const logged = d.log.length;
+    expect((await vm.start("alice", made.id)).status).toBe("running");
+    expect(connected).toEqual([{ endpoint: ENDPOINT, token: TOKEN, closed: false }]);
+    await vm.act("alice", made.id, "agent", { type: "key", key: "Return" });
+    expect(calls.some((c) => c.tool === "press_key" && c.token === TOKEN)).toBe(true);
+    expect(await vm.screenshot("alice", made.id)).toBe("iVBORw0KGgo=");
+    await vm.stop("alice", made.id);
+    expect(connected[0]!.closed).toBe(true);
+    expect((await vm.list("alice")).find((x) => x.id === made.id)!.status).toBe("stopped");
+    expect(d.log.length).toBe(logged);
+  });
+
+  test("no browser is assumed: navigate, paste, keyboard and VNC are not offered", async () => {
+    const { vm } = await remote();
+    const made = await vm.createRemote("alice", {
+      name: "Office Mac",
+      endpoint: ENDPOINT,
+      token: TOKEN,
+    });
+    await vm.start("alice", made.id);
+    expect(
+      await code(
+        vm.act("alice", made.id, "agent", { type: "navigate", url: "https://example.com" }),
+      ),
+    ).toBe("UNSUPPORTED");
+    expect(await code(vm.paste("alice", made.id, "hello"))).toBe("UNSUPPORTED");
+    expect(await code(vm.keyboard("alice", made.id, "us"))).toBe("UNSUPPORTED");
+    expect(() => vm.vncTicket("alice", made.id)).toThrow();
+    await vm.closeAll();
+  });
+
+  test("only https, with no credentials, path or query, and not a private address unless the operator allows it", async () => {
+    const { vm } = await remote();
+    const add = (endpoint: string) =>
+      code(vm.createRemote("alice", { name: "X", endpoint, token: TOKEN }));
+    expect(await add("http://93.184.216.34")).toBe("INSECURE");
+    expect(await add("https://user:pass@93.184.216.34")).toBe("INVALID");
+    expect(await add("https://93.184.216.34/mcp")).toBe("INVALID");
+    expect(await add("https://93.184.216.34/?token=x")).toBe("INVALID");
+    expect(await add("not a url")).toBe("INVALID");
+    for (const host of ["10.0.0.5", "127.0.0.1", "192.168.1.9", "169.254.169.254", "localhost"])
+      expect(await add(`https://${host}`)).toBe("BLOCKED_URL");
+    const lan = await remote({ allowPrivate: true });
+    expect(
+      await code(
+        lan.vm.createRemote("alice", {
+          name: "Lab",
+          endpoint: "http://10.0.0.5:3211",
+          token: TOKEN,
+        }),
+      ),
+    ).toBe("ok");
+  });
+
+  test("an address that has become private since it was saved is refused at start", async () => {
+    const { vm, store } = await remote();
+    const made = await vm.createRemote("alice", {
+      name: "Office Mac",
+      endpoint: ENDPOINT,
+      token: TOKEN,
+    });
+    store.rows.find((r) => r.id === made.id)!.endpoint = "https://10.0.0.5";
+    expect(await code(vm.start("alice", made.id))).toBe("BLOCKED_URL");
+  });
+
+  test("deleting revokes the token and leaves Docker alone; another user cannot start or delete it", async () => {
+    const { vm, d, secrets, connected } = await remote();
+    const made = await vm.createRemote("alice", {
+      name: "Office Mac",
+      endpoint: ENDPOINT,
+      token: TOKEN,
+    });
+    expect(await code(vm.start("bob", made.id))).toBe("NOT_FOUND");
+    expect(await code(vm.remove("bob", made.id))).toBe("NOT_FOUND");
+    await vm.start("alice", made.id);
+    const logged = d.log.length;
+    await vm.remove("alice", made.id);
+    expect([...secrets.kept.values()].map((k) => k.revoked)).toEqual([true]);
+    expect(connected[0]!.closed).toBe(true);
+    expect(d.log.length).toBe(logged);
+    expect((await vm.list("alice")).some((x) => x.id === made.id)).toBe(false);
+  });
+
+  test("without a secrets store remote computers are off, and a remote one never takes a local driver", async () => {
+    const { vm } = await setup();
+    expect(
+      await code(vm.createRemote("alice", { name: "X", endpoint: ENDPOINT, token: TOKEN })),
+    ).toBe("UNSUPPORTED");
+    expect(vm.options().targets.cua).toEqual([]);
+    const withSecrets = await remote();
+    const made = await withSecrets.vm.createRemote("alice", {
+      name: "Office Mac",
+      endpoint: ENDPOINT,
+      token: TOKEN,
+    });
+    expect(await code(withSecrets.vm.setDriver("alice", made.id, "agent-desktop"))).toBe(
+      "UNSUPPORTED",
+    );
   });
 });

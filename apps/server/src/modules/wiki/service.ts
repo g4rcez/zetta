@@ -204,7 +204,7 @@ const same = (a: Content, b: Content) =>
   a.tags.every((t, i) => t === b.tags[i]);
 const sameSet = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((x) => b.includes(x));
-const pageLink = (slug: string) => `/wiki/${encodeURIComponent(slug)}`;
+const pageLink = (slug: string) => `/memory/${encodeURIComponent(slug)}`;
 const who = (r: WikiReader) => (typeof r === "string" ? { userId: r, botId: undefined } : r);
 const uniqueViolation = (e: unknown) =>
   (e as { code?: string }).code === "23505" ||

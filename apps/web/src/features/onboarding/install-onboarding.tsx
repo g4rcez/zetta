@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
@@ -20,8 +21,9 @@ import { Plugins } from "../studio/plugins";
 import { reviewInstructions } from "../bots/instruction-review";
 import { FRESH_INTERVIEW, type InterviewState } from "../bots/interview-flow";
 import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { type AvatarValue } from "@/components/bot-avatar";
-import { installationApi, type NetworkMode } from "./installation-api";
+import { installationApi, installationQueries, type NetworkMode } from "./installation-api";
 import { isOnboardingStep, PRE_ACCOUNT_STEPS, type OnboardingStep } from "./steps";
 
 const STEPS: readonly { id: StepId; title: string; question: string; lede: string }[] = [
@@ -87,6 +89,13 @@ function readStored(): Stored {
   } catch {}
   return { key: "", mode: "local", url: "" };
 }
+// Opened at its network address (after `bun run setup --mode lan`): that address is the one other devices use.
+function networkOrigin(): string {
+  const { protocol, hostname, origin } = window.location;
+  return protocol === "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(hostname)
+    ? origin
+    : "";
+}
 function writeStored(value: Stored | null) {
   try {
     if (value) sessionStorage.setItem(STORE, JSON.stringify(value));
@@ -120,6 +129,7 @@ const draftOf = (b: Bot): Draft => ({
 
 export function InstallOnboarding() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [requested] = useState(() => {
     const step = new URLSearchParams(window.location.search).get("step");
     return isOnboardingStep(step) ? step : undefined;
@@ -134,7 +144,7 @@ export function InstallOnboarding() {
   const [setupKey, setSetupKey] = useState(stored.key);
   const [showKey, setShowKey] = useState(false);
   const [mode, setMode] = useState<NetworkMode>(stored.mode);
-  const [publicUrl, setPublicUrl] = useState(stored.url);
+  const [publicUrl, setPublicUrl] = useState(() => stored.url || networkOrigin());
   const [account, setAccount] = useState({ name: "", email: "", password: "", confirm: "" });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -159,7 +169,8 @@ export function InstallOnboarding() {
   }, [setupKey, mode, publicUrl]);
 
   async function loadChief(): Promise<Bot> {
-    const all = await chatClient.bots();
+    // Fresh on purpose: the Chief was just created, so a cached list may not hold it.
+    const all = await qc.fetchQuery({ ...chatQueries.bots(), staleTime: 0 });
     const found = all.find((b) => b.kind === "chief");
     if (!found) throw new Error("Your Chief could not be created. Reload and try again.");
     setChief(found);
@@ -174,7 +185,7 @@ export function InstallOnboarding() {
     (async () => {
       const status = await identityClient.status();
       if (status.state === "active") {
-        const installation = await installationApi.get();
+        const installation = await qc.fetchQuery({ ...installationQueries.get(), staleTime: 0 });
         if (!status.isAdmin || installation.onboarding === "done")
           return void navigate({ to: "/chat/{-$chatId}", replace: true });
         await loadChief();
@@ -275,6 +286,7 @@ export function InstallOnboarding() {
         outputStyleId: draft.outputStyleId,
       });
       setChief(saved);
+      void qc.invalidateQueries({ queryKey: chatQueries.bots().queryKey, exact: true });
       go("plugins");
     });
 
@@ -382,9 +394,9 @@ export function InstallOnboarding() {
             <p className="text-sm text-muted-foreground">
               It is the value of <code className="font-mono">ZETTA_SETUP_KEY</code> in the server's
               environment (or <code className="font-mono">ZETTA_CONNECTION_KEY</code> when no setup
-              key is set). Don't have one? Create it with{" "}
-              <code className="font-mono">openssl rand -base64 32</code>, set it, and restart the
-              server.
+              key is set). Don't have one? Run <code className="font-mono">bun run setup</code> to
+              create it, or use <code className="font-mono">openssl rand -base64 32</code>, set it,
+              and restart the server.
             </p>
             <Nav>
               <Button type="submit" disabled={busy || !setupKey.trim()}>
@@ -429,8 +441,10 @@ export function InstallOnboarding() {
                   onChange={(e) => setPublicUrl(e.target.value)}
                 />
                 <p className="text-sm text-muted-foreground">
-                  Use an https address, such as one from a private network like Tailscale. The
-                  server needs a restart to open up.
+                  On your local network, run <code className="font-mono">bun run setup</code> on the
+                  server, choose <code className="font-mono">lan</code>, restart, and open the
+                  address it prints. Otherwise enter an https address, such as one from a private
+                  network like Tailscale. The server needs a restart to open up.
                 </p>
               </div>
             )}

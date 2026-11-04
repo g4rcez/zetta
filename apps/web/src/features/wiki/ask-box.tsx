@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { mentionsAsText } from "@zetta/core/mentions";
 import { Link } from "@tanstack/react-router";
 import { PaperPlaneRightIcon, SparkleIcon, StopIcon } from "@phosphor-icons/react";
@@ -5,6 +6,7 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui";
 import { chatClient, errorMessage, type Bot as ChatBot } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { MentionField } from "../chat/mention";
 import { Response, type WikiLinkInfo } from "../chat/response";
 import { useZettaChat } from "../chat/use-zetta-chat";
@@ -18,7 +20,7 @@ const canAnswer = (b: ChatBot) =>
   b.kind === "chief" && b.onboarded && !["fixture", "decision"].includes(b.harness);
 
 /**
- * "Ask the wiki": the user's chief answers in place, streamed, from the wiki. Every question is its own conversation, archived once the
+ * "Ask your memory": the user's chief answers in place, streamed, from the wiki. Every question is its own conversation, archived once the
  * answer is saved so it does not fill the chat list; "Continue in chat" opens it. `scope` limits the bot to given items.
  * The question is typed in the chat's own text box (`MentionField`), so `@` and `#` work as in the chat (CLAUDE.md "Free text").
  */
@@ -31,7 +33,9 @@ export function AskBox({
   wikiLinks: WikiLinkInfo | undefined;
   autoFocus?: boolean;
 }) {
-  const [bots, setBots] = useState<ChatBot[]>();
+  const qc = useQueryClient();
+  const botsQuery = useQuery(chatQueries.bots());
+  const bots = botsQuery.data;
   const [question, setQuestion] = useState("");
   const [asked, setAsked] = useState<string>();
   const [conversationId, setConversationId] = useState<string>();
@@ -39,15 +43,17 @@ export function AskBox({
   const [error, setError] = useState<string>();
   const [limit, setLimit] = useState(true);
   useEffect(() => {
-    void chatClient.bots().then(setBots, (e) => setError(errorMessage(e)));
-  }, []);
+    if (botsQuery.error) setError(errorMessage(botsQuery.error));
+  }, [botsQuery.error]);
   const chief = bots?.find(canAnswer);
 
   const chat = useZettaChat({
     conversationId,
     onSettled: async (id) => {
       try {
-        const last = (await chatClient.messages(id)).filter((m) => m.role === "assistant").at(-1);
+        // The answer was just saved: never take an older copy from the cache.
+        const messages = await qc.fetchQuery({ ...chatQueries.messages(id), staleTime: 0 });
+        const last = messages.filter((m) => m.role === "assistant").at(-1);
         if (!last || last.status !== "complete") {
           setError("The chief could not answer. Try again.");
           return;
@@ -66,6 +72,7 @@ export function AskBox({
         // The answer is kept on this page; the conversation leaves the chat list but "Continue in chat" still opens it.
         // A failed question leaves it too: nobody wants a dead conversation in the list.
         await chatClient.updateConversation(id, { archived: true }).catch(() => {});
+        void qc.invalidateQueries({ queryKey: chatQueries.conversations().queryKey });
       }
     },
   });
@@ -97,7 +104,7 @@ export function AskBox({
   return (
     <section aria-labelledby="wiki-ask" className="rounded-xl border bg-card p-3">
       <h2 id="wiki-ask" className="sr-only">
-        Ask the wiki
+        Ask your memory
       </h2>
       {bots && !chief ? (
         <p className="px-1 text-sm text-muted-foreground">
@@ -114,11 +121,11 @@ export function AskBox({
             <SparkleIcon aria-hidden="true" className="ml-1 size-4 text-muted-foreground" />
           </span>
           <MentionField
-            aria-label="Ask the wiki"
+            aria-label="Ask your memory"
             value={question}
             onChange={setQuestion}
             bots={bots ?? []}
-            placeholder="Ask the wiki, e.g. how do refunds work?"
+            placeholder="Ask your memory, e.g. how do refunds work?"
             rows={1}
             maxLength={2000}
             autoFocus={autoFocus}
@@ -169,7 +176,7 @@ export function AskBox({
             {live?.content ? (
               <Response text={live.content} streaming wikiLinks={wikiLinks} />
             ) : (
-              "Reading the wiki…"
+              "Reading memory…"
             )}
           </div>
         )}
@@ -209,7 +216,7 @@ function SourceChips({
     <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
       {label}
       {sources.map((s) => (
-        <Link key={s.slug} to="/wiki/$slug" params={{ slug: s.slug }} className="rounded-full">
+        <Link key={s.slug} to="/memory/$slug" params={{ slug: s.slug }} className="rounded-full">
           <Badge tone={tone ?? "neutral"}>{s.title}</Badge>
         </Link>
       ))}

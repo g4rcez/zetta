@@ -127,7 +127,7 @@ export function FiltersBar({
         <button
           type="button"
           aria-expanded={open}
-          aria-controls="wiki-facets"
+          aria-controls="memory-facets"
           onClick={() => setOpen((o) => !o)}
           className={cn(
             control,
@@ -164,7 +164,7 @@ export function FiltersBar({
         </div>
       </div>
       {open && (
-        <div id="wiki-facets" className="space-y-4 rounded-lg border bg-card p-4">
+        <div id="memory-facets" className="space-y-4 border-t pt-4">
           <div className="flex flex-wrap gap-x-8 gap-y-3">
             <fieldset className="space-y-1.5">
               <legend className="text-xs font-medium text-muted-foreground">Who can read it</legend>

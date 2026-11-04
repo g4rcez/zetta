@@ -1,19 +1,24 @@
-import { defineRelationsPart } from "drizzle-orm";
-import { text, timestamp, boolean, index, integer, jsonb } from "drizzle-orm/pg-core";
+import { defineRelationsPart, sql } from "drizzle-orm";
+import { text, timestamp, boolean, check, index, integer, jsonb } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
 
-export const user = zetta.table("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").default(false).notNull(),
-  image: text("image"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-});
+export const user = zetta.table(
+  "user",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    email: text("email").notNull().unique(),
+    emailVerified: boolean("email_verified").default(false).notNull(),
+    image: text("image"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  // Better Auth stores the email in lower case. With this check, UNIQUE(email) is also unique per person ignoring case.
+  (table) => [check("user_email_canonical_check", sql`${table.email} = lower(${table.email})`)],
+);
 
 export const session = zetta.table(
   "session",

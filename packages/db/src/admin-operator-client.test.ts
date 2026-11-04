@@ -4,6 +4,7 @@ import { adminOperatorPoolOptions } from "./admin-operator-client";
 import { createAdminOperatorClientOwner } from "./admin-operator-client-owner";
 import { runAdminOperator } from "../../../apps/server/src/modules/identity/admin-operator";
 import type { OperatorDependencies } from "../../../apps/server/src/modules/identity/admin-operator";
+import { sourceOf } from "./test-source";
 
 const env = {
   ZETTA_OPERATOR_DATABASE_URL: "postgresql://operator:synthetic@127.0.0.1:55432/identity_local",
@@ -308,7 +309,7 @@ test("admin-operator-client uses only explicit bounded driver fields, never a UR
 
 test("admin-operator-client source retains owned release/end, error flags and fixed parameterized identity check", async () => {
   // Source evidence only: no Pool factory/connect or actual SQL executes here.
-  const source = await Bun.file(new URL("./admin-operator-client.ts", import.meta.url)).text();
+  const source = await sourceOf("./admin-operator-client.ts");
   expect(source).toContain("drizzle({ client, relations, logger: false })");
   expect(source).toContain(
     "const { reserve, close, healthy } = createAdminOperatorClientOwner(pool)",

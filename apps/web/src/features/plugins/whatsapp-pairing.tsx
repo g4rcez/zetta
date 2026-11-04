@@ -1,8 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui";
 import { errorMessage } from "../chat/chat-client";
-import { usePluginApi, type PluginTest } from "./plugins-api";
+import { usePluginApi, usePluginScope } from "./plugins-api";
 import { Modal } from "../shared/ui";
 import { Alert } from "@g4rcez/components/alert";
 
@@ -18,61 +19,50 @@ export function WhatsappPairing({
   onPaired: () => void;
 }) {
   const pluginsApi = usePluginApi();
-  const [busy, setBusy] = useState(false);
-  const [qr, setQr] = useState<string>();
-  const [message, setMessage] = useState<string>();
-  const [error, setError] = useState<string>();
-  const [phase, setPhase] = useState<Phase>("checking");
+  const scope = usePluginScope();
+  const [connected, setConnected] = useState(false);
   const done = useRef(false);
 
   const finish = useCallback(() => {
     if (done.current) return;
     done.current = true;
-    setPhase("connected");
-    setQr(undefined);
+    setConnected(true);
     onPaired();
   }, [onPaired]);
 
-  const load = useCallback(async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      const r = await pluginsApi.connect("whatsapp");
-      setMessage(r.message);
-      if (r.qrDataUrl) {
-        setQr(r.qrDataUrl);
-        setPhase("scan");
-      } else finish();
-    } catch (e) {
-      setError(errorMessage(e));
-      setPhase("error");
-    } finally {
-      setBusy(false);
-    }
-  }, [finish]);
-
+  // Opening the session returns the QR code. WAHA rotates the code about every 20 seconds, so it is fetched again while a code shows.
+  const pairing = useQuery({
+    queryKey: ["whatsapp-pairing", scope, "session"],
+    queryFn: () => pluginsApi.connect("whatsapp"),
+    enabled: !connected,
+    retry: false,
+    gcTime: 0,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchInterval: (q) => (q.state.data?.qrDataUrl ? 18_000 : false),
+  });
+  const qr = connected ? undefined : pairing.data?.qrDataUrl;
+  const message = pairing.data?.message;
+  const error = pairing.error ? errorMessage(pairing.error) : undefined;
+  const busy = pairing.isFetching;
+  const phase: Phase = connected ? "connected" : pairing.error ? "error" : qr ? "scan" : "checking";
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (pairing.data && !pairing.data.qrDataUrl) finish();
+  }, [pairing.data, finish]);
   // Live status: stop once WAHA reports the session as working.
+  const status = useQuery({
+    queryKey: ["whatsapp-pairing", scope, "status"],
+    queryFn: () => pluginsApi.test("whatsapp"),
+    enabled: !connected && pairing.isSuccess,
+    retry: false,
+    gcTime: 0,
+    staleTime: 0,
+    refetchInterval: (q) => (q.state.data?.status.state === "connected" ? false : 3000),
+  });
+  const statusState = status.data?.status.state;
   useEffect(() => {
-    const t = setInterval(() => {
-      if (done.current) return;
-      pluginsApi
-        .test("whatsapp")
-        .then((r: PluginTest) => {
-          if (r.status.state === "connected") finish();
-        })
-        .catch(() => undefined);
-    }, 3000);
-    return () => clearInterval(t);
-  }, [finish]);
-  // WAHA rotates the code about every 20 seconds.
-  useEffect(() => {
-    if (!qr) return;
-    const t = setInterval(() => void load(), 18_000);
-    return () => clearInterval(t);
-  }, [qr, load]);
+    if (statusState === "connected") finish();
+  }, [statusState, finish]);
 
   const step = phase === "connected" ? 3 : phase === "scan" ? 1 : phase === "error" ? 0 : 0;
   return (
@@ -121,7 +111,7 @@ export function WhatsappPairing({
             {phase === "connected" ? "Done" : "Close"}
           </Button>
           {phase !== "connected" && (
-            <Button size="sm" loading={busy} disabled={busy} onClick={() => void load()}>
+            <Button size="sm" loading={busy} disabled={busy} onClick={() => void pairing.refetch()}>
               {qr ? "Refresh code" : "Show QR code"}
             </Button>
           )}

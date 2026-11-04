@@ -26,10 +26,11 @@ export const PROVIDER_ENV: Record<string, string> = {
   openai: "OPENAI_API_KEY",
   google: "GEMINI_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
   github: "GITHUB_TOKEN",
 };
 // jev, email and x have no CLI env var: their secrets are only used server-side (decision adapter, mailbox and X source readers).
-export const PROVIDERS = [...Object.keys(PROVIDER_ENV), "jev", "email", "x", "plugin"];
+export const PROVIDERS = [...Object.keys(PROVIDER_ENV), "jev", "email", "x", "plugin", "machine"];
 
 export function createConnectionsService(db: Database, store?: Store) {
   const need = () => {

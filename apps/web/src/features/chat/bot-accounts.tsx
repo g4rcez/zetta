@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Button, Input, Select } from "@/components/ui";
 
 import {
@@ -6,11 +7,11 @@ import {
   errorMessage,
   PROVIDERS,
   type Bot,
-  type ConnectionList,
   type Provider,
   type RequiredConnection,
   type Requirement,
 } from "./chat-client";
+import { chatQueries } from "./chat-queries";
 
 export const KEY_PATTERN = /^[a-z0-9_-]{1,32}$/;
 const PROVIDER_NAME: Record<Provider, string> = {
@@ -18,6 +19,7 @@ const PROVIDER_NAME: Record<Provider, string> = {
   openai: "OpenAI",
   google: "Google",
   openrouter: "OpenRouter",
+  deepseek: "DeepSeek",
   github: "GitHub",
 };
 const STATUS: Record<Requirement["status"], string> = {
@@ -26,20 +28,17 @@ const STATUS: Record<Requirement["status"], string> = {
   unusable: "The chosen account cannot be used (it may have been revoked). Choose another.",
 };
 
+const NONE: Requirement[] = [];
+
 /** Required accounts: owners edit the list; every user (owner or not) binds their own account to each requirement. */
 export function BotAccounts({ bot, onBotChange }: { bot: Bot; onBotChange: (b: Bot) => void }) {
   const [draft, setDraft] = useState<RequiredConnection[]>(bot.requiredConnections ?? []);
-  const [reqs, setReqs] = useState<Requirement[]>([]);
-  const [conns, setConns] = useState<ConnectionList>();
+  const qc = useQueryClient();
+  const reqsQuery = chatQueries.requirements(bot.id, bot.version);
+  const reqs = useQuery({ ...reqsQuery, placeholderData: keepPreviousData }).data ?? NONE;
+  const conns = useQuery(chatQueries.connections()).data;
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
-  const reload = useCallback(() => {
-    void chatClient.requirements(bot.id).then(setReqs, () => setReqs([]));
-  }, [bot.id]);
-  useEffect(() => {
-    reload();
-    chatClient.connections().then(setConns, () => setConns(undefined));
-  }, [reload, bot.version]);
   useEffect(() => setDraft(bot.requiredConnections ?? []), [bot.requiredConnections]);
 
   const invalid =
@@ -62,7 +61,7 @@ export function BotAccounts({ bot, onBotChange }: { bot: Bot; onBotChange: (b: B
     try {
       await chatClient.bindConnection(bot.id, key, connectionId);
       setStatus("Account chosen.");
-      reload();
+      await qc.invalidateQueries({ queryKey: ["bots", bot.id, "requirements"] });
     } catch (e) {
       setError(errorMessage(e));
     }

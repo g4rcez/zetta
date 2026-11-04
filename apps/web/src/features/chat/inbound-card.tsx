@@ -1,5 +1,6 @@
 import { Alert } from "@g4rcez/components/alert";
 import { ArrowRightIcon, CheckCircleIcon } from "@phosphor-icons/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { BotIdentity, useBotIdentity } from "@/components/bot-identity";
@@ -8,7 +9,7 @@ import { inboundApi } from "../inbound/inbound-api";
 import { PluginIcon } from "../plugins/plugin-icon";
 import { pluginsApiFor } from "../plugins/plugins-api";
 import { errorMessage } from "./chat-client";
-import { applyPlan, reachLabel, type InboundCardData } from "./inbound-card-data";
+import { applyPlan, reachLabel, sameFilter, type InboundCardData } from "./inbound-card-data";
 
 type Phase = "ready" | "busy" | "applied" | "dismissed";
 
@@ -22,30 +23,26 @@ export function InboundCard({ data }: { data: InboundCardData }) {
   const plan = useMemo(() => applyPlan(data), [data]);
   const [phase, setPhase] = useState<Phase>("ready");
   const [error, setError] = useState<string>();
+  const qc = useQueryClient();
+  const want = data.incoming;
+  const inboundKey = ["bots", data.botId, "inbound"];
+  const options = useQuery({
+    queryKey: inboundKey,
+    queryFn: () => inboundApi.forBot(data.botId),
+    enabled: !!want && !data.settings.length,
+  }).data;
 
   // A route change that is already in place (the page was reloaded after Apply) shows as applied. Saved plugin settings are never
   // readable in the browser, so a card with settings stays applicable: saving the same value again changes nothing.
   useEffect(() => {
-    const want = data.incoming;
-    if (!want || data.settings.length) return;
-    let live = true;
-    void inboundApi.forBot(data.botId).then(
-      (options) => {
-        const r = options.find((o) => o.pluginId === data.plugin)?.route;
-        const same =
-          want.state === "on"
-            ? r?.enabled === true &&
-              r.botId === data.botId &&
-              JSON.stringify(r.filter) === JSON.stringify(want.filter)
-            : !r?.enabled || r.botId !== data.botId;
-        if (live && same) setPhase("applied");
-      },
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
-  }, [data]);
+    if (!want || !options) return;
+    const r = options.find((o) => o.pluginId === data.plugin)?.route;
+    const same =
+      want.state === "on"
+        ? r?.enabled === true && r.botId === data.botId && sameFilter(r.filter, want.filter)
+        : !r?.enabled || r.botId !== data.botId;
+    if (same) setPhase((p) => (p === "ready" ? "applied" : p));
+  }, [data.botId, data.plugin, want, options]);
 
   async function apply() {
     setPhase("busy");
@@ -54,6 +51,8 @@ export function InboundCard({ data }: { data: InboundCardData }) {
       if (Object.keys(plan.settings).length)
         await pluginsApiFor("mine").configure(data.plugin, plan.settings);
       if (plan.route) await inboundApi.set(data.botId, data.plugin, plan.route);
+      void qc.invalidateQueries({ queryKey: inboundKey });
+      void qc.invalidateQueries({ queryKey: ["plugins"] });
       setPhase("applied");
     } catch (e) {
       setError(errorMessage(e));

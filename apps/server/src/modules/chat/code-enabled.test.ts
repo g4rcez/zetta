@@ -7,7 +7,7 @@ describe("code access", () => {
   test("the owner's bot runs code for the owner", () => {
     expect(codeEnabled(shared, "owner")).toBe(true);
   });
-  test("a bot shared by someone else never runs code in the asker's workspace", () => {
+  test("a bot shared by someone else never runs code in the asker's code directory", () => {
     expect(codeEnabled(shared, "teammate")).toBe(false);
   });
 });

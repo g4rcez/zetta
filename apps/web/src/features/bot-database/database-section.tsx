@@ -6,7 +6,8 @@ import {
   SlidersHorizontalIcon,
   CheckSquareIcon,
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
 
 import { Button, Input } from "@/components/ui";
 import { errorMessage, type Bot } from "../chat/chat-client";
@@ -16,10 +17,9 @@ import {
   cell,
   columnLabel,
   databaseApi,
+  databaseQueries,
   size,
   tableLabel,
-  type DbOverview,
-  type DbPage,
   type DbTable,
   type DbTemplate,
 } from "./database-api";
@@ -31,44 +31,34 @@ const TEMPLATE_ICON: Record<string, typeof DatabaseIcon> = {
   notes: NotebookIcon,
 };
 const PAGE = 25;
+const NO_TEMPLATES: DbTemplate[] = [];
+
+type DbError = { message: string; fix?: string };
+const toError = (e: unknown): DbError => ({
+  message: errorMessage(e),
+  fix: (e as { details?: { fix?: unknown } }).details?.fix as string | undefined,
+});
 
 /**
  * Bot settings > Database. What the bot keeps in its private database, in plain words: each table shows the bot's own description,
  * people can browse it, download it, add a ready-made table, switch the database off for the bot, or erase everything and start over.
  */
 export function DatabaseSection({ bot, notify }: { bot: Bot; notify: (m: string) => void }) {
-  const [data, setData] = useState<DbOverview>();
-  const [templates, setTemplates] = useState<DbTemplate[]>([]);
-  const [error, setError] = useState<{ message: string; fix?: string }>();
+  const qc = useQueryClient();
+  const overview = useQuery(databaseQueries.overview(bot.id));
+  const data = overview.data;
+  const templates = useQuery(databaseQueries.templates()).data ?? NO_TEMPLATES;
+  const [actionError, setActionError] = useState<DbError>();
+  const error = actionError ?? (overview.error ? toError(overview.error) : undefined);
   const [busy, setBusy] = useState<string>();
   const [open, setOpen] = useState<DbTable>();
   const [resetting, setResetting] = useState(false);
-  const fail = (e: unknown) =>
-    setError({
-      message: errorMessage(e),
-      fix: (e as { details?: { fix?: unknown } }).details?.fix as string | undefined,
-    });
-
-  const reload = useCallback(async () => {
-    try {
-      setError(undefined);
-      setData(await databaseApi.overview(bot.id));
-    } catch (e) {
-      fail(e);
-    }
-  }, [bot.id]);
-  useEffect(() => {
-    setData(undefined);
-    void reload();
-    void databaseApi
-      .templates()
-      .then(setTemplates)
-      .catch(() => {});
-  }, [reload]);
+  const fail = (e: unknown) => setActionError(toError(e));
+  const reload = () => qc.invalidateQueries({ queryKey: ["bot-database", bot.id] });
 
   async function run(key: string, work: () => Promise<unknown>, done?: string) {
     setBusy(key);
-    setError(undefined);
+    setActionError(undefined);
     try {
       await work();
       if (done) notify(done);
@@ -273,25 +263,15 @@ function TableViewer({
   table: DbTable;
   onClose: () => void;
 }) {
-  const [page, setPage] = useState<DbPage>();
   const [offset, setOffset] = useState(0);
-  const [error, setError] = useState<string>();
+  const [downloadError, setDownloadError] = useState<string>();
   const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    let live = true;
-    setError(undefined);
-    databaseApi
-      .rows(botId, table.name, offset, PAGE)
-      .then((p) => {
-        if (live) setPage(p);
-      })
-      .catch((e) => {
-        if (live) setError(errorMessage(e));
-      });
-    return () => {
-      live = false;
-    };
-  }, [botId, table.name, offset]);
+  const rows = useQuery({
+    ...databaseQueries.rows(botId, table.name, offset, PAGE),
+    placeholderData: keepPreviousData,
+  });
+  const page = rows.data;
+  const error = downloadError ?? (rows.error ? errorMessage(rows.error) : undefined);
   const l = tableLabel(table);
   const cols = (page?.table ?? table).columns;
   const total = page?.total ?? table.rows;
@@ -369,9 +349,10 @@ function TableViewer({
             disabled={total === 0}
             onClick={() => {
               setSaving(true);
+              setDownloadError(undefined);
               databaseApi
                 .download(botId, { table: table.name })
-                .catch((e) => setError(errorMessage(e)))
+                .catch((e) => setDownloadError(errorMessage(e)))
                 .finally(() => setSaving(false));
             }}
           >

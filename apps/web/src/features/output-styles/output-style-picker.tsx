@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { errorMessage, type OutputStyleKey } from "../chat/chat-client";
 import { Choice } from "../shared/ui";
-import { outputStylesApi, type BuiltinStyle, type OutputStyle } from "./output-styles-api";
+import { outputStylesQueries } from "./output-styles-api";
 
 export type StyleChoice = { outputStyle: OutputStyleKey; outputStyleId: string | null };
 
@@ -35,20 +36,10 @@ export function OutputStylePicker({
   /** Radio group name: unique per form on the page. */
   name?: string;
 }) {
-  const [data, setData] = useState<{ builtins: BuiltinStyle[]; styles: OutputStyle[] }>();
-  const [error, setError] = useState("");
-  useEffect(() => {
-    let live = true;
-    outputStylesApi.list().then(
-      (d) => live && setData(d),
-      (e) => live && setError(errorMessage(e)),
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
+  const { data, error: failure } = useQuery(outputStylesQueries.list());
+  const error = failure ? errorMessage(failure) : "";
 
-  if (error)
+  if (error && !data)
     return (
       <p role="alert" className="text-sm text-destructive">
         {error}

@@ -48,6 +48,10 @@ describe("createApp", () => {
     const allowedImports = [
       "@elysiajs/cors",
       "./client-ip",
+      "./response-encoding",
+      "./health",
+      "./role",
+      "./worker-only",
       "elysia",
       "evlog/better-auth",
       "evlog/elysia",

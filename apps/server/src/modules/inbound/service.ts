@@ -19,6 +19,7 @@ import {
 } from "../integrations/plugins/registry";
 import type { Plugins } from "../integrations/plugins/service";
 import { TurnBusyError, type ChatService } from "../chat/service";
+import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
 
 type Route = typeof inboundRoute.$inferSelect;
 type Event = typeof inboundEvent.$inferSelect;
@@ -311,7 +312,11 @@ export function createInbound(
     }
     const claimed = await db
       .update(inboundEvent)
-      .set({ status: "delivering", attempts: sql`${inboundEvent.attempts} + 1` })
+      .set({
+        status: "delivering",
+        attempts: sql`${inboundEvent.attempts} + 1`,
+        ownerInstance: instanceId(),
+      })
       .where(and(inArray(inboundEvent.id, ids), eq(inboundEvent.status, "pending")))
       .returning();
     if (!claimed.length) return;
@@ -628,11 +633,16 @@ export function createInbound(
       }
     },
     /** Boot: chats that were being delivered when the server stopped are delivered again (the request id prevents a second turn). */
-    async recover() {
+    async recover(scope?: RecoveryScope) {
       const rows = await db
         .update(inboundEvent)
-        .set({ status: "pending" })
-        .where(eq(inboundEvent.status, "delivering"))
+        .set({ status: "pending", ownerInstance: null })
+        .where(
+          and(
+            eq(inboundEvent.status, "delivering"),
+            recoverable(inboundEvent.ownerInstance, scope),
+          ),
+        )
         .returning({ id: inboundEvent.id });
       return rows.length;
     },

@@ -17,7 +17,7 @@ export const APP_PREFIXES = [
   "/teams",
   "/team-roles",
   "/artifacts",
-  "/wiki",
+  "/memory",
   "/skills",
   "/search",
 ];

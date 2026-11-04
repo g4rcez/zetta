@@ -5,13 +5,13 @@ import { join } from "node:path";
 import { ArtifactFileError, classify, saveContent, savePath } from "./storage";
 
 let dir: string;
-let workspace: string;
+let codeDir: string;
 let root: string;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "artifacts-"));
-  workspace = join(dir, "work");
+  codeDir = join(dir, "work");
   root = join(dir, "store");
-  await mkdir(workspace);
+  await mkdir(codeDir);
 });
 afterEach(() => rm(dir, { recursive: true, force: true }));
 
@@ -56,29 +56,29 @@ describe("saveContent", () => {
 });
 
 describe("savePath", () => {
-  test("copies a workspace file and reports its name and size", async () => {
-    await mkdir(join(workspace, "out"));
-    await writeFile(join(workspace, "out", "sales.html"), "<h1>hi</h1>");
-    const r = await savePath("u1", "out/sales.html", workspace, root);
+  test("copies a code directory file and reports its name and size", async () => {
+    await mkdir(join(codeDir, "out"));
+    await writeFile(join(codeDir, "out", "sales.html"), "<h1>hi</h1>");
+    const r = await savePath("u1", "out/sales.html", codeDir, root);
     expect(r.fileName).toBe("sales.html");
     expect(r.size).toBe(11);
     expect(await readFile(join(root, "u1", r.sha256), "utf8")).toBe("<h1>hi</h1>");
   });
-  test("refuses a path that leaves the workspace", async () => {
+  test("refuses a path that leaves the code directory", async () => {
     await writeFile(join(dir, "secret.txt"), "secret");
-    expect(await code(savePath("u1", "../secret.txt", workspace, root))).toBe("NOT_FOUND");
-    expect(await code(savePath("u1", join(dir, "secret.txt"), workspace, root))).toBe("NOT_FOUND");
+    expect(await code(savePath("u1", "../secret.txt", codeDir, root))).toBe("NOT_FOUND");
+    expect(await code(savePath("u1", join(dir, "secret.txt"), codeDir, root))).toBe("NOT_FOUND");
   });
-  test("refuses a symlink that points outside the workspace", async () => {
+  test("refuses a symlink that points outside the code directory", async () => {
     await writeFile(join(dir, "secret.txt"), "secret");
-    await symlink(join(dir, "secret.txt"), join(workspace, "link.txt"));
-    expect(await code(savePath("u1", "link.txt", workspace, root))).toBe("NOT_FOUND");
+    await symlink(join(dir, "secret.txt"), join(codeDir, "link.txt"));
+    expect(await code(savePath("u1", "link.txt", codeDir, root))).toBe("NOT_FOUND");
   });
   test("refuses a missing file, a directory and an empty file", async () => {
-    await mkdir(join(workspace, "d"));
-    await writeFile(join(workspace, "empty.txt"), "");
-    expect(await code(savePath("u1", "nope.txt", workspace, root))).toBe("NOT_FOUND");
-    expect(await code(savePath("u1", "d", workspace, root))).toBe("NOT_FOUND");
-    expect(await code(savePath("u1", "empty.txt", workspace, root))).toBe("INVALID");
+    await mkdir(join(codeDir, "d"));
+    await writeFile(join(codeDir, "empty.txt"), "");
+    expect(await code(savePath("u1", "nope.txt", codeDir, root))).toBe("NOT_FOUND");
+    expect(await code(savePath("u1", "d", codeDir, root))).toBe("NOT_FOUND");
+    expect(await code(savePath("u1", "empty.txt", codeDir, root))).toBe("INVALID");
   });
 });

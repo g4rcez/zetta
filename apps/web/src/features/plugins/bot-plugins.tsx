@@ -1,14 +1,15 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 
 import { errorMessage } from "../chat/chat-client";
 import { Empty } from "../shared/ui";
 import { PluginIcon } from "./plugin-icon";
 import {
-  pluginsApi,
   pluginsApiFor,
-  type InstalledPlugin,
-  type PluginMeta,
+  pluginsQueries,
+  setBoundInCache,
+  usePlugins,
   type PluginScope,
 } from "./plugins-api";
 import { ToggleCard } from "./toggle-card";
@@ -28,46 +29,33 @@ export function BotPluginsSection({
   botId: string;
   disabled?: boolean;
 }) {
-  const [catalog, setCatalog] = useState<PluginMeta[]>();
-  const [installed, setInstalled] = useState<InstalledPlugin[]>();
-  const [bound, setBound] = useState<Set<string>>(new Set());
+  const qc = useQueryClient();
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
+  useEffect(() => setError(undefined), [botId]);
+  const { catalog, installed } = usePlugins(setError);
+  const botPlugins = useQuery(pluginsQueries.botPlugins(botId));
+  const loadError = botPlugins.error;
   useEffect(() => {
-    let live = true;
-    setError(undefined);
-    Promise.all([pluginsApi.catalog(), pluginsApi.installed(), pluginsApi.botPlugins(botId)])
-      .then(([c, i, b]) => {
-        if (live) {
-          setCatalog(c);
-          setInstalled(i);
-          setBound(new Set(b.configs.map((x) => key(x.id, x.scope))));
-        }
-      })
-      .catch((e) => {
-        if (live) setError(errorMessage(e));
-      });
-    return () => {
-      live = false;
-    };
-  }, [botId]);
+    if (loadError) setError(errorMessage(loadError));
+  }, [loadError]);
+  const bound = useMemo(
+    () => new Set((botPlugins.data?.configs ?? []).map((x) => key(x.id, x.scope))),
+    [botPlugins.data],
+  );
   async function toggle(id: string, scope: PluginScope, on: boolean) {
     setBusy(key(id, scope));
     setError(undefined);
     try {
       await pluginsApiFor(scope).setBound(botId, id, on);
-      setBound((s) => {
-        const n = new Set(s);
-        if (on) n.add(key(id, scope));
-        else n.delete(key(id, scope));
-        return n;
-      });
+      setBoundInCache(qc, botId, id, scope, on);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setBusy(undefined);
     }
   }
+  const ready = installed !== undefined && catalog !== undefined && botPlugins.data !== undefined;
   const rows = (installed ?? [])
     .map((i) => ({
       i,
@@ -92,8 +80,8 @@ export function BotPluginsSection({
         </p>
       </div>
       {error && <Alert theme="danger">{error}</Alert>}
-      {installed === undefined && !error && <Empty>Loading...</Empty>}
-      {installed && rows.length === 0 && <Empty>No plugins installed yet.</Empty>}
+      {!ready && !error && <Empty>Loading...</Empty>}
+      {ready && rows.length === 0 && <Empty>No plugins installed yet.</Empty>}
       <ul className="space-y-2">
         {rows.map(({ i, scope, meta }) => {
           const k = key(i.id, scope);

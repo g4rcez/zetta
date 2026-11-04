@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ComputerActivity } from "../computer/computer-activity";
@@ -42,15 +43,18 @@ import type { Author } from "./message-row";
 import { ProposalsPanel } from "./proposals-panel";
 import { LoopBanner, useGoalLoop } from "./loop-banner";
 import { SlowTurnCard, useTurnState } from "./slow-turn-card";
+import { useBotStatus } from "../bots/status";
 import { runSlowTurnCommand, slowTurnCommand } from "./slow-turn";
 import { PublishDialog } from "./publish-dialog";
 import { toggleReaction } from "./reactions";
+import { pollEvery } from "@/lib/query-policy";
+import { chatQueries } from "./chat-queries";
 import { useSidebarData } from "./sidebar-data";
 import { ThreadPanel } from "./thread-panel";
 import { draftKey } from "./use-draft";
 import { useZettaChat } from "./use-zetta-chat";
 import { Alert } from "@g4rcez/components/alert";
-import { discussionsApi } from "../discussions/discussions-api";
+import { discussionsQueries } from "../discussions/discussions-api";
 
 const SUGGESTIONS = [
   "What can you help me with?",
@@ -93,22 +97,23 @@ type ChatSearchState = {
   artifact?: string | undefined;
 };
 
+const NO_MESSAGES: Message[] = [];
+const NO_PROPOSALS: Proposal[] = [];
+
 export function ChatPage() {
   // The URL owns which chat is open: /chat/<conversationId>, /chat/new?bot=<botId> (empty draft) or a bare /chat (resolved below). Nothing else decides it.
   const search = useSearch({ from: "/_auth/chat/{-$chatId}" });
   const params = useParams({ from: "/_auth/chat/{-$chatId}" });
   const navigate = useNavigate();
   const { data: session } = authClient.useSession();
-  const { bots, setBots, refreshBots, chats, setChats, chatsLoaded, loadChats } = useSidebarData();
-  const [saved, setSaved] = useState<Message[]>([]);
+  const { bots, refreshBots, chats, setChats, chatsLoaded, loadChats } = useSidebarData();
+  const qc = useQueryClient();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
-  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [details, setDetails] = useState(false); // the context panel's bot and files view
   const [artifactWidth, setArtifactWidth] = useState(readArtifactWidth);
   const reduceMotion = useReducedMotion();
-  const [loadingMessages, setLoadingMessages] = useState(false);
   const [sent, setSent] = useState(0); // bumps on every send so the list jumps to the newest message
   const desktop = useMedia("(min-width: 1024px)");
   const fail = (e: unknown) => setError(errorMessage(e));
@@ -116,38 +121,18 @@ export function ChatPage() {
   const urlChat = params.chatId;
   const chatId = urlChat && urlChat !== NEW_CHAT ? urlChat : undefined;
   // A routine's chat is not in the sidebar list (`chats`): it is opened from Routines, so it is looked up by id.
-  const [lookup, setLookup] = useState<{ id: string; row?: Conversation }>();
   const listedRow = chatId ? chats.find((c) => c.id === chatId) : undefined;
-  const lookedUp = lookup?.id === chatId;
-  const openChatRow = listedRow ?? (lookedUp ? lookup?.row : undefined);
-  useEffect(() => {
-    if (!chatId || !chatsLoaded || listedRow || lookedUp) return;
-    let live = true;
-    chatClient
-      .conversation(chatId)
-      .then((row) => live && setLookup({ id: chatId, row }))
-      .catch(() => live && setLookup({ id: chatId }));
-    return () => {
-      live = false;
-    };
-  }, [chatId, chatsLoaded, listedRow, lookedUp]);
+  const lookup = useQuery({
+    ...chatQueries.conversation(chatId ?? ""),
+    enabled: !!chatId && chatsLoaded && !listedRow,
+    retry: false,
+  });
+  const lookedUp = lookup.isSuccess || lookup.isError;
+  const openChatRow = listedRow ?? lookup.data;
   // A room's conversation is where bots talk: the server refuses posts into it, so the page shows it read-only.
   const roomChat = openChatRow?.kind === "discussion";
-  const [room, setRoom] = useState<{ chatId: string; id?: string }>();
-  useEffect(() => {
-    if (!chatId || !roomChat) return;
-    let live = true;
-    discussionsApi
-      .list()
-      .then((rooms) => {
-        if (live) setRoom({ chatId, id: rooms.find((r) => r.conversationId === chatId)?.id });
-      })
-      .catch(() => live && setRoom({ chatId }));
-    return () => {
-      live = false;
-    };
-  }, [chatId, roomChat]);
-  const roomId = room?.chatId === chatId ? room?.id : undefined;
+  const rooms = useQuery({ ...discussionsQueries.list(), enabled: !!chatId && roomChat });
+  const roomId = chatId ? rooms.data?.find((r) => r.conversationId === chatId)?.id : undefined;
   const defaultBot =
     bots.find((b) => b.id === search.bot) ?? bots.find((b) => b.kind === "chief") ?? bots[0];
   // A conversation decides its bot; a draft (or a bare /chat) takes the bot from ?bot=, falling back to the chief.
@@ -192,25 +177,15 @@ export function ChatPage() {
     });
 
   // A chat shows only what its own bot asked: another bot's request is approved in that bot's chat.
-  const loadProposals = useCallback(
-    () =>
-      botId
-        ? chatClient
-            .proposals(botId)
-            .then(setProposals)
-            .catch(() => {})
-        : Promise.resolve(),
-    [botId],
-  );
-  // Proposals also come from loops, routines and other chats, which send no stream part: poll while the tab is visible.
-  useEffect(() => {
-    setProposals([]);
-    void loadProposals();
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") void loadProposals();
-    }, 5_000);
-    return () => clearInterval(t);
-  }, [loadProposals]);
+  // Proposals also come from loops, routines and other chats, which send no stream part, so they are polled.
+  const proposalsQuery = useQuery({
+    ...chatQueries.proposals(botId),
+    enabled: !!botId,
+    // A stream part (`data-proposal`) and every settled turn already refresh this; the poll only catches loops and routines.
+    refetchInterval: pollEvery(15_000, 15_000, false),
+  });
+  const proposals = botId ? (proposalsQuery.data ?? NO_PROPOSALS) : NO_PROPOSALS;
+  const loadProposals = useCallback(() => qc.invalidateQueries({ queryKey: ["proposals"] }), [qc]);
   // Remember the open conversation so the rail's Chat item returns to it.
   useEffect(() => {
     if (!openChatRow) return;
@@ -230,37 +205,17 @@ export function ChatPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatsLoaded, bots, urlChat, chatId, openChatRow, lookedUp, defaultBot?.id]);
-  const reload = useCallback(async (id: string) => {
-    try {
-      const list = await chatClient.messages(id);
-      setSaved(list);
-    } catch (e) {
-      fail(e);
-    }
-  }, []);
+  const messagesQuery = useQuery({ ...chatQueries.messages(chatId ?? ""), enabled: !!chatId });
+  const saved = (chatId && messagesQuery.data) || NO_MESSAGES;
+  const loadingMessages = !!chatId && messagesQuery.isLoading;
+  const messagesError = messagesQuery.error;
   useEffect(() => {
-    if (!chatId) {
-      setSaved([]);
-      setLoadingMessages(false);
-      return;
-    }
-    let live = true;
-    setLoadingMessages(true);
-    chatClient
-      .messages(chatId)
-      .then((list) => {
-        if (live) setSaved(list);
-      })
-      .catch((e) => {
-        if (live) fail(e);
-      })
-      .finally(() => {
-        if (live) setLoadingMessages(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [chatId]);
+    if (messagesError) setError(errorMessage(messagesError));
+  }, [messagesError]);
+  const reload = useCallback(
+    (id: string) => qc.invalidateQueries({ queryKey: chatQueries.messages(id).queryKey }),
+    [qc],
+  );
 
   const settle = useCallback(
     async (id: string) => {
@@ -268,13 +223,11 @@ export function ChatPage() {
       void loadChats().catch(() => {});
       void loadProposals();
       void refreshAttention();
-      // The chief may have just created bots: show them in the list and make their cards open.
-      void chatClient
-        .bots()
-        .then(setBots)
-        .catch(() => {});
+      void qc.invalidateQueries({ queryKey: chatQueries.loops(id).queryKey });
+      // Only the chief creates bots: show them in the list and make their cards open.
+      if (bots.find((b) => b.id === botId)?.kind === "chief") void refreshBots();
     },
-    [reload, loadChats, loadProposals],
+    [qc, reload, loadChats, loadProposals, refreshBots, bots, botId],
   );
   // Artifacts this page already tried to open: a stream replayed on resume must not reopen the pane.
   const autoOpened = useRef(new Set<string>());
@@ -305,6 +258,7 @@ export function ChatPage() {
     if (!chatId || !waiting || main.busy) return;
     follow.current.reattach();
     const t = setInterval(() => {
+      if (document.hidden) return; // a hidden tab catches up when it is visible again
       void reload(chatId);
       follow.current.reattach();
     }, 2_000);
@@ -319,7 +273,11 @@ export function ChatPage() {
     },
   );
 
-  const turn = useTurnState(chatId);
+  const botStatus = useBotStatus(botId)?.status;
+  const turn = useTurnState(
+    chatId,
+    main.busy || botStatus === "working" || botStatus === "planning",
+  );
   const current = bots.find((b) => b.id === botId);
   const meName = session?.user.name ?? "You",
     meImage = session?.user.image;
@@ -432,7 +390,9 @@ export function ChatPage() {
     [],
   );
   const setReactions = (id: string, reactions: Message["reactions"]) =>
-    setSaved((l) => l.map((m) => (m.id === id ? { ...m, reactions } : m)));
+    qc.setQueryData<Message[]>(chatQueries.messages(chatId ?? "").queryKey, (l) =>
+      l?.map((m) => (m.id === id ? { ...m, reactions } : m)),
+    );
   async function toggleReact(m: Row, emoji: string) {
     const before = m.reactions ?? [],
       wasMine = before.some((r) => r.emoji === emoji && r.mine);
@@ -454,7 +414,7 @@ export function ChatPage() {
     onSaveToWiki: (row) =>
       void chatClient
         .saveToWiki(`From chat: ${row.content.slice(0, 40)}`, row.content)
-        .then(() => setNotice("Saved to your wiki."), fail),
+        .then(() => setNotice("Saved to your memory."), fail),
     onQueue: (row, action) => {
       if (!chatId) return;
       void (
@@ -810,7 +770,11 @@ export function ChatPage() {
                 proposals={proposals}
                 bots={bots}
                 notify={setNotice}
-                onResolved={(id) => setProposals((l) => l.filter((x) => x.id !== id))}
+                onResolved={(id) =>
+                  qc.setQueryData<Proposal[]>(chatQueries.proposals(botId).queryKey, (l) =>
+                    l?.filter((x) => x.id !== id),
+                  )
+                }
                 onBotsChanged={() => void refreshBots()}
               />
               {notice && (

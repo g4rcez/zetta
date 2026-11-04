@@ -1,5 +1,6 @@
 import { unzipSync } from "fflate";
 import { DownloadSimpleIcon, FileIcon, FolderIcon } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ARTIFACT_HTML_CSP, ARTIFACT_HTML_SANDBOX } from "@zetta/core/artifact-csp";
@@ -33,26 +34,30 @@ const TooBig = ({ a }: { a: Artifact }) => (
   </Empty>
 );
 
-/** `undefined` while loading, `null` when the file cannot be read. */
-function useLoaded<T>(load: () => Promise<T>, deps: unknown[]) {
-  const [value, setValue] = useState<T | null | undefined>();
-  useEffect(() => {
-    let live = true;
-    setValue(undefined);
-    load().then(
-      (v) => live && setValue(v),
-      () => live && setValue(null),
-    );
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  return value;
+/**
+ * The file body, read once per artifact. It has its own key prefix, so a list refresh never downloads it again, and it leaves the
+ * cache after a minute because a body can be large. `undefined` while loading, `null` when the file cannot be read.
+ */
+function useContent<T>(
+  a: Artifact,
+  mode: string,
+  read: (r: Response) => Promise<T>,
+  enabled = true,
+) {
+  const query = useQuery({
+    queryKey: ["artifact-content", a.id, mode],
+    queryFn: () => fetchContent(a.id).then(read),
+    enabled,
+    retry: false,
+    staleTime: 60_000,
+    gcTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  return query.isError ? null : query.data;
 }
-const useText = (a: Artifact) => useLoaded(() => fetchContent(a.id).then((r) => r.text()), [a.id]);
+const useText = (a: Artifact) => useContent(a, "text", (r) => r.text());
 function useObjectUrl(a: Artifact) {
-  const blob = useLoaded(() => fetchContent(a.id).then((r) => r.blob()), [a.id]);
+  const blob = useContent(a, "blob", (r) => r.blob());
   const url = useMemo(() => (blob ? URL.createObjectURL(blob) : blob), [blob]);
   useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
   return url;
@@ -178,12 +183,11 @@ const ENTRY_IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;
 type Entry = { name: string; size: number };
 
 function ZipViewer({ a }: { a: Artifact }) {
-  const data = useLoaded(
-    () =>
-      a.size > MAX_ZIP
-        ? Promise.resolve(undefined)
-        : fetchContent(a.id).then(async (r) => new Uint8Array(await r.arrayBuffer())),
-    [a.id],
+  const data = useContent(
+    a,
+    "bytes",
+    async (r) => new Uint8Array(await r.arrayBuffer()),
+    a.size <= MAX_ZIP,
   );
   const entries = useMemo(() => {
     if (!data) return data;

@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -6,7 +7,7 @@ import {
   CaretRightIcon,
   CalendarPlusIcon,
   FileArchiveIcon,
-  BooksIcon,
+  BrainIcon,
   ListChecksIcon,
   UsersIcon,
   ChatTextIcon,
@@ -34,7 +35,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/to
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
 
-import { chatClient, errorMessage, isImage, type Bot, type UsedKnowledge } from "./chat-client";
+import { errorMessage, isImage, type Bot } from "./chat-client";
+import { chatQueries } from "./chat-queries";
 import { PictureStrip } from "./attachment-image";
 import { CopyButton } from "./chat-copy";
 import { EmojiPicker } from "./emoji-picker";
@@ -62,8 +64,8 @@ const initials = (name: string) =>
     .toUpperCase();
 
 function UsedNotes({ row }: { row: Row }) {
-  const [data, setData] = useState<UsedKnowledge>();
-  const [error, setError] = useState<string>();
+  const [opened, setOpened] = useState(false);
+  const { data, error } = useQuery({ ...chatQueries.usedKnowledge(row.id), enabled: opened });
   const used = row.meta?.used,
     n =
       (used?.memories?.length ?? 0) +
@@ -73,8 +75,7 @@ function UsedNotes({ row }: { row: Row }) {
     <details
       className="text-xs text-muted-foreground"
       onToggle={(e) => {
-        if ((e.currentTarget as HTMLDetailsElement).open && !data)
-          chatClient.usedKnowledge(row.id).then(setData, (x) => setError(errorMessage(x)));
+        if ((e.currentTarget as HTMLDetailsElement).open) setOpened(true);
       }}
     >
       <summary className="w-fit cursor-pointer select-none hover:text-foreground">
@@ -84,7 +85,7 @@ function UsedNotes({ row }: { row: Row }) {
         {!data && !error && <p>Loading…</p>}
         {error && (
           <p role="alert" className="text-destructive">
-            {error}
+            {errorMessage(error)}
           </p>
         )}
         {data?.memories.length ? (
@@ -101,12 +102,12 @@ function UsedNotes({ row }: { row: Row }) {
         ) : null}
         {data?.wiki.length ? (
           <div>
-            <p className="font-medium">Wiki</p>
+            <p className="font-medium">Memory</p>
             <ul className="list-disc pl-4">
               {data.wiki.map((m) => (
                 <li key={m.id} className="break-words">
                   <Link
-                    to="/wiki/$slug"
+                    to="/memory/$slug"
                     params={{ slug: m.slug }}
                     className="hover:text-foreground hover:underline"
                   >
@@ -125,16 +126,15 @@ function UsedNotes({ row }: { row: Row }) {
 
 /** The company documents an answer used. Each is re-checked against Drive when opened, so a file you lost access to is not listed. */
 function Sources({ row }: { row: Row }) {
-  const [list, setList] = useState<Awaited<ReturnType<typeof chatClient.sources>>>();
-  const [error, setError] = useState<string>();
+  const [opened, setOpened] = useState(false);
+  const { data: list, error } = useQuery({ ...chatQueries.sources(row.id), enabled: opened });
   const n = row.meta?.used?.docs?.length ?? 0;
   if (n === 0) return null;
   return (
     <details
       className="text-xs text-muted-foreground"
       onToggle={(e) => {
-        if ((e.currentTarget as HTMLDetailsElement).open && !list)
-          chatClient.sources(row.id).then(setList, (x) => setError(errorMessage(x)));
+        if ((e.currentTarget as HTMLDetailsElement).open) setOpened(true);
       }}
     >
       <summary className="w-fit cursor-pointer select-none hover:text-foreground">
@@ -144,7 +144,7 @@ function Sources({ row }: { row: Row }) {
         {!list && !error && <p>Checking access…</p>}
         {error && (
           <p role="alert" className="text-destructive">
-            {error}
+            {errorMessage(error)}
           </p>
         )}
         {list?.length === 0 && <p>You can no longer open these files.</p>}
@@ -284,7 +284,7 @@ function HoverBar({
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={onSaveToWiki}>
               <BookmarkSimpleIcon />
-              Save to wiki
+              Save to memory
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -699,12 +699,12 @@ export const MessageRow = memo(function MessageRow({
                   </Link>
                 ) : r.kind === "wiki" ? (
                   <Link
-                    to="/wiki/$slug"
+                    to="/memory/$slug"
                     params={{ slug: r.id }}
                     className="flex items-center gap-1 hover:text-foreground hover:underline"
                   >
-                    <BooksIcon aria-hidden="true" className="size-3.5" />
-                    {r.created === false ? "updated wiki" : "added to wiki"} “{r.text}”
+                    <BrainIcon aria-hidden="true" className="size-3.5" />
+                    {r.created === false ? "updated memory" : "added to memory"} “{r.text}”
                   </Link>
                 ) : r.kind === "discussion" ? (
                   <Link
@@ -717,8 +717,8 @@ export const MessageRow = memo(function MessageRow({
                 ) : (
                   // Receipts of older messages: notes and procedures are wiki items now, so they read the same way.
                   <>
-                    <BooksIcon aria-hidden="true" className="size-3.5" />
-                    saved to the wiki{r.text ? ` “${r.text}”` : ""}
+                    <BrainIcon aria-hidden="true" className="size-3.5" />
+                    saved to memory{r.text ? ` “${r.text}”` : ""}
                     {r.created === false ? " (already saved)" : ""}
                   </>
                 )}

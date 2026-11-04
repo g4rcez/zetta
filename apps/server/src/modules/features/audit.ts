@@ -1,6 +1,8 @@
 import type { Database } from "@zetta/db";
 import { and, desc, eq, lt } from "@zetta/db/query";
 import { auditEvent } from "@zetta/db/schema/features";
+import { topics } from "@zetta/core/live-topics";
+import { events } from "../events/bus";
 
 export type AuditKind = (typeof auditEvent.$inferInsert)["kind"];
 export type AuditOutcome = (typeof auditEvent.$inferInsert)["outcome"];
@@ -23,6 +25,8 @@ export async function audit(
     botId?: string | null;
     subjectId?: string | null;
     detail?: string;
+    /** Token counts of a `harness_run` (see TokenUsage in chat/claude-stream.ts). Absent for harnesses that do not report them. */
+    usage?: { input: number; cacheRead: number; cacheWrite: number; output: number };
   },
 ) {
   try {
@@ -33,7 +37,13 @@ export async function audit(
       botId: e.botId ?? null,
       subjectId: e.subjectId ?? null,
       detail: e.detail && SAFE_DETAIL.test(e.detail) ? e.detail : null,
+      inputTokens: e.usage?.input ?? null,
+      cacheReadTokens: e.usage?.cacheRead ?? null,
+      cacheWriteTokens: e.usage?.cacheWrite ?? null,
+      outputTokens: e.usage?.output ?? null,
     });
+    // The last run's outcome is part of the bot's status.
+    if (e.kind === "harness_run") events.publish([ownerUserId], topics.botStatus);
   } catch {
     /* auditing must not break the product */
   }

@@ -1,13 +1,15 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link, useBlocker } from "@tanstack/react-router";
 import { ChatCircleTextIcon, CheckIcon, CopyIcon, LinkIcon } from "@phosphor-icons/react";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
-import { ApiError, call } from "../chat/chat-client";
+import { ApiError, call, errorMessage } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { Response } from "../chat/response";
-import { Badge, ConfirmButton, Empty, Loading, useList } from "../shared/ui";
+import { Badge, ConfirmButton, Empty, Loading } from "../shared/ui";
 import { AddLinkPanel } from "./add-link-panel";
 import { AssistPanel } from "./assist-panel";
 import { AskBox } from "./ask-box";
@@ -18,16 +20,8 @@ import { SharedItem } from "./shared-item";
 import { useAction } from "./use-action";
 import { appendLink } from "./wiki-links";
 import { useWikiIndex } from "./use-wiki-index";
-import {
-  STATUS,
-  TYPE,
-  path,
-  wikiError,
-  type Author,
-  type Bot,
-  type Detail,
-  type TeamName,
-} from "./wiki-api";
+import { teamsQueries } from "../teams/teams-api";
+import { STATUS, TYPE, path, wikiError, wikiQueries, type Author } from "./wiki-api";
 
 /** The page of one item: what it says, when to use it, what it links to, where it came from, and its versions. */
 export function WikiItemPage({
@@ -40,43 +34,35 @@ export function WikiItemPage({
   assist?: "links" | "tags" | "tidy" | undefined;
 }) {
   const tf = useTimeFormat();
-  const [detail, setDetail] = useState<Detail>();
-  const [missing, setMissing] = useState<string>();
   const [editing, setEditing] = useState(edit);
   const [dirty, setDirty] = useState(false);
   const [copied, setCopied] = useState(false);
   const h1 = useRef<HTMLHeadingElement>(null);
   const form = useRef<HTMLFormElement>(null);
-  const { items, wikiLinks, reload: reloadIndex } = useWikiIndex();
+  const { items, wikiLinks } = useWikiIndex();
   const [adding, setAdding] = useState(false);
   const [asking, setAsking] = useState(false);
 
-  const load = useCallback(
-    () =>
-      call<Detail>(path(slug)).then(
-        (d) => {
-          setDetail(d);
-          setMissing(undefined);
-        },
-        (e) => {
-          setDetail(undefined);
-          setMissing(e instanceof ApiError && e.status === 404 ? "" : wikiError(e));
-        },
-      ),
-    [slug],
-  );
-  const { run, feedback, setError } = useAction(async () => {
-    await load();
-    void reloadIndex();
-  });
-  const [bots] = useList<Bot>("/api/bots", "bots", setError);
-  const [teams] = useList<TeamName>("/api/teams", "teams", setError);
+  const query = useQuery(wikiQueries.item(slug));
+  const detail = query.data;
+  // "" means the item does not exist; any other text is a load error.
+  const missing = !query.error
+    ? undefined
+    : query.error instanceof ApiError && query.error.status === 404
+      ? ""
+      : wikiError(query.error);
+  const { run, feedback, setError } = useAction();
+  const botsQuery = useQuery(chatQueries.bots());
+  const teamsQuery = useQuery(teamsQueries.list());
+  const bots = botsQuery.data;
+  const teams = teamsQuery.data;
+  const listError = botsQuery.error ?? teamsQuery.error;
   useEffect(() => {
-    setDetail(undefined);
-    setMissing(undefined);
+    if (listError) setError(errorMessage(listError));
+  }, [listError, setError]);
+  useEffect(() => {
     setEditing(edit);
-    void load();
-  }, [load, edit]);
+  }, [slug, edit]);
   // Leaving the page with unsaved edits asks first.
   useBlocker({
     shouldBlockFn: () => dirty && !window.confirm("Discard your changes?"),
@@ -91,19 +77,19 @@ export function WikiItemPage({
         {missing === "" ? (
           <Empty>
             There is no item called “{slug}” that you can read.{" "}
-            <Link to="/wiki" search={{ create: slug } as never} className="underline">
+            <Link to="/memory" search={{ create: slug } as never} className="underline">
               Create it
             </Link>{" "}
             or{" "}
-            <Link to="/wiki" className="underline">
-              go back to the wiki
+            <Link to="/memory" className="underline">
+              go back to memory
             </Link>
             .
           </Empty>
         ) : (
           <p role="alert" className="text-sm text-destructive">
             {missing}{" "}
-            <Button size="xs" variant="outline" onClick={() => void load()}>
+            <Button size="xs" variant="outline" onClick={() => void query.refetch()}>
               Try again
             </Button>
           </p>
@@ -156,8 +142,8 @@ export function WikiItemPage({
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-8">
         <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground">
-          <Link to="/wiki" className="hover:underline">
-            Wiki
+          <Link to="/memory" className="hover:underline">
+            Memory
           </Link>{" "}
           / {p.title}
         </nav>
@@ -172,7 +158,7 @@ export function WikiItemPage({
             )}
             <span className="tabular-nums text-muted-foreground">score {p.score} / 100</span>
             {p.tags.map((t) => (
-              <Link key={t} to="/wiki" search={{ tag: t } as never} className="rounded-full">
+              <Link key={t} to="/memory" search={{ tag: t } as never} className="rounded-full">
                 <Badge>{t}</Badge>
               </Link>
             ))}

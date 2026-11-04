@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # bun run zetta (everything runs through Vite+ `vp`): start postgres, apply migrations, then run backend + frontend for local testing.
+# The web dev server is the only HTTPS entry point (https://localhost:3000, self-signed certificate; apps/web/.env ZETTA_TLS_CERT/KEY from
+# `bun run certs` replace it). It forwards /api to the API on http://127.0.0.1:6000 (apps/web/vite.config.ts), so the browser makes no cross-origin call.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -22,7 +24,11 @@ $CONTAINER exec zetta-postgres pg_isready -U postgres >/dev/null || { echo "post
 echo "▶ Applying migrations"
 (cd packages/db && vp exec varlock run -- vp exec drizzle-kit migrate)
 
-echo "▶ Starting server (BETTER_AUTH_URL in apps/server/.env) and web (see vite output)"
+# Process variables win over .env files (varlock and Vite), so nothing is written to .env.
+export PORT=6000 BETTER_AUTH_URL=https://localhost:3000 CORS_ORIGIN=https://localhost:3000 VITE_SERVER_URL=https://localhost:3000
+echo "▶ Web https://localhost:3000 (proxies /api to the API on http://127.0.0.1:6000)"
+
+echo "▶ Starting server and web (see vite output)"
 pids=()
 cleanup() { trap - INT TERM EXIT; kill "${pids[@]}" 2>/dev/null || true; wait 2>/dev/null || true; }
 trap cleanup INT TERM EXIT

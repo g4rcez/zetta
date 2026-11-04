@@ -2,21 +2,21 @@
 
 What survives a restart, and what is reconciled at boot (`index.ts` calls these once):
 
-| State | After a crash/restart |
-| --- | --- |
-| Chat messages, memories, instructions, bots, settings, routines, workflows, snapshots | Persisted in Postgres; unaffected |
-| A chat generation in progress | The assistant row is written as `running` and flushed every ~750 ms; at boot it becomes `interrupted` (partial text kept, clearly labelled). The turn is **not** resumed or retried automatically |
-| A routine occurrence in progress | `interrupted` + one attention card; never marked successful; the schedule continues with the next occurrence |
-| A workflow run in progress | `interrupted`, completed steps stay in the trace, one attention card |
-| Browser sessions and takeover flags | In memory only: they are closed and must be started again. Profile data on disk (logins) persists until reset/revoked |
-| Laya model | Reloaded in the background |
-| Idempotent retries | A repeated send with the same `clientRequestId` returns the stored turn; a repeated run-now/workflow request key returns the same run |
+| State                                                                                 | After a crash/restart                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chat messages, memories, instructions, bots, settings, routines, workflows, snapshots | Persisted in Postgres; unaffected                                                                                                                                                                 |
+| A chat generation in progress                                                         | The assistant row is written as `running` and flushed every ~750 ms; at boot it becomes `interrupted` (partial text kept, clearly labelled). The turn is **not** resumed or retried automatically |
+| A routine occurrence in progress                                                      | `interrupted` + one attention card; never marked successful; the schedule continues with the next occurrence                                                                                      |
+| A workflow run in progress                                                            | `interrupted`, completed steps stay in the trace, one attention card                                                                                                                              |
+| Browser sessions and takeover flags                                                   | In memory only: they are closed and must be started again. Profile data on disk (logins) persists until reset/revoked                                                                             |
+| Laya model                                                                            | Reloaded in the background                                                                                                                                                                        |
+| Idempotent retries                                                                    | A repeated send with the same `clientRequestId` returns the stored turn; a repeated run-now/workflow request key returns the same run                                                             |
 
 Operator checklist: back up the Postgres volume (`zetta_postgres_data`) and `ZETTA_CONNECTION_KEY` (without it stored connections cannot be decrypted; the server then runs with connections disabled and says so). Restore drill (disposable): restore a dump into a scratch database, run `drizzle-kit migrate`, start the server against it and open `/chat`. **The disposable restore drill was executed on 2026-10-23** against the local compose Postgres: see [restore-drill.md](../verification/restore-drill.md) (dump, restore into a scratch database, migrate no-op, server boots and boot-recovery runs).
 
 ## Single instance, boot sweeps and migrations (2026-10-26)
 
-- Zetta assumes **one server process per installation**. At boot it kills harness containers (`zetta-run-*`), browser containers (`zetta-browser-*`) and desktop Spaces (`zetta-<12 hex>`) left by a previous process; a second instance on the same Docker/Cua host would have its containers swept.
+- Zetta assumes **one process that owns running work per installation** (`ZETTA_ROLE=all`, or the single `worker` when API instances run beside it: see [scaling.md](scaling.md)). Recovery of interrupted work is owner-scoped (see [scaling.md](scaling.md#instances-and-recovery)): it takes only work whose server instance is dead. The container sweeps are not scoped yet: at boot the process kills harness containers (`zetta-run-*`), browser containers (`zetta-browser-*`) and desktop Spaces (`zetta-<12 hex>`) left by a previous process; a second instance on the same Docker/Cua host would have its containers swept.
 - Browser and desktop session starts are serialized per user, so two simultaneous requests cannot launch two sessions or exceed the per-user limit.
 - Secrets passed to Docker harness runs travel through the process environment (`docker run -e KEY`), never in argv, so other local users cannot read them with `ps`.
 - Decision calls have a bounded backlog (32 total, 4 per user); beyond that they fail fast as "unavailable".

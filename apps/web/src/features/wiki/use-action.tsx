@@ -1,9 +1,11 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { wikiError } from "./wiki-api";
 
-/** Runs one action and shows its result or its error next to the form. */
-export function useAction(after: () => Promise<unknown> | void) {
+/** Runs one action and shows its result or its error next to the form. Then every wiki read loads again, unless `after` says otherwise. */
+export function useAction(after?: () => Promise<unknown> | void) {
+  const qc = useQueryClient();
   const [error, setError] = useState<string>();
   const [status, setStatus] = useState<string>();
   const run = async (work: () => Promise<unknown>, done: string) => {
@@ -15,7 +17,7 @@ export function useAction(after: () => Promise<unknown> | void) {
     } catch (e) {
       setError(wikiError(e));
     }
-    await after();
+    await (after ? after() : qc.invalidateQueries({ queryKey: ["wiki"] }));
   };
   const feedback = (
     <>

@@ -3,8 +3,9 @@ import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { ConnectionsUnavailableError, PROVIDERS, type ConnectionsService } from "./service";
 
-/** `plugin` connections hold sealed plugin config managed by the Plugins tab; they are neither listed nor user-creatable here. */
-const USER_PROVIDERS = PROVIDERS.filter((p) => p !== "plugin");
+/** `plugin` and `machine` connections hold secrets managed by the Plugins tab and the Computer tab; they are neither listed nor user-creatable here. */
+const MANAGED = ["plugin", "machine"];
+const USER_PROVIDERS = PROVIDERS.filter((p) => !MANAGED.includes(p));
 import { TransportError } from "@zetta/core/sealed-transport";
 import { ConnectionStoreError } from "./store-contract";
 import { TransportKeyExpiredError, transportKeyring, type TransportKeyring } from "./transport";
@@ -99,7 +100,7 @@ export function createConnectionRoutes(
           configured: connections.configured(),
           providers: USER_PROVIDERS,
           connections: connections.configured()
-            ? (await connections.list(c.actor)).filter((x) => x.provider !== "plugin")
+            ? (await connections.list(c.actor)).filter((x) => !MANAGED.includes(x.provider))
             : [],
         })),
       )
@@ -123,14 +124,12 @@ export function createConnectionRoutes(
               sealed: z.unknown(),
             })
             .parse(c.body);
-          const { secret } = z
-            .strictObject({ secret: z.string().min(8).max(8000) })
-            .parse(
-              await keyring.open(sealed, {
-                userId: c.userId,
-                purpose: `connection.create:${provider}`,
-              }),
-            );
+          const { secret } = z.strictObject({ secret: z.string().min(8).max(8000) }).parse(
+            await keyring.open(sealed, {
+              userId: c.userId,
+              purpose: `connection.create:${provider}`,
+            }),
+          );
           return { connection: await connections.create(c.actor, { provider, label, secret }) };
         }, 201),
       )

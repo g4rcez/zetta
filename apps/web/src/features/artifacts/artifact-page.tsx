@@ -5,16 +5,18 @@ import {
   ArrowSquareOutIcon,
   ChatIcon,
 } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { BotIdentity } from "@/components/bot-identity";
-import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { errorMessage } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { CopyButton } from "../chat/chat-copy";
 import { Badge, ConfirmButton, Empty } from "../shared/ui";
 import {
   ago,
   artifactsApi,
+  artifactsQueries,
   contentUrl,
   formatSize,
   kindLabel,
@@ -31,25 +33,20 @@ const action =
 export function ArtifactPage({ id }: { id: string }) {
   const tf = useTimeFormat();
   const navigate = useNavigate();
-  const [artifact, setArtifact] = useState<Artifact | null>();
-  const [bot, setBot] = useState<Bot>();
-
-  useEffect(() => {
-    setArtifact(undefined);
-    artifactsApi.get(id).then(setArtifact, () => setArtifact(null));
-  }, [id]);
+  const qc = useQueryClient();
+  const query = useQuery(artifactsQueries.detail(id));
+  const artifact: Artifact | null | undefined = query.isError && !query.data ? null : query.data;
   const botId = artifact?.botId;
-  useEffect(() => {
-    if (botId)
-      chatClient.bots().then(
-        (all) => setBot(all.find((b) => b.id === botId)),
-        () => {},
-      );
-  }, [botId]);
+  const bots = useQuery({ ...chatQueries.bots(), enabled: !!botId }).data;
+  const bot = botId ? bots?.find((b) => b.id === botId) : undefined;
 
   const remove = () =>
     artifactsApi.remove(id).then(
-      () => void navigate({ to: "/artifacts" }),
+      () => {
+        // Stale only: this page still shows the artifact until the router leaves, and a refetch would answer 404.
+        void qc.invalidateQueries({ queryKey: ["artifacts"], refetchType: "none" });
+        void navigate({ to: "/artifacts" });
+      },
       (e) => void toast.error(errorMessage(e)),
     );
 

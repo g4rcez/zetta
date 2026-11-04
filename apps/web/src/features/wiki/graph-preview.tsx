@@ -51,7 +51,7 @@ export function GraphPreview({
             <p className="text-xs break-words text-muted-foreground">{data.tags.join(", ")}</p>
           )}
           <Link
-            to="/wiki/$slug"
+            to="/memory/$slug"
             params={{ slug: data.slug }}
             className="inline-block font-medium underline"
           >

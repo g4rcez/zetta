@@ -12,7 +12,7 @@ Ask for a clear outcome using accounts and resources you are allowed to use. Ava
 
 ## Choose your browser profile
 
-A profile holds browser state, including login state. It can be dedicated to a bot or explicitly shared among your bots. Sharing a bot definition or moving it into a workspace does not share the profile with other users.
+A profile holds browser state, including login state. It can be dedicated to a bot or explicitly shared among your bots. Sharing a bot definition or moving it into a folder does not share the profile with other users.
 
 If two of your bots need the same shared profile, they must follow the approved exclusive-use/serialization policy rather than both controlling the same login session at once. Reset or revoke is a deliberate operation; resetting a profile can remove login state and needs confirmation.
 

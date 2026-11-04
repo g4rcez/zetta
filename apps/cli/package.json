@@ -1,0 +1,12 @@
+{
+  "name": "@zetta/cli",
+  "private": true,
+  "bin": {
+    "zetta": "src/index.ts"
+  },
+  "type": "module",
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "bun test"
+  }
+}

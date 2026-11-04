@@ -8,7 +8,7 @@
 
 For example: “Prepare a daily briefing from these sources. Link the sources and tell me what is missing.” Begin with a small task whose result you can judge. A useful response matters more than filling every advanced setting.
 
-Each user has one personal chief for coordination. You can start there or configure a specialist directly. Workspaces organize bots in the sidebar; moving a bot does not change who can use it.
+Each user has one personal chief for coordination. You can start there or configure a specialist directly. Folders organize bots in the sidebar; moving a bot does not change who can use it.
 
 ## Configure by form or conversation
 
@@ -34,13 +34,13 @@ Saving a form, clicking a reaction, staying silent, or the bot claiming you are 
 
 ## If setup stops
 
-| Situation | Expected path |
-| --- | --- |
-| Login is missing or expired | Follow secure account setup and return to the draft or conversation. |
-| Tool or model is unsupported | See the missing capability and choose a supported setup; no fake success response. |
-| The answer is not useful | Refine the job/instructions and retest before confirming. |
-| The page reloads | Recover the draft and current question; do not accept stale confirmation for a different setup. |
-| Relevant configuration or accounts change | Revalidate readiness. A past confirmation does not override revoked access. |
+| Situation                                 | Expected path                                                                                   |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Login is missing or expired               | Follow secure account setup and return to the draft or conversation.                            |
+| Tool or model is unsupported              | See the missing capability and choose a supported setup; no fake success response.              |
+| The answer is not useful                  | Refine the job/instructions and retest before confirming.                                       |
+| The page reloads                          | Recover the draft and current question; do not accept stale confirmation for a different setup. |
+| Relevant configuration or accounts change | Revalidate readiness. A past confirmation does not override revoked access.                     |
 
 Once ready, [give the bot work and manage attention](work-and-attention.md). Read [privacy and sharing](privacy-and-sharing.md) before connecting sensitive accounts or publishing a conversation.
 

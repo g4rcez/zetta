@@ -1,3 +1,5 @@
+import { queryOptions } from "@tanstack/react-query";
+
 import { call } from "../chat/chat-client";
 
 export type ClaudePreset = "auto" | "read_only" | "edit" | "git" | "full";
@@ -51,6 +53,12 @@ export const claudeApi = {
   updateAsset: (botId: string, id: string, a: ClaudeAssetInput) =>
     call<{ asset: ClaudeAsset }>(`${base(botId)}/assets/${id}`, "PUT", a).then((r) => r.asset),
   removeAsset: (botId: string, id: string) => call(`${base(botId)}/assets/${id}`, "DELETE"),
+};
+
+/** One key per bot. A write to its settings or assets invalidates it. */
+export const claudeQueries = {
+  settings: (botId: string) =>
+    queryOptions({ queryKey: ["claude", botId], queryFn: () => claudeApi.get(botId) }),
 };
 
 /** One rule per line in the form, a list on the wire. */

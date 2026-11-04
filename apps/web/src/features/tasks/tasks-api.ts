@@ -1,3 +1,5 @@
+import { queryOptions } from "@tanstack/react-query";
+
 import { call } from "../chat/chat-client";
 
 export const TASK_COLUMNS = [
@@ -23,6 +25,11 @@ export type Task = {
   status: TaskStatus;
   priority: TaskPriority;
   labels: string[];
+  ownerUserId: string;
+  /** "person": a bot asked `assigneeUserId` for something, and `botId` is the bot that asked. */
+  assignee: "bot" | "person";
+  assigneeUserId: string | null;
+  assigneeName: string | null;
   botId: string | null;
   conversationId: string | null;
   createdAt: string;
@@ -41,4 +48,11 @@ export const tasksApi = {
     patch: { title?: string; description?: string; priority?: TaskPriority; labels?: string[] },
   ) => call<{ task: Task }>(`/api/tasks/${id}`, "PATCH", patch).then((r) => r.task),
   remove: (id: string) => call(`/api/tasks/${id}`, "DELETE"),
+};
+
+/** The board filters on the client, so one list key serves every filter in the URL. */
+export const tasksQueries = {
+  list: () => queryOptions({ queryKey: ["tasks"], queryFn: () => tasksApi.list() }),
+  detail: (id: string) =>
+    queryOptions({ queryKey: ["tasks", id], queryFn: () => tasksApi.get(id) }),
 };

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui";
 
-import { call, errorMessage, type Bot } from "../chat/chat-client";
+import { call, type Bot } from "../chat/chat-client";
 import { Empty, list, listItem, when } from "../shared/ui";
+import { useLoadError } from "./studio-queries";
 import { useTimeFormat } from "@/features/preferences/preferences";
 
 type Event = {
@@ -40,29 +41,18 @@ export const describeEvent = (e: Pick<Event, "kind" | "outcome">) =>
 
 export function Activity({ bots, onError }: { bots: Bot[]; onError: (m: string) => void }) {
   const tf = useTimeFormat();
-  const [events, setEvents] = useState<Event[]>();
-  const [next, setNext] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const load = useCallback(
-    async (before?: string) => {
-      setBusy(true);
-      try {
-        const r = await call<{ events: Event[]; nextBefore: string | null }>(
-          `/api/activity?limit=50${before ? `&before=${encodeURIComponent(before)}` : ""}`,
-        );
-        setEvents((l) => (before ? [...(l ?? []), ...r.events] : r.events));
-        setNext(r.nextBefore);
-      } catch (e) {
-        onError(errorMessage(e));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [onError],
-  );
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { data, error, fetchNextPage, isFetching } = useInfiniteQuery({
+    queryKey: ["activity"],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      call<{ events: Event[]; nextBefore: string | null }>(
+        `/api/activity?limit=50${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ""}`,
+      ),
+    getNextPageParam: (last) => last.nextBefore ?? undefined,
+  });
+  useLoadError(error, onError);
+  const events = data?.pages.flatMap((p) => p.events);
+  const next = data?.pages.at(-1)?.nextBefore ?? null;
   return (
     <section aria-label="Activity" className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -94,7 +84,12 @@ export function Activity({ bots, onError }: { bots: Bot[]; onError: (m: string) 
         ))}
       </ul>
       {next && (
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => void load(next)}>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isFetching}
+          onClick={() => void fetchNextPage()}
+        >
           Load older
         </Button>
       )}

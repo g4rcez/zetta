@@ -1,5 +1,6 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { uuidv7 } from "@zetta/core/uuid";
-import { Suspense, lazy, useEffect, useState, type FormEvent } from "react";
+import { Suspense, lazy, useState, type FormEvent } from "react";
 import { Button, Input, Select } from "@/components/ui";
 import { MentionTextarea } from "../chat/mention";
 import { useSidebarData } from "../chat/sidebar-data";
@@ -110,6 +111,8 @@ export function TraceView({ run }: { run: RunResult }) {
   );
 }
 
+const NO_RUNS: PastRun[] = [];
+
 function RunPanel({ flow }: { flow: Flow }) {
   const { bots } = useSidebarData();
   const tf = useTimeFormat();
@@ -117,15 +120,14 @@ function RunPanel({ flow }: { flow: Flow }) {
   const [result, setResult] = useState<{ run: RunResult; output: string; replayed: boolean }>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [past, setPast] = useState<PastRun[]>();
-  const loadPast = () =>
-    call<{ runs: PastRun[] }>(`/api/workflows/${flow.id}/runs`).then(
-      (r) => setPast(r.runs),
-      () => setPast([]),
-    );
-  useEffect(() => {
-    void loadPast();
-  }, [flow.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const qc = useQueryClient();
+  const runsKey = ["workflows", flow.id, "runs"];
+  const runs = useQuery({
+    queryKey: runsKey,
+    queryFn: () => call<{ runs: PastRun[] }>(`/api/workflows/${flow.id}/runs`).then((r) => r.runs),
+  });
+  // A failed read of the history shows an empty history.
+  const past = runs.isError ? NO_RUNS : runs.data;
   async function run(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -135,7 +137,7 @@ function RunPanel({ flow }: { flow: Flow }) {
       setResult(
         await call(`/api/workflows/${flow.id}/run`, "POST", { input, requestKey: uuidv7() }),
       );
-      void loadPast();
+      void qc.invalidateQueries({ queryKey: runsKey });
     } catch (x) {
       setError(
         x instanceof ApiError && x.code === "BOT_NOT_READY"
@@ -478,6 +480,7 @@ function Editor({
 }
 
 export function Workflows({ bots, onError }: { bots: Bot[]; onError: (m: string) => void }) {
+  const qc = useQueryClient();
   const [rows, reload] = useList<Flow>("/api/workflows", "workflows", onError);
   const [editor, setEditor] = useState<
     { id?: string; name: string; version: number; graph: unknown } | "new"
@@ -485,12 +488,19 @@ export function Workflows({ bots, onError }: { bots: Bot[]; onError: (m: string)
   const [canvas, setCanvas] = useState<
     { id: string; name: string; version: number; graph: ServerGraph } | "new"
   >();
+  // A click always reads the latest version, because the editor saves with `expectedVersion`.
+  const detail = (id: string) =>
+    qc.fetchQuery({
+      queryKey: ["workflows", id],
+      queryFn: () =>
+        call<{
+          workflow: { id: string; name: string; graph: ServerGraph; version: number };
+        }>(`/api/workflows/${id}`).then((r) => r.workflow),
+      staleTime: 0,
+    });
   async function editCanvas(id: string) {
     try {
-      const r = await call<{
-        workflow: { id: string; name: string; graph: ServerGraph; version: number };
-      }>(`/api/workflows/${id}`);
-      setCanvas(r.workflow);
+      setCanvas(await detail(id));
     } catch (e) {
       onError(errorMessage(e));
     }
@@ -498,10 +508,7 @@ export function Workflows({ bots, onError }: { bots: Bot[]; onError: (m: string)
   const [running, setRunning] = useState<string>();
   async function edit(id: string) {
     try {
-      const r = await call<{
-        workflow: { id: string; name: string; graph: unknown; version: number };
-      }>(`/api/workflows/${id}`);
-      setEditor(r.workflow);
+      setEditor(await detail(id));
     } catch (e) {
       onError(errorMessage(e));
     }

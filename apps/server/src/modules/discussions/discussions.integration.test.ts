@@ -1208,6 +1208,47 @@ suite("group discussions against compose postgres", () => {
     ]);
     // Docs was not granted anything, so its chat stays as it was.
   });
+  test("a chief without code access still waits for Approve before a bot gets a rule from a room", async () => {
+    const chief = (await call(A, "GET", "/api/bots")).json.bots.find(
+      (b: { kind: string }) => b.kind === "chief",
+    ) as { id: string };
+    // No code access and no MCP: the server cannot see anything the chief read, so only the room's own rule keeps the grant behind a click.
+    await db
+      .update(bot)
+      .set({ onboarded: true, harness: "claude-code", codeAccess: false })
+      .where(eq(bot.id, chief.id));
+    const ops = await makeBot(A, "Ops", { harness: "claude-code", codeAccess: true });
+    const rulesOf = async (id: string) => (await createBotClaude(db).get(id)).config.allow;
+    replies.Ops = [
+      'I need a command.\n```zetta:permission\n{"rule":"Bash(rm:*)","reason":"clean the build folder"}\n```',
+    ];
+    replies.Zetta = [
+      'Asking.\n```zetta:bot_claude\n{"bot":"Ops","allow":["Bash(rm:*)"]}\n```',
+      "Asked the user about Ops.",
+    ];
+    const opsChat = await chatWith(A, ops.id);
+    await opsChat.say("clean the build folder");
+    await worker.drain();
+    expect(await rulesOf(ops.id)).toEqual([]);
+    const grant = (
+      (await call(A, "GET", "/api/proposals")).json.proposals as { id: string; kind: string }[]
+    ).find((p) => p.kind === "bot_permission");
+    expect(grant).toBeDefined();
+    replies.Ops = ["Cleaned the build folder."];
+    expect(
+      (await call(A, "POST", `/api/proposals/${grant!.id}/decision`, { approve: true })).json
+        .status,
+    ).toBe("approved");
+    expect(await rulesOf(ops.id)).toEqual(["Bash(rm:*)"]);
+    // Approving runs the bot's stopped request again in the background: wait for it, so it cannot write while the test cleans up.
+    let chat = await messagesOf(A, opsChat.c);
+    for (let i = 0; i < 50 && !chat.some((m) => m.content === "Cleaned the build folder."); i++) {
+      await Bun.sleep(100);
+      chat = await messagesOf(A, opsChat.c);
+    }
+    expect(chat.map((m) => m.content)).toContain("Cleaned the build folder.");
+  });
+
   test("a blocked bot escalates to the chief: the answer resumes the bot, and a handoff shows the question on the blocked bot, not on the chief", async () => {
     const chief = (await call(A, "GET", "/api/bots")).json.bots.find(
       (b: { kind: string }) => b.kind === "chief",

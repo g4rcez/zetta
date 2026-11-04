@@ -62,6 +62,8 @@ const store: VmStore = {
         createdAt: new Date(),
         lastStartedAt: null,
         deletedAt: null,
+        endpoint: null,
+        connectionId: null,
       });
     }
     return rows[0]!;
@@ -81,6 +83,8 @@ const store: VmStore = {
       createdAt: new Date(),
       lastStartedAt: null,
       deletedAt: null,
+      endpoint: null,
+      connectionId: null,
     };
     rows.push(row);
     return row;

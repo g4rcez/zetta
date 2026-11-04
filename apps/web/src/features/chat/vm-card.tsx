@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { CircleNotchIcon, MonitorIcon } from "@phosphor-icons/react";
 
 import { Button } from "@zetta/ui/components/button";
@@ -20,32 +21,18 @@ function LivePreview({
   active: boolean;
   onOpen: () => void;
 }) {
-  const [png, setPng] = useState<string>();
-  const busy = useRef(false);
-  useEffect(() => {
-    if (!active) return;
-    let stop = false;
-    const shot = async () => {
-      if (busy.current || document.hidden) return;
-      busy.current = true;
-      try {
-        const r = await call<{ png: string }>(
-          `/api/computer/vms/${encodeURIComponent(vmId)}/screenshot`,
-        );
-        if (!stop) setPng(r.png);
-      } catch {
-        /* booting or reconnecting: keep the last frame */
-      } finally {
-        busy.current = false;
-      }
-    };
-    void shot();
-    const t = setInterval(() => void shot(), PREVIEW_MS);
-    return () => {
-      stop = true;
-      clearInterval(t);
-    };
-  }, [vmId, active]);
+  // A failed poll (the computer is booting or reconnecting) keeps the last frame, because `data` survives an error.
+  const png = useQuery({
+    queryKey: ["computer", "vms", vmId, "screenshot"],
+    queryFn: () =>
+      call<{ png: string }>(`/api/computer/vms/${encodeURIComponent(vmId)}/screenshot`).then(
+        (r) => r.png,
+      ),
+    enabled: active,
+    refetchInterval: PREVIEW_MS,
+    retry: false,
+    gcTime: 0,
+  }).data;
   return (
     <button
       type="button"

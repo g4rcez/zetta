@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowUpIcon,
@@ -11,9 +12,9 @@ import { Button, Input, Select } from "@/components/ui";
 
 import { ENV } from "../../env";
 import { ApiError, call, errorMessage } from "../chat/chat-client";
+import { computerQueries } from "./studio-queries";
 
 export type VmControl = { id: string; control: "agent" | "human"; epoch: number };
-type VmInfo = VmControl & { name: string; status: string; keyboard?: string };
 type Rfb = InstanceType<typeof import("@novnc/novnc").default>;
 
 /** setxkbmap layouts the server accepts (KEYBOARD_LAYOUTS in apps/server/src/modules/computer/vm.ts). */
@@ -68,7 +69,16 @@ export function VmConsole({
     "connecting",
   );
   const [attempt, setAttempt] = useState(0);
-  const [info, setInfo] = useState<VmInfo>();
+  const qc = useQueryClient();
+  const vmsKey = computerQueries.vms().queryKey;
+  // The control state decides what Take over sends, so a mount always reads it again.
+  const { data: vms } = useQuery({ ...computerQueries.vms(), refetchOnMount: "always" });
+  const info = vms?.find((x) => x.id === vmId);
+  // A change made here is shown at once and kept in the cache the Studio list shares.
+  const patchInfo = (change: Partial<NonNullable<typeof info>>) =>
+    qc.setQueryData(computerQueries.vms().queryKey, (list) =>
+      list?.map((x) => (x.id === vmId ? { ...x, ...change } : x)),
+    );
   const [error, setError] = useState<string>();
   const control = info?.control ?? "agent";
 
@@ -121,21 +131,18 @@ export function VmConsole({
       r?.disconnect();
     };
   }, [base, attempt]);
-  useEffect(() => {
-    call<{ vms: VmInfo[] }>("/api/computer/vms").then(
-      (r) => setInfo(r.vms.find((x) => x.id === vmId)),
-      () => {},
-    );
-  }, [vmId, attempt]);
 
-  const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
+  const reconnect = useCallback(() => {
+    setAttempt((n) => n + 1);
+    void qc.invalidateQueries({ queryKey: vmsKey });
+  }, [qc, vmsKey]);
   const toggle = () =>
     call<{ vm: VmControl }>(`${base}/takeover`, "POST", {
       human: control !== "human",
       expected: control,
     }).then(
       (r) => {
-        setInfo((i) => i && { ...i, ...r.vm });
+        patchInfo(r.vm);
         rfb.current?.focus();
       },
       (e) => setError(vmError(e)),
@@ -144,7 +151,7 @@ export function VmConsole({
   const keyboard = (layout: string) =>
     call<{ keyboard: string }>(`${base}/keyboard`, "POST", { layout }).then(
       (r) => {
-        setInfo((i) => i && { ...i, keyboard: r.keyboard });
+        patchInfo({ keyboard: r.keyboard });
         rfb.current?.focus();
       },
       (e) => setError(vmError(e)),

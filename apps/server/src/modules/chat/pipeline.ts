@@ -1,10 +1,15 @@
 import { join } from "node:path";
 import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
-import { and, asc, eq, ne } from "@zetta/db/query";
+import { and, asc, eq, isNull, ne } from "@zetta/db/query";
 import { user as userTable } from "@zetta/db/schema/auth";
 import { bot as botTable, type bot } from "@zetta/db/schema/chat";
-import { computerVm, hook as hooks } from "@zetta/db/schema/features";
+import {
+  computerVm,
+  hook as hooks,
+  machine as machineTable,
+  machineBot as machineBotTable,
+} from "@zetta/db/schema/features";
 import { team as teamTable, teamRole } from "@zetta/db/schema/teams";
 import { raiseAttention } from "../features/attention";
 import { createKnowledge, renderMemory, type MemorySnapshot } from "../features/knowledge";
@@ -32,8 +37,9 @@ import {
   type RunCli,
   type StreamCli,
 } from "./harness";
-import { toolPreamble } from "./tools";
-import type { CliProgress } from "./claude-stream";
+import { MACHINE_TOOLS, toolPreamble } from "./tools";
+import type { CliProgress, TokenUsage } from "./claude-stream";
+import { runWithFallback, streamWithFallback, type FallbackUse } from "./fallback";
 
 type Bot = typeof bot.$inferSelect;
 type Hook = typeof hooks.$inferSelect;
@@ -98,17 +104,21 @@ export type Turn = {
   images?: CliImage[] | undefined;
   /** Continue this Claude Code session (a run a server restart cut off) instead of starting a new one. */
   resumeSession?: string | undefined;
-  /** Called with the Claude Code session id when the run is one that can be resumed (a code workspace), so the caller can record it. */
+  /** Called with the Claude Code session id when the run is one that can be resumed (a code directory), so the caller can record it. */
   onSession?: ((id: string) => void) | undefined;
   /** Progress while a non-streaming run works: a step the bot took, or "Still working" after a silence. */
   onActivity?: ((label: string) => void) | undefined;
+  /** Called with the token counts of each Claude Code process this turn starts (see TokenUsage). */
+  onUsage?: ((usage: TokenUsage) => void) | undefined;
+  /** Called when the bot's main harness was blocked (limit, sign-in, install) and the fallback harness answered instead. */
+  onFallback?: ((use: FallbackUse) => void) | undefined;
 };
 export type TurnResult = { text: string; stopped: boolean };
 
 /**
  * `ZETTA_CODE_ACCESS=off` is the operator's kill switch; otherwise the bot owner's `codeAccess` setting decides. Fixture bots never run code.
  * A bot someone else shared with the team never runs code for the asker: its instructions and permissions are the owner's, while the
- * workspace (clones, files, tokens) would be the asker's.
+ * code directory (clones, files, tokens) would be the asker's.
  */
 export const codeEnabled = (
   b: Pick<Bot, "codeAccess" | "harness"> & { ownerUserId?: string },
@@ -268,24 +278,34 @@ export function createTurnRunner(
     mcp?: McpRun,
     lookup?: ReturnType<typeof claudeFor>,
     onActivity?: (label: string) => void,
+    onUsage?: (usage: TokenUsage) => void,
+    onFallback?: (use: FallbackUse) => void,
+    skills?: readonly string[],
   ) {
     if (b.harness === "fixture") return fixtureResponder({ bot: b, history, prompt });
     if (b.harness === "decision") return decide ? decide(b, prompt, userId) : DECISION_FALLBACK;
-    const profile = await (lookup ?? claudeFor(b));
-    return cli({
-      harness: b.harness as NativeHarness,
-      prompt,
-      model: b.model,
-      userId,
-      botId: b.id,
-      ...(await codeFor(db, b, userId, noCode)),
-      ...(profile.profile ? profile : {}),
-      ...(extraEnv ? { extraEnv } : {}),
-      ...(mcp ? { mcp } : {}),
-      ...(signal ? { signal } : {}),
-      ...(images?.length ? { images } : {}),
-      ...(onActivity ? { onActivity } : {}),
-    });
+    return runWithFallback(
+      b,
+      async (x) => {
+        const profile = await (x === b ? (lookup ?? claudeFor(x, skills)) : claudeFor(x, skills));
+        return cli({
+          harness: x.harness as NativeHarness,
+          prompt,
+          model: x.model,
+          userId,
+          botId: x.id,
+          ...(await codeFor(db, x, userId, noCode)),
+          ...(profile.profile ? profile : {}),
+          ...(extraEnv ? { extraEnv } : {}),
+          ...(mcp ? { mcp } : {}),
+          ...(signal ? { signal } : {}),
+          ...(images?.length ? { images } : {}),
+          ...(onActivity ? { onActivity } : {}),
+          ...(onUsage ? { onUsage } : {}),
+        });
+      },
+      onFallback,
+    );
   }
   async function prepare({
     userId,
@@ -374,6 +394,27 @@ export function createTurnRunner(
         : [],
       level,
     ]);
+    // The machines (ssh, sftp, ftp) the user shared with this bot. Not with outside people in play; the names carry no secret.
+    const machines =
+      !fixture && !noCode && b.computerMode !== "off"
+        ? await db
+            .select({
+              name: machineTable.name,
+              kind: machineTable.kind,
+              username: machineTable.username,
+              host: machineTable.host,
+            })
+            .from(machineTable)
+            .innerJoin(machineBotTable, eq(machineBotTable.machineId, machineTable.id))
+            .where(
+              and(
+                eq(machineTable.ownerUserId, userId),
+                isNull(machineTable.deletedAt),
+                eq(machineBotTable.botId, b.id),
+              ),
+            )
+            .orderBy(asc(machineTable.createdAt))
+        : [];
     // Procedures (items tagged instruction) among the hits are shown in full, up to a few and a byte budget; the rest are loaded with zetta:wiki read.
     const procedures: { id: string; title: string; content: string }[] = [];
     let procedureBytes = 0;
@@ -407,6 +448,11 @@ export function createTurnRunner(
                 .map((v) => `${v.name}${v.kind === "default" ? " [default]" : ""} (${v.id})`)
                 .join(", ") || "only the default one, created on first use"
             }`
+          : "") +
+        (machines.length
+          ? `\n${MACHINE_TOOLS.trimStart()}\nThe user's machines (use the name): ${machines
+              .map((m) => `${m.name} (${m.kind}, ${m.username}@${m.host})`)
+              .join(", ")}`
           : "");
     const style = await resolveOutputStyle(db, b);
     const parts = [
@@ -486,6 +532,9 @@ export function createTurnRunner(
       turn.mcp,
       lookup,
       turn.onActivity,
+      turn.onUsage,
+      turn.onFallback,
+      turn.skills,
     );
     startBackground(turn.userId, turn.bot, p.background);
     return { text: reply, stopped: false };
@@ -508,24 +557,37 @@ export function createTurnRunner(
     } else if (turn.bot.harness === "decision") {
       yield await call(turn.bot, p.text, turn.history, turn.userId);
     } else {
-      const resumable =
-        turn.bot.harness === "claude-code" && codeEnabled(turn.bot, turn.userId, turn.noCode);
-      const sessionId = resumable ? (turn.resumeSession ?? uuidv7()) : undefined;
+      const code = await codeFor(db, turn.bot, turn.userId, turn.noCode);
+      const sessionId =
+        turn.bot.harness === "claude-code" && codeEnabled(turn.bot, turn.userId, turn.noCode)
+          ? (turn.resumeSession ?? uuidv7())
+          : undefined;
       if (sessionId) turn.onSession?.(sessionId);
-      yield* stream({
-        harness: turn.bot.harness as NativeHarness,
-        prompt: p.text,
-        model: turn.bot.model,
-        userId: turn.userId,
-        botId: turn.bot.id,
-        ...(await codeFor(db, turn.bot, turn.userId, turn.noCode)),
-        ...(await lookup),
-        ...(turn.extraEnv ? { extraEnv: turn.extraEnv } : {}),
-        ...(turn.mcp ? { mcp: turn.mcp } : {}),
-        ...(turn.signal ? { signal: turn.signal } : {}),
-        ...(turn.images?.length ? { images: turn.images } : {}),
-        ...(sessionId ? { session: { id: sessionId, resume: Boolean(turn.resumeSession) } } : {}),
-      });
+      yield* streamWithFallback(
+        turn.bot,
+        async function* (x) {
+          const primary = x === turn.bot;
+          yield* stream({
+            harness: x.harness as NativeHarness,
+            prompt: p.text,
+            model: x.model,
+            userId: turn.userId,
+            botId: x.id,
+            ...(primary ? code : await codeFor(db, x, turn.userId, turn.noCode)),
+            ...(await (primary ? lookup : claudeFor(x, turn.skills))),
+            ...(turn.extraEnv ? { extraEnv: turn.extraEnv } : {}),
+            ...(turn.mcp ? { mcp: turn.mcp } : {}),
+            ...(turn.signal ? { signal: turn.signal } : {}),
+            ...(turn.images?.length ? { images: turn.images } : {}),
+            // A session id names a Claude Code conversation: only the main harness can resume it.
+            ...(primary && sessionId
+              ? { session: { id: sessionId, resume: Boolean(turn.resumeSession) } }
+              : {}),
+            ...(turn.onUsage ? { onUsage: turn.onUsage } : {}),
+          });
+        },
+        turn.onFallback,
+      );
     }
     startBackground(turn.userId, turn.bot, p.background);
   }

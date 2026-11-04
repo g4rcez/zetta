@@ -23,8 +23,8 @@ const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
 const cascade = { onDelete: "cascade", onUpdate: "restrict" } as const;
 
 /** Visual grouping of bots. Never an access boundary (RFC-001). */
-export const workspace = zetta.table(
-  "workspace",
+export const folder = zetta.table(
+  "folder",
   {
     id: uuid("id")
       .primaryKey()
@@ -33,14 +33,14 @@ export const workspace = zetta.table(
       .notNull()
       .references(() => user.id, restrict),
     name: text("name").notNull(),
-    // Inner groups: a workspace may sit inside another of the same owner (checked by the service).
-    parentId: uuid("parent_id").references((): AnyPgColumn => workspace.id, restrict),
+    // Inner groups: a folder may sit inside another of the same owner (checked by the service).
+    parentId: uuid("parent_id").references((): AnyPgColumn => folder.id, restrict),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index("workspace_parent_id_idx").on(table.parentId),
-    unique("workspace_owner_name_unique").on(table.ownerUserId, table.name),
-    check("workspace_name_check", sql`length(btrim(${table.name})) between 1 and 80`),
+    index("folder_parent_id_idx").on(table.parentId),
+    unique("folder_owner_name_unique").on(table.ownerUserId, table.name),
+    check("folder_name_check", sql`length(btrim(${table.name})) between 1 and 80`),
   ],
 );
 
@@ -55,7 +55,7 @@ export const bot = zetta.table(
       .references(() => user.id, restrict),
     kind: text("kind", { enum: ["chief", "specialist"] }).notNull(),
     visibility: text("visibility", { enum: ["private", "team"] }).notNull(),
-    workspaceId: uuid("workspace_id").references(() => workspace.id, restrict),
+    folderId: uuid("folder_id").references(() => folder.id, restrict),
     name: text("name").notNull(),
     // Friendly-url id, unique across the installation and fixed at creation (renames keep it). Names the bot's database schema (`<snake>_bot`).
     slug: text("slug").notNull(),
@@ -69,6 +69,7 @@ export const bot = zetta.table(
         "opencode",
         "cursor",
         "hermes",
+        "deepseek",
         "fixture",
         "decision",
       ],
@@ -76,6 +77,11 @@ export const bot = zetta.table(
       .default("fixture")
       .notNull(),
     model: text("model"),
+    // Second harness for a turn the main one cannot answer (usage limit, sign-in or install problem). Null = no fallback.
+    fallbackHarness: text("fallback_harness", {
+      enum: ["pi", "codex", "omp", "claude-code", "opencode", "cursor", "hermes", "deepseek"],
+    }),
+    fallbackModel: text("fallback_model"),
     personality: text("personality").default("").notNull(),
     instructions: text("instructions").default("").notNull(),
     // Tone of voice: a built-in key, or `custom` + `output_style_id` (live reference, so edits reach every bot using it).
@@ -90,7 +96,7 @@ export const bot = zetta.table(
     computerMode: text("computer_mode", { enum: ["off", "browser", "desktop"] })
       .default("off")
       .notNull(),
-    // Code access the owner granted this bot: a persistent per-user workspace where it can run git, edit files and push. On by default.
+    // Code access the owner granted this bot: a persistent per-user code directory where it can run git, edit files and push. On by default.
     codeAccess: boolean("code_access").default(true).notNull(),
     // Who a commit of this bot is signed as: the server's git config (default), the bot's own address, the owner's account, or `commit_email`.
     commitIdentity: text("commit_identity", { enum: ["git-config", "bot", "account", "custom"] })
@@ -108,9 +114,9 @@ export const bot = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index("bot_workspace_id_idx").on(table.workspaceId),
+    index("bot_folder_id_idx").on(table.folderId),
     index("bot_owner_idx").on(table.ownerUserId),
-    // At most one personal chief per user, stable across workspace moves.
+    // At most one personal chief per user, stable across folder moves.
     uniqueIndex("bot_one_chief_per_owner")
       .on(table.ownerUserId)
       .where(sql`${table.kind} = 'chief'`),
@@ -206,8 +212,13 @@ export const message = zetta.table(
     // Author bot for assistant messages: the conversation's own bot, or a member bot in a room. Never another bot's chat (insertMessage and the message_author_guard trigger refuse it).
     botId: uuid("author_bot_id").references(() => bot.id, setNull),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    /** The server instance running this row (see server_instance). Recovery leaves the rows of a live instance alone. */
+    ownerInstance: uuid("owner_instance"),
   },
   (table) => [
+    index("message_running_idx")
+      .on(table.ownerUserId, table.botId)
+      .where(sql`${table.status} = 'running'`),
     index("message_parent_message_id_idx").on(table.parentMessageId),
     index("message_author_bot_id_idx").on(table.botId),
     index("message_owner_user_id_idx").on(table.ownerUserId),
@@ -246,8 +257,13 @@ export const chatQueue = zetta.table(
     // Send options read when the answer runs: { fileRefs, wikiIds }.
     input: jsonb("input"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    /** The server instance running this row (see server_instance). Recovery leaves the rows of a live instance alone. */
+    ownerInstance: uuid("owner_instance"),
   },
   (table) => [
+    uniqueIndex("chat_queue_one_running")
+      .on(table.conversationId)
+      .where(sql`${table.status} = 'running'`),
     unique("chat_queue_message_unique").on(table.messageId),
     index("chat_queue_conversation_created_idx").on(table.conversationId, table.createdAt),
     index("chat_queue_status_created_idx").on(table.status, table.createdAt),
@@ -321,6 +337,8 @@ export const goalLoop = zetta.table(
     lessons: text("lessons").default("").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    /** The server instance running this row (see server_instance). Recovery leaves the rows of a live instance alone. */
+    ownerInstance: uuid("owner_instance"),
   },
   (table) => [
     index("goal_loop_owner_user_id_idx").on(table.ownerUserId),

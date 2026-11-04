@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -7,11 +8,13 @@ import SignUpForm from "@/components/sign-up-form";
 import { authClient } from "@/lib/auth-client";
 import { getIdentityError, identityClient, type IdentityStatus } from "@/lib/identity-client";
 
-import { installationApi } from "../onboarding/installation-api";
+import { installationQueries } from "../onboarding/installation-api";
 import { EnrollmentForm } from "./enrollment-form";
+import { identityQueries } from "./identity-queries";
 
 export function LoginJourney() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { refetch: refreshSession } = authClient.useSession();
   const [identity, setIdentity] = useState<IdentityStatus | null>(null);
   const [showSignUp, setShowSignUp] = useState(false);
@@ -23,23 +26,27 @@ export function LoginJourney() {
   // An administrator whose install onboarding is unfinished resumes it instead of landing in chat.
   const enter = useCallback(
     async (status: Extract<IdentityStatus, { state: "active" }>) => {
-      const installation = status.isAdmin ? await installationApi.get().catch(() => null) : null;
+      // Fresh on purpose: the answer decides where the administrator lands.
+      const installation = status.isAdmin
+        ? await qc.fetchQuery({ ...installationQueries.get(), staleTime: 0 }).catch(() => null)
+        : null;
       if (installation?.onboarding === "pending")
         await navigate({ to: "/onboarding", replace: true });
       else await navigate({ to: "/chat/{-$chatId}", replace: true });
     },
-    [navigate],
+    [navigate, qc],
   );
 
   const checkStatus = useCallback(async () => {
     const status = await identityClient.status();
+    qc.setQueryData(identityQueries.status().queryKey, status);
     setIdentity(status);
     if (status.state === "active") {
       setToken("");
       await enter(status);
     }
     return status;
-  }, [enter]);
+  }, [enter, qc]);
 
   useEffect(() => {
     let alive = true;

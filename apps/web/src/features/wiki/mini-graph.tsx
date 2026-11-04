@@ -1,38 +1,23 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { lazy, Suspense, useMemo, useState } from "react";
 
-import { call, errorMessage } from "../chat/chat-client";
+import { errorMessage } from "../chat/chat-client";
 import { Loading } from "../shared/ui";
-import { path, type Relation } from "./wiki-api";
+import { wikiQueries } from "./wiki-api";
 import { fromNeighbors } from "./wiki-graph";
 import { useSeen } from "./use-size";
 
 const GraphView = lazy(() => import("./graph-view").then((m) => ({ default: m.GraphView })));
 const MAX_NODES = 30;
-type Neighbors = {
-  slug: string;
-  nodes: { slug: string; title: string }[];
-  edges: { from: string; to: string; relation: Relation }[];
-};
 
 /** The items around one item, one or two links away. It loads when scrolled into view, so a page you only read never pulls the drawing library. */
 export function MiniGraph({ slug, title }: { slug: string; title: string }) {
   const [box, seen] = useSeen<HTMLElement>();
   const [depth, setDepth] = useState<1 | 2>(1);
-  const [answer, setAnswer] = useState<{ for: string; r?: Neighbors; error?: string }>();
-  const key = `${slug}:${depth}`;
-  useEffect(() => {
-    if (!seen) return;
-    let live = true;
-    call<Neighbors>(`${path(slug)}/graph?depth=${depth}`).then(
-      (r) => live && setAnswer({ for: key, r }),
-      (e) => live && setAnswer({ for: key, error: errorMessage(e) }),
-    );
-    return () => {
-      live = false;
-    };
-  }, [seen, slug, depth, key]);
+  const neighbors = useQuery({ ...wikiQueries.neighbors(slug, depth), enabled: seen });
+  const r = neighbors.data;
+  const error = neighbors.isError ? errorMessage(neighbors.error) : undefined;
   const data = useMemo(() => {
-    const r = answer?.r;
     if (!r) return undefined;
     const nodes = r.nodes.slice(0, MAX_NODES - 1);
     const keep = new Set([slug, ...nodes.map((n) => n.slug)]);
@@ -42,7 +27,7 @@ export function MiniGraph({ slug, title }: { slug: string; title: string }) {
       nodes,
       edges: r.edges.filter((e) => keep.has(e.from) && keep.has(e.to)),
     });
-  }, [answer, slug, title]);
+  }, [r, slug, title]);
   return (
     <section ref={box} aria-labelledby="wiki-mini-graph" className="space-y-2">
       <div className="flex items-center justify-between gap-2">
@@ -63,11 +48,11 @@ export function MiniGraph({ slug, title }: { slug: string; title: string }) {
           ))}
         </div>
       </div>
-      {!seen || (!answer && !data) || answer?.for !== key ? (
+      {!seen || (!r && !error) ? (
         <Loading />
-      ) : answer.error ? (
+      ) : error ? (
         <p role="alert" className="text-sm text-destructive">
-          {answer.error}
+          {error}
         </p>
       ) : data ? (
         <Suspense fallback={<Loading />}>

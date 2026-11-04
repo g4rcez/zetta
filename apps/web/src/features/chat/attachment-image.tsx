@@ -1,3 +1,4 @@
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   CaretLeftIcon,
@@ -13,49 +14,35 @@ import { ENV } from "../../env";
 
 export type Pic = { id: string; name: string };
 
-/** One object URL per stored picture for the whole session: the server serves each file with an immutable cache header too. */
-// The object URLs live as long as the session on purpose: every message that shows a picture shares them, so none is revoked on unmount.
-const cache = new Map<string, Promise<string>>();
 /** Resolved URLs and natural sizes, read synchronously so a picture seen before renders at its final size on the first frame. */
 const urls = new Map<string, string>();
 const sizes = new Map<string, { w: number; h: number }>();
-function load(id: string) {
-  let hit = cache.get(id);
-  if (!hit) {
-    hit = fetch(new URL(`/api/attachments/${id}/content`, ENV.VITE_SERVER_URL), {
-      credentials: "include",
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error("image");
-        return r.blob();
-      })
-      .then((b) => {
-        const url = URL.createObjectURL(b);
-        urls.set(id, url);
-        return url;
+
+/**
+ * One object URL per stored picture for the whole session: the cache never expires an entry, and the server serves each file with an immutable cache header too.
+ * The object URLs live as long as the session on purpose: every message that shows a picture shares them, so none is revoked on unmount.
+ */
+const attachmentSrc = (id: string) =>
+  queryOptions({
+    queryKey: ["attachments", id, "content"],
+    queryFn: async () => {
+      const r = await fetch(new URL(`/api/attachments/${id}/content`, ENV.VITE_SERVER_URL), {
+        credentials: "include",
       });
-    hit.catch(() => cache.delete(id));
-    cache.set(id, hit);
-  }
-  return hit;
-}
+      if (!r.ok) throw new Error("image");
+      const url = URL.createObjectURL(await r.blob());
+      urls.set(id, url);
+      return url;
+    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+  });
 
 /** `undefined` while loading, `null` when the picture is gone. */
 export function useAttachmentSrc(id: string, enabled = true) {
-  const [src, setSrc] = useState<string | null | undefined>(() => urls.get(id));
-  useEffect(() => {
-    if (!enabled) return;
-    let live = true;
-    setSrc(urls.get(id));
-    load(id).then(
-      (u) => live && setSrc(u),
-      () => live && setSrc(null),
-    );
-    return () => {
-      live = false;
-    };
-  }, [id, enabled]);
-  return src;
+  const { data, isError } = useQuery({ ...attachmentSrc(id), enabled });
+  return isError ? null : data;
 }
 
 export function AttachmentImage({

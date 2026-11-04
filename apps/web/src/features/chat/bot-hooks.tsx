@@ -1,9 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
 import { Button, Checkbox, Input, Select } from "@/components/ui";
 import { MentionTextarea } from "./mention";
 import { useSidebarData } from "./sidebar-data";
 
 import { chatClient, errorMessage, type Bot, type Hook, type HookDryRun } from "./chat-client";
+import { chatQueries } from "./chat-queries";
 
 const KIND: Record<Hook["kind"], string> = {
   add_context: "Add context",
@@ -12,21 +14,18 @@ const KIND: Record<Hook["kind"], string> = {
   background: "Background task",
 };
 const sorted = (l: Hook[]) => [...l].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+const NONE: Hook[] = [];
 
 export function BotHooks({ bot }: { bot: Bot }) {
   const { bots } = useSidebarData();
-  const [hooks, setHooks] = useState<Hook[]>([]);
+  const qc = useQueryClient();
+  const hooksKey = chatQueries.hooks(bot.id).queryKey;
+  const hooks = useQuery({ ...chatQueries.hooks(bot.id), select: sorted }).data ?? NONE;
+  const setHooks = (update: (l: Hook[]) => Hook[]) =>
+    qc.setQueryData<Hook[]>(hooksKey, (l) => update(l ?? []));
   const [error, setError] = useState<string>();
   const [test, setTest] = useState("");
   const [result, setResult] = useState<HookDryRun>();
-  const load = () =>
-    chatClient.hooks(bot.id).then(
-      (l) => setHooks(sorted(l)),
-      () => setHooks([]),
-    );
-  useEffect(() => {
-    void load();
-  }, [bot.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const guard = async (work: () => Promise<unknown>) => {
     setError(undefined);
     try {
@@ -52,7 +51,10 @@ export function BotHooks({ bot }: { bot: Bot }) {
           (h.position ?? 0) === k ? undefined : chatClient.updateHook(h.id, { position: k }),
         ),
       );
-      setHooks(order.map((h, k) => ({ ...h, position: k })));
+      qc.setQueryData<Hook[]>(
+        hooksKey,
+        order.map((h, k) => ({ ...h, position: k })),
+      );
     });
   const add = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -65,7 +67,7 @@ export function BotHooks({ bot }: { bot: Bot }) {
         value: String(f.get("value") ?? ""),
       });
       form.reset();
-      await load();
+      await qc.invalidateQueries({ queryKey: hooksKey });
     });
   };
   const dry = (e: FormEvent) => {

@@ -22,8 +22,8 @@ export function SharedItem({
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-8">
       <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground">
-        <Link to="/wiki" className="hover:underline">
-          Wiki
+        <Link to="/memory" className="hover:underline">
+          Memory
         </Link>{" "}
         / {p.title}
       </nav>

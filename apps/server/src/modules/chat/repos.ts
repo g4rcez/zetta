@@ -18,14 +18,14 @@ export function githubRepoOf(url: string): string | undefined {
 const originOf = (config: string) => /\[remote "origin"\][^[]*?\burl\s*=\s*(\S+)/.exec(config)?.[1];
 
 /**
- * The GitHub repositories (`owner/repo`) in a user's code workspace that a run touched: the clone is one folder level down, and
+ * The GitHub repositories (`owner/repo`) in a user's code directory that a run touched: the clone is one folder level down, and
  * git activity inside it at or after `since` (ms) counts. Reads files only, never runs git. At most 5, most recent first.
  */
-export async function touchedRepos(workspace: string, since: number): Promise<string[]> {
-  const dirs = await readdir(workspace, { withFileTypes: true }).catch(() => []);
+export async function touchedRepos(codeDir: string, since: number): Promise<string[]> {
+  const dirs = await readdir(codeDir, { withFileTypes: true }).catch(() => []);
   const hits: { repo: string; at: number }[] = [];
   for (const d of dirs.filter((x) => x.isDirectory()).slice(0, MAX_DIRS)) {
-    const git = join(workspace, d.name, ".git");
+    const git = join(codeDir, d.name, ".git");
     const times = await Promise.all(
       ACTIVITY.map((f) =>
         stat(join(git, f)).then(

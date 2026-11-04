@@ -190,6 +190,8 @@ export const discussionTurn = zetta.table(
     createdAt: created(),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /** The server instance running this row (see server_instance). Recovery leaves the rows of a live instance alone. */
+    ownerInstance: uuid("owner_instance"),
   },
   (t) => [
     index("discussion_turn_trigger_message_id_idx").on(t.triggerMessageId),

@@ -1,11 +1,13 @@
 import { ArrowLeftIcon, ArrowSquareOutIcon, UserIcon, UsersThreeIcon } from "@phosphor-icons/react";
 import { Alert } from "@g4rcez/components/alert";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button } from "@/components/ui";
-import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { errorMessage, type Bot } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { ConfirmButton, Empty, Loading, Panel } from "../shared/ui";
 import { ChoiceBoxes } from "./choice-boxes";
 import { ComposioConnect } from "./composio-connect";
@@ -17,6 +19,8 @@ import {
   CATEGORY_LABEL,
   PluginScopeProvider,
   pluginsApiFor,
+  pluginsQueries,
+  setBoundInCache,
   usePluginApi,
   usePlugins,
   usePluginScope,
@@ -29,6 +33,8 @@ import { ToggleCard } from "./toggle-card";
 import { VaultGrants } from "./vault-grants";
 import { WhatsappInstall } from "./whatsapp-install";
 import { WhatsappPairing } from "./whatsapp-pairing";
+
+const NO_BOTS: Bot[] = [];
 
 const settingsText = (meta: PluginMeta, scope: PluginScope) =>
   `Saved values are stored encrypted for ${scope === "team" ? "the whole workspace" : "your account"} and never shown again. Leave a field blank to keep it.${meta.auth === "oauth" ? " Changing these disconnects the account; connect again afterwards." : ""}`;
@@ -269,30 +275,30 @@ function BotsSection({
 }) {
   const pluginsApi = usePluginApi();
   const scope = usePluginScope();
+  const qc = useQueryClient();
   // Per bot: whether this configuration is on, and whether the other one is on too (then the bot asks which to use).
-  const [bound, setBound] = useState<Record<string, { on: boolean; other: boolean }>>();
+  const results = useQueries({ queries: bots.map((b) => pluginsQueries.botPlugins(b.id)) });
+  const loadError = results.find((r) => r.error)?.error;
   useEffect(() => {
-    Promise.all(
-      bots.map(async (b) => {
-        const { configs } = await pluginsApi.botPlugins(b.id);
-        const mine = configs.filter((c) => c.id === meta.id);
-        return [
-          b.id,
-          {
-            on: mine.some((c) => c.scope === scope),
-            other: mine.some((c) => c.scope !== scope),
-          },
-        ] as const;
-      }),
-    ).then(
-      (r) => setBound(Object.fromEntries(r)),
-      (e) => onError(errorMessage(e)),
-    );
-  }, [bots, meta.id, scope, pluginsApi, onError]);
+    if (loadError) onError(errorMessage(loadError));
+    // `onError` is usually an inline function; the message only matters when the error changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadError]);
+  const bound = results.some((r) => !r.data)
+    ? undefined
+    : Object.fromEntries(
+        bots.map((b, i) => {
+          const mine = results[i]!.data!.configs.filter((c) => c.id === meta.id);
+          return [
+            b.id,
+            { on: mine.some((c) => c.scope === scope), other: mine.some((c) => c.scope !== scope) },
+          ] as const;
+        }),
+      );
   async function toggle(id: string, on: boolean) {
     try {
       await pluginsApi.setBound(id, meta.id, on);
-      setBound((s) => ({ ...s, [id]: { on, other: s?.[id]?.other ?? false } }));
+      setBoundInCache(qc, id, meta.id, scope, on);
     } catch (e) {
       onError(errorMessage(e));
     }
@@ -458,17 +464,16 @@ function ScopeSwitch({
 export function PluginPage({ pluginId, isAdmin }: { pluginId: string; isAdmin: boolean }) {
   const navigate = useNavigate();
   const [error, setError] = useState<string>();
-  const [bots, setBots] = useState<Bot[]>([]);
+  const botsQuery = useQuery(chatQueries.bots());
+  const bots = botsQuery.data ?? NO_BOTS;
   const [pairing, setPairing] = useState(false);
   const [picked, setPicked] = useState<PluginScope>();
   const { catalog, installed, reload } = usePlugins(setError);
   const { probes, probe, forget } = useProbes();
+  const botsError = botsQuery.error;
   useEffect(() => {
-    chatClient
-      .bots()
-      .then(setBots)
-      .catch((e) => setError(errorMessage(e)));
-  }, []);
+    if (botsError) setError(errorMessage(botsError));
+  }, [botsError]);
   const meta = catalog?.find((c) => c.id === pluginId);
   const mine = installed?.find((i) => i.id === pluginId && i.sharing === "private");
   const team = installed?.find((i) => i.id === pluginId && i.sharing === "team");

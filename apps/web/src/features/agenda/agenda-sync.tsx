@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowsClockwiseIcon } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { Button, Checkbox, Select } from "@/components/ui";
 
@@ -13,6 +14,37 @@ import { formatTime } from "@/features/preferences/time-format";
 type Google = "loading" | "missing" | "no-calendar" | "read-only" | "ok";
 /** Google accounts that can create events, as the Google plugin reports them. */
 type Writer = { email: string };
+
+const NO_WRITERS: Writer[] = [];
+/**
+ * What the Google plugin allows. Its own key (not under "agenda"): the check calls Google, so an Agenda reload must not repeat it.
+ */
+const googleStatus = queryOptions({
+  queryKey: ["agenda-google-status"],
+  staleTime: 5 * 60_000,
+  refetchOnWindowFocus: false,
+  queryFn: async (): Promise<{ google: Google; writers: Writer[] }> => {
+    const installed = await pluginsApi.installed().catch(() => []);
+    if (!installed.some((p) => p.id === "google")) return { google: "missing", writers: [] };
+    const t = await pluginsApi.test("google").catch(() => undefined);
+    if (t?.status.state !== "connected") return { google: "missing", writers: [] };
+    const scopes = (t.status.info?.scopes ?? []) as string[];
+    const accounts = (t.status.info?.accounts ?? []) as {
+      email: string;
+      state: string;
+      scopes: string[];
+    }[];
+    const writers = accounts.filter(
+      (a) => a.state === "connected" && a.scopes.includes("calendar.events"),
+    );
+    const google: Google = scopes.includes("calendar.events")
+      ? "ok"
+      : scopes.includes("calendar.events.readonly")
+        ? "read-only"
+        : "no-calendar";
+    return { google, writers };
+  },
+});
 
 /** Google Calendar sync settings for the Agenda. Connecting Google itself stays in Studio > Plugins. */
 export function AgendaSyncPanel({
@@ -27,37 +59,10 @@ export function AgendaSyncPanel({
   onError: (m: string) => void;
 }) {
   const tf = useTimeFormat();
-  const [google, setGoogle] = useState<Google>("loading");
   const [busy, setBusy] = useState(false);
-  const [writers, setWriters] = useState<Writer[]>([]);
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const installed = await pluginsApi.installed().catch(() => []);
-      if (!installed.some((p) => p.id === "google")) return "missing" as const;
-      const t = await pluginsApi.test("google").catch(() => undefined);
-      if (t?.status.state !== "connected") return "missing" as const;
-      const scopes = (t.status.info?.scopes ?? []) as string[];
-      const accounts = (t.status.info?.accounts ?? []) as {
-        email: string;
-        state: string;
-        scopes: string[];
-      }[];
-      setWriters(
-        accounts.filter((a) => a.state === "connected" && a.scopes.includes("calendar.events")),
-      );
-      return scopes.includes("calendar.events")
-        ? ("ok" as const)
-        : scopes.includes("calendar.events.readonly")
-          ? ("read-only" as const)
-          : ("no-calendar" as const);
-    })().then((g) => {
-      if (alive) setGoogle(g);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const status = useQuery(googleStatus);
+  const google: Google = status.data?.google ?? (status.isError ? "missing" : "loading");
+  const writers = status.data?.writers ?? NO_WRITERS;
 
   const set = async (v: Partial<Pick<AgendaSync, "enabled" | "pushByDefault" | "pushAccount">>) => {
     setBusy(true);

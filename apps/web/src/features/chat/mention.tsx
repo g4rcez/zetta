@@ -1,6 +1,7 @@
 import { ChatsIcon, UsersIcon } from "@phosphor-icons/react";
 import { cn } from "@zetta/ui/lib/utils";
 import type { EditorView } from "@codemirror/view";
+import { useQueryClient } from "@tanstack/react-query";
 import { legacyMentions, mentionIds, mentionToken, parseMentions } from "@zetta/core/mentions";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 
@@ -14,8 +15,8 @@ import {
 } from "@/components/editor/editor";
 import { mentionChips, refreshMentionChips } from "@/components/editor/mention-chips";
 
-import { discussionsApi } from "../discussions/discussions-api";
-import { teamsApi } from "../teams/teams-api";
+import { discussionsQueries } from "../discussions/discussions-api";
+import { teamsQueries } from "../teams/teams-api";
 import type { Bot } from "./chat-client";
 import { matchTrigger } from "./triggers";
 
@@ -85,6 +86,7 @@ export function useMention({
   viewRef: RefObject<EditorView | null>;
   onError?: (e: unknown) => void;
 }) {
+  const qc = useQueryClient();
   const [state, setState] = useState<State>();
   const [tags, setTags] = useState<Tag[]>();
   // Mention tokens in the text are drawn as chips with the current name of the bot, team or room.
@@ -110,7 +112,10 @@ export function useMention({
     const point = c ? { x: c.left, y: c.top, lineHeight: c.bottom - c.top } : undefined;
     setState(m ? { ...m, index: 0, point } : undefined);
     if (team && !tags)
-      Promise.all([teamsApi.list(), discussionsApi.list()]).then(([teams, rooms]) => {
+      Promise.all([
+        qc.fetchQuery(teamsQueries.list()),
+        qc.fetchQuery(discussionsQueries.list()),
+      ]).then(([teams, rooms]) => {
         setTags([
           ...teams.map((t) => ({ id: t.id, name: t.name, kind: "team" as const })),
           ...rooms

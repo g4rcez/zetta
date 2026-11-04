@@ -15,6 +15,7 @@ import { inApp } from "@/components/header";
 import { Logo } from "@/components/logo";
 import { authClient } from "@/lib/auth-client";
 import { cachedAuthGuard } from "@/lib/auth-guard";
+import { useLiveEvents } from "@/lib/live-events";
 import { SidebarDataProvider } from "@/features/chat/sidebar-data";
 import { IdentityRequestError, getIdentityError, identityClient } from "@/lib/identity-client";
 
@@ -116,6 +117,7 @@ function AccessError({ error, reset }: { error: unknown; reset: () => void }) {
 
 function AuthLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  useLiveEvents();
   return (
     <SidebarDataProvider>
       {inApp(pathname) ? (

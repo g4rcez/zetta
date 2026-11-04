@@ -1,0 +1,47 @@
+# Load balancer for docker-compose.scale.yml. Requests that need the worker (turns, harnesses, browsers, VMs) go to it; everything else
+# is spread over the api instances. The patterns below must match apps/server/src/worker-only.ts: worker-only.test.ts checks that they do.
+:3000 {
+	@worker_any path_regexp ^/api/(computer(/|$)|harnesses$|inbound/|decisions(/|$)|bots/[^/]+/(database|onboarding)(/|$)|bot-database/|plugins/[^/]+/(test|connect|disconnect|callback)$)
+	@worker_post {
+		method POST
+		path_regexp ^/api/(workflows/[^/]+/run|routines/[^/]+/run|bots/interview|wiki-assist|proposals/[^/]+/decision|conversations/[^/]+/(stream|chat|messages|queue|cancel|turn/wait)|conversations/[^/]+/queue/[^/]+/retry|connections|plugins)$
+	}
+	@worker_put {
+		method PUT
+		path_regexp ^/api/plugins/[^/]+/config$
+	}
+	@worker_get {
+		method GET
+		path_regexp ^/api/(conversations/[^/]+/(stream|chat/stream|turn)|connections/transport-key)$
+	}
+
+	# flush_interval -1: server-sent events and the VNC WebSocket must not be buffered.
+	handle @worker_any {
+		reverse_proxy worker:3000 {
+			flush_interval -1
+		}
+	}
+	handle @worker_post {
+		reverse_proxy worker:3000 {
+			flush_interval -1
+		}
+	}
+	handle @worker_put {
+		reverse_proxy worker:3000 {
+			flush_interval -1
+		}
+	}
+	handle @worker_get {
+		reverse_proxy worker:3000 {
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy api:3000 {
+			lb_policy round_robin
+			health_uri /readyz
+			health_interval 5s
+			flush_interval -1
+		}
+	}
+}

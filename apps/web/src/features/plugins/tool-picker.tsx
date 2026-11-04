@@ -1,7 +1,8 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { errorMessage } from "../chat/chat-client";
-import { pluginsApi, type ToolAccess } from "./plugins-api";
+import { pluginsApi, pluginsQueries, type ToolAccess } from "./plugins-api";
 import { Alert } from "@g4rcez/components/alert";
 
 /** Which tools of one enabled plugin / MCP server this bot may call: all of them, or only the ones ticked. Loads when opened. */
@@ -16,26 +17,21 @@ export function ToolPicker({
   name: string;
   disabled?: boolean;
 }) {
-  const [access, setAccess] = useState<ToolAccess>();
+  const qc = useQueryClient();
+  const [opened, setOpened] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  async function open() {
-    if (access) return;
-    setError(undefined);
-    try {
-      setAccess(await pluginsApi.toolAccess(botId, serverId));
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }
+  const [saveError, setSaveError] = useState<string>();
+  const options = pluginsQueries.toolAccess(botId, serverId);
+  const { data: access, error: loadError } = useQuery({ ...options, enabled: opened });
+  const error = saveError ?? (loadError ? errorMessage(loadError) : undefined);
   async function save(toolsMode: ToolAccess["toolsMode"], allowedTools: string[]) {
     setBusy(true);
-    setError(undefined);
+    setSaveError(undefined);
     try {
       const saved = await pluginsApi.setToolAccess(botId, serverId, { toolsMode, allowedTools });
-      setAccess((a) => (a ? { ...a, ...saved } : a));
+      qc.setQueryData<ToolAccess>(options.queryKey, (a) => (a ? { ...a, ...saved } : a));
     } catch (e) {
-      setError(errorMessage(e));
+      setSaveError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -45,7 +41,7 @@ export function ToolPicker({
     <details
       className="rounded-lg border bg-card px-3 py-2 text-sm"
       onToggle={(e) => {
-        if (e.currentTarget.open) void open();
+        if (e.currentTarget.open) setOpened(true);
       }}
     >
       <summary className="cursor-pointer text-xs text-muted-foreground">

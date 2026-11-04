@@ -1,6 +1,6 @@
 # Operator wiki
 
-Status: implemented 2026-10-29 as a page store; extended 2026-11-02 into the unified wiki below. Code: `apps/server/src/modules/wiki`, schema `packages/db/src/schema/wiki.ts`, web `apps/web/src/features/wiki` (`/wiki`, `/wiki/<slug>`).
+Status: implemented 2026-10-29 as a page store; extended 2026-11-02 into the unified wiki below. Code: `apps/server/src/modules/wiki`, schema `packages/db/src/schema/wiki.ts`, web `apps/web/src/features/wiki` (`/memory`, `/memory/<slug>`; named "Memory" in the UI since 2026-11-04, `/wiki` redirects).
 
 ## Problem
 
@@ -42,4 +42,4 @@ Memory, instructions, Drive documents and wiki pages are one concept: a **wiki i
 - **What goes in every prompt.** The bot's `solo` items and the person's `owner` items tagged `profile`, best score first, within 2200 and 1375 characters (at most 64 each). Everything else is found by search.
 - **Search.** Keywords (any content word for a long message), tags, and the nearest chunks by meaning, fused by reciprocal rank and scaled by score. Filters (type, tags, status, whose, author, team, score, age) apply before ranking. Each result says why it matched (words, tag, meaning) with the passage. Procedures (tag `instruction`) that fit a message are shown in full.
 - **Drive.** Each indexed document is an `owner` item tagged `drive`, linked back through `knowledge_doc.page_id` so a sync updates the same item. Its title and text are the document's and cannot be edited or shared; the whole text stays in the chunks. The same file reached through two Google accounts is one item.
-- **Wiki page.** `/wiki` has filters, "Ask the wiki" (the chief answers in place with cited items), a health panel with one fix per problem, a graph view, and the Drive and feed settings. `/wiki/<slug>` has the item, its links by relation, sources and versions, `[[` autocomplete, an Add link panel, and editor help that suggests tags, a how-to line, a score, links or a tidier text. Help runs on the chief, never receives a draft that looks like a secret, and changes nothing until the person accepts and saves.
+- **Memory page.** `/memory` has filters, "Ask your memory" (the chief answers in place with cited items), a health panel with one fix per problem, a graph view, and the Drive and feed settings. `/memory/<slug>` has the item, its links by relation, sources and versions, `[[` autocomplete, an Add link panel, and editor help that suggests tags, a how-to line, a score, links or a tidier text. Help runs on the chief, never receives a draft that looks like a secret, and changes nothing until the person accepts and saves.

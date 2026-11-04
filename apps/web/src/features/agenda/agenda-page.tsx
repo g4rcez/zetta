@@ -1,12 +1,13 @@
 import { PageCalendar, type CalendarEvent, type CalendarFilter } from "@g4rcez/components";
 import { CheckIcon } from "@phosphor-icons/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui";
 
 import {
-  agendaApi,
+  agendaQueries,
   useAgenda,
   type AgendaItem,
   type AgendaKind,
@@ -30,6 +31,13 @@ const FILTERS: CalendarFilter[] = [
   })),
   { id: "done", label: "Done", enabled: true, theme: DONE_THEME },
 ];
+const SYNC_OFF: AgendaSync = {
+  enabled: false,
+  pushByDefault: false,
+  pushAccount: null,
+  lastSyncedAt: null,
+  lastError: "",
+};
 const startOfMonth = (d: Date, add = 0) => new Date(d.getFullYear(), d.getMonth() + add, 1);
 /** All-day items are stored at UTC midnight; the calendar groups by local day, so they are placed on that calendar date locally. */
 const displayDate = (i: AgendaItem) => {
@@ -44,30 +52,19 @@ export function AgendaPage({ focusId }: { focusId?: string | undefined }) {
     to: startOfMonth(new Date(), 4),
   }));
   const { items, reload } = useAgenda(window, onError);
-  const [sync, setSync] = useState<AgendaSync>();
+  const qc = useQueryClient();
+  const syncQuery = useQuery(agendaQueries.sync());
+  const sync = syncQuery.data ?? (syncQuery.isError ? SYNC_OFF : undefined);
+  const setSync = (next: AgendaSync) => qc.setQueryData(agendaQueries.sync().queryKey, next);
   const [editing, setEditing] = useState<{ item?: AgendaItem; at?: Date }>();
-  useEffect(() => {
-    agendaApi
-      .sync()
-      .then(setSync)
-      .catch(() =>
-        setSync({
-          enabled: false,
-          pushByDefault: false,
-          pushAccount: null,
-          lastSyncedAt: null,
-          lastError: "",
-        }),
-      );
-  }, []);
   // Opened from an attention item or a chat receipt (/agenda?item=<id>).
   useEffect(() => {
     if (!focusId) return;
-    agendaApi
-      .get(focusId)
-      .then((item) => setEditing({ item }))
-      .catch(() => onError("That Agenda item no longer exists."));
-  }, [focusId, onError]);
+    qc.fetchQuery(agendaQueries.detail(focusId)).then(
+      (item) => setEditing({ item }),
+      () => onError("That Agenda item no longer exists."),
+    );
+  }, [focusId, onError, qc]);
 
   const events = useMemo<Ev[]>(
     () =>

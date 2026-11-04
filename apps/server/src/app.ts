@@ -4,7 +4,12 @@ import { createAuthMiddleware, type BetterAuthInstance } from "evlog/better-auth
 import { evlog, type EvlogElysiaOptions } from "evlog/elysia";
 
 import { stampClientIp } from "./client-ip";
+import { responseEncoding } from "./response-encoding";
+import { healthRoutes } from "./health";
+import type { Role } from "./role";
+import { workerOnlyGuard } from "./worker-only";
 import { createChatRoutes, type ChatServices } from "./modules/chat/routes";
+import { createEventRoutes, type EventServices } from "./modules/events/routes";
 import { createComputerRoutes, type ComputerServices } from "./modules/computer/routes";
 import { createInstallationRoutes, type InstallationServices } from "./modules/installation/routes";
 import { createConnectionRoutes, type ConnectionServices } from "./modules/connections/routes";
@@ -37,6 +42,7 @@ export type CreateAppOptions = {
   identity?: IdentityServices;
   installation?: InstallationServices;
   chat?: ChatServices;
+  events?: EventServices;
   features?: FeatureServices;
   decisions?: DecisionServices;
   computer?: ComputerServices;
@@ -61,6 +67,10 @@ export type CreateAppOptions = {
   desktopOrigins: readonly string[];
   /** Optional; without it evlog writes plain console logs. */
   drain?: EvlogElysiaOptions["drain"];
+  /** `api` refuses the requests only the worker can serve (see worker-only.ts). Default `all`: one process does everything. */
+  role?: Role;
+  /** Readiness for a load balancer: true when this instance can serve (the database answers). `GET /readyz` is 503 otherwise. */
+  ready?: () => Promise<boolean>;
 };
 
 export function createApp({
@@ -68,6 +78,7 @@ export function createApp({
   identity,
   installation,
   chat,
+  events,
   features,
   decisions,
   computer,
@@ -91,6 +102,8 @@ export function createApp({
   webOrigin,
   desktopOrigins,
   drain,
+  role = "all",
+  ready,
 }: CreateAppOptions) {
   // Telemetry must never receive private auth/driver exceptions. Authorization
   // uses the original auth service independently and still fails closed.
@@ -107,7 +120,7 @@ export function createApp({
       },
     },
     {
-      exclude: ["/api/auth/**"],
+      exclude: ["/api/auth/**", "/healthz", "/readyz"],
       maskEmail: true,
     },
   );
@@ -115,85 +128,101 @@ export function createApp({
   // systemRouter: false keeps routing in Elysia's own fetch handler. With Bun's native route table (`Bun.serve({ routes })`), Bun
   // 1.3.14 segfaults in routeListGetCached while serving a request under `bun --hot` (crash report decoded 2026-10-26), taking
   // the API and every live VNC session down with it.
-  return new Elysia({ systemRouter: false })
-    .mapResponse({ as: "global" }, ({ response, set }) => {
-      if (response instanceof Response) set.status = response.status;
-    })
-    .use(evlog(drain ? { drain } : {}))
-    .derive(async ({ request, log }) => {
-      await identifyUser(log, request.headers, new URL(request.url).pathname);
-      return {};
-    })
-    .use(
-      cors({
-        origin: [webOrigin, ...desktopOrigins],
-        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Authorization"],
-        credentials: true,
-      }),
-    )
-    .all("/api/auth/*", async (context) => {
-      const { request, status, server } = context;
-      if (["POST", "GET"].includes(request.method)) {
-        stampClientIp(request, server?.requestIP(request)?.address);
-        return auth.handler(request);
-      }
-      return status(405);
-    })
-    .use(zettaMcp ? createZettaMcpRoutes(zettaMcp, auth.handler) : new Elysia())
-    .use(identity ? createIdentityRoutes(identity, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(
-      installation
-        ? createInstallationRoutes(installation, [webOrigin, ...desktopOrigins])
-        : new Elysia(),
-    )
-    .use(chat ? createChatRoutes(chat, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(features ? createFeatureRoutes(features, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(decisions ? createDecisionRoutes(decisions, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(computer ? createComputerRoutes(computer, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(
-      connections
-        ? createConnectionRoutes(connections, [webOrigin, ...desktopOrigins])
-        : new Elysia(),
-    )
-    .use(
-      integrations
-        ? createIntegrationRoutes(integrations, [webOrigin, ...desktopOrigins])
-        : new Elysia(),
-    )
-    .use(agenda ? createAgendaRoutes(agenda, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(tasks ? createTaskRoutes(tasks, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(
-      preferences
-        ? createPreferenceRoutes(preferences, [webOrigin, ...desktopOrigins])
-        : new Elysia(),
-    )
-    .use(search ? createSearchRoutes(search) : new Elysia())
-    .use(
-      knowledge ? createKnowledgeRoutes(knowledge, [webOrigin, ...desktopOrigins]) : new Elysia(),
-    )
-    .use(wiki ? createWikiRoutes(wiki, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(
-      outputStyles
-        ? createOutputStyleRoutes(outputStyles, [webOrigin, ...desktopOrigins])
-        : new Elysia(),
-    )
-    .use(skills ? createSkillRoutes(skills, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(artifacts ? createArtifactRoutes(artifacts, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(
-      discussions
-        ? createDiscussionRoutes(discussions, [webOrigin, ...desktopOrigins])
-        : new Elysia(),
-    )
-    .use(teams ? createTeamRoutes(teams, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(inbound ? createInboundRoutes(inbound, [webOrigin, ...desktopOrigins]) : new Elysia())
-    .use(
-      botDatabase
-        ? createBotDatabaseRoutes(botDatabase, [webOrigin, ...desktopOrigins])
-        : new Elysia(),
-    )
-    .use(
-      botClaude ? createBotClaudeRoutes(botClaude, [webOrigin, ...desktopOrigins]) : new Elysia(),
-    )
-    .get("/", () => "OK");
+  return (
+    new Elysia({ systemRouter: false })
+      .mapResponse({ as: "global" }, ({ response, set }) => {
+        if (response instanceof Response) set.status = response.status;
+      })
+      .use(evlog({ ...(drain ? { drain } : {}), exclude: ["/healthz", "/readyz"] }))
+      .derive(async ({ request, log }) => {
+        await identifyUser(log, request.headers, new URL(request.url).pathname);
+        return {};
+      })
+      .use(
+        cors({
+          origin: [webOrigin, ...desktopOrigins],
+          methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+          allowedHeaders: ["Content-Type", "Authorization"],
+          credentials: true,
+        }),
+      )
+      .use(responseEncoding())
+      // Typed as a plain Elysia: one more fully typed `.use` makes this chain too complex for the compiler.
+      .use(role === "api" ? (workerOnlyGuard() as unknown as Elysia) : new Elysia())
+      .use(healthRoutes(ready) as unknown as Elysia)
+      .all("/api/auth/*", async (context) => {
+        const { request, status, server } = context;
+        if (["POST", "GET"].includes(request.method)) {
+          stampClientIp(request, server?.requestIP(request)?.address);
+          return auth.handler(request);
+        }
+        return status(405);
+      })
+      .use(zettaMcp ? createZettaMcpRoutes(zettaMcp, auth.handler) : new Elysia())
+      .use(identity ? createIdentityRoutes(identity, [webOrigin, ...desktopOrigins]) : new Elysia())
+      .use(
+        installation
+          ? createInstallationRoutes(installation, [webOrigin, ...desktopOrigins])
+          : new Elysia(),
+      )
+      .use(chat ? createChatRoutes(chat, [webOrigin, ...desktopOrigins]) : new Elysia())
+      // Typed as a plain Elysia: one more fully typed `.use` makes this chain too complex for the compiler.
+      .use(
+        events
+          ? (createEventRoutes(events, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(features ? createFeatureRoutes(features, [webOrigin, ...desktopOrigins]) : new Elysia())
+      .use(
+        decisions ? createDecisionRoutes(decisions, [webOrigin, ...desktopOrigins]) : new Elysia(),
+      )
+      .use(computer ? createComputerRoutes(computer, [webOrigin, ...desktopOrigins]) : new Elysia())
+      .use(
+        connections
+          ? createConnectionRoutes(connections, [webOrigin, ...desktopOrigins])
+          : new Elysia(),
+      )
+      .use(
+        integrations
+          ? createIntegrationRoutes(integrations, [webOrigin, ...desktopOrigins])
+          : new Elysia(),
+      )
+      .use(agenda ? createAgendaRoutes(agenda, [webOrigin, ...desktopOrigins]) : new Elysia())
+      .use(tasks ? createTaskRoutes(tasks, [webOrigin, ...desktopOrigins]) : new Elysia())
+      .use(
+        preferences
+          ? createPreferenceRoutes(preferences, [webOrigin, ...desktopOrigins])
+          : new Elysia(),
+      )
+      .use(search ? createSearchRoutes(search) : new Elysia())
+      .use(
+        knowledge ? createKnowledgeRoutes(knowledge, [webOrigin, ...desktopOrigins]) : new Elysia(),
+      )
+      .use(wiki ? createWikiRoutes(wiki, [webOrigin, ...desktopOrigins]) : new Elysia())
+      .use(
+        outputStyles
+          ? createOutputStyleRoutes(outputStyles, [webOrigin, ...desktopOrigins])
+          : new Elysia(),
+      )
+      .use(skills ? createSkillRoutes(skills, [webOrigin, ...desktopOrigins]) : new Elysia())
+      .use(
+        artifacts ? createArtifactRoutes(artifacts, [webOrigin, ...desktopOrigins]) : new Elysia(),
+      )
+      .use(
+        discussions
+          ? createDiscussionRoutes(discussions, [webOrigin, ...desktopOrigins])
+          : new Elysia(),
+      )
+      .use(teams ? createTeamRoutes(teams, [webOrigin, ...desktopOrigins]) : new Elysia())
+      .use(inbound ? createInboundRoutes(inbound, [webOrigin, ...desktopOrigins]) : new Elysia())
+      .use(
+        botDatabase
+          ? createBotDatabaseRoutes(botDatabase, [webOrigin, ...desktopOrigins])
+          : new Elysia(),
+      )
+      .use(
+        botClaude ? createBotClaudeRoutes(botClaude, [webOrigin, ...desktopOrigins]) : new Elysia(),
+      )
+      .get("/", () => "OK")
+  );
 }

@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { Button, Input } from "@/components/ui";
 import { errorMessage, type Bot } from "../chat/chat-client";
@@ -9,10 +10,11 @@ import { SkillPicker, type PickerItem } from "./skill-picker";
 import {
   FAILURE_TEXT,
   skillsApi,
+  skillsQueries,
   WARNING_TEXT,
+  type MarketAnswer,
   type MarketRepo,
   type SearchResult,
-  type Suggestion,
   type Trust,
 } from "./skills-api";
 
@@ -36,6 +38,34 @@ type Shown = {
   }[];
 };
 
+const fromRepo = (r: MarketRepo): Shown => ({
+  title: r.repo,
+  trust: r.trust,
+  ...(r.truncated ? { note: "The repository is large: some skills may not be listed." } : {}),
+  rows: r.skills.map((k) => ({
+    ...k,
+    repo: r.repo,
+    ref: r.ref,
+    installed: k.installedId !== null,
+    showRepo: false,
+  })),
+});
+const fromSearch = (text: string, r: SearchResult): Shown => ({
+  title: `Results for "${text}"`,
+  trust: undefined,
+  note:
+    [
+      r.indexing ? "Still reading the repositories: search again in a moment for more." : "",
+      r.unavailable.length ? `Could not read: ${r.unavailable.join(", ")}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined,
+  rows: r.skills.map((k) => ({ ...k, installed: k.installedId !== null, showRepo: true })),
+});
+
+const shownOf = (a: MarketAnswer): Shown =>
+  a.kind === "repo" ? fromRepo(a.repo) : fromSearch(a.text, a.result);
+
 /** Find skills in the trusted repositories, or browse any GitHub repository, choose some, and install them into the library. */
 export function Marketplace({
   bots,
@@ -53,95 +83,60 @@ export function Marketplace({
   onFilter: (text: string) => void;
   onError: (m?: string) => void;
 }) {
-  const [suggestions, setSuggestions] = useState<Suggestion[]>();
+  const qc = useQueryClient();
   /** The text in the box before it is submitted; the submitted text is `q`. */
   const [draft, setDraft] = useState(q ?? "");
-  const [shown, setShown] = useState<Shown>();
   const [selected, setSelected] = useState<string[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [status, setStatus] = useState<string>();
   const mine = bots.filter((b) => b.canEdit);
 
+  const suggested = useQuery(skillsQueries.suggestions());
+  const suggestions = suggested.data;
   useEffect(() => {
-    skillsApi.suggestions().then(setSuggestions, (e) => onError(errorMessage(e)));
-  }, [onError]);
+    if (suggested.error) onError(errorMessage(suggested.error));
+    // `onError` is the page's setter; the message only matters when the error changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggested.error]);
 
-  const fromRepo = (r: MarketRepo): Shown => ({
-    title: r.repo,
-    trust: r.trust,
-    ...(r.truncated ? { note: "The repository is large: some skills may not be listed." } : {}),
-    rows: r.skills.map((k) => ({
-      ...k,
-      repo: r.repo,
-      ref: r.ref,
-      installed: k.installedId !== null,
-      showRepo: false,
-    })),
-  });
-  const fromSearch = (text: string, r: SearchResult): Shown => ({
-    title: `Results for "${text}"`,
-    trust: undefined,
-    note:
-      [
-        r.indexing ? "Still reading the repositories: search again in a moment for more." : "",
-        r.unavailable.length ? `Could not read: ${r.unavailable.join(", ")}.` : "",
-      ]
-        .filter(Boolean)
-        .join(" ") || undefined,
-    rows: r.skills.map((k) => ({ ...k, installed: k.installedId !== null, showRepo: true })),
-  });
-
-  const browse = async (source: string, keepStatus = false) => {
-    onError();
-    if (!keepStatus) setStatus(undefined);
-    setBusy(true);
-    try {
-      setShown(fromRepo(await skillsApi.repo(source)));
-    } catch (e) {
-      setShown(undefined);
-      onError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const search = async (text: string, keepStatus = false) => {
-    onError();
-    if (!keepStatus) setStatus(undefined);
-    setBusy(true);
-    try {
-      setShown(fromSearch(text, await skillsApi.search(text)));
-    } catch (e) {
-      setShown(undefined);
-      onError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const load = (text: string, keepStatus = false) =>
-    looksLikeSource(text) ? browse(text, keepStatus) : search(text, keepStatus);
   // The address is the real state: the results follow `q`, also after Back, Forward, a reload or a shared link.
+  const market = useQuery({ ...skillsQueries.market(q ?? ""), enabled: Boolean(q) });
+  const answer = market.data;
+  const shown = useMemo(
+    () => (q && answer && !market.isError ? shownOf(answer) : undefined),
+    [q, answer, market.isError],
+  );
+  const busy = installing || (Boolean(q) && market.isFetching);
   useEffect(() => {
     setDraft(q ?? "");
     setSelected([]);
-    if (q) void load(q);
-    else setShown(undefined);
-    // `load` only reads state setters and the api client.
+    setStatus(undefined);
+    if (q) onError();
+    // `onError` is the page's setter; the results only start over when the address changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
+  useEffect(() => {
+    if (market.error) onError(errorMessage(market.error));
+    // `onError` is the page's setter; the message only matters when the error changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market.error]);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
     if (!text) return;
     // The same text again reads it again, since the address does not change.
-    if (text === q) void load(text);
-    else onQuery(text);
+    if (text === q) {
+      onError();
+      setStatus(undefined);
+      void market.refetch();
+    } else onQuery(text);
   };
 
   const install = async () => {
     if (!shown) return;
     onError();
-    setBusy(true);
+    setInstalling(true);
     try {
       const groups = new Map<string, { ref: string; paths: string[] }>();
       for (const r of shown.rows)
@@ -181,13 +176,16 @@ export function Marketplace({
         .filter(Boolean)
         .join(" ");
       // The list is read again so the installed ones are marked; reading it clears the status, so the message is set after.
-      if (q) await load(q, true);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["skills", "market", "source"] }),
+        qc.invalidateQueries({ queryKey: ["skills", "list"] }),
+      ]);
       setStatus(message);
       setSelected([]);
     } catch (e) {
       onError(errorMessage(e));
     } finally {
-      setBusy(false);
+      setInstalling(false);
     }
   };
 

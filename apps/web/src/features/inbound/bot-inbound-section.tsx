@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
 import { Button, Checkbox, Input } from "@/components/ui";
 
 import { errorMessage, type Bot } from "../chat/chat-client";
-import { inboundApi, type InboundOption } from "./inbound-api";
+import { inboundApi, inboundQueries } from "./inbound-api";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatTime, type TimeFormat } from "@/features/preferences/time-format";
 
@@ -16,16 +17,14 @@ const when = (iso: string | null, f: TimeFormat) =>
  */
 export function BotInboundSection({ bot }: { bot: Bot }) {
   const tf = useTimeFormat();
-  const [options, setOptions] = useState<InboundOption[]>();
+  const qc = useQueryClient();
+  const { data: options, error } = useQuery(inboundQueries.forBot(bot.id));
   const [status, setStatus] = useState<string>();
   const [busy, setBusy] = useState<string>();
-  const load = useCallback(
-    () => inboundApi.forBot(bot.id).then(setOptions, (e) => setStatus(errorMessage(e))),
-    [bot.id],
-  );
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (error) setStatus(errorMessage(error));
+  }, [error]);
+  const load = () => qc.invalidateQueries({ queryKey: inboundQueries.forBot(bot.id).queryKey });
   async function run(id: string, work: () => Promise<unknown>, done: string) {
     setBusy(id);
     setStatus(undefined);

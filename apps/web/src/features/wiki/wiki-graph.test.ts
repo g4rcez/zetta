@@ -151,7 +151,7 @@ describe("neighborhood, summary, fromNeighbors", () => {
     const g = buildGraph(data, { filter: filter(), colorBy: "type", showMissing: true, now: NOW });
     expect(summary(g, false)).toBe("4 items, 2 links, 1 not linked");
     expect(summary(g, true)).toBe(
-      "4 items, 2 links, 1 not linked. Showing the first part of a larger wiki",
+      "4 items, 2 links, 1 not linked. Showing the first part of a larger memory",
     );
   });
   test("an item's neighbors become a small graph keyed by slug", () => {

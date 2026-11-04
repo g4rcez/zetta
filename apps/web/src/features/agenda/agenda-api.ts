@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { keepPreviousData, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect } from "react";
 
 import { call, errorMessage } from "../chat/chat-client";
 
@@ -74,34 +75,41 @@ export const agendaApi = {
     }>("/api/agenda/sync/now", "POST", {}),
 };
 
+/** Every key starts with "agenda", so one invalidation after a write refreshes the list, the item and the sync state. */
+export const agendaQueries = {
+  list: (from: Date, to: Date) =>
+    queryOptions({
+      queryKey: ["agenda", "list", { from: from.toISOString(), to: to.toISOString() }],
+      queryFn: () => agendaApi.list(from, to),
+    }),
+  detail: (id: string) =>
+    queryOptions({ queryKey: ["agenda", id], queryFn: () => agendaApi.get(id) }),
+  sync: () => queryOptions({ queryKey: ["agenda", "sync"], queryFn: () => agendaApi.sync() }),
+};
+
 /** PageCalendar keeps its own visible date, so the page loads a wide window around today and can widen it on request. */
 export function useAgenda(window: { from: Date; to: Date }, onError: (m: string) => void) {
-  const [items, setItems] = useState<AgendaItem[]>();
-  const [tick, setTick] = useState(0);
-  const reload = useCallback(() => setTick((n) => n + 1), []);
+  const qc = useQueryClient();
+  const query = useQuery({
+    ...agendaQueries.list(window.from, window.to),
+    // Bots and Google sync change the Agenda in the background: refresh while the page is visible.
+    refetchInterval: 60_000,
+    // Widening the window keeps the rows on screen until the new ones arrive.
+    placeholderData: keepPreviousData,
+  });
+  const error = query.error;
   useEffect(() => {
-    let alive = true;
-    agendaApi
-      .list(window.from, window.to)
-      .then((r) => {
-        if (alive) setItems(r);
-      })
-      .catch((e) => {
-        if (alive) {
-          setItems((x) => x ?? []);
-          onError(errorMessage(e));
-        }
-      });
-    return () => {
-      alive = false;
-    };
-  }, [window.from, window.to, tick, onError]);
-  // Bots and Google sync change the Agenda in the background: refresh while the page is visible.
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") reload();
-    }, 60_000);
-    return () => clearInterval(t);
-  }, [reload]);
-  return { items, reload, setItems };
+    if (error) onError(errorMessage(error));
+  }, [error, onError]);
+  const reload = useCallback(() => qc.invalidateQueries({ queryKey: ["agenda"] }), [qc]);
+  const key = agendaQueries.list(window.from, window.to).queryKey;
+  const setItems = useCallback(
+    (next: AgendaItem[]) => qc.setQueryData<AgendaItem[]>(key, next),
+    // The key holds the window as text.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [qc, JSON.stringify(key)],
+  );
+  return { items: query.data ?? (query.isError ? NO_ITEMS : undefined), reload, setItems };
 }
+
+const NO_ITEMS: AgendaItem[] = [];

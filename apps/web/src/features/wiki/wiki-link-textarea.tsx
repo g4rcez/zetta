@@ -121,7 +121,7 @@ export function WikiLinkTextarea({
               </button>
             ))}
           </div>
-          <ul id={listId} role="listbox" aria-label="Wiki items to link">
+          <ul id={listId} role="listbox" aria-label="Memory items to link">
             {rows.length === 0 && (
               <li className="px-2 py-1.5 text-muted-foreground" role="presentation">
                 Type the name of an item.

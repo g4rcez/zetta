@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { pollEvery } from "@/lib/query-policy";
+import { useCallback, useState } from "react";
 import { HourglassMediumIcon, NotePencilIcon, SquareIcon } from "@phosphor-icons/react";
 
 import { Button } from "@zetta/ui/components/button";
@@ -19,25 +21,18 @@ import {
 
 const POLL_MS = 15_000;
 
-/** The server's view of this chat's turn, read every 15 s while the tab is visible. It is the server's view, not the stream's: a turn can
- * run on after the stream closed. */
-export function useTurnState(conversationId: string | undefined) {
-  const [state, setState] = useState<TurnState>();
-  const refresh = useCallback(async () => {
-    if (!conversationId || document.visibilityState !== "visible") return;
-    setState(await turnStateOf(conversationId).catch(() => undefined));
-  }, [conversationId]);
-  useEffect(() => {
-    setState(undefined);
-    void refresh();
-    const timer = setInterval(() => void refresh(), POLL_MS);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [refresh]);
-  return { state, refresh };
+/** The server's view of this chat's turn, read every 15 s while the tab is visible and a turn is `active` (otherwise once, and on focus).
+ * It is the server's view, not the stream's: a turn can run on after the stream closed. */
+export function useTurnState(conversationId: string | undefined, active: boolean) {
+  const query = useQuery({
+    queryKey: ["conversations", conversationId, "turn"],
+    queryFn: () => turnStateOf(conversationId!),
+    enabled: !!conversationId,
+    refetchInterval: pollEvery(POLL_MS, false, active),
+  });
+  const { refetch } = query;
+  const refresh = useCallback(async () => void (await refetch()), [refetch]);
+  return { state: conversationId ? query.data : undefined, refresh };
 }
 
 const minutes = (ms: number) => Math.max(1, Math.round(ms / 60_000));

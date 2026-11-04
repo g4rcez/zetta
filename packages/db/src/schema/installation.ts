@@ -14,9 +14,9 @@ export const installationSettings = zetta.table(
     onboarding: text("onboarding", { enum: ["pending", "done"] })
       .default("pending")
       .notNull(),
-    /** Builtin Laya decision model (plugin). Off by default: turning it on downloads about 1.7 GB. */
+    /** Builtin Laya decision model (plugin). On by default: the first boot downloads about 1.3 to 1.7 GB. An administrator can turn it off. */
     laya: text("laya", { enum: ["on", "off"] })
-      .default("off")
+      .default("on")
       .notNull(),
     /** BCP-47 tags the Laya model must understand ("en" always first). Any non-English tag selects the multilingual model. */
     layaLanguages: jsonb("laya_languages").$type<string[]>().default(["en"]).notNull(),

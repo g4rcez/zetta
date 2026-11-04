@@ -1,4 +1,7 @@
+import { queryOptions } from "@tanstack/react-query";
+
 import { call } from "../chat/chat-client";
+import { STATIC } from "@/lib/query-policy";
 
 /** Past this many bots a team still works, but every turn carries more context (see TEAM_SIZE_WARNING). */
 export const TEAM_SIZE_WARNING_AT = 6;
@@ -103,4 +106,19 @@ export const teamsApi = {
     ).then((r) => r.people),
   startRoom: (id: string, v: { title: string; firstMessage?: string; goal?: string }) =>
     call<{ discussionId: string }>(`/api/teams/${id}/rooms`, "POST", v).then((r) => r.discussionId),
+};
+
+export const teamsQueries = {
+  list: () => queryOptions({ queryKey: ["teams"], queryFn: () => teamsApi.list(), ...STATIC }),
+  roles: () =>
+    queryOptions({ queryKey: ["teams", "roles"], queryFn: () => teamsApi.roles(), ...STATIC }),
+  detail: (id: string) =>
+    queryOptions({ queryKey: ["teams", id], queryFn: () => teamsApi.get(id) }),
+  people: (id: string) =>
+    queryOptions({ queryKey: ["teams", id, "people"], queryFn: () => teamsApi.people(id) }),
+  candidates: (id: string) =>
+    queryOptions({
+      queryKey: ["teams", id, "candidates"],
+      queryFn: () => teamsApi.candidates(id),
+    }),
 };

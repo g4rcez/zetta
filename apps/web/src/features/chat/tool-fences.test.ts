@@ -26,6 +26,10 @@ describe("stripToolFences", () => {
     expect(stripToolFences('Done.\n```zetta:escalate\n{"problem":"x"}\n```')).toBe("Done.");
     expect(stripToolFences('Done.\n```zetta:setup\n{"a":')).toBe("Done.");
   });
+  it("removes a folder block, and a workspace block written before the rename", () => {
+    expect(stripToolFences('Done.\n```zetta:folder\n{"action":"list"}\n```')).toBe("Done.");
+    expect(stripToolFences('Done.\n```zetta:workspace\n{"action":"list"}\n```')).toBe("Done.");
+  });
   it("keeps a server-built setup card", () => {
     const t = 'Hi\n```zetta:setup-card\n{"a":1}';
     expect(stripToolFences(t)).toBe(t);

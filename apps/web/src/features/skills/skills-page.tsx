@@ -1,13 +1,16 @@
 import { LightningIcon } from "@phosphor-icons/react";
 import { Alert } from "@g4rcez/components/alert";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui";
-import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { errorMessage, type Bot } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { Marketplace } from "./marketplace";
 import { MySkills } from "./my-skills";
 import type { SkillsSearch } from "./skills-search";
 
+const NONE: Bot[] = [];
 type Tab = "mine" | "market";
 const TABS: { id: Tab; label: string }[] = [
   { id: "mine", label: "My skills" },
@@ -31,11 +34,12 @@ export function SkillsPage({
   ) => void;
 }) {
   const tab: Tab = search.tab ?? "mine";
-  const [bots, setBots] = useState<Bot[]>([]);
+  const botsQuery = useQuery(chatQueries.bots());
+  const bots = botsQuery.data ?? NONE;
   const [error, setError] = useState<string>();
   useEffect(() => {
-    chatClient.bots().then(setBots, (e) => setError(errorMessage(e)));
-  }, []);
+    if (botsQuery.error) setError(errorMessage(botsQuery.error));
+  }, [botsQuery.error]);
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-6xl min-w-0 space-y-6 p-4 md:p-8">

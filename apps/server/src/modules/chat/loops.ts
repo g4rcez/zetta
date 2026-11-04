@@ -10,6 +10,7 @@ import { firstObject } from "./bot-interview";
 import type { NativeHarness, RunCli } from "./harness";
 import { failureKind, retryDelayMs } from "./retry";
 import { AUTONOMY, FEEDBACK, LOOP_STOP } from "./tools";
+import { instanceId, recoverable } from "../runtime/instance";
 
 export type GoalLoop = typeof goalLoop.$inferSelect;
 /** Completed steps in a row without new progress before a loop pauses and asks the user. Failed steps wait and retry instead (see retry.ts). */
@@ -107,6 +108,38 @@ export function createLoopStore(db: Database) {
         .orderBy(desc(goalLoop.createdAt))
         .limit(20);
     },
+    /**
+     * Takes the lease of a running loop: the one instance that drives it. It succeeds when nobody holds it, this instance holds it, or the
+     * holder is dead. Without a registered instance (tests) there is one driver, so it always succeeds.
+     */
+    async claim(id: string) {
+      const me = instanceId();
+      if (!me) return true;
+      const rows = await db
+        .update(goalLoop)
+        .set({ ownerInstance: me })
+        .where(
+          and(
+            eq(goalLoop.id, id),
+            eq(goalLoop.status, "running"),
+            or(
+              eq(goalLoop.ownerInstance, me),
+              recoverable(goalLoop.ownerInstance, { unowned: true }),
+            ),
+          ),
+        )
+        .returning({ id: goalLoop.id });
+      return rows.length > 0;
+    },
+    /** Lets go of the lease, so another instance can drive the loop (a retry wait, a pause, the end). */
+    async release(id: string) {
+      const me = instanceId();
+      if (!me) return;
+      await db
+        .update(goalLoop)
+        .set({ ownerInstance: null })
+        .where(and(eq(goalLoop.id, id), eq(goalLoop.ownerInstance, me)));
+    },
     /** Running loops that are not waiting for a retry. */
     running() {
       return db
@@ -171,8 +204,8 @@ export function createLoopStore(db: Database) {
       }
       return row;
     },
-    /** The Chief answered a blocked loop: the answer joins the progress, which the next step reads, and the loop goes on. */
-    async resumeWith(id: string, answer: string) {
+    /** Someone answered a blocked loop (the Chief by default, `from` says who): the answer joins the progress, which the next step reads, and the loop goes on. */
+    async resumeWith(id: string, answer: string, from = "The Chief answered your question") {
       const loop = await store.get(id);
       if (!loop || loop.status !== "paused") return;
       const [row] = await db
@@ -184,9 +217,7 @@ export function createLoopStore(db: Database) {
           retryAt: null,
           lastError: null,
           reason: null,
-          progress: `${loop.progress}\nThe Chief answered your question: ${answer}`
-            .trim()
-            .slice(-2000),
+          progress: `${loop.progress}\n${from}: ${answer}`.trim().slice(-2000),
           updatedAt: new Date(),
         })
         .where(and(eq(goalLoop.id, id), eq(goalLoop.status, "paused")))
@@ -424,6 +455,8 @@ export function createLoopDriver(store: LoopStore, runTurn: LoopTurn) {
     if (driving.has(id)) return;
     driving.add(id);
     try {
+      // Another instance may be driving this loop: only the one that holds the lease takes a step.
+      if (!(await store.claim(id))) return;
       for (;;) {
         const loop = await store.get(id);
         if (!loop || loop.status !== "running") return;
@@ -498,6 +531,7 @@ export function createLoopDriver(store: LoopStore, runTurn: LoopTurn) {
       }
     } finally {
       driving.delete(id);
+      await store.release(id).catch(() => {});
     }
   }
 

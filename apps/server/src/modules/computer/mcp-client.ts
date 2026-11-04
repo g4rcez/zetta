@@ -16,6 +16,12 @@ export type McpCall = (
 export type McpSession = { call: McpCall; close: () => Promise<void> };
 /** `attempts` bounds the health wait (250 ms apart): a reattach to a container that should already be up gives up quickly. */
 export type VmConnect = (port: number, token: string, attempts?: number) => Promise<McpSession>;
+/** Same, for a spacesd on another machine, by its https address. */
+export type RemoteConnect = (
+  endpoint: string,
+  token: string,
+  attempts?: number,
+) => Promise<McpSession>;
 
 /** Wraps a connected MCP client: a slow step or a Stop is not a dead connection, so it keeps the session and tells the caller what happened. */
 export function wrapClient(c: Client): McpSession {
@@ -54,8 +60,8 @@ export function wrapClient(c: Client): McpSession {
 }
 
 /** Production transport: spacesd's MCP endpoint, bearer token in a header (never in a URL), after its health check answers. */
-export const connectSpacesd: VmConnect = async (port, token, attempts = 240) => {
-  const base = `http://127.0.0.1:${port}`;
+export const connectSpacesdUrl: RemoteConnect = async (endpoint, token, attempts = 40) => {
+  const base = endpoint.replace(/\/+$/, "");
   const headers = { authorization: `Bearer ${token}` };
   let ok = false;
   for (let i = 0; i < attempts && !ok; i++) {
@@ -72,3 +78,6 @@ export const connectSpacesd: VmConnect = async (port, token, attempts = 240) => 
   );
   return wrapClient(c);
 };
+/** A spacesd in a local container: loopback, on the port Docker published. */
+export const connectSpacesd: VmConnect = (port, token, attempts = 240) =>
+  connectSpacesdUrl(`http://127.0.0.1:${port}`, token, attempts);

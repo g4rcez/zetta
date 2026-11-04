@@ -15,10 +15,13 @@ export type Bot = {
   visibility: "private" | "team";
   canEdit: boolean;
   version: number;
-  workspaceId?: string | null;
+  folderId?: string | null;
   onboarded: boolean;
   harness: string;
   model: string | null;
+  /** Harness a turn moves to when the main one hits its limit or cannot sign in. Missing on the public card of a bot you do not own. */
+  fallbackHarness?: string | null;
+  fallbackModel?: string | null;
   personality: string;
   instructions: string;
   /** Tone of voice. Missing on the public card of a bot you do not own. */
@@ -43,12 +46,13 @@ export type CommitIdentity = "git-config" | "bot" | "account" | "custom";
 export type ComputerMode = "off" | "browser" | "desktop";
 export type BotStatus = "available" | "working" | "planning" | "pending" | "error" | "offline";
 export type BotStatusEntry = { botId: string; status: BotStatus; reason: string };
-export type Provider = "anthropic" | "openai" | "google" | "openrouter" | "github";
+export type Provider = "anthropic" | "openai" | "google" | "openrouter" | "deepseek" | "github";
 export const PROVIDERS: readonly Provider[] = [
   "anthropic",
   "openai",
   "google",
   "openrouter",
+  "deepseek",
   "github",
 ];
 export type RequiredConnection = { key: string; provider: Provider };
@@ -58,6 +62,8 @@ export type BotPatch = Partial<{
   description: string;
   harness: string;
   model: string | null;
+  fallbackHarness: string | null;
+  fallbackModel: string | null;
   personality: string;
   instructions: string;
   outputStyle: OutputStyleKey;
@@ -78,7 +84,7 @@ export type Conversation = {
   archived?: boolean;
   kind?: "chat" | "discussion" | "inbound";
 };
-export type Workspace = { id: string; name: string; parentId?: string | null };
+export type Folder = { id: string; name: string; parentId?: string | null };
 export type ProposalKind =
   | "config"
   | "create_bot"
@@ -91,7 +97,9 @@ export type ProposalKind =
   | "team_goals"
   | "bot_permission"
   | "create_wiki_page"
-  | "install_skills";
+  | "install_skills"
+  /** A change to the user's setup that the chief asked for (routines, teams, bots, styles...). `patch.title` says what. */
+  | "chief_action";
 export type Proposal = {
   id: string;
   /** The bot the change is about. */
@@ -104,6 +112,8 @@ export type Proposal = {
 };
 export type DecisionResult = {
   status: "approved" | "rejected" | "stale";
+  /** A line for the person when the change worked only in part (for example a routine that stays paused). */
+  note?: string;
   /** Only for a proposal to install skills: what was installed and where. */
   skills?: {
     installed: string[];
@@ -315,41 +325,18 @@ export const errorCode = (e: unknown) => (e instanceof ApiError ? e.code : undef
 
 /** A read that never answers must surface as an error instead of an endless spinner (writes can legitimately run long). */
 const REQUEST_TIMEOUT_MS = 30_000;
-/**
- * Identical GETs in flight share one request (several components load the same list on mount). Each caller reads its own clone.
- * Any write clears the map, so a read that starts after a write never joins a request that began before it.
- */
-const inflight = new Map<string, Promise<Response>>();
+/** Reads that several components share go through the query cache (`lib/query-client.ts`), which sends one request per key. */
 export async function call<T>(path: string, method = "GET", body?: object): Promise<T> {
-  const request = () =>
-    fetch(new URL(path, ENV.VITE_SERVER_URL), {
-      method,
-      credentials: "include",
-      cache: "no-store",
-      ...(method === "GET" ? { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } : {}),
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  let response: Response;
-  if (method === "GET" && !body) {
-    let pending = inflight.get(path);
-    if (!pending) {
-      const started = (pending = request());
-      inflight.set(path, started);
-      const done = () => {
-        if (inflight.get(path) === started) inflight.delete(path);
-      };
-      started.then(done, done);
-    }
-    response = (await pending).clone();
-  } else {
-    inflight.clear();
-    try {
-      response = await request();
-    } finally {
-      inflight.clear();
-    }
-  }
+  const response = await fetch(new URL(path, ENV.VITE_SERVER_URL), {
+    method,
+    credentials: "include",
+    // The server marks most answers `no-store`, so those are never kept. The polled lists carry an ETag: the browser asks
+    // `If-None-Match` and the server answers 304 when nothing changed.
+    cache: "no-cache",
+    ...(method === "GET" ? { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } : {}),
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
   if (!response.ok) throw await toApiError(response);
   return response.json() as Promise<T>;
 }
@@ -449,12 +436,12 @@ export const chatClient = {
     call(`/api/conversations/${id}/queue/${messageId}`, "DELETE"),
   retryQueued: (id: string, messageId: string) =>
     call(`/api/conversations/${id}/queue/${messageId}/retry`, "POST"),
-  workspaces: () => call<{ workspaces: Workspace[] }>("/api/workspaces").then((r) => r.workspaces),
-  createWorkspace: (name: string, parentId?: string) =>
-    call<{ workspace: Workspace }>("/api/workspaces", "POST", {
+  folders: () => call<{ folders: Folder[] }>("/api/folders").then((r) => r.folders),
+  createFolder: (name: string, parentId?: string) =>
+    call<{ folder: Folder }>("/api/folders", "POST", {
       name,
       ...(parentId ? { parentId } : {}),
-    }).then((r) => r.workspace),
+    }).then((r) => r.folder),
   /** With `botId`, only what that bot asked: a chat shows the proposals of its own bot. */
   proposals: (botId?: string) =>
     call<{ proposals: Proposal[] }>(
@@ -465,8 +452,8 @@ export const chatClient = {
       approve,
       ...(selection ? { selection } : {}),
     }),
-  moveBot: (id: string, workspaceId: string | null) =>
-    call<{ bot: Bot }>(`/api/bots/${id}/workspace`, "POST", { workspaceId }).then((r) => r.bot),
+  moveBot: (id: string, folderId: string | null) =>
+    call<{ bot: Bot }>(`/api/bots/${id}/folder`, "POST", { folderId }).then((r) => r.bot),
   hooks: (id: string) => call<{ hooks: Hook[] }>(`/api/bots/${id}/hooks`).then((r) => r.hooks),
   addHook: (id: string, hook: { kind: Hook["kind"]; pattern?: string; value?: string }) =>
     call<{ hook: Hook }>(`/api/bots/${id}/hooks`, "POST", hook).then((r) => r.hook),

@@ -35,6 +35,8 @@ function memoryStore(): VmStore {
         createdAt: new Date(),
         lastStartedAt: null,
         deletedAt: null,
+        endpoint: null,
+        connectionId: null,
       };
       rows.push(r);
       return r;

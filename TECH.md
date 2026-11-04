@@ -43,8 +43,8 @@ Then, run the development server:
 bun run dev
 ```
 
-Open [http://localhost:3001](http://localhost:3001) in your browser to see the web application.  
-The API is running at [http://localhost:3000](http://localhost:3000).
+Open [https://localhost:3000](https://localhost:3000) in your browser to see the web application (accept the self-signed certificate once).  
+The API runs at `http://127.0.0.1:6000`. The web dev server forwards `/api` to it, so use the web address only.
 
 ## UI Customization
 

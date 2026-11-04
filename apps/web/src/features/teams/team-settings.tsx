@@ -1,6 +1,7 @@
 import { ArrowLeftIcon, CrownIcon, UsersThreeIcon } from "@phosphor-icons/react";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { Button, Input } from "@/components/ui";
@@ -15,6 +16,7 @@ import {
   TEAM_SIZE_WARNING,
   TEAM_SIZE_WARNING_AT,
   teamsApi,
+  teamsQueries,
   type Team,
   type TeamMember,
 } from "./teams-api";
@@ -53,9 +55,12 @@ export function TeamSettingsPage({
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [context, setContext] = useState("");
   const [error, setError] = useState<string>();
-  const [loadError, setLoadError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const { roles } = useTeamRoles();
+  const qc = useQueryClient();
+  const query = useQuery(teamsQueries.detail(teamId));
+  const loadError = query.error && !team ? errorMessage(query.error) : undefined;
+  const dirtyRef = useRef(false);
   const fill = (t: Team) => {
     setTeam(t);
     setName(t.name);
@@ -63,13 +68,13 @@ export function TeamSettingsPage({
     setContext(t.context);
     setMembers(t.members);
   };
+  const loaded = query.data;
   useEffect(() => {
-    setLoadError(undefined);
-    teamsApi
-      .get(teamId)
-      .then(fill)
-      .catch((e) => setLoadError(errorMessage(e)));
-  }, [teamId]);
+    // A newer answer never overwrites what the user is typing.
+    if (loaded && (team?.id !== loaded.id || !dirtyRef.current)) fill(loaded);
+    // `fill` and `team` change on every fill; only a new answer matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
   const patchMember = (botId: string, p: Partial<TeamMember>) =>
     setMembers((ms) => ms.map((m) => (m.botId === botId ? { ...m, ...p } : m)));
   const makeChief = (botId: string) =>
@@ -99,6 +104,7 @@ export function TeamSettingsPage({
         })),
       });
       fill(saved);
+      qc.setQueryData(teamsQueries.detail(teamId).queryKey, saved);
       toast.success("Team saved.");
       void reloadRooms();
       void reloadTeams();
@@ -129,6 +135,7 @@ export function TeamSettingsPage({
     context !== team.context ||
     JSON.stringify(members.map((m) => [m.botId, m.kind, m.roleId])) !==
       JSON.stringify(team.members.map((m) => [m.botId, m.kind, m.roleId]));
+  dirtyRef.current = dirty;
   const chief = members.find((m) => m.kind === "chief");
   return (
     <div className="h-full overflow-y-auto">

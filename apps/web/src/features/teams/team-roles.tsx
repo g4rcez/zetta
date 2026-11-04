@@ -14,6 +14,7 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import { Link } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
@@ -26,6 +27,7 @@ import {
   TEAM_ROLE_COLORS,
   TEAM_ROLE_ICONS,
   teamsApi,
+  teamsQueries,
   type TeamRole,
   type TeamRoleColor,
   type TeamRoleIcon,
@@ -86,27 +88,19 @@ const ICON_OPTIONS = TEAM_ROLE_ICONS.map((i) => ({
   ),
 }));
 
-/** The user's role catalog. `reload` re-reads it; it also runs when the tab regains focus, because roles are managed in another tab. */
+const NO_ROLES: TeamRole[] = [];
+
+/** The user's role catalog. `reload` re-reads it; the cache also refreshes when the tab regains focus, because roles are managed in another tab. */
 export function useTeamRoles() {
-  const [roles, setRoles] = useState<TeamRole[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const reload = useCallback(
-    () =>
-      teamsApi
-        .roles()
-        .then(setRoles, (e) => {
-          toast.error(errorMessage(e));
-        })
-        .finally(() => setLoaded(true)),
-    [],
-  );
+  const qc = useQueryClient();
+  const query = useQuery(teamsQueries.roles());
+  const error = query.error;
   useEffect(() => {
-    void reload();
-    const onFocus = () => void reload();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [reload]);
-  return { roles, loaded, reload };
+    if (error) toast.error(errorMessage(error), { id: "team-roles-load" });
+  }, [error]);
+  // The whole ["teams"] prefix: a changed role renames the role of its members in every team too.
+  const reload = useCallback(() => qc.invalidateQueries({ queryKey: ["teams"] }), [qc]);
+  return { roles: query.data ?? NO_ROLES, loaded: !query.isPending, reload };
 }
 
 /** React Flow renders the bot cards itself, so the canvas hands them the catalog through context. */

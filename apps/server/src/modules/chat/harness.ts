@@ -3,7 +3,7 @@ import { chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises
 import { homedir, tmpdir } from "node:os";
 import { containerUser } from "../container-user";
 import { trackRun } from "./processes";
-import { createClaudeStream, type CliProgress } from "./claude-stream";
+import { createClaudeStream, type CliProgress, type TokenUsage } from "./claude-stream";
 import { dirname, join, resolve as resolvePath, sep } from "node:path";
 
 export type NativeHarness =
@@ -13,7 +13,8 @@ export type NativeHarness =
   | "claude-code"
   | "opencode"
   | "cursor"
-  | "hermes";
+  | "hermes"
+  | "deepseek";
 
 /**
  * Code access for a run. "git" = host run; "full" = the run is inside a hardened container, which is the boundary. Claude Code runs any
@@ -109,7 +110,7 @@ export function claudeArgs(
   mcp?: McpRun,
 ): string[] {
   const args = ["claude", "-p", ...(model ? ["--model", model] : [])];
-  // Only a code workspace outlives the run, so only there can a cut-off session be found again.
+  // Only a code directory outlives the run, so only there can a cut-off session be found again.
   if (code && session) args.push(session.resume ? "--resume" : "--session-id", session.id);
   const deny = [...(profile?.deny ?? [])];
   const hasPlugin = Boolean(pluginDir);
@@ -156,7 +157,7 @@ export function claudeArgs(
     );
   } else {
     if (deny.length) args.push(`--disallowedTools=${[...new Set(deny)].join(",")}`);
-    // No workspace, so no git: only gh, for GitHub bound with the server's CLI login (the user's consent, as in code runs).
+    // No code directory, so no git: only gh, for GitHub bound with the server's CLI login (the user's consent, as in code runs).
     const allow = [...pluginTools, ...(github ? ["Bash(gh:*)"] : []), ...(mcp?.allow ?? [])];
     if (allow.length) args.push(`--allowedTools=${allow.join(",")}`);
   }
@@ -300,10 +301,12 @@ export const harnessCommands: Record<
     p,
   ],
   hermes: (p, m, c, x) => hermesArgs(p, m, c, x?.profile),
+  // dsh headless answers one task in plain text and exits. It has no documented model flag.
+  deepseek: (p) => ["dsh", "headless", p],
 };
 
-/** Where code workspaces live. One folder per user, shared by that user's bots, so cloned repositories survive between turns. */
-export function codeWorkspace(
+/** Where code directories live. One folder per user, shared by that user's bots, so cloned repositories survive between turns. */
+export function codeDir(
   userId: string,
   root = process.env.ZETTA_CODE_ROOT || join(homedir(), ".zetta", "code"),
 ) {
@@ -557,7 +560,7 @@ export function dockerConfig(env: NodeJS.ProcessEnv = process.env): DockerConfig
 /**
  * Pure builder for the container command. Hardening: no extra capabilities, no privilege escalation, read-only root filesystem,
  * tmpfs for /tmp and the working directory, non-root user, memory/cpu/pid limits, no host mounts except this user's own harness
- * home (login state) and, for code runs, this user's own code workspace as the working directory, and only the explicitly passed environment variables (never inherited from the server).
+ * home (login state) and, for code runs, this user's own code directory as the working directory, and only the explicitly passed environment variables (never inherited from the server).
  */
 export function dockerArgs(
   cfg: DockerConfig,
@@ -565,7 +568,7 @@ export function dockerArgs(
     name: string;
     argv: string[];
     home?: string;
-    workspace?: string | undefined;
+    codeDir?: string | undefined;
     pluginDir?: string | undefined;
     imageDir?: string | undefined;
     env: Record<string, string>;
@@ -593,8 +596,8 @@ export function dockerArgs(
     "",
     "--tmpfs",
     "/tmp:rw,size=64m",
-    ...(o.workspace
-      ? ["-v", `${o.workspace}:/work:rw`]
+    ...(o.codeDir
+      ? ["-v", `${o.codeDir}:/work:rw`]
       : ["--tmpfs", `/work:rw,size=64m,uid=${containerUser().uid}`]),
     "-w",
     "/work",
@@ -649,12 +652,12 @@ export type CliInput = {
   userId?: string;
   /** The bot that runs, so the slow-turn card can tell which CLI belongs to which answer (see processes.ts). */
   botId?: string;
-  /** Run in the user's persistent code workspace with git and file permissions pre-approved. The identity signs commits. */ code?: GitIdentity;
+  /** Run in the user's persistent code directory with git and file permissions pre-approved. The identity signs commits. */ code?: GitIdentity;
   /** Claude Code and Hermes: this bot's own permissions, prompt, effort, skills (and, for Claude Code, budget and sub-agents). */ profile?: AgentProfile;
   extraEnv?: Record<string, string>;
   /** Claude Code: the MCP servers zetta bound to this bot (see McpRun). */ mcp?: McpRun;
   /** Pictures the user attached: copied next to the run and named in the prompt, since a CLI takes only text. `path` is absolute. */ images?: CliImage[];
-  /** Claude Code in a code workspace: a named session, so a run cut off by a restart can be resumed. */ session?: CliSession;
+  /** Claude Code in a code directory: a named session, so a run cut off by a restart can be resumed. */ session?: CliSession;
   signal?: AbortSignal;
   /** Optional wall-clock limit. Runs have none unless the caller asks for one. */
   timeoutMs?: number;
@@ -662,6 +665,8 @@ export type CliInput = {
   heartbeatMs?: number;
   /** `runCli` sends each progress line here; `streamCli` yields it instead. */
   onActivity?: (label: string) => void;
+  /** Claude Code only: called once when the run ends with the token counts it reported (also for a run that failed). */
+  onUsage?: (usage: TokenUsage) => void;
   resolve?: (name: string) => string | null;
 };
 export type CliSession = { id: string; resume: boolean };
@@ -760,7 +765,7 @@ export function killGroup(pid: number, platform: string = process.platform) {
   }
 }
 
-/** Streams the harness's stdout as it arrives. Runs in a throwaway empty cwd (or, with `code`, the user's persistent workspace) with a minimal environment, in its own process group
+/** Streams the harness's stdout as it arrives. Runs in a throwaway empty cwd (or, with `code`, the user's persistent code directory) with a minimal environment, in its own process group
  * (the whole tree is killed on timeout, cancel, overflow or generator close), bounded by an output cap and concurrency limits. A run has no
  * deadline unless the caller passes `timeoutMs`; a bot may work for days. Only the first minutes of a run hold a concurrency slot. */
 export const streamCli: StreamCli = async function* ({
@@ -779,12 +784,13 @@ export const streamCli: StreamCli = async function* ({
   mcp,
   botId,
   heartbeatMs = HEARTBEAT_MS,
+  onUsage,
 }) {
   const docker = dockerConfig();
-  const workspace = code && userId ? codeWorkspace(userId) : undefined;
+  const codePath = code && userId ? codeDir(userId) : undefined;
   const profile = harness === "claude-code" || harness === "hermes" ? given : undefined;
   const { [GITHUB_CLI_ENV]: viaCli, ...baseEnv } = givenEnv ?? {};
-  const extraEnv = workspace
+  const extraEnv = codePath
     ? {
         ...baseEnv,
         ...gitEnv(
@@ -821,10 +827,10 @@ export const streamCli: StreamCli = async function* ({
       await mkdir(home, { recursive: true, mode: 0o700 });
       await chmod(home, 0o700).catch(() => {});
     }
-    if (workspace) {
-      await mkdir(workspace, { recursive: true, mode: 0o700 });
-      await chmod(workspace, 0o700).catch(() => {});
-      cwd = workspace;
+    if (codePath) {
+      await mkdir(codePath, { recursive: true, mode: 0o700 });
+      await chmod(codePath, 0o700).catch(() => {});
+      cwd = codePath;
     } else cwd = await mkdtemp(join(tmpdir(), "zetta-run-"));
     if (harness === "claude-code" && profile && Object.keys(profile.files).length)
       pluginDir = await writePluginDir(profile.files);
@@ -843,14 +849,14 @@ export const streamCli: StreamCli = async function* ({
     const argv = harnessCommands[harness](
       imagePaths.length ? prompt + imageNote(imagePaths) : prompt,
       model,
-      workspace ? (docker ? "full" : "git") : undefined,
-      profile || mcp || viaCli || (workspace && baseEnv.GITHUB_TOKEN)
+      codePath ? (docker ? "full" : "git") : undefined,
+      profile || mcp || viaCli || (codePath && baseEnv.GITHUB_TOKEN)
         ? {
             profile,
             ...(mcp ? { mcp } : {}),
-            ...((workspace && baseEnv.GITHUB_TOKEN) || viaCli ? { github: true } : {}),
+            ...((codePath && baseEnv.GITHUB_TOKEN) || viaCli ? { github: true } : {}),
             ...(pluginDir ? { pluginDir: docker ? CONTAINER_PLUGIN_DIR : pluginDir } : {}),
-            ...(workspace && session ? { session } : {}),
+            ...(codePath && session ? { session } : {}),
           }
         : undefined,
     );
@@ -865,7 +871,7 @@ export const streamCli: StreamCli = async function* ({
               name: containerName!,
               argv,
               home,
-              workspace,
+              codeDir: codePath,
               pluginDir,
               imageDir: docker ? imageDir : undefined,
               env: extraEnv ?? {},
@@ -1004,13 +1010,14 @@ export const streamCli: StreamCli = async function* ({
         if (tail.over) kill(proc.pid);
         yield* tail.out;
       }
+      if (events?.state.usage) onUsage?.(events.state.usage);
       const code = await Promise.race([proc.exited, stop]);
       await Promise.race([errDone, Bun.sleep(200)]);
       if (
         docker &&
         (code === 127 ||
           code === 126 ||
-          /executable file not found|no such file or directory.*(claude|codex|pi|omp|opencode|cursor|hermes)/i.test(
+          /executable file not found|no such file or directory.*(claude|codex|pi|omp|opencode|cursor|hermes|dsh)/i.test(
             errText,
           ))
       )
@@ -1039,10 +1046,10 @@ export const streamCli: StreamCli = async function* ({
     if (timer) clearTimeout(timer);
     if (slot) clearTimeout(slot);
     if (child) kill(child.pid);
-    // A code workspace is the user's persistent checkout; only throwaway directories are removed.
-    if (cwd && cwd !== workspace) await rm(cwd, { recursive: true, force: true });
+    // A code directory is the user's persistent checkout; only throwaway directories are removed.
+    if (cwd && cwd !== codePath) await rm(cwd, { recursive: true, force: true });
     if (pluginDir) await rm(pluginDir, { recursive: true, force: true });
-    // Docker copies live in their own temp dir; native copies sit in the cwd, which is removed above or (code workspace) cleaned here.
+    // Docker copies live in their own temp dir; native copies sit in the cwd, which is removed above or (code directory) cleaned here.
     if (imageDir) await rm(imageDir, { recursive: true, force: true });
     release();
   }

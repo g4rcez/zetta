@@ -153,8 +153,11 @@ export function useZettaChat({
   }, [conversationId, parentMessageId, attachKey]);
 
   const busy = chat.status === "submitted" || chat.status === "streaming";
-  // The bot's status changes when its answer starts and ends: do not wait for the next poll.
+  // The bot's status changes when its answer starts and ends: do not wait for the next poll. Not on mount: the status query loads itself.
+  const wasBusy = useRef(busy);
   useEffect(() => {
+    if (wasBusy.current === busy) return;
+    wasBusy.current = busy;
     void refreshBotStatus();
   }, [busy]);
   // Live rows get one timestamp per turn, and keep their identity while they do not change.

@@ -1,29 +1,24 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 
 import { layaModelFor } from "@zetta/core/laya-languages";
 
 import { Button, Checkbox } from "@/components/ui";
-import { identityClient } from "@/lib/identity-client";
 import { errorMessage } from "../chat/chat-client";
-import { installationApi, type Installation } from "../onboarding/installation-api";
+import { identityQueries } from "../identity/identity-queries";
+import {
+  installationApi,
+  installationQueries,
+  type Installation,
+} from "../onboarding/installation-api";
 import { LAYA_LOCALES } from "./laya-locales";
 import { LanguagePicker } from "./language-picker";
 
 /** The builtin Laya model setting of this installation; `undefined` while it loads. */
 export function useLayaMode(): Installation["laya"] | undefined {
-  const [mode, setMode] = useState<Installation["laya"]>();
-  useEffect(() => {
-    let alive = true;
-    void installationApi
-      .get()
-      .then((i) => alive && setMode(i.laya))
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, []);
-  return mode;
+  const { data } = useQuery(installationQueries.get());
+  return data?.laya;
 }
 
 /** Shown where a feature needs Laya and the administrator has not turned it on. */
@@ -60,30 +55,18 @@ export function LayaSwitch({
   /** Label of the button that turns Laya on. */
   submitLabel?: string;
 }) {
-  const [saved, setSaved] = useState<Installation>();
+  const { data: saved } = useQuery(installationQueries.get());
+  const { data: identity } = useQuery(identityQueries.status());
+  const admin = identity?.state === "active" && identity.isAdmin;
   const [enabled, setEnabled] = useState(false);
   const [languages, setLanguages] = useState<string[]>(["en"]);
-  const [admin, setAdmin] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The switches are a draft: they follow the saved settings when those change (first load, save).
   useEffect(() => {
-    let alive = true;
-    void installationApi
-      .get()
-      .then((i) => {
-        if (!alive) return;
-        setSaved(i);
-        setEnabled(i.laya === "on");
-        setLanguages(i.layaLanguages);
-      })
-      .catch(() => undefined);
-    void identityClient
-      .status()
-      .then((s) => alive && setAdmin(s.state === "active" && s.isAdmin))
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, []);
+    if (!saved) return;
+    setEnabled(saved.laya === "on");
+    setLanguages(saved.layaLanguages);
+  }, [saved]);
   const isOn = saved?.laya === "on";
   const dirty =
     saved !== undefined && enabled && (!isOn || !sameLanguages(languages, saved.layaLanguages));
@@ -91,10 +74,8 @@ export function LayaSwitch({
   async function save(patch: Partial<Pick<Installation, "laya" | "layaLanguages">>) {
     setBusy(true);
     try {
+      // `installationApi.patch` puts the answer in the cache; the effect above updates the draft.
       const next = await installationApi.patch(patch);
-      setSaved(next);
-      setEnabled(next.laya === "on");
-      setLanguages(next.layaLanguages);
       onChanged?.(next);
     } catch (e) {
       onError(errorMessage(e));

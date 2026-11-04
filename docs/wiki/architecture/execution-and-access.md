@@ -8,7 +8,7 @@
 
 Derive the initiating user from the authenticated session or stored routine owner, not model output or a client-supplied user ID. Carry that identity through the bot, conversation, run, delegation, workflow, hook, decision, and connection resolution. Recheck access at dispatch and when a user opens retained resources.
 
-A chief coordinates; it does not gain extra edit authority. Workspaces cannot change permissions. Native CLI homes, credentials, memory, processes, browser state, and desktop sessions need an actual isolation boundary. A prompt telling a model not to read another user's data is not one.
+A chief coordinates; it does not gain extra edit authority. Folders cannot change permissions. Native CLI homes, credentials, memory, processes, browser state, and desktop sessions need an actual isolation boundary. A prompt telling a model not to read another user's data is not one.
 
 Ownership and isolation decisions are assigned to [RFC-001](../../../tasks/001-approve-domain-and-ownership-contracts.md) and [RFC-002](../../../tasks/002-prove-multi-user-execution-isolation.md). Enforcement and connection contracts belong to [RFC-005](../../../tasks/005-enforce-actor-and-resource-access-boundaries.md) and [RFC-007](../../../tasks/007-store-user-owned-connection-references.md).
 
@@ -43,13 +43,13 @@ Browser/computer takeover also transfers input ownership: suspend automation and
 
 [Attention state](../../../tasks/071-define-common-in-app-attention-state.md) uses a stable actor/source/issue-generation identity. Producers from chat, delegation, routines, proposals, browser/computer use, and workflows emit consistent items; sidebar, activity, and [kanban](../../../tasks/072-build-user-attention-kanban.md) consume the same authorized view.
 
-| Operation | Required meaning |
-| --- | --- |
-| Read/acknowledge | The user has seen the item; no implied approval or completion. |
-| Resolve | The underlying answer, repair, or decision clears that issue. |
-| Approve configuration | An explicit authorized version-bound decision, not a board movement. |
-| Cancel work | An explicit request to the execution owner, not deletion of a card. |
-| Show result | An authorized durable link, with partial/uncertain state still visible. |
+| Operation             | Required meaning                                                        |
+| --------------------- | ----------------------------------------------------------------------- |
+| Read/acknowledge      | The user has seen the item; no implied approval or completion.          |
+| Resolve               | The underlying answer, repair, or decision clears that issue.           |
+| Approve configuration | An explicit authorized version-bound decision, not a board movement.    |
+| Cancel work           | An explicit request to the execution owner, not deletion of a card.     |
+| Show result           | An authorized durable link, with partial/uncertain state still visible. |
 
 Source identity prevents duplicate cards after replay. A new failed routine occurrence must not vanish because an earlier occurrence was acknowledged. Revoked links must fail safely without leaking content.
 

@@ -1,4 +1,5 @@
 import { CheckIcon } from "@phosphor-icons/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Modal as LibModal } from "@/components/ui";
 import { Skeleton } from "@g4rcez/components";
@@ -94,21 +95,26 @@ export function Panel({
 export const when = (iso: string | null | undefined, f: TimeFormat) =>
   iso ? formatDateTime(iso, f) : "-";
 
-/** Loads `{[key]: T[]}` from a GET endpoint. */
+/** Loads `{[key]: T[]}` from a GET endpoint. Components that ask for the same path share one request. */
 export function useList<T>(path: string, key: string, onError: (m: string) => void) {
-  const [rows, setRows] = useState<T[] | undefined>();
-  const reload = useCallback(
-    () =>
-      call<Record<string, T[]>>(path).then(
-        (r) => setRows(r[key]),
-        (e) => onError(errorMessage(e)),
-      ),
-    [path, key, onError],
-  );
+  const qc = useQueryClient();
+  const queryKey = ["list", path] as const;
+  const query = useQuery({
+    queryKey,
+    queryFn: () => call<Record<string, T[]>>(path).then((r) => r[key] as T[]),
+  });
+  const error = query.error;
   useEffect(() => {
-    void reload();
-  }, [reload]);
-  return [rows, reload, setRows] as const;
+    if (error) onError(errorMessage(error));
+    // `onError` is usually an inline function; the message only matters when the error changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
+  const reload = useCallback(() => qc.invalidateQueries({ queryKey: ["list", path] }), [qc, path]);
+  const setRows = useCallback(
+    (next: T[] | undefined) => qc.setQueryData<T[]>(["list", path], next),
+    [qc, path],
+  );
+  return [query.data, reload, setRows] as const;
 }
 
 /** Two-step confirm: first click asks, second click confirms. Escape or Cancel backs out. */

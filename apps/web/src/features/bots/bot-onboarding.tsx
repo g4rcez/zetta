@@ -166,7 +166,15 @@ const ArtTile = ({ icon: Icon, tint }: { icon: PhosphorIcon; tint: string }) => 
   </span>
 );
 
-const EXPERIMENTAL_HARNESSES = ["codex", "pi", "omp", "opencode", "cursor", "hermes"] as const;
+const EXPERIMENTAL_HARNESSES = [
+  "codex",
+  "pi",
+  "omp",
+  "opencode",
+  "cursor",
+  "hermes",
+  "deepseek",
+] as const;
 
 /** Full-page, step-by-step "new bot" experience: explains each choice, reviews the instructions, then wires plugins, accounts and extras. */
 export function BotOnboarding() {

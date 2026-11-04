@@ -3,7 +3,8 @@ import { Link } from "@tanstack/react-router";
 import { CaretRightIcon, ChatIcon, PlusIcon, WarningIcon } from "@phosphor-icons/react";
 import { RoutineCalendar } from "./routine-calendar";
 import { RoutineTimeline } from "./routine-timeline";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button, Input, Radiobox, Select } from "@/components/ui";
 
 import { ApiError, call, errorMessage, type Bot } from "../chat/chat-client";
@@ -69,6 +70,7 @@ type Run = {
   trigger: string;
 };
 type Flow = { id: string; name: string };
+const NO_RUNS: Run[] = [];
 
 const RUN_STATUS: Record<Run["status"], string> = {
   running: "Running",
@@ -116,18 +118,18 @@ function ActivationCard({
   onDone: () => void;
   onClose: () => void;
 }) {
-  const [summary, setSummary] = useState<Summary>();
-  const [missing, setMissing] = useState<string[]>();
-  const [error, setError] = useState<string>();
-  useEffect(() => {
-    call<{ summary: Summary }>(`/api/routines/${routineId}/summary`).then(
-      (r) => {
-        setSummary(r.summary);
-        setMissing(r.summary.missing.map(String));
-      },
-      (e) => setError(errorMessage(e)),
-    );
-  }, [routineId]);
+  // Always fresh: what is missing changes while the user fixes it elsewhere.
+  const query = useQuery({
+    queryKey: ["routines", routineId, "summary"],
+    queryFn: () =>
+      call<{ summary: Summary }>(`/api/routines/${routineId}/summary`).then((r) => r.summary),
+    staleTime: 0,
+  });
+  const summary = query.data;
+  const [refused, setMissing] = useState<string[]>();
+  const [actionError, setError] = useState<string>();
+  const missing = refused ?? summary?.missing.map(String);
+  const error = actionError ?? (query.error ? errorMessage(query.error) : undefined);
   async function activate() {
     setError(undefined);
     try {
@@ -202,27 +204,18 @@ function ActivationCard({
 
 function History({ routineId }: { routineId: string }) {
   const tf = useTimeFormat();
-  const [runs, setRuns] = useState<Run[]>([]);
-  const [next, setNext] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState<string>();
-  const load = useCallback(
-    (before?: string) =>
+  const query = useInfiniteQuery({
+    queryKey: ["routines", routineId, "runs"],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
       call<{ runs: Run[]; nextBefore: string | null }>(
-        `/api/routines/${routineId}/runs${before ? `?before=${encodeURIComponent(before)}` : ""}`,
-      ).then(
-        (r) => {
-          setRuns((l) => (before ? [...l, ...r.runs] : r.runs));
-          setNext(r.nextBefore);
-          setLoaded(true);
-        },
-        (e) => setError(errorMessage(e)),
+        `/api/routines/${routineId}/runs${pageParam ? `?before=${encodeURIComponent(pageParam)}` : ""}`,
       ),
-    [routineId],
-  );
-  useEffect(() => {
-    void load();
-  }, [load]);
+    getNextPageParam: (last) => last.nextBefore ?? undefined,
+  });
+  const runs = query.data?.pages.flatMap((p) => p.runs) ?? NO_RUNS;
+  const loaded = query.isSuccess;
+  const error = query.error ? errorMessage(query.error) : undefined;
   return (
     <section aria-label="Run history" className="mt-2 space-y-1 text-sm">
       {error && (
@@ -259,8 +252,13 @@ function History({ routineId }: { routineId: string }) {
           </li>
         ))}
       </ul>
-      {next && (
-        <Button size="sm" variant="outline" onClick={() => void load(next)}>
+      {query.hasNextPage && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={query.isFetchingNextPage}
+          onClick={() => void query.fetchNextPage()}
+        >
           Load older
         </Button>
       )}
@@ -746,7 +744,22 @@ export function Routines({
   /** A routine to show open and scrolled into view (from a link such as `/routines?routine=<id>`). */
   focusId?: string | undefined;
 }) {
-  const [rows, reload] = useList<Routine>("/api/routines", "routines", onError);
+  const qc = useQueryClient();
+  const rowsQuery = useQuery({
+    queryKey: ["routines", { state: "all" }],
+    queryFn: () => call<{ routines: Routine[] }>("/api/routines").then((r) => r.routines),
+    // Statuses change while the page is open (runs start, fail, finish), so the list keeps itself fresh.
+    refetchInterval: 10_000,
+  });
+  const rows = rowsQuery.data;
+  const loadError = rowsQuery.error;
+  useEffect(() => {
+    if (loadError) onError(errorMessage(loadError));
+    // `onError` is an inline function; the message only matters when the error changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadError]);
+  // The whole ["routines"] prefix: the sidebar rows, the calendar, the timeline and every history read the same data.
+  const reload = () => qc.invalidateQueries({ queryKey: ["routines"] });
   const [flows] = useList<Flow>("/api/workflows", "workflows", onError);
   const [status, setStatus] = useState<string>();
   const [creating, setCreating] = useState(false);
@@ -758,21 +771,10 @@ export function Routines({
   const [busy, setBusy] = useState<string>();
   const [tab, setTab] = useState<"overview" | "calendar">("overview");
   const [now, setNow] = useState(() => Date.now());
-  // Statuses change while the page is open (runs start, fail, finish), so the list keeps itself fresh.
+  // Relative times ("5 min ago") move on with every answer.
   useEffect(() => {
-    // Hidden tabs skip the refresh and catch up when they become visible.
-    const tick = () => {
-      if (document.visibilityState !== "visible") return;
-      setNow(Date.now());
-      void reload();
-    };
-    const t = setInterval(tick, 10_000);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      clearInterval(t);
-      document.removeEventListener("visibilitychange", tick);
-    };
-  }, [reload]);
+    if (rowsQuery.dataUpdatedAt) setNow(rowsQuery.dataUpdatedAt);
+  }, [rowsQuery.dataUpdatedAt]);
   useEffect(() => {
     if (!focusId || !rows || focused.current) return;
     focused.current = true;
@@ -900,10 +902,10 @@ export function Routines({
         className="min-w-0 space-y-5"
       >
         {tab === "calendar" ? (
-          <RoutineCalendar refreshKey={rows?.length ?? 0} />
+          <RoutineCalendar />
         ) : (
           <>
-            <RoutineTimeline refreshKey={rows?.length ?? 0} />
+            <RoutineTimeline />
             <div className="space-y-2">
               <h3 className="text-base font-semibold tracking-tight">
                 All routines

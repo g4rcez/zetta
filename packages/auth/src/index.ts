@@ -2,6 +2,7 @@ import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import type { Database } from "@zetta/db";
 import { uuidv7 } from "@zetta/core/uuid";
 import * as schema from "@zetta/db/schema/auth";
+import { rateLimit } from "@zetta/db/schema/runtime";
 import { cimd } from "@better-auth/cimd";
 import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { mcp } from "@better-auth/mcp";
@@ -18,7 +19,7 @@ import {
 } from "./invitation-policy";
 
 export { CLIENT_IP_HEADER };
-export { requireMcpAuth } from "@better-auth/mcp";
+export { requireMcpAuth, type McpGuardAuth } from "./mcp-guard";
 export { createInsufficientScopeError } from "better-auth/oauth2";
 
 /** OAuth scopes of Zetta's MCP server: read tools need `mcp:read`, tools that change something need `mcp:write`. */
@@ -65,14 +66,21 @@ export function createAuthOptions(
     database: drizzleAdapter(database, {
       provider: "pg",
       transaction: true,
-      schema,
+      // `rateLimit` is only read when the counters are stored in the database (`ZETTA_AUTH_RATE_LIMIT_STORAGE=database`).
+      schema: { ...schema, rateLimit },
     }),
     trustedOrigins: [env.CORS_ORIGIN, ...desktopOrigins],
     emailAndPassword: { enabled: true },
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
     // Sign-in is the password-guessing surface: a longer window than the default (3 per 10 s) that still stops a brute force per client.
-    rateLimit: { customRules: { "/sign-in/email": { window: 15 * 60, max: 20 } } },
+    // With several servers the counters live in the database, so the limit is per client and not per server.
+    rateLimit: {
+      ...(process.env.ZETTA_AUTH_RATE_LIMIT_STORAGE === "database"
+        ? { storage: "database" as const, modelName: "rateLimit" }
+        : {}),
+      customRules: { "/sign-in/email": { window: 15 * 60, max: 20 } },
+    },
     advanced: {
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
       database: { generateId: () => uuidv7() },
@@ -83,7 +91,7 @@ export function createAuthOptions(
       },
     },
     plugins: [
-      // Signs MCP access tokens and serves /jwks, which requireMcpAuth verifies them with.
+      // Signs MCP access tokens and serves /jwks. requireMcpAuth (./mcp-guard) reads the same keys in process, with no HTTP call.
       jwt(),
       mcp({
         // The sign-in and consent pages are web app routes; the API redirects there with a signed query.

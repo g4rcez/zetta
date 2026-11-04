@@ -1,7 +1,6 @@
 import type { Database } from "@zetta/db";
 import { and, desc, eq, gt } from "@zetta/db/query";
 import { auditEvent } from "@zetta/db/schema/features";
-import { bot } from "@zetta/db/schema/chat";
 import { harnessCommands, harnessHome, inspectHarness, type NativeHarness } from "./harness";
 
 export const HARNESS_LABELS: Record<NativeHarness, string> = {
@@ -12,6 +11,7 @@ export const HARNESS_LABELS: Record<NativeHarness, string> = {
   opencode: "OpenCode",
   cursor: "Cursor",
   hermes: "Hermes",
+  deepseek: "DeepSeek",
 };
 export type HarnessStatus = "ready" | "not_installed" | "needs_login" | "unverified";
 
@@ -28,16 +28,15 @@ export async function harnessReadiness(
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000);
   for (const h of Object.keys(harnessCommands) as NativeHarness[]) {
     const info = await inspectHarness(h, resolve);
-    // last outcome for this harness by this user, via the bots that use it
+    // last outcome for this harness by this user: a run records the harness that ran, which is a bot's fallback when the main one was blocked
     const rows = await db
       .select({ outcome: auditEvent.outcome, at: auditEvent.createdAt })
       .from(auditEvent)
-      .innerJoin(bot, eq(bot.id, auditEvent.botId))
       .where(
         and(
           eq(auditEvent.ownerUserId, userId),
           eq(auditEvent.kind, "harness_run"),
-          eq(bot.harness, h),
+          eq(auditEvent.detail, h),
           gt(auditEvent.createdAt, since),
         ),
       )

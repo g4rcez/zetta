@@ -16,7 +16,7 @@ export function LinkLists({ links, linkedFrom }: { links: WikiLink[]; linkedFrom
           {rows.map((l) => (
             <li key={`${l.relation}:${l.slug}`} className="flex flex-wrap items-center gap-2">
               <Badge>{RELATION[l.relation]}</Badge>
-              <Link to="/wiki/$slug" params={{ slug: l.slug }} className="hover:underline">
+              <Link to="/memory/$slug" params={{ slug: l.slug }} className="hover:underline">
                 {l.title}
               </Link>
             </li>

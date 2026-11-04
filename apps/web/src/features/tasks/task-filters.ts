@@ -8,6 +8,8 @@ import {
 
 /** Value in `botIds` for tasks that no bot owns (`botId === null`). */
 export const NO_BOT = "none";
+/** Value in `botIds` for the tasks assigned to the person who looks at the page. */
+export const FOR_ME = "me";
 
 export type TimeWindow = "any" | "day" | "week" | "month";
 export type ThreadFilter = "any" | "with" | "without";
@@ -15,7 +17,7 @@ export type TaskSort = "default" | "updated" | "created" | "title";
 
 export type TaskFilters = {
   query: string;
-  /** Bot ids and `NO_BOT`. Empty means every bot. */
+  /** Bot ids, `NO_BOT` and `FOR_ME`. Empty means every bot. */
   botIds: string[];
   /** Columns to keep. Empty means every column. */
   statuses: TaskStatus[];
@@ -83,15 +85,17 @@ export function activeCount(f: TaskFilters): number {
   ].filter(Boolean).length;
 }
 
-/** Keeps the tasks that pass every filter, then orders them. Never changes the input array. */
-export function applyFilters(tasks: Task[], f: TaskFilters, now: number): Task[] {
+/** Keeps the tasks that pass every filter, then orders them. Never changes the input array. `viewerId` is who looks at the page (for `FOR_ME`). */
+export function applyFilters(tasks: Task[], f: TaskFilters, now: number, viewerId = ""): Task[] {
   const query = f.query.trim().toLowerCase();
   const kept = tasks.filter(
     (t) =>
       (query === "" ||
         t.title.toLowerCase().includes(query) ||
         t.description.toLowerCase().includes(query)) &&
-      (f.botIds.length === 0 || f.botIds.includes(t.botId ?? NO_BOT)) &&
+      (f.botIds.length === 0 ||
+        f.botIds.includes(t.botId ?? NO_BOT) ||
+        (f.botIds.includes(FOR_ME) && t.assignee === "person" && t.assigneeUserId === viewerId)) &&
       (f.statuses.length === 0 || f.statuses.includes(t.status)) &&
       (f.priorities.length === 0 || f.priorities.includes(t.priority)) &&
       (f.labels.length === 0 || t.labels.some((l) => f.labels.includes(l))) &&
@@ -119,7 +123,7 @@ export const DEFAULT_STATE: TaskState = { ...DEFAULT_FILTERS, view: "board", gro
 export type TaskGroup = { key: string; label: string; tasks: Task[] };
 type BotName = { id: string; name: string };
 
-/** Splits the tasks into the board columns (status) or one group per bot (assignee). Never changes the input. */
+/** Splits the tasks into the board columns (status) or one group per person, then per bot (assignee). Never changes the input. */
 export function groupTasks(
   tasks: Task[],
   groupBy: GroupBy,
@@ -136,8 +140,22 @@ export function groupTasks(
     );
   }
   const known = new Set(bots.map((b) => b.id));
-  const owner = (t: Task) => (t.botId && known.has(t.botId) ? t.botId : NO_BOT);
-  return [...bots.map((b) => ({ key: b.id, label: b.name })), { key: NO_BOT, label: "Unassigned" }]
+  const owner = (t: Task) =>
+    t.assignee === "person"
+      ? `person:${t.assigneeUserId}`
+      : t.botId && known.has(t.botId)
+        ? t.botId
+        : NO_BOT;
+  const people = new Map(
+    tasks
+      .filter((t) => t.assignee === "person")
+      .map((t) => [`person:${t.assigneeUserId}`, t.assigneeName ?? "A person"]),
+  );
+  return [
+    ...[...people].map(([key, label]) => ({ key, label })),
+    ...bots.map((b) => ({ key: b.id, label: b.name })),
+    { key: NO_BOT, label: "Unassigned" },
+  ]
     .map((g) => ({ ...g, tasks: tasks.filter((t) => owner(t) === g.key) }))
     .filter((g) => g.tasks.length > 0);
 }

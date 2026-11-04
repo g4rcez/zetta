@@ -10,11 +10,11 @@ Zetta uses a Bun/TypeScript workspace with a web app, server, and shared package
 
 Directly inspected anchors for this documentation review:
 
-| Anchor | Observed responsibility | What it does not establish |
-| --- | --- | --- |
-| [Root manifest](../../../package.json) | Workspace, package catalog, and development scripts | Runtime compatibility of planned integrations. |
+| Anchor                                                  | Observed responsibility                                                          | What it does not establish                                                                                   |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| [Root manifest](../../../package.json)                  | Workspace, package catalog, and development scripts                              | Runtime compatibility of planned integrations.                                                               |
 | [Server entry point](../../../apps/server/src/index.ts) | Elysia composition, logging identity, auth forwarding, CORS, and health response | Authorization for future bot, chat, run, or file resources. Logging user identity is not access enforcement. |
-| [Service wiring](../../../apps/server/src/services.ts) | Creates database and auth services | A delivered execution worker or domain service layer. |
+| [Service wiring](../../../apps/server/src/services.ts)  | Creates database and auth services                                               | A delivered execution worker or domain service layer.                                                        |
 
 The repository contains desktop-related scripts. That is separate from required isolated computer-use execution; it does not establish a new native desktop-client requirement or prove desktop automation support.
 
@@ -22,13 +22,13 @@ The repository contains desktop-related scripts. That is separate from required 
 
 Reuse the existing workspace rather than introduce a new orchestration platform by default. These directories are planned responsibilities, not claims that all modules exist:
 
-| Responsibility | Planned location or boundary |
-| --- | --- |
-| User journeys and stateful views | `apps/web/src/features/<domain>/` and authenticated routes; reuse shared UI. |
-| Authorization and domain mutations | `apps/server/src/modules/<domain>/`; derive actor authority server-side. |
-| Durable domain records | `packages/db/src/schema/`; approved incremental migrations, not a speculative full schema. |
-| Execution and integrations | Owned server runtime, verified harness adapters, scoped connections, and controlled host tools. |
-| Browser and desktop resources | Approved isolated backends, user-bound profiles/sessions, explicit leases and cleanup. |
+| Responsibility                     | Planned location or boundary                                                                    |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| User journeys and stateful views   | `apps/web/src/features/<domain>/` and authenticated routes; reuse shared UI.                    |
+| Authorization and domain mutations | `apps/server/src/modules/<domain>/`; derive actor authority server-side.                        |
+| Durable domain records             | `packages/db/src/schema/`; approved incremental migrations, not a speculative full schema.      |
+| Execution and integrations         | Owned server runtime, verified harness adapters, scoped connections, and controlled host tools. |
+| Browser and desktop resources      | Approved isolated backends, user-bound profiles/sessions, explicit leases and cleanup.          |
 
 Proposed flow, not a protocol specification:
 
@@ -44,7 +44,7 @@ Chief delegation and visual workflow steps use the same execution and actor rule
 ## Boundaries that must stay separate
 
 - **Bot definition versus actor:** a shared bot can run for different users without sharing their credentials or private knowledge.
-- **Workspace versus membership:** grouping is presentation; human membership and resource authorization are separate.
+- **Folder versus membership:** grouping is presentation; human membership and resource authorization are separate.
 - **Run events versus chat history:** replay supports reconnect; durable assistant/tool messages outlive event retention. See [RFC-069](../../../tasks/069-persist-assistant-and-tool-output.md) and [RFC-070](../../../tasks/070-build-private-multi-turn-run-context.md).
 - **Attention versus audit:** attention describes what needs action now. Audit explains what happened. Neither can manufacture execution success.
 - **Memory versus instructions versus configuration:** facts, reusable methods, and behavior/setup have different write and approval rules.

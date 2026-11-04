@@ -15,7 +15,7 @@ export function orderBots<B extends Ordered>(bots: B[], order: readonly string[]
   return { chief, rest };
 }
 
-/** The saved order after one group (a workspace's bots, in their new order) is placed; other groups keep their places. */
+/** The saved order after one group (a folder's bots, in their new order) is placed; other groups keep their places. */
 export function placeGroup(order: readonly string[], group: readonly string[]) {
   return [...order.filter((id) => !group.includes(id)), ...group].slice(-ORDER_LIMIT);
 }

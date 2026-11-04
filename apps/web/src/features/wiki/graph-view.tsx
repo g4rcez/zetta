@@ -114,8 +114,8 @@ export function GraphView({
   const picked = selected ? style.get(selected) : undefined;
   const open = (n: GNode) =>
     n.missing
-      ? void navigate({ to: "/wiki", search: { create: n.slug } as never })
-      : void navigate({ to: "/wiki/$slug", params: { slug: n.slug } });
+      ? void navigate({ to: "/memory", search: { create: n.slug } as never })
+      : void navigate({ to: "/memory/$slug", params: { slug: n.slug } });
 
   const jump = (text: string) => {
     setFind(text);
@@ -149,7 +149,7 @@ export function GraphView({
   if (data.nodes.length === 0)
     return <Empty>Nothing to draw yet. Items and the links between them show up here.</Empty>;
   return (
-    <section aria-label="Wiki graph" className="space-y-3">
+    <section aria-label="Memory graph" className="space-y-3">
       {controls && (
         <div className="flex flex-wrap items-center gap-2">
           <div role="group" aria-label="Dimensions" className="flex gap-1">
@@ -231,7 +231,7 @@ export function GraphView({
       <div
         ref={box}
         role="region"
-        aria-label="Graph of wiki items. Use Find in the graph to pick an item; double-click an item or press Enter to open it."
+        aria-label="Graph of memory items. Use Find in the graph to pick an item; double-click an item or press Enter to open it."
         tabIndex={0}
         onKeyDown={(e) => {
           if (e.key === "Escape") setSelected(undefined);
@@ -262,7 +262,7 @@ export function GraphView({
             node={picked}
             data={byId.get(picked.id)}
             onClose={() => setSelected(undefined)}
-            onCreate={(slug) => void navigate({ to: "/wiki", search: { create: slug } as never })}
+            onCreate={(slug) => void navigate({ to: "/memory", search: { create: slug } as never })}
           />
         )}
       </div>

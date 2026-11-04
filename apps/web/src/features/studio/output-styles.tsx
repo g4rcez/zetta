@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
 import { EditorField } from "@/components/editor/editor";
 import { Button, Input, Select } from "@/components/ui";
 import { errorMessage } from "../chat/chat-client";
 import {
   exportUrl,
   outputStylesApi,
-  type BuiltinStyle,
+  outputStylesQueries,
   type OutputStyle,
   type StyleScope,
 } from "../output-styles/output-styles-api";
 import { Badge, ConfirmButton, Empty, list, listItem, Panel } from "../shared/ui";
+import { useLoadError } from "./studio-queries";
 
 const SCOPES: { value: StyleScope; label: string }[] = [
   { value: "private", label: "Only me" },
@@ -26,17 +28,13 @@ function Download({ href, name }: { href: string; name: string }) {
 }
 
 export function OutputStyles({ onError }: { onError: (m: string) => void }) {
-  const [data, setData] = useState<{ builtins: BuiltinStyle[]; styles: OutputStyle[] }>();
+  const qc = useQueryClient();
+  const { data, error: loadError } = useQuery(outputStylesQueries.list());
+  useLoadError(loadError, onError);
   const [editing, setEditing] = useState<string>();
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
-  const reload = useCallback(
-    () => outputStylesApi.list().then(setData, (e) => onError(errorMessage(e))),
-    [onError],
-  );
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const reload = () => qc.invalidateQueries({ queryKey: outputStylesQueries.list().queryKey });
 
   const run = async (work: () => Promise<unknown>, done: string) => {
     setError(undefined);

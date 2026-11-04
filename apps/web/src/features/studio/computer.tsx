@@ -1,12 +1,12 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { VmPanel } from "./desktop";
+import { MachinesPanel } from "./machines";
 import { useCallback, useEffect, useState } from "react";
 import { Button, Input } from "@/components/ui";
 
 import { ApiError, call, errorMessage } from "../chat/chat-client";
 import { Badge, ConfirmButton, Empty, list, listItem, Panel } from "../shared/ui";
-
-type Session = { profile: string; control: "agent" | "human"; url: string };
-type Profile = { name: string; mode: "dedicated" | "shared"; revoked: boolean };
+import { computerQueries, useLoadError, type ComputerSession as Session } from "./studio-queries";
 
 /** Friendly wording for the computer errors (409 HUMAN_IN_CONTROL / STALE_CONTROL, 410 REVOKED). */
 export function computerError(e: unknown): string {
@@ -21,20 +21,12 @@ export function computerError(e: unknown): string {
   return errorMessage(e);
 }
 
-function Profiles({ onError, refreshKey }: { onError: (m: string) => void; refreshKey: number }) {
-  const [profiles, setProfiles] = useState<Profile[]>();
+function Profiles({ onError }: { onError: (m: string) => void }) {
+  const qc = useQueryClient();
+  const { data: profiles, error } = useQuery(computerQueries.profiles());
+  useLoadError(error, onError, computerError);
   const [status, setStatus] = useState<string>();
-  const load = useCallback(
-    () =>
-      call<{ profiles: Profile[] }>("/api/computer/profiles").then(
-        (r) => setProfiles(r.profiles),
-        (e) => onError(computerError(e)),
-      ),
-    [onError],
-  );
-  useEffect(() => {
-    void load();
-  }, [load, refreshKey]);
+  const load = () => qc.invalidateQueries({ queryKey: computerQueries.profiles().queryKey });
   const run = async (work: () => Promise<unknown>, done: string) => {
     setStatus(undefined);
     try {
@@ -107,17 +99,19 @@ function Profiles({ onError, refreshKey }: { onError: (m: string) => void; refre
 }
 
 export function Computer({ onError }: { onError: (m: string) => void }) {
+  const qc = useQueryClient();
+  const sessionsKey = computerQueries.sessions().queryKey;
   const [profile, setProfile] = useState("default");
   const [session, setSession] = useState<Session>();
   const [png, setPng] = useState<string>();
-  const [caps, setCaps] = useState<{
-    browser: boolean;
-    desktop: boolean;
-    desktopBackend?: string | null;
-    note?: string;
-  }>();
-  const [tick, setTick] = useState(0);
+  const { data: caps } = useQuery(computerQueries.capabilities());
+  const { data: sessions } = useQuery({
+    ...computerQueries.sessions(),
+    // The session shown here is a draft that actions update; a focus refetch must not replace it.
+    refetchOnWindowFocus: false,
+  });
   const base = `/api/computer/sessions/${profile}`;
+  // The screenshot is a live capture taken on demand, not a cached read.
   const refresh = useCallback(
     (p?: string) =>
       call<{ png: string }>(`/api/computer/sessions/${p ?? profile}/screenshot`)
@@ -125,33 +119,39 @@ export function Computer({ onError }: { onError: (m: string) => void }) {
         .catch((e) => onError(computerError(e))),
     [profile, onError],
   );
-  const reloadSession = useCallback(
-    () =>
-      call<{ sessions: Session[] }>("/api/computer/sessions")
-        .then((r) => {
-          /* a bot's own session (b-<botId>) is listed too, so a handoff from chat can be taken over here */ const s =
-            r.sessions.find((x) => x.profile === profile) ??
-            r.sessions.find((x) => x.profile === "default") ??
-            r.sessions[0];
-          setSession(s);
-          if (s) {
-            setProfile(s.profile);
-            void refresh(s.profile);
-          }
-        })
-        .catch(() => {}),
-    [refresh, profile],
-  );
+  // Keeps the cached list and the session on screen equal.
+  const putSession = (next: Session | undefined, gone = profile) => {
+    setSession(next);
+    qc.setQueryData(sessionsKey, (list = []) => {
+      if (!next) return list.filter((x) => x.profile !== gone);
+      return list.some((x) => x.profile === next.profile)
+        ? list.map((x) => (x.profile === next.profile ? next : x))
+        : [...list, next];
+    });
+  };
+  const reloadSession = () => qc.invalidateQueries({ queryKey: sessionsKey });
   useEffect(() => {
-    void reloadSession();
-    call<{ browser: boolean; desktop: boolean; desktopBackend?: string | null; note?: string }>(
-      "/api/computer/capabilities",
-    ).then(setCaps, () => {});
-  }, [reloadSession]);
+    if (!sessions) return;
+    /* a bot's own session (b-<botId>) is listed too, so a handoff from chat can be taken over here */
+    const s =
+      sessions.find((x) => x.profile === profile) ??
+      sessions.find((x) => x.profile === "default") ??
+      sessions[0];
+    // A change made here already updated both: only a difference from the server needs a new look.
+    const same = s && session && s.profile === session.profile && s.control === session.control;
+    if (same && s.url === session.url) return;
+    setSession(s);
+    if (s) {
+      setProfile(s.profile);
+      void refresh(s.profile);
+    }
+    // Runs when the list changes; `profile` and `refresh` are the values of that render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions]);
   const act = (body: object) =>
     call<{ session: Session }>(`${base}/action`, "POST", body).then(
       (r) => {
-        setSession(r.session);
+        putSession(r.session);
         return refresh();
       },
       (e) => {
@@ -161,10 +161,10 @@ export function Computer({ onError }: { onError: (m: string) => void }) {
     );
   async function start() {
     try {
-      setSession(
+      putSession(
         (await call<{ session: Session }>("/api/computer/sessions", "POST", { profile })).session,
       );
-      setTick((t) => t + 1);
+      void qc.invalidateQueries({ queryKey: computerQueries.profiles().queryKey });
     } catch (e) {
       onError(computerError(e));
     }
@@ -172,7 +172,7 @@ export function Computer({ onError }: { onError: (m: string) => void }) {
   async function takeover() {
     if (!session) return;
     try {
-      setSession(
+      putSession(
         (
           await call<{ session: Session }>(`${base}/takeover`, "POST", {
             human: session.control !== "human",
@@ -210,6 +210,7 @@ export function Computer({ onError }: { onError: (m: string) => void }) {
           </p>
         )}
         {caps?.desktop && <VmPanel onError={onError} />}
+        <MachinesPanel onError={onError} />
         {!session ? (
           <Button size="sm" onClick={() => void start()}>
             Start browser
@@ -262,7 +263,7 @@ export function Computer({ onError }: { onError: (m: string) => void }) {
                 onClick={() =>
                   void call(base, "DELETE").then(
                     () => {
-                      setSession(undefined);
+                      putSession(undefined);
                       setPng(undefined);
                     },
                     (e) => onError(computerError(e)),
@@ -317,7 +318,7 @@ export function Computer({ onError }: { onError: (m: string) => void }) {
           </div>
         )}
       </Panel>
-      <Profiles onError={onError} refreshKey={tick} />
+      <Profiles onError={onError} />
     </section>
   );
 }

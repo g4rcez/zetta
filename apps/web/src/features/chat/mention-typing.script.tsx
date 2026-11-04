@@ -23,6 +23,7 @@ globalThis.fetch = (async () => new Response("{}", { status: 200 })) as unknown 
 const { act, useState } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { EditorView } = await import("@codemirror/view");
+const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const { MentionField, MentionTextarea } = await import("./mention");
 
 const bots = [
@@ -32,7 +33,11 @@ const mount = async (element: unknown) => {
   const host = win.document.createElement("div");
   win.document.body.append(host);
   const root = createRoot(host as unknown as Element);
-  await act(async () => root.render(element as never));
+  // The bot rows draw a status dot, which reads the query cache.
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  await act(async () =>
+    root.render(<QueryClientProvider client={client}>{element as never}</QueryClientProvider>),
+  );
   return host as unknown as HTMLElement;
 };
 const contentOf = (host: HTMLElement) =>

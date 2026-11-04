@@ -9,6 +9,9 @@ import { AccessError, type ActiveActor } from "../identity/access";
 import { insertMessage } from "../chat/messages";
 import { normalizeMentionText } from "../chat/mention-text";
 import { failureKind, retryDelayMs } from "../chat/retry";
+import { topics } from "@zetta/core/live-topics";
+import { runsWork } from "../../role";
+import { events } from "../events/bus";
 import { raiseAttention } from "./attention";
 import { audit } from "./audit";
 import {
@@ -18,6 +21,7 @@ import {
   validTimezone,
   type Recurrence,
 } from "./schedule";
+import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
 
 export class RoutineError extends Error {
   constructor(
@@ -127,11 +131,17 @@ export function createRoutines(
   }
 
   type RoutineStatus = Routine["status"];
-  const mark = (id: string, status: RoutineStatus, reason: string | null = null) =>
-    db
+  /** The routine list, the unread runs and the bot's "working" status change together. */
+  const changed = (ownerUserId: string) =>
+    events.publish([ownerUserId], topics.routines, topics.botStatus);
+  const mark = async (id: string, status: RoutineStatus, reason: string | null = null) => {
+    const [row] = await db
       .update(routine)
       .set({ status, statusReason: reason, statusAt: new Date() })
-      .where(eq(routine.id, id));
+      .where(eq(routine.id, id))
+      .returning({ ownerUserId: routine.ownerUserId });
+    if (row) changed(row.ownerUserId);
+  };
 
   /**
    * Live node-schedule jobs, one per active routine, fired at its stored `nextRunAt`. The database stays the source of truth: jobs are
@@ -147,6 +157,8 @@ export function createRoutines(
   /** (Re)schedules the routine's next occurrence; a paused, archived or unscheduled routine has no job. */
   function arm(r: Routine) {
     disarm(r.id);
+    // An `api` process never fires jobs: the worker finds a new or changed routine on its next sweep.
+    if (!runsWork) return;
     if (r.paused || r.archived || !r.nextRunAt) return;
     // node-schedule ignores dates in the past, so an overdue occurrence fires right away.
     const at = r.nextRunAt.getTime() > Date.now() ? r.nextRunAt : new Date(Date.now() + 500);
@@ -179,20 +191,20 @@ export function createRoutines(
           finishedAt: new Date(),
         })
         .where(eq(routineRun.id, runId))
-        .then(() => {
+        .then(async () => {
           if (status === "blocked" || status === "failed") return mark(r.id, status, reasonCode);
           // A routine paused in the meantime (or run by hand while paused) goes back to "paused"; a finished one-time routine is completed.
-          return r.kind === "once"
-            ? mark(r.id, "completed")
-            : db
-                .update(routine)
-                .set({
-                  status: sql`case when ${routine.paused} then 'paused' else 'scheduled' end`,
-                  statusReason: null,
-                  statusAt: new Date(),
-                })
-                .where(eq(routine.id, r.id));
+          if (r.kind === "once") return mark(r.id, "completed");
+          await db
+            .update(routine)
+            .set({
+              status: sql`case when ${routine.paused} then 'paused' else 'scheduled' end`,
+              statusReason: null,
+              statusAt: new Date(),
+            })
+            .where(eq(routine.id, r.id));
         })
+        .then(() => changed(r.ownerUserId))
         .then(() =>
           audit(db, r.ownerUserId, {
             kind: "routine_run",
@@ -340,6 +352,7 @@ export function createRoutines(
         routineId: r.id,
         ownerUserId: r.ownerUserId,
         status: "running",
+        ownerInstance: instanceId(),
         output: "",
         occurrenceKey: key,
         trigger,
@@ -348,6 +361,7 @@ export function createRoutines(
       })
       .onConflictDoNothing()
       .returning();
+    if (row) changed(r.ownerUserId);
     return row;
   }
 
@@ -902,11 +916,11 @@ export function createRoutines(
       return first(await db.select().from(routineRun).where(eq(routineRun.id, claimed.id)));
     },
     /** Boot recovery: occurrences left running by a dead process become interrupted, with one attention card per routine. */
-    async recoverInterrupted() {
+    async recoverInterrupted(scope?: RecoveryScope) {
       const rows = await db
         .update(routineRun)
         .set({ status: "interrupted", reasonCode: "process_restart", finishedAt: new Date() })
-        .where(eq(routineRun.status, "running"))
+        .where(and(eq(routineRun.status, "running"), recoverable(routineRun.ownerInstance, scope)))
         .returning();
       // Only routines that really had a run in flight; a stale "running" label without one is not an interruption.
       if (rows.length)

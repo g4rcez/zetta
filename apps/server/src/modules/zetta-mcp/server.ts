@@ -93,7 +93,7 @@ function botView(actor: ActiveActor, b: Bot) {
     computerMode: b.computerMode,
     codeAccess: b.codeAccess,
     requiredConnections: b.requiredConnections,
-    workspaceId: b.workspaceId,
+    folderId: b.folderId,
     version: b.version,
   };
 }

@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Client, Pool } from "pg";
 
 import type { DatabaseConfig } from "./config";
 import { relations } from "./relations";
@@ -19,3 +19,6 @@ export function createDb(env: DatabaseConfig) {
 }
 
 export type Database = ReturnType<typeof createDb>;
+
+/** A single connection outside the pool, for `LISTEN` (a pooled connection goes back to other callers). */
+export { Client as PgClient };

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { Calendar } from "@g4rcez/components/calendar";
 
 import { call } from "../chat/chat-client";
@@ -6,6 +7,7 @@ import { dayKey, groupByDay, monthRange, type CalendarItem } from "./calendar-da
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatTime } from "@/features/preferences/time-format";
 
+const NO_ITEMS: CalendarItem[] = [];
 const STATUS_LABEL: Record<string, string> = {
   succeeded: "ran",
   failed: "failed",
@@ -16,32 +18,22 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 /** Month view of routine occurrences (upcoming and past) built with the shared @g4rcez/components Calendar. */
-export function RoutineCalendar({ refreshKey }: { refreshKey: number }) {
+export function RoutineCalendar() {
   const tf = useTimeFormat();
   const [month, setMonth] = useState(() => new Date());
   const [selected, setSelected] = useState<Date | undefined>(new Date());
-  const [items, setItems] = useState<CalendarItem[]>([]);
-  const [error, setError] = useState<string>();
-  useEffect(() => {
-    const { from, to } = monthRange(month);
-    let alive = true;
-    call<{ items: CalendarItem[] }>("/api/routines/calendar", "POST", {
-      from: from.toISOString(),
-      to: to.toISOString(),
-    })
-      .then((r) => {
-        if (alive) {
-          setItems(r.items);
-          setError(undefined);
-        }
-      })
-      .catch(() => {
-        if (alive) setError("Could not load the calendar.");
-      });
-    return () => {
-      alive = false;
-    };
-  }, [month, refreshKey]);
+  const { from, to } = monthRange(month);
+  const query = useQuery({
+    queryKey: ["routines", "calendar", { from: from.toISOString(), to: to.toISOString() }],
+    queryFn: () =>
+      call<{ items: CalendarItem[] }>("/api/routines/calendar", "POST", {
+        from: from.toISOString(),
+        to: to.toISOString(),
+      }).then((r) => r.items),
+    placeholderData: keepPreviousData,
+  });
+  const items = query.data ?? NO_ITEMS;
+  const error = query.error ? "Could not load the calendar." : undefined;
   const byDay = useMemo(() => groupByDay(items), [items]);
   const todays = selected ? (byDay.get(dayKey(selected)) ?? []) : [];
   return (

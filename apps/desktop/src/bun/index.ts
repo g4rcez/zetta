@@ -1,7 +1,7 @@
 import { BrowserWindow, Updater } from "electrobun/main";
 
-const DEV_SERVER_PORT = 3001;
-// The web dev server runs on HTTPS when apps/web/.env sets ZETTA_TLS_CERT/KEY, otherwise on HTTP.
+const DEV_SERVER_PORT = 3000;
+// The web dev server runs on HTTPS (self-signed, or the ZETTA_TLS_CERT/KEY pair of apps/web/.env); HTTP is the fallback for a custom setup.
 const DEV_SERVER_URLS = [
   `https://localhost:${DEV_SERVER_PORT}`,
   `http://localhost:${DEV_SERVER_PORT}`,

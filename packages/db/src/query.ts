@@ -4,6 +4,7 @@ export {
   asc,
   desc,
   eq,
+  getTableColumns,
   gt,
   gte,
   inArray,
@@ -16,3 +17,4 @@ export {
   or,
   sql,
 } from "drizzle-orm";
+export type { SQL, SQLWrapper } from "drizzle-orm";

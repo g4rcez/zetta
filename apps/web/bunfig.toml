@@ -1,1 +1,5 @@
 env = false
+
+[test]
+# Every test file shares one process and one module cache: the app env (src/env.ts) must exist before the first file imports it.
+preload = ["./src/test-env.ts"]

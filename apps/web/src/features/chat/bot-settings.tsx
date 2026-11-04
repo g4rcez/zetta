@@ -32,7 +32,7 @@ import {
   type Bot,
   type BotAvatarValue,
   type BotPatch,
-  type Workspace,
+  type Folder,
 } from "./chat-client";
 import { MentionTextarea } from "./mention";
 import { useSidebarData } from "./sidebar-data";
@@ -42,7 +42,7 @@ const UNGROUPED = "__ungrouped";
 type Common = {
   bot: Bot;
   bots: Bot[];
-  spaces: Workspace[];
+  spaces: Folder[];
   onBotChange: (b: Bot) => void;
   notify: (m: string) => void;
 };
@@ -78,10 +78,23 @@ function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
   const { error, setError, saving, save } = useSave(bot, onBotChange, notify);
   const [harness, setHarness] = useState(bot.harness);
   const [model, setModel] = useState(bot.model ?? "");
+  const [fallback, setFallback] = useState(bot.fallbackHarness ?? "");
+  const [fallbackModel, setFallbackModel] = useState(bot.fallbackModel ?? "");
   useEffect(() => {
     setHarness(bot.harness);
     setModel(bot.model ?? "");
+    setFallback(bot.fallbackHarness ?? "");
+    setFallbackModel(bot.fallbackModel ?? "");
   }, [bot.id, bot.version]);
+  // A bot with no AI (decision) or no provider (fixture) has no limit to run into.
+  const canFallBack = harness !== "fixture" && harness !== "decision";
+  const fallbackChoices = harnessOptions.filter(
+    (o) => o.value !== "fixture" && o.value !== "decision" && o.value !== harness,
+  );
+  const fallbackModels = modelOptions(
+    fallback,
+    bot.fallbackHarness === fallback ? bot.fallbackModel : null,
+  );
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -90,6 +103,8 @@ function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
       description: String(data.get("description") ?? ""),
       harness: String(data.get("harness") ?? "fixture"),
       model: String(data.get("model") ?? "").trim() || null,
+      fallbackHarness: canFallBack ? String(data.get("fallbackHarness") ?? "") || null : null,
+      fallbackModel: canFallBack ? String(data.get("fallbackModel") ?? "").trim() || null : null,
     });
   }
   return (
@@ -108,6 +123,10 @@ function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
           onChange={(e) => {
             setHarness(e.target.value);
             if (!isAllowedModel(e.target.value, model)) setModel("");
+            if (e.target.value === fallback) {
+              setFallback("");
+              setFallbackModel("");
+            }
           }}
           options={harnessOptions}
         />
@@ -135,6 +154,37 @@ function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
             options={modelOptions(harness, bot.harness === harness ? bot.model : null)}
           />
         )}
+        {canFallBack && (
+          <>
+            <Select
+              title="Fallback harness"
+              required={false}
+              name="fallbackHarness"
+              value={fallback}
+              onChange={(e) => {
+                setFallback(e.target.value);
+                setFallbackModel("");
+              }}
+              options={[{ value: "", label: "None" }, ...fallbackChoices]}
+            />
+            {fallback && fallbackModels.length > 1 ? (
+              <Select
+                title="Fallback model"
+                required={false}
+                name="fallbackModel"
+                value={fallbackModel}
+                onChange={(e) => setFallbackModel(e.target.value)}
+                options={fallbackModels}
+              />
+            ) : (
+              <span aria-hidden="true" />
+            )}
+            <p className="text-xs text-muted-foreground md:col-span-2">
+              Used for a turn when the main harness reaches its usage limit, is not signed in, or is
+              not installed. The next turn tries the main harness again.
+            </p>
+          </>
+        )}
         <div className={`${saveRow} md:col-span-2`}>
           <Failure error={error} />
           <Button type="submit" size="sm" disabled={saving}>
@@ -144,14 +194,14 @@ function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
       </form>
       {spaces.length > 0 && (
         <Select
-          title="Workspace"
+          title="Folder"
           required={false}
-          value={bot.workspaceId ?? UNGROUPED}
+          value={bot.folderId ?? UNGROUPED}
           onChange={(e) =>
             void chatClient
               .moveBot(bot.id, e.target.value === UNGROUPED ? null : e.target.value)
               .then(
-                (b) => onBotChange({ ...bot, workspaceId: b.workspaceId }),
+                (b) => onBotChange({ ...bot, folderId: b.folderId }),
                 (x) => setError(errorMessage(x)),
               )
           }

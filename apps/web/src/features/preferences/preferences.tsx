@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   useCallback,
@@ -62,37 +63,48 @@ const Ctx = createContext<Value | null>(null);
 
 /** The signed-in person's layout preferences. A change shows at once and is saved to their account after a short pause. */
 export function PreferencesProvider({ children }: { children: ReactNode }) {
+  const qc = useQueryClient();
   const [preferences, setPreferences] = useState(readCache);
   const pending = useRef<Partial<Preferences>>({});
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // Read once per visit: the cache entry is kept in step with every change below, so a remount does not ask again.
+  // Signed out or offline: the query fails and the cached layout stays.
+  const { data: saved } = useQuery({
+    queryKey: ["preferences"],
+    queryFn: () =>
+      call<{ preferences: Preferences }>("/api/preferences").then((r) => r.preferences),
+    staleTime: Infinity,
+    retry: false,
+  });
   useEffect(() => {
-    void call<{ preferences: Preferences }>("/api/preferences")
-      .then(({ preferences: saved }) => {
-        // A change made before the answer arrived is newer than what the server holds.
-        const next = { ...saved, ...pending.current };
-        setPreferences(next);
-        writeCache(next);
-      })
-      .catch(() => {}); // Signed out or offline: keep the cached layout.
-  }, []);
+    if (!saved) return;
+    // A change made before the answer arrived is newer than what the server holds.
+    const next = { ...saved, ...pending.current };
+    setPreferences(next);
+    writeCache(next);
+  }, [saved]);
 
-  const set = useCallback((patch: Partial<Preferences>) => {
-    setPreferences((current) => {
-      const next = { ...current, ...patch };
-      writeCache(next);
-      return next;
-    });
-    pending.current = { ...pending.current, ...patch };
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      const body = pending.current;
-      pending.current = {};
-      call("/api/preferences", "PATCH", body).catch(() =>
-        toast.error("Could not save your preferences. They will reset on your next visit."),
-      );
-    }, SAVE_DELAY_MS);
-  }, []);
+  const set = useCallback(
+    (patch: Partial<Preferences>) => {
+      setPreferences((current) => {
+        const next = { ...current, ...patch };
+        writeCache(next);
+        qc.setQueryData(["preferences"], next);
+        return next;
+      });
+      pending.current = { ...pending.current, ...patch };
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        const body = pending.current;
+        pending.current = {};
+        call("/api/preferences", "PATCH", body).catch(() =>
+          toast.error("Could not save your preferences. They will reset on your next visit."),
+        );
+      }, SAVE_DELAY_MS);
+    },
+    [qc],
+  );
 
   const value = useMemo(() => ({ preferences, set }), [preferences, set]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

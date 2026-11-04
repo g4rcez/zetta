@@ -1,8 +1,15 @@
 import { expect, test } from "bun:test";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
 import { setupDom } from "../skills/dom-env";
+
+const withQuery = (element: unknown) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {element as never}
+  </QueryClientProvider>
+);
 
 const win = setupDom();
 
@@ -29,19 +36,22 @@ const render = async (proposal: object) => {
   const root = createRoot(host as unknown as Element);
   await act(async () =>
     root.render(
-      <ProposalsPanel
-        proposals={[proposal as never]}
-        bots={bots as never}
-        notify={() => {}}
-        onResolved={() => {}}
-        onBotsChanged={() => {}}
-      />,
+      withQuery(
+        <ProposalsPanel
+          proposals={[proposal as never]}
+          bots={bots as never}
+          notify={() => {}}
+          onResolved={() => {}}
+          onBotsChanged={() => {}}
+        />,
+      ),
     ),
   );
   return { host, unmount: () => act(async () => root.unmount()) };
 };
-const images = (host: HTMLElement) =>
-  [...host.querySelectorAll("img")].map((i) => i.getAttribute("src"));
+// happy-dom elements are not the `lib.dom` types the app is compiled with.
+const images = (host: unknown) =>
+  [...(host as HTMLElement).querySelectorAll("img")].map((i) => i.getAttribute("src"));
 
 test("a permission request shows the bot that asks, and the bot it is about, with their avatars", async () => {
   const { host, unmount } = await render({
@@ -73,7 +83,33 @@ test("a wiki save request shows the bot that asks", async () => {
     ],
     patch: {},
   });
-  expect(host.textContent).toContain("suggests: Save to the wiki");
+  expect(host.textContent).toContain("suggests: Save to memory");
   expect(images(host)).toContain("/avatars/treinador.png");
+  await unmount();
+});
+
+test("a change the chief asks for says what it is, shows each old and new value, and offers Approve", async () => {
+  const { host, unmount } = await render({
+    id: "p3",
+    kind: "chief_action",
+    botId: null,
+    proposedByBotId: TARGET,
+    diff: [
+      { field: "bot", from: null, to: "Treinador" },
+      { field: "computerMode", from: "off", to: "browser" },
+      { field: "add member", from: null, to: "Editor (Reviewer)" },
+      { field: "add member", from: null, to: "Writer" },
+    ],
+    patch: { title: "Change Treinador" },
+  });
+  expect(host.textContent).toContain("suggests: Change Treinador");
+  expect(host.textContent).toContain("Computer: off → browser");
+  expect(host.textContent).toContain("Add member: Editor (Reviewer)");
+  expect(host.textContent).toContain("Add member: Writer");
+  expect(host.textContent).not.toContain("Approve and create");
+  expect([...host.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
+    "Reject",
+    "Approve",
+  ]);
   await unmount();
 });

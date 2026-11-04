@@ -1,5 +1,6 @@
 import { Alert } from "@g4rcez/components/alert";
 import { ArrowSquareOutIcon, CheckCircleIcon } from "@phosphor-icons/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
@@ -32,6 +33,12 @@ type Live = {
   /** Undefined until the plugin is installed. */
   probe: PluginTest | undefined;
   bound: boolean;
+};
+
+/** The plugin is installed but the person still has to sign in or choose it for the bot: look again soon. */
+const isWaiting = (l: Live) => {
+  const state = l.probe?.status.state;
+  return Boolean(l.installed && (state === "needs-auth" || (state === "connected" && !l.bound)));
 };
 
 /** A guide step with its web addresses drawn as links (they leave the app, so they open in a new tab). */
@@ -136,16 +143,19 @@ function Fields({
 export function SetupCard({ data }: { data: SetupCardData }) {
   const actions = useSetupActions();
   const api = useMemo(() => pluginsApiFor(data.scope), [data.scope]);
-  const [live, setLive] = useState<Live>();
-  const [error, setError] = useState<string>();
   const [pairing, setPairing] = useState(false);
   const [binding, setBinding] = useState(false);
   // Set once the card saw the plugin not ready. Only then does reaching "ready" mean the person just finished it, so an old card never talks again.
   const worked = useRef(false);
   const said = useRef(false);
 
-  const load = useCallback(async () => {
-    try {
+  const qc = useQueryClient();
+  // The answer depends on the scope (team or private) and comes from the server, not from the reply. While the setup waits (a sign-in in
+  // another tab or a dialog) it looks again, and as soon as the person comes back (window focus). A finished card does not: one chat can
+  // hold many cards, and each look runs the plugin probe.
+  const query = useQuery({
+    queryKey: ["plugins", "setup", data.scope, data.botId, data.plugin],
+    queryFn: async (): Promise<Live> => {
       const [catalog, installedList, configs] = await Promise.all([
         api.catalog(),
         api.installed(),
@@ -156,41 +166,26 @@ export function SetupCard({ data }: { data: SetupCardData }) {
       const sharing = data.scope === "team" ? "team" : "private";
       const installed = installedList.find((i) => i.id === meta.id && i.sharing === sharing);
       const probe = installed ? await api.test(meta.id) : undefined;
-      setLive({
+      return {
         meta,
         installed,
         probe,
         bound: configs.configs.some((c) => c.id === meta.id && c.scope === data.scope),
-      });
-      setError(undefined);
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }, [api, data.botId, data.plugin, data.scope]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+      };
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: (q) => (q.state.data ? isWaiting(q.state.data) : true),
+    refetchInterval: (q) => (q.state.data && isWaiting(q.state.data) ? POLL_MS : false),
+  });
+  const live = query.data;
+  const [childError, setError] = useState<string>();
+  const error = childError ?? (query.error ? errorMessage(query.error) : undefined);
+  const load = useCallback(() => qc.invalidateQueries({ queryKey: ["plugins"] }), [qc]);
+  // A new answer replaces an error a child reported.
+  useEffect(() => setError(undefined), [query.dataUpdatedAt]);
 
   const state = live?.probe?.status.state;
   const ready = Boolean(live && live.installed && state === "connected" && live.bound);
-
-  // The sign-in happens in another tab or a dialog: look again while the person is away, and as soon as they come back.
-  const waiting = Boolean(
-    live?.installed && (state === "needs-auth" || (state === "connected" && !live?.bound)),
-  );
-  useEffect(() => {
-    if (!waiting) return;
-    const tick = () => {
-      if (document.visibilityState === "visible") void load();
-    };
-    const t = setInterval(tick, POLL_MS);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      clearInterval(t);
-      document.removeEventListener("visibilitychange", tick);
-    };
-  }, [waiting, load]);
 
   useEffect(() => {
     if (!live) return;

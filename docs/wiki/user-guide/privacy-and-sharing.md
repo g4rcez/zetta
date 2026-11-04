@@ -8,16 +8,16 @@
 
 Each user signs in to Zetta with their own local account. External account logins do not replace Zetta's server-side authentication and authorization.
 
-| Resource or action | Required boundary |
-| --- | --- |
-| Bot definition | Team-visible by default, optionally private. Visibility alone does not grant all editing rights. |
-| Personal chief | One per user, independent of workspace selection. |
-| Private conversation, files, and retained knowledge | Belong to their authorized user scope; sharing a bot does not share them. |
-| Interactive or delegated work | Uses the requesting user's authorized connections. |
-| Scheduled work | Uses the routine owner's authorized connections. |
-| Workflow execution | Preserves the initiating user, or routine owner for scheduled execution. |
-| Workspace | Visual grouping only; never a sharing or authorization boundary. |
-| Browser profile | User-owned; sharing among that user's bots must be explicit. Never shared across users. |
+| Resource or action                                  | Required boundary                                                                                |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Bot definition                                      | Team-visible by default, optionally private. Visibility alone does not grant all editing rights. |
+| Personal chief                                      | One per user, independent of folder selection.                                                   |
+| Private conversation, files, and retained knowledge | Belong to their authorized user scope; sharing a bot does not share them.                        |
+| Interactive or delegated work                       | Uses the requesting user's authorized connections.                                               |
+| Scheduled work                                      | Uses the routine owner's authorized connections.                                                 |
+| Workflow execution                                  | Preserves the initiating user, or routine owner for scheduled execution.                         |
+| Folder                                              | Visual grouping only; never a sharing or authorization boundary.                                 |
+| Browser profile                                     | User-owned; sharing among that user's bots must be explicit. Never shared across users.          |
 
 Human membership, shared-bot editing rights, and removal/revocation policy still need the [ownership decision](../../../tasks/001-approve-domain-and-ownership-contracts.md). There is one installation admin; administrative duties do not imply unrestricted reading of private conversations or credentials.
 

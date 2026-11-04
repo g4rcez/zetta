@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowSquareOutIcon, DownloadSimpleIcon, XIcon } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { Button } from "@zetta/ui/components/button";
 
@@ -13,12 +13,13 @@ const iconButton =
 
 /** A file a bot published, opened beside the chat so the conversation stays in view. The full page stays one link away. */
 export function ArtifactPanel({ id, onClose }: { id: string; onClose: () => void }) {
+  const { data, isError } = useQuery({
+    queryKey: ["artifacts", id],
+    queryFn: () => artifactsApi.get(id),
+    retry: false,
+  });
   // `undefined` while loading, `null` when it is gone.
-  const [artifact, setArtifact] = useState<Artifact | null>();
-  useEffect(() => {
-    setArtifact(undefined);
-    artifactsApi.get(id).then(setArtifact, () => setArtifact(null));
-  }, [id]);
+  const artifact: Artifact | null | undefined = isError ? null : data;
   return (
     <section aria-label="Artifact" className="flex h-full min-h-0 flex-col bg-background">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">

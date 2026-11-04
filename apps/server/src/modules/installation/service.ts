@@ -25,7 +25,7 @@ const DEFAULTS: InstallationSettings = {
   networkMode: "local",
   publicUrl: null,
   onboarding: "pending",
-  laya: "off",
+  laya: "on",
   layaLanguages: ["en"],
 };
 

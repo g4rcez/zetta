@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { UserCircleDashedIcon } from "@phosphor-icons/react";
+import { UserCircleDashedIcon, UserCircleIcon } from "@phosphor-icons/react";
 import type { MouseEvent } from "react";
 import { BotAvatar } from "@/components/bot-avatar";
 import type { Bot } from "../chat/chat-client";
@@ -32,6 +32,8 @@ export function GroupIcon({
   bots: Bot[];
 }) {
   if (groupBy === "status") return <StatusIcon status={group.key as TaskStatus} />;
+  if (group.key.startsWith("person:"))
+    return <UserCircleIcon aria-hidden className="size-5 text-attention" />;
   const bot = bots.find((b) => b.id === group.key);
   return bot && group.key !== NO_BOT ? (
     <BotAvatar bot={bot} size={20} square />
@@ -83,6 +85,14 @@ export function TaskList({
                   <span className="hidden items-center gap-1 sm:flex">
                     <LabelChips labels={task.labels} />
                   </span>
+                  {task.assignee === "person" && (
+                    <span
+                      title={`Assigned to ${task.assigneeName ?? "a person"}`}
+                      className="shrink-0"
+                    >
+                      <UserCircleIcon aria-hidden className="size-5 text-attention" />
+                    </span>
+                  )}
                   {bot && (
                     <span title={bot.name} className="shrink-0">
                       <BotAvatar bot={bot} size={20} square />

@@ -1,19 +1,19 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 
-import { call } from "../chat/chat-client";
 import { Response } from "../chat/response";
 import { Badge, Empty, Loading } from "../shared/ui";
 import { decodeDraft, type WikiDraft } from "./draft";
 import { useWikiIndex } from "./use-wiki-index";
-import { path, wikiError, type Detail } from "./wiki-api";
+import { wikiError, wikiQueries } from "./wiki-api";
 
 const Shell = ({ title, children }: { title: string; children: ReactNode }) => (
   <div className="h-full overflow-y-auto">
     <div className="mx-auto w-full max-w-4xl space-y-5 p-4 md:p-8">
       <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground">
-        <Link to="/wiki" className="hover:underline">
-          Wiki
+        <Link to="/memory" className="hover:underline">
+          Memory
         </Link>{" "}
         / {title}
       </nav>
@@ -42,12 +42,9 @@ const NOTE: Record<"link" | "confirm" | "sources" | "archive" | "mark_stale", st
 
 function Change({ draft }: { draft: Exclude<WikiDraft, { action: "write" }> }) {
   const { wikiLinks } = useWikiIndex();
-  const [detail, setDetail] = useState<Detail>();
-  const [error, setError] = useState<string>();
-  useEffect(() => {
-    call<Detail>(path(draft.slug)).then(setDetail, (e) => setError(wikiError(e)));
-  }, [draft.slug]);
-  if (error)
+  const { data: detail, error: failure } = useQuery(wikiQueries.item(draft.slug));
+  const error = failure ? wikiError(failure) : undefined;
+  if (error && !detail)
     return (
       <Shell title={draft.slug}>
         <p role="alert" className="text-sm text-destructive">

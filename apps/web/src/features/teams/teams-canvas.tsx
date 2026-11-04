@@ -25,6 +25,7 @@ import {
   type DragEvent,
   type ReactNode,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Tooltip } from "@g4rcez/components/tooltip";
@@ -35,7 +36,7 @@ import { Button, Input } from "@/components/ui";
 import { MentionTextarea } from "../chat/mention";
 import { useSidebarData } from "../chat/sidebar-data";
 import { useTheme } from "../../components/theme-provider";
-import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { errorMessage } from "../chat/chat-client";
 import {
   addBot,
   arrange,
@@ -53,7 +54,13 @@ import {
   type TeamsNode,
 } from "./team-graph";
 import { RoleField, RolesContext, useRoleLabel, useTeamRoles } from "./team-roles";
-import { TEAM_SIZE_WARNING, TEAM_SIZE_WARNING_AT, teamsApi, type TeamSave } from "./teams-api";
+import {
+  TEAM_SIZE_WARNING,
+  TEAM_SIZE_WARNING_AT,
+  teamsApi,
+  teamsQueries,
+  type TeamSave,
+} from "./teams-api";
 
 /** What the server holds for a team, apart from its version. */
 const saveKey = (v: TeamSave) => JSON.stringify({ ...v, expectedVersion: 0 });
@@ -185,9 +192,10 @@ function Editor() {
   const { resolvedTheme } = useTheme();
   const rf = useReactFlow();
   const navigate = useNavigate();
-  const { reloadTeams } = useSidebarData();
+  const qc = useQueryClient();
+  const { reloadTeams, bots: allBots } = useSidebarData();
   const [nodes, setNodes, onNodesChange] = useNodesState<TeamsNode>([]);
-  const [bots, setBots] = useState<Bot[]>([]);
+  const bots = useMemo(() => allBots.filter((x) => x.onboarded), [allBots]);
   const { roles } = useTeamRoles();
   const [drawerId, setDrawerId] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -197,7 +205,8 @@ function Editor() {
   const fail = useCallback((e: unknown) => toast.error(errorMessage(e)), []);
   const load = useCallback(async () => {
     try {
-      const flow = teamsToFlow(await teamsApi.list());
+      // Always fresh: the nodes hold local edits, so a stale list would save an old version.
+      const flow = teamsToFlow(await qc.fetchQuery({ ...teamsQueries.list(), staleTime: 0 }));
       synced.current = new Map(
         flowToTeams(flow).map((t) => [
           t.id,
@@ -208,11 +217,10 @@ function Editor() {
     } catch (e) {
       fail(e);
     }
-  }, [setNodes, fail]);
+  }, [qc, setNodes, fail]);
   useEffect(() => {
     void load();
-    chatClient.bots().then((b) => setBots(b.filter((x) => x.onboarded)), fail);
-  }, [load, fail]);
+  }, [load]);
 
   const selected = nodes.find((n) => n.id === drawerId);
   const teamOf =
@@ -249,6 +257,7 @@ function Editor() {
         try {
           const team = await teamsApi.save(t.id, { ...t.save, expectedVersion: known.version });
           synced.current.set(t.id, { version: team.version, key: saveKey(t.save) });
+          void reloadTeams();
         } catch (e) {
           fail(e);
           await load();

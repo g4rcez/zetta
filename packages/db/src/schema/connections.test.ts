@@ -54,7 +54,7 @@ describe("connection schema offline contract (not PostgreSQL execution)", () => 
       Bun.serve = denied; Bun.connect = denied; net.Socket.prototype.connect = denied;
       tls.connect = denied; globalThis.fetch = denied; globalThis.setTimeout = denied; globalThis.setInterval = denied;
       const schema = await import(${JSON.stringify(import.meta.resolve("./connections"))});
-      if (Object.keys(schema).length !== 5) throw new Error('unexpected exports');
+      if (Object.keys(schema).length !== 6) throw new Error('unexpected exports');
       console.log('offline import PASS');
     `;
     // When the real module is imported in an isolated child.

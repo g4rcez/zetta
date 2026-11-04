@@ -6,8 +6,10 @@ import {
   ChatIcon,
   PaperPlaneRightIcon,
   SparkleIcon,
+  UserCircleIcon,
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@zetta/ui/components/button";
 import {
@@ -19,8 +21,10 @@ import {
 import { BotIdentity } from "@/components/bot-identity";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
+import { authClient } from "@/lib/auth-client";
 import { ago } from "../artifacts/artifacts-api";
 import { chatClient, errorMessage, type Bot, type Message } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { Markdown } from "../chat/markdown";
 import { MentionField } from "../chat/mention";
 import { stripToolFences } from "../chat/tool-fences";
@@ -32,6 +36,7 @@ import {
   TASK_COLUMNS,
   TASK_PRIORITIES,
   tasksApi,
+  tasksQueries,
   type Task,
   type TaskPriority,
   type TaskStatus,
@@ -55,6 +60,14 @@ const pendingAnswer = (thread: Message[]) => {
   const last = thread.at(-1);
   return last?.role === "assistant" && last.status === "complete" ? last : undefined;
 };
+
+/** Poll while the bot has the turn: the last message of the thread is not the bot's finished answer. */
+const botHasTurn = (all: Message[] | undefined) => {
+  const shown = visible(all ?? []);
+  return shown.length > 0 && !pendingAnswer(shown);
+};
+const NO_BOTS: Bot[] = [];
+const NO_MESSAGES: Message[] = [];
 
 const SUMMARY_MARK = "[AI Summary]";
 const SUMMARY_PROMPT = `${SUMMARY_MARK} Summarize this task for someone who joins now, in under 120 words and in Markdown: where the work stands, decisions made, what is still open, and the next step. Name at most 3 links that matter. Do not use tools and do not change the task.`;
@@ -130,55 +143,42 @@ export function TaskDetail({
 }) {
   const tf = useTimeFormat();
   const navigate = useNavigate();
-  const [task, setTask] = useState<Task | null | undefined>(initial);
-  const [bot, setBot] = useState<Bot>();
-  const [bots, setBots] = useState<Bot[]>([]);
-  const [thread, setThread] = useState<Message[]>([]);
+  const qc = useQueryClient();
+  const taskKey = tasksQueries.detail(id).queryKey;
+  // `initial` only paints the first frame; the fresh copy replaces it.
+  const taskQuery = useQuery({ ...tasksQueries.detail(id), placeholderData: initial });
+  const task: Task | null | undefined =
+    taskQuery.isError && !taskQuery.data ? null : taskQuery.data;
+  const setTask = (next: Task | null | undefined) => {
+    if (next) qc.setQueryData<Task>(taskKey, next);
+  };
   const [asking, setAsking] = useState(false);
   const [showAllLinks, setShowAllLinks] = useState(false);
   const fail = (e: unknown) => toast.error(errorMessage(e));
-
-  useEffect(() => {
-    if (!initial) setTask(undefined);
-    tasksApi.get(id).then(setTask, () => setTask(null));
-    // `initial` only paints the first frame; the fresh copy replaces it.
-  }, [id]);
+  const viewerId = authClient.useSession().data?.user.id;
+  // A person a bot asked, who does not own the task, sees it and moves it. The chat behind it is the owner's, so it stays hidden.
+  const guest = !!task && !!viewerId && task.ownerUserId !== viewerId;
 
   const botId = task?.botId;
   // All the bots, for the `@` picker of the reply and the description; the task's own bot shows in the header.
-  useEffect(() => {
-    chatClient.bots().then(
-      (all) => {
-        setBots(all);
-        setBot(botId ? all.find((b) => b.id === botId) : undefined);
-      },
-      () => {},
-    );
-  }, [botId]);
+  const bots = useQuery(chatQueries.bots()).data ?? NO_BOTS;
+  const bot = botId ? bots.find((b) => b.id === botId) : undefined;
 
-  const conversationId = task?.conversationId;
-  const loadThread = useCallback(
-    () =>
-      conversationId
-        ? chatClient.messages(conversationId).then(
-            (all) => setThread(visible(all)),
-            () => {},
-          )
-        : Promise.resolve(),
-    [conversationId],
-  );
-  const last = thread.at(-1);
-  const waitingOnBot = !!last && !pendingAnswer(thread);
-  useEffect(() => {
-    void loadThread();
-    if (!waitingOnBot) return;
-    const timer = setInterval(() => void loadThread(), POLL_MS);
-    return () => clearInterval(timer);
-  }, [loadThread, waitingOnBot]);
+  const conversationId = guest ? undefined : task?.conversationId;
+  const threadQuery = useQuery({
+    ...chatQueries.messages(conversationId ?? ""),
+    enabled: !!conversationId,
+    select: visible,
+    refetchInterval: (q) => (botHasTurn(q.state.data) ? POLL_MS : false),
+  });
+  const thread = threadQuery.data ?? NO_MESSAGES;
+  const waitingOnBot = thread.length > 0 && !pendingAnswer(thread);
+  const loadThread = () =>
+    qc.invalidateQueries({ queryKey: chatQueries.messages(conversationId ?? "").queryKey });
 
   const patch = (change: Change) => {
     const before = task;
-    setTask((t) => (t ? { ...t, ...change } : t));
+    if (task) setTask({ ...task, ...change });
     const request = change.status ? tasksApi.move(id, change.status) : tasksApi.update(id, change);
     request.then(
       (saved) => {
@@ -238,57 +238,98 @@ export function TaskDetail({
             }
           >
             <main className="flex min-w-0 flex-col gap-6">
-              <EditableText
-                key={`title-${task.updatedAt}`}
-                value={task.title}
-                label="Title"
-                maxLength={200}
-                required
-                className={peek ? "text-xl font-medium" : "text-2xl font-medium"}
-                onSave={(title) => patch({ title })}
-              />
-              <EditableText
-                key={`description-${task.updatedAt}`}
-                value={task.description}
-                label="Description"
-                placeholder="Add description…"
-                maxLength={4000}
-                multiline
-                bots={bots}
-                className="text-sm"
-                onSave={(description) => patch({ description })}
-              />
-              <section aria-label="AI Summary" className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={!conversationId || summarizing}
-                    title={conversationId ? undefined : "This task has no thread to summarize."}
-                    onClick={summarize}
+              {guest ? (
+                <>
+                  <h1
+                    className={`break-words ${peek ? "text-xl font-medium" : "text-2xl font-medium"}`}
                   >
-                    <SparkleIcon /> {summarizing ? "Summarizing…" : "AI Summary"}
-                  </Button>
-                  {answer?.status === "complete" && answer.createdAt && (
-                    <time
-                      dateTime={answer.createdAt}
-                      className="text-xs text-muted-foreground"
-                      title={formatDateTime(answer.createdAt, tf)}
-                    >
-                      {ago(answer.createdAt)}
-                    </time>
+                    {task.title}
+                  </h1>
+                  {task.description && (
+                    <div className="text-sm">
+                      <Markdown source={task.description} />
+                    </div>
                   )}
-                </div>
-                {summaryFailed && (
-                  <p className="text-sm text-destructive">The summary failed. Try again.</p>
+                </>
+              ) : (
+                <>
+                  <EditableText
+                    key={`title-${task.updatedAt}`}
+                    value={task.title}
+                    label="Title"
+                    maxLength={200}
+                    required
+                    className={peek ? "text-xl font-medium" : "text-2xl font-medium"}
+                    onSave={(title) => patch({ title })}
+                  />
+                  <EditableText
+                    key={`description-${task.updatedAt}`}
+                    value={task.description}
+                    label="Description"
+                    placeholder="Add description…"
+                    maxLength={4000}
+                    multiline
+                    bots={bots}
+                    className="text-sm"
+                    onSave={(description) => patch({ description })}
+                  />
+                </>
+              )}
+              {task.assignee === "person" &&
+                task.assigneeUserId === viewerId &&
+                task.status !== "done" && (
+                  <section
+                    aria-label="Waiting for you"
+                    className="flex flex-col gap-2 rounded-lg border border-attention/60 bg-attention/5 p-4"
+                  >
+                    <Badge tone="warning">Waiting for you</Badge>
+                    <p className="text-sm">
+                      A bot needs this from you. Mark it as done when it is met. The bot is told
+                      each time you change the status.
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="self-start"
+                      onClick={() => patch({ status: "done" })}
+                    >
+                      Mark as done
+                    </Button>
+                  </section>
                 )}
-                {answer?.status === "complete" && !summarizing && (
-                  <div className="rounded-lg border bg-muted/30 p-4 text-sm">
-                    <Markdown source={answer.content} />
+              {!guest && (
+                <section aria-label="AI Summary" className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!conversationId || summarizing}
+                      title={conversationId ? undefined : "This task has no thread to summarize."}
+                      onClick={summarize}
+                    >
+                      <SparkleIcon /> {summarizing ? "Summarizing…" : "AI Summary"}
+                    </Button>
+                    {answer?.status === "complete" && answer.createdAt && (
+                      <time
+                        dateTime={answer.createdAt}
+                        className="text-xs text-muted-foreground"
+                        title={formatDateTime(answer.createdAt, tf)}
+                      >
+                        {ago(answer.createdAt)}
+                      </time>
+                    )}
                   </div>
-                )}
-              </section>
+                  {summaryFailed && (
+                    <p className="text-sm text-destructive">The summary failed. Try again.</p>
+                  )}
+                  {answer?.status === "complete" && !summarizing && (
+                    <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+                      <Markdown source={answer.content} />
+                    </div>
+                  )}
+                </section>
+              )}
               {pending && (
                 <section
                   aria-label="Waiting for your answer"
@@ -309,28 +350,30 @@ export function TaskDetail({
                   </div>
                 </section>
               )}
-              <section aria-label="Activity" className="flex flex-col gap-3 border-t pt-4">
-                <h2 className="text-sm font-medium">Activity</h2>
-                {!conversationId ? (
-                  <p className="text-sm text-muted-foreground">
-                    This task has no thread. A bot links one when it creates the task from a chat.
-                  </p>
-                ) : rest.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No messages in the thread yet.</p>
-                ) : (
-                  <ol className="flex flex-col gap-3">
-                    {rest.map((m) => (
-                      <ThreadMessage
-                        key={m.id}
-                        message={m}
-                        bot={bot}
-                        pending={m.id === pending?.id}
-                      />
-                    ))}
-                  </ol>
-                )}
-                {conversationId && <ReplyBox bots={bots} onSend={reply} />}
-              </section>
+              {!guest && (
+                <section aria-label="Activity" className="flex flex-col gap-3 border-t pt-4">
+                  <h2 className="text-sm font-medium">Activity</h2>
+                  {!conversationId ? (
+                    <p className="text-sm text-muted-foreground">
+                      This task has no thread. A bot links one when it creates the task from a chat.
+                    </p>
+                  ) : rest.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No messages in the thread yet.</p>
+                  ) : (
+                    <ol className="flex flex-col gap-3">
+                      {rest.map((m) => (
+                        <ThreadMessage
+                          key={m.id}
+                          message={m}
+                          bot={bot}
+                          pending={m.id === pending?.id}
+                        />
+                      ))}
+                    </ol>
+                  )}
+                  {conversationId && <ReplyBox bots={bots} onSend={reply} />}
+                </section>
+              )}
             </main>
             <aside className={`flex flex-col gap-6 text-sm ${peek ? "" : "lg:pt-2"}`}>
               <section aria-label="Properties" className="flex flex-col gap-2">
@@ -348,37 +391,53 @@ export function TaskDetail({
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    aria-label={`Priority: ${priorityLabel(task.priority)}`}
-                    className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-                  >
+                {guest ? (
+                  <p className="inline-flex items-center gap-1.5">
                     <PriorityIcon priority={task.priority} />
                     {priorityLabel(task.priority)}
-                    <CaretDownIcon aria-hidden="true" className="size-3" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-44">
-                    {TASK_PRIORITIES.filter((p) => p.priority !== task.priority).map((p) => (
-                      <DropdownMenuItem
-                        key={p.priority}
-                        onClick={() => patch({ priority: p.priority })}
-                      >
-                        <PriorityIcon priority={p.priority} />
-                        {p.label}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <LabelsEditor
-                  labels={task.labels}
-                  known={knownLabels}
-                  onChange={(labels) => patch({ labels })}
-                />
-                {task.botId && (
+                  </p>
+                ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      aria-label={`Priority: ${priorityLabel(task.priority)}`}
+                      className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                    >
+                      <PriorityIcon priority={task.priority} />
+                      {priorityLabel(task.priority)}
+                      <CaretDownIcon aria-hidden="true" className="size-3" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-44">
+                      {TASK_PRIORITIES.filter((p) => p.priority !== task.priority).map((p) => (
+                        <DropdownMenuItem
+                          key={p.priority}
+                          onClick={() => patch({ priority: p.priority })}
+                        >
+                          <PriorityIcon priority={p.priority} />
+                          {p.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                {!guest && (
+                  <LabelsEditor
+                    labels={task.labels}
+                    known={knownLabels}
+                    onChange={(labels) => patch({ labels })}
+                  />
+                )}
+                {task.assignee === "person" && (
+                  <p className="inline-flex items-center gap-1.5">
+                    <UserCircleIcon aria-hidden className="size-5 text-muted-foreground" />
+                    <span className="text-muted-foreground">Assigned to</span>{" "}
+                    {task.assigneeUserId === viewerId ? "you" : (task.assigneeName ?? "a person")}
+                  </p>
+                )}
+                {task.botId && !guest && (
                   <BotIdentity
                     bot={bot ?? { id: task.botId, name: "Deleted bot" }}
                     size={24}
-                    sub="Assigned bot"
+                    sub={task.assignee === "person" ? "Asked by" : "Assigned bot"}
                   />
                 )}
               </section>
@@ -455,13 +514,15 @@ export function TaskDetail({
                     <ChatIcon aria-hidden="true" className="size-4" /> Open the chat
                   </Link>
                 )}
-                <ConfirmButton
-                  label="Delete"
-                  question="Delete this task for good?"
-                  confirmLabel="Delete"
-                  variant="destructive"
-                  onConfirm={remove}
-                />
+                {!guest && (
+                  <ConfirmButton
+                    label="Delete"
+                    question="Delete this task for good?"
+                    confirmLabel="Delete"
+                    variant="destructive"
+                    onConfirm={remove}
+                  />
+                )}
               </div>
             </aside>
           </div>

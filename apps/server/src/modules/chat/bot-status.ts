@@ -37,11 +37,13 @@ type LiveRun = { botId: string; userId: string; phase: RunPhase; label: string }
  * In-process registry of chat answers that are being written right now, keyed by message id (one bot can answer in several chats).
  * Same lifetime as the turn registry: after a restart nothing runs, and boot recovery already marks the rows `interrupted`.
  */
-export function createLiveBots() {
+export function createLiveBots(onChange?: (userId: string) => void) {
   const runs = new Map<string, LiveRun>();
+  const lastLabelPush = new Map<string, number>();
   return {
     begin(messageId: string, botId: string, userId: string) {
       runs.set(messageId, { botId, userId, phase: "planning", label: "" });
+      onChange?.(userId);
     },
     /** A phase moves forward only: planning to working, never back, so one late "Thinking" does not flip the label. */
     update(messageId: string, change: { phase?: RunPhase; label?: string }) {
@@ -49,9 +51,17 @@ export function createLiveBots() {
       if (!run) return;
       if (change.phase === "working") run.phase = "working";
       if (change.label && change.label !== "Thinking") run.label = change.label;
+      // The label changes with every tool call: tell the page at most every 3 s, so a busy turn does not refetch all statuses each time.
+      const now = Date.now();
+      if (now - (lastLabelPush.get(run.userId) ?? 0) >= 3_000) {
+        lastLabelPush.set(run.userId, now);
+        onChange?.(run.userId);
+      }
     },
     end(messageId: string) {
+      const run = runs.get(messageId);
       runs.delete(messageId);
+      if (run) onChange?.(run.userId);
     },
     /** The most advanced run of this bot for this viewer (working beats planning). */
     of(userId: string, botId: string): LiveRun | undefined {

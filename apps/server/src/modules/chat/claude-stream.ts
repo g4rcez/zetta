@@ -1,6 +1,15 @@
 /** What a run reports while it works, next to the reply text. `activity` is a short line for the chat's status and timeline. */
 export type CliProgress = { activity: string };
 export type ClaudeItem = string | CliProgress;
+/** Token counts of a run, as Claude Code reports them in its `result` event. Counts only: no text. */
+export type TokenUsage = { input: number; cacheRead: number; cacheWrite: number; output: number };
+export const noUsage = (): TokenUsage => ({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 });
+export const addUsage = (to: TokenUsage, u: TokenUsage) => {
+  to.input += u.input;
+  to.cacheRead += u.cacheRead;
+  to.cacheWrite += u.cacheWrite;
+  to.output += u.output;
+};
 
 // A line is an event only when it has one of these types; any other line (even valid JSON) is plain reply text if the run has no result.
 const EVENT_TYPES = new Set(["system", "assistant", "user", "result", "stream_event"]);
@@ -81,7 +90,11 @@ export function createClaudeStream() {
   let answered = false;
   const plain: string[] = [];
   const out: ClaudeItem[] = [];
-  const state = { failed: false, errorText: "", lastActivity: "" };
+  const state: { failed: boolean; errorText: string; lastActivity: string; usage?: TokenUsage } = {
+    failed: false,
+    errorText: "",
+    lastActivity: "",
+  };
 
   const activity = (label: string) => {
     if (!label) return;
@@ -113,6 +126,15 @@ export function createClaudeStream() {
       }
     } else if (ev.type === "result") {
       answered = true;
+      const usage = asObj(ev.usage);
+      const count = (v: unknown) =>
+        typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+      state.usage = {
+        input: count(usage.input_tokens),
+        cacheRead: count(usage.cache_read_input_tokens),
+        cacheWrite: count(usage.cache_creation_input_tokens),
+        output: count(usage.output_tokens),
+      };
       const result = typeof ev.result === "string" ? ev.result : "";
       if (ev.is_error === true || (ev.subtype !== undefined && ev.subtype !== "success")) {
         state.failed = true;

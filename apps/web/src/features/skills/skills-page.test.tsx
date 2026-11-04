@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -167,7 +168,14 @@ const mount = async (initial: Search, isAdmin = false) => {
   const host = win.document.createElement("div");
   win.document.body.append(host);
   const root = createRoot(host as unknown as Element);
-  await act(async () => root.render(<Address />));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <Address />
+      </QueryClientProvider>,
+    ),
+  );
   await settle();
   return { changes, unmount: () => act(async () => root.unmount()) };
 };

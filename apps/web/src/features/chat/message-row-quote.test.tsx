@@ -1,8 +1,15 @@
 import { afterEach, expect, test } from "bun:test";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
 import { setupDom } from "../skills/dom-env";
+
+const withQuery = (element: unknown) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {element as never}
+  </QueryClientProvider>
+);
 
 const win = setupDom();
 Object.assign(globalThis, {
@@ -39,16 +46,18 @@ function mount(props: Record<string, unknown>) {
   roots.push(root);
   act(() =>
     root.render(
-      <MessageRow
-        row={row}
-        author={{ name: "Ana" }}
-        quoteAuthor={{ name: "Helper" }}
-        continued={false}
-        onReact={() => {}}
-        onReply={() => {}}
-        onSaveToWiki={() => {}}
-        {...props}
-      />,
+      withQuery(
+        <MessageRow
+          row={row}
+          author={{ name: "Ana" }}
+          quoteAuthor={{ name: "Helper" }}
+          continued={false}
+          onReact={() => {}}
+          onReply={() => {}}
+          onSaveToWiki={() => {}}
+          {...props}
+        />,
+      ),
     ),
   );
   return host as unknown as HTMLElement;

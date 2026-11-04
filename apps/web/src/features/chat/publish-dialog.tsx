@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Button } from "@/components/ui";
 
 import { ApiError, chatClient, errorMessage, type SnapshotPreview } from "./chat-client";
@@ -15,21 +16,21 @@ export function PublishDialog({
   onClose: () => void;
   onPublished: () => void;
 }) {
-  const [preview, setPreview] = useState<SnapshotPreview>();
-  const [error, setError] = useState<string>();
+  const previewQuery = useQuery({
+    queryKey: ["conversations", conversationId, "snapshot-preview"],
+    queryFn: () => chatClient.previewSnapshot(conversationId),
+    // The preview hash must match what the server has now: never reuse an older one.
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  });
+  const preview: SnapshotPreview | undefined = previewQuery.isFetching
+    ? undefined
+    : previewQuery.data;
+  const [writeError, setError] = useState<string>();
+  const error = writeError ?? (previewQuery.error ? errorMessage(previewQuery.error) : undefined);
   const [note, setNote] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const load = useCallback(() => {
-    setPreview(undefined);
-    chatClient.previewSnapshot(conversationId).then(
-      (p) => {
-        setPreview(p);
-        setError(undefined);
-      },
-      (e) => setError(errorMessage(e)),
-    );
-  }, [conversationId]);
-  useEffect(load, [load]);
   async function confirm() {
     if (!preview || busy) return;
     setBusy(true);
@@ -42,7 +43,7 @@ export function PublishDialog({
         setNote(
           "The conversation changed since you opened this preview. Review the updated text before publishing.",
         );
-        load();
+        void previewQuery.refetch();
       } else setError(errorMessage(e));
     } finally {
       setBusy(false);

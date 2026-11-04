@@ -8,6 +8,7 @@ import {
   AttachmentError,
   DiscussionConversationError,
   BotNameError,
+  FallbackError,
   ModelError,
   NotReadyError,
   OnboardingError,
@@ -30,6 +31,14 @@ export type ChatServices = {
 };
 
 const uuid = z.string().uuid();
+// The /workspaces routes in the chain below are deprecated aliases of the /folders routes, from when folders were called
+// workspaces: same work, old body and response keys. Remove them one release after the rename. (The note lives here because a
+// comment inside the chain makes the formatter re-indent all of it.)
+const newFolderBody = z.strictObject({
+  name: z.string().trim().min(1).max(80),
+  parentId: uuid.optional(),
+});
+const renameFolderBody = z.strictObject({ name: z.string().trim().min(1).max(80) });
 /** Every bot the API returns says whether the caller may change it, so a client that keeps the returned bot (onboarding, settings) stays editable. */
 const editable = <B extends { ownerUserId: string } | undefined>(actor: { userId: string }, b: B) =>
   b && { ...b, canEdit: b.ownerUserId === actor.userId };
@@ -64,11 +73,17 @@ const botInput = z.strictObject({
       "opencode",
       "cursor",
       "hermes",
+      "deepseek",
       "fixture",
       "decision",
     ])
     .optional(),
   model: z.string().max(128).nullable().optional(),
+  fallbackHarness: z
+    .enum(["pi", "codex", "omp", "claude-code", "opencode", "cursor", "hermes", "deepseek"])
+    .nullable()
+    .optional(),
+  fallbackModel: z.string().max(128).nullable().optional(),
   personality: z.string().max(4096).optional(),
   instructions: z.string().max(16384).optional(),
   outputStyle: z.enum(OUTPUT_STYLE_KEYS).optional(),
@@ -81,7 +96,7 @@ const botInput = z.strictObject({
     .array(
       z.strictObject({
         key: z.string().regex(/^[a-z0-9_-]{1,32}$/),
-        provider: z.enum(["anthropic", "openai", "google", "openrouter", "github"]),
+        provider: z.enum(["anthropic", "openai", "google", "openrouter", "deepseek", "github"]),
       }),
     )
     .max(8)
@@ -448,6 +463,12 @@ export function createChatRoutes(
         "MODEL_NOT_ALLOWED",
         "That model isn't available for this harness. Pick one from the list or use the harness default.",
       );
+    if (error instanceof FallbackError)
+      return fail(
+        400,
+        "FALLBACK_INVALID",
+        "The fallback must be a different harness from the main one, with a model that harness offers.",
+      );
     if (error instanceof AttachmentError)
       return fail(
         400,
@@ -553,10 +574,13 @@ export function createChatRoutes(
     .get(
       "/bots",
       guarded(async ({ actor }) => {
-        await chat.ensureChief(actor);
-        return {
-          bots: await chat.listBots(actor).then((rows) => rows.map((b) => editable(actor, b))),
-        };
+        let rows = await chat.listBots(actor);
+        // The list is polled: ask for the chief only when the person has none yet (the first visit).
+        if (!rows.some((b) => b.kind === "chief" && b.ownerUserId === actor.userId)) {
+          await chat.ensureChief(actor);
+          rows = await chat.listBots(actor);
+        }
+        return { bots: rows.map((b) => editable(actor, b)) };
       }),
     )
     .get(
@@ -675,29 +699,39 @@ export function createChatRoutes(
       guarded(async ({ actor }) => ({ harnesses: await chat.harnessReadiness(actor.userId) })),
     )
     .get(
+      "/folders",
+      guarded(async ({ actor }) => ({ folders: await chat.listFolders(actor) })),
+    )
+    .post(
+      "/folders",
+      guarded(async ({ actor, body }) => {
+        const v = parse(newFolderBody, body);
+        return { folder: await chat.createFolder(actor, v.name, v.parentId) };
+      }, 201),
+    )
+    .post(
+      "/bots/:id/folder",
+      guarded(async ({ actor, body, params }) => ({
+        bot: editable(
+          actor,
+          await chat.moveBot(
+            actor,
+            parse(uuid, params.id),
+            parse(z.strictObject({ folderId: uuid.nullable() }), body).folderId,
+          ),
+        ),
+      })),
+    )
+    .get(
       "/workspaces",
-      guarded(async ({ actor }) => ({ workspaces: await chat.listWorkspaces(actor) })),
+      guarded(async ({ actor }) => ({ workspaces: await chat.listFolders(actor) })),
     )
     .post(
       "/workspaces",
-      guarded(
-        async ({ actor, body }) => ({
-          workspace: await chat.createWorkspace(
-            actor,
-            ...(() => {
-              const v = parse(
-                z.strictObject({
-                  name: z.string().trim().min(1).max(80),
-                  parentId: uuid.optional(),
-                }),
-                body,
-              );
-              return [v.name, v.parentId] as const;
-            })(),
-          ),
-        }),
-        201,
-      ),
+      guarded(async ({ actor, body }) => {
+        const v = parse(newFolderBody, body);
+        return { workspace: await chat.createFolder(actor, v.name, v.parentId) };
+      }, 201),
     )
     .post(
       "/bots/:id/workspace",
@@ -738,18 +772,32 @@ export function createChatRoutes(
       })),
     )
     .patch(
-      "/workspaces/:id",
+      "/folders/:id",
       guarded(async ({ actor, body, params }) => ({
-        workspace: await chat.renameWorkspace(
+        folder: await chat.renameFolder(
           actor,
           parse(uuid, params.id),
-          parse(z.strictObject({ name: z.string().trim().min(1).max(80) }), body).name,
+          parse(renameFolderBody, body).name,
+        ),
+      })),
+    )
+    .delete(
+      "/folders/:id",
+      guarded(async ({ actor, params }) => chat.deleteFolder(actor, parse(uuid, params.id))),
+    )
+    .patch(
+      "/workspaces/:id",
+      guarded(async ({ actor, body, params }) => ({
+        workspace: await chat.renameFolder(
+          actor,
+          parse(uuid, params.id),
+          parse(renameFolderBody, body).name,
         ),
       })),
     )
     .delete(
       "/workspaces/:id",
-      guarded(async ({ actor, params }) => chat.deleteWorkspace(actor, parse(uuid, params.id))),
+      guarded(async ({ actor, params }) => chat.deleteFolder(actor, parse(uuid, params.id))),
     )
     .delete(
       "/bots/:id",

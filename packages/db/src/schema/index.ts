@@ -19,4 +19,5 @@ export * from "./installation";
 export * from "./knowledge";
 export * from "./wiki";
 export * from "./preferences";
+export * from "./runtime";
 export * from "./pg-schema";

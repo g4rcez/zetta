@@ -32,8 +32,11 @@ suite("a chat turn that hits a harness failure against compose postgres", () => 
   /** What each start of the CLI does, in order. */
   let starts: ("ok" | HarnessError)[] = [];
   let runs = 0;
-  const cli = async function* () {
+  /** The harness of each start, in order. */
+  let seen: string[] = [];
+  const cli = async function* (input: { harness: string }) {
     runs++;
+    seen.push(input.harness);
     const next = starts.shift() ?? "ok";
     if (next !== "ok") throw next;
     yield "recovered";
@@ -60,9 +63,11 @@ suite("a chat turn that hits a harness failure against compose postgres", () => 
         body: body ? JSON.stringify(body) : undefined,
       }),
     );
-  const conversation = async () => {
+  const conversation = async (extra: Record<string, unknown> = {}) => {
     const bot = (
-      (await (await req("POST", "/api/bots", { name: "RetryBot", harness: "pi" })).json()) as any
+      (await (
+        await req("POST", "/api/bots", { name: "RetryBot", harness: "pi", ...extra })
+      ).json()) as any
     ).bot.id as string;
     return ((await (await req("POST", "/api/conversations", { botId: bot })).json()) as any)
       .conversation.id as string;
@@ -109,5 +114,42 @@ suite("a chat turn that hits a harness failure against compose postgres", () => 
     );
     expect(reply.meta).toMatchObject({ error: "auth_required" });
     expect(runs).toBe(1);
+  });
+
+  test("a bot whose main harness hit its limit answers with its fallback harness", async () => {
+    starts = [new HarnessError("quota"), "ok"];
+    seen = [];
+    const reply = await answer(await conversation({ fallbackHarness: "codex" }));
+    expect(reply).toMatchObject({ status: "complete", content: "recovered" });
+    expect(seen).toEqual(["pi", "codex"]);
+  });
+
+  test("the next turn tries the main harness again", async () => {
+    const c = await conversation({ fallbackHarness: "codex" });
+    starts = [new HarnessError("quota"), "ok", "ok"];
+    seen = [];
+    await answer(c);
+    await (await req("POST", `/api/conversations/${c}/stream`, { content: "again" })).text();
+    expect(seen).toEqual(["pi", "codex", "pi"]);
+  });
+
+  test("a slow or flaky main harness is retried, not replaced by the fallback", async () => {
+    starts = [new HarnessError("failed"), "ok"];
+    seen = [];
+    const reply = await answer(await conversation({ fallbackHarness: "codex" }));
+    expect(reply).toMatchObject({ status: "complete", content: "recovered" });
+    expect(seen).toEqual(["pi", "pi"]);
+  });
+
+  test("when the fallback is blocked too, the reply names the fallback and the error code", async () => {
+    starts = [new HarnessError("auth_required"), new HarnessError("quota")];
+    seen = [];
+    const reply = await answer(await conversation({ fallbackHarness: "codex" }));
+    expect(reply.status).toBe("failed");
+    expect(reply.content).toBe(
+      "codex has reached its usage limit for the signed-in account. Wait for the limit to reset or switch to an API key.",
+    );
+    expect(reply.meta).toMatchObject({ error: "quota" });
+    expect(seen).toEqual(["pi", "codex"]);
   });
 });

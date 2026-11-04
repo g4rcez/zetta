@@ -1,28 +1,21 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui";
 import { call } from "../chat/chat-client";
 import { Badge, list, listItem } from "../shared/ui";
 import { RailSection } from "./rail-section";
 import { useAction } from "./use-action";
-import type { Suggestions } from "./wiki-api";
+import { wikiQueries } from "./wiki-api";
 
 export function SuggestionsPanel() {
-  const [data, setData] = useState<Suggestions>();
-  const load = useCallback(
-    () => call<Suggestions>("/api/wiki-suggestions").then(setData, () => undefined),
-    [],
-  );
-  const { run, feedback } = useAction(load);
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { data } = useQuery(wikiQueries.suggestions());
+  const { run, feedback } = useAction();
   if (!data || (!data.incoming.length && !data.outgoing.length)) return null;
   return (
     <RailSection
       title="Suggestions"
-      label="Wiki suggestions"
+      label="Memory suggestions"
       count={data.incoming.length}
       description="Changes other members suggested for items you shared, and the ones you sent."
     >
@@ -33,7 +26,7 @@ export function SuggestionsPanel() {
               <p>
                 <span className="font-medium">{s.authorName}</span> suggests a change to{" "}
                 <Link
-                  to="/wiki/$slug"
+                  to="/memory/$slug"
                   params={{ slug: s.slug }}
                   className="font-medium hover:underline"
                 >

@@ -1,4 +1,7 @@
+import { queryOptions } from "@tanstack/react-query";
+
 import { call } from "../chat/chat-client";
+import { looksLikeSource } from "./source";
 
 export type SkillSource = "manual" | "github";
 export type Skill = {
@@ -104,3 +107,28 @@ export const toSkillName = (text: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^[^a-z]+|-+$/g, "")
     .slice(0, 63);
+
+/** What the marketplace shows for the text in the address: a repository to browse, or the result of a search. */
+export type MarketAnswer =
+  | { kind: "repo"; repo: MarketRepo }
+  | { kind: "search"; text: string; result: SearchResult };
+
+/** Keys nest under `["skills"]`: `list` is the library, `market` is GitHub. */
+export const skillsQueries = {
+  list: (scope: "mine" | "all") =>
+    queryOptions({ queryKey: ["skills", "list", scope], queryFn: () => skillsApi.list(scope) }),
+  suggestions: () =>
+    queryOptions({
+      queryKey: ["skills", "market", "suggestions"],
+      queryFn: () => skillsApi.suggestions(),
+    }),
+  /** `text` is the submitted text (`q` in the address). */
+  market: (text: string) =>
+    queryOptions({
+      queryKey: ["skills", "market", "source", text],
+      queryFn: async (): Promise<MarketAnswer> =>
+        looksLikeSource(text)
+          ? { kind: "repo", repo: await skillsApi.repo(text) }
+          : { kind: "search", text, result: await skillsApi.search(text) },
+    }),
+};

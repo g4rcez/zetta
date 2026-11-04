@@ -1,4 +1,6 @@
 import { mentionsAsText } from "@zetta/core/mentions";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { pollEvery } from "@/lib/query-policy";
 import { useEffect, useRef, useState } from "react";
 import {
   CircleNotchIcon,
@@ -11,7 +13,8 @@ import {
 import { Button } from "@zetta/ui/components/button";
 import { cn } from "@zetta/ui/lib/utils";
 
-import { errorMessage, loopsOf, setLoop, type GoalLoop } from "./chat-client";
+import { errorMessage, setLoop, type GoalLoop } from "./chat-client";
+import { chatQueries } from "./chat-queries";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatTime } from "@/features/preferences/time-format";
 
@@ -24,45 +27,38 @@ export function useGoalLoop(
   onTick: () => void,
   onChanged: () => void,
 ) {
-  const [all, setAll] = useState<GoalLoop[]>([]);
+  const qc = useQueryClient();
+  const key = chatQueries.loops(conversationId ?? "").queryKey;
+  const query = useQuery({
+    ...chatQueries.loops(conversationId ?? ""),
+    enabled: !!conversationId,
+    // Each new step shows up while a loop is running or paused. A loop that starts elsewhere shows up on the slow poll.
+    refetchInterval: (q) =>
+      pollEvery(
+        3_000,
+        60_000,
+        !!q.state.data?.some((l) => l.status === "running" || l.status === "paused"),
+      ),
+  });
+  const all = (conversationId && query.data) || NONE;
   const handlers = useRef({ onTick, onChanged });
   handlers.current = { onTick, onChanged };
-  const pollNow = useRef<() => void>(() => {});
+  const last = useRef("");
   useEffect(() => {
-    setAll([]);
-    if (!conversationId) return;
-    let stop = false,
-      timer: ReturnType<typeof setTimeout> | undefined,
-      last = "";
-    const poll = async () => {
-      clearTimeout(timer);
-      // Hidden tab: skip the fetch; the visibilitychange listener below polls again as soon as the tab is back.
-      if (document.visibilityState !== "visible") return;
-      const loops = await loopsOf(conversationId).catch(() => undefined);
-      if (stop) return;
-      setAll(loops ?? []);
-      const key = (loops ?? [])
-        .map((l) => `${l.id}:${l.status}:${l.iterations}:${l.updatedAt}`)
-        .join("|");
-      if (last && key !== last) handlers.current.onChanged();
-      last = key;
-      if (loops?.some((l) => l.status === "running")) handlers.current.onTick();
-      const active = Boolean(loops?.some((l) => l.status === "running" || l.status === "paused"));
-      clearTimeout(timer);
-      timer = setTimeout(() => void poll(), active ? 3_000 : 20_000);
-    };
-    const onVisible = () => void poll();
-    pollNow.current = onVisible;
-    document.addEventListener("visibilitychange", onVisible);
-    void poll();
-    return () => {
-      stop = true;
-      clearTimeout(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
+    last.current = "";
   }, [conversationId]);
+  // `dataUpdatedAt` moves on every answer, so a running loop ticks on each poll even when nothing in it changed.
+  useEffect(() => {
+    if (!query.data) return;
+    const seen = query.data
+      .map((l) => `${l.id}:${l.status}:${l.iterations}:${l.updatedAt}`)
+      .join("|");
+    if (last.current && seen !== last.current) handlers.current.onChanged();
+    last.current = seen;
+    if (query.data.some((l) => l.status === "running")) handlers.current.onTick();
+  }, [query.dataUpdatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
   const update = (next: GoalLoop) =>
-    setAll((cur) =>
+    qc.setQueryData<GoalLoop[]>(key, (cur = []) =>
       cur.some((l) => l.id === next.id)
         ? cur.map((l) => (l.id === next.id ? next : l))
         : [next, ...cur],
@@ -73,9 +69,11 @@ export function useGoalLoop(
     loops: all.filter((l) => l.status === "running" || l.status === "paused"),
     update,
     /** Fetch the loops now, without waiting for the next poll (after the room stops its goals). */
-    refresh: () => pollNow.current(),
+    refresh: () => qc.invalidateQueries({ queryKey: key }),
   };
 }
+
+const NONE: GoalLoop[] = [];
 
 const LABEL: Record<GoalLoop["status"], string> = {
   running: "Loop running",

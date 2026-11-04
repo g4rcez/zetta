@@ -1,5 +1,6 @@
 import { createAuth, mcpResource } from "@zetta/auth";
 import { createDb } from "@zetta/db";
+import { sql } from "@zetta/db/query";
 
 import { ENV, desktopOrigins } from "./env.server";
 
@@ -15,6 +16,9 @@ import { createSources } from "./modules/integrations/sources";
 import { createConnectionStore } from "./modules/connections/store";
 import { createConnectionsService, PROVIDERS } from "./modules/connections/service";
 import { createComputerService, dockerBrowserConfig } from "./modules/computer/service";
+import { createMachineRunner } from "./modules/computer/machine-runner";
+import { createMachineService } from "./modules/computer/machines";
+import { vmSecretsFrom } from "./modules/computer/vm-secrets";
 import {
   createDbVmStore,
   createVmService,
@@ -57,6 +61,10 @@ import { TurnBusyError } from "./modules/chat/turns";
 import { createFirstAccountSetup, createSetupState } from "./modules/identity/first-account";
 import { matchesConnectionKey } from "./modules/identity/setup-key";
 import { createInstallationService } from "./modules/installation/service";
+import { events } from "./modules/events/bus";
+import { work } from "./modules/events/work";
+import { runsWork } from "./role";
+import { memoizeSession } from "./session-memo";
 import { createInvitationSignupPreflight } from "./modules/identity/signup-preflight";
 
 // `bun --hot` re-runs this module on every edit: keep one connection pool per process instead of leaking a new one (100 connections
@@ -93,10 +101,17 @@ if (setupKey === ENV.ZETTA_CONNECTION_KEY)
   console.warn(
     "ZETTA_SETUP_KEY is not set: first-run onboarding asks for ZETTA_CONNECTION_KEY. Set ZETTA_SETUP_KEY to a separate value.",
   );
-export const auth = createAuth(ENV, db, trustedExtraOrigins, {
-  invitationSignupVerifier: createInvitationSignupPreflight(db),
-  firstAccount: createFirstAccountSetup(db, setupKey),
-});
+/** For `GET /readyz`: the database answers. */
+export const databaseReady = async () => {
+  await db.execute(sql`select 1`);
+  return true;
+};
+export const auth = memoizeSession(
+  createAuth(ENV, db, trustedExtraOrigins, {
+    invitationSignupVerifier: createInvitationSignupPreflight(db),
+    firstAccount: createFirstAccountSetup(db, setupKey),
+  }),
+);
 const membershipLookup = createMembershipLookup(db);
 export const identity = {
   access: createIdentityAccess(auth, membershipLookup),
@@ -104,6 +119,7 @@ export const identity = {
   setupOpen: createSetupState(db),
   verifySetupKey: (key: string) => matchesConnectionKey(key, setupKey),
 };
+export const eventServices = { access: identity.access, bus: events };
 export const installationServices = {
   access: identity.access,
   installation,
@@ -115,27 +131,34 @@ import { createFileStore } from "./modules/chat/files";
 // Authorized server files live under ZETTA_FILES_ROOT (me/<userId>/… private, shared/… team-readable).
 const files = createFileStore(process.env.ZETTA_FILES_ROOT ?? `${process.cwd()}/.zetta-files`);
 const decisions = createDecisionService();
-// Laya is a builtin plugin, off by default: the installation setting decides. ZETTA_LAYA_PRELOAD=0 loads it on first use instead of at boot.
+// Laya is a builtin plugin, on by default: the installation setting decides (an administrator can turn it off). The first boot downloads the weights.
+// ZETTA_LAYA_PRELOAD=0 loads it on first use instead of at boot.
 decisions.setMode(installed.laya, {
-  preload: process.env.ZETTA_LAYA_PRELOAD !== "0",
+  preload: runsWork && process.env.ZETTA_LAYA_PRELOAD !== "0",
   variant: layaModelFor(installed.layaLanguages),
 });
 // Persistent per-user VMs (docker/desktop image): enable with ZETTA_DESKTOP_RUNTIME=docker.
 const vmDocker = dockerVmConfig();
 const num = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
-const vms = vmDocker
-  ? createVmService({
-      store: createDbVmStore(db),
-      docker: vmDocker,
-      tokenRoot: process.env.ZETTA_VM_TOKEN_ROOT ?? `${process.cwd()}/.zetta-vm`,
-      maxPerUser: num(process.env.ZETTA_VM_MAX_PER_USER),
-      maxRunningPerUser: num(process.env.ZETTA_VM_MAX_RUNNING_PER_USER),
-      maxRunning: num(process.env.ZETTA_VM_MAX_RUNNING),
-      allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
-      vmDrivers: vmDriversFrom(process.env.ZETTA_VM_DRIVERS),
-      vmOs: vmOsFrom(process.env.ZETTA_VM_OS),
-    })
-  : undefined;
+// An `api` process has no VMs: the worker owns them and the load balancer sends every /api/computer request there.
+const vms =
+  vmDocker && runsWork
+    ? createVmService({
+        store: createDbVmStore(db),
+        docker: vmDocker,
+        tokenRoot: process.env.ZETTA_VM_TOKEN_ROOT ?? `${process.cwd()}/.zetta-vm`,
+        maxPerUser: num(process.env.ZETTA_VM_MAX_PER_USER),
+        maxRunningPerUser: num(process.env.ZETTA_VM_MAX_RUNNING_PER_USER),
+        maxRunning: num(process.env.ZETTA_VM_MAX_RUNNING),
+        allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+        vmDrivers: vmDriversFrom(process.env.ZETTA_VM_DRIVERS),
+        vmOs: vmOsFrom(process.env.ZETTA_VM_OS),
+        secrets: vmSecretsFrom(
+          () => connections,
+          (userId) => issueBackgroundActor(membershipLookup, userId),
+        ),
+      })
+    : undefined;
 // `bun --hot` re-runs this module: the previous instance lets go of its VMs (the new one reattaches on next use) instead of keeping a
 // second idle reaper and stale connections around.
 const hot = globalThis as { zettaVms?: { detach(): void } };
@@ -171,6 +194,13 @@ for (let attempt = 1; !connectionStore && attempt <= 5; attempt++) {
   }
 }
 const connections = createConnectionsService(db, connectionStore);
+// Machines (ssh, sftp, ftp) a bot reaches through the server. Secrets live in `connections`; this needs no state of its own.
+const machines = createMachineService({
+  db,
+  connections,
+  runner: createMachineRunner(),
+  allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+});
 export const connectionServices = { access: identity.access, connections };
 // Administrator opt-in: lets MCP servers and the WhatsApp (WAHA) plugin reach private/localhost addresses (e.g. a WAHA container). Off by default.
 const mcp = createMcp(db, connections, {
@@ -229,7 +259,13 @@ const turnRunner = createTurnRunner(
 );
 // Bots learn from finished work and the chief reviews the wiki, through the same turn runner as the chat.
 const wikiJobs = createWikiJobs(db, { wiki, run: turnRunner, lookup: membershipLookup });
+const agendaScheduler = createAgendaScheduler(db, mcp.plugins, membershipLookup);
 const skillsLibrary = createSkills(db);
+const outputStyles = createOutputStyles(db);
+const botClaude = createBotClaude(db);
+const preferences = createPreferenceStore(db);
+// The incoming-message service needs the chat service, which needs it back for its chief tools: a late-bound reference.
+const inboundRef: { current?: ReturnType<typeof createInbound> } = {};
 const skillsMarket = createMarket();
 export const chatServices = {
   access: identity.access,
@@ -256,6 +292,15 @@ export const chatServices = {
       wiki,
       skills: { skills: skillsLibrary, market: skillsMarket },
       teams: teamStore,
+      outputStyles,
+      features,
+      botClaude,
+      machines,
+      preferences,
+      sources: sources as never,
+      knowledge: companyKnowledge,
+      agendaScheduler,
+      inbound: () => inboundRef.current,
       backgroundActor: (userId) => issueBackgroundActor(membershipLookup, userId),
     },
   ),
@@ -374,7 +419,11 @@ const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKe
     }
   }
 });
-loops.onStart = loopDriver.kick;
+// A kick reaches the worker even when the request ran on an `api` process (over Postgres NOTIFY, see modules/events).
+loops.onStart = (id) => work.kick("loop", id);
+if (runsWork) work.on("loop", (id) => id && loopDriver.kick(id));
+// A person moved, or deleted, a task a bot asked for: tell the bot with a turn in its chat. Best effort, after the change is saved.
+tasks.onPersonTask = (e) => void chatServices.chat.notifyTask(e).catch(() => {});
 /** Boot: continue the Claude Code runs a restart cut off, in their own sessions. A conversation with an active goal loop is left to the loop driver. */
 export async function resumeInterruptedRuns() {
   for (const r of chatServices.chat.takeResumable()) {
@@ -410,7 +459,8 @@ const discussionWorker = createDiscussionWorker(
   chatServices.chat,
   membershipLookup,
 );
-discussions.onEnqueue = discussionWorker.kick;
+discussions.onEnqueue = () => work.kick("discussions");
+if (runsWork) work.on("discussions", () => discussionWorker.kick());
 export const discussionServices = {
   access: identity.access,
   store: discussions,
@@ -418,19 +468,20 @@ export const discussionServices = {
   chat: chatServices.chat,
 };
 export const botDatabaseServices = { access: identity.access, db, database: botDatabase };
-export const botClaudeServices = { access: identity.access, db, claude: createBotClaude(db) };
+export const botClaudeServices = { access: identity.access, db, claude: botClaude };
 export const inboundServices = {
   access: identity.access,
   inbound: createInbound(db, mcp.plugins, chatServices.chat, membershipLookup),
 };
+inboundRef.current = inboundServices.inbound;
 export const featureServices = { access: identity.access, features };
 export const decisionServices = { access: identity.access, decisions };
-export const computerServices = { access: identity.access, computer, vms };
+export const computerServices = { access: identity.access, computer, vms, machines };
 export const integrationServices = { access: identity.access, mcp, sources };
 export const taskServices = { access: identity.access, tasks };
 export const preferenceServices = {
   access: identity.access,
-  preferences: createPreferenceStore(db),
+  preferences,
 };
 export const knowledgeServices = { access: identity.access, knowledge: companyKnowledge };
 export const wikiServices = {
@@ -443,7 +494,7 @@ export const wikiServices = {
 export const searchServices = { access: identity.access, search: createSearch(db) };
 export const artifactServices = { access: identity.access, artifacts };
 export const teamServices = { access: identity.access, store: teamStore };
-export const outputStyleServices = { access: identity.access, styles: createOutputStyles(db) };
+export const outputStyleServices = { access: identity.access, styles: outputStyles };
 export const skillServices = {
   access: identity.access,
   db,
@@ -466,5 +517,5 @@ export const zettaMcpServices = {
 export const agendaServices = {
   access: identity.access,
   agenda,
-  scheduler: createAgendaScheduler(db, mcp.plugins, membershipLookup),
+  scheduler: agendaScheduler,
 };

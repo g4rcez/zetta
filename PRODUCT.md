@@ -29,10 +29,10 @@ Self-hosted, one admin per installation. The server runs six harnesses (Pi, Code
 - The chief is named "Zetta" by default, so the app and the bot people talk to share one name; the user can rename it. "Chief" stays the name of the role.
 - Chat-first shell: one sidebar with the chief first and the other bots in the order each user sets (drag or keyboard, saved per user); each bot lists its own chats. See docs/intent/redesign.md.
 - Attention model shared by sidebar, activity and task kanban: working/queued, needs input, blocked, new results; kept separate from execution status.
-- Routines, agenda, studio, computer (VM) use, workspaces as visual teams of bots.
+- Routines, agenda, studio, computer (VM) use, folders as visual teams of bots.
 - Bots are team-visible by default, may be private; sharing a bot never shares conversations, credentials, files or memories.
 - In-app notifications only for now; no external push/email.
-- Vocabulary: chief, bots, workspaces, routines, attention.
+- Vocabulary: chief, bots, folders, routines, attention.
 - Web navigation must use TanStack Router links (see CLAUDE.md).
 
 ## Brand Commitments

@@ -1,9 +1,11 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -125,6 +127,8 @@ export const routineRun = zetta.table(
     retryAt: timestamp("retry_at", { withTimezone: true }),
     /** When the owner opened the run's chat. Null = pending (running) or not seen yet: it counts in the Routines badge. */
     readAt: timestamp("read_at", { withTimezone: true }),
+    /** The server instance running this row (see server_instance). Recovery leaves the rows of a live instance alone. */
+    ownerInstance: uuid("owner_instance"),
   },
   (t) => [
     index("routine_run_unread_idx")
@@ -230,6 +234,8 @@ export const workflowRun = zetta.table(
     requestKey: text("request_key"),
     createdAt: created(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /** The server instance running this row (see server_instance). Recovery leaves the rows of a live instance alone. */
+    ownerInstance: uuid("owner_instance"),
   },
   (t) => [
     index("workflow_run_owner_user_id_idx").on(t.ownerUserId),
@@ -330,6 +336,7 @@ export const configProposal = zetta.table(
         "bot_permission",
         "create_wiki_page",
         "install_skills",
+        "chief_action",
       ],
     })
       .default("config")
@@ -464,7 +471,7 @@ export const browserProfile = zetta.table(
 
 /** Persistent Linux desktops ("VMs"): one default per user, plus extras a bot proposed and the user approved. Home lives on volume `zetta-vm-<id>`. */
 /** Where a computer runs: a container ("vm") or the desktop of the machine that runs the server ("local"). */
-export const computerTargets = ["vm", "local"] as const;
+export const computerTargets = ["vm", "local", "cua"] as const;
 /** The automation tool that drives it. */
 export const computerDrivers = ["cua", "agent-desktop"] as const;
 /** The system a container computer runs. Only what can run in a container is stored; Windows and macOS are offered in the list but not creatable. */
@@ -489,8 +496,18 @@ export const computerVm = zetta.table(
     createdAt: created(),
     lastStartedAt: timestamp("last_started_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    /** The server instance running this row (see server_instance). Recovery leaves the rows of a live instance alone. */
+    ownerInstance: uuid("owner_instance"),
+    /** Target "cua": the https address of a machine that already runs cua-spacesd. The bearer token is a sealed `connection`, never a column. */
+    endpoint: text("endpoint"),
+    connectionId: uuid("connection_id").references(() => connection.id, restrict),
   },
   (t) => [
+    check(
+      "computer_vm_cua_check",
+      sql`(${t.target} = 'cua') = (${t.endpoint} is not null and ${t.connectionId} is not null)`,
+    ),
+    index("computer_vm_connection_id_idx").on(t.connectionId),
     index("computer_vm_created_by_bot_id_idx").on(t.createdByBotId),
     index("computer_vm_owner_idx").on(t.ownerUserId, t.status),
     uniqueIndex("computer_vm_default_unique")
@@ -500,6 +517,58 @@ export const computerVm = zetta.table(
     uniqueIndex("computer_vm_local_unique")
       .on(t.ownerUserId)
       .where(sql`${t.target} = 'local' and ${t.status} <> 'deleted'`),
+  ],
+);
+
+export const machineKinds = ["ssh", "sftp", "ftp"] as const;
+/** A remote machine a bot reaches through the server (never from the bot's own shell). The key, password or token is a sealed `connection`; this row holds no secret. */
+export const machine = zetta.table(
+  "machine",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    ownerUserId: owner(),
+    name: text("name").notNull(),
+    kind: text("kind", { enum: machineKinds }).notNull(),
+    host: text("host").notNull(),
+    port: integer("port").notNull(),
+    username: text("username").notNull(),
+    /** ssh and sftp: the pinned host key, `<type> <base64>` as `ssh-keyscan` prints it. A different key later fails the call. */
+    hostKey: text("host_key"),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => connection.id, restrict),
+    createdAt: created(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    check("machine_port_check", sql`${t.port} between 1 and 65535`),
+    check("machine_host_key_check", sql`${t.kind} = 'ftp' or ${t.hostKey} is not null`),
+    index("machine_connection_id_idx").on(t.connectionId),
+    uniqueIndex("machine_owner_name_unique")
+      .on(t.ownerUserId, t.name)
+      .where(sql`${t.deletedAt} is null`),
+  ],
+);
+
+/** Which bots may use a machine. A machine nobody is listed for is used by no bot. A row goes when the machine or the bot does. */
+export const machineBot = zetta.table(
+  "machine_bot",
+  {
+    machineId: uuid("machine_id")
+      .notNull()
+      .references(() => machine.id, { onDelete: "cascade", onUpdate: "restrict" }),
+    botId: uuid("bot_id")
+      .notNull()
+      .references(() => bot.id, { onDelete: "cascade", onUpdate: "restrict" }),
+    ownerUserId: owner(),
+    createdAt: created(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.machineId, t.botId] }),
+    index("machine_bot_bot_id_idx").on(t.botId),
+    index("machine_bot_owner_idx").on(t.ownerUserId),
   ],
 );
 
@@ -538,9 +607,20 @@ export const auditEvent = zetta.table(
     botId: uuid("bot_id"),
     subjectId: text("subject_id"),
     detail: text("detail"),
+    // Token counts of a harness run (all its processes added up). Null when the harness does not report them.
+    inputTokens: integer("input_tokens"),
+    cacheReadTokens: integer("cache_read_tokens"),
+    cacheWriteTokens: integer("cache_write_tokens"),
+    outputTokens: integer("output_tokens"),
     createdAt: created(),
   },
-  (t) => [index("audit_owner_idx").on(t.ownerUserId, t.createdAt)],
+  (t) => [
+    index("audit_owner_idx").on(t.ownerUserId, t.createdAt),
+    // The last harness run of each bot (bot status): without it the query reads the owner's whole audit history.
+    index("audit_harness_run_last_idx")
+      .on(t.ownerUserId, t.botId, t.createdAt.desc())
+      .where(sql`${t.kind} = 'harness_run'`),
+  ],
 );
 
 /** User-owned MCP servers (http, or allowlisted local stdio commands). Secrets never live here: an optional connection id references the sealed store. */

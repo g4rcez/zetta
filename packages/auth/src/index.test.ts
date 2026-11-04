@@ -112,6 +112,16 @@ test("createAuthOptions preserves the legacy config and existing createAuth invo
   expect(legacy.plugins.map((plugin) => plugin.id)).toEqual(["jwt", "oauth-provider", "cimd"]);
   expect(legacy.advanced.ipAddress.ipAddressHeaders).toEqual(["x-zetta-client-ip"]);
   expect(legacy.rateLimit.customRules["/sign-in/email"]).toEqual({ window: 900, max: 20 });
+  // Memory counters by default; the database when several servers share the limit.
+  expect("storage" in legacy.rateLimit).toBe(false);
+  process.env.ZETTA_AUTH_RATE_LIMIT_STORAGE = "database";
+  try {
+    const shared = createAuthOptions(env, database);
+    expect(shared.rateLimit).toMatchObject({ storage: "database", modelName: "rateLimit" });
+    expect(shared.rateLimit.customRules["/sign-in/email"]).toEqual({ window: 900, max: 20 });
+  } finally {
+    delete process.env.ZETTA_AUTH_RATE_LIMIT_STORAGE;
+  }
   expect(createAuthOptions(env, database, desktopOrigins).trustedOrigins).toEqual([
     env.CORS_ORIGIN,
     ...desktopOrigins,
@@ -266,7 +276,8 @@ test("installed Better Auth 1.7.7 is eager; createAuth delegates exact config wi
     "return betterAuth(createAuthOptions(env, database, desktopOrigins, options));",
   );
   expect(source).toContain('import * as schema from "@zetta/db/schema/auth"');
-  expect(source).toContain('provider: "pg",\n      transaction: true,\n      schema,');
+  expect(source).toContain('provider: "pg",\n      transaction: true,');
+  expect(source).toContain("schema: { ...schema, rateLimit },");
   expect(source).toContain(
     "before: createInvitationSignupPolicy(options?.invitationSignupVerifier, options?.firstAccount)",
   );

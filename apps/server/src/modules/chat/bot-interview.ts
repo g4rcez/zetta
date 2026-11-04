@@ -16,6 +16,7 @@ export const interviewInput = z.strictObject({
     "opencode",
     "cursor",
     "hermes",
+    "deepseek",
     "fixture",
     "decision",
   ]),

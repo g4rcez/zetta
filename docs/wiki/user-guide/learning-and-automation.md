@@ -14,7 +14,7 @@
 | Run stable work at known times             | Routine                               | Prepare the briefing each weekday.                                                      |
 | Choose different steps based on conditions | Visual workflow                       | Summarize available sources; take a different branch when required sources are missing. |
 
-A workflow describes the steps and conditions. A routine describes when a task or published workflow runs. Neither is a visual workspace, which only groups bots.
+A workflow describes the steps and conditions. A routine describes when a task or published workflow runs. Neither is a visual folder, which only groups bots.
 
 ## Correct a mistake
 

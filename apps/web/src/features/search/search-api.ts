@@ -1,3 +1,5 @@
+import { queryOptions } from "@tanstack/react-query";
+
 import { call } from "../chat/chat-client";
 
 export type SearchKind = "conversation" | "message" | "wiki" | "artifact" | "task";
@@ -15,7 +17,7 @@ export type SearchHit = {
 export const KIND_LABEL: Record<SearchKind, string> = {
   conversation: "Chat",
   message: "Message",
-  wiki: "Wiki",
+  wiki: "Memory",
   artifact: "Artifact",
   task: "Task",
 };
@@ -48,6 +50,12 @@ export function hitTarget(h: SearchHit): {
       return { to: "/artifacts/$artifactId", params: { artifactId: h.id } };
     case "wiki":
       // The id of a wiki hit is its slug.
-      return { to: "/wiki/$slug", params: { slug: h.id } };
+      return { to: "/memory/$slug", params: { slug: h.id } };
   }
 }
+
+/** The key holds the submitted text and the limit: the same search from two places is one request. */
+export const searchQueries = {
+  hits: (q: string, limit = 20) =>
+    queryOptions({ queryKey: ["search", q, limit], queryFn: () => searchApi.search(q, limit) }),
+};

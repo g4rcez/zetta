@@ -38,7 +38,10 @@ export class ComputerError extends Error {
       | "DISCONNECTED"
       | "SLOW"
       | "NO_ELEMENT"
-      | "UNSUPPORTED",
+      | "UNSUPPORTED"
+      | "HOST_KEY_CHANGED"
+      | "AUTH_FAILED"
+      | "UNREACHABLE",
   ) {
     super(code);
   }

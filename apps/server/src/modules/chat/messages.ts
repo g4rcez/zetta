@@ -3,6 +3,8 @@ import { and, eq, sql } from "@zetta/db/query";
 import { conversation, message } from "@zetta/db/schema/chat";
 import { discussion, discussionMember } from "@zetta/db/schema/discussions";
 import { normalizeMentionText } from "./mention-text";
+import { topics } from "@zetta/core/live-topics";
+import { events } from "../events/bus";
 
 type Insert = typeof message.$inferInsert;
 const code = (e: unknown) =>
@@ -69,6 +71,7 @@ export async function insertMessage(
   for (let attempt = 0; ; attempt++) {
     try {
       const [row] = nest ? await nest((savepoint) => write(savepoint)) : await write(db);
+      events.publish([values.ownerUserId], topics.conversation(conversationId));
       return row!;
     } catch (e) {
       if (code(e) !== "23505" || attempt >= 6) throw e;

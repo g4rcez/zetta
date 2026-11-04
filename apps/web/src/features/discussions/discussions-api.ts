@@ -1,3 +1,5 @@
+import { queryOptions } from "@tanstack/react-query";
+
 import { call } from "../chat/chat-client";
 
 export type DiscussionStatus = "open" | "paused" | "stalled" | "resolved" | "cancelled";
@@ -173,4 +175,19 @@ export const STATUS_LABEL: Record<DiscussionStatus, string> = {
   stalled: "Needs you",
   resolved: "Resolved",
   cancelled: "Cancelled",
+};
+
+/** Reads as cache entries: `["discussions"]` is the prefix of every room read, so one invalidation refreshes list and detail. */
+export const discussionsQueries = {
+  list: () =>
+    queryOptions({ queryKey: ["discussions", "list"], queryFn: () => discussionsApi.list() }),
+  running: () =>
+    queryOptions({ queryKey: ["discussions", "running"], queryFn: () => discussionsApi.running() }),
+  detail: (id: string) =>
+    queryOptions({ queryKey: ["discussions", id], queryFn: () => discussionsApi.get(id) }),
+  steps: (id: string) =>
+    queryOptions({
+      queryKey: ["discussions", id, "steps"],
+      queryFn: () => discussionsApi.steps(id),
+    }),
 };

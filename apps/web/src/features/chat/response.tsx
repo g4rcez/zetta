@@ -16,6 +16,8 @@ import { rehypeGithubRefs } from "./github-refs";
 import { rehypeMentionLinks } from "./mention-tags";
 import { tagPatches } from "./code-fence";
 import { codePlugins } from "./highlighted-code";
+import { FormCard } from "./form-card";
+import { parseFormCard } from "./form-card-data";
 import { InboundCard } from "./inbound-card";
 import { parseInboundCard } from "./inbound-card-data";
 import { SetupCard } from "./setup-card";
@@ -87,13 +89,13 @@ function WikiRef({ info, ...props }: { info: WikiLinkInfo; children?: ReactNode 
   const hit = info(slug);
   const prefix = relation === "related" ? "" : `${RELATION[relation]} `;
   return hit ? (
-    <Link to="/wiki/$slug" params={{ slug }} className={WIKI_LINK}>
+    <Link to="/memory/$slug" params={{ slug }} className={WIKI_LINK}>
       {prefix}
       {hit.title}
     </Link>
   ) : (
     <Link
-      to="/wiki"
+      to="/memory"
       search={{ create: slug } as never}
       className="rounded-md px-1 text-muted-foreground underline decoration-dotted"
     >
@@ -166,7 +168,7 @@ const Markdown = memo(function Markdown({
  * Message body. Markdown goes through Streamdown, which tolerates half-written syntax while a reply streams; fenced `zetta:ui`
  * blocks are drawn by json-render from the shared catalog (a block that never validates is shown as the code it is).
  */
-const CARD = /```zetta:(whatsapp|setup-card|inbound-card)\s*\n([\s\S]*?)```/g;
+const CARD = /```zetta:(whatsapp|setup-card|inbound-card|form-card)\s*\n([\s\S]*?)```/g;
 
 export const Response = memo(function Response({
   text: raw,
@@ -184,7 +186,7 @@ export const Response = memo(function Response({
   wikiLinks?: WikiLinkInfo | undefined;
 }) {
   const text = streaming ? stripToolFences(raw) : raw;
-  const whatsapp = !streaming && /```zetta:(whatsapp|setup-card|inbound-card)/.test(text);
+  const whatsapp = !streaming && /```zetta:(whatsapp|setup-card|inbound-card|form-card)/.test(text);
   // Hooks stay above the early return (a reply can flip to the WhatsApp view when it settles). A reply with no ui fence skips the parse on every chunk.
   const segments = useMemo(
     () => (whatsapp || !text.includes("```" + UI_FENCE) ? [] : splitReply(text, streaming)),
@@ -196,6 +198,7 @@ export const Response = memo(function Response({
       wa?: ReturnType<typeof parseWhatsapp>;
       setup?: ReturnType<typeof parseSetupCard>;
       inbound?: ReturnType<typeof parseInboundCard>;
+      form?: ReturnType<typeof parseFormCard>;
       raw?: string;
     }[] = [];
     let last = 0;
@@ -206,7 +209,9 @@ export const Response = memo(function Response({
           ? { setup: parseSetupCard(m[2]!), raw: m[2]! }
           : m[1] === "inbound-card"
             ? { inbound: parseInboundCard(m[2]!), raw: m[2]! }
-            : { wa: parseWhatsapp(m[2]!), raw: m[2]! },
+            : m[1] === "form-card"
+              ? { form: parseFormCard(m[2]!), raw: m[2]! }
+              : { wa: parseWhatsapp(m[2]!), raw: m[2]! },
       );
       last = m.index! + m[0].length;
     }
@@ -222,6 +227,8 @@ export const Response = memo(function Response({
             <SetupCard key={i} data={p.setup} />
           ) : p.inbound ? (
             <InboundCard key={i} data={p.inbound} />
+          ) : p.form ? (
+            <FormCard key={i} data={p.form} />
           ) : p.wa ? (
             <WhatsappView key={i} data={p.wa} />
           ) : (

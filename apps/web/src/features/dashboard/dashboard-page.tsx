@@ -11,20 +11,23 @@ import {
 } from "@phosphor-icons/react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { uuidv7 } from "@zetta/core/uuid";
-import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Logo } from "@/components/logo";
 import { authClient } from "@/lib/auth-client";
 import { useAttentionSummary, useRunningDiscussions } from "../attention/summary";
 import { chatClient, errorMessage, type Proposal } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { Composer, type Outgoing } from "../chat/composer";
 import { useSidebarData } from "../chat/sidebar-data";
 import { useDraft } from "../chat/use-draft";
 import { relativeTime } from "../studio/routine-format";
-import { tasksApi } from "../tasks/tasks-api";
+import { tasksQueries } from "../tasks/tasks-api";
 import { greeting } from "./greeting";
 
+const NO_PROPOSALS: Proposal[] = [];
 const EXAMPLES_KEY = "zetta:home-examples";
 const EXAMPLES: { icon: Icon; title: string; hint: string; prompt: string }[] = [
   {
@@ -65,22 +68,13 @@ export function DashboardPage() {
   const draft = useDraft(chief ? `home:${chief.id}` : undefined);
   const [sending, setSending] = useState(false);
   const [showExamples, setShowExamples] = useState(() => !examplesHidden());
-  const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [openTasks, setOpenTasks] = useState<number>();
+  // A failed read leaves the stat out; the page still works.
+  const proposals = useQuery(chatQueries.proposals()).data ?? NO_PROPOSALS;
+  const tasks = useQuery(tasksQueries.list()).data;
+  const openTasks = tasks?.filter((t) => t.status !== "done").length;
   const composer = useRef<HTMLDivElement>(null);
   const now = Date.now();
   const firstName = session?.user.name?.split(" ")[0];
-
-  useEffect(() => {
-    void chatClient
-      .proposals()
-      .then(setProposals)
-      .catch(() => {});
-    void tasksApi
-      .list()
-      .then((tasks) => setOpenTasks(tasks.filter((t) => t.status !== "done").length))
-      .catch(() => {});
-  }, []);
 
   async function submit({ text, attachmentIds, fileRefs, wikiIds }: Outgoing) {
     if (!chief) return false;

@@ -1,17 +1,10 @@
-import { Outlet, createFileRoute, useChildMatches } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 
-import { WikiExplorer } from "@/features/wiki/explorer";
-import { parseWikiSearch, type WikiSearch } from "@/features/wiki/wiki-filters";
-
+// The wiki is now Memory. Saved links, attention items and old chat messages still point here.
 export const Route = createFileRoute("/_auth/wiki")({
-  head: () => ({ meta: [{ title: "Wiki · zetta" }] }),
-  validateSearch: (search: Record<string, unknown>): WikiSearch => parseWikiSearch(search),
-  component: RouteComponent,
+  beforeLoad: ({ location }) => {
+    if (location.pathname.replace(/\/$/, "") === "/wiki")
+      throw redirect({ to: "/memory", search: location.search as never, replace: true });
+  },
+  component: Outlet,
 });
-
-/** This route is the parent of /wiki/$slug: the explorer shows only when no item page is open. */
-function RouteComponent() {
-  const search = Route.useSearch();
-  const child = useChildMatches();
-  return child.length ? <Outlet /> : <WikiExplorer search={search} />;
-}

@@ -11,6 +11,7 @@ const row = (
   botId: string | null = null,
 ): Saved => ({
   id,
+  ownerInstance: null,
   conversationId: "c",
   ownerUserId: "u",
   seq,

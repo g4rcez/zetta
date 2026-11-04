@@ -188,6 +188,42 @@ suite("chat against compose postgres", () => {
       ).status,
     ).toBe(200);
   });
+  test("a fallback harness must differ from the main one and offer its model", async () => {
+    const { bot } = (await (
+      await call(ids[0]!, "POST", "/api/bots", {
+        name: "Backed up",
+        harness: "claude-code",
+        fallbackHarness: "deepseek",
+      })
+    ).json()) as { bot: { id: string; fallbackHarness: string | null } };
+    expect(bot.fallbackHarness).toBe("deepseek");
+    const patch = (version: number, body: Record<string, unknown>) =>
+      call(ids[0]!, "PATCH", `/api/bots/${bot.id}`, { expectedVersion: version, patch: body });
+    const same = await patch(1, { fallbackHarness: "claude-code" });
+    expect(same.status).toBe(400);
+    expect(((await same.json()) as { error: { code: string } }).error.code).toBe(
+      "FALLBACK_INVALID",
+    );
+    expect((await patch(1, { fallbackHarness: "codex", fallbackModel: "haiku" })).status).toBe(400);
+    const moved = (await (
+      await patch(1, { fallbackHarness: "codex", fallbackModel: "gpt-5" })
+    ).json()) as { bot: { fallbackHarness: string; fallbackModel: string } };
+    expect(moved.bot).toMatchObject({ fallbackHarness: "codex", fallbackModel: "gpt-5" });
+    // Making the fallback the main harness removes the fallback instead of refusing the change.
+    const swapped = (await (await patch(2, { harness: "codex", model: "gpt-5" })).json()) as {
+      bot: { fallbackHarness: string | null; fallbackModel: string | null };
+    };
+    expect(swapped.bot).toMatchObject({ fallbackHarness: null, fallbackModel: null });
+    expect(
+      (
+        await call(ids[0]!, "POST", "/api/bots", {
+          name: "Offline backup",
+          harness: "fixture",
+          fallbackHarness: "fixture",
+        })
+      ).status,
+    ).toBe(400);
+  });
   test("team specialists are visible but only editable by the owner", async () => {
     const created = (await (
       await call(ids[0]!, "POST", "/api/bots", { name: "Reviewer" })
@@ -366,12 +402,12 @@ suite("chat against compose postgres", () => {
     ).conversations;
     expect(left).toEqual([]);
   });
-  test("workspaces only group bots and never change access", async () => {
+  test("folders only group bots and never change access", async () => {
     const w = (
-      (await (await call(ids[0]!, "POST", "/api/workspaces", { name: "Research" })).json()) as {
-        workspace: { id: string };
+      (await (await call(ids[0]!, "POST", "/api/folders", { name: "Research" })).json()) as {
+        folder: { id: string };
       }
-    ).workspace;
+    ).folder;
     const chiefBots = (
       (await (await call(ids[0]!, "GET", "/api/bots")).json()) as {
         bots: { id: string; kind: string }[];
@@ -379,41 +415,73 @@ suite("chat against compose postgres", () => {
     ).bots;
     const chief = chiefBots.find((b) => b.kind === "chief")!;
     expect(
-      (await call(ids[0]!, "POST", `/api/bots/${chief.id}/workspace`, { workspaceId: w.id }))
-        .status,
+      (await call(ids[0]!, "POST", `/api/bots/${chief.id}/folder`, { folderId: w.id })).status,
     ).toBe(200);
     expect(
-      (await call(ids[1]!, "POST", `/api/bots/${chief.id}/workspace`, { workspaceId: null }))
-        .status,
+      (await call(ids[1]!, "POST", `/api/bots/${chief.id}/folder`, { folderId: null })).status,
     ).toBe(404);
     expect(
-      (await call(ids[1]!, "POST", `/api/bots/${chief.id}/workspace`, { workspaceId: w.id }))
-        .status,
+      (await call(ids[1]!, "POST", `/api/bots/${chief.id}/folder`, { folderId: w.id })).status,
     ).toBe(404);
     const after = (
       (await (await call(ids[0]!, "GET", "/api/bots")).json()) as { bots: { kind: string }[] }
     ).bots;
     expect(after.filter((b) => b.kind === "chief")).toHaveLength(1);
     expect(
-      ((await (await call(ids[1]!, "GET", "/api/workspaces")).json()) as { workspaces: unknown[] })
-        .workspaces,
+      ((await (await call(ids[1]!, "GET", "/api/folders")).json()) as { folders: unknown[] })
+        .folders,
     ).toHaveLength(0);
-    // inner groups: parent must be the caller's own workspace
-    const inner = await call(ids[0]!, "POST", "/api/workspaces", {
+    // inner groups: parent must be the caller's own folder
+    const inner = await call(ids[0]!, "POST", "/api/folders", {
       name: "Papers",
       parentId: w.id,
     });
     expect(inner.status).toBe(201);
     expect(
       (
-        (await (await call(ids[0]!, "GET", "/api/workspaces")).json()) as {
-          workspaces: { parentId: string | null; name: string }[];
+        (await (await call(ids[0]!, "GET", "/api/folders")).json()) as {
+          folders: { parentId: string | null; name: string }[];
         }
-      ).workspaces.find((x) => x.name === "Papers")?.parentId,
+      ).folders.find((x) => x.name === "Papers")?.parentId,
     ).toBe(w.id);
     expect(
-      (await call(ids[1]!, "POST", "/api/workspaces", { name: "Sneaky", parentId: w.id })).status,
+      (await call(ids[1]!, "POST", "/api/folders", { name: "Sneaky", parentId: w.id })).status,
     ).toBe(404);
+  });
+  test("the old workspace paths still answer for one release, with the old keys", async () => {
+    const created = await call(ids[0]!, "POST", "/api/workspaces", { name: "Legacy" });
+    expect(created.status).toBe(201);
+    const w = ((await created.json()) as { workspace: { id: string } }).workspace;
+    const chief = (
+      (await (await call(ids[0]!, "GET", "/api/bots")).json()) as {
+        bots: { id: string; kind: string }[];
+      }
+    ).bots.find((b) => b.kind === "chief")!;
+    expect(
+      (await call(ids[0]!, "POST", `/api/bots/${chief.id}/workspace`, { workspaceId: w.id }))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        (await (await call(ids[0]!, "GET", "/api/folders")).json()) as {
+          folders: { id: string; name: string }[];
+        }
+      ).folders.find((f) => f.id === w.id)?.name,
+    ).toBe("Legacy");
+    expect(
+      (
+        (await (await call(ids[0]!, "GET", "/api/workspaces")).json()) as {
+          workspaces: { id: string }[];
+        }
+      ).workspaces.map((f) => f.id),
+    ).toContain(w.id);
+    expect((await call(ids[1]!, "PATCH", `/api/workspaces/${w.id}`, { name: "Hack" })).status).toBe(
+      404,
+    );
+    expect(
+      (await call(ids[0]!, "PATCH", `/api/workspaces/${w.id}`, { name: "Renamed" })).status,
+    ).toBe(200);
+    expect((await call(ids[0]!, "DELETE", `/api/workspaces/${w.id}`)).status).toBe(200);
   });
   test("a new bot is ready at once, also for someone else, and editing it does not lock it", async () => {
     const { bot: b } = (await (
@@ -571,42 +639,42 @@ suite("chat against compose postgres", () => {
     expect((await call(owner, "DELETE", `/api/bots/${chief!.id}`)).status).toBe(404);
     await db.delete(mcpServer).where(eq(mcpServer.id, server!.id));
   });
-  test("workspaces can be renamed and deleted without touching bots, chats or access", async () => {
+  test("folders can be renamed and deleted without touching bots, chats or access", async () => {
     const w = (
-      (await (await call(ids[0]!, "POST", "/api/workspaces", { name: "Temp" })).json()) as {
-        workspace: { id: string };
+      (await (await call(ids[0]!, "POST", "/api/folders", { name: "Temp" })).json()) as {
+        folder: { id: string };
       }
-    ).workspace;
+    ).folder;
     const inner = (
       (await (
-        await call(ids[0]!, "POST", "/api/workspaces", { name: "TempInner", parentId: w.id })
-      ).json()) as { workspace: { id: string } }
-    ).workspace;
+        await call(ids[0]!, "POST", "/api/folders", { name: "TempInner", parentId: w.id })
+      ).json()) as { folder: { id: string } }
+    ).folder;
     const b = (
       (await (await call(ids[0]!, "POST", "/api/bots", { name: "InTemp" })).json()) as {
         bot: { id: string };
       }
     ).bot;
-    await call(ids[0]!, "POST", `/api/bots/${b.id}/workspace`, { workspaceId: w.id });
-    expect((await call(ids[1]!, "PATCH", `/api/workspaces/${w.id}`, { name: "Hack" })).status).toBe(
+    await call(ids[0]!, "POST", `/api/bots/${b.id}/folder`, { folderId: w.id });
+    expect((await call(ids[1]!, "PATCH", `/api/folders/${w.id}`, { name: "Hack" })).status).toBe(
       404,
     );
-    expect(
-      (await call(ids[0]!, "PATCH", `/api/workspaces/${w.id}`, { name: "Renamed" })).status,
-    ).toBe(200);
-    expect((await call(ids[1]!, "DELETE", `/api/workspaces/${w.id}`)).status).toBe(404);
-    expect((await call(ids[0]!, "DELETE", `/api/workspaces/${w.id}`)).status).toBe(200);
+    expect((await call(ids[0]!, "PATCH", `/api/folders/${w.id}`, { name: "Renamed" })).status).toBe(
+      200,
+    );
+    expect((await call(ids[1]!, "DELETE", `/api/folders/${w.id}`)).status).toBe(404);
+    expect((await call(ids[0]!, "DELETE", `/api/folders/${w.id}`)).status).toBe(200);
     const bots = (
       (await (await call(ids[0]!, "GET", "/api/bots")).json()) as {
-        bots: { id: string; workspaceId: string | null }[];
+        bots: { id: string; folderId: string | null }[];
       }
     ).bots;
-    expect(bots.find((x) => x.id === b.id)!.workspaceId).toBeNull(); // moved up, still there
+    expect(bots.find((x) => x.id === b.id)!.folderId).toBeNull(); // moved up, still there
     const spaces = (
-      (await (await call(ids[0]!, "GET", "/api/workspaces")).json()) as {
-        workspaces: { id: string; parentId: string | null }[];
+      (await (await call(ids[0]!, "GET", "/api/folders")).json()) as {
+        folders: { id: string; parentId: string | null }[];
       }
-    ).workspaces;
+    ).folders;
     expect(spaces.find((x) => x.id === inner.id)!.parentId).toBeNull();
     expect(spaces.some((x) => x.id === w.id)).toBe(false);
   });

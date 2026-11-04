@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   CaretDownIcon,
@@ -21,7 +22,16 @@ import {
   XCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@zetta/ui/components/badge";
@@ -37,19 +47,15 @@ import { cn } from "@zetta/ui/lib/utils";
 import { Button, Checkbox, Input, Select } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";
 
-import {
-  chatClient,
-  errorMessage,
-  type Bot,
-  type Message,
-  type Proposal,
-} from "../chat/chat-client";
+import { chatClient, errorMessage, type Bot, type Message } from "../chat/chat-client";
 import { transcriptRows, type Row } from "../chat/chat-rows";
 import type { Outgoing } from "../chat/composer";
 import { DraftComposer, type DraftHandle } from "../chat/draft-composer";
 import { draftKey } from "../chat/use-draft";
 import { LoopBanner, useGoalLoop } from "../chat/loop-banner";
-import { useRooms, useSidebarData } from "../chat/sidebar-data";
+import { pollEvery } from "@/lib/query-policy";
+import { chatQueries } from "../chat/chat-queries";
+import { useRooms, useSidebarData, useTeams } from "../chat/sidebar-data";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Drawer } from "@/components/drawer";
 import { ComputerActivity } from "../computer/computer-activity";
@@ -61,6 +67,7 @@ import type { Author } from "../chat/message-row";
 import { ProposalsPanel } from "../chat/proposals-panel";
 import {
   discussionsApi,
+  discussionsQueries,
   STATUS_LABEL,
   type DiscussionDetail,
   type DiscussionListItem,
@@ -69,9 +76,10 @@ import {
   type RoomTask,
   type RoomTurn,
 } from "./discussions-api";
-import { teamsApi, type Team } from "../teams/teams-api";
+import { teamsApi } from "../teams/teams-api";
 import { roomLabel, roomStatus } from "./rooms";
-import { RoomCanvas } from "./room-canvas";
+// The flow canvas (@xyflow/react) is about 40 kB gzip plus its CSS and only a team room's canvas view draws it.
+const RoomCanvas = lazy(() => import("./room-canvas").then((m) => ({ default: m.RoomCanvas })));
 import { StepsDrawer } from "./steps-drawer";
 import { Alert } from "@g4rcez/components/alert";
 
@@ -94,6 +102,12 @@ const ago = (iso: string) => {
 };
 const closed = (s: DiscussionStatus) => s === "resolved" || s === "cancelled";
 const botOf = (bots: Bot[], id: string) => bots.find((b) => b.id === id) ?? { id };
+
+/** Turns of a room that are running or waiting to run. */
+const turnsOpen = (d: DiscussionDetail | undefined) =>
+  d?.turns.filter((t) => t.status === "running" || t.status === "queued").length ?? 0;
+const NO_MESSAGES: Message[] = [];
+const NO_STEPS: { turns: RoomTurn[]; tasks: RoomTask[] } = { turns: [], tasks: [] };
 
 /** `#` is a room; the Chief's help and permission rooms get their own mark. */
 function KindIcon({ kind, className }: { kind: RoomKind; className?: string }) {
@@ -383,54 +397,63 @@ function RoomView({
 }) {
   const { data: session } = authClient.useSession();
   const navigate = useNavigate();
-  const [detail, setDetail] = useState<DiscussionDetail>();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [briefs, setBriefs] = useState<Proposal[]>([]);
+  const qc = useQueryClient();
   const draft = useRef<DraftHandle | null>(null);
   const [edit, setEdit] = useState<{ title: string; goal: string; context: string }>();
-  const [teams, setTeams] = useState<Team[]>([]);
+  const teams = useTeams();
   const [busy, setBusy] = useState(false);
-  const [room, setRoom] = useState<{ turns: RoomTurn[]; tasks: RoomTask[] }>({
-    turns: [],
-    tasks: [],
-  });
   const [openBot, setOpenBot] = useState<string>();
   const [loopForm, setLoopForm] = useState<{ goal: string; doneWhen: string }>();
   const [teamGoal, setTeamGoal] = useState<string>();
   const [details, setDetails] = useDetailsPanel();
   const fail = useCallback((e: unknown) => toast.error(errorMessage(e)), []);
+  // Detail, messages and proposals are three cache entries that load side by side. They poll together: fast while a turn runs,
+  // slow when the live stream already shows the only running turn (`covered`), which also reloads the room when it settles.
+  const covered = useRef(false);
+  const detailQuery = useQuery({
+    ...discussionsQueries.detail(id),
+    refetchInterval: (q) =>
+      pollEvery(2000, 10_000, turnsOpen(q.state.data) > 0 && !covered.current),
+  });
+  const detail = detailQuery.data;
+  const every = pollEvery(2000, 10_000, turnsOpen(detail) > 0 && !covered.current);
+  const conversationId = detail?.discussion.conversationId;
+  const messagesQuery = useQuery({
+    ...chatQueries.messages(conversationId ?? ""),
+    enabled: !!conversationId,
+    refetchInterval: every,
+  });
+  const messages = (conversationId && messagesQuery.data) || NO_MESSAGES;
+  const proposalsQuery = useQuery({ ...chatQueries.proposals(), refetchInterval: every });
+  // Same panel as a chat: the briefs that gate this discussion and whatever its bots proposed (config changes, and so on).
+  const briefs = useMemo(() => {
+    const memberIds = new Set(detail?.members.map((m) => m.botId));
+    return (proposalsQuery.data ?? []).filter((p) =>
+      p.kind === "discussion_brief" || p.kind === "team_goals"
+        ? p.patch?.discussionId === id
+        : p.kind !== "open_discussion" &&
+          Boolean((p.proposedByBotId ?? p.botId) && memberIds.has((p.proposedByBotId ?? p.botId)!)),
+    );
+  }, [proposalsQuery.data, detail?.members, id]);
+  const stepsQuery = useQuery({
+    ...discussionsQueries.steps(id),
+    enabled: !!detail?.discussion.teamId && view === "canvas",
+    refetchInterval: every,
+  });
+  const room = stepsQuery.data ?? NO_STEPS;
+  const loadError = detailQuery.error ?? messagesQuery.error ?? proposalsQuery.error;
+  useEffect(() => {
+    if (loadError) toast.error(errorMessage(loadError), { id: "room-load" });
+  }, [loadError]);
+  /** Fetches the room again now (after a write, a settled turn or a new proposal) and resolves when it is fresh. */
   const load = useCallback(async () => {
-    try {
-      const d = await discussionsApi.get(id);
-      setDetail(d);
-      if (d.discussion.teamId && view === "canvas") setRoom(await discussionsApi.steps(id));
-      setMessages(await chatClient.messages(d.discussion.conversationId));
-      const memberIds = new Set(d.members.map((m) => m.botId));
-      // Same panel as a chat: the briefs that gate this discussion and whatever its bots proposed (config changes, and so on).
-      setBriefs(
-        (await chatClient.proposals()).filter((p) =>
-          p.kind === "discussion_brief" || p.kind === "team_goals"
-            ? p.patch?.discussionId === id
-            : p.kind !== "open_discussion" &&
-              Boolean(
-                (p.proposedByBotId ?? p.botId) && memberIds.has((p.proposedByBotId ?? p.botId)!),
-              ),
-        ),
-      );
-    } catch (e) {
-      fail(e);
-    }
-  }, [id, view, fail]);
-  useEffect(() => {
-    void load();
-  }, [load]);
-  // The teams a room can move into, and the shared context of its own team.
-  useEffect(() => {
-    teamsApi
-      .list()
-      .then(setTeams)
-      .catch(() => {});
-  }, [id]);
+    await Promise.all([
+      // Exact: the steps of the canvas have their own poll, and refetching them here would repeat their large payload.
+      qc.invalidateQueries({ queryKey: discussionsQueries.detail(id).queryKey, exact: true }),
+      qc.invalidateQueries({ queryKey: ["conversations", conversationId, "messages"] }),
+      qc.invalidateQueries({ queryKey: ["proposals"] }),
+    ]);
+  }, [qc, id, conversationId]);
   // Opening the room closes its "is waiting" card. Once per open, not on each poll; a failure leaves the card as it was.
   useEffect(() => {
     void discussionsApi
@@ -444,16 +467,6 @@ function RoomView({
     () => {},
     () => void load(),
   );
-  const working = detail?.turns.some((t) => t.status === "running" || t.status === "queued");
-  useEffect(() => {
-    const t = setInterval(
-      () => {
-        if (document.visibilityState === "visible") void load();
-      },
-      working ? 2000 : 10_000,
-    );
-    return () => clearInterval(t);
-  }, [working, load]);
 
   const runningTurn = detail?.turns.find((t) => t.status === "running");
   // A team member who does not own the room reads it. The live stream is the owner's, so a member sees new messages by polling.
@@ -468,6 +481,8 @@ function RoomView({
     },
     onProposal: () => void load(),
   });
+  // The stream follows one turn. With two bots answering at once, the other one reaches the page only through the poll.
+  covered.current = !readOnly && liveChat.busy && turnsOpen(detail) <= 1;
   const me: Author = { name: session?.user.name ?? "You", image: session?.user.image };
   const authorOf = useCallback(
     (row: Row): Author => {
@@ -815,14 +830,22 @@ function RoomView({
         )}
         {d.teamId && view === "canvas" ? (
           <>
-            <RoomCanvas
-              bots={bots}
-              members={detail.members}
-              chiefId={d.createdByBotId}
-              turns={room.turns}
-              tasks={room.tasks}
-              onOpen={setOpenBot}
-            />
+            <Suspense
+              fallback={
+                <p role="status" className="p-6 text-sm text-muted-foreground">
+                  Loading…
+                </p>
+              }
+            >
+              <RoomCanvas
+                bots={bots}
+                members={detail.members}
+                chiefId={d.createdByBotId}
+                turns={room.turns}
+                tasks={room.tasks}
+                onOpen={setOpenBot}
+              />
+            </Suspense>
             {openBot && (
               <StepsDrawer
                 bot={
@@ -846,7 +869,7 @@ function RoomView({
               rows={rows}
               bots={bots}
               authorOf={authorOf}
-              busy={Boolean(working) || liveChat.busy}
+              busy={Boolean(turnsOpen(detail) > 0) || liveChat.busy}
               label="Room transcript"
               threads={false}
               actions={{
@@ -856,7 +879,7 @@ function RoomView({
                 onSaveToWiki: (row) =>
                   void chatClient
                     .saveToWiki(d.title, row.content)
-                    .then(() => toast.success("Saved to your wiki."), fail),
+                    .then(() => toast.success("Saved to your memory."), fail),
               }}
               intro={
                 rows.length === 0 ? (
@@ -1147,23 +1170,18 @@ function NewRoom({
   const ready = bots.filter((b) => b.onboarded);
   const [task, setTask] = useState("");
   const [busy, setBusy] = useState(false);
-  const [teams, setTeams] = useState<Team[]>([]);
   const [teamId, setTeamId] = useState("");
   // Ticked bots stay apart from the goal text, so a room can start with members and no goal.
   const [ticked, setTicked] = useState<string[]>([]);
   const mentioned = mentionedBots(task, ready);
   const picked = ready.filter((b) => ticked.includes(b.id) || mentioned.some((m) => m.id === b.id));
-  useEffect(() => {
-    // A team can start a room only with a chief and one more bot.
-    teamsApi
-      .list()
-      .then((all) =>
-        setTeams(
-          all.filter((t) => t.members.length >= 2 && t.members.some((m) => m.kind === "chief")),
-        ),
-      )
-      .catch(() => {});
-  }, []);
+  // A team can start a room only with a chief and one more bot.
+  const allTeams = useTeams();
+  const teams = useMemo(
+    () =>
+      allTeams.filter((t) => t.members.length >= 2 && t.members.some((m) => m.kind === "chief")),
+    [allTeams],
+  );
   async function submit(form: HTMLFormElement) {
     const f = new FormData(form);
     const title = String(f.get("title") ?? "");

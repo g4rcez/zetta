@@ -7,7 +7,9 @@ import {
   PauseIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { pollEvery } from "@/lib/query-policy";
+import { useState } from "react";
 
 import { cn } from "@zetta/ui/lib/utils";
 
@@ -49,28 +51,13 @@ function readOpen() {
 
 /** The routines of the user, refreshed while the sidebar is mounted: often while one runs, slowly otherwise. `undefined` until the first answer. */
 function useRoutineRows() {
-  const [rows, setRows] = useState<Row[]>();
-  const running = rows?.some((r) => statusOf(r) === "running");
-  useEffect(() => {
-    let stopped = false;
-    const load = () =>
-      call<{ routines: Row[] }>("/api/routines?state=active").then(
-        (r) => !stopped && setRows(r.routines),
-        () => !stopped && setRows((x) => x ?? []),
-      );
-    void load();
-    const t = setInterval(
-      () => {
-        if (document.visibilityState === "visible") void load();
-      },
-      running ? 3000 : 15_000,
-    );
-    return () => {
-      stopped = true;
-      clearInterval(t);
-    };
-  }, [running]);
-  return rows;
+  const query = useQuery({
+    queryKey: ["routines", { state: "active" }],
+    queryFn: () => call<{ routines: Row[] }>("/api/routines?state=active").then((r) => r.routines),
+    refetchInterval: (q) =>
+      pollEvery(3000, 15_000, !!q.state.data?.some((r) => statusOf(r) === "running")),
+  });
+  return query.data ?? (query.isError ? [] : undefined);
 }
 
 /** The routine's current status as a mark. Each has a text name; colour never carries it alone. Amber is only for "a person is needed". */

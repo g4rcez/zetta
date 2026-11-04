@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { authClient } from "@/lib/auth-client";
@@ -29,37 +30,37 @@ type Full = {
 
 export function Snapshots({ onError }: { onError: (m: string) => void }) {
   const tf = useTimeFormat();
-  const [rows, reload] = useList<Snap>("/api/snapshots", "snapshots", onError);
-  const [open, setOpen] = useState<{ id: string; snap?: Full; gone?: boolean }>();
-  const [me, setMe] = useState<string>();
-  async function view(id: string) {
-    setOpen({ id });
-    try {
-      const r = await call<{ snapshot: Full }>(`/api/snapshots/${id}`);
-      setOpen({ id, snap: r.snapshot });
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 404) setOpen({ id, gone: true });
-      else {
-        setOpen(undefined);
-        onError(errorMessage(e, "Could not open it."));
-      }
-    }
-  }
+  const qc = useQueryClient();
+  const [rows] = useList<Snap>("/api/snapshots", "snapshots", onError);
+  const [openId, setOpenId] = useState<string>();
+  const { data: session } = authClient.useSession();
+  const me = session?.user.id;
+  const detail = useQuery({
+    queryKey: ["snapshots", openId],
+    queryFn: () => call<{ snapshot: Full }>(`/api/snapshots/${openId}`).then((r) => r.snapshot),
+    enabled: !!openId,
+  });
+  const gone = detail.error instanceof ApiError && detail.error.status === 404;
+  const failed = detail.isError && !gone;
+  useEffect(() => {
+    if (!failed) return;
+    setOpenId(undefined);
+    onError(errorMessage(detail.error, "Could not open it."));
+    // Only a new failure matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.error]);
+  const open = openId ? { id: openId, snap: detail.data, gone } : undefined;
   async function revoke(id: string) {
     try {
       await call(`/api/snapshots/${id}`, "DELETE");
-      await view(id);
-      await reload();
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["snapshots", id] }),
+        qc.invalidateQueries({ queryKey: ["list", "/api/snapshots"] }),
+      ]);
     } catch (e) {
       onError(errorMessage(e));
     }
   }
-  useEffect(() => {
-    authClient.getSession().then(
-      (r) => setMe(r.data?.user.id),
-      () => {},
-    );
-  }, []);
   const s = open?.snap;
   return (
     <section aria-label="Team snapshots" className="space-y-3">
@@ -72,7 +73,7 @@ export function Snapshots({ onError }: { onError: (m: string) => void }) {
             <button
               className={`flex w-full min-w-0 items-baseline justify-between gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${open?.id === r.id ? "bg-accent" : ""}`}
               aria-current={open?.id === r.id}
-              onClick={() => void view(r.id)}
+              onClick={() => setOpenId(r.id)}
             >
               <span className="min-w-0 break-words">
                 <span className="font-medium">{r.title}</span>

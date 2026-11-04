@@ -3,18 +3,29 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { varlockVitePlugin } from "@varlock/vite-integration";
+import basicSsl from "@vitejs/plugin-basic-ssl";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite-plus";
 
 export default defineConfig(({ mode }) => {
-  // HTTPS for the dev server: the same certificate pair as the API (see apps/server/.env.schema and `bun run certs`).
-  const { ZETTA_TLS_CERT: cert, ZETTA_TLS_KEY: key } = loadEnv(mode, process.cwd(), "ZETTA_TLS_");
+  // The browser only talks to this dev server (https://localhost:3000). It forwards /api to the API on localhost:6000, so there is no
+  // cross-origin call. HTTPS uses the ZETTA_TLS_CERT/KEY pair when set (see `bun run certs`), otherwise a self-signed basic-ssl certificate.
+  const {
+    ZETTA_TLS_CERT: cert,
+    ZETTA_TLS_KEY: key,
+    ZETTA_HOST: host,
+  } = loadEnv(mode, process.cwd(), "ZETTA_");
   if (!cert !== !key)
     throw new Error("Set both ZETTA_TLS_CERT and ZETTA_TLS_KEY in apps/web/.env, or neither.");
   return {
     server: {
-      port: 3001,
+      port: 3000,
+      strictPort: true,
+      // ZETTA_HOST=0.0.0.0 (written by `bun run setup --mode lan`) lets other devices on the network open the dev server.
+      host: host || undefined,
       https: cert && key ? { cert: readFileSync(cert), key: readFileSync(key) } : undefined,
+      // No changeOrigin: Host and Origin stay localhost:3000, which is what Better Auth checks against BETTER_AUTH_URL.
+      proxy: { "/api": { target: "http://127.0.0.1:6000", ws: true } },
     },
     resolve: {
       tsconfigPaths: true,
@@ -32,6 +43,7 @@ export default defineConfig(({ mode }) => {
         autoCodeSplitting: true,
       }),
       react(),
+      ...(cert && key ? [] : [basicSsl()]),
     ],
   };
 });

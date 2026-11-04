@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { assertActivationCatalog, verifyActivationSources } from "./identity-activation-proof";
+import { sourceOf } from "./test-source";
 test("pinned asymmetric feature tree selects only the two new migrations", async () => {
   await expect(verifyActivationSources()).resolves.toBeUndefined();
 });
@@ -57,7 +58,7 @@ test("pure manifest comparison rejects tampered hashes and baseline SQL without 
     expect(() => assertActivationManifest(raw)).toThrow("Identity activation proof unavailable.");
 });
 test("both entries retain private fresh setup and layer before returning, without caller hooks", async () => {
-  const source = await Bun.file(new URL("./identity-proof-client.ts", import.meta.url)).text();
+  const source = await sourceOf("./identity-proof-client.ts");
   expect(source).toContain("openIdentityProofCore(connectionString, false)");
   expect(source).toContain("openIdentityProofCore(connectionString, true)");
   expect(source).not.toContain("export async function openIdentityProofCore");
@@ -102,8 +103,8 @@ test("proof helpers import inertly with all timer and network startup trapped in
   expect({ code, out, err }).toEqual({ code: 0, out: "PASS inert imports\n", err: "" });
 });
 test("fixed exhaustion entry applies only pinned delta before seed and full guards before returning", async () => {
-  const core = await Bun.file(new URL("./identity-proof-client.ts", import.meta.url)).text();
-  const helper = await Bun.file(new URL("./identity-activation-proof.ts", import.meta.url)).text();
+  const core = await sourceOf("./identity-proof-client.ts");
+  const helper = await sourceOf("./identity-activation-proof.ts");
   expect(core).toContain(
     "export async function openIdentityActivationExhaustionProof(connectionString: string)",
   );

@@ -1,6 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { queryOptions, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 
 import { call, errorMessage, sendSealed } from "../chat/chat-client";
+import { STATIC } from "@/lib/query-policy";
 
 export type PluginField = {
   key: string;
@@ -132,21 +134,63 @@ export function usePluginApi() {
   return useMemo(() => pluginsApiFor(scope), [scope]);
 }
 
+/** Every plugin read has one key under `["plugins"]`: invalidate that prefix after an install, a removal or a setting change. */
+export const pluginsQueries = {
+  catalog: () =>
+    queryOptions({
+      queryKey: ["plugins", "catalog"],
+      queryFn: () => pluginsApi.catalog(),
+      ...STATIC,
+    }),
+  installed: () =>
+    queryOptions({
+      queryKey: ["plugins", "installed"],
+      queryFn: () => pluginsApi.installed(),
+      ...STATIC,
+    }),
+  /** The plugins one bot uses. The answer does not depend on the page's Individual / Shared switch. */
+  botPlugins: (botId: string) =>
+    queryOptions({
+      queryKey: ["plugins", "bots", botId],
+      queryFn: () => pluginsApi.botPlugins(botId),
+    }),
+  toolAccess: (botId: string, serverId: string) =>
+    queryOptions({
+      queryKey: ["plugins", "bots", botId, "tools", serverId],
+      queryFn: () => pluginsApi.toolAccess(botId, serverId),
+    }),
+};
+
+/** Shows a saved on / off switch at once, without a second request. */
+export function setBoundInCache(
+  qc: QueryClient,
+  botId: string,
+  id: string,
+  scope: PluginScope,
+  on: boolean,
+) {
+  qc.setQueryData<Awaited<ReturnType<typeof pluginsApi.botPlugins>>>(
+    pluginsQueries.botPlugins(botId).queryKey,
+    (old) => {
+      if (!old) return old;
+      const configs = old.configs.filter((c) => !(c.id === id && c.scope === scope));
+      if (on) configs.push({ id, scope });
+      return { plugins: [...new Set(configs.map((c) => c.id))], configs };
+    },
+  );
+}
+
 /** Catalog + the user's installed plugins. */
 export function usePlugins(onError: (m: string) => void) {
-  const [catalog, setCatalog] = useState<PluginMeta[]>();
-  const [installed, setInstalled] = useState<InstalledPlugin[]>();
-  const reload = useCallback(async () => {
-    try {
-      const [c, i] = await Promise.all([pluginsApi.catalog(), pluginsApi.installed()]);
-      setCatalog(c);
-      setInstalled(i);
-    } catch (e) {
-      onError(errorMessage(e));
-    }
-  }, [onError]);
+  const qc = useQueryClient();
+  const catalog = useQuery(pluginsQueries.catalog());
+  const installed = useQuery(pluginsQueries.installed());
+  const error = catalog.error ?? installed.error;
   useEffect(() => {
-    void reload();
-  }, [reload]);
-  return { catalog, installed, reload };
+    if (error) onError(errorMessage(error));
+    // `onError` is usually an inline function; the message only matters when the error changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
+  const reload = useCallback(() => qc.invalidateQueries({ queryKey: ["plugins"] }), [qc]);
+  return { catalog: catalog.data, installed: installed.data, reload };
 }

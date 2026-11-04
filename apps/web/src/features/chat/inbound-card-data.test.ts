@@ -68,3 +68,26 @@ describe("applyPlan", () => {
     expect(applyPlan(read({ ...card, incoming: undefined })!).route).toBeUndefined();
   });
 });
+
+import { sameFilter } from "./inbound-card-data";
+
+test("two filters with the same fields are the same, whatever order the database listed them in", () => {
+  expect(
+    sameFilter(
+      { direct: true, groups: false, chats: ["a", "b"] },
+      JSON.parse('{"chats":["a","b"],"direct":true,"groups":false}'),
+    ),
+  ).toBe(true);
+  expect(
+    sameFilter(
+      { direct: true, groups: false, chats: [] },
+      { direct: true, groups: true, chats: [] },
+    ),
+  ).toBe(false);
+  expect(
+    sameFilter(
+      { direct: true, groups: false, chats: ["a"] },
+      { direct: true, groups: false, chats: [] },
+    ),
+  ).toBe(false);
+});

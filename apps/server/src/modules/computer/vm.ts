@@ -9,10 +9,16 @@ import { assertPublicUrl, assertWebScheme, ComputerError, type Actor } from "./s
 import { pageLinks, type PageLinks } from "./cdp";
 import type { CredentialField } from "../integrations/plugins/registry";
 import { vncPassword } from "./vnc";
-import { connectSpacesd, type VmConnect } from "./mcp-client";
+import {
+  connectSpacesd,
+  connectSpacesdUrl,
+  type RemoteConnect,
+  type VmConnect,
+} from "./mcp-client";
 import { createCuaDriver } from "./drivers/cua";
 import { createAgentDesktopDriver } from "./drivers/agent-desktop";
 import { hasBrowser, osOptions, type OsId } from "./os";
+import { instanceId, recoverable } from "../runtime/instance";
 import {
   DRIVERS,
   Passthrough,
@@ -56,6 +62,9 @@ export type VmStore = {
       target?: VmTarget;
       driver?: DriverName;
       os?: OsId;
+      /** Target "cua": where its spacesd listens, and the sealed bearer token (a `connection`). */
+      endpoint?: string | null;
+      connectionId?: string | null;
     },
   ): Promise<VmRow>;
   setDriver(userId: string, id: string, driver: DriverName): Promise<void>;
@@ -84,7 +93,10 @@ type VSession = {
   id: string;
   userId: string;
   port: number;
-  vnc: { port: number; password: string };
+  /** Absent for a remote computer: there is no VNC server to bridge to. */
+  vnc?: { port: number; password: string };
+  /** A computer on another machine (target "cua"): nothing of it runs in a container here. */
+  remote?: boolean;
   viewers: number;
   /** The computer's image has a browser: no browser means no navigate and no sign-in fill. */
   browser: boolean;
@@ -248,6 +260,8 @@ export function createDbVmStore(db: Database): VmStore {
             ...(v.target ? { target: v.target } : {}),
             ...(v.driver ? { driver: v.driver } : {}),
             ...(v.os ? { os: v.os } : {}),
+            ...(v.endpoint ? { endpoint: v.endpoint } : {}),
+            ...(v.connectionId ? { connectionId: v.connectionId } : {}),
           })
           .returning()
       )[0]!,
@@ -264,16 +278,23 @@ export function createDbVmStore(db: Database): VmStore {
         .update(computerVm)
         .set({
           status,
+          ownerInstance: status === "running" ? instanceId() : null,
           ...(status === "running" ? { lastStartedAt: new Date() } : {}),
           ...(status === "deleted" ? { deletedAt: new Date() } : {}),
         })
         .where(eq(computerVm.id, id));
     },
+    // Called by the boot sweep, which also stops the containers of this host: VMs of a dead owner and VMs recorded before owners existed.
     resetRunning: async () => {
       await db
         .update(computerVm)
-        .set({ status: "stopped" })
-        .where(eq(computerVm.status, "running"));
+        .set({ status: "stopped", ownerInstance: null })
+        .where(
+          and(
+            eq(computerVm.status, "running"),
+            recoverable(computerVm.ownerInstance, { unowned: true }),
+          ),
+        );
     },
   };
 }
@@ -295,12 +316,23 @@ export type VmOptions = {
   vmOs?: readonly OsId[];
   /** Reads the page address and links over the DevTools port; injectable so tests do not need Chromium. */
   links?: (port: number) => Promise<PageLinks>;
+  /** Where the bearer token of a remote Cua computer is kept (sealed in the connections store). Without it, remote computers are off. */
+  secrets?: VmSecrets;
+  connectRemote?: RemoteConnect;
+};
+/** The sealed token of a remote computer. `read` throws a `ComputerError` REVOKED when it is gone. */
+export type VmSecrets = {
+  create(userId: string, label: string, secret: string): Promise<string>;
+  read(userId: string, connectionId: string): Promise<string>;
+  revoke(userId: string, connectionId: string): Promise<void>;
 };
 export function createVmService({
   store,
   docker,
   exec = createCliExec(docker.bin),
   connect = connectSpacesd,
+  connectRemote = connectSpacesdUrl,
+  secrets,
   links = pageLinks,
   tokenRoot,
   maxPerUser = 4,
@@ -392,6 +424,7 @@ export function createVmService({
       target: row.target,
       driver: row.driver,
       os: row.os,
+      endpoint: row.endpoint,
       status: s
         ? ("running" as const)
         : row.status === "running"
@@ -441,6 +474,63 @@ export function createVmService({
 
   /** Each user's default VM id, so the hot path (a bot acting on a running VM) skips the database. */
   const defaults = new Map<string, string>();
+  /** Only an https address with no credentials, path or query; a private one only when the operator allows private networks. */
+  async function assertEndpoint(raw: string): Promise<string> {
+    let u: URL;
+    try {
+      u = new URL(raw);
+    } catch {
+      throw new ComputerError("INVALID");
+    }
+    if (u.protocol !== "https:" && !(u.protocol === "http:" && allowPrivate))
+      throw new ComputerError("INSECURE");
+    if (u.username || u.password || u.search || u.hash || u.pathname !== "/")
+      throw new ComputerError("INVALID");
+    if (!allowPrivate) await assertPublicUrl(u.href);
+    return u.origin;
+  }
+  /** A computer on another machine that runs cua-spacesd: connect with the stored bearer token. Nothing runs on this host. */
+  async function startRemote(userId: string, row: VmRow) {
+    if (!secrets || !row.endpoint || !row.connectionId) throw new ComputerError("UNSUPPORTED");
+    if ([...sessions.values()].filter((s) => s.userId === userId).length >= maxRunningPerUser)
+      throw new ComputerError("LIMIT");
+    try {
+      // Checked at every start: a name that pointed at a public address when it was saved may point somewhere private now.
+      await assertEndpoint(row.endpoint);
+      const client = await connectRemote(
+        row.endpoint,
+        await secrets.read(userId, row.connectionId),
+      );
+      // No browser is assumed on someone else's machine: navigate and sign-in fill stay off, the other actions work.
+      const driver = createCuaDriver(client.call, { browser: false });
+      await driver.ready().catch(async (e: unknown) => {
+        await client.close().catch(() => undefined);
+        throw e;
+      });
+      sessions.set(row.id, {
+        id: row.id,
+        userId,
+        port: 0,
+        remote: true,
+        viewers: 0,
+        keyboard: "us",
+        close: client.close,
+        driver,
+        browser: false,
+        cdp: null,
+        control: "agent",
+        epoch: 0,
+        lastUsed: Date.now(),
+        queue: Promise.resolve(),
+        row: { ...row, status: "running" },
+      });
+      await store.setStatus(row.id, "running");
+      return view({ ...row, status: "running" });
+    } catch (e) {
+      await store.setStatus(row.id, "failed");
+      throw e instanceof ComputerError ? e : new ComputerError("UNAVAILABLE");
+    }
+  }
   /** Starts the user's VM (the default one when no id is given). One start at a time per user, so caps cannot be raced. */
   const start = (userId: string, vmId?: string) => {
     const hot = sessions.get(vmId ?? defaults.get(userId) ?? "");
@@ -457,6 +547,7 @@ export function createVmService({
         existing.row = { ...row, status: "running" };
         return view(row);
       }
+      if (row.target === "cua") return startRemote(userId, row);
       // A computer keeps the driver it was given; if the operator has since turned that driver off, it does not start under another one.
       if (!vmDrivers.includes(row.driver)) throw new ComputerError("UNSUPPORTED");
       const running = [...sessions.values()];
@@ -678,6 +769,10 @@ export function createVmService({
     }
     sessions.delete(id);
     await s.close().catch(() => undefined);
+    if (s.remote) {
+      await store.setStatus(id, "stopped");
+      return;
+    }
     await exec(["stop", "-t", "10", container(id)]).catch(() => undefined);
     await rm(join(tokenRoot, id), { recursive: true, force: true }).catch(() => undefined);
     await store.setStatus(id, "stopped");
@@ -714,22 +809,65 @@ export function createVmService({
         return view(await store.create(userId, v));
       });
     },
+    /**
+     * Adds a computer that runs on another machine (cua-spacesd, reached by https with a bearer token). The token is sealed at once;
+     * the row holds the address and the id of the sealed token, never the token.
+     */
+    async createRemote(
+      userId: string,
+      v: { name: string; endpoint: string; token: string; botId?: string | null },
+    ) {
+      if (!secrets) throw new ComputerError("UNSUPPORTED");
+      if (!SAFE_NAME.test(v.name) || v.token.length < 8 || v.token.length > 8000)
+        throw new ComputerError("INVALID");
+      const endpoint = await assertEndpoint(v.endpoint);
+      return serial(userId, async () => {
+        await store.ensureDefault(userId);
+        if ((await store.count(userId)) >= maxPerUser) throw new ComputerError("LIMIT");
+        const connectionId = await secrets.create(userId, v.name, v.token);
+        try {
+          return view(
+            await store.create(userId, {
+              name: v.name,
+              botId: v.botId ?? null,
+              target: "cua",
+              endpoint,
+              connectionId,
+            }),
+          );
+        } catch (e) {
+          await secrets.revoke(userId, connectionId).catch(() => undefined);
+          throw e;
+        }
+      });
+    },
     /** Switches the driver of a stopped computer; a running one keeps the driver it started with. */
     async setDriver(userId: string, id: string, driver: DriverName) {
-      await owned(userId, id);
+      if ((await owned(userId, id)).target === "cua") throw new ComputerError("UNSUPPORTED");
       if (!vmDrivers.includes(driver)) throw new ComputerError("UNSUPPORTED");
       if (sessions.has(id)) throw new ComputerError("LIMIT");
       await store.setDriver(userId, id, driver);
     },
     /** What a person may choose when they create or edit a computer. */
     options: () => ({
-      targets: { vm: [...vmDrivers], local: [] as DriverName[] },
+      targets: {
+        vm: [...vmDrivers],
+        local: [] as DriverName[],
+        cua: secrets ? (["cua"] as DriverName[]) : ([] as DriverName[]),
+      },
       os: osOptions(vmOs),
     }),
     /** Deleting destroys the container AND its home volume (sign-ins, downloads). The default VM is recreated empty on next use. */
     async remove(userId: string, id: string) {
-      await owned(userId, id);
+      const row = await owned(userId, id);
       await stop(userId, id);
+      if (row.target === "cua") {
+        // Nothing of a remote computer lives here except its sealed token.
+        if (row.connectionId)
+          await secrets?.revoke(userId, row.connectionId).catch(() => undefined);
+        await store.setStatus(id, "deleted");
+        return;
+      }
       await exec(["rm", "-f", container(id)]).catch(() => undefined);
       await exec(["volume", "rm", "-f", container(id)]).catch(() => undefined);
       await store.setStatus(id, "deleted");
@@ -765,7 +903,7 @@ export function createVmService({
     epochOf: (userId: string, id: string) => live(userId, id).epoch,
     /** A person's "paste": the text is typed into the focused window as keystrokes, so terminals and pages both take it. */
     async paste(userId: string, id: string, text: string) {
-      live(userId, id);
+      if (live(userId, id).remote) throw new ComputerError("UNSUPPORTED");
       const r = await exec([
         "exec",
         container(id),
@@ -782,6 +920,7 @@ export function createVmService({
     /** The VM's X keyboard layout, so keys typed through VNC produce the characters printed on the person's keyboard. */
     async keyboard(userId: string, id: string, layout: string) {
       const s = live(userId, id);
+      if (s.remote) throw new ComputerError("UNSUPPORTED");
       if (!(KEYBOARD_LAYOUTS as readonly string[]).includes(layout))
         throw new ComputerError("INVALID");
       const [name, variant] = layout.split(":");
@@ -799,7 +938,7 @@ export function createVmService({
     },
     /** A one-time, 30-second ticket for opening the VNC WebSocket (browsers cannot set headers on one). Only for a running VM. */
     vncTicket(userId: string, id: string) {
-      live(userId, id);
+      if (live(userId, id).remote) throw new ComputerError("UNSUPPORTED");
       for (const [k, t] of tickets) if (t.expires < Date.now()) tickets.delete(k);
       const ticket = randomBytes(24).toString("base64url");
       tickets.set(ticket, { userId, id, expires: Date.now() + 30_000 });
@@ -811,12 +950,14 @@ export function createVmService({
       tickets.delete(ticket);
       if (!t || t.id !== id || t.expires < Date.now()) throw new ComputerError("NOT_FOUND");
       const s = live(t.userId, id);
+      if (!s.vnc) throw new ComputerError("UNSUPPORTED");
+      const vnc = s.vnc;
       s.viewers++;
       let released = false;
       return {
         userId: t.userId,
-        port: s.vnc.port,
-        password: s.vnc.password,
+        port: vnc.port,
+        password: vnc.password,
         release: () => {
           if (!released) {
             released = true;

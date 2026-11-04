@@ -16,7 +16,8 @@ import { createOutputStyles } from "../output-styles/service";
 import { createTaskStore } from "../tasks/store";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
-const suite = url ? describe : describe.skip;
+// A skipped describe still runs its body, and this one starts a server that queries the database: without one, register nothing.
+const suite: typeof describe = url ? describe : ((() => {}) as never);
 const REDIRECT = "http://127.0.0.1:8976/callback";
 
 suite("Zetta MCP server: OAuth 2.1 sign-in and tools against compose postgres", () => {

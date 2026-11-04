@@ -100,7 +100,12 @@ suite("durable chat turns against compose postgres", () => {
             .slice(6),
         ),
       }));
+  // services.ts sets ZETTA_CODE_ACCESS=off while it is imported (when the shared database is in network mode), and which test files
+  // import it first varies by machine: this suite needs code access on, so it owns the variable.
+  let savedCodeAccess: string | undefined;
   beforeAll(async () => {
+    savedCodeAccess = process.env.ZETTA_CODE_ACCESS;
+    delete process.env.ZETTA_CODE_ACCESS;
     const now = new Date();
     await db.insert(user).values(
       ids.map((id) => ({
@@ -119,6 +124,8 @@ suite("durable chat turns against compose postgres", () => {
       );
   });
   afterAll(async () => {
+    if (savedCodeAccess === undefined) delete process.env.ZETTA_CODE_ACCESS;
+    else process.env.ZETTA_CODE_ACCESS = savedCodeAccess;
     await cleanupTestUsers(db, ids);
   });
   const setup = async (as: string) => {

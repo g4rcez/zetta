@@ -478,15 +478,16 @@ suite("bot tools against compose postgres", () => {
     ];
     calls.length = 0;
     loopDriver.kick(started.id);
-    const until = async (want: string) => {
+    const until = async (want: string, iterations?: number) => {
       for (let i = 0; i < 100; i++) {
         const l = (await call(A, "GET", `/api/conversations/${c}/loops`)).json.loops[0];
-        if (l?.status === want) return l;
+        if (l?.status === want && (iterations === undefined || l.iterations === iterations))
+          return l;
         await Bun.sleep(50);
       }
       throw new Error(`loop never reached ${want}`);
     };
-    const finished = await until("done");
+    const finished = await until("done", 3);
     expect(finished.iterations).toBe(3);
     expect(finished.progress).toBe("All 3 pages checked.");
     expect(calls).toEqual(["open", "open", "open"]);

@@ -10,6 +10,7 @@ import { errorMessage } from "../chat/chat-client";
 import { MentionTextarea } from "../chat/mention";
 import { useSidebarData } from "../chat/sidebar-data";
 import { Badge, Empty, list, listItem, Loading, Panel } from "../shared/ui";
+import { InvitationManager } from "../identity/invitation-manager";
 import { TeamPeoplePanel } from "./team-people";
 import { RoleField, useTeamRoles } from "./team-roles";
 import {
@@ -44,9 +45,12 @@ function BackLink({ roomId }: { roomId?: string | undefined }) {
 export function TeamSettingsPage({
   teamId,
   roomId,
+  isAdmin,
 }: {
   teamId: string;
   roomId?: string | undefined;
+  /** Only the installation administrator can issue invitations. */
+  isAdmin: boolean;
 }) {
   const { reloadRooms, reloadTeams, bots } = useSidebarData();
   const [team, setTeam] = useState<Team>();
@@ -273,6 +277,15 @@ export function TeamSettingsPage({
           </Button>
         </div>
       </form>
+      {isAdmin && (
+        // Outside the team form: a form cannot contain another form.
+        <div className="mx-auto max-w-3xl px-4 pb-8 md:px-8">
+          <InvitationManager />
+          <p className="mt-2 max-w-md text-sm text-muted-foreground">
+            Once the person has an account, add them to this team in People above.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

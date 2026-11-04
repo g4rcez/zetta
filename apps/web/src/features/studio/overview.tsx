@@ -98,6 +98,7 @@ const Summary = ({ status }: { status: Status }) =>
 const SECTIONS = studioTabs.filter(
   (t) =>
     t.slug !== "overview" &&
+    t.slug !== "invites" &&
     t.slug !== "attention" &&
     t.slug !== "plugins" &&
     t.slug !== "computer",

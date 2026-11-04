@@ -15,5 +15,6 @@ export const Route = createFileRoute("/_auth/teams_/$teamId/settings")({
 function RouteComponent() {
   const { teamId } = Route.useParams();
   const { room } = Route.useSearch();
-  return <TeamSettingsPage teamId={teamId} roomId={room} />;
+  const { identity } = Route.useRouteContext();
+  return <TeamSettingsPage teamId={teamId} roomId={room} isAdmin={identity.isAdmin} />;
 }

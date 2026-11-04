@@ -37,6 +37,12 @@ export const studioTabs = [
     label: "Team snapshots",
     blurb: "Read-only copies of chats shared with your team.",
   },
+  {
+    slug: "invites",
+    label: "Invites",
+    blurb:
+      "Invite people to this server, cancel pending invitations and manage who is in each team.",
+  },
   { slug: "activity", label: "Activity", blurb: "A privacy-safe trail of what your bots did." },
 ] as const;
 

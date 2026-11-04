@@ -16,10 +16,25 @@ const invitationSchema = z
     token: identifier,
   })
   .strict();
+const pendingInvitationsSchema = z
+  .object({
+    invitations: z.array(
+      z
+        .object({
+          invitationId: identifier,
+          intendedEmail: z.string(),
+          createdAt: z.iso.datetime(),
+          expiresAt: z.iso.datetime(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
 const errorSchema = z.object({ error: z.object({ code: z.string(), message: z.string() }) });
 
 export type IdentityStatus = z.infer<typeof identityStatusSchema>;
 export type IssuedInvitation = z.infer<typeof invitationSchema>;
+export type PendingInvitation = z.infer<typeof pendingInvitationsSchema>["invitations"][number];
 export type InvitationInput = { intendedEmail: string; intendedUserId?: string };
 export type SignUpInput = {
   name: string;
@@ -137,6 +152,8 @@ export function createIdentityClient(
       request("/api/identity/setup/key", z.object({ ok: z.literal(true) }).strict(), { key }),
     issue: (input: InvitationInput) =>
       request("/api/identity/invitations", invitationSchema, input),
+    pending: () =>
+      request("/api/identity/invitations", pendingInvitationsSchema).then((r) => r.invitations),
     accept: (token: string) =>
       request("/api/identity/invitations/accept", z.object({ userId: identifier }).strict(), {
         token,
@@ -177,6 +194,7 @@ export const identityClient = {
   setup: () => configuredClient().setup(),
   verifySetupKey: (key: string) => configuredClient().verifySetupKey(key),
   issue: (input: InvitationInput) => configuredClient().issue(input),
+  pending: () => configuredClient().pending(),
   accept: (token: string) => configuredClient().accept(token),
   revoke: (invitationId: string) => configuredClient().revoke(invitationId),
   signUp: (input: SignUpInput) => configuredClient().signUp(input),

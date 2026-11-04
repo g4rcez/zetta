@@ -14,7 +14,7 @@ const NO_CANDIDATES: TeamCandidate[] = [];
  * The humans of a team. Every person reads all rooms of the team. The owner adds people from the installation's members and
  * removes them. Posting in a room stays with the owner until a later release.
  */
-export function TeamPeoplePanel({ teamId }: { teamId: string }) {
+export function TeamPeoplePanel({ teamId, title = "People" }: { teamId: string; title?: string }) {
   const qc = useQueryClient();
   const peopleQuery = useQuery(teamsQueries.people(teamId));
   const candidatesQuery = useQuery(teamsQueries.candidates(teamId));
@@ -52,7 +52,7 @@ export function TeamPeoplePanel({ teamId }: { teamId: string }) {
   if (!people) return <Loading />;
   return (
     <Panel
-      title="People"
+      title={title}
       count={people.length}
       description="Everyone here can read every room of this team. Only you can post in them for now."
     >

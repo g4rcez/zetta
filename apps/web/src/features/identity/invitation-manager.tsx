@@ -11,7 +11,15 @@ import { formatDateTime } from "@/features/preferences/time-format";
 
 type DisplayedInvitation = Omit<IssuedInvitation, "token"> & { token: string | null };
 
-export function InvitationManager() {
+/** `onChange` runs after an invitation is created or revoked, so a list of pending invitations can reload. */
+export function InvitationManager({
+  onChange,
+  cancelledId,
+}: {
+  onChange?: () => void;
+  /** An invitation cancelled elsewhere (the pending list). If it is the one shown here, this form lets go of it. */
+  cancelledId?: string | undefined;
+} = {}) {
   const tf = useTimeFormat();
   const [invitation, setInvitation] = useState<DisplayedInvitation | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +29,12 @@ export function InvitationManager() {
   const issueHeading = useRef<HTMLHeadingElement>(null);
   const revokeButton = useRef<HTMLButtonElement>(null);
   const mutationInFlight = useRef(false);
+  useEffect(() => {
+    if (cancelledId && invitation?.invitationId === cancelledId) {
+      setInvitation(null);
+      setFeedback("Invitation revoked.");
+    }
+  }, [cancelledId, invitation?.invitationId]);
   useEffect(() => {
     if (invitation?.token) resultHeading.current?.focus();
   }, [invitation?.token]);
@@ -46,6 +60,7 @@ export function InvitationManager() {
         });
         setInvitation(result);
         setFeedback("Invitation created. Copy the token before hiding it.");
+        onChange?.();
       } catch (failure) {
         setError(
           `${getIdentityError(failure)} If the response was lost, an invitation may have been created. Contact the installation operator before issuing another.`,
@@ -65,6 +80,7 @@ export function InvitationManager() {
       await identityClient.revoke(invitation.invitationId);
       setInvitation(null);
       setFeedback("Invitation revoked.");
+      onChange?.();
       issueHeading.current?.focus();
     } catch (failure) {
       setError(getIdentityError(failure));

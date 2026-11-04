@@ -8,10 +8,11 @@ import {
   PlugIcon,
   SignpostIcon,
   UsersIcon,
+  UserPlusIcon,
   SquaresFourIcon,
   type Icon,
 } from "@phosphor-icons/react";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Suspense, lazy, useRef, useState } from "react";
 
@@ -27,6 +28,7 @@ const Accounts = lazy(() => import("./accounts").then((m) => ({ default: m.Accou
 const Activity = lazy(() => import("./activity").then((m) => ({ default: m.Activity })));
 const Attention = lazy(() => import("./attention").then((m) => ({ default: m.Attention })));
 const Computer = lazy(() => import("./computer").then((m) => ({ default: m.Computer })));
+const Invites = lazy(() => import("./invites").then((m) => ({ default: m.Invites })));
 const Decisions = lazy(() => import("./decisions").then((m) => ({ default: m.Decisions })));
 const Overview = lazy(() => import("./overview").then((m) => ({ default: m.Overview })));
 const Plugins = lazy(() => import("./plugins").then((m) => ({ default: m.Plugins })));
@@ -48,12 +50,14 @@ const ICON: Record<Tab, Icon> = {
   Computer: DevicesIcon,
   Plugins: PlugIcon,
   "Team snapshots": UsersIcon,
+  Invites: UserPlusIcon,
   Activity: ActivityIcon,
 };
 const NO_BOTS: Bot[] = [];
 
 export function StudioPage() {
   const { tab: slug } = useParams({ from: "/_auth/studio/$tab" });
+  const { identity } = useRouteContext({ from: "/_auth/studio/$tab" });
   const navigate = useNavigate();
   const current = studioTabs.find((t) => t.slug === slug) ?? studioTabs[0];
   const tab: Tab = current.label;
@@ -151,6 +155,7 @@ export function StudioPage() {
               {tab === "Computer" && <Computer onError={setError} />}
               {tab === "Plugins" && <Plugins onError={setError} />}
               {tab === "Team snapshots" && <Snapshots onError={setError} />}
+              {tab === "Invites" && <Invites isAdmin={identity.isAdmin} />}
               {tab === "Activity" && <Activity bots={bots} onError={setError} />}
             </Suspense>
           </div>

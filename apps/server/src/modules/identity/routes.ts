@@ -95,6 +95,30 @@ export function createIdentityRoutes(
       },
       { body: t.Unknown() },
     )
+    .get("/invitations", async ({ request }) => {
+      try {
+        const actor = await access.requireActive(request.headers);
+        if (!actor.isAdmin) throw new AccessError("ACCESS_DENIED");
+        const invitations = await enrollment.listPendingInvitations({ userId: actor.userId });
+        return Response.json({ invitations }, { headers: { "cache-control": "no-store" } });
+      } catch (error) {
+        if (error instanceof AccessError)
+          return errorResponse(
+            error.code === "SIGN_IN_REQUIRED"
+              ? 401
+              : error.code === "IDENTITY_UNAVAILABLE"
+                ? 503
+                : 403,
+            error.code,
+            error.message,
+          );
+        return errorResponse(
+          503,
+          "IDENTITY_UNAVAILABLE",
+          "Unable to list invitations. Please retry.",
+        );
+      }
+    })
     .post(
       "/invitations/:operation?",
       async ({ request, body, params }) => {

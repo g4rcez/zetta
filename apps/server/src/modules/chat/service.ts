@@ -224,6 +224,12 @@ export class BotNameError extends Error {
     );
   }
 }
+/** Postgres keeps jsonb keys in its own order, so two filters are compared by field, never by their JSON text. */
+const sameFilter = (a: InboundFilter, b: InboundFilter) =>
+  a.direct === b.direct &&
+  a.groups === b.groups &&
+  a.chats.length === b.chats.length &&
+  a.chats.every((c, i) => c === b.chats[i]);
 const assertBotName = (name: string | undefined) => {
   if (name !== undefined && isReservedBotName(name)) throw new BotNameError();
 };
@@ -1630,8 +1636,7 @@ export function createChatService(
           const routeChange =
             c.args.incoming === "off"
               ? mine
-              : c.args.incoming === "on" &&
-                (!mine || JSON.stringify(next) !== JSON.stringify(filter));
+              : c.args.incoming === "on" && (!mine || !sameFilter(next, filter));
           if (!changes.length && !routeChange) {
             browserResults.push(
               `inbound ${d.id}: nothing to change, it is already set that way. Read it with status.`,

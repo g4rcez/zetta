@@ -1,5 +1,5 @@
 /**
- * Builds the computer-use demo videos (and their posters) in docs/demo from recordings made by apps/server/src/scripts/vm-demo.ts.
+ * Builds the computer-use demo videos (each with a GIF preview) in docs/demo from recordings made by apps/server/src/scripts/vm-demo.ts.
  * Each recording is `<root>/<name>/` with the frames and events.json that ZETTA_VM_DEMO_FRAMES writes.
  *
  *   # one driver at a time (needs a built docker/desktop image) -> zetta-demo-computer-vm.mp4
@@ -111,9 +111,7 @@ function caption(chip: string, text: string) {
 }
 
 /** One recording: each frame with the caption that was current when it was taken, held until the next frame. */
-async function recording(
-  name: string,
-): Promise<{ segments: Segment[]; at: (text: string) => string | undefined }> {
+async function recording(name: string): Promise<Segment[]> {
   const dir = join(root, name);
   const { driver, events } = (await Bun.file(join(dir, "events.json")).json()) as {
     driver: string;
@@ -125,8 +123,6 @@ async function recording(
     .sort()
     .map((f) => ({ file: join(dir, f), t: Number(/-(\d+)\.png$/.exec(f)![1]) }));
   const segments: Segment[] = [];
-  /** The last frame shown under each caption, by caption text: the end of a step is where its result is on screen. */
-  const lastFrame = new Map<string, { i: number; png: string }>();
   // Composite in small batches: ImageMagick is the slow part.
   for (let i = 0; i < frames.length; i += 8) {
     await Promise.all(
@@ -134,14 +130,12 @@ async function recording(
         const event = [...events].reverse().find((e) => e.t <= f.t) ?? events[0]!;
         const out = join(work, `${name}-${String(i + k).padStart(5, "0")}.png`);
         await $`magick ${f.file} ${await caption(event.chip ?? defaultChip, event.text)} -append ${out}`.quiet();
-        if ((lastFrame.get(event.text)?.i ?? -1) < i + k)
-          lastFrame.set(event.text, { i: i + k, png: out });
         const next = frames[i + k + 1]?.t ?? f.t + 1200;
         segments[i + k] = { png: out, seconds: Math.min(1, Math.max(0.1, (next - f.t) / 1000)) };
       }),
     );
   }
-  return { segments, at: (text) => [...lastFrame].find(([c]) => c.includes(text))?.[1].png };
+  return segments;
 }
 
 async function encode(timeline: Segment[], mp4: string) {
@@ -154,6 +148,17 @@ async function encode(timeline: Segment[], mp4: string) {
     ].join("\n"),
   );
   await $`ffmpeg -y -loglevel error -f concat -safe 0 -i ${list} -vf fps=25,format=yuv420p -c:v libx264 -preset slow -crf 28 -movflags +faststart ${mp4}`;
+  await gif(mp4);
+}
+
+/**
+ * A looping GIF next to the video. GitHub removes <video> tags from a README, so the README embeds this animation and links it to the mp4;
+ * a GIF shows everywhere. The screens barely change, so 800 px at 6 fps stays around 1 MB and the terminal text stays legible.
+ */
+async function gif(mp4: string) {
+  const filter =
+    "fps=6,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle";
+  await $`ffmpeg -y -loglevel error -i ${mp4} -vf ${filter} -loop 0 ${mp4.replace(/\.mp4$/, ".gif")}`;
 }
 
 if (kind === "browse") {
@@ -185,17 +190,14 @@ if (kind === "browse") {
   await encode(
     [
       { png: intro, seconds: 4 },
-      ...cua.segments,
+      ...cua,
       { png: middle, seconds: 2.5 },
-      ...ad.segments,
+      ...ad,
       { png: outro, seconds: 4.5 },
     ],
     mp4,
   );
-  // Poster: the sign-in page with the password typed, as agent-desktop saw it.
-  const poster = ad.at("the password");
-  if (poster) await Bun.write(join(demo, "zetta-vm-poster.png"), Bun.file(poster));
-  console.log(`wrote ${mp4}${poster ? " and zetta-vm-poster.png" : ""}`);
+  console.log(`wrote ${mp4} and its GIF`);
 } else {
   const intro = join(work, "intro.png");
   await card(intro, [
@@ -238,7 +240,6 @@ if (kind === "browse") {
   await $`magick ${heads} ${debian} -geometry +14+150 -composite ${ubuntu} -geometry +646+150 -composite -font ${FONT} -pointsize 24 -fill ${GREY} -gravity south -annotate +0+110 ${"uname -a prints the host's kernel on both (they are containers): the os-release line tells them apart"} -annotate +0+70 ${"Debian has a browser behind the terminal; Ubuntu is a desktop with a terminal only"} ${both}`.quiet();
   const rec = await recording("machines");
   const mp4 = join(demo, "zetta-demo-two-machines.mp4");
-  await encode([{ png: intro, seconds: 4 }, ...rec.segments, { png: both, seconds: 7 }], mp4);
-  await Bun.write(join(demo, "zetta-two-machines-poster.png"), Bun.file(both));
-  console.log(`wrote ${mp4} and zetta-two-machines-poster.png`);
+  await encode([{ png: intro, seconds: 4 }, ...rec, { png: both, seconds: 7 }], mp4);
+  console.log(`wrote ${mp4} and its GIF`);
 }

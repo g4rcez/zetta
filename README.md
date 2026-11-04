@@ -15,11 +15,9 @@ The product is for people who want useful work done, not another technical syste
 
 ## See it in action
 
-<video src="docs/demo/zetta-demo-chat-workflow.mp4" poster="docs/demo/zetta-demo-poster.png" controls muted playsinline width="100%">
-  <a href="docs/demo/zetta-demo-chat-workflow.mp4"><img src="docs/demo/zetta-demo-poster.png" alt="Zetta: a chat with Chief that hands work to two bots in a room"></a>
-</video>
+[![Zetta: a chat with Chief that hands work to two bots in a room](docs/demo/zetta-demo-poster.png)](docs/demo/zetta-demo-chat-workflow.mp4)
 
-_Demo video (62 s): mention two bots in a chat with your chief, read their answers in a shared room, then build, view and run a two-step workflow. The bot replies are scripted by a stand-in `claude` command, so the demo makes no model call. If the player does not load, select the image to open the file._
+_Demo video (62 s): mention two bots in a chat with your chief, read their answers in a shared room, then build, view and run a two-step workflow. The bot replies are scripted by a stand-in `claude` command, so the demo makes no model call. Select the image to open the full video (mp4)._
 
 | Mention a bot with `@`                                                                         | Bots answer together in a room                                                                 |
 | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -29,21 +27,17 @@ _Demo video (62 s): mention two bots in a chat with your chief, read their answe
 
 ### A bot uses a private computer
 
-<video src="docs/demo/zetta-demo-computer-vm.mp4" poster="docs/demo/zetta-vm-poster.png" controls muted playsinline width="100%">
-  <a href="docs/demo/zetta-demo-computer-vm.mp4"><img src="docs/demo/zetta-vm-poster.png" alt="Zetta: a bot fills a sign-in form on its own Linux computer without seeing the password"></a>
-</video>
+[![Zetta: a bot fills a sign-in form on its own Linux computer without seeing the password](docs/demo/zetta-demo-computer-vm.gif)](docs/demo/zetta-demo-computer-vm.mp4)
 
-_Demo video (55 s): the screen of a real Zetta computer (a Linux desktop in a container) while a bot drives it, once with the **Cua** driver and once with **agent-desktop**. The bot opens a page, reads it as numbered text, scrolls, clicks a link, and opens a sign-in page. Zetta types a dummy username and password into the right fields, so the bot never sees them. A person then takes over, the bot is refused, and the person hands control back. The steps are scripted, so no model is called, but the recording is the VM's own screen and runs the same VM service the app and its bots use. Waits longer than a second are shortened. If the player does not load, select the image to open the file._
+_Demo video (55 s): the screen of a real Zetta computer (a Linux desktop in a container) while a bot drives it, once with the **Cua** driver and once with **agent-desktop**. The bot opens a page, reads it as numbered text, scrolls, clicks a link, and opens a sign-in page. Zetta types a dummy username and password into the right fields, so the bot never sees them. A person then takes over, the bot is refused, and the person hands control back. The steps are scripted, so no model is called, but the recording is the VM's own screen and runs the same VM service the app and its bots use. Waits longer than a second are shortened. Select the image to open the full video (mp4)._
 
 Pick the driver per computer in Studio > Computer; the operator offers it with `ZETTA_VM_DRIVERS=cua,agent-desktop` ([setup](docs/operations/runtime-modes.md#desktop-computers-vms)). To record it yourself, build `docker/desktop`, run `apps/server/src/scripts/vm-demo.ts <cua|agent-desktop>` for each driver with `ZETTA_VM_DEMO_FRAMES` set, and run `docs/demo/build-vm-demo.ts` on the result (it needs `ffmpeg` and ImageMagick).
 
 ### Two computers: Debian and Ubuntu
 
-<video src="docs/demo/zetta-demo-two-machines.mp4" poster="docs/demo/zetta-two-machines-poster.png" controls muted playsinline width="100%">
-  <a href="docs/demo/zetta-demo-two-machines.mp4"><img src="docs/demo/zetta-two-machines-poster.png" alt="Zetta: two computers side by side, one Debian 13 and one Ubuntu 24.04, each showing the output of uname -a in a terminal"></a>
-</video>
+[![Zetta: two computers side by side, one Debian 13 and one Ubuntu 24.04, each showing the output of uname -a in a terminal](docs/demo/zetta-demo-two-machines.gif)](docs/demo/zetta-demo-two-machines.mp4)
 
-_Demo video (39 s): your default computer (Debian 13, driven by **Cua**) and a second one created beside it (Ubuntu 24.04, driven by **agent-desktop**). On each, the bot opens a terminal and runs `uname -a` and `grep PRETTY_NAME /etc/os-release`. Both are containers, so `uname -a` prints the same host kernel on both; the os-release line tells them apart. Steps are scripted (no model call). If the player does not load, select the image to open the file._
+_Demo video (39 s): your default computer (Debian 13, driven by **Cua**) and a second one created beside it (Ubuntu 24.04, driven by **agent-desktop**). On each, the bot opens a terminal and runs `uname -a` and `grep PRETTY_NAME /etc/os-release`. Both are containers, so `uname -a` prints the same host kernel on both; the os-release line tells them apart. Steps are scripted (no model call). Select the image to open the full video (mp4)._
 
 A new computer is a name, a **system** and a **driver**, chosen in Studio > Computer. The list shows Linux (Debian 13, Ubuntu 24.04), Windows and macOS: the Linux ones work, and Windows and macOS say why they cannot (a Linux container cannot run them; macOS would only be the server's own desktop). The Ubuntu computer is a desktop with a terminal and no browser, because Ubuntu ships Chromium only as a snap, which does not run in a container. The operator turns it on with `ZETTA_VM_OS=debian,ubuntu` and builds its image ([setup](docs/operations/runtime-modes.md#desktop-computers-vms)). To record it yourself, run `apps/server/src/scripts/vm-demo.ts machines` with `ZETTA_VM_DEMO_FRAMES` set, then `docs/demo/build-vm-demo.ts <dir> machines`.
 

@@ -234,15 +234,6 @@ export function createDiscussionStore(
     /** Bots the person addressed without a mention (owners of a picked skill, the author of a quoted message): they are woken, and then the fallback answer is not needed. */
     skillOwners: readonly string[] = [],
   ) {
-    // A turn that finishes after its room was deleted still posts its reply: it must not wake anyone in a room that is gone, because the
-    // worker never claims turns of a cancelled room and they would stay queued for good. The room row is locked, so a delete either sees the
-    // turns this adds (and cancels them) or runs first (and this adds none): without the lock the two cannot see each other's uncommitted work.
-    const [room] = await tx
-      .select({ status: discussion.status })
-      .from(discussion)
-      .where(eq(discussion.id, d.id))
-      .for("update");
-    if (room?.status === "cancelled") return 0;
     const members = await tx
       .select({ botId: discussionMember.botId, name: bot.name, kind: bot.kind })
       .from(discussionMember)

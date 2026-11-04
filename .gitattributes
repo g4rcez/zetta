@@ -1,0 +1,3 @@
+# The proof modules pin the SHA-256 of these files' exact bytes (packages/db/src/*-proof*.ts). Windows checks text files out with CRLF by
+# default, which changes the hash, so git must never convert them.
+packages/db/*-test-migrations/** -text

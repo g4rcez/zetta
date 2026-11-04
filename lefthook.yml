@@ -9,6 +9,9 @@ pre-commit:
       run: bun oxlint --fix {staged_files}
       stage_fixed: true
     - name: oxfmt
+      # Only what oxfmt formats: it exits with an error when every staged file is unsupported or ignored (.oxfmtrc.json).
+      glob: "*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,md,mdx,css,scss,html,yml,yaml,toml}"
+      exclude: "packages/db/*-test-migrations/**"
       run: bun oxfmt --write {staged_files}
       stage_fixed: true
     # Public repo: no secrets, .env files, agent output or home paths in what we commit.

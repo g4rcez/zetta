@@ -21,6 +21,7 @@ import { user } from "@zetta/db/schema/auth";
 import { dockerConfig } from "../chat/harness";
 import type { FileStore } from "../chat/files";
 import { insertMessage, quoteOf } from "../chat/messages";
+import { transaction } from "./transaction";
 import { codeEnabled } from "../chat/pipeline";
 import type { LoopStore } from "../chat/loops";
 import { createBotClaude, skillsOf } from "../bot-claude/store";
@@ -233,6 +234,15 @@ export function createDiscussionStore(
     /** Bots the person addressed without a mention (owners of a picked skill, the author of a quoted message): they are woken, and then the fallback answer is not needed. */
     skillOwners: readonly string[] = [],
   ) {
+    // A turn that finishes after its room was deleted still posts its reply: it must not wake anyone in a room that is gone, because the
+    // worker never claims turns of a cancelled room and they would stay queued for good. The room row is locked, so a delete either sees the
+    // turns this adds (and cancels them) or runs first (and this adds none): without the lock the two cannot see each other's uncommitted work.
+    const [room] = await tx
+      .select({ status: discussion.status })
+      .from(discussion)
+      .where(eq(discussion.id, d.id))
+      .for("update");
+    if (room?.status === "cancelled") return 0;
     const members = await tx
       .select({ botId: discussionMember.botId, name: bot.name, kind: bot.kind })
       .from(discussionMember)
@@ -306,7 +316,7 @@ export function createDiscussionStore(
         ].join("\u0000"),
       )
       .digest("hex");
-    const res = await db.transaction(async (tx) => {
+    const res = await transaction(db, async (tx) => {
       const [same] = await tx
         .select()
         .from(discussion)
@@ -479,7 +489,7 @@ export function createDiscussionStore(
             .where(and(inArray(bot.id, unique), visible(a), eq(bot.archived, false)))
         : [];
       if (ok.length !== unique.length) throw new AccessError("NOT_FOUND");
-      await db.transaction(async (tx) => {
+      await transaction(db, async (tx) => {
         await tx
           .delete(botPeer)
           .where(and(eq(botPeer.ownerUserId, a.userId), eq(botPeer.botId, botId)));
@@ -890,7 +900,7 @@ export function createDiscussionStore(
       const sinceUser = recent.findIndex((m) => m.role === "user");
       const posts = (sinceUser < 0 ? recent : recent.slice(0, sinceUser)).reverse();
       if (isIdleChatter(posts)) {
-        await db.transaction((tx) => silenceRoom(tx, cur, "auto"));
+        await transaction(db, (tx) => silenceRoom(tx, cur, "auto"));
         return 0;
       }
       const n = await enqueueWakes(db, cur, authorBotId, text, messageId, false, !mentionsOnly);
@@ -1013,7 +1023,7 @@ export function createDiscussionStore(
       const addressed = [
         ...new Set([...skillOwners, ...(quotedMember ? [quotedMember.botId] : [])]),
       ];
-      const res = await db.transaction(async (tx) => {
+      const res = await transaction(db, async (tx) => {
         const cur =
           d.status === "stalled"
             ? (
@@ -1147,7 +1157,7 @@ export function createDiscussionStore(
       if (d.status === "resolved" || d.status === "cancelled")
         throw new DiscussionError("CLOSED", `That room is already ${d.status}.`);
       const wrap = d.createdByBotId && by?.id !== d.createdByBotId ? d.createdByBotId : null;
-      const row = await db.transaction(async (tx) => {
+      const row = await transaction(db, async (tx) => {
         const [r] = await tx
           .update(discussion)
           .set({
@@ -1207,7 +1217,7 @@ export function createDiscussionStore(
       const d = await loadOwned(a, id);
       if (d.status === "resolved" || d.status === "cancelled")
         throw new DiscussionError("CLOSED", `This room is ${d.status}.`);
-      const row = await db.transaction(async (tx) => {
+      const row = await transaction(db, async (tx) => {
         const set =
           action === "pause"
             ? { status: "paused" as const }
@@ -1251,7 +1261,7 @@ export function createDiscussionStore(
         throw new DiscussionError("CLOSED", `This room is ${d.status}.`);
       for (const l of (await loops?.activeAll(d.conversationId)) ?? [])
         await loops?.setStatus(a.userId, l.id, "cancelled");
-      return db.transaction((tx) => silenceRoom(tx, d, "user"));
+      return transaction(db, (tx) => silenceRoom(tx, d, "user"));
     },
     /**
      * Ends every goal loop of the room and drops the queued turns, but keeps the room, its messages and its context.
@@ -1263,7 +1273,7 @@ export function createDiscussionStore(
         throw new DiscussionError("CLOSED", `This room is ${d.status}.`);
       for (const l of (await loops?.activeAll(d.conversationId)) ?? [])
         await loops?.setStatus(a.userId, l.id, "cancelled");
-      return db.transaction(async (tx) => {
+      return transaction(db, async (tx) => {
         const [r] = await tx
           .update(discussion)
           .set({ status: "open", updatedAt: new Date(), version: sql`${discussion.version} + 1` })
@@ -1290,7 +1300,7 @@ export function createDiscussionStore(
       opts: { reason?: string; moveTo?: string } = {},
     ) {
       const d = await loadOwned(a, id);
-      await db.transaction(async (tx) => {
+      await transaction(db, async (tx) => {
         const live = d.status !== "resolved" && d.status !== "cancelled";
         if (live) {
           await tx
@@ -1494,7 +1504,7 @@ export function createDiscussionStore(
           "CONFLICT",
           "This room already has a loop. Stop it before starting another.",
         );
-      const started = await db.transaction((tx) =>
+      const started = await transaction(db, (tx) =>
         Promise.all(
           v.goals.map((g) =>
             loops.start(
@@ -1544,7 +1554,7 @@ export function createDiscussionStore(
                 : "cancelled",
         };
       }
-      await db.transaction(async (tx) => {
+      await transaction(db, async (tx) => {
         const row = await insertMessage(tx, d.conversationId, {
           ownerUserId: d.ownerUserId,
           role: "system",
@@ -1754,7 +1764,7 @@ export function createDiscussionStore(
       lane: "any" | "user" = "any",
     ): Promise<Claimed | undefined> {
       for (let i = 0; i < 10; i++) {
-        const out = await db.transaction(async (tx): Promise<Claimed | "again" | undefined> => {
+        const out = await transaction(db, async (tx): Promise<Claimed | "again" | undefined> => {
           const picked = await tx.execute<{
             id: string;
           }>(sql`select t.id from discussion_turn t join discussion d on d.id = t.discussion_id

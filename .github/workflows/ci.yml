@@ -36,6 +36,8 @@ jobs:
       - name: Web build
         working-directory: apps/web
         run: bun run build
+        # The build validates its environment (varlock), and the server address has no default.
+        env: { VITE_SERVER_URL: "http://localhost:3000" }
 
   # Public repo: hooks can be skipped locally, so CI enforces the same rules.
   public-hygiene:

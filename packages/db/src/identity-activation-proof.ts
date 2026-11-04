@@ -15,7 +15,7 @@ const manifest = [
     files: [
       {
         name: "snapshot.json",
-        hash: "0b01edf370dcdb97262af73e8dc8e16256ba9ad51908ff3b5d1dfb92d910d7f5",
+        hash: "30e1163720c2ad104e233c4904aec963b3b5afff675c9b0161b74bc0ae1f1d09",
       },
     ],
   },
@@ -28,7 +28,7 @@ const manifest = [
       },
       {
         name: "snapshot.json",
-        hash: "2dce3abbb9a0263515cec4e497bd445b5d8135fcd922535f34b76402b67c2010",
+        hash: "4c977a63ae94ac482f4bf8a1e08710c9333d9da01411f6177cce5a5e948821a1",
       },
     ],
   },
@@ -41,7 +41,7 @@ const manifest = [
       },
       {
         name: "snapshot.json",
-        hash: "a74a5c63ff0873d4abc0bc29ef920cac9786637fa7889e76b50846e953c90606",
+        hash: "42697dccafddeded5d3b1b72a32b5f9de50fa98aa4360d09a5a5a54a4da5c053",
       },
     ],
   },

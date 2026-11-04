@@ -10,7 +10,7 @@ const folder = fileURLToPath(new URL("../connection-test-migrations/", import.me
 const migrationName = "20261022171713_connection_initial";
 const hashes = {
   "migration.sql": "133fa78bf246ab9af83a6cc5809bffba64e7cd72f16cc6b2bd43de264afc4e30",
-  "snapshot.json": "9d74877e12ad2906ec50f571bdfcd7593a365bb8ac7b78c5d822e0cc15e54db6",
+  "snapshot.json": "aed2ec39ed4b34c8df82d737ddf665a65336f75841973ad33cb7f14888a5447b",
 } as const;
 
 function check(value: unknown): asserts value {

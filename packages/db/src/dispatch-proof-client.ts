@@ -10,11 +10,11 @@ const folder = fileURLToPath(new URL("../dispatch-test-migrations/", import.meta
 const migrations = {
   "20261022191656_dispatch_initial": {
     "migration.sql": "bc46841c779ef1fe42ea3df8adbb2b21a12048c3112d853c7e50f954b5e085ae",
-    "snapshot.json": "0c9df90269a1a3f60215df664c538a5db228dca1e26e5337afa832ef42930ed2",
+    "snapshot.json": "9f7f7e92f05280f247d0f75fc187b24e2940d382cc3b2abc7ff3cbabd9029ac6",
   },
   "20261022191701_dispatch_guards": {
     "migration.sql": "230248ab21f5e0c13b6ddb642e9ec01e95ef84499554792e8599d6b030c8343c",
-    "snapshot.json": "317eaabc2eef47b06dccf7143278255f0882c7989b65c4268f0fb1e2ff38de2b",
+    "snapshot.json": "63b4838a126c51eef9407204c753b9bde632be89ec507b791f8403ba97219650",
   },
 } as const;
 function check(value: unknown): asserts value {

@@ -19,11 +19,11 @@ const folder = fileURLToPath(new URL("../run-test-migrations/", import.meta.url)
 const migrations = {
   "20261022180455_runs_initial": {
     "migration.sql": "ca730fae8f7e5d5f6917292d6f71b56aa76ef31b5e20c4e826c474e5b05f65cb",
-    "snapshot.json": "3bc93e6146b58b7f01a10c5e8481354991bdd3ca8fdf3a753b093469a05415ef",
+    "snapshot.json": "c7afa787623205578ff7a848b8216888efb0e9576b1d033b926e816ee7d2a565",
   },
   "20261022180711_runs_constraints": {
     "migration.sql": "2c9690dd5f978d73253849a2326e81cb45cac377c5f38c379a4f94b7c4f490ee",
-    "snapshot.json": "2b48aaa1e7ed2585286056d2863e7a3ef46f528703bf7f45702c296ced1ce33a",
+    "snapshot.json": "ac7c66645f2d3cd35866bcabd94f9589abcfd88b0ef7a5b3521b72ad74bbac67",
   },
 } as const;
 function check(value: unknown): asserts value {

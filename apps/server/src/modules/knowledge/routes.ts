@@ -3,15 +3,12 @@ import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { PluginError } from "../integrations/plugins/registry";
 import type { Knowledge } from "./service";
+import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type KnowledgeServices = {
   access: ReturnType<typeof createIdentityAccess>;
   knowledge: Knowledge;
 };
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 const uuid = z.string().uuid();
 
 /** Typed as a bare Elysia on purpose: app.ts chains every module and TypeScript gives up on the combined route type past this size. */
@@ -28,29 +25,11 @@ export function createKnowledgeRoutes(
     ) =>
     async ({ request, params }: { request: Request; params: Record<string, string> }) => {
       try {
-        if (request.method !== "GET") {
-          const o = request.headers.get("origin");
-          if (!o || !trustedOrigins.includes(o))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
+        const denied = rejectUntrustedOrigin(request, trustedOrigins);
+        if (denied) return denied;
         return out(await work({ actor: await access.requireActive(request.headers), params }));
       } catch (e) {
-        if (e instanceof AccessError)
-          return fail(
-            e.code === "SIGN_IN_REQUIRED"
-              ? 401
-              : e.code === "NOT_FOUND"
-                ? 404
-                : e.code === "IDENTITY_UNAVAILABLE"
-                  ? 503
-                  : 403,
-            e.code,
-            e.message,
-          );
+        if (e instanceof AccessError) return accessFail(e);
         // The plugin's own words: they say what is missing (connect Google, tick Drive access) and never carry provider text.
         if (e instanceof PluginError)
           return fail(

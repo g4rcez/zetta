@@ -7,6 +7,7 @@ import { raiseAttention } from "../features/attention";
 import { issueBackgroundActor, type MembershipLookup } from "../identity/access";
 import type { Turn } from "../chat/pipeline";
 import { parseTools } from "../chat/tools";
+import { defuse } from "../discussions/prompt";
 import { WikiError, type Wiki } from "./service";
 import { runWikiTool } from "./tool";
 
@@ -40,7 +41,6 @@ const HISTORY = 40,
   MESSAGE_CHARS = 4000,
   PAGE_CHARS = 3000;
 const WRITES = new Set(["write", "patch", "mark_stale", "suggest"]);
-const defuse = (t: string) => t.replaceAll("```", "'''");
 
 const learnPrompt = (what: string, pages: string) => `You finished this work: ${what}
 Read the conversation above. Save in the user's wiki only what another bot will need later to do similar work faster: where things are, how a system or account behaves, decisions and their reasons, problems and their fixes, steps that worked (tag those instruction). Do not save the result of the work itself, one-off details, secrets or facts about the user.

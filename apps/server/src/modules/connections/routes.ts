@@ -9,16 +9,13 @@ const USER_PROVIDERS = PROVIDERS.filter((p) => !MANAGED.includes(p));
 import { TransportError } from "@zetta/core/sealed-transport";
 import { ConnectionStoreError } from "./store-contract";
 import { TransportKeyExpiredError, transportKeyring, type TransportKeyring } from "./transport";
+import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type ConnectionServices = {
   access: ReturnType<typeof createIdentityAccess>;
   connections: ConnectionsService;
 };
 const uuid = z.string().uuid();
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 const key = z.string().regex(/^[a-z0-9_-]{1,32}$/);
 
 export function createConnectionRoutes(
@@ -33,18 +30,7 @@ export function createConnectionRoutes(
     params: Record<string, string>;
   };
   function mapError(e: unknown) {
-    if (e instanceof AccessError)
-      return fail(
-        e.code === "SIGN_IN_REQUIRED"
-          ? 401
-          : e.code === "NOT_FOUND"
-            ? 404
-            : e.code === "IDENTITY_UNAVAILABLE"
-              ? 503
-              : 403,
-        e.code,
-        e.message,
-      );
+    if (e instanceof AccessError) return accessFail(e);
     if (e instanceof ConnectionsUnavailableError)
       return fail(
         503,
@@ -77,15 +63,8 @@ export function createConnectionRoutes(
       params: Record<string, string>;
     }) => {
       try {
-        if (request.method !== "GET") {
-          const o = request.headers.get("origin");
-          if (!o || !trustedOrigins.includes(o))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
+        const denied = rejectUntrustedOrigin(request, trustedOrigins);
+        if (denied) return denied;
         const actor = await access.requireActive(request.headers);
         return out(await work({ userId: actor.userId, actor, body, params }), status);
       } catch (e) {

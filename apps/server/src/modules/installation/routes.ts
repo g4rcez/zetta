@@ -8,6 +8,7 @@ import {
   type InstallationService,
   type NetworkMode,
 } from "./service";
+import { fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type InstallationServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -16,10 +17,6 @@ export type InstallationServices = {
   runningMode: NetworkMode;
 };
 
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 const patchInput = z.strictObject({
   networkMode: z.enum(["local", "network"]).optional(),
   publicUrl: z
@@ -64,13 +61,8 @@ export function createInstallationRoutes(
     })
     .patch("/", async ({ request, body: raw }) => {
       try {
-        const origin = request.headers.get("origin");
-        if (!origin || !trustedOrigins.includes(origin))
-          return fail(
-            403,
-            "UNTRUSTED_ORIGIN",
-            "Open Zetta from its trusted application and try again.",
-          );
+        const denied = rejectUntrustedOrigin(request, trustedOrigins);
+        if (denied) return denied;
         const actor = await access.requireActive(request.headers);
         if (!("isAdmin" in actor && actor.isAdmin)) throw new AccessError("ACCESS_DENIED");
         return out(await body(await installation.update(patchInput.parse(raw))));

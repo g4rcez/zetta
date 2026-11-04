@@ -14,7 +14,6 @@ import { chatQueries } from "../chat/chat-queries";
 import { CopyButton } from "../chat/chat-copy";
 import { Badge, ConfirmButton, Empty } from "../shared/ui";
 import {
-  ago,
   artifactsApi,
   artifactsQueries,
   contentUrl,
@@ -22,6 +21,7 @@ import {
   kindLabel,
   type Artifact,
 } from "./artifacts-api";
+import { relativeTime } from "../shared/relative-time";
 import { ArtifactViewer } from "./viewers";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
@@ -82,7 +82,7 @@ export function ArtifactPage({ id }: { id: string }) {
                     dateTime={artifact.createdAt}
                     title={formatDateTime(artifact.createdAt, tf)}
                   >
-                    {ago(artifact.createdAt)}
+                    {relativeTime(artifact.createdAt)}
                   </time>
                 </p>
               </div>

@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "@zetta/ui/components/input";
 import { cn } from "@zetta/ui/lib/utils";
+import { saveLocal } from "@/lib/local-storage";
 
 type Emoji = { label: string; unicode: string; group: number; tags: string[] };
 type Catalog = {
@@ -69,14 +70,7 @@ function readRecent(): string[] {
   }
 }
 function rememberRecent(emoji: string) {
-  try {
-    localStorage.setItem(
-      RECENT_KEY,
-      JSON.stringify([emoji, ...readRecent().filter((e) => e !== emoji)].slice(0, RECENT_MAX)),
-    );
-  } catch {
-    /* storage unavailable: recents are a nicety */
-  }
+  saveLocal(RECENT_KEY, [emoji, ...readRecent().filter((e) => e !== emoji)].slice(0, RECENT_MAX));
 }
 
 /** Searchable picker over every Unicode emoji, grouped by category, with a "recent" row. Calls `onPick` and leaves closing to the caller. */

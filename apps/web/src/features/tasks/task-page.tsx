@@ -22,7 +22,7 @@ import { BotIdentity } from "@/components/bot-identity";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
 import { authClient } from "@/lib/auth-client";
-import { ago } from "../artifacts/artifacts-api";
+import { relativeTime } from "../shared/relative-time";
 import { chatClient, errorMessage, type Bot, type Message } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { Markdown } from "../chat/markdown";
@@ -316,7 +316,7 @@ export function TaskDetail({
                         className="text-xs text-muted-foreground"
                         title={formatDateTime(answer.createdAt, tf)}
                       >
-                        {ago(answer.createdAt)}
+                        {relativeTime(answer.createdAt)}
                       </time>
                     )}
                   </div>
@@ -342,7 +342,7 @@ export function TaskDetail({
                       className="text-xs text-muted-foreground"
                       title={pending.createdAt ? formatDateTime(pending.createdAt, tf) : undefined}
                     >
-                      {pending.createdAt ? ago(pending.createdAt) : ""}
+                      {pending.createdAt ? relativeTime(pending.createdAt) : ""}
                     </time>
                   </div>
                   <div className="text-sm">
@@ -459,7 +459,7 @@ export function TaskDetail({
                   </p>
                   {lastActivity && (
                     <p className="text-muted-foreground" title={formatDateTime(lastActivity, tf)}>
-                      Last activity {ago(lastActivity)}
+                      Last activity {relativeTime(lastActivity)}
                     </p>
                   )}
                 </section>
@@ -501,8 +501,12 @@ export function TaskDetail({
               )}
               <section aria-label="Dates" className="flex flex-col gap-1 text-muted-foreground">
                 <h2 className="text-xs font-medium">Dates</h2>
-                <p title={formatDateTime(task.createdAt, tf)}>Created {ago(task.createdAt)}</p>
-                <p title={formatDateTime(task.updatedAt, tf)}>Updated {ago(task.updatedAt)}</p>
+                <p title={formatDateTime(task.createdAt, tf)}>
+                  Created {relativeTime(task.createdAt)}
+                </p>
+                <p title={formatDateTime(task.updatedAt, tf)}>
+                  Updated {relativeTime(task.updatedAt)}
+                </p>
               </section>
               <div className="flex flex-col items-start gap-2">
                 {conversationId && (
@@ -548,7 +552,9 @@ function ThreadMessage({
     >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span className="font-medium text-foreground">{mine ? "You" : (bot?.name ?? "Bot")}</span>
-        {message.createdAt && <time dateTime={message.createdAt}>{ago(message.createdAt)}</time>}
+        {message.createdAt && (
+          <time dateTime={message.createdAt}>{relativeTime(message.createdAt)}</time>
+        )}
         {message.status === "running" && <Badge>Working</Badge>}
         {message.queue === "pending" && <Badge>Queued</Badge>}
         {(message.status === "failed" || message.queue === "failed") && (

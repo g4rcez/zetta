@@ -2,6 +2,7 @@ import { Outlet, createFileRoute, useChildMatches } from "@tanstack/react-router
 
 import { ArtifactsPage } from "@/features/artifacts/artifacts-page";
 import { ARTIFACT_KINDS, type ArtifactKind } from "@/features/artifacts/artifacts-api";
+import { isUuid } from "@/features/shared/search-params";
 
 type ArtifactsSearch = {
   bot?: string;
@@ -13,9 +14,7 @@ type ArtifactsSearch = {
 export const Route = createFileRoute("/_auth/artifacts")({
   head: () => ({ meta: [{ title: "Artifacts · zetta" }] }),
   validateSearch: (search: Record<string, unknown>): ArtifactsSearch => ({
-    ...(typeof search.bot === "string" && /^[0-9a-f-]{36}$/i.test(search.bot)
-      ? { bot: search.bot }
-      : {}),
+    ...(isUuid(search.bot) ? { bot: search.bot } : {}),
     ...(typeof search.kind === "string" && ARTIFACT_KINDS.some((k) => k.kind === search.kind)
       ? { kind: search.kind as ArtifactKind }
       : {}),

@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { AgendaPage } from "@/features/agenda/agenda-page";
+import { isUuid } from "@/features/shared/search-params";
 
 type AgendaSearch = { item?: string };
 
 export const Route = createFileRoute("/_auth/agenda")({
-  validateSearch: (search: Record<string, unknown>): AgendaSearch => (typeof search.item === "string" && /^[0-9a-f-]{36}$/i.test(search.item) ? { item: search.item } : {}),
+  validateSearch: (search: Record<string, unknown>): AgendaSearch =>
+    isUuid(search.item) ? { item: search.item } : {},
   component: RouteComponent,
 });
 

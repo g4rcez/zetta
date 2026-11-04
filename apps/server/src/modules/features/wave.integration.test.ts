@@ -430,6 +430,19 @@ suite("feature wave against compose postgres", () => {
     expect(unsafe.status).toBe(422);
   });
 
+  test.each([
+    ["a GitHub fine-grained token", "my token github_pat_example_example_example_000"],
+    ["a JWT", "bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJleGFtcGxlIn0.c2lnbmF0dXJl"],
+    ["a password line", "password: correct-horse-battery"],
+  ])("snapshots: %s blocks publication", async (_kind, content) => {
+    const b = await newBot(A, "Writer");
+    const conv = (await call(A, "POST", "/api/conversations", { botId: b.id })).json.conversation
+      .id as string;
+    await call(A, "POST", `/api/conversations/${conv}/messages`, { content });
+    const preview = await call(A, "POST", "/api/snapshots/preview", { conversationId: conv });
+    expect(preview.status).toBe(422);
+  });
+
   test("hooks: ordered, invalid or risky patterns rejected, dry-run, stop is evaluated on redacted text, toggles and owner-only", async () => {
     const b = await newBot(A, "Hooked");
     const add = (v: object) => call(A, "POST", `/api/bots/${b.id}/hooks`, v);

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { RAIL_MODES, SIDEBAR_LIMITS, TIME_FORMATS } from "@zetta/db/schema/preferences";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import type { PreferenceStore } from "./store";
+import { fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type PreferenceServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -17,10 +18,6 @@ const patch = z.strictObject({
   // Ids only, never names: a stale or foreign id is harmless because only this person reads the list.
   botOrder: z.array(z.uuid()).max(500).optional(),
 });
-const out = (body: unknown, code = 200) =>
-  Response.json(body, { status: code, headers: { "cache-control": "no-store" } });
-const fail = (code: number, error: string, message: string) =>
-  out({ error: { code: error, message } }, code);
 
 export function createPreferenceRoutes(
   { access, preferences }: PreferenceServices,
@@ -35,15 +32,8 @@ export function createPreferenceRoutes(
     ) =>
     async ({ request, body }: { request: Request; body: unknown }) => {
       try {
-        if (request.method !== "GET") {
-          const origin = request.headers.get("origin");
-          if (!origin || !trustedOrigins.includes(origin))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
+        const denied = rejectUntrustedOrigin(request, trustedOrigins);
+        if (denied) return denied;
         return out(await work({ actor: await access.requireActive(request.headers), body }));
       } catch (e) {
         if (e instanceof AccessError)

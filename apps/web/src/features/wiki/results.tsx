@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
 import { BotIdentity } from "@/components/bot-identity";
-import { ago } from "../artifacts/artifacts-api";
+import { relativeTime } from "../shared/relative-time";
 import { Badge } from "../shared/ui";
 import { splitPassage } from "./wiki-passage";
 import { TYPE, type Bot, type Item } from "./wiki-api";
@@ -111,7 +111,7 @@ export function Results({
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <Author item={i} bots={bots} />
             <time dateTime={i.updatedAt} title={when(i.updatedAt)}>
-              {ago(i.updatedAt)}
+              {relativeTime(i.updatedAt)}
             </time>
             {i.tags.length > 0 && (
               <ul className="relative z-10 flex flex-wrap gap-1" aria-label="Tags">

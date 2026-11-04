@@ -5,6 +5,7 @@ import { HookError, isReactionEmoji, type FeaturesService } from "./service";
 import { RoutineError } from "./routines";
 import { SnapshotError } from "./snapshots";
 import { WorkflowError } from "./workflows";
+import { accessFail, createGuardedRoute, fail } from "../http-response";
 
 export type FeatureServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -89,10 +90,6 @@ const schemas = {
   }),
   reaction: z.strictObject({ emoji: z.string().refine(isReactionEmoji, "Not an emoji") }),
 };
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string, extra: object = {}) =>
-  out({ error: { code, message, ...extra } }, status);
 
 export function createFeatureRoutes(
   { access, features: f }: FeatureServices,
@@ -105,18 +102,7 @@ export function createFeatureRoutes(
     query: Record<string, string | undefined>;
   };
   function mapError(e: unknown) {
-    if (e instanceof AccessError)
-      return fail(
-        e.code === "SIGN_IN_REQUIRED"
-          ? 401
-          : e.code === "NOT_FOUND"
-            ? 404
-            : e.code === "IDENTITY_UNAVAILABLE"
-              ? 503
-              : 403,
-        e.code,
-        e.message,
-      );
+    if (e instanceof AccessError) return accessFail(e);
     if (e instanceof RoutineError)
       return e.code === "NOT_READY"
         ? fail(409, "NOT_READY", "Finish the missing steps before activating this.", {
@@ -157,37 +143,7 @@ export function createFeatureRoutes(
       return fail(400, "INVALID_REQUEST", "Check the details and try again.");
     return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
   }
-  const g =
-    (work: (c: Ctx) => Promise<unknown>, status = 200) =>
-    async ({
-      request,
-      body,
-      params,
-      query,
-    }: {
-      request: Request;
-      body: unknown;
-      params: Record<string, string>;
-      query: Record<string, string | undefined>;
-    }) => {
-      try {
-        if (request.method !== "GET") {
-          const origin = request.headers.get("origin");
-          if (!origin || !trustedOrigins.includes(origin))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
-        return out(
-          await work({ actor: await access.requireActive(request.headers), body, params, query }),
-          status,
-        );
-      } catch (e) {
-        return mapError(e);
-      }
-    };
+  const g = createGuardedRoute({ access, trustedOrigins, mapError });
   const id = (c: Ctx) => uuid.parse(c.params.id);
   return new Elysia({ prefix: "/api", normalize: false })
     .get(

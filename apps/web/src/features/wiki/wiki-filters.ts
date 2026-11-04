@@ -1,3 +1,4 @@
+import { isUuid, searchText } from "../shared/search-params";
 import type { Author, Hit, Item, Row, SharedRow, Status, WikiType } from "./wiki-api";
 
 export const SORTS = ["relevance", "updated", "created", "score", "title"] as const;
@@ -7,7 +8,6 @@ export type Since = keyof typeof SINCE;
 const TYPES: readonly WikiType[] = ["solo", "owner", "teams", "all"];
 const STATUSES: readonly Status[] = ["current", "stale", "archived"];
 const AUTHORS: readonly Author[] = ["user", "bot", "system"];
-const UUID = /^[0-9a-f-]{36}$/i;
 
 /** What the address holds. Lists are comma separated so the URL stays readable. */
 export type WikiSearch = {
@@ -72,9 +72,11 @@ export function parseWikiSearch(raw: Record<string, unknown>): WikiSearch {
     tag = list(raw.tag),
     status = list(raw.status, STATUSES),
     min = score(raw.min),
-    max = score(raw.max);
+    max = score(raw.max),
+    q = searchText(raw.q, 200),
+    create = searchText(raw.create, 160);
   return {
-    ...(typeof raw.q === "string" && raw.q.trim() && { q: raw.q.trim().slice(0, 200) }),
+    ...(q ? { q } : {}),
     ...(raw.view === "graph" && { view: "graph" as const }),
     ...(raw.view === "graph" && raw.dim === "3d" && { dim: "3d" as const }),
     ...(type.length && { type: type.join(",") }),
@@ -83,14 +85,13 @@ export function parseWikiSearch(raw: Record<string, unknown>): WikiSearch {
     ...(status.length && { status: status.join(",") }),
     ...((raw.access === "own" || raw.access === "shared") && { access: raw.access }),
     ...(AUTHORS.includes(raw.by as Author) && { by: raw.by as Author }),
-    ...(typeof raw.bot === "string" && UUID.test(raw.bot) && { bot: raw.bot }),
-    ...(typeof raw.team === "string" && UUID.test(raw.team) && { team: raw.team }),
+    ...(isUuid(raw.bot) && { bot: raw.bot }),
+    ...(isUuid(raw.team) && { team: raw.team }),
     ...(min !== undefined && { min }),
     ...(max !== undefined && { max }),
     ...(typeof raw.since === "string" && raw.since in SINCE && { since: raw.since as Since }),
     ...(SORTS.includes(raw.sort as Sort) && { sort: raw.sort as Sort }),
-    ...(typeof raw.create === "string" &&
-      raw.create.trim() && { create: raw.create.trim().slice(0, 160) }),
+    ...(create ? { create } : {}),
   };
 }
 

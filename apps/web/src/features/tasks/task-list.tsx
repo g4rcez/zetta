@@ -3,7 +3,7 @@ import { UserCircleDashedIcon, UserCircleIcon } from "@phosphor-icons/react";
 import type { MouseEvent } from "react";
 import { BotAvatar } from "@/components/bot-avatar";
 import type { Bot } from "../chat/chat-client";
-import { relativeTime } from "../studio/routine-format";
+import { relativeTime } from "../shared/relative-time";
 import { LabelChips, PriorityIcon, StatusIcon } from "./task-badges";
 import { NO_BOT, type GroupBy, type TaskGroup } from "./task-filters";
 import type { Task, TaskStatus } from "./tasks-api";

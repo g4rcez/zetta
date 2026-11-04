@@ -4,6 +4,7 @@ import { skillName } from "../bot-claude/profile";
 import { AccessError, type ActiveActor, type createIdentityAccess } from "../identity/access";
 import { DiscussionError, publicRoom, type DiscussionStore } from "./store";
 import type { DiscussionWorker } from "./worker";
+import { accessFail, createGuardedRoute, fail } from "../http-response";
 
 export type DiscussionServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -54,10 +55,6 @@ const schemas = {
   peers: z.strictObject({ peerBotIds: z.array(uuid).max(20) }),
   status: z.enum(["open", "paused", "stalled", "resolved", "cancelled"]).optional(),
 };
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 const STATUS: Record<DiscussionError["code"], number> = {
   INVALID: 400,
   LIMIT: 409,
@@ -78,54 +75,13 @@ export function createDiscussionRoutes(
     query: Record<string, string | undefined>;
   };
   function mapError(e: unknown) {
-    if (e instanceof AccessError)
-      return fail(
-        e.code === "SIGN_IN_REQUIRED"
-          ? 401
-          : e.code === "NOT_FOUND"
-            ? 404
-            : e.code === "IDENTITY_UNAVAILABLE"
-              ? 503
-              : 403,
-        e.code,
-        e.message,
-      );
+    if (e instanceof AccessError) return accessFail(e);
     if (e instanceof DiscussionError) return fail(STATUS[e.code], e.code, e.safe);
     if (e instanceof z.ZodError)
       return fail(400, "INVALID_REQUEST", "Check the details and try again.");
     return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
   }
-  const g =
-    (work: (c: Ctx) => Promise<unknown>, status = 200) =>
-    async ({
-      request,
-      body,
-      params,
-      query,
-    }: {
-      request: Request;
-      body: unknown;
-      params: Record<string, string>;
-      query: Record<string, string | undefined>;
-    }) => {
-      try {
-        if (request.method !== "GET") {
-          const origin = request.headers.get("origin");
-          if (!origin || !trustedOrigins.includes(origin))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
-        return out(
-          await work({ actor: await access.requireActive(request.headers), body, params, query }),
-          status,
-        );
-      } catch (e) {
-        return mapError(e);
-      }
-    };
+  const g = createGuardedRoute({ access, trustedOrigins, mapError });
   const id = (c: Ctx) => uuid.parse(c.params.id);
   return new Elysia({ prefix: "/api", normalize: false })
     .get(

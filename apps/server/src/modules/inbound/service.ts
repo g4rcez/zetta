@@ -3,6 +3,7 @@ import type { Database } from "@zetta/db";
 import { and, asc, eq, gt, gte, inArray, lt, sql } from "@zetta/db/query";
 import { bot, conversation } from "@zetta/db/schema/chat";
 import { inboundEvent, inboundRoute, inboundThread } from "@zetta/db/schema/inbound";
+import { defuse } from "../discussions/prompt";
 import { raiseAttention } from "../features/attention";
 import {
   AccessError,
@@ -44,7 +45,6 @@ export class InboundError extends Error {
   }
 }
 
-const defuse = (t: string) => t.replaceAll("```", "'''");
 const clock = (ms: number) => new Date(ms).toISOString().slice(11, 16);
 
 /** What the bot receives: the outside messages as data, the one chat it may answer, and what to do when other bots are needed. */

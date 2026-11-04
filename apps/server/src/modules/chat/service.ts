@@ -142,6 +142,7 @@ import {
   isChiefWrite,
   type ChiefPatch,
 } from "./chief";
+import { norm } from "./chief/resolve";
 import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
 import { topics } from "@zetta/core/live-topics";
 import { events } from "../events/bus";
@@ -149,6 +150,7 @@ import {
   discussionPrompt,
   HELP_CHIEF_TOOLS,
   MEMBER_TOOLS,
+  defuse,
   isSilent,
   mentionKey,
   openToolText,
@@ -638,7 +640,6 @@ export function createChatService(
       browserResults.push(problemForBot(p));
       notes.push(problemBlock(p, who.name));
     };
-    const normName = (v: string) => v.trim().replace(/^@/, "").replace(/\s+/g, "").toLowerCase();
     /** The bot a `setup` or `inbound` block is about: its `bot` argument (the chief only, one of the user's own bots), else the asking bot. */
     const subjectOf = async (
       name: string | undefined,
@@ -649,7 +650,7 @@ export function createChatService(
         .select()
         .from(bot)
         .where(and(eq(bot.ownerUserId, actor.userId), eq(bot.archived, false)));
-      const hits = mine.filter((x) => x.id === name || normName(x.name) === normName(name));
+      const hits = mine.filter((x) => x.id === name || norm(x.name) === norm(name));
       return hits.length === 1
         ? { bot: hits[0]! }
         : { error: `no single bot called "${name}". Use a name or id from the bots list.` };
@@ -665,11 +666,11 @@ export function createChatService(
       const missing: string[] = [];
       const unknownRoles: string[] = [];
       for (const m of members) {
-        const hit = mine.find((x) => x.id === m.bot || normName(x.name) === normName(m.bot));
+        const hit = mine.find((x) => x.id === m.bot || norm(x.name) === norm(m.bot));
         if (!hit) missing.push(m.bot);
         else if (hit.id !== who.id && !picked.some((p) => p.botId === hit.id)) {
           const role = m.role
-            ? roles?.find((r) => r.id === m.role || normName(r.name) === normName(m.role))
+            ? roles?.find((r) => r.id === m.role || norm(r.name) === norm(m.role))
             : undefined;
           if (m.role && !role) unknownRoles.push(m.role);
           picked.push({ botId: hit.id, roleId: role?.id ?? null });
@@ -1303,9 +1304,9 @@ export function createChatService(
           continue;
         }
         try {
-          const wanted = normName(c.args.team);
+          const wanted = norm(c.args.team);
           const found = (await deps.teams.list(actor)).find(
-            (t) => t.id === c.args.team || normName(t.name) === wanted,
+            (t) => t.id === c.args.team || norm(t.name) === wanted,
           );
           if (!found) {
             browserResults.push(
@@ -2921,8 +2922,6 @@ export function createChatService(
       result: `agenda.${a.action} ok: id ${item.id}`,
     };
   }
-  /** Fences inside untrusted text (pages, files, tool results) are defused so they cannot be parsed as Zetta tool calls. */
-  const defuse = (t: string) => t.replaceAll("```", "'''");
   /** The message a channel reply quotes, as a snapshot. It must belong to the same chat. */
   async function loadQuote(conversationId: string, id: string): Promise<Quote> {
     const [m] = await db
@@ -3696,7 +3695,6 @@ export function createChatService(
     ).sort(
       (x, y) => Number(y.ownerUserId === actor.userId) - Number(x.ownerUserId === actor.userId),
     );
-    const key = (n: string) => n.replace(/\s+/g, "").toLowerCase();
     const chosen: (typeof bot.$inferSelect)[] = [];
     const skipped: { name: string; reason: string }[] = [];
     const seen = new Set<string>();
@@ -3704,7 +3702,7 @@ export function createChatService(
       const ref = "id" in t ? t.id : t.key;
       if (seen.has(ref)) continue;
       seen.add(ref);
-      const hit = visible.find((x) => ("id" in t ? x.id === t.id : key(x.name) === t.key));
+      const hit = visible.find((x) => ("id" in t ? x.id === t.id : mentionKey(x.name) === t.key));
       if (!hit)
         skipped.push({ name: "id" in t ? t.label : t.key, reason: "no such bot you can use" });
       else if (hit.id === exclude || chosen.includes(hit)) continue;
@@ -3991,8 +3989,7 @@ export function createChatService(
       .from(bot)
       .where(and(eq(bot.ownerUserId, actor.userId), eq(bot.archived, false)));
     const target =
-      mine.find((x) => x.id === ref) ??
-      mine.find((x) => x.name.replace(/\s+/g, "").toLowerCase() === ref.replace(/\s+/g, ""));
+      mine.find((x) => x.id === ref) ?? mine.find((x) => mentionKey(x.name) === mentionKey(ref));
     if (!target)
       return {
         error: `no bot called "${args.bot}". Use a name or id from the bots list.`,

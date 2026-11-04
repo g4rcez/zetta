@@ -52,6 +52,8 @@ import { useBotAttention, type BotAttention } from "../attention/summary";
 import type { Bot, Conversation, Folder } from "./chat-client";
 import { ORDER_LIMIT, moveInGroup, orderBots, placeGroup } from "./bot-order";
 import { useSidebarData } from "./sidebar-data";
+import { relativeTime } from "../shared/relative-time";
+import { saveLocal } from "@/lib/local-storage";
 
 export { orderBots };
 
@@ -80,13 +82,6 @@ const readJson = <T,>(key: string, fallback: T, valid: (v: unknown) => v is T): 
     return valid(raw) ? raw : fallback;
   } catch {
     return fallback;
-  }
-};
-const persist = (key: string, value: unknown) => {
-  try {
-    localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
-  } catch {
-    // Storage unavailable (private mode): the preference just lasts for this session.
   }
 };
 const isIdList = (v: unknown): v is string[] =>
@@ -147,16 +142,6 @@ function Hint({
 }
 
 const fullDate = (iso: string) => new Date(iso).toLocaleString();
-
-/** Short relative time for a row: "now", "5m", "3h", "2d", then a calendar date. */
-function ago(iso: string) {
-  const s = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
 
 /** ArrowUp/ArrowDown walk the visible conversation rows, so the list works without the mouse. */
 function walkRows(e: KeyboardEvent<HTMLElement>) {
@@ -310,9 +295,9 @@ function ChatRow({
           <Hint title="Last activity" description={fullDate(c.updatedAt)}>
             <time
               dateTime={c.updatedAt}
-              className="w-8 shrink-0 text-right text-xs text-muted-foreground tabular-nums group-focus-within/chat:opacity-0 group-hover/chat:opacity-0"
+              className="min-w-8 shrink-0 text-right text-xs text-muted-foreground tabular-nums group-focus-within/chat:opacity-0 group-hover/chat:opacity-0"
             >
-              {ago(c.updatedAt)}
+              {relativeTime(c.updatedAt)}
             </time>
           </Hint>
         )}
@@ -582,7 +567,7 @@ function BotSection({
                 dateTime={latest.updatedAt}
                 className="pl-1 text-xs text-muted-foreground tabular-nums"
               >
-                {ago(latest.updatedAt)}
+                {relativeTime(latest.updatedAt)}
               </time>
             </Hint>
           )
@@ -693,9 +678,9 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
   const [showAll, setShowAll] = useState<Set<string>>(() => new Set());
   const [announcement, setAnnouncement] = useState("");
   const dragging = useRef(false);
-  useEffect(() => persist(OPEN_KEY, opened), [opened]);
-  useEffect(() => persist(MODE_KEY, mode), [mode]);
-  useEffect(() => persist(BOTS_OPEN_KEY, botsOpen), [botsOpen]);
+  useEffect(() => saveLocal(OPEN_KEY, opened), [opened]);
+  useEffect(() => saveLocal(MODE_KEY, mode), [mode]);
+  useEffect(() => saveLocal(BOTS_OPEN_KEY, botsOpen), [botsOpen]);
   const order = preferences.botOrder;
   // The order used to live in this browser only: move it to the account once, unless the account already has one.
   useEffect(() => {

@@ -100,18 +100,3 @@ export function formatSize(bytes: number) {
   }
   return `${n.toFixed(n < 10 ? 1 : 0)} ${units[i]}`;
 }
-
-const RELATIVE = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-const STEPS = [
-  ["year", 31_536_000],
-  ["month", 2_592_000],
-  ["day", 86_400],
-  ["hour", 3600],
-  ["minute", 60],
-] as const;
-/** "3 hours ago", "yesterday"; falls back to "just now" under a minute. */
-export function ago(iso: string, now = Date.now()) {
-  const s = Math.round((new Date(iso).getTime() - now) / 1000);
-  const step = STEPS.find(([, sec]) => Math.abs(s) >= sec);
-  return step ? RELATIVE.format(Math.round(s / step[1]), step[0]) : "just now";
-}

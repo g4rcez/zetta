@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { DiscussionError, publicRoom } from "../discussions/store";
 import { TeamError, type TeamStore } from "./store";
+import { accessFail, createGuardedRoute, fail } from "../http-response";
 
 export type TeamServices = { access: ReturnType<typeof createIdentityAccess>; store: TeamStore };
 const uuid = z.string().uuid();
@@ -51,10 +52,6 @@ const schemas = {
     firstMessage: z.string().trim().min(1).max(4000).optional(),
   }),
 };
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 const TEAM_STATUS: Record<TeamError["code"], number> = {
   INVALID: 400,
   NOT_FOUND: 404,
@@ -80,53 +77,14 @@ export function createTeamRoutes(
     params: Record<string, string>;
   };
   function mapError(e: unknown) {
-    if (e instanceof AccessError)
-      return fail(
-        e.code === "SIGN_IN_REQUIRED"
-          ? 401
-          : e.code === "NOT_FOUND"
-            ? 404
-            : e.code === "IDENTITY_UNAVAILABLE"
-              ? 503
-              : 403,
-        e.code,
-        e.message,
-      );
+    if (e instanceof AccessError) return accessFail(e);
     if (e instanceof TeamError) return fail(TEAM_STATUS[e.code], e.code, e.safe);
     if (e instanceof DiscussionError) return fail(DISCUSSION_STATUS[e.code], e.code, e.safe);
     if (e instanceof z.ZodError)
       return fail(400, "INVALID_REQUEST", "Check the details and try again.");
     return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
   }
-  const g =
-    (work: (c: Ctx) => Promise<unknown>, status = 200) =>
-    async ({
-      request,
-      body,
-      params,
-    }: {
-      request: Request;
-      body: unknown;
-      params: Record<string, string>;
-    }) => {
-      try {
-        if (request.method !== "GET") {
-          const origin = request.headers.get("origin");
-          if (!origin || !trustedOrigins.includes(origin))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
-        return out(
-          await work({ actor: await access.requireActive(request.headers), body, params }),
-          status,
-        );
-      } catch (e) {
-        return mapError(e);
-      }
-    };
+  const g = createGuardedRoute({ access, trustedOrigins, mapError });
   const id = (c: Ctx) => uuid.parse(c.params.id);
   return new Elysia({ prefix: "/api", normalize: false })
     .get(

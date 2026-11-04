@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { toolSchemas } from "../chat/tools";
+import { defuse } from "../discussions/prompt";
 import { WikiError, WIKI_LIMITS, type Wiki } from "./service";
 
 export type WikiToolArgs = z.infer<typeof toolSchemas.wiki>;
@@ -10,8 +11,6 @@ export type WikiToolOutcome = {
   saved?: { slug: string; title: string; created: boolean };
 };
 
-/** Page text is data written by the user or by bots: fences are defused so it can never be parsed as a tool call. */
-const defuse = (t: string) => t.replaceAll("```", "'''");
 const why: Record<WikiError["code"], string> = {
   SECRET_REJECTED: "it looked like a secret",
   UNSAFE: "it looked like an instruction aimed at an AI, not knowledge",

@@ -3,7 +3,8 @@ import { and, eq } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
 
 import { RoutineError, type RoutineInput } from "../../features/routines";
-import { pick, short, validTimezone } from "./resolve";
+import { validTimezone } from "../../features/schedule";
+import { pick, short } from "./resolve";
 import type { ChiefArgs } from "./schemas";
 import type { Applied, ApplyCtx, ChiefCtx, DiffLine, Outcome } from "./types";
 

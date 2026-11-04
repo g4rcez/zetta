@@ -2,6 +2,8 @@
  * Output helpers shared by native plugins that return third-party content (mail, posts, comments). Every result is framed as
  * untrusted data so a bot never treats it as instructions, and is clipped to the platform's 8000 character tool-result budget.
  */
+import { PluginError } from "./registry";
+
 export const MAX_OUT = 7500;
 export const clip = (v: unknown, n: number) => {
   const t = typeof v === "string" ? v : "";
@@ -42,3 +44,17 @@ export const num = (v: unknown, d: number, min: number, max: number) => {
 };
 export const str = (v: unknown, max: number) =>
   typeof v === "string" ? v.trim().slice(0, max) : "";
+/** Strip control/bidi characters and cap length. */
+export const clean = (v: unknown, max: number) =>
+  String(v ?? "")
+    // oxlint-disable-next-line no-control-regex -- strips control characters on purpose
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f‎‏‪-‮⁦-⁩]/g, " ")
+    .slice(0, max);
+/** Required text: trimmed, not empty, not longer than `max`. Throws INVALID_ARGS naming the field. */
+export const requiredText = (v: unknown, max: number, name = "text") => {
+  const t = clean(v, max + 1).trim();
+  if (!t) throw new PluginError("INVALID_ARGS", `${name} is empty.`);
+  if (t.length > max)
+    throw new PluginError("INVALID_ARGS", `${name} is longer than ${max} characters.`);
+  return t;
+};

@@ -5,6 +5,7 @@ import { ARTIFACT_KINDS } from "@zetta/db/schema/artifacts";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { withDesignSystem } from "./design-system";
 import { ARTIFACT_SORTS, type ArtifactStore } from "./store";
+import { accessFail, fail, out } from "../http-response";
 
 /** Bigger pages are streamed as they are, without the design system. */
 const MAX_HTML_STYLED = 10 * 1024 * 1024;
@@ -20,10 +21,6 @@ const query = z.object({
   sort: z.enum(ARTIFACT_SORTS).optional(),
 });
 const pin = z.strictObject({ pinned: z.boolean() });
-const out = (body: unknown, code = 200) =>
-  Response.json(body, { status: code, headers: { "cache-control": "no-store" } });
-const fail = (code: number, error: string, message: string) =>
-  out({ error: { code: error, message } }, code);
 
 /** Untrusted bytes: HTML may run scripts but only in an opaque origin (no cookies, no API); everything else runs nothing. */
 const SECURITY: Record<string, string> = {
@@ -72,18 +69,7 @@ export function createArtifactRoutes(
         "UNTRUSTED_ORIGIN",
         "Open Zetta from its trusted application and try again.",
       );
-    if (e instanceof AccessError)
-      return fail(
-        e.code === "SIGN_IN_REQUIRED"
-          ? 401
-          : e.code === "NOT_FOUND"
-            ? 404
-            : e.code === "IDENTITY_UNAVAILABLE"
-              ? 503
-              : 403,
-        e.code,
-        e.message,
-      );
+    if (e instanceof AccessError) return accessFail(e);
     if (e instanceof z.ZodError)
       return fail(400, "INVALID_REQUEST", "Check the details and try again.");
     return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");

@@ -17,6 +17,7 @@ import { useRooms } from "../chat/sidebar-data";
 import { TeamRoomRows } from "../teams/team-chats";
 import type { DiscussionListItem } from "./discussions-api";
 import { groupRooms, roomLabel, roomSignal, type RoomSignal } from "./rooms";
+import { saveLocal } from "@/lib/local-storage";
 
 const OPEN_KEY = "zetta.sidebar-sections";
 type Sections = { rooms: boolean; issues: boolean };
@@ -165,11 +166,7 @@ export function RoomsSection({ query }: { query: string }) {
   const toggle = (key: keyof Sections) =>
     setSections((s) => {
       const next = { ...s, [key]: !s[key] };
-      try {
-        localStorage.setItem(OPEN_KEY, JSON.stringify(next));
-      } catch {
-        // Storage unavailable (private mode): the choice lasts for this session.
-      }
+      saveLocal(OPEN_KEY, next);
       return next;
     });
   // A search opens everything, so a match is never hidden inside a closed section.

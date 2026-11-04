@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { PluginError, type PluginContext, type PluginStatus } from "../registry";
+import { clean } from "../untrusted";
 
 /**
  * Reddit OAuth2 "web app" flow (Authorization Code + state), used as an INTEGRATION grant for bot tools. See github.com/reddit-archive/reddit/wiki/OAuth2:
@@ -113,13 +114,6 @@ export function needScope(ctx: PluginContext, ...any: ScopeId[]) {
     );
 }
 
-/** Strip control/bidi characters and cap length (Reddit text is untrusted). */
-// oxlint-disable-next-line no-control-regex
-export const clean = (v: unknown, max: number) =>
-  String(v ?? "")
-    // oxlint-disable-next-line no-control-regex -- strips control characters on purpose
-    .replace(/[\u0000-\u0008\u000b-\u001f\u007f‎‏‪-‮⁦-⁩]/g, " ")
-    .slice(0, max);
 const SUB = /^[A-Za-z0-9][A-Za-z0-9_]{1,20}$/;
 /** `r/Foo`, `/r/foo/` or `foo` -> `foo` (lowercase for comparisons). Throws on anything else. */
 export function subName(v: unknown, name = "subreddit"): string {

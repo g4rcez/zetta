@@ -1,6 +1,6 @@
 import { PluginError, type PluginContext, type PluginTool } from "../registry";
-import { num, str, untrustedList } from "../untrusted";
-import { clean, needScope, rfetch, SCOPE_IDS, subName } from "./oauth";
+import { clean, num, str, untrustedList } from "../untrusted";
+import { needScope, rfetch, SCOPE_IDS, subName } from "./oauth";
 
 const SRC = "Reddit";
 const ID36 = /^[a-z0-9]{1,13}$/,

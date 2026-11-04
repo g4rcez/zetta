@@ -23,7 +23,7 @@ import { BotAvatar } from "@/components/bot-avatar";
 import { authClient } from "@/lib/auth-client";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
-import { relativeTime } from "../studio/routine-format";
+import { relativeTime } from "../shared/relative-time";
 import { LabelChips, PriorityIcon } from "./task-badges";
 import { GROUP_OPTIONS, Segmented, TaskFilterBar } from "./task-filter-bar";
 import {

@@ -81,6 +81,7 @@ import { roomLabel, roomStatus } from "./rooms";
 // The flow canvas (@xyflow/react) is about 40 kB gzip plus its CSS and only a team room's canvas view draws it.
 const RoomCanvas = lazy(() => import("./room-canvas").then((m) => ({ default: m.RoomCanvas })));
 import { StepsDrawer } from "./steps-drawer";
+import { relativeTime } from "../shared/relative-time";
 import { Alert } from "@g4rcez/components/alert";
 
 const STATUS_CLASS: Record<DiscussionStatus, string> = {
@@ -89,16 +90,6 @@ const STATUS_CLASS: Record<DiscussionStatus, string> = {
   stalled: "bg-warn/15 text-warn",
   resolved: "bg-success/15 text-success",
   cancelled: "bg-muted text-muted-foreground",
-};
-const ago = (iso: string) => {
-  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
-  return m < 1
-    ? "now"
-    : m < 60
-      ? `${m}m`
-      : m < 1440
-        ? `${Math.round(m / 60)}h`
-        : `${Math.round(m / 1440)}d`;
 };
 const closed = (s: DiscussionStatus) => s === "resolved" || s === "cancelled";
 const botOf = (bots: Bot[], id: string) => bots.find((b) => b.id === id) ?? { id };
@@ -373,9 +364,9 @@ function BrowserRow({ d, bots }: { d: DiscussionListItem; bots: Bot[] }) {
         )}
         <time
           dateTime={d.updatedAt}
-          className="w-9 shrink-0 text-right text-xs text-muted-foreground tabular-nums"
+          className="min-w-9 shrink-0 text-right text-xs text-muted-foreground tabular-nums"
         >
-          {ago(d.updatedAt)}
+          {relativeTime(d.updatedAt)}
         </time>
       </Link>
     </li>

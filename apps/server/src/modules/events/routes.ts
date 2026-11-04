@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import type { EventBus } from "./bus";
+import { fail } from "../http-response";
 
 export type EventServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -10,11 +11,6 @@ export type EventServices = {
 
 /** One person with many tabs open is normal; this stops a loop from holding the process's sockets. */
 const MAX_STREAMS_PER_USER = 10;
-
-const out = (body: unknown, status: number) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 
 export function createEventRoutes(
   { access, bus }: EventServices,

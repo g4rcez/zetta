@@ -1,6 +1,7 @@
 import { PluginError, type PluginContext, type PluginTool } from "../registry";
-import { str } from "../untrusted";
-import { allowlist, clean, needScope, rfetch, subName, type ScopeId } from "./oauth";
+import { createSendLimit } from "../send-limit";
+import { clean, requiredText, str } from "../untrusted";
+import { allowlist, needScope, rfetch, subName, type ScopeId } from "./oauth";
 import { allowsNsfw } from "./tools";
 
 /**
@@ -21,15 +22,12 @@ const DISABLED = () =>
     "Open Studio > Plugins > Reddit, turn on 'Allow bots to act on my account', then ask again.",
   );
 
-const log = new Map<string, number[]>(); // `${userId}:${bucket}` -> timestamps (in memory; resets on restart)
+const limits = {
+  write: createSendLimit({ perHour: WRITES_PER_HOUR, perMin: WRITES_PER_MIN }),
+  vote: createSendLimit({ perHour: VOTES_PER_HOUR }),
+};
 function rateLimit(userId: string, bucket: "write" | "vote", now = Date.now()) {
-  const key = `${userId}:${bucket}`,
-    list = (log.get(key) ?? []).filter((t) => now - t < 3_600_000);
-  const hour = bucket === "vote" ? VOTES_PER_HOUR : WRITES_PER_HOUR;
-  if (
-    list.length >= hour ||
-    (bucket === "write" && list.filter((t) => now - t < 60_000).length >= WRITES_PER_MIN)
-  )
+  if (!limits[bucket].allow(userId, now))
     throw new PluginError(
       "RATE_LIMITED",
       bucket === "vote"
@@ -37,11 +35,12 @@ function rateLimit(userId: string, bucket: "write" | "vote", now = Date.now()) {
         : `The Reddit action limit was reached (${WRITES_PER_MIN} a minute, ${WRITES_PER_HOUR} an hour).`,
       "Wait a while and ask again.",
     );
-  list.push(now);
-  log.set(key, list);
 }
 /** Test helper. */
-export const resetRedditLimits = () => log.clear();
+export const resetRedditLimits = () => {
+  limits.write.reset();
+  limits.vote.reset();
+};
 
 /** Subreddit (lowercase) a post or comment lives in, through /api/info. */
 async function subredditOf(ctx: PluginContext, fullname: string): Promise<string | undefined> {
@@ -81,13 +80,6 @@ const fullname = (v: unknown, kinds: string[], name = "id") => {
       `${name} must be a Reddit fullname (${kinds.map((k) => `${k}_...`).join(" or ")}), as returned by the read tools.`,
     );
   return s;
-};
-const text = (v: unknown, max: number, name = "text") => {
-  const t = clean(v, max + 1).trim();
-  if (!t) throw new PluginError("INVALID_ARGS", `${name} is empty.`);
-  if (t.length > max)
-    throw new PluginError("INVALID_ARGS", `${name} is longer than ${max} characters.`);
-  return t;
 };
 
 /** Reddit's `api_type=json` errors ([[CODE, message, field], ...]) mapped to what the user can do. */
@@ -168,7 +160,7 @@ export const writeTools: PluginTool[] = [
     ),
     async handler(ctx, a) {
       const sr = subName(a.subreddit),
-        title = text(a.title, 300, "title");
+        title = requiredText(a.title, 300, "title");
       const url = str(a.url, 2000);
       if (url && a.text)
         throw new PluginError("INVALID_ARGS", "Pass either text or url, not both.");
@@ -191,7 +183,7 @@ export const writeTools: PluginTool[] = [
             sr,
             title,
             kind: url ? "link" : "self",
-            ...(url ? { url } : { text: a.text === undefined ? "" : text(a.text, 20_000) }),
+            ...(url ? { url } : { text: a.text === undefined ? "" : requiredText(a.text, 20_000) }),
             nsfw: a.nsfw === true ? "true" : undefined,
             spoiler: a.spoiler === true ? "true" : undefined,
             flair_id: flair || undefined,
@@ -219,7 +211,7 @@ export const writeTools: PluginTool[] = [
     ),
     async handler(ctx, a) {
       const parent = fullname(a.parent, ["t1", "t3"], "parent"),
-        body = text(a.text, 10_000);
+        body = requiredText(a.text, 10_000);
       await guard(ctx, "submit", { thing: parent });
       return {
         status: "commented",
@@ -266,7 +258,7 @@ export const writeTools: PluginTool[] = [
     ),
     async handler(ctx, a) {
       const id = fullname(a.id, ["t1", "t3"]),
-        body = text(a.text, id.startsWith("t3") ? 20_000 : 10_000);
+        body = requiredText(a.text, id.startsWith("t3") ? 20_000 : 10_000);
       await guard(ctx, "edit", null);
       return {
         status: "edited",
@@ -345,8 +337,8 @@ export const writeTools: PluginTool[] = [
       const to = str(a.to, 30).replace(/^\/?u(ser)?\//i, "");
       if (!USER.test(to))
         throw new PluginError("INVALID_ARGS", "to must be a Reddit username such as u/someone.");
-      const subject = text(a.subject, 100, "subject"),
-        body = text(a.text, 10_000);
+      const subject = requiredText(a.subject, 100, "subject"),
+        body = requiredText(a.text, 10_000);
       await guard(ctx, "privatemessages", null);
       checked(
         await rfetch(ctx, "/api/compose", { method: "POST", form: { to, subject, text: body } }),

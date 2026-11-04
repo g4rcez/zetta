@@ -10,6 +10,7 @@ import { AccessError, type createIdentityAccess } from "../identity/access";
 import { McpError, type Mcp } from "./mcp";
 import { PluginError } from "./plugins/registry";
 import { SourceError, type Sources } from "./sources";
+import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type IntegrationServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -24,10 +25,6 @@ const scopeOf = z.enum(["mine", "team"]);
 const sealedConfig = z.strictObject({
   config: z.record(z.string().max(40), z.string().max(4000)).default({}),
 });
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 
 export function createIntegrationRoutes(
   { access, mcp, sources }: IntegrationServices,
@@ -41,18 +38,7 @@ export function createIntegrationRoutes(
     scope: z.infer<typeof scopeOf>;
   };
   function mapError(e: unknown) {
-    if (e instanceof AccessError)
-      return fail(
-        e.code === "SIGN_IN_REQUIRED"
-          ? 401
-          : e.code === "NOT_FOUND"
-            ? 404
-            : e.code === "IDENTITY_UNAVAILABLE"
-              ? 503
-              : 403,
-        e.code,
-        e.message,
-      );
+    if (e instanceof AccessError) return accessFail(e);
     if (e instanceof McpError)
       return fail(
         e.code === "NOT_BOUND"
@@ -122,15 +108,8 @@ export function createIntegrationRoutes(
       params: Record<string, string>;
     }) => {
       try {
-        if (request.method !== "GET") {
-          const o = request.headers.get("origin");
-          if (!o || !trustedOrigins.includes(o))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
+        const denied = rejectUntrustedOrigin(request, trustedOrigins);
+        if (denied) return denied;
         return out(
           await work({
             actor: await access.requireActive(request.headers),

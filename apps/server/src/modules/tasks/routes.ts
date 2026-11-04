@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { TASK_PRIORITIES, TASK_STATUSES, type TaskStore } from "./store";
+import { accessFail, createGuardedRoute, fail } from "../http-response";
 
 export type TaskServices = { access: ReturnType<typeof createIdentityAccess>; tasks: TaskStore };
 const status = z.enum(TASK_STATUSES);
@@ -25,10 +26,6 @@ const patch = z.strictObject({
   priority: priority.optional(),
   labels: labels.optional(),
 });
-const out = (body: unknown, code = 200) =>
-  Response.json(body, { status: code, headers: { "cache-control": "no-store" } });
-const fail = (code: number, error: string, message: string) =>
-  out({ error: { code: error, message } }, code);
 
 export function createTaskRoutes(
   { access, tasks }: TaskServices,
@@ -39,49 +36,13 @@ export function createTaskRoutes(
     body: unknown;
     params: Record<string, string>;
   };
-  const g =
-    (work: (c: Ctx) => Promise<unknown>, code = 200) =>
-    async ({
-      request,
-      body,
-      params,
-    }: {
-      request: Request;
-      body: unknown;
-      params: Record<string, string>;
-    }) => {
-      try {
-        if (request.method !== "GET") {
-          const origin = request.headers.get("origin");
-          if (!origin || !trustedOrigins.includes(origin))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
-        return out(
-          await work({ actor: await access.requireActive(request.headers), body, params }),
-          code,
-        );
-      } catch (e) {
-        if (e instanceof AccessError)
-          return fail(
-            e.code === "SIGN_IN_REQUIRED"
-              ? 401
-              : e.code === "NOT_FOUND"
-                ? 404
-                : e.code === "IDENTITY_UNAVAILABLE"
-                  ? 503
-                  : 403,
-            e.code,
-            e.message,
-          );
-        if (e instanceof z.ZodError)
-          return fail(400, "INVALID_REQUEST", "Check the details and try again.");
-        return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
-      }
-    };
+  function mapError(e: unknown) {
+    if (e instanceof AccessError) return accessFail(e);
+    if (e instanceof z.ZodError)
+      return fail(400, "INVALID_REQUEST", "Check the details and try again.");
+    return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
+  }
+  const g = createGuardedRoute({ access, trustedOrigins, mapError });
   const id = (c: Ctx) => z.string().uuid().parse(c.params.id);
   return new Elysia({ prefix: "/api", normalize: false })
     .get(

@@ -5,6 +5,7 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from "./tasks-api";
+import { isUuid } from "../shared/search-params";
 
 /** Value in `botIds` for tasks that no bot owns (`botId === null`). */
 export const NO_BOT = "none";
@@ -160,7 +161,6 @@ export function groupTasks(
     .filter((g) => g.tasks.length > 0);
 }
 
-const UUID = /^[0-9a-f-]{36}$/i;
 const THREADS = THREAD_OPTIONS.map((o) => o.value);
 const WINDOWS = WINDOW_OPTIONS.map((o) => o.value);
 const SORTS = SORT_OPTIONS.map((o) => o.value);
@@ -202,6 +202,6 @@ export function parseTaskSearch(raw: Record<string, unknown>): TaskSearch {
     sort: pick(raw.sort, SORTS, "default"),
     view: pick(raw.view, ["board", "list"], "board"),
     groupBy: pick(raw.groupBy, ["status", "assignee"], "status"),
-    task: task && UUID.test(task) ? task : undefined,
+    task: isUuid(task) ? task : undefined,
   });
 }

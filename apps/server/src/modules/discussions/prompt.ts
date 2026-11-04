@@ -11,7 +11,8 @@ import type { TeamKind } from "@zetta/db/schema/teams";
  * Pure text for group discussions: the tool instructions bots get, the member prompt (shared brief + named transcript) and who a post wakes.
  * Everything other bots or outside people wrote is framed as data between nonce markers; fences are defused so it cannot carry tool calls.
  */
-const defuse = (t: string) => t.replaceAll("```", "'''");
+/** Fences inside untrusted text are defused, so the text cannot be parsed as a tool call. */
+export const defuse = (t: string) => t.replaceAll("```", "'''");
 export { mentionKey };
 
 export type PromptMember = { botId: string; name: string; role: string; code: boolean };

@@ -19,6 +19,7 @@ import { MAX_SECRET, type MachineService } from "./machines";
 import { ComputerError, type ComputerService } from "./service";
 import type { VmService } from "./vm";
 import { openVncBridge, type VncBridge } from "./vnc";
+import { fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type ComputerServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -92,10 +93,6 @@ const vmRemoteCreate = z.strictObject({
   endpoint: z.string().url().max(300),
   sealed: z.unknown(),
 });
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 
 export function createComputerRoutes(
   { access, computer, vms, machines }: ComputerServices,
@@ -115,15 +112,8 @@ export function createComputerRoutes(
       params: Record<string, string>;
     }) => {
       try {
-        if (request.method !== "GET") {
-          const o = request.headers.get("origin");
-          if (!o || !trustedOrigins.includes(o))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
+        const denied = rejectUntrustedOrigin(request, trustedOrigins);
+        if (denied) return denied;
         const actor = await access.requireActive(request.headers);
         return out(await work({ userId: actor.userId, actor, body, params }), status);
       } catch (e) {

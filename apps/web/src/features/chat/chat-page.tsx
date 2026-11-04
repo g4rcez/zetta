@@ -54,6 +54,7 @@ import { ThreadPanel } from "./thread-panel";
 import { draftKey } from "./use-draft";
 import { useZettaChat } from "./use-zetta-chat";
 import { Alert } from "@g4rcez/components/alert";
+import { saveLocal } from "@/lib/local-storage";
 import { discussionsQueries } from "../discussions/discussions-api";
 
 const SUGGESTIONS = [
@@ -82,13 +83,6 @@ const readArtifactWidth = () => {
       : ARTIFACT_LIMITS.fallback;
   } catch {
     return ARTIFACT_LIMITS.fallback;
-  }
-};
-const writeArtifactWidth = (width: number) => {
-  try {
-    localStorage.setItem(ARTIFACT_WIDTH_KEY, String(width));
-  } catch {
-    // Storage unavailable (private mode): the width just lasts for this session.
   }
 };
 type ChatSearchState = {
@@ -862,7 +856,7 @@ export function ChatPage() {
                   {...ARTIFACT_LIMITS}
                   onChange={(width) => {
                     setArtifactWidth(width);
-                    writeArtifactWidth(width);
+                    saveLocal(ARTIFACT_WIDTH_KEY, width);
                   }}
                 />
               )}

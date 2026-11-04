@@ -6,6 +6,7 @@ import { AccessError, type ActiveActor, type createIdentityAccess } from "../ide
 import { installSelection } from "./install";
 import { MarketError, parseSource, type Market } from "./market";
 import { SKILL_LIMITS, skillFields, SkillError, type Skills } from "./service";
+import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type SkillServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -14,10 +15,6 @@ export type SkillServices = {
   market: Market;
 };
 const uuid = z.string().uuid();
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 const STATUS: Record<SkillError["code"], [number, string]> = {
   NOT_FOUND: [404, "No such skill."],
   FORBIDDEN: [403, "Only an admin can do this."],
@@ -63,18 +60,7 @@ export function createSkillRoutes(
     query: URLSearchParams;
   };
   function mapError(e: unknown) {
-    if (e instanceof AccessError)
-      return fail(
-        e.code === "SIGN_IN_REQUIRED"
-          ? 401
-          : e.code === "NOT_FOUND"
-            ? 404
-            : e.code === "IDENTITY_UNAVAILABLE"
-              ? 503
-              : 403,
-        e.code,
-        e.message,
-      );
+    if (e instanceof AccessError) return accessFail(e);
     if (e instanceof SkillError) return fail(STATUS[e.code][0], e.code, STATUS[e.code][1]);
     if (e instanceof MarketError)
       return fail(MARKET_STATUS[e.code][0], e.code, MARKET_STATUS[e.code][1]);
@@ -99,15 +85,8 @@ export function createSkillRoutes(
       params: Record<string, string>;
     }) => {
       try {
-        if (request.method !== "GET") {
-          const o = request.headers.get("origin");
-          if (!o || !trustedOrigins.includes(o))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
+        const denied = rejectUntrustedOrigin(request, trustedOrigins);
+        if (denied) return denied;
         return out(
           await work({
             actor: await access.requireActive(request.headers),

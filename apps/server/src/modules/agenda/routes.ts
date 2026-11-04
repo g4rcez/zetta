@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import type { AgendaScheduler } from "./scheduler";
 import { AGENDA_KINDS, AgendaError, type AgendaService } from "./service";
+import { accessFail, createGuardedRoute, fail } from "../http-response";
 
 export type AgendaServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -50,10 +51,6 @@ const schemas = {
     pushAccount: z.string().trim().min(1).max(254).nullable().optional(),
   }),
 };
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 
 export function createAgendaRoutes(
   { access, agenda, scheduler }: AgendaServices,
@@ -66,18 +63,7 @@ export function createAgendaRoutes(
     query: Record<string, string | undefined>;
   };
   function mapError(e: unknown) {
-    if (e instanceof AccessError)
-      return fail(
-        e.code === "SIGN_IN_REQUIRED"
-          ? 401
-          : e.code === "NOT_FOUND"
-            ? 404
-            : e.code === "IDENTITY_UNAVAILABLE"
-              ? 503
-              : 403,
-        e.code,
-        e.message,
-      );
+    if (e instanceof AccessError) return accessFail(e);
     if (e instanceof AgendaError)
       return e.code === "NOT_FOUND"
         ? fail(404, "NOT_FOUND", "That Agenda item no longer exists.")
@@ -88,37 +74,7 @@ export function createAgendaRoutes(
       return fail(400, "INVALID_REQUEST", "Check the details and try again.");
     return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
   }
-  const g =
-    (work: (c: Ctx) => Promise<unknown>, status = 200) =>
-    async ({
-      request,
-      body,
-      params,
-      query,
-    }: {
-      request: Request;
-      body: unknown;
-      params: Record<string, string>;
-      query: Record<string, string | undefined>;
-    }) => {
-      try {
-        if (request.method !== "GET") {
-          const origin = request.headers.get("origin");
-          if (!origin || !trustedOrigins.includes(origin))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
-        return out(
-          await work({ actor: await access.requireActive(request.headers), body, params, query }),
-          status,
-        );
-      } catch (e) {
-        return mapError(e);
-      }
-    };
+  const g = createGuardedRoute({ access, trustedOrigins, mapError });
   const id = (c: Ctx) => uuid.parse(c.params.id);
   return new Elysia({ prefix: "/api", normalize: false })
     .get(

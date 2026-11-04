@@ -10,7 +10,8 @@ import { Button, Input, Radiobox, Select } from "@/components/ui";
 import { ApiError, call, errorMessage, type Bot } from "../chat/chat-client";
 import { MentionTextarea } from "../chat/mention";
 import { Badge, ConfirmButton, Empty, Modal, list, listItem, useList, when } from "../shared/ui";
-import { relativeTime, summarize } from "../studio/routine-format";
+import { relativeTime } from "../shared/relative-time";
+import { summarize } from "../studio/routine-format";
 import { refreshAttention, useRoutineUnreadChats } from "../attention/summary";
 import { buildSchedule, describeSchedule, type ScheduleMode } from "../studio/routine-schedule";
 import { Alert } from "@g4rcez/components/alert";
@@ -771,7 +772,7 @@ export function Routines({
   const [busy, setBusy] = useState<string>();
   const [tab, setTab] = useState<"overview" | "calendar">("overview");
   const [now, setNow] = useState(() => Date.now());
-  // Relative times ("5 min ago") move on with every answer.
+  // Relative times ("5m ago") move on with every answer.
   useEffect(() => {
     if (rowsQuery.dataUpdatedAt) setNow(rowsQuery.dataUpdatedAt);
   }, [rowsQuery.dataUpdatedAt]);

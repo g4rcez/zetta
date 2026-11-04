@@ -4,16 +4,13 @@ import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { STYLE_LIMITS } from "./format";
 import { OutputStyleError, type OutputStyles } from "./service";
+import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type OutputStyleServices = {
   access: ReturnType<typeof createIdentityAccess>;
   styles: OutputStyles;
 };
 
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 const STATUS: Record<OutputStyleError["code"], [number, string]> = {
   NOT_FOUND: [404, "No such output style."],
   CONFLICT: [409, "This style changed. Reload and try again."],
@@ -76,15 +73,8 @@ export function createOutputStyleRoutes(
       body: unknown;
     }) => {
       try {
-        if (request.method !== "GET") {
-          const o = request.headers.get("origin");
-          if (!o || !trustedOrigins.includes(o))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
+        const denied = rejectUntrustedOrigin(request, trustedOrigins);
+        if (denied) return denied;
         const result = await work({
           owner: (await access.requireActive(request.headers)).userId,
           params,
@@ -92,18 +82,7 @@ export function createOutputStyleRoutes(
         });
         return result instanceof Response ? result : out(result, status);
       } catch (e) {
-        if (e instanceof AccessError)
-          return fail(
-            e.code === "SIGN_IN_REQUIRED"
-              ? 401
-              : e.code === "NOT_FOUND"
-                ? 404
-                : e.code === "IDENTITY_UNAVAILABLE"
-                  ? 503
-                  : 403,
-            e.code,
-            e.message,
-          );
+        if (e instanceof AccessError) return accessFail(e);
         if (e instanceof OutputStyleError)
           return fail(STATUS[e.code][0], e.code, STATUS[e.code][1]);
         if (e instanceof z.ZodError)

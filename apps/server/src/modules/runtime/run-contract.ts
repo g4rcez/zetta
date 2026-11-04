@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { parseRunInput, type RunInput } from "./harness";
+import { harnessSchema, parseRunInput, type RunInput } from "./harness";
 
 export class RunBoundaryError extends Error {
   constructor(
@@ -55,11 +55,10 @@ const connection = z
   .strictObject({ reference: runIdSchema, credentialVersion: runCounterSchema })
   .readonly();
 const origin = z.enum(["interactive", "setup"]);
-const harness = z.enum(["fixture", "pi", "codex", "omp", "claude-code", "opencode", "cursor"]);
 const input = z
   .strictObject({
     prompt: text,
-    harness,
+    harness: harnessSchema,
     model: runIdSchema
       .nullable()
       .optional()
@@ -130,7 +129,7 @@ const snapshot = z.tuple([
   runIdSchema,
   runCounterSchema,
   text,
-  harness,
+  harnessSchema,
   runIdSchema.nullable(),
   z.tuple([z.number(), z.number(), z.number(), z.number(), z.number()]),
   z.array(z.tuple([runIdSchema, runCounterSchema])).max(32),

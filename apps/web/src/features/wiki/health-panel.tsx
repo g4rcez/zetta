@@ -7,7 +7,7 @@ import { BotIdentity } from "@/components/bot-identity";
 import { Button } from "@/components/ui";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
-import { ago } from "../artifacts/artifacts-api";
+import { relativeTime } from "../shared/relative-time";
 import { ApiError, call } from "../chat/chat-client";
 import { Badge, Empty, Loading } from "../shared/ui";
 import { Fold } from "./fold";
@@ -104,12 +104,12 @@ function JobRow({ job: j, bots }: { job: Checks["jobs"][number]; bots: Bot[] | u
           size={20}
           sub={
             <time dateTime={j.createdAt} title={formatDateTime(j.createdAt, tf)}>
-              {ago(j.createdAt)}
+              {relativeTime(j.createdAt)}
             </time>
           }
         />
       ) : (
-        <p className="text-xs text-muted-foreground">{ago(j.createdAt)}</p>
+        <p className="text-xs text-muted-foreground">{relativeTime(j.createdAt)}</p>
       )}
       {slugs.length > 0 && (
         <p className="text-xs break-words text-muted-foreground">

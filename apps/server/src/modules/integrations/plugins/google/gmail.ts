@@ -1,4 +1,5 @@
 import { PluginError, type PluginTool } from "../registry";
+import { createSendLimit } from "../send-limit";
 import {
   ACCOUNT_ARG,
   clip,
@@ -65,8 +66,8 @@ const recipients = (v: unknown) => {
     throw new PluginError("INVALID_ARGS", "to must be 1 to 5 valid email addresses.");
   return list;
 };
-const sent = new Map<string, number[]>();
 const SEND_PER_HOUR = 10;
+const sendLimit = createSendLimit({ perHour: SEND_PER_HOUR });
 
 export const gmailTools: PluginTool[] = [
   {
@@ -208,11 +209,8 @@ export const gmailTools: PluginTool[] = [
         );
       const to = recipients(a.to);
       const raw = rfc822(to, str(a.subject, 200), str(a.body, 20_000));
-      const now = settings().now();
-      const recent = (sent.get(g.userId) ?? []).filter((t) => now - t < 3_600_000);
-      if (recent.length >= SEND_PER_HOUR)
+      if (!sendLimit.allow(g.userId, settings().now()))
         throw new PluginError("RATE_LIMITED", "Too many emails sent this hour.");
-      sent.set(g.userId, [...recent, now]);
       const j = (await (
         await gfetch(g, `${settings().gmailBase}/users/me/messages/send`, {
           method: "POST",

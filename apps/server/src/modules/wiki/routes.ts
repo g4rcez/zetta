@@ -11,6 +11,7 @@ import type { WikiJobs } from "./jobs";
 import { assistInput, type WikiAssist } from "./assist";
 import type { WikiGraphReader } from "./graph";
 import { WIKI_LIMITS, WikiError, type Wiki, type WikiFilter } from "./service";
+import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type WikiServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -25,10 +26,6 @@ export type WikiServices = {
 const assistCalls = new Map<string, number[]>();
 const ASSIST_PER_MINUTE = 10;
 class RateLimited extends Error {}
-const out = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-const fail = (status: number, code: string, message: string) =>
-  out({ error: { code, message } }, status);
 const STATUS: Record<WikiError["code"], [number, string]> = {
   SECRET_REJECTED: [400, "The page looks like it holds a secret. Remove it and save again."],
   UNSAFE: [400, "The page looks like an instruction aimed at an AI."],
@@ -146,15 +143,8 @@ export function createWikiRoutes(
       body: unknown;
     }) => {
       try {
-        if (request.method !== "GET") {
-          const o = request.headers.get("origin");
-          if (!o || !trustedOrigins.includes(o))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
+        const denied = rejectUntrustedOrigin(request, trustedOrigins);
+        if (denied) return denied;
         return out(
           await work({
             owner: (await access.requireActive(request.headers)).userId,
@@ -164,18 +154,7 @@ export function createWikiRoutes(
           }),
         );
       } catch (e) {
-        if (e instanceof AccessError)
-          return fail(
-            e.code === "SIGN_IN_REQUIRED"
-              ? 401
-              : e.code === "NOT_FOUND"
-                ? 404
-                : e.code === "IDENTITY_UNAVAILABLE"
-                  ? 503
-                  : 403,
-            e.code,
-            e.message,
-          );
+        if (e instanceof AccessError) return accessFail(e);
         if (e instanceof RateLimited)
           return fail(429, "RATE_LIMITED", "Too many requests. Wait a minute and try again.");
         if (e instanceof WikiError) return fail(STATUS[e.code][0], e.code, STATUS[e.code][1]);

@@ -58,10 +58,19 @@ const support = z.discriminatedUnion("supported", [
     })
     .readonly(),
 ]);
+export const harnessSchema = z.enum([
+  "fixture",
+  "pi",
+  "codex",
+  "omp",
+  "claude-code",
+  "opencode",
+  "cursor",
+]);
 const capabilitiesSchema = z
   .strictObject({
     version: z.literal(1),
-    harness: z.enum(["fixture", "pi", "codex", "omp", "claude-code", "opencode", "cursor"]),
+    harness: harnessSchema,
     resume: support,
     modelSelection: support,
     modelCatalog: support,

@@ -23,6 +23,7 @@ import { decisionConfigSchema } from "./routing";
 import { FileAccessError, type FileStore } from "./files";
 import { createUIMessageStreamResponse } from "ai";
 import { toUIMessageStream } from "./ui-stream";
+import { accessFail, createGuardedRoute, fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type ChatServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -172,52 +173,11 @@ const noFiles: FileStore = {
 const filePath = z.string().min(1).max(300);
 const startChat = z.strictObject({ botId: uuid });
 
-const fail = (status: number, code: string, message: string) =>
-  Response.json({ error: { code, message } }, { status, headers: { "cache-control": "no-store" } });
-const ok = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
-
 export function createChatRoutes(
   { access, chat, files }: ChatServices,
   trustedOrigins: readonly string[],
 ) {
-  const guarded =
-    (
-      work: (ctx: {
-        actor: Awaited<ReturnType<typeof access.requireActive>>;
-        body: unknown;
-        params: Record<string, string>;
-        query: Record<string, string | undefined>;
-      }) => Promise<unknown>,
-      status = 200,
-    ) =>
-    async ({
-      request,
-      body,
-      params,
-      query,
-    }: {
-      request: Request;
-      body: unknown;
-      params: Record<string, string>;
-      query: Record<string, string | undefined>;
-    }) => {
-      try {
-        if (request.method !== "GET") {
-          const origin = request.headers.get("origin");
-          if (!origin || !trustedOrigins.includes(origin))
-            return fail(
-              403,
-              "UNTRUSTED_ORIGIN",
-              "Open Zetta from its trusted application and try again.",
-            );
-        }
-        const actor = await access.requireActive(request.headers);
-        return ok(await work({ actor, body, params, query }), status);
-      } catch (error) {
-        return mapError(error);
-      }
-    };
+  const guarded = createGuardedRoute({ access, trustedOrigins, mapError });
   const parse = <T extends z.ZodType>(schema: T, value: unknown): z.infer<T> => schema.parse(value);
 
   /** Server-sent events with cursor ids: `id: n` per frame. The turn keeps running if the connection drops; reconnect with
@@ -282,13 +242,8 @@ export function createChatRoutes(
     params: Record<string, string>;
   }) {
     try {
-      const origin = request.headers.get("origin");
-      if (!origin || !trustedOrigins.includes(origin))
-        return fail(
-          403,
-          "UNTRUSTED_ORIGIN",
-          "Open Zetta from its trusted application and try again.",
-        );
+      const denied = rejectUntrustedOrigin(request, trustedOrigins);
+      if (denied) return denied;
       const actor = await access.requireActive(request.headers);
       const turn = await chat.startTurn(actor, parse(uuid, params.id), parse(send, body));
       return sse(turn.follow(0), () => {});
@@ -319,7 +274,7 @@ export function createChatRoutes(
         after,
         query.turn ? parse(uuid, query.turn) : undefined,
       );
-      if (!turn) return ok({ resumable: false });
+      if (!turn) return out({ resumable: false });
       return sse(turn.follow(), () => {});
     } catch (error) {
       return mapError(error);
@@ -349,13 +304,8 @@ export function createChatRoutes(
     params: Record<string, string>;
   }) {
     try {
-      const origin = request.headers.get("origin");
-      if (!origin || !trustedOrigins.includes(origin))
-        return fail(
-          403,
-          "UNTRUSTED_ORIGIN",
-          "Open Zetta from its trusted application and try again.",
-        );
+      const denied = rejectUntrustedOrigin(request, trustedOrigins);
+      if (denied) return denied;
       const actor = await access.requireActive(request.headers);
       const id = parse(uuid, params.id);
       const input = parse(send, body);
@@ -405,18 +355,7 @@ export function createChatRoutes(
     }
   }
   function mapError(error: unknown) {
-    if (error instanceof AccessError)
-      return fail(
-        error.code === "SIGN_IN_REQUIRED"
-          ? 401
-          : error.code === "NOT_FOUND"
-            ? 404
-            : error.code === "IDENTITY_UNAVAILABLE"
-              ? 503
-              : 403,
-        error.code,
-        error.message,
-      );
+    if (error instanceof AccessError) return accessFail(error);
     if (error instanceof ProposalSelectionError)
       return fail(400, "CHOOSE_SKILLS", "Choose at least one of the skills the bot offered.");
     if (error instanceof NotReadyError)

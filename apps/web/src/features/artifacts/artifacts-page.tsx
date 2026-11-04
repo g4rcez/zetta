@@ -24,7 +24,6 @@ import { errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { Badge, ConfirmButton, Empty, field, list, listItem } from "../shared/ui";
 import {
-  ago,
   ARTIFACT_KINDS,
   artifactsApi,
   artifactsQueries,
@@ -36,6 +35,7 @@ import {
   type ArtifactSort,
   type ArtifactUsage,
 } from "./artifacts-api";
+import { relativeTime } from "../shared/relative-time";
 import { groupVersions } from "./versions";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
@@ -348,7 +348,7 @@ function Row({
           title={formatDateTime(a.createdAt, tf)}
           className="w-24 shrink-0 text-right text-xs text-muted-foreground"
         >
-          {ago(a.createdAt)}
+          {relativeTime(a.createdAt)}
         </time>
       </Link>
       {children}

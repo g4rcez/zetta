@@ -23,7 +23,7 @@ import { chatQueries } from "../chat/chat-queries";
 import { Composer, type Outgoing } from "../chat/composer";
 import { useSidebarData } from "../chat/sidebar-data";
 import { useDraft } from "../chat/use-draft";
-import { relativeTime } from "../studio/routine-format";
+import { relativeTime } from "../shared/relative-time";
 import { tasksQueries } from "../tasks/tasks-api";
 import { greeting } from "./greeting";
 

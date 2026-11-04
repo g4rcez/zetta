@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 
 import { call } from "../chat/chat-client";
+import { saveLocal } from "@/lib/local-storage";
 import { DEFAULT_TIME_FORMAT, type TimeFormat } from "./time-format";
 
 export type RailMode = "expanded" | "collapsed";
@@ -50,13 +51,6 @@ const readCache = (): Preferences => {
     return DEFAULTS;
   }
 };
-const writeCache = (value: Preferences) => {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(value));
-  } catch {
-    // Storage unavailable (private mode): the layout just loads from the server next time.
-  }
-};
 
 type Value = { preferences: Preferences; set: (patch: Partial<Preferences>) => void };
 const Ctx = createContext<Value | null>(null);
@@ -82,14 +76,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     // A change made before the answer arrived is newer than what the server holds.
     const next = { ...saved, ...pending.current };
     setPreferences(next);
-    writeCache(next);
+    saveLocal(CACHE_KEY, next);
   }, [saved]);
 
   const set = useCallback(
     (patch: Partial<Preferences>) => {
       setPreferences((current) => {
         const next = { ...current, ...patch };
-        writeCache(next);
+        saveLocal(CACHE_KEY, next);
         qc.setQueryData(["preferences"], next);
         return next;
       });

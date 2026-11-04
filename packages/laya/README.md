@@ -25,9 +25,9 @@ Changes against upstream:
 
 The graph has the same inputs as the English one. The outputs are `logits` and `act_logits` (not `act_probs`). Calibration is in `config.json#laya`. The tokenizer is Gemma-style, so the special tokens are `<bos> <eos> <mask> <pad>`.
 
-`config.json` lists `cls_token_id: 1`, but the tokenizer declares `cls_token: <bos>` (id 2). The loader uses the tokenizer's own token names. `LayaOptions.ids` can override them to compare the two (see `ZETTA_LAYA_TEST` in `apps/server/src/modules/decisions/jev-laya.test.ts`).
+`config.json` lists `cls_token_id: 1`, but the tokenizer declares `cls_token: <bos>` (id 2). The loader uses the tokenizer's own token names. `LayaOptions.ids` can override them to compare the two.
 
-Measured on 2026-11-01 with `src/multilingual.real.test.ts` (`ZETTA_LAYA_TEST=1`, opt-in, downloads 1.3 GB):
+Measured on 2026-11-01 with a real-model test (downloaded 1.3 GB; the test was removed 2026-11-04 with the other opt-in real-model tests):
 
 - The same refund request in en, pt, es, ja, zh: "billing" for en, pt, es, zh (confidence 0.69–0.89). Japanese picked "support" at 0.57, so it is the weak one. A bug report in en, pt, ja: "support" at 0.95–0.97.
 - cls id 2 (tokenizer `<bos>`, used) against cls id 1 (`config.json`): both 7 of 8 right, confidences within 0.08. The choice does not matter on this sample.

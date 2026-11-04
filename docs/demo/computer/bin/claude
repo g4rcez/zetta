@@ -1,0 +1,54 @@
+#!/usr/bin/env bun
+// Stand-in for the Claude Code CLI, used only to record the README computer demos. It makes no model call: it answers from replies.ts.
+//
+// A turn runs in rounds. The first prompt holds the person's message. Each later round holds "Steps you already took this turn" (one line
+// per tool call, oldest first), so the number of steps tells this script which round it is in.
+import { appendFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { rules } from "../replies.ts";
+
+const args = process.argv.slice(2);
+if (args[0] === "--version") {
+  console.log("2.1.0 (Claude Code)");
+  process.exit(0);
+}
+if (args[0] === "auth") {
+  console.log(JSON.stringify({ loggedIn: true }));
+  process.exit(0);
+}
+
+const prompt = args.at(-1) ?? "";
+const everything = args.join("\n");
+
+const log = /Steps you already took this turn \(oldest first\):\n([\s\S]*?)\n\nYour previous reply:/.exec(prompt)?.[1];
+const steps = (log ?? "").split("\n").filter(Boolean).length;
+// The person's message: named in later rounds, the end of the prompt in the first one.
+const request = /Original request:\n([\s\S]*?)\n\n(?:Steps you already|Your previous reply)/.exec(prompt)?.[1] ?? prompt.slice(-500);
+
+/** `{{n:Learn more|More information}}` -> the number of the first screen element whose text matches, from the last screen read. */
+function fill(reply: string) {
+  return reply
+    .replace(/\{\{n:([^}]+)\}\}/g, (_, words: string) => {
+      const hit = new RegExp(`\\[(\\d+)\\][^\\n]*?(?:${words})`, "i").exec(prompt);
+      return hit?.[1] ?? "1";
+    })
+    .replace(/\{\{vm:([^}]+)\}\}/g, (_, name: string) => {
+      const hit = new RegExp(`${name}(?: \\[default\\])? \\(([0-9a-f-]{36})\\)`).exec(everything);
+      return hit?.[1] ?? "unknown";
+    });
+}
+
+const hit = rules.find((r) => r.steps === steps && new RegExp(r.req, "i").test(request));
+const reply = hit ? fill(hit.reply) : `(no scripted reply for round ${steps})`;
+appendFileSync(
+  join(tmpdir(), "zetta-demo-standin.log"),
+  `\n===== round ${steps} · ${hit ? "scripted" : "NO MATCH"}\nREQUEST: ${request.slice(0, 300)}\n${log ?? ""}\nSCREEN: ${/<<<DATA-\w+\n([\s\S]*?)\nDATA-/.exec(prompt)?.[1]?.slice(0, 1800) ?? "-"}\n`,
+);
+
+const say = (o: unknown) => console.log(JSON.stringify(o));
+await Bun.sleep(1800);
+say({ type: "system", subtype: "init", session_id: "demo" });
+say({ type: "assistant", message: { content: [{ type: "thinking", thinking: "…" }] } });
+await Bun.sleep(2200);
+say({ type: "result", subtype: "success", is_error: false, result: reply, session_id: "demo" });

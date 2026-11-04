@@ -1,0 +1,16 @@
+#!/bin/sh
+# Container CLI for the demo server (ZETTA_DOCKER_BIN). It labels every computer the demo starts with zetta.demo=1 and shows `ps` only for
+# that label. Without it, the server's boot sweep stops every `zetta.vm=1` container on this machine's Podman, including the computers of
+# another Zetta installation that runs there.
+engine="${ZETTA_DEMO_ENGINE:-podman}"
+case "$1" in
+run)
+  shift
+  exec "$engine" run --label zetta.demo=1 "$@"
+  ;;
+ps)
+  shift
+  exec "$engine" ps --filter label=zetta.demo=1 "$@"
+  ;;
+*) exec "$engine" "$@" ;;
+esac

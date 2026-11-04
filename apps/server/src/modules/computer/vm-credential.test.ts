@@ -56,7 +56,7 @@ function world(
       };
     if (tool === "list_windows")
       return {
-        text: 'Found 1 windows:\n  window_id=42 pid=7 "Sign in to GitHub · GitHub - Chromium" 1279x799+0+0 app=Chromium',
+        text: 'Found 1 windows:\n  window_id=42 pid=7 "Sign in to GitHub · GitHub - Chromium" 1280x773+0+27 app=Chromium',
         isError: false,
       };
     if (tool === "get_window_state")
@@ -65,7 +65,8 @@ function world(
         isError: false,
         structured: {
           elements: o.elements ?? ELEMENTS,
-          window_bounds: { x: 0, y: 0, width: 1279, height: 799 },
+          // The real window sits under the 27 px panel; element frames are screen pixels, so they already include that offset.
+          window_bounds: { x: 0, y: 27, width: 1280, height: 773 },
         },
       };
     if (tool === "hotkey" && (args.keys as string[]).join("+") === "ctrl+l") omnibox = true;

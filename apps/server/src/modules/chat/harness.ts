@@ -1,7 +1,7 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { containerUser } from "../container-user";
+import { containerUser, engineOf, tmpfsOwner, type Engine } from "../container-user";
 import { trackRun } from "./processes";
 import { createClaudeStream, type CliProgress, type TokenUsage } from "./claude-stream";
 import { dirname, join, resolve as resolvePath, sep } from "node:path";
@@ -543,17 +543,21 @@ export type DockerConfig = {
   cpus: string;
   pids: number;
   bin: string;
+  /** Unset means Docker. Set from the binary when the config is built (see engineOf). */
+  engine?: Engine;
 };
 /** `ZETTA_HARNESS_RUNTIME=docker` runs every harness turn in a throwaway, hardened container instead of on the host. */
 export function dockerConfig(env: NodeJS.ProcessEnv = process.env): DockerConfig | undefined {
   if (env.ZETTA_HARNESS_RUNTIME !== "docker") return undefined;
+  const bin = env.ZETTA_DOCKER_BIN ?? "docker";
   return {
     image: env.ZETTA_HARNESS_IMAGE ?? "zetta-harness:latest",
     network: env.ZETTA_HARNESS_NETWORK ?? "bridge",
     memory: env.ZETTA_HARNESS_MEMORY ?? "1g",
     cpus: env.ZETTA_HARNESS_CPUS ?? "1",
     pids: Number(env.ZETTA_HARNESS_PIDS ?? 256),
-    bin: env.ZETTA_DOCKER_BIN ?? "docker",
+    bin,
+    engine: engineOf(bin, env),
   };
 }
 
@@ -598,7 +602,7 @@ export function dockerArgs(
     "/tmp:rw,size=64m",
     ...(o.codeDir
       ? ["-v", `${o.codeDir}:/work:rw`]
-      : ["--tmpfs", `/work:rw,size=64m,uid=${containerUser().uid}`]),
+      : ["--tmpfs", `/work:rw,size=64m${tmpfsOwner(cfg.engine)}`]),
     "-w",
     "/work",
     "-e",
@@ -609,7 +613,7 @@ export function dockerArgs(
   if (o.pluginDir) args.push("-v", `${o.pluginDir}:${CONTAINER_PLUGIN_DIR}:ro`);
   if (o.imageDir) args.push("-v", `${o.imageDir}:${CONTAINER_IMAGE_DIR}:ro`);
   if (o.home) args.push("-v", `${o.home}:/home/agent:rw`);
-  else args.push("--tmpfs", `/home/agent:rw,size=64m,uid=${containerUser().uid}`);
+  else args.push("--tmpfs", `/home/agent:rw,size=64m${tmpfsOwner(cfg.engine)}`);
   // Values never appear in argv (visible to every local user via `ps`): `-e KEY` makes docker read them from its own environment.
   for (const k of Object.keys(o.env)) if (/^[A-Z][A-Z0-9_]*$/.test(k)) args.push("-e", k);
   return [...args, cfg.image, ...o.argv];

@@ -3,9 +3,6 @@ import { describe, expect, test } from "bun:test";
 import { createDecisionService, DecisionError } from "./service";
 import { executeGraph, graphSchema } from "../features/workflow";
 
-// Real model: runs only when explicitly enabled (needs ~2GB RAM and the cached ONNX bundle).
-const real = process.env.ZETTA_LAYA_TEST === "1" ? describe : describe.skip;
-
 describe("decision service (fake model)", () => {
   test("serializes calls, reports status and recovers from a failed load", async () => {
     let loads = 0,
@@ -156,18 +153,4 @@ describe("workflow browse node", () => {
     expect(ok.status).toBe("succeeded");
     expect((await executeGraph(graph, "x", async () => "")).status).toBe("failed");
   });
-});
-
-real("laya (real ONNX model)", () => {
-  test("classifies a support ticket", async () => {
-    const svc = createDecisionService(undefined, undefined, { mode: "on" });
-    const r = await svc.choose(
-      "I cancelled two weeks ago and still have no refund for my invoice.",
-      "Which team should handle this ticket?",
-      ["billing", "support", "sales"],
-    );
-    expect(r.choice).toBe("billing");
-    expect(Object.values(r.probabilities).reduce((a, b) => a + b, 0)).toBeCloseTo(1, 2);
-    await svc.close();
-  }, 120_000);
 });

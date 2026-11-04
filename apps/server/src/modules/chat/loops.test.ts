@@ -20,8 +20,10 @@ describe("loop prompts", () => {
   test("a bot picks the method itself and hands off only for blockers", () => {
     for (const p of [loopPrompt(loop, 2), roomLoopPrompt(loop, 2)]) {
       expect(p).toContain("Pick it yourself");
-      expect(p).toContain("sign-in, CAPTCHA, payment");
-      expect(p).not.toContain("a decision");
+      expect(p).toContain("Never ask the user to choose a method or to approve one");
+      expect(p).toContain(
+        "Only a person can clear some blockers (a sign-in, a CAPTCHA, a payment, a document, an access, a decision outside your limits)",
+      );
     }
   });
   test("every loop step can pause or stop the loop when the user asks", () => {

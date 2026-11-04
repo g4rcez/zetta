@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { containerUser, engineOf } from "../container-user";
 import {
   browserDockerArgs,
   ComputerError,
@@ -11,6 +12,23 @@ import {
 const cfg = { bin: "docker", image: "zetta-browser:latest", memory: "1g", cpus: "1", pids: 512 };
 const paths = { name: "b1", profileDir: "/data/p", egressDir: "/data/egress" };
 describe("browser container configuration", () => {
+  test("the container user owns the tmpfs mounts on Docker; podman, which refuses that option, gets a world-writable mode instead", () => {
+    const mounts = (engine: "docker" | "podman") =>
+      browserDockerArgs({ ...cfg, engine }, { ...paths, isolated: true }).filter(
+        (x) => x.startsWith("/tmp:") || x.startsWith("/home/agent:"),
+      );
+    expect(mounts("docker")).toEqual([
+      `/tmp:rw,size=256m,uid=${containerUser().uid}`,
+      `/home/agent:rw,size=64m,uid=${containerUser().uid}`,
+    ]);
+    expect(mounts("podman")).toEqual([
+      "/tmp:rw,size=256m,mode=1777",
+      "/home/agent:rw,size=64m,mode=1777",
+    ]);
+    expect(
+      dockerBrowserConfig({ ZETTA_BROWSER_RUNTIME: "docker", ZETTA_CONTAINER_ENGINE: "podman" }),
+    ).toMatchObject({ engine: "podman" });
+  });
   test("is off unless enabled; the container is hardened and published no port", () => {
     expect(dockerBrowserConfig({})).toBeUndefined();
     expect(dockerBrowserConfig({ ZETTA_BROWSER_RUNTIME: "docker" })).toMatchObject({
@@ -45,6 +63,7 @@ describe("browser container configuration", () => {
 });
 
 // Real containers: opt-in (needs docker and `docker build -t zetta-browser:latest docker/browser`).
+// On macOS with a podman machine the temp folder must be one the machine shares (TMPDIR=/private/tmp/...): bind mounts from /var/folders fail.
 const real = process.env.ZETTA_DOCKER_TEST === "1" ? describe : describe.skip;
 real("computer sessions in docker (real)", () => {
   let root: string;
@@ -70,7 +89,11 @@ real("computer sessions in docker (real)", () => {
 
   test("a session runs in its own container, reads a page, is isolated from the host filesystem, and the container disappears on close", async () => {
     root = await mkdtemp(join(process.cwd(), ".zetta-browser-test-"));
-    const svc = createComputerService({ docker: cfg, root, allowPrivate: true });
+    const svc = createComputerService({
+      docker: { ...cfg, engine: engineOf("docker") },
+      root,
+      allowPrivate: true,
+    });
     try {
       await svc.start("du1", "p1");
       expect((await names()).split("\n").filter(Boolean)).toHaveLength(1);
@@ -93,7 +116,11 @@ real("computer sessions in docker (real)", () => {
   }, 180_000);
 
   test("two users get two separate containers; the SSRF policy still applies in docker mode", async () => {
-    const svc = createComputerService({ docker: cfg, root, allowPrivate: false });
+    const svc = createComputerService({
+      docker: { ...cfg, engine: engineOf("docker") },
+      root,
+      allowPrivate: false,
+    });
     try {
       await svc.start("du2", "a");
       await svc.start("du3", "a");

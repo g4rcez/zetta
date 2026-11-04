@@ -1,5 +1,5 @@
 import { uuidv7 } from "@zetta/core/uuid";
-import { containerUser } from "../container-user";
+import { containerUser, engineOf, tmpfsOwner, type Engine } from "../container-user";
 import { createSerializer } from "./serial";
 import { lookup } from "node:dns/promises";
 import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
@@ -177,14 +177,18 @@ export type DockerBrowser = {
   memory: string;
   cpus: string;
   pids: number;
+  /** Unset means Docker. Set from the binary when the config is built (see engineOf). */
+  engine?: Engine;
 };
 /** `ZETTA_BROWSER_RUNTIME=docker` runs each browser session in its own hardened container instead of on the host. */
 export function dockerBrowserConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): DockerBrowser | undefined {
   if (env.ZETTA_BROWSER_RUNTIME !== "docker") return undefined;
+  const bin = env.ZETTA_DOCKER_BIN ?? "docker";
   return {
-    bin: env.ZETTA_DOCKER_BIN ?? "docker",
+    bin,
+    engine: engineOf(bin, env),
     image: env.ZETTA_BROWSER_IMAGE ?? "zetta-browser:latest",
     memory: env.ZETTA_BROWSER_MEMORY ?? "1g",
     cpus: env.ZETTA_BROWSER_CPUS ?? "1",
@@ -221,9 +225,9 @@ export function browserDockerArgs(
     "--user",
     containerUser().user,
     "--tmpfs",
-    `/tmp:rw,size=256m,uid=${containerUser().uid}`,
+    `/tmp:rw,size=256m${tmpfsOwner(d.engine)}`,
     "--tmpfs",
-    `/home/agent:rw,size=64m,uid=${containerUser().uid}`,
+    `/home/agent:rw,size=64m${tmpfsOwner(d.engine)}`,
     ...(o.isolated ? ["--network", "none"] : []),
     "-v",
     `${o.profileDir}:/profile:rw`,

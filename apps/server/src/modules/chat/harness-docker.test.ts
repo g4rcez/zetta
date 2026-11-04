@@ -1,4 +1,4 @@
-import { containerUser } from "../container-user";
+import { containerUser, engineOf } from "../container-user";
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -11,6 +11,8 @@ const cfg = {
   cpus: "1",
   pids: 256,
   bin: "docker",
+  // The engine behind `docker` on this machine (podman answers to it too): the real proofs below run on either.
+  engine: engineOf("docker"),
 };
 
 describe("docker runtime configuration", () => {
@@ -23,6 +25,23 @@ describe("docker runtime configuration", () => {
         ZETTA_HARNESS_NETWORK: "none",
       }),
     ).toMatchObject({ image: "zetta-harness:latest", memory: "512m", network: "none" });
+  });
+  test("the container user owns its tmpfs mounts on Docker; podman, which refuses that option, gets a world-writable mode instead", () => {
+    const mounts = (engine: "docker" | "podman") =>
+      dockerArgs({ ...cfg, engine }, { name: "n", argv: ["true"], env: {} }).filter(
+        (x) => x.startsWith("/work:") || x.startsWith("/home/agent:"),
+      );
+    expect(mounts("docker")).toEqual([
+      `/work:rw,size=64m,uid=${containerUser().uid}`,
+      `/home/agent:rw,size=64m,uid=${containerUser().uid}`,
+    ]);
+    expect(mounts("podman")).toEqual([
+      "/work:rw,size=64m,mode=1777",
+      "/home/agent:rw,size=64m,mode=1777",
+    ]);
+    expect(
+      dockerConfig({ ZETTA_HARNESS_RUNTIME: "docker", ZETTA_CONTAINER_ENGINE: "podman" }),
+    ).toMatchObject({ engine: "podman" });
   });
   test("container command is hardened: read-only root, no capabilities, non-root, limits, no host mounts except the user's home", () => {
     const a = dockerArgs(cfg, {

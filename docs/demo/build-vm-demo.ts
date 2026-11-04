@@ -1,245 +1,191 @@
 /**
- * Builds the computer-use demo videos (each with a GIF preview) in docs/demo from recordings made by apps/server/src/scripts/vm-demo.ts.
- * Each recording is `<root>/<name>/` with the frames and events.json that ZETTA_VM_DEMO_FRAMES writes.
+ * Builds the computer-use demo videos (each with a GIF preview) in docs/demo from recordings of the Zetta dashboard made by
+ * docs/demo/computer/record.ts. Each recording is `<root>/<name>/` with raw.webm and events.json.
  *
- *   # one driver at a time (needs a built docker/desktop image) -> zetta-demo-computer-vm.mp4
- *   ZETTA_VM_DEMO_FRAMES=/tmp/rec/cua           bun run apps/server/src/scripts/vm-demo.ts cua
- *   ZETTA_VM_DEMO_FRAMES=/tmp/rec/agent-desktop bun run apps/server/src/scripts/vm-demo.ts agent-desktop
- *   bun docs/demo/build-vm-demo.ts /tmp/rec
- *
- *   # two machines (Debian + Cua, Ubuntu + agent-desktop; also needs the Ubuntu image) -> zetta-demo-two-machines.mp4
- *   ZETTA_VM_DEMO_FRAMES=/tmp/rec/machines ZETTA_VM_IMAGE_UBUNTU=... bun run apps/server/src/scripts/vm-demo.ts machines /tmp/rec/stills
- *   bun docs/demo/build-vm-demo.ts /tmp/rec machines
+ *   docs/demo/computer/stack.sh up
+ *   bun docs/demo/computer/record.ts browse      # -> $ZETTA_DEMO_DIR/rec/browse     -> zetta-demo-computer-vm.mp4
+ *   docs/demo/computer/stack.sh up
+ *   bun docs/demo/computer/record.ts machines    # -> $ZETTA_DEMO_DIR/rec/machines   -> zetta-demo-two-machines.mp4
+ *   bun docs/demo/build-vm-demo.ts $ZETTA_DEMO_DIR/rec browse
+ *   bun docs/demo/build-vm-demo.ts $ZETTA_DEMO_DIR/rec machines
  *
  * Needs ffmpeg and ImageMagick (`magick`) on PATH. Captions use FONT (a .ttf/.ttc file; default: Helvetica on macOS, DejaVu on Linux).
- * The recordings show only the VM's own screen and a dummy credential.
+ * The recordings show the dashboard with fake data and a dummy sign-in; waits (a computer starting, a bot working) are sped up.
  */
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { $ } from "bun";
 
 const root = process.argv[2];
-const kind = process.argv[3] ?? "browse";
-if (!root || !["browse", "machines"].includes(kind)) {
-  console.error("usage: bun docs/demo/build-vm-demo.ts <recordings dir> [machines]");
+const kind = process.argv[3];
+if (!root || (kind !== "browse" && kind !== "machines")) {
+  console.error("usage: bun docs/demo/build-vm-demo.ts <recordings dir> browse|machines");
   process.exit(2);
 }
 const demo = import.meta.dir;
 const FONT =
   process.env.FONT ??
-  ["/System/Library/Fonts/Helvetica.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"].find(
-    (f) => existsSync(f),
-  );
+  ["/System/Library/Fonts/Helvetica.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"].find((f) => existsSync(f));
 if (!FONT) throw new Error("set FONT to a .ttf/.ttc file");
 
-const W = 1280,
-  SCREEN_H = 800,
+// The recording is 1600x1000; the caption bar sits under it so that it never covers the dashboard.
+const W = 1600,
+  PAGE_H = 1000,
   BAR_H = 72,
-  H = SCREEN_H + BAR_H;
-const work = join(root, "build");
+  H = PAGE_H + BAR_H;
+const work = join(root, kind, "build");
 await rm(work, { recursive: true, force: true });
 await mkdir(work, { recursive: true });
 
 const INK = "#0f1115";
 const ACCENT = "#7dd3fc";
 const GREY = "#a1a1aa";
-const DRIVER_LABEL: Record<string, string> = { cua: "Cua", "agent-desktop": "agent-desktop" };
-type Segment = { png: string; seconds: number };
+const DIM = "#71717a";
 type Line = { text: string; size: number; color?: string };
+type Recording = {
+  ready: number;
+  end: number;
+  events: { t: number; text: string; chip?: string }[];
+  idles: { from: number; to: number }[];
+};
 
-/** Text lines on the dark background, centered; with `top` they start that many pixels from the top instead. */
-async function card(file: string, lines: Line[], top?: number) {
-  const args = [
-    "-size",
-    `${W}x${H}`,
-    `xc:${INK}`,
-    "-font",
-    FONT!,
-    "-gravity",
-    top === undefined ? "center" : "north",
-  ];
-  let y = top ?? -((lines.length - 1) * 26);
+/** Text lines on the dark background, centered. */
+async function card(file: string, lines: Line[]) {
+  const args = ["-size", `${W}x${H}`, `xc:${INK}`, "-font", FONT!, "-gravity", "center"];
+  let y = -((lines.length - 1) * 30);
   for (const l of lines) {
-    args.push(
-      "-pointsize",
-      String(l.size),
-      "-fill",
-      l.color ?? "white",
-      "-annotate",
-      `+0${y >= 0 ? "+" : ""}${y}`,
-      l.text,
-    );
-    y += l.size + 22;
+    args.push("-pointsize", String(l.size), "-fill", l.color ?? "white", "-annotate", `+0${y >= 0 ? "+" : ""}${y}`, l.text);
+    y += l.size + 26;
   }
   await $`magick ${args} ${file}`.quiet();
 }
-const captions = new Map<string, Promise<string>>();
-/** The caption bar for one text and chip, written once (frames ask for it in parallel, so the promise is what is shared). */
-function caption(chip: string, text: string) {
-  const key = `${chip}|${text}`;
-  let made = captions.get(key);
-  if (!made) {
-    const file = join(work, `cap-${captions.size}.png`);
-    const args = [
-      "-size",
-      `${W}x${BAR_H}`,
-      `xc:${INK}`,
-      "-font",
-      FONT!,
-      "-pointsize",
-      "27",
-      "-fill",
-      "white",
-      "-gravity",
-      "west",
-      "-annotate",
-      "+28+0",
-      text,
-      "-fill",
-      ACCENT,
-      "-gravity",
-      "east",
-      "-annotate",
-      "+28+0",
-      chip,
-    ];
-    made = $`magick ${args} ${file}`.quiet().then(() => file);
-    captions.set(key, made);
-  }
-  return made;
+
+/** The caption bar: the text on the left, the chip (driver or system) on the right. */
+async function bar(file: string, text: string, chip: string) {
+  const args = [
+    "-size", `${W}x${BAR_H}`, `xc:${INK}`, "-font", FONT!, "-pointsize", "28",
+    "-fill", "white", "-gravity", "west", "-annotate", "+32+0", text,
+    "-fill", ACCENT, "-gravity", "east", "-annotate", "+32+0", chip,
+  ];
+  await $`magick ${args} ${file}`.quiet();
 }
 
-/** One recording: each frame with the caption that was current when it was taken, held until the next frame. */
-async function recording(name: string): Promise<Segment[]> {
+const FAST_MIN = 0.8,
+  FAST_MAX = 2.2;
+/** One recording as an mp4: idle waits sped up, captions in the bar under the page. */
+async function clip(name: string, defaultChip: string) {
   const dir = join(root, name);
-  const { driver, events } = (await Bun.file(join(dir, "events.json")).json()) as {
-    driver: string;
-    events: { t: number; text: string; chip?: string }[];
-  };
-  const defaultChip = DRIVER_LABEL[driver] ?? driver;
-  const frames = (await readdir(dir))
-    .filter((f) => /^\d{5}-\d+\.png$/.test(f))
-    .sort()
-    .map((f) => ({ file: join(dir, f), t: Number(/-(\d+)\.png$/.exec(f)![1]) }));
-  const segments: Segment[] = [];
-  // Composite in small batches: ImageMagick is the slow part.
-  for (let i = 0; i < frames.length; i += 8) {
-    await Promise.all(
-      frames.slice(i, i + 8).map(async (f, k) => {
-        const event = [...events].reverse().find((e) => e.t <= f.t) ?? events[0]!;
-        const out = join(work, `${name}-${String(i + k).padStart(5, "0")}.png`);
-        await $`magick ${f.file} ${await caption(event.chip ?? defaultChip, event.text)} -append ${out}`.quiet();
-        const next = frames[i + k + 1]?.t ?? f.t + 1200;
-        segments[i + k] = { png: out, seconds: Math.min(1, Math.max(0.1, (next - f.t) / 1000)) };
-      }),
-    );
+  const rec = (await Bun.file(join(dir, "events.json")).json()) as Recording;
+  const [start, end] = [rec.ready / 1000, rec.end / 1000];
+
+  // Segments of the source time line: normal speed, or sped up where record.ts marked an idle wait.
+  const spans = rec.idles
+    .map((i) => ({ from: Math.max(start, i.from / 1000), to: Math.min(end, i.to / 1000) }))
+    .filter((i) => i.to - i.from > 1.5)
+    .sort((a, b) => a.from - b.from);
+  const segs: { from: number; to: number; speed: number }[] = [];
+  let at = start;
+  for (const s of spans) {
+    if (s.from > at) segs.push({ from: at, to: s.from, speed: 1 });
+    const target = Math.min(FAST_MAX, Math.max(FAST_MIN, (s.to - s.from) / 12));
+    segs.push({ from: s.from, to: s.to, speed: (s.to - s.from) / target });
+    at = s.to;
   }
-  return segments;
+  if (at < end) segs.push({ from: at, to: end, speed: 1 });
+  // Source time -> time in the clip.
+  const starts: number[] = [];
+  let total = 0;
+  for (const s of segs) {
+    starts.push(total);
+    total += (s.to - s.from) / s.speed;
+  }
+  const mapped = (t: number) => {
+    const i = segs.findIndex((s) => t < s.to);
+    if (i < 0) return total;
+    return starts[i]! + (Math.max(t, segs[i]!.from) - segs[i]!.from) / segs[i]!.speed;
+  };
+
+  const caps = rec.events.map((e, i) => ({
+    file: join(work, `${name}-cap-${i}.png`),
+    from: mapped(Math.max(start, e.t / 1000)),
+    to: i + 1 < rec.events.length ? mapped(rec.events[i + 1]!.t / 1000) : total,
+    text: e.text,
+    chip: e.chip ?? defaultChip,
+  }));
+  for (const c of caps) await bar(c.file, c.text, c.chip);
+
+  const cut = segs.map((s, i) => `[0:v]trim=start=${s.from}:end=${s.to},setpts=(PTS-STARTPTS)/${s.speed}[v${i}]`);
+  const joined = `${segs.map((_, i) => `[v${i}]`).join("")}concat=n=${segs.length}:v=1:a=0,fps=25,pad=${W}:${H}:0:0:color=${INK}[base]`;
+  const over = caps.map(
+    (c, i) =>
+      `[${i === 0 ? "base" : `o${i - 1}`}][${i + 1}:v]overlay=0:${PAGE_H}:enable='between(t,${c.from.toFixed(3)},${c.to.toFixed(3)})'[o${i}]`,
+  );
+  const last = caps.length ? `o${caps.length - 1}` : "base";
+  const graph = [...cut, joined, ...over].join(";");
+  const out = join(work, `${name}.mp4`);
+  const inputs = caps.flatMap((c) => ["-i", c.file]);
+  await $`ffmpeg -y -loglevel error -i ${join(dir, "raw.webm")} ${inputs} -filter_complex ${graph} -map ${`[${last}]`} -c:v libx264 -preset slow -crf 27 -pix_fmt yuv420p ${out}`;
+  console.log(`${name}: ${total.toFixed(0)} s (from ${(end - start).toFixed(0)} s recorded)`);
+  return out;
 }
 
-async function encode(timeline: Segment[], mp4: string) {
+/** A still card as a clip with the same encoding as the recording, so that the parts can be joined without re-encoding. */
+async function still(png: string, seconds: number) {
+  const out = png.replace(/\.png$/, ".mp4");
+  await $`ffmpeg -y -loglevel error -loop 1 -t ${seconds} -i ${png} -vf fps=25,format=yuv420p -c:v libx264 -preset slow -crf 27 ${out}`;
+  return out;
+}
+
+async function join_(parts: string[], mp4: string) {
   const list = join(work, "list.txt");
-  await Bun.write(
-    list,
-    [
-      ...timeline.map((s) => `file '${s.png}'\nduration ${s.seconds.toFixed(3)}`),
-      `file '${timeline.at(-1)!.png}'`,
-    ].join("\n"),
-  );
-  await $`ffmpeg -y -loglevel error -f concat -safe 0 -i ${list} -vf fps=25,format=yuv420p -c:v libx264 -preset slow -crf 28 -movflags +faststart ${mp4}`;
+  await Bun.write(list, parts.map((p) => `file '${p}'`).join("\n"));
+  await $`ffmpeg -y -loglevel error -f concat -safe 0 -i ${list} -c copy -movflags +faststart ${mp4}`;
   await gif(mp4);
 }
 
 /**
  * A looping GIF next to the video. GitHub removes <video> tags from a README, so the README embeds this animation and links it to the mp4;
- * a GIF shows everywhere. The screens barely change, so 800 px at 6 fps stays around 1 MB and the terminal text stays legible.
+ * a GIF shows everywhere. Low frame rate keeps it small: the screens change slowly.
  */
 async function gif(mp4: string) {
   const filter =
-    "fps=6,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle";
+    "fps=5,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle";
   await $`ffmpeg -y -loglevel error -i ${mp4} -vf ${filter} -loop 0 ${mp4.replace(/\.mp4$/, ".gif")}`;
 }
 
+const intro = join(work, "intro.png"),
+  outro = join(work, "outro.png");
 if (kind === "browse") {
-  const intro = join(work, "intro.png"),
-    middle = join(work, "middle.png"),
-    outro = join(work, "outro.png");
   await card(intro, [
-    { text: "A bot uses a computer in Zetta", size: 56 },
-    { text: "A private Linux desktop that bots and people share", size: 30, color: GREY },
-    { text: "The same steps with two drivers: Cua, then agent-desktop", size: 30, color: ACCENT },
-    {
-      text: "Recorded from the VM's own screen · scripted steps, no model call",
-      size: 24,
-      color: "#71717a",
-    },
-  ]);
-  await card(middle, [
-    { text: "Same steps, now with agent-desktop", size: 52 },
-    { text: "Chosen per computer in Studio > Computer", size: 28, color: GREY },
+    { text: "A bot uses a computer in Zetta", size: 60 },
+    { text: "In the dashboard: ask in chat, watch live, take over, hand back", size: 32, color: GREY },
+    { text: "The same steps with two drivers: Cua, then agent-desktop", size: 32, color: ACCENT },
+    { text: "Scripted bot replies, no model call · waits shortened", size: 26, color: DIM },
   ]);
   await card(outro, [
-    { text: "Passwords are typed by the server, never seen by the bot", size: 40 },
-    { text: "A person can take over at any moment and hand back", size: 30, color: GREY },
-    { text: "Run it yourself: apps/server/src/scripts/vm-demo.ts", size: 24, color: "#71717a" },
+    { text: "A person can take over at any moment and hand back", size: 44 },
+    { text: "What you type goes to the computer, not into the chat", size: 32, color: GREY },
+    { text: "Run it yourself: docs/demo/computer/stack.sh", size: 26, color: DIM },
   ]);
-  const cua = await recording("cua");
-  const ad = await recording("agent-desktop");
+  const parts = [await still(intro, 4.5), await clip("browse", "Cua"), await still(outro, 4.5)];
   const mp4 = join(demo, "zetta-demo-computer-vm.mp4");
-  await encode(
-    [
-      { png: intro, seconds: 4 },
-      ...cua,
-      { png: middle, seconds: 2.5 },
-      ...ad,
-      { png: outro, seconds: 4.5 },
-    ],
-    mp4,
-  );
+  await join_(parts, mp4);
   console.log(`wrote ${mp4} and its GIF`);
 } else {
-  const intro = join(work, "intro.png");
   await card(intro, [
-    { text: "Two computers in Zetta", size: 56 },
-    { text: "A new computer is a name, a system and a driver", size: 30, color: GREY },
-    { text: "Debian 13 with Cua, then Ubuntu 24.04 with agent-desktop", size: 30, color: ACCENT },
-    { text: "On each, the bot opens a terminal and runs uname -a", size: 24, color: "#71717a" },
+    { text: "Two computers in Zetta", size: 60 },
+    { text: "A new computer is a name, a system and a driver", size: 32, color: GREY },
+    { text: "Debian 13 with Cua, then Ubuntu 24.04 with agent-desktop", size: 32, color: ACCENT },
+    { text: "One bot runs the same commands on both · scripted, no model call", size: 26, color: DIM },
   ]);
-  // The finished machines side by side, from the stills the run saved after each terminal.
-  const stills = join(root, "stills");
-  const pick = async (suffix: string) =>
-    join(
-      stills,
-      (await readdir(stills)).find((f) => f.endsWith(suffix))!,
-    );
-  const small = async (suffix: string, name: string) => {
-    const out = join(work, name);
-    // Only the terminal and what is behind it: the whole screen would shrink its text past reading.
-    await $`magick ${await pick(suffix)} -crop 880x560+0+0 +repage -resize 620x ${out}`.quiet();
-    return out;
-  };
-  const [debian, ubuntu] = [
-    await small("debian-terminal.png", "debian-small.png"),
-    await small("ubuntu-terminal.png", "ubuntu-small.png"),
-  ];
-  const heads = join(work, "both-heads.png");
-  await card(
-    heads,
-    [
-      { text: "Two computers, two systems, two drivers", size: 40 },
-      {
-        text: "Debian 13 · Cua          |          Ubuntu 24.04 · agent-desktop",
-        size: 26,
-        color: ACCENT,
-      },
-    ],
-    16,
-  );
-  const both = join(work, "both.png");
-  await $`magick ${heads} ${debian} -geometry +14+150 -composite ${ubuntu} -geometry +646+150 -composite -font ${FONT} -pointsize 24 -fill ${GREY} -gravity south -annotate +0+110 ${"uname -a prints the host's kernel on both (they are containers): the os-release line tells them apart"} -annotate +0+70 ${"Debian has a browser behind the terminal; Ubuntu is a desktop with a terminal only"} ${both}`.quiet();
-  const rec = await recording("machines");
+  await card(outro, [
+    { text: "Two computers, two systems, two drivers", size: 44 },
+    { text: "uname -a prints the host's kernel on both (they are containers): the os-release line tells them apart", size: 26, color: GREY },
+    { text: "Debian has a browser behind the terminal; Ubuntu is a desktop with a terminal only", size: 26, color: GREY },
+  ]);
+  const parts = [await still(intro, 4.5), await clip("machines", "Debian 13 · Cua"), await still(outro, 6)];
   const mp4 = join(demo, "zetta-demo-two-machines.mp4");
-  await encode([{ png: intro, seconds: 4 }, ...rec, { png: both, seconds: 7 }], mp4);
+  await join_(parts, mp4);
   console.log(`wrote ${mp4} and its GIF`);
 }

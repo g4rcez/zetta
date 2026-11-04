@@ -33,6 +33,9 @@ jobs:
         env:
           ZETTA_CHAT_TEST_DATABASE_URL: ${{ matrix.os == 'ubuntu-latest' && 'postgresql://postgres:password@127.0.0.1:5432/zetta_test' || '' }}
           ZETTA_TEST_DATABASE_URL: ${{ matrix.os == 'ubuntu-latest' && 'postgresql://postgres:password@127.0.0.1:5432/zetta_test' || '' }}
+          # Both only need a Postgres URL (the instance suite wants the migrations applied; LISTEN/NOTIFY writes no data).
+          ZETTA_INSTANCE_TEST_DATABASE_URL: ${{ matrix.os == 'ubuntu-latest' && 'postgresql://postgres:password@127.0.0.1:5432/zetta_test' || '' }}
+          ZETTA_SIGNALS_TEST_URL: ${{ matrix.os == 'ubuntu-latest' && 'postgresql://postgres:password@127.0.0.1:5432/zetta_test' || '' }}
       - name: Web build
         working-directory: apps/web
         run: bun run build

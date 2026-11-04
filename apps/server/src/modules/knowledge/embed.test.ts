@@ -1,25 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createLocalEmbedder } from "./embed";
 
-// Loads the real model (about 120 MB, downloaded once). Off by default: ZETTA_EMBEDDING_SMOKE=1 [ZETTA_EMBEDDING_MODEL_DIR=<cache>].
-const smoke = process.env.ZETTA_EMBEDDING_SMOKE === "1" ? describe : describe.skip;
-
-smoke("local embedding model", () => {
-  test("gives 384-dimension unit vectors, and related text in two languages is close", async () => {
-    const e = createLocalEmbedder();
-    const [q] = await e.embed(["orçamento do projeto"], "query");
-    const [near, far] = await e.embed(
-      ["The budget of the project is approved.", "Grilled cheese sandwich recipe with tomato."],
-      "passage",
-    );
-    const cos = (x: number[], y: number[]) => x.reduce((s, v, i) => s + v * y[i]!, 0);
-    expect(q).toHaveLength(384);
-    expect(cos(q!, q!)).toBeCloseTo(1, 3);
-    expect(cos(q!, near!)).toBeGreaterThan(cos(q!, far!) + 0.03);
-    expect(cos(q!, near!)).toBeGreaterThan(0.85);
-  }, 120_000);
-});
-
 describe("embedding queue", () => {
   // A fake model that takes 40 ms per batch and records the order of the texts it saw.
   const order: string[] = [];

@@ -11,7 +11,7 @@
  * --build-arg BROWSER=none, see docker/desktop/Dockerfile).
  *
  * With ZETTA_VM_DEMO_FRAMES=<dir> it also records the screen while it runs: `<n>-<ms>.png` frames (ms since the start) and `events.json`
- * with a caption for each step. docs/demo/build-vm-demo.sh turns those into the README video.
+ * with a caption for each step. The README videos no longer use these frames: they are recorded in the dashboard (docs/demo/computer/).
  *
  * It needs a built docker/desktop image and network access from the container. The VM and its volume are removed at the end. No database:
  * the rows live in memory. The credential is a fixed dummy; nothing is submitted.

@@ -56,18 +56,16 @@ suite("activity trail and harness readiness", () => {
   };
   beforeAll(async () => {
     const now = new Date();
-    await db
-      .insert(user)
-      .values(
-        ids.map((id) => ({
-          id,
-          name: id,
-          email: `${id}@t.test`,
-          emailVerified: true,
-          createdAt: now,
-          updatedAt: now,
-        })),
-      );
+    await db.insert(user).values(
+      ids.map((id) => ({
+        id,
+        name: id,
+        email: `${id}@t.test`,
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
     await db
       .insert(membership)
       .values(
@@ -117,6 +115,7 @@ suite("activity trail and harness readiness", () => {
       "claude-code",
       "codex",
       "cursor",
+      "deepseek",
       "hermes",
       "omp",
       "opencode",

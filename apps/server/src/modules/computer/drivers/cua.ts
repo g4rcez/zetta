@@ -240,10 +240,7 @@ export function createCuaDriver(raw: McpCall, { browser = true } = {}): DesktopD
         max_elements: 400,
         tree_format: "elements",
       });
-      const st = (state.structured ?? {}) as {
-        elements?: AxElement[];
-        window_bounds?: { x?: number; y?: number };
-      };
+      const st = (state.structured ?? {}) as { elements?: AxElement[] };
       if (state.isError || !Array.isArray(st.elements)) throw new ComputerError("UNAVAILABLE");
       if (st.elements.some((e) => e.role === "button" && /^not secure$/i.test(e.label ?? "")))
         throw new ComputerError("INSECURE");
@@ -269,12 +266,12 @@ export function createCuaDriver(raw: McpCall, { browser = true } = {}): DesktopD
       const value = await reveal(url).catch((e: unknown) => {
         throw new Passthrough(e);
       }); // the grant's own refusal, not a transport failure
-      const ox = st.window_bounds?.x ?? 0,
-        oy = st.window_bounds?.y ?? 0,
-        f = input.frame;
+      // Frames are screen pixels (see elementCenter): the window's own origin must not be added. The panel puts it at y=27, and adding it
+      // lands the click below the input, so the value is typed into nothing.
+      const f = input.frame;
       let r = await call("click", {
-        x: Math.round(ox + f.x + f.w / 2),
-        y: Math.round(oy + f.y + f.h / 2),
+        x: Math.round(f.x + f.w / 2),
+        y: Math.round(f.y + f.h / 2),
         ...SCREEN,
       });
       if (!r.isError) r = await call("type_text", { text: value.slice(0, 2000), ...FG });

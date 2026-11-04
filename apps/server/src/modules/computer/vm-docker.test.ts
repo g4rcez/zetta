@@ -189,7 +189,8 @@ describe.skipIf(!enabled)("vm service (real containers)", () => {
         await vms.fillCredential("carol", vm.id, "totp", reveal("000000")).catch((e) => e.code),
       ).toBe("NO_INPUT"); // no code box on this page
       // read the username back out of its input (a password input refuses copy): it is in the field the server picked
-      await vms.act("carol", vm.id, "agent", { type: "click", x: 644, y: 294 });
+      // focus is in the password box after the fill: Shift+Tab goes back to the username box, whatever the page layout is
+      await vms.act("carol", vm.id, "agent", { type: "key", key: "shift+Tab" });
       await vms.act("carol", vm.id, "agent", { type: "key", key: "ctrl+a" });
       await vms.act("carol", vm.id, "agent", { type: "key", key: "ctrl+c" });
       if (process.env.ZETTA_VM_SHOT)

@@ -25,6 +25,15 @@ docker build -t zetta-desktop:latest docker/desktop
 
 Each VM is one container: Debian, TigerVNC's X server, XFCE (panel, menu, terminal, file manager), Chromium and [cua-spacesd](https://github.com/trycua/cua/tree/main/libs/cua-spacesd).
 
+- **Drivers.** A VM is driven by one of two tools. `cua` is the default. `ZETTA_VM_DRIVERS=cua,agent-desktop` also offers [agent-desktop](https://github.com/vercel-labs/agent-desktop) (v1.1.0, pinned in the image): the person picks it per computer in Studio > Computer (only while the computer is stopped), and it runs a CLI command inside the container for each step, so spacesd is not used for that computer. Rebuild the image after pulling: an older image has no agent-desktop, and a started VM is recreated on its next start when its image changed (its home volume is kept).
+- **Systems.** Debian 13 is the default. `ZETTA_VM_OS=debian,ubuntu` also offers **Ubuntu 24.04**, picked per computer when it is created (the system cannot change afterwards, because the home volume belongs to it). The Ubuntu image is a desktop with a terminal and **no browser**, because Ubuntu ships Chromium only as a snap, which does not run in a container; navigation and sign-in fills are refused there (`UNSUPPORTED`). Build it from the same Dockerfile and name it with `ZETTA_VM_IMAGE_UBUNTU` (default `zetta-desktop-ubuntu:latest`):
+
+  ```
+  docker build -t zetta-desktop-ubuntu:latest --build-arg BASE_IMAGE=ubuntu:24.04 --build-arg BROWSER=none docker/desktop
+  ```
+
+  Windows and macOS appear in the list in Studio but cannot be created: a Linux container cannot run them. macOS is only possible as the server's own desktop (the local target, not built yet).
+
 - **Persistence.** The `zetta-vm-<id>` container and the volume of the same name, mounted at `/home/agent`, persist. Chromium sign-ins survive the 15-minute idle stop. Deleting a VM in Studio > Computer destroys both.
 - **Control channel.**
   - The server drives the desktop through spacesd's MCP endpoint, published on `127.0.0.1` only.

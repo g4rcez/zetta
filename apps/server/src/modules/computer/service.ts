@@ -37,7 +37,8 @@ export class ComputerError extends Error {
       | "INSECURE"
       | "DISCONNECTED"
       | "SLOW"
-      | "NO_ELEMENT",
+      | "NO_ELEMENT"
+      | "UNSUPPORTED",
   ) {
     super(code);
   }

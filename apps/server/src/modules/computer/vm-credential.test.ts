@@ -87,6 +87,9 @@ function world(
         ownerUserId: u,
         name: "Default",
         kind: "default",
+        target: "vm",
+        driver: "cua",
+        os: "debian",
         createdByBotId: null,
         purpose: null,
         status: "stopped",
@@ -97,6 +100,7 @@ function world(
       rows.push(r);
       return r;
     },
+    setDriver: async () => {},
     create: async () => {
       throw 0;
     },

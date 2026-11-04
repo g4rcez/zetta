@@ -8,6 +8,8 @@ import {
   compactTree,
   createVmService,
   vmDockerArgs,
+  vmDriversFrom,
+  vmOsFrom,
   type VmDocker,
   type McpCall,
   type VmExec,
@@ -36,6 +38,9 @@ function memoryStore(): VmStore & { rows: VmRow[] } {
     ownerUserId: userId,
     name: "Default",
     kind: "default",
+    target: "vm",
+    driver: "cua",
+    os: "debian",
     createdByBotId: null,
     purpose: null,
     status: "stopped",
@@ -62,9 +67,14 @@ function memoryStore(): VmStore & { rows: VmRow[] } {
         name: v.name,
         purpose: v.purpose ?? null,
         createdByBotId: v.botId ?? null,
+        ...(v.driver ? { driver: v.driver } : {}),
+        ...(v.os ? { os: v.os } : {}),
       });
       rows.push(r);
       return r;
+    },
+    setDriver: async (_u, id, driver) => {
+      rows.find((x) => x.id === id)!.driver = driver;
     },
     count: async (u) => live(u).length,
     setStatus: async (id, status) => {
@@ -76,6 +86,17 @@ function memoryStore(): VmStore & { rows: VmRow[] } {
     },
   };
 }
+/** What agent-desktop prints for the few commands a start needs (envelopes as recorded from agent-desktop 1.1.0 on the VM image). */
+const agentDesktopReply = (command: string) =>
+  JSON.stringify({
+    version: "2.6",
+    ok: true,
+    command,
+    data:
+      command === "list-windows"
+        ? [{ id: "w-1", app_name: "chromium", title: "Example - Chromium", is_focused: true }]
+        : { permissions: { accessibility: { state: "granted" } } },
+  });
 /** Fake container CLI: tracks containers/volumes by name; `docker start` only works for an existing (stopped) container. */
 function fakeDocker() {
   const containers = new Map<string, "running" | "exited">();
@@ -112,7 +133,11 @@ function fakeDocker() {
       return { code: 0, stdout: "" };
     }
     if (cmd === "port") return { code: 0, stdout: "127.0.0.1:41234\n" };
-    if (cmd === "exec") return { code: 0, stdout: "" };
+    if (cmd === "exec")
+      return {
+        code: 0,
+        stdout: args[2] === "zetta-agent-desktop" ? agentDesktopReply(args[3]!) : "",
+      };
     if (cmd === "ps") return { code: 0, stdout: [...containers.keys()].join("\n") };
     if (cmd === "restart") {
       if (!containers.has(name)) return { code: 1, stdout: "" };
@@ -225,6 +250,99 @@ describe("vm service (fake docker + fake spacesd)", () => {
     expect(await code(vm.screenshot("bob", a.id))).toBe("NOT_FOUND");
     expect(await code(vm.remove("bob", a.id))).toBe("NOT_FOUND");
     expect(() => vm.takeover("bob", a.id, true)).toThrow(ComputerError);
+    await vm.closeAll();
+  });
+  test("a computer has a target and a driver; only allowed ones are accepted, and a running computer keeps its driver", async () => {
+    const { vm, d, m } = await setup({ vmDrivers: ["cua", "agent-desktop"] });
+    const made = await vm.create("alice", { name: "Work", driver: "agent-desktop" });
+    expect([made.target, made.driver]).toEqual(["vm", "agent-desktop"]);
+    expect((await vm.start("alice")).driver).toBe("cua");
+    // An agent-desktop computer is driven by commands run in its container; spacesd is never contacted.
+    const [logged, spacesd] = [d.log.length, m.calls.length];
+    expect((await vm.start("alice", made.id)).driver).toBe("agent-desktop");
+    expect(d.log.slice(logged).some((a) => a[0] === "exec" && a[2] === "zetta-agent-desktop")).toBe(
+      true,
+    );
+    expect(m.calls.length).toBe(spacesd);
+    await vm.stop("alice", made.id);
+    expect(vm.options().targets).toEqual({ vm: ["cua", "agent-desktop"], local: [] });
+    // The server's own desktop is not offered yet.
+    expect(await code(vm.create("alice", { name: "Mine", target: "local" }))).toBe("UNSUPPORTED");
+    const def = (await vm.list("alice")).find((x) => x.kind === "default")!;
+    expect(await code(vm.setDriver("alice", def.id, "agent-desktop"))).toBe("LIMIT"); // running
+    expect(await code(vm.setDriver("bob", def.id, "cua"))).toBe("NOT_FOUND");
+    await vm.stop("alice", def.id);
+    await vm.setDriver("alice", def.id, "agent-desktop");
+    expect((await vm.list("alice")).find((x) => x.id === def.id)!.driver).toBe("agent-desktop");
+    await vm.closeAll();
+  });
+  test("the operator's system list: known names only, debian when empty", () => {
+    expect(vmOsFrom(undefined)).toEqual(["debian"]);
+    expect(vmOsFrom("windows,nope")).toEqual(["debian"]);
+    expect(vmOsFrom("ubuntu, debian,ubuntu")).toEqual(["ubuntu", "debian"]);
+  });
+  test("a computer runs the image of its system, and a system the operator did not offer is refused", async () => {
+    const { vm, d } = await setup({ vmOs: ["debian", "ubuntu"] });
+    const ubuntu = await vm.create("alice", { name: "Ubuntu box", os: "ubuntu" });
+    expect(ubuntu.os).toBe("ubuntu");
+    await vm.start("alice", ubuntu.id);
+    const run = d.log.find((a) => a[0] === "run" && a.includes(`zetta-vm-${ubuntu.id}`))!;
+    expect(run.at(-1)).toBe("zetta-desktop-ubuntu:latest");
+    const debian = (await vm.start("alice")).id;
+    expect(d.log.find((a) => a[0] === "run" && a.includes(`zetta-vm-${debian}`))!.at(-1)).toBe(
+      "zetta-desktop:latest",
+    );
+    await vm.closeAll();
+
+    const only = await setup();
+    expect(await code(only.vm.create("alice", { name: "Ubuntu box", os: "ubuntu" }))).toBe(
+      "UNSUPPORTED",
+    );
+  });
+  test("the list a person picks from has every system; Windows and macOS say why they are not available", async () => {
+    const { vm } = await setup({ vmOs: ["debian", "ubuntu"] });
+    expect(vm.options().os.map((o) => [o.id, o.family, o.available])).toEqual([
+      ["debian", "linux", true],
+      ["ubuntu", "linux", true],
+      ["windows", "windows", false],
+      ["macos", "macos", false],
+    ]);
+    expect(vm.options().os.find((o) => o.id === "windows")!.note).toContain("licence");
+    expect((await setup()).vm.options().os.find((o) => o.id === "ubuntu")!.available).toBe(false);
+  });
+  test("a system without a browser starts without waiting for one and refuses browser actions", async () => {
+    const { vm, m } = await setup({ vmOs: ["debian", "ubuntu"] });
+    const ubuntu = await vm.create("alice", { name: "Ubuntu box", os: "ubuntu" });
+    const before = m.calls.length;
+    await vm.start("alice", ubuntu.id);
+    expect(m.calls.slice(before).filter((c) => c.tool === "list_windows")).toEqual([]);
+    expect(
+      await code(
+        vm.act("alice", ubuntu.id, "agent", { type: "navigate", url: "https://example.com" }),
+      ),
+    ).toBe("UNSUPPORTED");
+    expect(await code(vm.fillCredential("alice", ubuntu.id, "password", async () => "x"))).toBe(
+      "UNSUPPORTED",
+    );
+    await vm.act("alice", ubuntu.id, "agent", { type: "key", key: "ctrl+l" }); // other input still works
+    await vm.closeAll();
+  });
+  test("the operator's driver list: known names only, cua when empty", () => {
+    expect(vmDriversFrom(undefined)).toEqual(["cua"]);
+    expect(vmDriversFrom("")).toEqual(["cua"]);
+    expect(vmDriversFrom("agent-desktop, cua,agent-desktop,nope")).toEqual([
+      "agent-desktop",
+      "cua",
+    ]);
+  });
+  test("a driver the operator did not allow is refused", async () => {
+    const { vm } = await setup();
+    expect(await code(vm.create("alice", { name: "Work", driver: "agent-desktop" }))).toBe(
+      "UNSUPPORTED",
+    );
+    const def = await vm.start("alice");
+    await vm.stop("alice", def.id);
+    expect(await code(vm.setDriver("alice", def.id, "agent-desktop"))).toBe("UNSUPPORTED");
     await vm.closeAll();
   });
   test("caps: VMs per user (default included) and running VMs per user / in total", async () => {

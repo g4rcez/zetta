@@ -15,7 +15,13 @@ import { createSources } from "./modules/integrations/sources";
 import { createConnectionStore } from "./modules/connections/store";
 import { createConnectionsService, PROVIDERS } from "./modules/connections/service";
 import { createComputerService, dockerBrowserConfig } from "./modules/computer/service";
-import { createDbVmStore, createVmService, dockerVmConfig } from "./modules/computer/vm";
+import {
+  createDbVmStore,
+  createVmService,
+  dockerVmConfig,
+  vmDriversFrom,
+  vmOsFrom,
+} from "./modules/computer/vm";
 import { createFeaturesService } from "./modules/features/service";
 import { createAgenda } from "./modules/agenda/service";
 import { createLocalEmbedder } from "./modules/knowledge/embed";
@@ -126,6 +132,8 @@ const vms = vmDocker
       maxRunningPerUser: num(process.env.ZETTA_VM_MAX_RUNNING_PER_USER),
       maxRunning: num(process.env.ZETTA_VM_MAX_RUNNING),
       allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+      vmDrivers: vmDriversFrom(process.env.ZETTA_VM_DRIVERS),
+      vmOs: vmOsFrom(process.env.ZETTA_VM_OS),
     })
   : undefined;
 // `bun --hot` re-runs this module: the previous instance lets go of its VMs (the new one reattaches on next use) instead of keeping a

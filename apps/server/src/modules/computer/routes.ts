@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
+import { computerDrivers, computerOsList, computerTargets } from "@zetta/db/schema/features";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { ComputerError, type ComputerService } from "./service";
 import type { VmService } from "./vm";
@@ -39,6 +40,12 @@ const vmAction = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("navigate"), url: z.string().url().max(2000) }),
 ]);
 const vmId = z.string().uuid();
+const vmCreate = z.strictObject({
+  name: z.string().min(1).max(60),
+  target: z.enum(computerTargets).optional(),
+  driver: z.enum(computerDrivers).optional(),
+  os: z.enum(computerOsList).optional(),
+});
 const out = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { "cache-control": "no-store" } });
 const fail = (status: number, code: string, message: string) =>
@@ -164,6 +171,8 @@ export function createComputerRoutes(
           ...computer.capabilities(),
           desktop: Boolean(vms),
           desktopBackend: vms ? "vm" : null,
+          targets: vms?.options().targets ?? { vm: [], local: [] },
+          os: vms?.options().os ?? [],
           note: vms
             ? "Each user has a persistent Linux desktop (Debian + Chromium); bots can ask for more. Browser sessions are separate."
             : computer.capabilities().note,
@@ -172,6 +181,18 @@ export function createComputerRoutes(
       .get(
         "/vms",
         g(async (c) => ({ vms: await needVms().list(c.userId) })),
+      )
+      .post(
+        "/vms",
+        g(async (c) => ({ vm: await needVms().create(c.userId, vmCreate.parse(c.body)) }), 201),
+      )
+      .patch(
+        "/vms/:id",
+        g(async (c) => {
+          const b = z.strictObject({ driver: z.enum(computerDrivers) }).parse(c.body);
+          await needVms().setDriver(c.userId, v(c), b.driver);
+          return { ok: true };
+        }),
       )
       .post(
         "/vms/default/start",

@@ -1,0 +1,19 @@
+{
+  "version": "2.6",
+  "ok": true,
+  "command": "list-windows",
+  "data": [
+    {
+      "accessible": true,
+      "app_name": "chromium",
+      "bounds": { "height": 773.0, "width": 1280.0, "x": 0.0, "y": 27.0 },
+      "id": "w-1.11-org-a11y-atspi-accessible-1",
+      "is_focused": true,
+      "minimized": false,
+      "pid": 109,
+      "process_instance": "059931c0:34294608",
+      "title": "Example Domain - Chromium",
+      "visible": true
+    }
+  ]
+}

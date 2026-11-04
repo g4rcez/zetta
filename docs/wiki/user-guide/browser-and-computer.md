@@ -18,6 +18,10 @@ If two of your bots need the same shared profile, they must follow the approved 
 
 Exact persistence, session retention, and backend limits require the [browser/computer decision](../../../tasks/074-select-required-browser-and-computer-backends.md). Do not assume an existing login from the host browser is copied automatically.
 
+## Computers, and what drives them
+
+Studio > Computer lists your persistent Linux computers. When the operator offers more than one driver, each computer shows which tool drives it (Cua or agent-desktop) and you can change that while the computer is stopped; the same screen is what you see over VNC. Create a new computer there with a name and a driver. When the operator offers more than one system, the form also asks for the system (Debian or Ubuntu). Ubuntu computers have a terminal and no browser. Windows and macOS are listed with the reason they are not available. A bot that reads a page gets the same numbered text (`click_element{n}`) with either driver. One difference: the Cua driver refuses an element that is scrolled out of view, so a bot scrolls first; agent-desktop can press a link that is below the fold.
+
 ## Help with login or another human step
 
 When a bot needs login, MFA, or another human-only action:

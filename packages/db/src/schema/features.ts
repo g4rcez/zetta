@@ -463,6 +463,12 @@ export const browserProfile = zetta.table(
 );
 
 /** Persistent Linux desktops ("VMs"): one default per user, plus extras a bot proposed and the user approved. Home lives on volume `zetta-vm-<id>`. */
+/** Where a computer runs: a container ("vm") or the desktop of the machine that runs the server ("local"). */
+export const computerTargets = ["vm", "local"] as const;
+/** The automation tool that drives it. */
+export const computerDrivers = ["cua", "agent-desktop"] as const;
+/** The system a container computer runs. Only what can run in a container is stored; Windows and macOS are offered in the list but not creatable. */
+export const computerOsList = ["debian", "ubuntu"] as const;
 export const computerVm = zetta.table(
   "computer_vm",
   {
@@ -472,6 +478,9 @@ export const computerVm = zetta.table(
     ownerUserId: owner(),
     name: text("name").notNull(),
     kind: text("kind", { enum: ["default", "extra"] }).notNull(),
+    target: text("target", { enum: computerTargets }).default("vm").notNull(),
+    driver: text("driver", { enum: computerDrivers }).default("cua").notNull(),
+    os: text("os", { enum: computerOsList }).default("debian").notNull(),
     createdByBotId: uuid("created_by_bot_id").references(() => bot.id, restrict),
     purpose: text("purpose"),
     status: text("status", { enum: ["stopped", "running", "failed", "deleted"] })
@@ -487,6 +496,10 @@ export const computerVm = zetta.table(
     uniqueIndex("computer_vm_default_unique")
       .on(t.ownerUserId)
       .where(sql`${t.kind} = 'default' and ${t.status} <> 'deleted'`),
+    // One computer per user on the server's own desktop: there is one screen and one set of signed-in apps.
+    uniqueIndex("computer_vm_local_unique")
+      .on(t.ownerUserId)
+      .where(sql`${t.target} = 'local' and ${t.status} <> 'deleted'`),
   ],
 );
 

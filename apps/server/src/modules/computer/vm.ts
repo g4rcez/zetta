@@ -2,8 +2,6 @@ import { createSerializer } from "./serial";
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Database } from "@zetta/db";
 import { and, asc, eq, ne } from "@zetta/db/query";
 import { computerVm } from "@zetta/db/schema/features";
@@ -11,19 +9,21 @@ import { assertPublicUrl, assertWebScheme, ComputerError, type Actor } from "./s
 import { pageLinks, type PageLinks } from "./cdp";
 import type { CredentialField } from "../integrations/plugins/registry";
 import { vncPassword } from "./vnc";
-import { pickInput, type AxElement } from "../integrations/plugins/credentials";
+import { connectSpacesd, type VmConnect } from "./mcp-client";
+import { createCuaDriver } from "./drivers/cua";
+import { createAgentDesktopDriver } from "./drivers/agent-desktop";
+import { hasBrowser, osOptions, type OsId } from "./os";
+import {
+  DRIVERS,
+  Passthrough,
+  type DesktopDriver,
+  type DriverName,
+  type VmAction,
+} from "./drivers/types";
 
-/** A cua-spacesd MCP tool call. Goes away when the VM driver moves to agent-desktop. */
-export type McpCall = (
-  tool: string,
-  args: Record<string, unknown>,
-  opts?: { signal?: AbortSignal | undefined; timeout?: number },
-) => Promise<{
-  text: string;
-  imageBase64?: string;
-  isError: boolean;
-  /** The tool's structuredContent, when it returns one. */ structured?: unknown;
-}>;
+export { connectSpacesd, type McpCall, type VmConnect } from "./mcp-client";
+export { compactTree } from "./drivers/cua";
+export type { VmAction } from "./drivers/types";
 
 /**
  * Persistent Linux desktops ("VMs") for computer use. Each row in computer_vm is one container from docker/desktop (Debian, TigerVNC,
@@ -39,24 +39,26 @@ export type McpCall = (
  * Activity is recorded in a file next to the token, so an idle stop in one process never kills a VM another process is driving, and a
  * session whose transport died is dropped (DISCONNECTED) so the next start reattaches instead of failing every call.
  */
-export type VmAction =
-  | { type: "click"; x: number; y: number }
-  | { type: "type"; text: string }
-  | { type: "key"; key: string }
-  | { type: "scroll"; direction: "up" | "down" | "left" | "right"; amount?: number }
-  | { type: "launch"; app: string }
-  | { type: "navigate"; url: string }
-  /** Element [n] of the last read, clicked at the center of its frame. */
-  | { type: "click_element"; n: number };
-export type VmRow = typeof computerVm.$inferSelect;
+// `owner_instance` is the server's own bookkeeping (see runtime/instance.ts), not part of a VM's record.
+export type VmRow = Omit<typeof computerVm.$inferSelect, "ownerInstance">;
+export type VmTarget = VmRow["target"];
+export { vmOsFrom, type OsId } from "./os";
 export type VmStore = {
   list(userId: string): Promise<VmRow[]>;
   get(userId: string, id: string): Promise<VmRow | undefined>;
   ensureDefault(userId: string): Promise<VmRow>;
   create(
     userId: string,
-    v: { name: string; purpose?: string | null; botId?: string | null },
+    v: {
+      name: string;
+      purpose?: string | null;
+      botId?: string | null;
+      target?: VmTarget;
+      driver?: DriverName;
+      os?: OsId;
+    },
   ): Promise<VmRow>;
+  setDriver(userId: string, id: string, driver: DriverName): Promise<void>;
   count(userId: string): Promise<number>;
   setStatus(id: string, status: VmRow["status"]): Promise<void>;
   resetRunning(): Promise<void>;
@@ -64,6 +66,8 @@ export type VmStore = {
 export type VmDocker = {
   bin: string;
   image: string;
+  /** Images for the other systems (Debian is `image`); default zetta-desktop-ubuntu:latest. */
+  images?: Partial<Record<OsId, string>>;
   memory: string;
   cpus: string;
   pids: number;
@@ -72,32 +76,26 @@ export type VmDocker = {
   network?: string;
 };
 /** Runs the container CLI; injectable so tests do not need Docker. */
-export type VmExec = (args: string[]) => Promise<{ code: number; stdout: string }>;
-/** `attempts` bounds the health wait (250 ms apart): a reattach to a container that should already be up gives up quickly. */
-export type VmConnect = (
-  port: number,
-  token: string,
-  attempts?: number,
-) => Promise<{ call: McpCall; close: () => Promise<void> }>;
-
+export type VmExec = (
+  args: string[],
+  opts?: { signal?: AbortSignal | undefined; timeout?: number },
+) => Promise<{ code: number; stdout: string }>;
 type VSession = {
   id: string;
   userId: string;
   port: number;
   vnc: { port: number; password: string };
   viewers: number;
-  client: Awaited<ReturnType<VmConnect>>;
+  /** The computer's image has a browser: no browser means no navigate and no sign-in fill. */
+  browser: boolean;
+  /** Ends the connection to the driver: a Cua MCP session; nothing for agent-desktop, which runs one command per call. */
+  close: () => Promise<void>;
+  driver: DesktopDriver;
   control: "agent" | "human";
   epoch: number;
   lastUsed: number;
   queue: Promise<unknown>;
   keyboard: KeyboardLayout;
-  /** Chromium's window, cached between actions; dropped when a call on it fails. */
-  win?: { window_id: number; pid: number } | undefined;
-  /** Labels of the numbered elements in the last read, so click_element can find [n] again if the page shifted. */
-  labels?: Map<number, string>;
-  /** Chromium's window title at the last read, to see when an action changed the page. */
-  title?: string | undefined;
   /** The published DevTools port, looked up at the first read; null when the VM's image has none (started before it was added). */
   cdp?: number | null;
   row?: VmRow;
@@ -135,17 +133,13 @@ export type KeyboardLayout = (typeof KEYBOARD_LAYOUTS)[number];
 const SAFE_APP = /^[A-Za-z0-9._ -]{1,60}$/;
 const SAFE_NAME = /^[\p{L}\p{N} ._-]{1,60}$/u;
 const container = (id: string) => `zetta-vm-${id}`;
-/** An error from outside spacesd (e.g. a credential grant refusing) that `guard` must rethrow as is. */
-class Passthrough {
-  constructor(readonly error: unknown) {}
-}
-
 /** `ZETTA_DESKTOP_RUNTIME=docker` turns on per-user VMs; the rest tunes the container. */
 export function dockerVmConfig(env: NodeJS.ProcessEnv = process.env): VmDocker | undefined {
   if (env.ZETTA_DESKTOP_RUNTIME !== "docker") return undefined;
   return {
     bin: env.ZETTA_DOCKER_BIN ?? "docker",
     image: env.ZETTA_VM_IMAGE ?? "zetta-desktop:latest",
+    images: { ubuntu: env.ZETTA_VM_IMAGE_UBUNTU || "zetta-desktop-ubuntu:latest" },
     memory: env.ZETTA_VM_MEMORY ?? "2g",
     cpus: env.ZETTA_VM_CPUS ?? "2",
     pids: Number(env.ZETTA_VM_PIDS ?? 1024),
@@ -153,6 +147,14 @@ export function dockerVmConfig(env: NodeJS.ProcessEnv = process.env): VmDocker |
     runtime: env.ZETTA_VM_RUNTIME || undefined,
     network: env.ZETTA_VM_NETWORK || undefined,
   };
+}
+/** `ZETTA_VM_DRIVERS=cua,agent-desktop`: the drivers an operator offers. Unknown names are dropped; empty means cua only. */
+export function vmDriversFrom(raw: string | undefined): DriverName[] {
+  const named = (raw ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x): x is DriverName => (DRIVERS as readonly string[]).includes(x));
+  return named.length ? [...new Set(named)] : ["cua"];
 }
 export function vmDockerArgs(d: VmDocker, o: { id: string; tokenFile: string; vncFile: string }) {
   return [
@@ -192,68 +194,21 @@ export function vmDockerArgs(d: VmDocker, o: { id: string; tokenFile: string; vn
 }
 
 export function createCliExec(bin: string): VmExec {
-  return async (args) => {
+  return async (args, opts) => {
+    const timer = opts?.timeout ? AbortSignal.timeout(opts.timeout) : undefined;
+    const signals = [opts?.signal, timer].filter((x): x is AbortSignal => Boolean(x));
     const p = Bun.spawn([bin, ...args], {
       stdout: "pipe",
       stderr: "ignore",
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
+      ...(signals.length ? { signal: AbortSignal.any(signals) } : {}),
     });
     const stdout = await new Response(p.stdout).text();
-    return { code: await p.exited, stdout };
+    const code = await p.exited;
+    if (timer?.aborted && !opts?.signal?.aborted) throw new ComputerError("SLOW");
+    return { code, stdout };
   };
 }
-
-/** Production transport: spacesd's MCP endpoint, bearer token in a header (never in a URL), after its health check answers. */
-export const connectSpacesd: VmConnect = async (port, token, attempts = 240) => {
-  const base = `http://127.0.0.1:${port}`;
-  const headers = { authorization: `Bearer ${token}` };
-  let ok = false;
-  for (let i = 0; i < attempts && !ok; i++) {
-    ok = await fetch(`${base}/health`, { headers }).then(
-      (r) => r.ok,
-      () => false,
-    );
-    if (!ok) await Bun.sleep(250);
-  }
-  if (!ok) throw new ComputerError("UNAVAILABLE");
-  const c = new Client({ name: "zetta-vm", version: "1" });
-  await c.connect(
-    new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers } }),
-  );
-  return {
-    call: async (tool, args, opts) => {
-      const r = (await c
-        .callTool({ name: tool, arguments: args }, undefined, {
-          timeout: opts?.timeout ?? 60_000,
-          ...(opts?.signal ? { signal: opts.signal } : {}),
-        })
-        .catch((e: unknown) => {
-          // A slow step or a Stop is not a dead connection: keep the session, tell the caller what happened.
-          if (opts?.signal?.aborted) throw new ComputerError("CANCELLED");
-          if (
-            (e as { code?: unknown })?.code === -32001 ||
-            /timed? ?out/i.test(String((e as Error)?.message))
-          )
-            throw new ComputerError("SLOW");
-          throw e;
-        })) as {
-        isError?: boolean;
-        content?: { type: string; text?: string; data?: string }[];
-        structuredContent?: unknown;
-      };
-      return {
-        text: (r.content ?? [])
-          .filter((x) => x.type === "text")
-          .map((x) => x.text ?? "")
-          .join("\n"),
-        imageBase64: r.content?.find((x) => x.type === "image")?.data,
-        isError: Boolean(r.isError),
-        structured: r.structuredContent,
-      };
-    },
-    close: () => c.close().catch(() => {}),
-  };
-};
 
 export function createDbVmStore(db: Database): VmStore {
   const live = (userId: string) =>
@@ -290,9 +245,18 @@ export function createDbVmStore(db: Database): VmStore {
             kind: "extra",
             purpose: v.purpose ?? null,
             createdByBotId: v.botId ?? null,
+            ...(v.target ? { target: v.target } : {}),
+            ...(v.driver ? { driver: v.driver } : {}),
+            ...(v.os ? { os: v.os } : {}),
           })
           .returning()
       )[0]!,
+    setDriver: async (userId, id, driver) => {
+      await db
+        .update(computerVm)
+        .set({ driver })
+        .where(and(live(userId), eq(computerVm.id, id)));
+    },
     count: async (userId) =>
       (await db.select({ id: computerVm.id }).from(computerVm).where(live(userId))).length,
     setStatus: async (id, status) => {
@@ -325,6 +289,10 @@ export type VmOptions = {
   maxRunning?: number;
   idleMs?: number;
   allowPrivate?: boolean;
+  /** Drivers a person may pick for a VM (default: cua). agent-desktop joins once the image ships it. */
+  vmDrivers?: readonly DriverName[];
+  /** Systems a person may pick for a new computer (default: debian). Each needs its image built. */
+  vmOs?: readonly OsId[];
   /** Reads the page address and links over the DevTools port; injectable so tests do not need Chromium. */
   links?: (port: number) => Promise<PageLinks>;
 };
@@ -340,6 +308,8 @@ export function createVmService({
   maxRunning = 6,
   idleMs = 15 * 60_000,
   allowPrivate = false,
+  vmDrivers = ["cua"],
+  vmOs = ["debian"],
 }: VmOptions) {
   const sessions = new Map<string, VSession>();
   const tickets = new Map<string, { userId: string; id: string; expires: number }>();
@@ -385,7 +355,7 @@ export function createVmService({
   /** The transport to spacesd failed (the container stopped or restarted with another token): forget the session so the next start reattaches. */
   const drop = (s: VSession) => {
     if (sessions.get(s.id) === s) sessions.delete(s.id);
-    void s.client.close().catch(() => undefined);
+    void s.close().catch(() => undefined);
   };
   /** Runs spacesd calls for a session; a transport failure (not a tool error) drops it and surfaces as DISCONNECTED. */
   const guard = async <T>(s: VSession, work: () => Promise<T>): Promise<T> => {
@@ -419,6 +389,9 @@ export function createVmService({
       kind: row.kind,
       purpose: row.purpose,
       createdByBotId: row.createdByBotId,
+      target: row.target,
+      driver: row.driver,
+      os: row.os,
       status: s
         ? ("running" as const)
         : row.status === "running"
@@ -435,6 +408,36 @@ export function createVmService({
     if (r.code !== 0 || !m) throw new ComputerError("UNAVAILABLE");
     return Number(m[1]);
   };
+
+  /** Connects the row's driver to a running container. Cua talks to spacesd; agent-desktop runs a command in the container per call. */
+  async function attach(
+    driver: DriverName,
+    os: OsId,
+    id: string,
+    port: number,
+    token: string,
+    attempts?: number,
+  ) {
+    const browser = hasBrowser(os);
+    if (driver === "cua") {
+      const client = await connect(port, token, attempts);
+      return { driver: createCuaDriver(client.call, { browser }), close: client.close, browser };
+    }
+    return {
+      driver: createAgentDesktopDriver(
+        {
+          cli: (args, o) => exec(["exec", container(id), "zetta-agent-desktop", ...args], o),
+          xdotool: (args, o) => exec(["exec", container(id), "xdotool", ...args], o),
+        },
+        { browser },
+      ),
+      close: async () => {},
+      browser,
+    };
+  }
+  /** The image a computer runs: Debian's is the default image; another system's is its own, never Debian's. */
+  const imageOf = (os: OsId) =>
+    os === "debian" ? docker.image : (docker.images?.[os] ?? `zetta-desktop-${os}:latest`);
 
   /** Each user's default VM id, so the hot path (a bot acting on a running VM) skips the database. */
   const defaults = new Map<string, string>();
@@ -454,6 +457,8 @@ export function createVmService({
         existing.row = { ...row, status: "running" };
         return view(row);
       }
+      // A computer keeps the driver it was given; if the operator has since turned that driver off, it does not start under another one.
+      if (!vmDrivers.includes(row.driver)) throw new ComputerError("UNSUPPORTED");
       const running = [...sessions.values()];
       if (
         running.filter((s) => s.userId === userId).length >= maxRunningPerUser ||
@@ -467,14 +472,14 @@ export function createVmService({
         // A container built from an older image is recreated (all state lives on the home volume), so image updates reach existing VMs.
         const [had, want] = await Promise.all([
           exec(["inspect", "--format", "{{.Image}} {{.State.Running}}", container(row.id)]),
-          exec(["image", "inspect", "--format", "{{.Id}}", docker.image]),
+          exec(["image", "inspect", "--format", "{{.Id}}", imageOf(row.os)]),
         ]);
         const [image, running] = had.stdout.trim().split(/\s+/);
         const current = had.code === 0 && want.code === 0 && image === want.stdout.trim();
         // Still running with no session here (a hot reload, another server process, a restart): reattach with the token it already has.
         // Restarting it instead would kill whatever another process (or the previous module instance) is doing on it right now.
         if (current && running === "true") {
-          const back = await reattach(row.id, userId, tokenFile, vncFile);
+          const back = await reattach(row.id, userId, row.driver, row.os, tokenFile, vncFile);
           if (back) {
             orphans.delete(row.id);
             await store.setStatus(row.id, "running");
@@ -501,20 +506,19 @@ export function createVmService({
           : { code: 1 };
         if (
           started.code !== 0 &&
-          (await exec(vmDockerArgs(docker, { id: row.id, tokenFile, vncFile }))).code !== 0
+          (
+            await exec(
+              vmDockerArgs(
+                { ...docker, image: imageOf(row.os) },
+                { id: row.id, tokenFile, vncFile },
+              ),
+            )
+          ).code !== 0
         )
           throw new ComputerError("UNAVAILABLE");
         const [port, vncPort] = await Promise.all([portOf(row.id, 3211), portOf(row.id, 5900)]);
-        const client = await connect(port, token);
-        // "running" means usable: wait (bounded) for Chromium's window, so a bot's first keystroke has a target.
-        for (let i = 0; i < 60; i++) {
-          const w = await client.call("list_windows", {}).catch(() => undefined);
-          if (w && !w.isError && /window_id=\d+ pid=\d+ "[^"]*Chromium/i.test(w.text)) break;
-          await Bun.sleep(500);
-        }
-        // Right after boot no window is active, and foreground input is refused until one is (see `focused`).
-        const win = await chromium(client.call).catch(() => undefined);
-        if (win) await client.call("bring_to_front", win).catch(() => undefined);
+        const { driver, close, browser } = await attach(row.driver, row.os, row.id, port, token);
+        await driver.ready();
         sessions.set(row.id, {
           id: row.id,
           userId,
@@ -522,7 +526,9 @@ export function createVmService({
           vnc: { port: vncPort, password },
           viewers: 0,
           keyboard: "us",
-          client,
+          close,
+          driver,
+          browser,
           control: "agent",
           epoch: 0,
           lastUsed: Date.now(),
@@ -543,7 +549,14 @@ export function createVmService({
   };
 
   /** A session for a container that is already running, from the token and VNC password on disk; undefined when they no longer work. */
-  async function reattach(id: string, userId: string, tokenFile: string, vncFile: string) {
+  async function reattach(
+    id: string,
+    userId: string,
+    driverName: DriverName,
+    os: OsId,
+    tokenFile: string,
+    vncFile: string,
+  ) {
     const [token, password] = await Promise.all([
       readFile(tokenFile, "utf8").catch(() => ""),
       readFile(vncFile, "utf8").then(
@@ -555,13 +568,11 @@ export function createVmService({
     const ports = await Promise.all([portOf(id, 3211), portOf(id, 5900)]).catch(() => undefined);
     if (!ports) return undefined;
     // ~5 s of health checks: spacesd may be busy for a moment, and giving up here restarts the container (open tabs are lost).
-    const client = await connect(ports[0], token, 20).catch(() => undefined);
-    if (!client) return undefined;
-    const probe =
-      (await client.call("list_windows", {}).catch(() => undefined)) ??
-      (await Bun.sleep(500).then(() => client.call("list_windows", {}).catch(() => undefined)));
-    if (!probe || probe.isError) {
-      await client.close().catch(() => undefined);
+    const attached = await attach(driverName, os, id, ports[0], token, 20).catch(() => undefined);
+    if (!attached) return undefined;
+    const { driver, close, browser } = attached;
+    if (!(await driver.probe().catch(() => false))) {
+      await close().catch(() => undefined);
       return undefined;
     }
     const s: VSession = {
@@ -571,7 +582,9 @@ export function createVmService({
       vnc: { port: ports[1], password },
       viewers: 0,
       keyboard: "us",
-      client,
+      close,
+      driver,
+      browser,
       control: "agent",
       epoch: 0,
       lastUsed: Date.now(),
@@ -603,36 +616,15 @@ export function createVmService({
         throw new ComputerError("STALE_CONTROL");
       if (sessions.get(s.id) !== s) throw new ComputerError("DISCONNECTED");
       return guard(s, async () => {
-        const call = focused((tool, args) => s.client.call(tool, args, { signal: opts.signal }));
-        let r;
-        if (action.type === "click_element") {
-          const at = await elementCenter(s, call, action.n);
-          r = await call("click", { x: at.x, y: at.y, ...SCREEN });
-        } else if (action.type === "click")
-          r = await call("click", { x: Math.round(action.x), y: Math.round(action.y), ...SCREEN });
-        else if (action.type === "type")
-          r = await call("type_text", { text: action.text.slice(0, 2000), ...FG });
-        else if (action.type === "key") r = await pressKey(call, action.key.slice(0, 40));
-        else if (action.type === "scroll")
-          r = await call("scroll", {
-            direction: action.direction,
-            amount: Math.max(1, Math.min(20, action.amount ?? 3)),
-            x: 640,
-            y: 400,
-            ...SCREEN,
-          });
-        else if (action.type === "launch") {
-          if (!SAFE_APP.test(action.app)) throw new ComputerError("INVALID");
-          r = await call("launch_app", { name: action.app });
-        } else {
-          // Chromium is always open: focus its address bar, type, Enter. The address is checked first, like browser sessions.
+        if (action.type === "launch" && !SAFE_APP.test(action.app))
+          throw new ComputerError("INVALID");
+        if (action.type === "navigate") {
+          if (!s.browser) throw new ComputerError("UNSUPPORTED"); // this system's image has no browser
+          // The address is checked first, like browser sessions.
           assertWebScheme(action.url);
           if (!allowPrivate) await assertPublicUrl(action.url);
-          r = await call("hotkey", { keys: ["ctrl", "l"], ...FG });
-          if (!r.isError) r = await call("type_text", { text: action.url, ...FG });
-          if (!r.isError) r = await call("press_key", { key: "Return", ...FG });
         }
-        if (r.isError) throw new ComputerError("UNAVAILABLE");
+        await s.driver.act(action, { signal: opts.signal });
         s.lastUsed = Date.now();
         return { id: s.id, control: s.control, epoch: s.epoch };
       });
@@ -641,70 +633,6 @@ export function createVmService({
     return run;
   }
 
-  /** Chromium's window for a session, cached until a call on it fails. */
-  async function windowOf(s: VSession, call: McpCall) {
-    s.win ??= await chromium(call);
-    return s.win;
-  }
-  /**
-   * Screen point of element [n] from the last read. Indices follow the page's tree order, so they hold while the page is the same; if the
-   * element there now has another label, the one with the label the bot saw is used instead. Off-screen or missing: NO_ELEMENT.
-   */
-  async function elementCenter(s: VSession, call: McpCall, n: number) {
-    const win = await windowOf(s, call);
-    if (!win) throw new ComputerError("NO_ELEMENT");
-    const r = await call("get_window_state", {
-      ...win,
-      include_screenshot: false,
-      max_elements: Math.min(5000, Math.max(400, n + 100)),
-      tree_format: "elements",
-    });
-    const st = (r.structured ?? {}) as {
-      elements?: (AxElement & { element_index?: number })[];
-      window_bounds?: { y?: number; height?: number };
-    };
-    if (r.isError || !Array.isArray(st.elements)) {
-      s.win = undefined;
-      throw new ComputerError("UNAVAILABLE");
-    }
-    const clean = (x?: string) => (x ?? "").replace(/\uFFFC/g, "").trim();
-    const want = s.labels?.get(n);
-    let el = st.elements.find((e) => e.element_index === n);
-    if (want && clean(el?.label) !== want)
-      el = st.elements.find((e) => clean(e.label) === want) ?? el;
-    const f = el?.frame;
-    if (!f || f.w <= 0 || f.h <= 0) throw new ComputerError("NO_ELEMENT");
-    // Frames are screen pixels, like click's desktop scope (checked on cua-spacesd 0.8.0: a Hacker News title link at y=158 h=15 opens
-    // when clicked at y=166, although the state says coordinate_frame "window"). Only the visible part of the element counts.
-    const top = Math.max(f.y, st.window_bounds?.y ?? 0),
-      bottom = Math.min(
-        f.y + f.h,
-        (st.window_bounds?.y ?? 0) + (st.window_bounds?.height ?? 10_000),
-      );
-    if (bottom <= top) throw new ComputerError("NO_ELEMENT"); // scrolled out of view
-    return { x: Math.round(f.x + f.w / 2), y: Math.round((top + bottom) / 2) };
-  }
-  /** Chromium's window in this VM (the one bots drive), as list_windows reports it. */
-  async function chromium(call: McpCall) {
-    const windows = await call("list_windows", {});
-    const found = [...windows.text.matchAll(/window_id=(\d+) pid=(\d+) "([^"]*)"/g)];
-    const top = found.find((m) => /chromium/i.test(m[3]!));
-    return windows.isError || !top ? undefined : { window_id: Number(top[1]), pid: Number(top[2]) };
-  }
-  /**
-   * Foreground input needs an active window. Openbox has none right after boot, or after the focused window closed, and cua-driver then
-   * refuses with `foreground_unavailable` without sending anything: activate Chromium and retry that one call once.
-   */
-  const focused =
-    (call: McpCall): McpCall =>
-    async (tool, args) => {
-      const r = await call(tool, args);
-      if (!r.isError || !/foreground_unavailable/.test(r.text)) return r;
-      const win = await chromium(call).catch(() => undefined);
-      if (!win) return r;
-      await call("bring_to_front", win).catch(() => undefined);
-      return call(tool, args);
-    };
   /**
    * Types one credential into the sign-in input of the VM's Chromium as ONE queued step, so no other action can slip in between the checks
    * and the typing. Checked against cua-spacesd 0.8.0: its accessibility tree carries roles, labels and frames but neither field values
@@ -732,56 +660,10 @@ export function createVmService({
         throw new ComputerError("STALE_CONTROL");
       if (sessions.get(s.id) !== s) throw new ComputerError("DISCONNECTED");
       return guard(s, async () => {
-        const call = focused(s.client.call),
-          win = await chromium(call);
-        if (!win) throw new ComputerError("NO_ADDRESS");
-        const state = await call("get_window_state", {
-          ...win,
-          include_screenshot: false,
-          max_elements: 400,
-          tree_format: "elements",
-        });
-        const st = (state.structured ?? {}) as {
-          elements?: AxElement[];
-          window_bounds?: { x?: number; y?: number };
-        };
-        if (state.isError || !Array.isArray(st.elements)) throw new ComputerError("UNAVAILABLE");
-        if (st.elements.some((e) => e.role === "button" && /^not secure$/i.test(e.label ?? "")))
-          throw new ComputerError("INSECURE");
-        const input = pickInput(field, st.elements);
-        if (!input?.frame) throw new ComputerError("NO_INPUT");
-        const text = (r: Awaited<ReturnType<McpCall>>) => {
-          const t = (r.structured as { text?: unknown } | undefined)?.text;
-          return typeof t === "string" ? t : undefined;
-        };
-        const before = text(await call("clipboard_read", { include_text: true }));
-        let url: string | undefined;
-        try {
-          if (
-            !(await call("hotkey", { keys: ["ctrl", "l"], ...FG })).isError &&
-            !(await call("hotkey", { keys: ["ctrl", "c"], ...FG })).isError
-          )
-            url = text(await call("clipboard_read", { include_text: true }))?.trim();
-        } finally {
-          await call("press_key", { key: "Escape", ...FG }).catch(() => undefined);
-          await call("clipboard_write", { text: before ?? "" }).catch(() => undefined);
-        }
-        if (!url || !/^https?:\/\/\S+$/i.test(url)) throw new ComputerError("NO_ADDRESS");
-        const value = await reveal(url).catch((e: unknown) => {
-          throw new Passthrough(e);
-        }); // the grant's own refusal, not a transport failure
-        const ox = st.window_bounds?.x ?? 0,
-          oy = st.window_bounds?.y ?? 0,
-          f = input.frame;
-        let r = await call("click", {
-          x: Math.round(ox + f.x + f.w / 2),
-          y: Math.round(oy + f.y + f.h / 2),
-          ...SCREEN,
-        });
-        if (!r.isError) r = await call("type_text", { text: value.slice(0, 2000), ...FG });
-        if (r.isError) throw new ComputerError("UNAVAILABLE");
+        if (!s.browser) throw new ComputerError("UNSUPPORTED");
+        const done = await s.driver.fillCredential(field, reveal);
         s.lastUsed = Date.now();
-        return { label: input.label ?? field };
+        return done;
       });
     });
     s.queue = run.catch(() => undefined);
@@ -795,7 +677,7 @@ export function createVmService({
       return;
     }
     sessions.delete(id);
-    await s.client.close().catch(() => undefined);
+    await s.close().catch(() => undefined);
     await exec(["stop", "-t", "10", container(id)]).catch(() => undefined);
     await rm(join(tokenRoot, id), { recursive: true, force: true }).catch(() => undefined);
     await store.setStatus(id, "stopped");
@@ -812,15 +694,38 @@ export function createVmService({
     /** Only an approved create_vm proposal calls this; the cap counts every VM the user has (the default included). */
     async create(
       userId: string,
-      v: { name: string; purpose?: string | null; botId?: string | null },
+      v: {
+        name: string;
+        purpose?: string | null;
+        botId?: string | null;
+        target?: VmTarget;
+        driver?: DriverName;
+        os?: OsId;
+      },
     ) {
       if (!SAFE_NAME.test(v.name)) throw new ComputerError("INVALID");
+      if (v.os && !vmOs.includes(v.os)) throw new ComputerError("UNSUPPORTED");
+      // Only the VM target exists until the server host can be driven; the driver must be one the operator allows.
+      if (v.target && v.target !== "vm") throw new ComputerError("UNSUPPORTED");
+      if (v.driver && !vmDrivers.includes(v.driver)) throw new ComputerError("UNSUPPORTED");
       return serial(userId, async () => {
         await store.ensureDefault(userId);
         if ((await store.count(userId)) >= maxPerUser) throw new ComputerError("LIMIT");
         return view(await store.create(userId, v));
       });
     },
+    /** Switches the driver of a stopped computer; a running one keeps the driver it started with. */
+    async setDriver(userId: string, id: string, driver: DriverName) {
+      await owned(userId, id);
+      if (!vmDrivers.includes(driver)) throw new ComputerError("UNSUPPORTED");
+      if (sessions.has(id)) throw new ComputerError("LIMIT");
+      await store.setDriver(userId, id, driver);
+    },
+    /** What a person may choose when they create or edit a computer. */
+    options: () => ({
+      targets: { vm: [...vmDrivers], local: [] as DriverName[] },
+      os: osOptions(vmOs),
+    }),
     /** Deleting destroys the container AND its home volume (sign-ins, downloads). The default VM is recreated empty on next use. */
     async remove(userId: string, id: string) {
       await owned(userId, id);
@@ -831,9 +736,7 @@ export function createVmService({
     },
     async screenshot(userId: string, id: string) {
       const s = live(userId, id);
-      const r = await guard(s, () => s.client.call("get_desktop_state", {}));
-      if (r.isError || !r.imageBase64) throw new ComputerError("UNAVAILABLE");
-      return r.imageBase64;
+      return guard(s, () => s.driver.screenshot());
     },
     /**
      * Text view for bots that cannot see images: Chromium's accessibility tree with clickable elements numbered for click_element.
@@ -842,52 +745,12 @@ export function createVmService({
     async read(userId: string, id: string, opts: { settle?: boolean; signal?: AbortSignal } = {}) {
       const s = live(userId, id);
       return guard(s, async () => {
-        const call: McpCall = (tool, args) => s.client.call(tool, args, { signal: opts.signal });
-        const win = await windowOf(s, call);
-        if (!win) {
-          const windows = await call("list_windows", {});
-          return windows.text.slice(0, 2000) || "No windows are open.";
-        }
-        const once = async () => {
-          const r = await call("get_window_state", {
-            ...win,
-            include_screenshot: false,
-            max_elements: opts.settle ? 800 : 1500,
-          });
-          if (r.isError) {
-            s.win = undefined; // the window may have closed: look it up again next time
-            throw new ComputerError("UNAVAILABLE");
-          }
-          return r.text;
-        };
-        // After a click or navigate the old page stays on screen for a moment: reading it at once makes the bot think the step failed.
-        // Wait (briefly) for Chromium's title to change; a click that does not navigate costs at most ~2 s.
-        if (opts.settle)
-          for (let i = 0; i < 7; i++) {
-            await Bun.sleep(300);
-            const title = /"([^"]*)"/.exec(
-              (await call("list_windows", {})).text.match(
-                new RegExp(`window_id=${win.window_id} [^\\n]*`),
-              )?.[0] ?? "",
-            )?.[1];
-            if (title !== undefined && title !== s.title) break;
-          }
-        let tree = await once();
-        // A page still loading has an almost empty tree: give it one more moment.
-        if (opts.settle && compactTree(tree).length < 400) {
-          await Bun.sleep(900);
-          tree = await once();
-        }
-        const title = /"([^"]*)"/.exec(
-          tree.split("\n").find((l) => /\[0\] frame/.test(l)) ?? "",
-        )?.[1];
-        s.title = title;
-        s.labels = new Map();
-        const body = compactTree(tree, s.labels);
+        const r = await s.driver.read(opts);
+        if (r.kind === "plain") return r.text;
         // A VM from an older image publishes no DevTools port, and a page may not answer: the read goes on without the address.
         if (s.cdp === undefined) s.cdp = await portOf(s.id, 9222).catch(() => null);
         const page = s.cdp === null ? undefined : await links(s.cdp).catch(() => undefined);
-        return formatRead(title, body, page, Boolean(opts.settle));
+        return formatRead(r.title, r.body, page, Boolean(opts.settle));
       });
     },
     takeover(userId: string, id: string, human: boolean, expected?: "agent" | "human") {
@@ -1003,53 +866,9 @@ export function createVmService({
     /** A `bun --hot` reload replaced this service: stop its timer and connections but leave the containers to the new instance. */
     detach() {
       clearInterval(reaper);
-      for (const s of sessions.values()) void s.client.close().catch(() => undefined);
+      for (const s of sessions.values()) void s.close().catch(() => undefined);
       sessions.clear();
     },
   };
 }
 export type VmService = ReturnType<typeof createVmService>;
-
-/**
- * cua-driver input on Xvfb (checked against cua-spacesd 0.8.0): background delivery needs uinput, which a virtual X server cannot add,
- * so input is delivered in the foreground (the desktop is private to this VM); coordinates are screen pixels (scope "desktop").
- */
-const FG = { delivery_mode: "foreground" } as const;
-const SCREEN = { scope: "desktop", ...FG } as const;
-/**
- * The accessibility tree as readable text: page content sits hundreds of rows deep under unlabelled panels and sections, so the raw tree
- * runs out of budget in the site's header. Keeps one line per element that has text (role and label), drops actions, indices, the
- * placeholder characters of empty containers and a label repeated by its own child.
- */
-export function compactTree(tree: string, numbered?: Map<number, string>) {
-  const out: string[] = [];
-  let last = "";
-  for (const raw of tree.split("\n")) {
-    const m =
-      /^\s*- (?:\[(\d+)\] )?([a-z][a-z ]*?)(?: = | )"(.*?)"(?: \(description "(.*?)"\))?(?: .*)?$/.exec(
-        raw.replace(/\uFFFC/g, ""),
-      );
-    if (!m) continue;
-    const [, index, role = "", label = "", description = ""] = m;
-    const text = (label.trim() || description.trim()).replace(/\s+/g, " ");
-    if (!text || text === last) continue;
-    last = text;
-    const plain = role === "static" || role === "section" || role === "panel";
-    // Clickable elements keep their index (when asked for), so the bot can click_element{n} instead of guessing coordinates.
-    const n = numbered && index !== undefined && CLICKABLE.test(role) ? Number(index) : undefined;
-    if (n !== undefined) numbered!.set(n, label.trim());
-    out.push(`${n !== undefined ? `[${n}] ` : ""}${plain ? text : `${role} "${text}"`}`);
-  }
-  return out.join("\n");
-}
-const CLICKABLE =
-  /^(button|link|entry|check box|radio button|combo box|menu item|tab|toggle button|list item|password text|text|heading)$/;
-
-/** "ctrl+l" style combos go through hotkey; a single key through press_key. */
-const pressKey = (call: McpCall, key: string) => {
-  const keys = key
-    .split("+")
-    .map((k) => k.trim())
-    .filter(Boolean);
-  return keys.length > 1 ? call("hotkey", { keys, ...FG }) : call("press_key", { key, ...FG });
-};

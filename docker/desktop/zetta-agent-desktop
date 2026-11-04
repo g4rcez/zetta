@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs agent-desktop inside the desktop session (the server calls it with `docker exec`). session.env is written by the entrypoint.
+[ -r /tmp/runtime-agent/session.env ] || { echo '{"ok":false,"error":{"code":"SESSION_NOT_READY"}}'; exit 3; }
+. /tmp/runtime-agent/session.env
+exec agent-desktop "$@"

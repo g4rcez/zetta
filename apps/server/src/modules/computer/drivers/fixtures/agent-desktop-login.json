@@ -1,0 +1,2066 @@
+{
+  "version": "2.6",
+  "ok": true,
+  "command": "snapshot",
+  "data": {
+    "app": "chromium",
+    "complete": true,
+    "ref_count": 82,
+    "snapshot_id": "s14ptx5leyzhia",
+    "tree": {
+      "available_actions": ["RightClick"],
+      "bounds": { "height": 773.0, "width": 1280.0, "x": 0.0, "y": 27.0 },
+      "children": [
+        {
+          "available_actions": ["RightClick"],
+          "bounds": { "height": 773.0, "width": 1280.0, "x": 0.0, "y": 27.0 },
+          "children": [
+            {
+              "available_actions": ["RightClick"],
+              "bounds": { "height": 773.0, "width": 1280.0, "x": 0.0, "y": 27.0 },
+              "children": [
+                {
+                  "available_actions": ["Click", "RightClick", "SetFocus"],
+                  "bounds": { "height": 35.0, "width": 30.0, "x": 1162.0, "y": 27.0 },
+                  "name": "Minimize",
+                  "ref_id": "@s14ptx5leyzhia:e1",
+                  "role": "button"
+                },
+                {
+                  "available_actions": ["Click", "RightClick"],
+                  "bounds": { "height": 30.0, "width": 30.0, "x": 972.0, "y": 35.0 },
+                  "name": "Maximize",
+                  "ref_id": "@s14ptx5leyzhia:e2",
+                  "role": "button",
+                  "states": ["hidden"]
+                },
+                {
+                  "available_actions": ["Click", "RightClick", "SetFocus"],
+                  "bounds": { "height": 35.0, "width": 30.0, "x": 1202.0, "y": 27.0 },
+                  "name": "Restore",
+                  "ref_id": "@s14ptx5leyzhia:e3",
+                  "role": "button"
+                },
+                {
+                  "available_actions": ["Click", "RightClick", "SetFocus"],
+                  "bounds": { "height": 35.0, "width": 38.0, "x": 1242.0, "y": 27.0 },
+                  "name": "Close",
+                  "ref_id": "@s14ptx5leyzhia:e4",
+                  "role": "button"
+                },
+                {
+                  "available_actions": ["RightClick"],
+                  "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                  "name": "Untitled - Chromium",
+                  "role": "statictext",
+                  "states": ["hidden"]
+                },
+                {
+                  "available_actions": ["RightClick"],
+                  "bounds": { "height": 773.0, "width": 1280.0, "x": 0.0, "y": 27.0 },
+                  "children": [
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 733.0, "width": 1280.0, "x": 0.0, "y": 67.0 },
+                      "role": "group",
+                      "states": ["hidden"]
+                    },
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 46.0, "width": 1280.0, "x": 0.0, "y": 67.0 },
+                      "children": [
+                        {
+                          "available_actions": ["RightClick", "Select"],
+                          "bounds": { "height": 46.0, "width": 1280.0, "x": 0.0, "y": 67.0 },
+                          "children": [
+                            {
+                              "available_actions": ["Click", "RightClick", "SetFocus"],
+                              "bounds": { "height": 34.0, "width": 40.0, "x": 0.0, "y": 73.0 },
+                              "description": "Press to go back, context menu to see history",
+                              "name": "Back",
+                              "ref_id": "@s14ptx5leyzhia:e6",
+                              "role": "button"
+                            },
+                            {
+                              "available_actions": ["RightClick", "Click"],
+                              "bounds": { "height": 34.0, "width": 34.0, "x": 42.0, "y": 73.0 },
+                              "description": "Press to go forward, context menu to see history",
+                              "name": "Forward",
+                              "ref_id": "@s14ptx5leyzhia:e7",
+                              "role": "button",
+                              "states": ["disabled"]
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick", "SetFocus"],
+                              "bounds": { "height": 34.0, "width": 34.0, "x": 78.0, "y": 73.0 },
+                              "description": "Reload this page",
+                              "name": "Reload",
+                              "ref_id": "@s14ptx5leyzhia:e8",
+                              "role": "button"
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick"],
+                              "bounds": { "height": 18.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                              "description": "Open the home page",
+                              "name": "Home",
+                              "ref_id": "@s14ptx5leyzhia:e9",
+                              "role": "button",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                              "name": "Open tab in split view",
+                              "ref_id": "@s14ptx5leyzhia:e10",
+                              "role": "button",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 34.0, "width": 1074.0, "x": 121.0, "y": 73.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "ref_id": "@s14ptx5leyzhia:e11",
+                                  "role": "button",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["Click", "RightClick", "SetFocus"],
+                                  "bounds": {
+                                    "height": 24.0,
+                                    "width": 102.0,
+                                    "x": 126.0,
+                                    "y": 78.0
+                                  },
+                                  "children": [
+                                    {
+                                      "available_actions": ["RightClick"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 126.0,
+                                        "y": 78.0
+                                      },
+                                      "role": "alert",
+                                      "states": ["hidden"]
+                                    }
+                                  ],
+                                  "name": "Not secure",
+                                  "ref_id": "@s14ptx5leyzhia:e12",
+                                  "role": "button"
+                                },
+                                {
+                                  "available_actions": ["Click", "RightClick", "SetFocus"],
+                                  "bounds": {
+                                    "height": 24.0,
+                                    "width": 915.0,
+                                    "x": 236.0,
+                                    "y": 78.0
+                                  },
+                                  "name": "Address and search bar",
+                                  "placeholder": "Search DuckDuckGo or type a URL",
+                                  "ref_id": "@s14ptx5leyzhia:e13",
+                                  "role": "textfield",
+                                  "value": "data:text/html,<title>Sign in</title><h1>Sign in</h1><label>Username <input name=u aria-label=Username></label><label>Password <input type=password name=p aria-label=Password></label><a href=https://example.com>Home</a><button>Go</button>"
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "statictext",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "statictext",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "children": [
+                                    {
+                                      "available_actions": ["RightClick"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 121.0,
+                                        "y": 73.0
+                                      },
+                                      "role": "alert",
+                                      "states": ["hidden"]
+                                    }
+                                  ],
+                                  "ref_id": "@s14ptx5leyzhia:e14",
+                                  "role": "button",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "children": [
+                                    {
+                                      "available_actions": ["RightClick"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 121.0,
+                                        "y": 73.0
+                                      },
+                                      "role": "alert",
+                                      "states": ["hidden"]
+                                    }
+                                  ],
+                                  "ref_id": "@s14ptx5leyzhia:e15",
+                                  "role": "button",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "alert",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": {
+                                    "height": 24.0,
+                                    "width": 24.0,
+                                    "x": 1159.0,
+                                    "y": 78.0
+                                  },
+                                  "children": [
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e16",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e17",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e18",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e19",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e20",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e21",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e22",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e23",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e24",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e25",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e26",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e27",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e28",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e29",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e30",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e31",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e32",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e33",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e34",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e35",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e36",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e37",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e38",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e39",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e40",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e41",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["disabled", "hidden"]
+                                        }
+                                      ],
+                                      "ref_id": "@s14ptx5leyzhia:e42",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["Click", "RightClick", "SetFocus"],
+                                      "bounds": {
+                                        "height": 24.0,
+                                        "width": 24.0,
+                                        "x": 1159.0,
+                                        "y": 78.0
+                                      },
+                                      "children": [
+                                        {
+                                          "available_actions": ["RightClick"],
+                                          "bounds": {
+                                            "height": 0.0,
+                                            "width": 0.0,
+                                            "x": 1159.0,
+                                            "y": 78.0
+                                          },
+                                          "role": "alert",
+                                          "states": ["hidden"]
+                                        }
+                                      ],
+                                      "name": "Bookmark this tab",
+                                      "ref_id": "@s14ptx5leyzhia:e43",
+                                      "role": "button"
+                                    }
+                                  ],
+                                  "role": "group"
+                                },
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "name": "Clear input",
+                                  "ref_id": "@s14ptx5leyzhia:e44",
+                                  "role": "button",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 121.0, "y": 73.0 },
+                                  "role": "statictext",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group"
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": { "height": 34.0, "width": 34.0, "x": 0.0, "y": 67.0 },
+                                  "name": "Extensions",
+                                  "ref_id": "@s14ptx5leyzhia:e45",
+                                  "role": "menubutton",
+                                  "states": ["haspopup", "hidden"]
+                                },
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                                  "name": "Close side panel",
+                                  "ref_id": "@s14ptx5leyzhia:e46",
+                                  "role": "button",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                                  "description": "Chrome Labs",
+                                  "name": "Chrome Labs - pinned",
+                                  "ref_id": "@s14ptx5leyzhia:e47",
+                                  "role": "switch",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                                  "role": "group",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                              "name": "Energy Saver is on",
+                              "ref_id": "@s14ptx5leyzhia:e48",
+                              "role": "menubutton",
+                              "states": ["haspopup", "hidden"]
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                              "name": "Performance issue alert",
+                              "ref_id": "@s14ptx5leyzhia:e49",
+                              "role": "button",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                              "name": "Control your music, videos, and more",
+                              "ref_id": "@s14ptx5leyzhia:e50",
+                              "role": "menubutton",
+                              "states": ["haspopup", "hidden"]
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick", "SetFocus"],
+                              "bounds": { "height": 34.0, "width": 34.0, "x": 1204.0, "y": 73.0 },
+                              "name": "You",
+                              "ref_id": "@s14ptx5leyzhia:e51",
+                              "role": "menubutton",
+                              "states": ["haspopup"]
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                              "name": "Hidden toolbar buttons",
+                              "ref_id": "@s14ptx5leyzhia:e52",
+                              "role": "menubutton",
+                              "states": ["haspopup", "hidden"]
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick", "SetFocus"],
+                              "bounds": { "height": 34.0, "width": 40.0, "x": 1240.0, "y": 73.0 },
+                              "description": "Customize and control Chromium",
+                              "name": "Chromium",
+                              "ref_id": "@s14ptx5leyzhia:e53",
+                              "role": "menubutton",
+                              "states": ["haspopup"]
+                            }
+                          ],
+                          "ref_id": "@s14ptx5leyzhia:e5",
+                          "role": "toolbar"
+                        },
+                        {
+                          "available_actions": ["RightClick", "Select"],
+                          "bounds": { "height": 0.0, "width": 1280.0, "x": 0.0, "y": 113.0 },
+                          "children": [
+                            {
+                              "available_actions": ["Click", "RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "description": "Show apps",
+                              "name": "Apps",
+                              "ref_id": "@s14ptx5leyzhia:e55",
+                              "role": "button",
+                              "role_description": "Bookmark button",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "name": "Managed bookmarks",
+                              "ref_id": "@s14ptx5leyzhia:e56",
+                              "role": "menubutton",
+                              "role_description": "Bookmark folder button",
+                              "states": ["haspopup", "hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick", "Select"],
+                              "bounds": { "height": 28.0, "width": 36.0, "x": 6.0, "y": 113.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": { "height": 28.0, "width": 28.0, "x": 6.0, "y": 113.0 },
+                                  "name": "Tab groups",
+                                  "ref_id": "@s14ptx5leyzhia:e58",
+                                  "role": "menubutton",
+                                  "states": ["haspopup", "hidden"]
+                                }
+                              ],
+                              "name": "Saved Tab Groups",
+                              "ref_id": "@s14ptx5leyzhia:e57",
+                              "role": "toolbar",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 16.0, "width": 10.0, "x": 42.0, "y": 113.0 },
+                              "name": "Separator",
+                              "role": "separator",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick"],
+                              "bounds": { "height": 28.0, "width": 28.0, "x": 1230.0, "y": 113.0 },
+                              "description": "Hidden bookmarks",
+                              "name": "Menu containing hidden bookmarks",
+                              "ref_id": "@s14ptx5leyzhia:e59",
+                              "role": "menubutton",
+                              "states": ["haspopup", "hidden"]
+                            },
+                            {
+                              "available_actions": ["Click", "RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "name": "All Bookmarks",
+                              "ref_id": "@s14ptx5leyzhia:e60",
+                              "role": "menubutton",
+                              "role_description": "Bookmark folder button",
+                              "states": ["haspopup", "hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "name": "Separator",
+                              "role": "separator",
+                              "states": ["hidden"]
+                            }
+                          ],
+                          "name": "Bookmarks",
+                          "ref_id": "@s14ptx5leyzhia:e54",
+                          "role": "toolbar",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 67.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        }
+                      ],
+                      "role": "group"
+                    },
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 687.0, "width": 1280.0, "x": 0.0, "y": 113.0 },
+                      "children": [
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 687.0, "width": 1280.0, "x": 0.0, "y": 113.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 686.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                          "children": [
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 686.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": {
+                                    "height": 686.0,
+                                    "width": 1280.0,
+                                    "x": 0.0,
+                                    "y": 114.0
+                                  },
+                                  "role": "group",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 686.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                              "role": "group"
+                            },
+                            {
+                              "available_actions": ["RightClick", "SetFocus", "Scroll"],
+                              "bounds": { "height": 686.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": {
+                                    "height": 37.0,
+                                    "width": 1264.0,
+                                    "x": 8.0,
+                                    "y": 122.0
+                                  },
+                                  "children": [
+                                    {
+                                      "available_actions": ["RightClick"],
+                                      "bounds": {
+                                        "height": 36.0,
+                                        "width": 96.0,
+                                        "x": 8.0,
+                                        "y": 122.0
+                                      },
+                                      "name": "Sign in",
+                                      "role": "statictext"
+                                    }
+                                  ],
+                                  "name": "Sign in",
+                                  "role": "heading"
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": {
+                                    "height": 22.0,
+                                    "width": 254.0,
+                                    "x": 8.0,
+                                    "y": 180.0
+                                  },
+                                  "children": [
+                                    {
+                                      "available_actions": ["RightClick"],
+                                      "bounds": {
+                                        "height": 18.0,
+                                        "width": 69.0,
+                                        "x": 8.0,
+                                        "y": 181.0
+                                      },
+                                      "name": "Username ",
+                                      "role": "statictext"
+                                    },
+                                    {
+                                      "available_actions": ["Click", "RightClick", "SetFocus"],
+                                      "bounds": {
+                                        "height": 22.0,
+                                        "width": 186.0,
+                                        "x": 76.0,
+                                        "y": 180.0
+                                      },
+                                      "name": "Username",
+                                      "ref_id": "@s14ptx5leyzhia:e62",
+                                      "role": "textfield"
+                                    }
+                                  ],
+                                  "role": "statictext"
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": {
+                                    "height": 22.0,
+                                    "width": 252.0,
+                                    "x": 261.0,
+                                    "y": 180.0
+                                  },
+                                  "children": [
+                                    {
+                                      "available_actions": ["RightClick"],
+                                      "bounds": {
+                                        "height": 18.0,
+                                        "width": 67.0,
+                                        "x": 261.0,
+                                        "y": 181.0
+                                      },
+                                      "name": "Password ",
+                                      "role": "statictext"
+                                    },
+                                    {
+                                      "available_actions": ["Click", "RightClick", "SetFocus"],
+                                      "bounds": {
+                                        "height": 22.0,
+                                        "width": 186.0,
+                                        "x": 327.0,
+                                        "y": 180.0
+                                      },
+                                      "name": "Password",
+                                      "ref_id": "@s14ptx5leyzhia:e63",
+                                      "role": "textfield",
+                                      "states": ["secure"]
+                                    }
+                                  ],
+                                  "role": "statictext"
+                                },
+                                {
+                                  "available_actions": ["Click", "RightClick", "SetFocus"],
+                                  "bounds": {
+                                    "height": 18.0,
+                                    "width": 40.0,
+                                    "x": 512.0,
+                                    "y": 181.0
+                                  },
+                                  "children": [
+                                    {
+                                      "available_actions": ["Click", "RightClick"],
+                                      "bounds": {
+                                        "height": 18.0,
+                                        "width": 40.0,
+                                        "x": 512.0,
+                                        "y": 181.0
+                                      },
+                                      "name": "Home",
+                                      "ref_id": "@s14ptx5leyzhia:e65",
+                                      "role": "statictext"
+                                    }
+                                  ],
+                                  "name": "Home",
+                                  "ref_id": "@s14ptx5leyzhia:e64",
+                                  "role": "link"
+                                },
+                                {
+                                  "available_actions": ["Click", "RightClick", "SetFocus"],
+                                  "bounds": {
+                                    "height": 22.0,
+                                    "width": 35.0,
+                                    "x": 551.0,
+                                    "y": 180.0
+                                  },
+                                  "name": "Go",
+                                  "ref_id": "@s14ptx5leyzhia:e66",
+                                  "role": "button"
+                                }
+                              ],
+                              "name": "Sign in",
+                              "ref_id": "@s14ptx5leyzhia:e61",
+                              "role": "webarea",
+                              "states": ["focused"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 114.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 114.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 114.0 },
+                                  "role": "group",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 686.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 686.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 686.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 686.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 686.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 24.0, "width": 191.0, "x": 1089.0, "y": 776.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": {
+                                    "height": 22.0,
+                                    "width": 139.0,
+                                    "x": 1111.0,
+                                    "y": 777.0
+                                  },
+                                  "name": "data:text/html,<title>Sign in</title><h1>Sign in</h1><label>Username <input name=u aria-label=Username></label><label>Password <input type=password name=p aria-label=Password></label><a href=https://example.com>Home</a><button>Go</button>",
+                                  "role": "statictext",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": {
+                                    "height": 24.0,
+                                    "width": 24.0,
+                                    "x": 1256.0,
+                                    "y": 776.0
+                                  },
+                                  "name": "Close this view",
+                                  "ref_id": "@s14ptx5leyzhia:e67",
+                                  "role": "button",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 686.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 686.0, "width": 1280.0, "x": 0.0, "y": 114.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            }
+                          ],
+                          "role": "group"
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                          "children": [
+                            {
+                              "available_actions": ["RightClick", "SetValue"],
+                              "bounds": { "height": 24.0, "width": 4.0, "x": 0.0, "y": 101.0 },
+                              "name": "Split View Resize Handle (draggable)",
+                              "ref_id": "@s14ptx5leyzhia:e68",
+                              "role": "slider",
+                              "states": ["hidden"],
+                              "value": "0"
+                            }
+                          ],
+                          "role": "separator",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                          "children": [
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                                  "role": "group",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                                  "role": "group",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                                  "role": "group",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                                  "role": "statictext",
+                                  "states": ["hidden"]
+                                },
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": {
+                                    "height": 24.0,
+                                    "width": 24.0,
+                                    "x": -12.0,
+                                    "y": 113.0
+                                  },
+                                  "name": "Close this view",
+                                  "ref_id": "@s14ptx5leyzhia:e69",
+                                  "role": "button",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            }
+                          ],
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                          "children": [
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                                  "name": "Create split view",
+                                  "role": "statictext",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            }
+                          ],
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 1.0, "width": 1280.0, "x": 0.0, "y": 113.0 },
+                          "role": "group"
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 113.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 687.0, "width": 1280.0, "x": 0.0, "y": 113.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        }
+                      ],
+                      "role": "group"
+                    },
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                      "children": [
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 14.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        }
+                      ],
+                      "name": "Infobar Container",
+                      "role": "group",
+                      "states": ["hidden"]
+                    },
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 733.0, "width": 1280.0, "x": 0.0, "y": 67.0 },
+                      "children": [
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 10.0, "width": 10.0, "x": -1.0, "y": 66.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 10.0, "width": 10.0, "x": 1271.0, "y": 66.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 10.0, "width": 10.0, "x": -1.0, "y": 791.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 10.0, "width": 10.0, "x": 1271.0, "y": 791.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 733.0, "width": 1280.0, "x": 0.0, "y": 67.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        }
+                      ],
+                      "role": "group",
+                      "states": ["hidden"]
+                    },
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                      "children": [
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick", "SetValue"],
+                          "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                          "name": "Side Panel Resize Handle (draggable)",
+                          "ref_id": "@s14ptx5leyzhia:e70",
+                          "role": "slider",
+                          "states": ["hidden"],
+                          "value": "0"
+                        }
+                      ],
+                      "role": "group",
+                      "states": ["hidden"]
+                    },
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 41.0, "width": 1160.0, "x": 0.0, "y": 27.0 },
+                      "children": [
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 41.0, "width": 28.0, "x": 6.0, "y": 27.0 },
+                          "children": [
+                            {
+                              "available_actions": ["Click", "RightClick", "SetFocus"],
+                              "bounds": { "height": 28.0, "width": 28.0, "x": 6.0, "y": 33.0 },
+                              "name": "Tab search",
+                              "ref_id": "@s14ptx5leyzhia:e71",
+                              "role": "menubutton",
+                              "states": ["haspopup"]
+                            }
+                          ],
+                          "role": "group"
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 41.0, "width": 256.0, "x": 28.0, "y": 27.0 },
+                          "children": [
+                            {
+                              "available_actions": ["RightClick", "Select"],
+                              "bounds": { "height": 41.0, "width": 256.0, "x": 28.0, "y": 27.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["RightClick", "Select", "SetFocus"],
+                                  "bounds": {
+                                    "height": 41.0,
+                                    "width": 256.0,
+                                    "x": 28.0,
+                                    "y": 27.0
+                                  },
+                                  "children": [
+                                    {
+                                      "available_actions": ["RightClick", "Click"],
+                                      "bounds": {
+                                        "height": 0.0,
+                                        "width": 0.0,
+                                        "x": 28.0,
+                                        "y": 27.0
+                                      },
+                                      "name": "Mute tab",
+                                      "ref_id": "@s14ptx5leyzhia:e74",
+                                      "role": "button",
+                                      "states": ["disabled", "hidden"]
+                                    },
+                                    {
+                                      "available_actions": ["Click", "RightClick", "SetFocus"],
+                                      "bounds": {
+                                        "height": 28.0,
+                                        "width": 28.0,
+                                        "x": 242.0,
+                                        "y": 33.0
+                                      },
+                                      "name": "Close",
+                                      "ref_id": "@s14ptx5leyzhia:e75",
+                                      "role": "button"
+                                    }
+                                  ],
+                                  "name": "Sign in - Memory usage - 47.4 MB",
+                                  "ref_id": "@s14ptx5leyzhia:e73",
+                                  "role": "tab",
+                                  "states": ["selected"]
+                                },
+                                {
+                                  "available_actions": ["RightClick"],
+                                  "bounds": { "height": 0.0, "width": 256.0, "x": 28.0, "y": 27.0 },
+                                  "role": "group",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "ref_id": "@s14ptx5leyzhia:e72",
+                              "role": "tablist",
+                              "states": ["multiselectable"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 41.0, "width": 256.0, "x": 28.0, "y": 27.0 },
+                              "role": "group"
+                            }
+                          ],
+                          "role": "group"
+                        },
+                        {
+                          "available_actions": ["Click", "RightClick", "SetFocus"],
+                          "bounds": { "height": 41.0, "width": 28.0, "x": 278.0, "y": 27.0 },
+                          "description": "New tab",
+                          "name": "New Tab",
+                          "ref_id": "@s14ptx5leyzhia:e76",
+                          "role": "button"
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 41.0, "width": 842.0, "x": 318.0, "y": 27.0 },
+                          "role": "group"
+                        }
+                      ],
+                      "role": "group"
+                    },
+                    {
+                      "available_actions": ["RightClick", "Select"],
+                      "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                      "children": [
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 113.0, "width": 0.0, "x": 12.0, "y": 27.0 },
+                          "children": [
+                            {
+                              "available_actions": ["RightClick", "Click"],
+                              "bounds": { "height": 32.0, "width": 32.0, "x": 12.0, "y": 34.0 },
+                              "name": "Collapse tabs (Ctrl+Shift+L)",
+                              "ref_id": "@s14ptx5leyzhia:e78",
+                              "role": "button",
+                              "states": ["disabled", "hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 58.0, "width": 28.0, "x": 14.0, "y": 74.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": { "height": 28.0, "width": 28.0, "x": 14.0, "y": 74.0 },
+                                  "name": "Tab groups",
+                                  "ref_id": "@s14ptx5leyzhia:e79",
+                                  "role": "menubutton",
+                                  "states": ["haspopup", "hidden"]
+                                },
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": {
+                                    "height": 28.0,
+                                    "width": 28.0,
+                                    "x": 14.0,
+                                    "y": 104.0
+                                  },
+                                  "name": "Tab search",
+                                  "ref_id": "@s14ptx5leyzhia:e80",
+                                  "role": "button",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            }
+                          ],
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                          "children": [
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 1.0, "width": 32.0, "x": 12.0, "y": 27.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 32.0, "width": 32.0, "x": 12.0, "y": 36.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["Click", "RightClick"],
+                                  "bounds": { "height": 32.0, "width": 32.0, "x": 12.0, "y": 36.0 },
+                                  "name": "New tab",
+                                  "ref_id": "@s14ptx5leyzhia:e81",
+                                  "role": "button",
+                                  "states": ["hidden"]
+                                }
+                              ],
+                              "role": "group",
+                              "states": ["hidden"]
+                            },
+                            {
+                              "available_actions": ["RightClick"],
+                              "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                              "role": "group",
+                              "states": ["hidden"]
+                            }
+                          ],
+                          "role": "group",
+                          "states": ["hidden"]
+                        },
+                        {
+                          "available_actions": ["RightClick", "SetValue"],
+                          "bounds": { "height": 0.0, "width": 5.0, "x": -5.0, "y": 27.0 },
+                          "name": "Vertical Tab Strip Resize Handle (Draggable)",
+                          "ref_id": "@s14ptx5leyzhia:e82",
+                          "role": "slider",
+                          "states": ["hidden"],
+                          "value": "0"
+                        },
+                        {
+                          "available_actions": ["RightClick"],
+                          "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                          "role": "group",
+                          "states": ["hidden"]
+                        }
+                      ],
+                      "ref_id": "@s14ptx5leyzhia:e77",
+                      "role": "tablist",
+                      "states": ["hidden"]
+                    },
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                      "role": "group",
+                      "states": ["hidden"]
+                    },
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                      "role": "group",
+                      "states": ["hidden"]
+                    },
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                      "role": "group"
+                    },
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 773.0, "width": 1280.0, "x": 0.0, "y": 27.0 },
+                      "role": "group",
+                      "states": ["hidden"]
+                    },
+                    {
+                      "available_actions": ["RightClick"],
+                      "bounds": { "height": 0.0, "width": 0.0, "x": 0.0, "y": 27.0 },
+                      "role": "group",
+                      "states": ["hidden"]
+                    }
+                  ],
+                  "role": "group"
+                }
+              ],
+              "role": "group"
+            },
+            {
+              "available_actions": ["RightClick"],
+              "bounds": { "height": 773.0, "width": 1280.0, "x": 0.0, "y": 27.0 },
+              "role": "group",
+              "states": ["hidden"]
+            }
+          ],
+          "role": "group"
+        }
+      ],
+      "name": "Sign in - Chromium",
+      "role": "window"
+    },
+    "window": { "id": "w-1.11-org-a11y-atspi-accessible-1", "title": "Sign in - Chromium" }
+  }
+}

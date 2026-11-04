@@ -22,6 +22,9 @@ xset s off; xset s noblank; xset -dpms 2>/dev/null || true
 
 eval "$(dbus-launch --sh-syntax)"
 export DBUS_SESSION_BUS_ADDRESS
+# `docker exec` shells do not inherit this session, and the D-Bus address is random per start: zetta-agent-desktop reads it from here.
+printf "export DISPLAY='%s' XDG_RUNTIME_DIR='%s' DBUS_SESSION_BUS_ADDRESS='%s' NO_AT_BRIDGE=0 GTK_MODULES='%s'\n" \
+  "$DISPLAY" "$XDG_RUNTIME_DIR" "$DBUS_SESSION_BUS_ADDRESS" "$GTK_MODULES" > /tmp/runtime-agent/session.env
 /usr/libexec/at-spi-bus-launcher --launch-immediately >/tmp/atspi.log 2>&1 &
 
 startxfce4 >/tmp/xfce.log 2>&1 &

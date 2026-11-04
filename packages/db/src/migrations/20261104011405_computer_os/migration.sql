@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."computer_vm" ADD COLUMN "os" text DEFAULT 'debian' NOT NULL;

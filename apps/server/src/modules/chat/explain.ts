@@ -158,6 +158,14 @@ const BY_CODE: Record<string, Entry> = {
     why: "That element is not on the screen any more (the page changed or it is scrolled out of view).",
     fix: "The bot should read the screen again and pick the element from the new list.",
   },
+  NAVIGATION_FAILED: {
+    why: "The computer's browser could not open the page.",
+    fix: "The bot should try another address or another source, or tell you what blocked it.",
+  },
+  UNSUPPORTED: {
+    why: "This computer cannot do that (it has no browser, or its driver is turned off).",
+    fix: "Check the computer's system and driver in Studio > Computer, or use another computer.",
+  },
   NOT_FOUND: {
     why: "It could not be found.",
     fix: "It may have been removed. Check Studio and ask the bot again.",
@@ -210,7 +218,15 @@ export function explain(what: string, e: unknown): Problem {
     ); // never the message: it may carry a URL or token
   const base = known ?? UNEXPECTED;
   // A plugin that wrote its own explanation knows best; the shared table only fills in what it left out.
-  const why = e instanceof PluginError && e.safe !== DEFAULT_SAFE ? e.safe : base.why;
+  // A computer error may carry the browser's own error code (`net::ERR_*`): safe text, never a URL.
+  const detail =
+    typeof (e as { detail?: unknown })?.detail === "string" ? (e as { detail: string }).detail : "";
+  const why =
+    e instanceof PluginError && e.safe !== DEFAULT_SAFE
+      ? e.safe
+      : detail
+        ? `${base.why.replace(/\.$/, "")} (${detail}).`
+        : base.why;
   const fix = e instanceof PluginError && e.fix ? e.fix : base.fix;
   return { code, title: `${what} didn't work`, why, fix };
 }

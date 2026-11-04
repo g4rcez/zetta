@@ -277,7 +277,11 @@ export function createAgentDesktopDriver(
         );
       } else if (action.type === "launch") must(await run(["launch", "--", action.app], signal));
       else {
-        // Chromium is always open: focus its address bar, type, Enter.
+        // Chromium is always open: focus its window (xdotool sends keys to whatever has focus), then its address bar, type, Enter.
+        await keys(
+          ["search", "--onlyvisible", "--class", "chromium", "windowactivate", "--sync"],
+          signal,
+        );
         await keys(["key", "ctrl+l"], signal);
         await Bun.sleep(150);
         await keys(["type", "--clearmodifiers", "--delay", "6", "--", action.url], signal);

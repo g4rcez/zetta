@@ -6,7 +6,13 @@ import type { Database } from "@zetta/db";
 import { and, asc, eq, ne } from "@zetta/db/query";
 import { computerVm } from "@zetta/db/schema/features";
 import { assertPublicUrl, assertWebScheme, ComputerError, type Actor } from "./service";
-import { pageLinks, type PageLinks } from "./cdp";
+import {
+  NavigationError,
+  navigatePage,
+  pageLinks,
+  type NavigateResult,
+  type PageLinks,
+} from "./cdp";
 import type { CredentialField } from "../integrations/plugins/registry";
 import { vncPassword } from "./vnc";
 import {
@@ -112,6 +118,7 @@ type VSession = {
   cdp?: number | null;
   row?: VmRow;
 };
+const BLANK_TAB = "The browser shows an empty tab (about:blank): navigate again.";
 /**
  * A read as the bot gets it: the window title, the page address, the numbered screen and, for an explicit read, where each link goes
  * (the accessibility tree has no addresses, so without it a bot cannot cite a permalink). A settle read stays small: no link list.
@@ -123,7 +130,9 @@ export function formatRead(
   settle: boolean,
 ) {
   const head = `Window "${title ?? "Chromium"}" (click_element{n} clicks [n]):${page ? `\nURL: ${page.url.slice(0, 400)}` : ""}`;
-  const screen = `${head}\n${body}`.slice(0, settle ? 6000 : 12_000);
+  // A tab that never left about:blank (a navigate that did not land, a Chromium restart) must not read as an empty page.
+  const blank = page?.url === "about:blank" ? `${BLANK_TAB}\n` : "";
+  const screen = `${blank}${head}\n${body}`.slice(0, settle ? 6000 : 12_000);
   if (settle || !page?.links.length) return screen;
   const links = page.links.map((l) => `- ${l.text || "(no text)"} -> ${l.href}`).join("\n");
   return `${screen}\nLinks on the page (text -> address):\n${links}`.slice(0, screen.length + 6000);
@@ -316,6 +325,8 @@ export type VmOptions = {
   vmOs?: readonly OsId[];
   /** Reads the page address and links over the DevTools port; injectable so tests do not need Chromium. */
   links?: (port: number) => Promise<PageLinks>;
+  /** Opens an address over the DevTools port and waits for the load; injectable so tests do not need Chromium. */
+  navigate?: (port: number, url: string, o?: { signal?: AbortSignal }) => Promise<NavigateResult>;
   /** Where the bearer token of a remote Cua computer is kept (sealed in the connections store). Without it, remote computers are off. */
   secrets?: VmSecrets;
   connectRemote?: RemoteConnect;
@@ -334,6 +345,7 @@ export function createVmService({
   connectRemote = connectSpacesdUrl,
   secrets,
   links = pageLinks,
+  navigate = navigatePage,
   tokenRoot,
   maxPerUser = 4,
   maxRunningPerUser = 2,
@@ -687,13 +699,26 @@ export function createVmService({
     return s;
   }
 
+  /** The published DevTools port, looked up once; null when the VM's image has none (started before it was added). */
+  async function devtools(s: VSession) {
+    if (s.cdp === undefined) s.cdp = await portOf(s.id, 9222).catch(() => null);
+    return s.cdp;
+  }
+
   function act(
     userId: string,
     id: string,
     by: Actor,
     action: VmAction,
     opts: { signal?: AbortSignal; epoch?: number } = {},
-  ): Promise<{ id: string; control: "agent" | "human"; epoch: number }> {
+  ): Promise<{
+    id: string;
+    control: "agent" | "human";
+    epoch: number;
+    /** navigate only: the address the tab ended on, and whether its load event fired (false: still loading). */
+    url?: string;
+    loaded?: boolean;
+  }> {
     let s: VSession;
     try {
       s = live(userId, id);
@@ -714,6 +739,21 @@ export function createVmService({
           // The address is checked first, like browser sessions.
           assertWebScheme(action.url);
           if (!allowPrivate) await assertPublicUrl(action.url);
+          // Through the DevTools port the bot learns where the tab landed or why it did not. Typing in the address bar is blind: it
+          // reports success when the keys went to another window, or while Chromium is still starting.
+          const port = await devtools(s);
+          if (port !== null) {
+            try {
+              const at = await navigate(port, action.url, { signal: opts.signal });
+              s.lastUsed = Date.now();
+              return { id: s.id, control: s.control, epoch: s.epoch, ...at };
+            } catch (e) {
+              if (e instanceof NavigationError)
+                throw new ComputerError("NAVIGATION_FAILED", e.message);
+              if (opts.signal?.aborted) throw new ComputerError("CANCELLED");
+              // DevTools did not answer (Chromium restarting): the address bar still works.
+            }
+          }
         }
         await s.driver.act(action, { signal: opts.signal });
         s.lastUsed = Date.now();
@@ -886,8 +926,8 @@ export function createVmService({
         const r = await s.driver.read(opts);
         if (r.kind === "plain") return r.text;
         // A VM from an older image publishes no DevTools port, and a page may not answer: the read goes on without the address.
-        if (s.cdp === undefined) s.cdp = await portOf(s.id, 9222).catch(() => null);
-        const page = s.cdp === null ? undefined : await links(s.cdp).catch(() => undefined);
+        const port = await devtools(s);
+        const page = port === null ? undefined : await links(port).catch(() => undefined);
         return formatRead(r.title, r.body, page, Boolean(opts.settle));
       });
     },

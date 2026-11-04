@@ -10,6 +10,26 @@ describe("toolPreamble", () => {
     expect(toolPreamble("browser")).not.toContain("zetta:desktop");
     expect(toolPreamble("desktop")).toContain("zetta:desktop");
   });
+  test("a bot knows which browser is which, and is steered to the user's own computer when fetching is blocked", () => {
+    expect(toolPreamble("browser")).toContain(
+      "a separate browser on the Zetta server, with none of the user's sign-ins",
+    );
+    const desktop = toolPreamble("desktop");
+    expect(desktop).toContain("the browser inside the user's own computer (a VM)");
+    expect(desktop).toContain(
+      "when WebFetch, curl or zetta:browser are blocked: a blocked fetch is not a reason to stop",
+    );
+    expect(desktop).toContain("send navigate and read together in one reply");
+    expect(desktop).toContain(
+      "If a site needs a sign-in or shows a CAPTCHA, the computer works: say what you see, try another address of the same source once",
+    );
+    expect(desktop).toContain(
+      "If the read shows about:blank or an old page, read once more before you report a failure",
+    );
+    expect(desktop).toContain(
+      "never start, stop or control a computer with shell tools (utmctl, docker, podman, VNC)",
+    );
+  });
   test("every bot is told to pick the method itself", () => {
     expect(toolPreamble("off")).toContain("Never ask the user to choose a method");
     expect(toolPreamble("desktop", true, true)).toContain("Pick it yourself");

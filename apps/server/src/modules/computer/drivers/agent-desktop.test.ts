@@ -115,10 +115,11 @@ describe("agent-desktop driver", () => {
     expect(cli).toEqual([]); // agent-desktop's own `press` is never used: it crashes Chromium on the VM display
   });
 
-  test("navigate focuses the address bar, types the address and presses Enter", async () => {
+  test("navigate focuses the Chromium window and its address bar, types the address and presses Enter", async () => {
     const { driver, keys } = container(example);
     await driver.act({ type: "navigate", url: "https://example.com/a?b=1" });
     expect(keys).toEqual([
+      ["search", "--onlyvisible", "--class", "chromium", "windowactivate", "--sync"],
       ["key", "ctrl+l"],
       ["type", "--clearmodifiers", "--delay", "6", "--", "https://example.com/a?b=1"],
       ["key", "Return"],

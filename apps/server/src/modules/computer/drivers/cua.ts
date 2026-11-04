@@ -164,7 +164,9 @@ export function createCuaDriver(raw: McpCall, { browser = true } = {}): DesktopD
         });
       else if (action.type === "launch") r = await call("launch_app", { name: action.app });
       else {
-        // Chromium is always open: focus its address bar, type, Enter.
+        // Chromium is always open: bring its window up (foreground keys go to whatever is active), then its address bar, type, Enter.
+        const w = await windowOf(call).catch(() => undefined);
+        if (w && (await call("bring_to_front", w)).isError) win = undefined;
         r = await call("hotkey", { keys: ["ctrl", "l"], ...FG });
         if (!r.isError) r = await call("type_text", { text: action.url, ...FG });
         if (!r.isError) r = await call("press_key", { key: "Return", ...FG });

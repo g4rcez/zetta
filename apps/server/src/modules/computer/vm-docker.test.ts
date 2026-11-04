@@ -122,6 +122,36 @@ describe.skipIf(!enabled)("vm service (real containers)", () => {
     expect((await exec(["volume", "inspect", `zetta-vm-${a.id}`])).code).not.toBe(0);
   }, 240_000);
 
+  test("a cold start then navigate lands on the page: the very next read shows it, and a page the browser refuses is NAVIGATION_FAILED with its error", async () => {
+    const docker = dockerVmConfig({
+      ZETTA_DESKTOP_RUNTIME: "docker",
+      ZETTA_DOCKER_BIN: process.env.ZETTA_DOCKER_BIN,
+      ZETTA_VM_IMAGE: process.env.ZETTA_VM_IMAGE,
+    })!;
+    const vms = createVmService({
+      store: memoryStore(),
+      docker,
+      tokenRoot: await mkdtemp(join(process.env.ZETTA_VM_TOKEN_ROOT ?? tmpdir(), "zetta-vm-nav-")),
+      allowPrivate: false,
+    });
+    const vm = await vms.start("dave");
+    try {
+      // Straight after the start, as a bot does: no waiting, no polling.
+      const at = await vms.act("dave", vm.id, "agent", {
+        type: "navigate",
+        url: "https://example.com/",
+      });
+      expect(at).toMatchObject({ url: "https://example.com/", loaded: true });
+      expect(await vms.read("dave", vm.id)).toContain("Example Domain");
+      const e = await vms
+        .act("dave", vm.id, "agent", { type: "navigate", url: "https://expired.badssl.com/" })
+        .catch((x) => x);
+      expect(e).toMatchObject({ code: "NAVIGATION_FAILED", detail: "net::ERR_CERT_DATE_INVALID" });
+    } finally {
+      await vms.remove("dave", vm.id);
+    }
+  }, 240_000);
+
   test("a credential fill reads the real address and types into the right inputs of a real sign-in page", async () => {
     const docker = dockerVmConfig({
       ZETTA_DESKTOP_RUNTIME: "docker",

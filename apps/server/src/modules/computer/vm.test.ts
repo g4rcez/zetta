@@ -3,10 +3,12 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { NavigationError } from "./cdp";
 import { ComputerError } from "./service";
 import {
   compactTree,
   createVmService,
+  formatRead,
   vmDockerArgs,
   vmDriversFrom,
   vmOsFrom,
@@ -191,6 +193,9 @@ async function setup(opts: Partial<Parameters<typeof createVmService>[0]> = {}) 
     tokenRoot,
     allowPrivate: true,
     links: async () => {
+      throw new Error("no DevTools in this test");
+    },
+    navigate: async () => {
       throw new Error("no DevTools in this test");
     },
     ...opts,
@@ -726,6 +731,63 @@ describe("page address and links in a read", () => {
       'Window "r/neovim - Chromium" (click_element{n} clicks [n]):\nframe "r/neovim - Chromium"\n[3] link "Inspect your LSP config"',
     );
     await vm.closeAll();
+  });
+});
+
+describe("navigate over the DevTools port", () => {
+  const keys = (m: { calls: { tool: string }[] }) => m.calls.map((c) => c.tool);
+  test("the address opens through the published port, nothing is typed, and the answer names the page the tab is on", async () => {
+    const seen: [number, string][] = [];
+    const { vm, m } = await setup({
+      navigate: async (port, url) => {
+        seen.push([port, url]);
+        return { url: "https://old.reddit.com/r/neovim/top/?t=day", loaded: true };
+      },
+    });
+    const { id } = await vm.start("u");
+    expect(
+      await vm.act("u", id, "agent", {
+        type: "navigate",
+        url: "https://old.reddit.com/r/neovim/top/?t=day",
+      }),
+    ).toMatchObject({ url: "https://old.reddit.com/r/neovim/top/?t=day", loaded: true });
+    expect(seen).toEqual([[41234, "https://old.reddit.com/r/neovim/top/?t=day"]]);
+    expect(keys(m)).not.toContain("type_text");
+    await vm.closeAll();
+  });
+  test("an address the browser refuses is NAVIGATION_FAILED with the browser's error", async () => {
+    const { vm } = await setup({
+      navigate: async () => {
+        throw new NavigationError("net::ERR_NAME_NOT_RESOLVED");
+      },
+    });
+    const { id } = await vm.start("u");
+    const e = await vm
+      .act("u", id, "agent", { type: "navigate", url: "https://nowhere.example/" })
+      .catch((x) => x);
+    expect(e).toMatchObject({ code: "NAVIGATION_FAILED", detail: "net::ERR_NAME_NOT_RESOLVED" });
+    await vm.closeAll();
+  });
+  test("DevTools that does not answer falls back to the address bar: ctrl+l, the address, Return", async () => {
+    const { vm, m } = await setup();
+    const { id } = await vm.start("u");
+    await vm.act("u", id, "agent", { type: "navigate", url: "https://example.com/" });
+    expect(keys(m).slice(-4)).toEqual(["bring_to_front", "hotkey", "type_text", "press_key"]);
+    expect(m.calls.at(-2)).toMatchObject({
+      tool: "type_text",
+      args: { text: "https://example.com/" },
+    });
+    await vm.closeAll();
+  });
+  test("a blank tab is called out in a read, so the bot navigates again instead of reporting an empty page", () => {
+    expect(
+      formatRead("about:blank - Chromium", "frame", { url: "about:blank", links: [] }, true),
+    ).toBe(
+      'The browser shows an empty tab (about:blank): navigate again.\nWindow "about:blank - Chromium" (click_element{n} clicks [n]):\nURL: about:blank\nframe',
+    );
+    expect(formatRead("New Tab - Chromium", "frame", undefined, true)).toBe(
+      'Window "New Tab - Chromium" (click_element{n} clicks [n]):\nframe',
+    );
   });
 });
 

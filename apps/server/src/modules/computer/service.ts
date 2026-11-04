@@ -41,7 +41,10 @@ export class ComputerError extends Error {
       | "UNSUPPORTED"
       | "HOST_KEY_CHANGED"
       | "AUTH_FAILED"
-      | "UNREACHABLE",
+      | "UNREACHABLE"
+      | "NAVIGATION_FAILED",
+    /** Safe text for the bot and the user, e.g. Chromium's `net::ERR_*` code. Never a URL or a secret. */
+    readonly detail?: string,
   ) {
     super(code);
   }

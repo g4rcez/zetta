@@ -200,13 +200,11 @@ describe("vm fillCredential", () => {
     expect(w.calls.some((c) => c.tool === "bring_to_front")).toBe(true); // a fresh VM has no active window: start activates Chromium
     w.deactivate();
     w.calls.length = 0; // focus lost again (e.g. a person closed a window over VNC)
-    await vms.act("u1", vm.id, "agent", { type: "navigate", url: "https://example.com" });
+    await vms.act("u1", vm.id, "agent", { type: "key", key: "Return" });
     expect(w.calls.map((c) => c.tool)).toEqual([
-      "hotkey",
+      "press_key",
       "list_windows",
       "bring_to_front",
-      "hotkey",
-      "type_text",
       "press_key",
     ]);
   });

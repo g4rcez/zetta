@@ -302,3 +302,102 @@ export async function pageLinks(port: number, timeoutMs = 5000): Promise<PageLin
     }
   }
 }
+
+/** The browser refused the address (no DNS answer, connection refused, certificate error...): the message is Chromium's `net::ERR_*` code. */
+export class NavigationError extends Error {}
+
+export type NavigateResult = { url: string; loaded: boolean };
+
+/**
+ * Opens `url` in the most recently active tab of a VM's Chromium over its DevTools port and waits for the load event, so the caller knows
+ * the tab left about:blank. Unlike `connectCdp` it only attaches to the tab (no request interception, no viewport override): the window
+ * is the one the user sees. A page that is still loading after `loadMs` answers `loaded: false` with the address it is on.
+ */
+export async function navigatePage(
+  port: number,
+  url: string,
+  o: { timeoutMs?: number; loadMs?: number; signal?: AbortSignal } = {},
+): Promise<NavigateResult> {
+  const { timeoutMs = 10_000, loadMs = 15_000, signal } = o;
+  // Right after a cold start Chromium may not listen yet or may not have its first tab: wait for a page target, up to timeoutMs.
+  const deadline = Date.now() + timeoutMs;
+  let target: { type: string; webSocketDebuggerUrl?: string } | undefined;
+  for (let last: unknown; !target; await Bun.sleep(250)) {
+    if (signal?.aborted) throw new Error("cancelled");
+    if (Date.now() > deadline) throw last instanceof Error ? last : new Error("no page");
+    try {
+      const list = (await (
+        await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2000) })
+      ).json()) as { type: string; webSocketDebuggerUrl?: string }[];
+      target = list.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
+      if (!target) last = new Error("no page");
+    } catch (e) {
+      last = e;
+    }
+  }
+  const ws = new WebSocket(
+    target.webSocketDebuggerUrl!.replace(/^ws:\/\/[^/]+/, `ws://127.0.0.1:${port}`),
+  );
+  const pending = new Map<number, { resolve: (r: any) => void; reject: (e: Error) => void }>();
+  let nextId = 1;
+  let onLoad: () => void = () => {};
+  const closeAll = (why: string) => {
+    for (const p of pending.values()) p.reject(new Error(why));
+    pending.clear();
+  };
+  ws.onmessage = (e) => {
+    const m = JSON.parse(String(e.data));
+    const p = m.id === undefined ? undefined : pending.get(m.id);
+    if (p) {
+      pending.delete(m.id);
+      if (m.error) p.reject(new Error(m.error.message ?? "cdp error"));
+      else p.resolve(m.result);
+    } else if (m.method === "Page.loadEventFired") onLoad();
+  };
+  ws.onclose = () => closeAll("cdp closed");
+  const send = (method: string, params: object = {}) =>
+    new Promise<any>((resolve, reject) => {
+      const id = nextId++;
+      const t = setTimeout(() => {
+        if (pending.delete(id)) reject(new Error(`cdp timeout ${method}`));
+      }, timeoutMs);
+      pending.set(id, {
+        resolve: (r) => (clearTimeout(t), resolve(r)),
+        reject: (e) => (clearTimeout(t), reject(e)),
+      });
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+  signal?.addEventListener("abort", () => ws.close(), { once: true });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("cdp connect timeout")), timeoutMs);
+      ws.onopen = () => (clearTimeout(t), resolve());
+      ws.onerror = () => (clearTimeout(t), reject(new Error("cdp connect failed")));
+    });
+    await send("Page.enable");
+    // Listen before navigating: the load event may arrive right behind the answer to Page.navigate.
+    let loadTimer: ReturnType<typeof setTimeout> | undefined;
+    const loaded = new Promise<boolean>((resolve) => {
+      onLoad = () => resolve(true);
+      loadTimer = setTimeout(() => resolve(false), loadMs);
+    });
+    try {
+      const r = await send("Page.navigate", { url });
+      if (r?.errorText) throw new NavigationError(String(r.errorText));
+      const done = await loaded;
+      const at = await send("Runtime.evaluate", {
+        expression: "location.href",
+        returnByValue: true,
+      });
+      return { url: String(at?.result?.value ?? url), loaded: done };
+    } finally {
+      clearTimeout(loadTimer);
+    }
+  } finally {
+    try {
+      ws.close();
+    } catch {
+      /* closed */
+    }
+  }
+}

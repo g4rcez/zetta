@@ -1496,7 +1496,7 @@ export function createChatService(
                   60_000,
                 ),
               };
-            await withTimeout(
+            const at = await withTimeout(
               vms.act(
                 actor.userId,
                 vm.id,
@@ -1517,8 +1517,10 @@ export function createChatService(
                 { signal: stepSignal(signal, 50_000), epoch },
               ),
             );
+            // navigate answers where the tab landed, so a step in the middle of a reply is not a blind "ok".
+            const ok = `${a.action} ok${a.action === "navigate" && at.url ? `: now at ${at.url.slice(0, 300)}${at.loaded === false ? " (still loading)" : ""}` : ""}`;
             // Bots run through text-only harnesses: the last action of the reply returns what the screen now shows.
-            if (i !== lastDesktop) return { vm, out: `${a.action} ok` };
+            if (i !== lastDesktop) return { vm, out: ok };
             const screen = await withTimeout(
               vms.read(actor.userId, vm.id, {
                 settle: true,
@@ -1528,7 +1530,7 @@ export function createChatService(
             ).catch(
               () => "(the screen could not be read just now: send a read action to look again)",
             );
-            return { vm, out: `${a.action} ok\n${screen.slice(0, 6000)}` };
+            return { vm, out: `${ok}\n${screen.slice(0, 6000)}` };
           };
           // The VM was restarted or stopped under this turn (DISCONNECTED): reconnect once and redo the step, so the task continues. Only
           // steps that are safe to repeat: typing or clicking twice could send a form twice.

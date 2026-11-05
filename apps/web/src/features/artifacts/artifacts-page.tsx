@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { BotIdentity } from "@/components/bot-identity";
+import { Button } from "@/components/ui";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { Badge, ConfirmButton, Empty, field, list, listItem } from "../shared/ui";
@@ -352,19 +353,20 @@ function Row({
         </time>
       </Link>
       {children}
-      <button
-        type="button"
+      <Button
+        variant={a.pinnedAt ? "link" : "ghost"}
+        size="icon-sm"
         aria-pressed={Boolean(a.pinnedAt)}
         aria-label={a.pinnedAt ? `Unpin ${a.title}` : `Pin ${a.title}`}
         onClick={() => onPin(a)}
-        className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:text-primary"
+        className="shrink-0"
       >
         <PushPinIcon
           aria-hidden="true"
           weight={a.pinnedAt ? "fill" : "regular"}
           className="size-4"
         />
-      </button>
+      </Button>
       {manage && (
         <ConfirmButton
           label="Delete"

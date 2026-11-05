@@ -16,6 +16,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Logo } from "@/components/logo";
+import { Button } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";
 import { useAttentionSummary, useRunningDiscussions } from "../attention/summary";
 import { chatClient, errorMessage, type Proposal } from "../chat/chat-client";
@@ -170,14 +171,14 @@ export function DashboardPage() {
           <section aria-label="Examples" className="space-y-3">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <h2 className="text-sm font-normal">Get started with some examples</h2>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 onClick={hideExamples}
                 aria-label="Hide examples"
-                className="rounded p-1 hover:bg-muted"
               >
                 <XIcon aria-hidden />
-              </button>
+              </Button>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               {EXAMPLES.map(({ icon: Glyph, title, hint, prompt }) => (

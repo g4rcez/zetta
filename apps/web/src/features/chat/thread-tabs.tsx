@@ -19,6 +19,7 @@ import {
 } from "@zetta/ui/components/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
 import { cn } from "@zetta/ui/lib/utils";
+import { Button } from "@/components/ui";
 import type { Conversation } from "./chat-client";
 import { chatQueries } from "./chat-queries";
 
@@ -213,23 +214,21 @@ export function ThreadTabs({
         </PopoverContent>
       </Popover>
       {current && (
-        <button
-          type="button"
+        <Button
+          variant={current.favorite ? "link" : "ghost"}
+          size="icon-sm"
           aria-pressed={!!current.favorite}
           aria-label={current.favorite ? "Remove from favorites" : "Add to favorites"}
           title={current.favorite ? "Remove from favorites" : "Add to favorites"}
           onClick={() => onUpdate(current.id, { favorite: !current.favorite })}
-          className={cn(
-            "flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
-            current.favorite ? "text-primary" : "text-muted-foreground hover:text-foreground",
-          )}
+          className="shrink-0"
         >
           <StarIcon
             aria-hidden="true"
             weight={current.favorite ? "fill" : "regular"}
             className="size-4"
           />
-        </button>
+        </Button>
       )}
       {current && (
         <DropdownMenu>

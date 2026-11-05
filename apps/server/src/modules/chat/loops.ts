@@ -297,7 +297,7 @@ function loopNotes(loop: GoalLoop) {
       ? `Your previous step failed: ${loop.lastError}\nDo not repeat the same approach. Use the zetta-recover-from-failure skill.`
       : "",
     loop.stalls >= 2
-      ? `No new progress for ${loop.stalls} steps. Change approach: take a smaller step, check your assumptions, search the wiki for gotchas.`
+      ? `No new progress for ${loop.stalls} steps. Change approach: take a smaller step, check your assumptions, search the memory for gotchas.`
       : "",
     loop.lessons ? `Lessons so far:\n${defuse(loop.lessons)}` : "",
   ]

@@ -70,14 +70,14 @@ suite("Laya attention in a chat turn (real database)", () => {
   test("a greeting gets no wiki items", async () => {
     const t = turn({ state: "ready", score: 0.1, confidence: 0.92 });
     const { prompt, used } = await t.ask("thanks!");
-    expect(prompt).not.toContain("Wiki items that may help");
+    expect(prompt).not.toContain("Memory items that may help");
     expect(t.searched).toEqual({ wiki: 0 });
     expect(used?.attention?.level).toBe("trivial");
   });
   test("a normal request keeps the wiki items", async () => {
     const t = turn({ state: "ready", score: 1.4, confidence: 0.8 });
     const { prompt, used } = await t.ask("how long do refunds take?");
-    expect(prompt).toContain("Wiki items that may help");
+    expect(prompt).toContain("Memory items that may help");
     expect(prompt).not.toContain("looks complex");
     expect(used?.attention?.level).toBe("normal");
   });

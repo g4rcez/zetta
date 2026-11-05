@@ -4,7 +4,7 @@ export const ASK_SCOPE_MAX = 5; // the server takes at most five picked items pe
 
 /** What the chief is asked. The answer's `[[slug]]` links become the cited sources. */
 export const askPrompt = (question: string) =>
-  `Answer from my wiki and cite the items you use as [[slug]]. Question: ${question.trim()}`;
+  `Answer from my memory and cite the items you use as [[slug]]. Question: ${question.trim()}`;
 
 export type Source = { slug: string; title: string };
 

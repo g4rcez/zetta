@@ -16,6 +16,7 @@ const GLOBALS = [
   "MutationObserver",
   "requestAnimationFrame",
   "cancelAnimationFrame",
+  "ResizeObserver",
 ] as const;
 
 /**
@@ -41,6 +42,12 @@ export function setupDom() {
     MutationObserver: win.MutationObserver,
     requestAnimationFrame: win.requestAnimationFrame.bind(win),
     cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
+    // happy-dom has none, and every browser does: the library's password field measures itself with it.
+    ResizeObserver: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
   });
   // happy-dom rejects a cancelled animation, which the modal library does every time it closes. A browser does not.
   win.HTMLElement.prototype.animate = (() => ({

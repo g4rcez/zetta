@@ -238,6 +238,21 @@ export function FiltersBar({
                 </select>
               </Facet>
             )}
+            <Facet label="Created by">
+              <select
+                name="createdBy"
+                value={filter.createdBy ?? ""}
+                onChange={(e) => set({ createdBy: e.target.value })}
+                className={control}
+              >
+                <option value="">Anyone</option>
+                {(bots ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </Facet>
             <Facet label="Team">
               <select
                 name="team"

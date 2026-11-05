@@ -31,9 +31,7 @@ import { toast } from "sonner";
 import { Tooltip } from "@g4rcez/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotIdentity, BotsContext, useBotIdentity } from "@/components/bot-identity";
-import { Drawer } from "@/components/drawer";
-import { Button, Input } from "@/components/ui";
-import { MentionTextarea } from "../chat/mention";
+import { Button } from "@/components/ui";
 import { useSidebarData } from "../chat/sidebar-data";
 import { useTheme } from "../../components/theme-provider";
 import { errorMessage } from "../chat/chat-client";
@@ -46,14 +44,13 @@ import {
   flowToTeams,
   groupsOf,
   makeChief,
-  removeBot,
   TEAM_DEFAULT_SIZE,
   teamsToFlow,
   type BotNode,
   type TeamNode,
   type TeamsNode,
 } from "./team-graph";
-import { RoleField, RolesContext, useRoleLabel, useTeamRoles } from "./team-roles";
+import { RolesContext, useRoleLabel, useTeamRoles } from "./team-roles";
 import {
   TEAM_SIZE_WARNING,
   TEAM_SIZE_WARNING_AT,
@@ -96,8 +93,6 @@ const TeamActions = createContext<{
   /** Fits the bots to the group after a resize. */
   relayout: () => void;
 }>({ configure: () => {}, roster: () => [], setChief: () => {}, relayout: () => {} });
-const titleButton =
-  "nodrag grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50";
 
 function TeamGroup({ id, data, selected }: NodeProps<TeamNode>) {
   const actions = useContext(TeamActions);
@@ -137,14 +132,15 @@ function TeamGroup({ id, data, selected }: NodeProps<TeamNode>) {
             </label>
           )}
           <Tip tip="Configure this team: name, goal and rooms" className="nodrag">
-            <button
-              type="button"
-              className={titleButton}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="nodrag shrink-0"
               aria-label={`Configure ${data.name}`}
               onClick={() => actions.configure(id)}
             >
               <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
-            </button>
+            </Button>
           </Tip>
         </div>
         {/* Padding sits on the wrapper: on the clamped text it would show a sliver of the third line. */}
@@ -197,11 +193,9 @@ function Editor() {
   const [nodes, setNodes, onNodesChange] = useNodesState<TeamsNode>([]);
   const bots = useMemo(() => allBots.filter((x) => x.onboarded), [allBots]);
   const { roles } = useTeamRoles();
-  const [drawerId, setDrawerId] = useState<string>();
   const [busy, setBusy] = useState(false);
   const synced = useRef(new Map<string, { version: number; key: string }>());
   const queue = useRef<Promise<void>>(Promise.resolve());
-  const [room, setRoom] = useState({ title: "", firstMessage: "" });
   const fail = useCallback((e: unknown) => toast.error(errorMessage(e)), []);
   const load = useCallback(async () => {
     try {
@@ -221,22 +215,6 @@ function Editor() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const selected = nodes.find((n) => n.id === drawerId);
-  const teamOf =
-    selected?.type === "team"
-      ? selected
-      : nodes.find((n): n is TeamNode => n.id === (selected as BotNode | undefined)?.parentId);
-  const memberNodes = teamOf
-    ? nodes
-        .filter((n): n is BotNode => n.type === "bot" && n.parentId === teamOf.id)
-        .sort((a, b) => Number(b.data.kind === "chief") - Number(a.data.kind === "chief"))
-    : [];
-  const members = memberNodes.length;
-  const patch = (id: string, p: Record<string, unknown>) =>
-    setNodes((ns) =>
-      ns.map((n) => (n.id === id ? ({ ...n, data: { ...n.data, ...p } } as TeamsNode) : n)),
-    );
 
   async function work(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -269,6 +247,19 @@ function Editor() {
     const timer = setTimeout(() => void sync(nodes), 600);
     return () => clearTimeout(timer);
   }, [nodes]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Team settings are a page: a drawer is for a quick look, and this is configuration. The canvas saves first, so the page opens on what you see here.
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const openSettings = async (nodeId: string) => {
+    const current = nodesRef.current;
+    const node = current.find((n) => n.id === nodeId);
+    const team = node?.type === "team" ? node : current.find((n) => n.id === node?.parentId);
+    if (team?.type !== "team") return;
+    await sync(current);
+    await navigate({ to: "/teams/$teamId/settings", params: { teamId: team.data.teamId }, search: {} });
+  };
+  const openSettingsRef = useRef(openSettings);
+  openSettingsRef.current = openSettings;
   // A string key, so the title bars re-render when the roster changes but not on every drag.
   const rosterKey = JSON.stringify(
     nodes.flatMap((n) =>
@@ -283,7 +274,7 @@ function Editor() {
         { nodeId: nodeId!, name: name!, chief: kind === "chief" },
       ]);
     return {
-      configure: setDrawerId,
+      configure: (nodeId: string) => void openSettingsRef.current(nodeId),
       roster: (teamNodeId: string) => byTeam.get(teamNodeId) ?? [],
       setChief: (botNodeId: string) => setNodes((ns) => makeChief(ns, botNodeId)),
       relayout: () => setNodes(arrange),
@@ -387,7 +378,7 @@ function Editor() {
                   nodeTypes={nodeTypes}
                   onNodesChange={onNodesChange}
                   onNodeClick={(_, n) => {
-                    if (n.type === "bot") setDrawerId(n.id);
+                    if (n.type === "bot") void openSettings(n.id);
                   }}
                   deleteKeyCode={null}
                   onNodeDragStop={(_, n) => {
@@ -412,245 +403,6 @@ function Editor() {
                 </ReactFlow>
               </div>
             </main>
-            {selected && teamOf && (
-              <Drawer
-                open
-                onClose={() => setDrawerId(undefined)}
-                title={
-                  selected.type === "team" ? (
-                    selected.data.name
-                  ) : (
-                    <BotIdentity
-                      size={40}
-                      bot={
-                        botsById.get(selected.data.botId) ?? {
-                          id: selected.data.botId,
-                          name: selected.data.name,
-                        }
-                      }
-                      sub={selected.data.kind === "chief" ? "Chief of this team" : "Member"}
-                    />
-                  )
-                }
-                description={
-                  selected.type === "team"
-                    ? "Settings and rooms for this team"
-                    : `In team ${teamOf.data.name}`
-                }
-                footer={
-                  <div className="flex w-full items-center justify-between gap-2">
-                    {selected.type === "team" ? (
-                      <Tip tip="Delete this team. Rooms already opened stay.">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-destructive"
-                          disabled={busy}
-                          onClick={() => {
-                            if (window.confirm(`Delete team "${selected.data.name}"?`))
-                              void work(async () => {
-                                await teamsApi.archive(selected.data.teamId);
-                                setDrawerId(undefined);
-                                await load();
-                              });
-                          }}
-                        >
-                          Delete team
-                        </Button>
-                      </Tip>
-                    ) : (
-                      <Tip tip="Take this bot out of the team">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setNodes((ns) => removeBot(ns, selected.id));
-                            setDrawerId(undefined);
-                          }}
-                        >
-                          Remove from team
-                        </Button>
-                      </Tip>
-                    )}
-                  </div>
-                }
-              >
-                {selected.type === "team" ? (
-                  <div className="flex flex-col gap-6">
-                    <section className="flex flex-col gap-3">
-                      <h3 className="text-sm font-semibold">Team</h3>
-                      <Input
-                        title="Name"
-                        reportStatus={false}
-                        value={selected.data.name}
-                        maxLength={80}
-                        onChange={(e) => patch(selected.id, { name: e.target.value })}
-                      />
-                      <MentionTextarea
-                        title="Goal"
-                        reportStatus={false}
-                        required={false}
-                        rows={3}
-                        maxLength={1000}
-                        bots={bots}
-                        value={selected.data.goal}
-                        onChange={(goal) => patch(selected.id, { goal })}
-                      />
-                      <p className="-mt-1 text-xs text-muted-foreground">
-                        Optional. Without one, the chief follows each prompt.
-                      </p>
-                      {members > TEAM_SIZE_WARNING_AT && (
-                        <p
-                          role="status"
-                          className="rounded border border-warn/50 bg-warn/10 px-3 py-2 text-sm"
-                        >
-                          {TEAM_SIZE_WARNING}
-                        </p>
-                      )}
-                    </section>
-                    <section className="flex flex-col gap-3 border-t pt-6">
-                      <h3 className="text-sm font-semibold">Members</h3>
-                      {memberNodes.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          No bots yet. Drag a bot from the list into the team.
-                        </p>
-                      ) : (
-                        <ul className="space-y-1">
-                          {memberNodes.map((m) => (
-                            <li key={m.id}>
-                              <button
-                                type="button"
-                                className="flex w-full rounded-lg border bg-card px-2 py-1.5 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-                                onClick={() => setDrawerId(m.id)}
-                              >
-                                <BotIdentity
-                                  bot={
-                                    botsById.get(m.data.botId) ?? {
-                                      id: m.data.botId,
-                                      name: m.data.name,
-                                    }
-                                  }
-                                  size={28}
-                                  sub={
-                                    roles.find((r) => r.id === m.data.roleId)?.name ??
-                                    (m.data.kind === "chief" ? "Chief" : "Member")
-                                  }
-                                  trailing={
-                                    m.data.kind === "chief" ? (
-                                      <CrownIcon
-                                        className="size-3 shrink-0 text-warn"
-                                        aria-label="Chief"
-                                      />
-                                    ) : undefined
-                                  }
-                                  className="w-full"
-                                />
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </section>
-                    <section className="flex flex-col gap-3 border-t pt-6">
-                      <h3 className="text-sm font-semibold">Start a room</h3>
-                      <Input
-                        title="Room title"
-                        reportStatus={false}
-                        required={false}
-                        value={room.title}
-                        maxLength={120}
-                        onChange={(e) => setRoom({ ...room, title: e.target.value })}
-                      />
-                      <MentionTextarea
-                        title="What should the bots do? (optional)"
-                        reportStatus={false}
-                        required={false}
-                        rows={4}
-                        maxLength={1000}
-                        bots={bots}
-                        value={room.firstMessage}
-                        onChange={(firstMessage) => setRoom({ ...room, firstMessage })}
-                      />
-                      <div className="flex flex-wrap items-center gap-3">
-                        <Tip tip="Open a room: the chief gets your first order and coordinates the team">
-                          <Button
-                            size="sm"
-                            disabled={busy || members < 2 || !room.title.trim()}
-                            onClick={() =>
-                              void work(async () => {
-                                await sync(nodes);
-                                const id = await teamsApi.startRoom(teamOf.data.teamId, {
-                                  title: room.title.trim(),
-                                  // The text is the goal and the first order, as in the New room page.
-                                  ...(room.firstMessage.trim()
-                                    ? {
-                                        goal: room.firstMessage.trim(),
-                                        firstMessage: room.firstMessage.trim(),
-                                      }
-                                    : {}),
-                                });
-                                await navigate({
-                                  to: "/rooms",
-                                  search: { id, view: "canvas" },
-                                });
-                              })
-                            }
-                          >
-                            Start a room
-                          </Button>
-                        </Tip>
-                        <Tip tip="Open the team's chat: talk to all members and set goals for them">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={busy || members < 2}
-                            onClick={() =>
-                              void work(async () => {
-                                await sync(nodes);
-                                const id = await teamsApi.chat(teamOf.data.teamId);
-                                await navigate({
-                                  to: "/rooms",
-                                  search: { id },
-                                });
-                              })
-                            }
-                          >
-                            Chat with team
-                          </Button>
-                        </Tip>
-                        {members < 2 && (
-                          <p className="text-xs text-muted-foreground">
-                            Add a chief and at least one more bot first.
-                          </p>
-                        )}
-                      </div>
-                    </section>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    <RoleField
-                      roles={roles}
-                      value={selected.data.roleId}
-                      onChange={(roleId) => patch(selected.id, { roleId })}
-                    />
-                    <Tip
-                      tip="Make this bot the chief: it gets your orders first and coordinates the others"
-                      className="self-start"
-                    >
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="self-start"
-                        disabled={selected.data.kind === "chief"}
-                        onClick={() => setNodes((ns) => makeChief(ns, selected.id))}
-                      >
-                        Make chief
-                      </Button>
-                    </Tip>
-                  </div>
-                )}
-              </Drawer>
-            )}
           </div>
         </TeamActions.Provider>
       </RolesContext.Provider>

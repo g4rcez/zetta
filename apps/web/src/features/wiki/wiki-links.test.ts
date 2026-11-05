@@ -16,6 +16,7 @@ const item = (o: Partial<Item>): Item => ({
   by: "user",
   ownerName: null,
   botId: null,
+  authorBotId: null,
   teams: [],
   createdAt: "c",
   updatedAt: "u",

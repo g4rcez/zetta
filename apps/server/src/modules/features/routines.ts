@@ -414,7 +414,7 @@ export function createRoutines(
           : `failed${run.reasonCode ? ` (${run.reasonCode})` : ""}`
       }.`,
       run.output ? `What it had produced: ${run.output.slice(0, 1500)}` : "",
-      `This is retry ${run.attempt + 1}. Use the zetta-recover-from-failure skill: change approach instead of repeating the step that failed, and save what you learn as a wiki gotcha.`,
+      `This is retry ${run.attempt + 1}. Use the zetta-recover-from-failure skill: change approach instead of repeating the step that failed, and save what you learn as a memory gotcha.`,
       "Check what already happened in this chat, finish only what is missing, and do not repeat actions that already took effect.",
     ]
       .filter((x) => x !== "")

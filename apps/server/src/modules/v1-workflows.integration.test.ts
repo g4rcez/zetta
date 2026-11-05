@@ -181,7 +181,7 @@ suite("v1 user journeys", () => {
     expect(prompts.at(-1)).not.toContain("Release checklist");
     // The person picks it: the bot follows it even though it is not in the team.
     const picked = await say(outside, "Go", [id]);
-    expect(prompts.at(-1)).toContain("The user asked you to follow these wiki items");
+    expect(prompts.at(-1)).toContain("The user asked you to follow these memory items");
     expect(prompts.at(-1)).toContain("1) tag the commit 2) push the tag");
     expect(picked.json.assistant.meta.used.instructions).toEqual([{ id }]);
     expect((await say(outside, "Go", [uuidv7()])).status).toBe(404);

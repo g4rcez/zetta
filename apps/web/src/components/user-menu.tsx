@@ -12,17 +12,21 @@ import {
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
 import { Skeleton } from "@zetta/ui/components/skeleton";
-import { CaretUpDownIcon, UserIcon } from "@phosphor-icons/react";
+import { CaretUpDownIcon, SlidersHorizontalIcon, UserIcon } from "@phosphor-icons/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { usePreferences } from "@/features/preferences/preferences";
-import { TIME_FORMATS, type TimeFormat } from "@/features/preferences/time-format";
+import { useProfile } from "@/features/preferences/profile-api";
+import {
+  TIME_FORMAT_LABEL,
+  TIME_FORMATS,
+  type TimeFormat,
+} from "@/features/preferences/time-format";
+import { UserAvatar } from "@/components/user-avatar";
 import { railRow, railRowExpanded } from "@/components/rail-row";
 import { authClient } from "@/lib/auth-client";
 import { AuthenticationRequestError } from "@/lib/auth-transport";
-
-const TIME_FORMAT_LABEL: Record<TimeFormat, string> = { "24h": "24-hour", "12h": "12-hour" };
 
 export default function UserMenu({
   compact = false,
@@ -36,6 +40,7 @@ export default function UserMenu({
   const navigate = useNavigate();
   const { preferences, set } = usePreferences();
   const { data: session, isPending } = authClient.useSession();
+  const { data: profile } = useProfile(Boolean(session));
   const [signingOut, setSigningOut] = useState(false);
   const signOutPending = useRef(false);
 
@@ -105,12 +110,7 @@ export default function UserMenu({
       >
         {rail ? (
           <>
-            <span
-              aria-hidden="true"
-              className="grid size-5 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground"
-            >
-              {session.user.name.slice(0, 1).toUpperCase()}
-            </span>
+            <UserAvatar name={session.user.name} avatar={profile?.avatar} size={20} />
             {rail === "expanded" ? (
               <>
                 <span className="flex min-w-0 flex-1 flex-col text-left leading-tight">
@@ -128,17 +128,12 @@ export default function UserMenu({
           </>
         ) : inline ? (
           <>
-            <span
-              aria-hidden="true"
-              className="grid size-6 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold"
-            >
-              {session.user.name.slice(0, 1).toUpperCase()}
-            </span>
+            <UserAvatar name={session.user.name} avatar={profile?.avatar} size={24} />
             <span className="hidden min-w-0 truncate sm:block">{session.user.name}</span>
             <span className="sr-only">, account menu</span>
           </>
         ) : compact ? (
-          <span aria-hidden="true">{session.user.name.slice(0, 1).toUpperCase()}</span>
+          <UserAvatar name={session.user.name} avatar={profile?.avatar} size={32} />
         ) : (
           <>
             <UserIcon aria-hidden="true" className="sm:hidden" />
@@ -155,6 +150,11 @@ export default function UserMenu({
           <DropdownMenuLabel className="break-words">{session.user.name}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem className="break-all">{session.user.email}</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem render={<Link to="/preferences" />}>
+            <SlidersHorizontalIcon />
+            Preferences
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>Time format</DropdownMenuLabel>
           <DropdownMenuRadioGroup

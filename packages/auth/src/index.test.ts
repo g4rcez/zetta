@@ -112,6 +112,7 @@ test("createAuthOptions preserves the legacy config and existing createAuth invo
   expect(legacy.plugins.map((plugin) => plugin.id)).toEqual(["jwt", "oauth-provider", "cimd"]);
   expect(legacy.advanced.ipAddress.ipAddressHeaders).toEqual(["x-zetta-client-ip"]);
   expect(legacy.rateLimit.customRules["/sign-in/email"]).toEqual({ window: 900, max: 20 });
+  expect(legacy.rateLimit.customRules["/change-password"]).toEqual({ window: 900, max: 10 });
   // Memory counters by default; the database when several servers share the limit.
   expect("storage" in legacy.rateLimit).toBe(false);
   process.env.ZETTA_AUTH_RATE_LIMIT_STORAGE = "database";
@@ -278,8 +279,21 @@ test("installed Better Auth 1.7.7 is eager; createAuth delegates exact config wi
   expect(source).toContain('import * as schema from "@zetta/db/schema/auth"');
   expect(source).toContain('provider: "pg",\n      transaction: true,');
   expect(source).toContain("schema: { ...schema, rateLimit },");
-  expect(source).toContain(
-    "before: createInvitationSignupPolicy(options?.invitationSignupVerifier, options?.firstAccount)",
+  // The formatter wraps this call, so compare without whitespace.
+  expect(source.replace(/\s+/g, "")).toContain(
+    "before:createInvitationSignupPolicy(options?.invitationSignupVerifier,options?.firstAccount",
   );
   expect(source).not.toContain("/schema/identity");
+});
+
+test("the gated options refuse update-user in front of the signup gate, and the legacy options add no hooks", async () => {
+  const gated = createAuthOptions(env, database, [], {
+    invitationSignupVerifier: async () => false,
+  });
+  await expect(
+    Reflect.apply(gated.hooks?.before as never, undefined, [
+      { path: "/update-user", body: { name: "Ada" } },
+    ]),
+  ).rejects.toMatchObject({ status: "FORBIDDEN", body: { code: "PROFILE_API_ONLY" } });
+  expect("hooks" in createAuthOptions(env, database)).toBe(false);
 });

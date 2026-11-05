@@ -164,6 +164,15 @@ describe("chief tools", () => {
       },
     ]);
   });
+  test("zetta:memory is the memory tool; zetta:wiki still works as its old name", () => {
+    const call = '{"action":"search","query":"tea"}';
+    expect(parseTools("```zetta:memory\n" + call + "\n```").calls).toHaveLength(1);
+    expect(parseTools("```zetta:wiki\n" + call + "\n```").calls).toHaveLength(1);
+    // A refused block is reported under the new name, also when the bot used the old one.
+    expect(parseTools("```zetta:wiki\nnot json\n```").rejected).toEqual([
+      { kind: "memory", reason: "the block is not valid JSON" },
+    ]);
+  });
   test("wiki accepts the graph fields and never lets a bot publish", () => {
     const wiki = (json: string) => parseTools("```zetta:wiki\n" + json + "\n```").calls;
     expect(

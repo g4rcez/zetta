@@ -22,6 +22,8 @@ export type WikiSearch = {
   access?: "own" | "shared";
   by?: Author;
   bot?: string;
+  /** Id of the bot that created the item. */
+  createdBy?: string;
   team?: string;
   min?: number;
   max?: number;
@@ -40,6 +42,7 @@ export type WikiFilter = {
   access?: "own" | "shared";
   by?: Author;
   bot?: string;
+  createdBy?: string;
   team?: string;
   min?: number;
   max?: number;
@@ -86,6 +89,7 @@ export function parseWikiSearch(raw: Record<string, unknown>): WikiSearch {
     ...((raw.access === "own" || raw.access === "shared") && { access: raw.access }),
     ...(AUTHORS.includes(raw.by as Author) && { by: raw.by as Author }),
     ...(isUuid(raw.bot) && { bot: raw.bot }),
+    ...(isUuid(raw.createdBy) && { createdBy: raw.createdBy }),
     ...(isUuid(raw.team) && { team: raw.team }),
     ...(min !== undefined && { min }),
     ...(max !== undefined && { max }),
@@ -104,6 +108,7 @@ export const filterOf = (s: WikiSearch): WikiFilter => ({
   ...(s.access && { access: s.access }),
   ...(s.by && { by: s.by }),
   ...(s.bot && { bot: s.bot }),
+  ...(s.createdBy && { createdBy: s.createdBy }),
   ...(s.team && { team: s.team }),
   ...(s.min !== undefined && { min: s.min }),
   ...(s.max !== undefined && { max: s.max }),
@@ -121,6 +126,7 @@ export const activeCount = (f: WikiFilter) =>
     f.access,
     f.by,
     f.bot,
+    f.createdBy,
     f.team,
     f.min !== undefined || f.max !== undefined,
     f.since,
@@ -141,6 +147,7 @@ export function mergeRows(pages: readonly Row[], shared: readonly SharedRow[]): 
       by: r.updatedBy,
       ownerName: null,
       botId: r.updatedBy === "bot" ? r.updatedByBotId : null,
+      authorBotId: r.authorBotId,
       teams: r.teams,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
@@ -158,6 +165,7 @@ export function mergeRows(pages: readonly Row[], shared: readonly SharedRow[]): 
       by: null,
       ownerName: r.ownerName,
       botId: null,
+      authorBotId: null,
       teams: [],
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
@@ -182,6 +190,7 @@ export function matches(item: Item, f: WikiFilter, now = Date.now()) {
   if (f.access && item.access !== f.access) return false;
   if (f.by && item.by !== f.by) return false;
   if (f.bot && item.botId !== f.bot) return false;
+  if (f.createdBy && item.authorBotId !== f.createdBy) return false;
   if (f.team && !item.teams.includes(f.team)) return false;
   if (f.min !== undefined && item.score < f.min) return false;
   if (f.max !== undefined && item.score > f.max) return false;
@@ -222,6 +231,7 @@ export function searchQuery(s: WikiSearch) {
   put("access", s.access);
   put("by", s.by);
   put("bot", s.bot);
+  put("createdBy", s.createdBy);
   put("team", s.team);
   put("min", s.min);
   put("max", s.max);
@@ -244,6 +254,7 @@ export function itemOfHit(h: Hit): Item {
     by: null,
     ownerName: h.ownerName,
     botId: null,
+    authorBotId: null,
     teams: [],
     createdAt: h.updatedAt,
     updatedAt: h.updatedAt,

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CircleNotchIcon, MonitorIcon } from "@phosphor-icons/react";
 
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 
 import { call, errorMessage } from "../chat/chat-client";
 import { VmDialog, vmError } from "../studio/vm-viewer";

@@ -26,6 +26,7 @@ const item = (o: Partial<Item>): Item => ({
   by: "user",
   ownerName: null,
   botId: null,
+  authorBotId: null,
   teams: [],
   createdAt: "2026-10-01T00:00:00Z",
   updatedAt: "2026-11-01T00:00:00Z",
@@ -103,6 +104,13 @@ describe("matches", () => {
     expect(matches(i, f({ tag: "a,z" }), NOW)).toBe(true);
     expect(matches(i, f({ tag: "a,z", tagMode: "all" }), NOW)).toBe(false);
     expect(matches(i, f({ tag: "a,b", tagMode: "all" }), NOW)).toBe(true);
+  });
+  test("createdBy keeps the items a bot created, not the ones it last wrote", () => {
+    const bot = "01a199f7-6d0f-7f13-8518-1ffa91665d29";
+    expect(parseWikiSearch({ createdBy: bot, by: "bot" })).toEqual({ createdBy: bot, by: "bot" });
+    expect(parseWikiSearch({ createdBy: "nope" })).toEqual({});
+    expect(matches(item({ authorBotId: bot }), f({ createdBy: bot }), NOW)).toBe(true);
+    expect(matches(item({ authorBotId: null, botId: bot, by: "bot" }), f({ createdBy: bot }), NOW)).toBe(false);
   });
   test("type, access, author, score range and age narrow the list", () => {
     expect(matches(item({ type: "solo" }), f({ type: "teams,owner" }), NOW)).toBe(false);

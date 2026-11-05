@@ -11,7 +11,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 import {
   DropdownMenu,
   DropdownMenuContent,

@@ -10,7 +10,7 @@ import {
   SquareIcon,
 } from "@phosphor-icons/react";
 
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 import { cn } from "@zetta/ui/lib/utils";
 
 import { errorMessage, setLoop, type GoalLoop } from "./chat-client";
@@ -119,7 +119,7 @@ export function LoopBanner({
       role="status"
       aria-label={label}
       className={cn(
-        "flex items-center gap-3 rounded-lg border px-3 py-2 text-sm",
+        "flex items-center gap-3 rounded-lg border px-3 py-2 text-sm transition-[opacity,translate] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] starting:-translate-y-1 starting:opacity-0 motion-reduce:starting:translate-y-0",
         running && "border-primary/30 bg-primary/5",
         loop.status === "paused" && "border-warn/40 bg-warn/5",
         loop.status === "done" && "border-success/30 bg-success/5",

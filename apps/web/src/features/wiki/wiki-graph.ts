@@ -91,12 +91,13 @@ const asItem = (n: GraphNodeData): Item => ({
   by: null,
   ownerName: null,
   botId: null,
+  authorBotId: null,
   teams: [],
   createdAt: n.updatedAt,
   updatedAt: n.updatedAt,
 });
 const graphFilter = (f: WikiFilter): WikiFilter => {
-  const { by: _by, bot: _bot, team: _team, ...rest } = f;
+  const { by: _by, bot: _bot, createdBy: _createdBy, team: _team, ...rest } = f;
   return { ...rest, q: "" };
 };
 

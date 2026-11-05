@@ -2,9 +2,8 @@ import { useId, type ReactNode } from "react";
 
 import { Logo } from "./logo";
 
-export type AvatarValue =
-  | { kind: "preset"; preset: string; colors: string[] }
-  | { kind: "image"; src: string };
+import type { AvatarValue } from "@zetta/core/avatar";
+export type { AvatarValue };
 export type SidebarLayout =
   | "mail"
   | "compact"

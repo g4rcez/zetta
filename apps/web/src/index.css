@@ -21,6 +21,36 @@ body,
   position: relative;
 }
 
+/* Phone feel. Tap flash off: every control has its own press style. Controls never select their label on long-press, and fire click without the double-tap-zoom wait. */
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+button,
+a,
+summary,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+button,
+summary,
+[role="button"] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* iOS zooms the page when a field under 16px takes focus. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 .link {
   @apply ease-in duration-300 transition-all;
 }

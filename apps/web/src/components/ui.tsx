@@ -36,6 +36,14 @@ const SIZE: Record<Size, string> = {
   "icon-lg": "icon",
 };
 
+/** The library has one icon size (about 24px); the old shadcn sizes were 32 / 24 / 28 / 40px, so the box is set here. */
+const ICON_BOX: Partial<Record<Size, string>> = {
+  icon: "size-8",
+  "icon-xs": "size-6",
+  "icon-sm": "size-7",
+  "icon-lg": "size-10",
+};
+
 export function Button({
   variant = "default",
   size = "default",
@@ -48,7 +56,7 @@ export function Button({
       theme={THEME[variant] as never}
       size={SIZE[size] as never}
       rounded={size === "icon-lg" ? "circle" : "default"}
-      className={className}
+      className={`${ICON_BOX[size] ?? ""} ${className}`.trim()}
     />
   );
 }

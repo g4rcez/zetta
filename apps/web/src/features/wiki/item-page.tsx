@@ -3,7 +3,7 @@ import { Link, useBlocker } from "@tanstack/react-router";
 import { ChatCircleTextIcon, CheckIcon, CopyIcon, LinkIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import { Button } from "@/components/ui";
+import { Button, Modal } from "@/components/ui";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
 import { ApiError, call, errorMessage } from "../chat/chat-client";
@@ -65,7 +65,12 @@ export function WikiItemPage({
   }, [slug, edit]);
   // Leaving the page with unsaved edits asks first.
   useBlocker({
-    shouldBlockFn: () => dirty && !window.confirm("Discard your changes?"),
+    shouldBlockFn: async () =>
+      dirty &&
+      !(await Modal.confirm<boolean>({
+        title: "Discard your changes?",
+        confirm: { text: "Discard", theme: "danger" },
+      })),
     enableBeforeUnload: () => dirty,
     disabled: !dirty,
   });

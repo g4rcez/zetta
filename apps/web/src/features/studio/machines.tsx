@@ -87,13 +87,13 @@ function HowItWorks() {
     { Icon: HardDrives, title: "Your server", text: "Does the work and answers." },
   ];
   return (
-    <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
+    <div className="space-y-3">
       <ol className="grid items-start gap-3 sm:grid-cols-[1fr_auto_1fr_auto_1fr]">
         {steps.flatMap(({ Icon: Glyph, title, text }, i) => [
           <li key={title} className="flex items-start gap-3">
             <span
               aria-hidden
-              className="grid size-8 shrink-0 place-items-center rounded-lg bg-card text-primary"
+              className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"
             >
               <Glyph size={20} weight="duotone" />
             </span>
@@ -138,7 +138,7 @@ function KindPicker({
         return (
           <label
             key={k}
-            className={`relative flex cursor-pointer flex-col gap-2 rounded-lg border bg-card p-4 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring ${picked ? "border-primary bg-primary/5" : "hover:bg-accent"}`}
+            className={`relative flex cursor-pointer flex-col gap-2 rounded-lg border p-4 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring ${picked ? "border-primary bg-primary/5" : "hover:bg-accent"}`}
           >
             <input
               type="radio"
@@ -424,7 +424,7 @@ export function MachinesPanel({ onError }: { onError: (m: string) => void }) {
       <HowItWorks />
 
       {notice && (
-        <div role="status" className="space-y-2 rounded-lg border bg-muted/30 p-4 text-sm">
+        <div role="status" className="space-y-2 border-l-2 border-primary pl-4 text-sm">
           <p className="flex items-center gap-2">
             <CheckCircle size={20} weight="fill" aria-hidden className="text-primary" />
             {notice.text}
@@ -454,9 +454,9 @@ export function MachinesPanel({ onError }: { onError: (m: string) => void }) {
       )}
 
       {machines && machines.length > 0 && (
-        <ul aria-label="Your machines" className="space-y-3">
+        <ul aria-label="Your machines" className="divide-y border-y">
           {machines.map((m) => (
-            <li key={m.id} className="space-y-3 rounded-lg border p-4 text-sm">
+            <li key={m.id} className="space-y-3 py-4 text-sm">
               <div className="flex flex-wrap items-start gap-3">
                 <KindTile kind={m.kind} />
                 <div className="min-w-0 space-y-1">
@@ -524,7 +524,7 @@ export function MachinesPanel({ onError }: { onError: (m: string) => void }) {
                 </code>
               )}
               {editing?.id === m.id && editing.what === "share" && (
-                <div className="space-y-3 rounded-lg bg-muted/30 p-4">
+                <div className="space-y-3 border-l-2 pl-4">
                   <p className="text-xs text-muted-foreground">
                     Only the bots you pick can see or use {m.name}. Everyone else is told it does
                     not exist.
@@ -538,7 +538,7 @@ export function MachinesPanel({ onError }: { onError: (m: string) => void }) {
               {editing?.id === m.id && editing.what === "secret" && (
                 <form
                   autoComplete="off"
-                  className="space-y-3 rounded-lg bg-muted/30 p-4"
+                  className="space-y-3 border-l-2 pl-4"
                   onSubmit={(e) => void replace(m, e)}
                 >
                   <SecretField
@@ -561,7 +561,7 @@ export function MachinesPanel({ onError }: { onError: (m: string) => void }) {
           ref={form}
           autoComplete="off"
           aria-label="Add a machine"
-          className="space-y-6 rounded-lg border p-4"
+          className="space-y-6 border-t pt-6"
           onSubmit={(e) => void create(e)}
         >
           <Part
@@ -654,7 +654,7 @@ export function MachinesPanel({ onError }: { onError: (m: string) => void }) {
                 {busy === "scan" ? "Checking…" : "Check host key"}
               </Button>
               {keys && (
-                <div className="space-y-2 rounded-lg bg-muted/30 p-4">
+                <div className="space-y-2 border-l-2 pl-4">
                   <p className="flex items-center gap-2 text-sm">
                     <CheckCircle size={20} weight="fill" aria-hidden className="text-primary" />
                     The machine answered. Compare its fingerprint with the one your administrator

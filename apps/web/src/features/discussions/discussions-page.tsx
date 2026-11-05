@@ -35,7 +35,6 @@ import {
 import { toast } from "sonner";
 
 import { Badge } from "@zetta/ui/components/badge";
-import { Button as IconButton } from "@zetta/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,7 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
 import { cn } from "@zetta/ui/lib/utils";
-import { Button, Checkbox, Input, Select } from "@/components/ui";
+import { Button, Checkbox, Input, Modal, Select } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";
 
 import { chatClient, errorMessage, type Bot, type Message } from "../chat/chat-client";
@@ -601,7 +600,7 @@ function RoomView({
               ))}
             </div>
           )}
-          <IconButton
+          <Button
             size="icon-sm"
             variant="ghost"
             title="Room details"
@@ -610,9 +609,9 @@ function RoomView({
             onClick={() => setDetails(!details)}
           >
             <InfoIcon />
-          </IconButton>
+          </Button>
           {!isClosed && (
-            <IconButton
+            <Button
               size="icon-sm"
               variant="ghost"
               title="Silence the bots: stop their messages and goal loops until you post"
@@ -626,13 +625,13 @@ function RoomView({
               }
             >
               <SpeakerSlashIcon />
-            </IconButton>
+            </Button>
           )}
           {!readOnly && (
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
-                  <IconButton
+                  <Button
                     size="icon-sm"
                     variant="ghost"
                     title="Room actions"
@@ -678,8 +677,13 @@ function RoomView({
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem
-                      onClick={() => {
-                        if (window.confirm("Stop all goals? The room and its history stay."))
+                      onClick={async () => {
+                        const ok = await Modal.confirm<boolean>({
+                          title: "Stop all goals?",
+                          description: "The room and its history stay.",
+                          confirm: { text: "Stop goals", theme: "danger" },
+                        });
+                        if (ok)
                           void act(
                             () => discussionsApi.stopGoals(id).then(goalLoop.refresh),
                             "Goals stopped.",
@@ -702,9 +706,13 @@ function RoomView({
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       variant="destructive"
-                      onClick={() => {
-                        if (window.confirm("Cancel this room? Queued bot turns are dropped."))
-                          void act(() => discussionsApi.act(id, "cancel"));
+                      onClick={async () => {
+                        const ok = await Modal.confirm<boolean>({
+                          title: "Cancel this room?",
+                          description: "Queued bot turns are dropped.",
+                          confirm: { text: "Cancel room", theme: "danger" },
+                        });
+                        if (ok) void act(() => discussionsApi.act(id, "cancel"));
                       }}
                     >
                       <XCircleIcon />
@@ -714,12 +722,13 @@ function RoomView({
                 )}
                 <DropdownMenuItem
                   variant="destructive"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "Delete this room? It stops and leaves your lists. Its history is kept.",
-                      )
-                    )
+                  onClick={async () => {
+                    const ok = await Modal.confirm<boolean>({
+                      title: "Delete this room?",
+                      description: "It stops and leaves your lists. Its history is kept.",
+                      confirm: { text: "Delete room", theme: "danger" },
+                    });
+                    if (ok)
                       void act(
                         () =>
                           discussionsApi
@@ -870,7 +879,19 @@ function RoomView({
                 onSaveToWiki: (row) =>
                   void chatClient
                     .saveToWiki(d.title, row.content)
-                    .then(() => toast.success("Saved to your memory."), fail),
+                    .then(
+                      (r) =>
+                        toast.success(
+                          <span>
+                            Saved to your{" "}
+                            <Link to="/memory/$slug" params={{ slug: r.slug }} className="underline">
+                              memory
+                            </Link>
+                            .
+                          </span>,
+                        ),
+                      fail,
+                    ),
               }}
               intro={
                 rows.length === 0 ? (
@@ -954,14 +975,14 @@ function RoomView({
                   Edit
                 </Button>
               )}
-              <IconButton
+              <Button
                 size="icon-sm"
                 variant="ghost"
                 aria-label="Close details"
                 onClick={() => setDetails(false)}
               >
                 <XIcon />
-              </IconButton>
+              </Button>
             </div>
           </div>
           {d.tainted && (

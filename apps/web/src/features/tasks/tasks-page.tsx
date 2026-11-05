@@ -233,14 +233,15 @@ export function TasksPage({
                       {group.tasks.length}
                     </span>
                     {byStatus && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
                         aria-label={`Add task to ${group.label}`}
                         onClick={() => setAdding(status)}
-                        className="ml-auto rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                        className="ml-auto"
                       >
                         <PlusIcon className="size-4" />
-                      </button>
+                      </Button>
                     )}
                   </header>
                   {byStatus && adding === status && (

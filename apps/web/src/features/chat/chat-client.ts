@@ -114,6 +114,8 @@ export type DecisionResult = {
   status: "approved" | "rejected" | "stale";
   /** A line for the person when the change worked only in part (for example a routine that stays paused). */
   note?: string;
+  /** Only for a proposal to save a memory item: the item it saved, so the page can link to it. */
+  memory?: { slug: string; title: string; created: boolean };
   /** Only for a proposal to install skills: what was installed and where. */
   skills?: {
     installed: string[];
@@ -491,7 +493,7 @@ export const chatClient = {
   usedKnowledge: (messageId: string) => call<UsedKnowledge>(`/api/messages/${messageId}/knowledge`),
   /** Saves text as a wiki procedure (tag instruction) the bots find when a similar task comes up. */
   saveToWiki: (title: string, content: string) =>
-    call(`/api/wiki/${encodeURIComponent(title.slice(0, 80))}`, "PUT", {
+    call<{ slug: string }>(`/api/wiki/${encodeURIComponent(title.slice(0, 80))}`, "PUT", {
       title,
       content,
       tags: ["instruction"],

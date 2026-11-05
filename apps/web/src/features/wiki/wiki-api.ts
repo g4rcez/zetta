@@ -66,6 +66,8 @@ export type Item = {
   by: Author | null;
   ownerName: string | null;
   botId: string | null;
+  /** The bot that created the item; null when a person or the system did. */
+  authorBotId: string | null;
   teams: string[];
   createdAt: string;
   updatedAt: string;

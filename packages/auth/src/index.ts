@@ -9,6 +9,7 @@ import { mcp } from "@better-auth/mcp";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError, isAPIError } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
+import { createProfileWriteGate } from "./account-write-gate";
 import { CLIENT_IP_HEADER } from "./client-ip-header";
 import {
   createFirstAccountClaim,
@@ -79,7 +80,12 @@ export function createAuthOptions(
       ...(process.env.ZETTA_AUTH_RATE_LIMIT_STORAGE === "database"
         ? { storage: "database" as const, modelName: "rateLimit" }
         : {}),
-      customRules: { "/sign-in/email": { window: 15 * 60, max: 20 } },
+      // Changing the password asks for the current one, so a stolen cookie could guess it: 10 tries per 15 minutes per client
+      // (the default is 3 per 10 s, about 1000 an hour).
+      customRules: {
+        "/sign-in/email": { window: 15 * 60, max: 20 },
+        "/change-password": { window: 15 * 60, max: 10 },
+      },
     },
     advanced: {
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
@@ -120,9 +126,8 @@ export function createAuthOptions(
             },
           },
           hooks: {
-            before: createInvitationSignupGate(
-              options?.invitationSignupVerifier,
-              options?.firstAccount,
+            before: createProfileWriteGate(
+              createInvitationSignupGate(options?.invitationSignupVerifier, options?.firstAccount),
             ),
           },
           databaseHooks: {

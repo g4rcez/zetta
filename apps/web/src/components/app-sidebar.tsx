@@ -7,7 +7,8 @@ import {
   NotePencilIcon,
   SidebarSimpleIcon,
 } from "@phosphor-icons/react";
-import { useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { Tooltip } from "@g4rcez/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
 
@@ -261,18 +262,22 @@ function readMore() {
 /** Studio, Dashboard and the other building and oversight pages: closed by default, open while one of them is shown. */
 function MoreGroup() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const [open, setOpen] = useState(readMore);
   const here = MORE.some((l) => isActive(l, pathname));
-  const shown = open || here;
-  const toggle = () =>
-    setOpen((o) => {
-      try {
-        localStorage.setItem(MORE_KEY, o ? "closed" : "open");
-      } catch {
-        // Storage unavailable: the choice lasts for this session.
-      }
-      return !o;
-    });
+  const [open, setOpen] = useState(() => readMore() || here);
+  // Arriving on a page of the group opens it; a click on the button can still close it.
+  useEffect(() => {
+    if (here) setOpen(true);
+  }, [here, pathname]);
+  const shown = open;
+  const reduce = useReducedMotion();
+  const toggle = () => {
+    try {
+      localStorage.setItem(MORE_KEY, shown ? "closed" : "open");
+    } catch {
+      // Storage unavailable: the choice lasts for this session.
+    }
+    setOpen(!shown);
+  };
   return (
     <section aria-label="More">
       <div className="pt-3 pb-1 pl-1">
@@ -292,15 +297,24 @@ function MoreGroup() {
           More
         </button>
       </div>
-      {shown && (
-        <ul className="space-y-px">
-          {MORE.map((l) => (
-            <li key={l.label}>
-              <NavRow link={l} collapsed={false} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <AnimatePresence initial={false}>
+        {shown && (
+          <motion.ul
+            key="items"
+            initial={reduce ? false : { height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="space-y-px overflow-hidden"
+          >
+            {MORE.map((l) => (
+              <li key={l.label}>
+                <NavRow link={l} collapsed={false} />
+              </li>
+            ))}
+          </motion.ul>
+        )}
+      </AnimatePresence>
     </section>
   );
 }

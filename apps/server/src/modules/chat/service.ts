@@ -441,7 +441,7 @@ export type ChatDeps = {
   >;
   /** The shared task board (modules/tasks): bots add and move tasks with zetta:task. */ tasks?: TaskStore;
   /** Files bots deliver (modules/artifacts): published with zetta:artifact. */ artifacts?: ArtifactStore;
-  /** The user's wiki (modules/wiki): bots search, read and write it with zetta:wiki. */ wiki?: Wiki;
+  /** The user's wiki (modules/wiki): bots search, read and write it with zetta:memory. */ wiki?: Wiki;
   /** The skill library and the GitHub marketplace (modules/skills): bots ask to install skills with zetta:skills. */ skills?: {
     skills: Skills;
     market: Market;
@@ -1712,7 +1712,7 @@ export function createChatService(
         }
       } else if (c.kind === "wiki") {
         if (!deps.wiki) {
-          browserResults.push("wiki unavailable");
+          browserResults.push("memory unavailable");
           continue;
         }
         // Inside a team room a new item is for that team's bots; elsewhere it is for all the user's bots.
@@ -1745,7 +1745,7 @@ export function createChatService(
           continue;
         }
         try {
-          // The asker's own wiki, never the bot owner's (same rule as memory).
+          // The asker's own memory, never the bot owner's (same rule as memory).
           const r = await runWikiTool(deps.wiki, actor.userId, who.id, conversationId, c.args, {
             teamId,
           });
@@ -1759,7 +1759,7 @@ export function createChatService(
               created: r.saved.created,
             });
         } catch (e) {
-          fail(`Wiki: ${c.args.action}`, e);
+          fail(`Memory: ${c.args.action}`, e);
         }
       } else if (c.kind === "task") {
         try {
@@ -3148,14 +3148,16 @@ export function createChatService(
       for (let round = 0; ; round++) {
         const parsed = parseTools(current);
         if (parsed.plan) ctx.onPlan?.(parsed.plan);
-        let calls = untrusted ? parsed.calls.filter((c) => !writes(c)) : parsed.calls;
+        // After outside content a wiki write is not dropped: it becomes an Approve card (see runTools). A `suggest` is still dropped.
+        const asksFirst = (c: ToolCall) => c.kind === "wiki" && c.args.action !== "suggest";
+        let calls = untrusted ? parsed.calls.filter((c) => !writes(c) || asksFirst(c)) : parsed.calls;
         // A block that does not run is never silent: the user gets a note and the bot is told, so it cannot claim the work was done.
         const dropped: RejectedTool[] = [...parsed.rejected];
         const titleOf = (c: ToolCall): Pick<RejectedTool, "title"> => {
           const title = (c.args as { title?: unknown }).title;
           return typeof title === "string" ? { title: title.slice(0, 80) } : {};
         };
-        for (const c of parsed.calls.filter((c) => untrusted && writes(c)))
+        for (const c of parsed.calls.filter((c) => untrusted && writes(c) && !asksFirst(c)))
           dropped.push({
             kind: c.kind,
             ...titleOf(c),
@@ -3244,13 +3246,14 @@ export function createChatService(
           },
           // The CLI can read pages, repositories and MCP results without the server seeing it, so a write only applies at once when the
           // person's own chat message asked for it. Loops, rooms and anything else the server wrote itself always ask.
-          reach &&
-            !(
-              ctx.scope?.policy === "default" &&
-              !ctx.scope.loopId &&
-              !ctx.scope.discussionId &&
-              asksToKeep(ctx.prompt)
-            )
+          untrusted ||
+            (reach &&
+              !(
+                ctx.scope?.policy === "default" &&
+                !ctx.scope.loopId &&
+                !ctx.scope.discussionId &&
+                asksToKeep(ctx.prompt)
+              ))
             ? "ask"
             : "apply",
         );
@@ -3328,6 +3331,7 @@ export function createChatService(
     /** A fixed reply (decision routing, unconfigured chief) instead of running the bot. */ canned?:
       | string
       | undefined;
+    /** Receipts the turn already holds before the bot answers (the memory item a "remember that ..." message saved). */ receipts?: Receipt[];
     /** Appended to a completed reply (e.g. which @mentions were not asked). */ suffixIfComplete?:
       | string
       | undefined;
@@ -3409,7 +3413,7 @@ export function createChatService(
     };
     // A second of slack: file times are coarser than the clock.
     const runStart = Date.now() - 1000;
-    const receipts: Receipt[] = [];
+    const receipts: Receipt[] = [...(a.receipts ?? [])];
     let errCode: string | undefined;
     let envHandle: Awaited<ReturnType<NonNullable<typeof connections>["envFor"]>> | undefined;
     let runEnv: Record<string, string> | undefined;
@@ -4847,6 +4851,7 @@ export function createChatService(
         }
       }
       let chiefNote: string | undefined;
+      let savedMemory: { slug: string; title: string; created: boolean } | undefined;
       let installedSkills:
         | {
             installed: string[];
@@ -4963,23 +4968,23 @@ export function createChatService(
         const a = res.create.args as Record<string, unknown>;
         if (res.create.kind === "create_bot") await this.createBot(actor, a as never);
         else if (res.create.kind === "create_wiki_page") {
-          if (!deps.wiki) throw new Error("wiki unavailable");
+          if (!deps.wiki) throw new Error("memory unavailable");
           const w = a as {
             args: never;
             botId: string;
             conversationId: string | null;
             teamId?: string | null;
           };
-          await runWikiTool(
-            deps.wiki,
-            actor.userId,
-            w.botId,
-            w.conversationId ?? undefined,
-            w.args,
-            {
-              teamId: w.teamId ?? null,
-            },
-          );
+          savedMemory = (
+            await runWikiTool(
+              deps.wiki,
+              actor.userId,
+              w.botId,
+              w.conversationId ?? undefined,
+              w.args,
+              { teamId: w.teamId ?? null },
+            )
+          ).saved;
         } else if (res.create.kind === "create_routine") await creators!.routine(actor, a as never);
         else if (res.create.kind === "open_discussion") {
           if (!deps.discussions) throw new Error("discussions unavailable");
@@ -5067,6 +5072,7 @@ export function createChatService(
           status: "approved" as const,
           ...(installedSkills ? { skills: installedSkills } : {}),
           ...(chiefNote ? { note: chiefNote } : {}),
+          ...(savedMemory ? { memory: savedMemory } : {}),
         };
       } catch {
         await db.update(configProposal).set({ status: "stale" }).where(eq(configProposal.id, id));
@@ -5664,10 +5670,20 @@ export function createChatService(
         external || step
           ? undefined
           : /^remember(?: that|:)?\s+(.{3,500})$/is.exec(input.content.trim())?.[1];
-      if (fact)
-        await deps.wiki
+      // The saved item becomes a receipt on the bot's answer, so the chat links to it.
+      const rememberReceipts: Receipt[] = [];
+      if (fact) {
+        const r = await deps.wiki
           ?.remember(actor.userId, { content: fact, botId: b.id, target: "memory" }, { by: "user" })
           .catch(() => undefined);
+        if (r)
+          rememberReceipts.push({
+            kind: "wiki",
+            id: r.page.slug,
+            text: r.page.title.slice(0, 120),
+            created: r.created,
+          });
+      }
 
       // Decision routing (Laya): may answer directly, ask for more, stop, or hand the turn to another bot.
       // A decision-only bot is its routing, so it also answers inbound chats and steps; but it never hands an outside message to another bot.
@@ -5800,6 +5816,7 @@ export function createChatService(
           skills: who.id === b.id ? skills : undefined,
           proposals: newProposals,
           signal,
+          ...(who.id === b.id && rememberReceipts.length ? { receipts: rememberReceipts } : {}),
           canned: who.id === b.id ? canned : undefined,
           suffixIfComplete: skipped.length
             ? `\n\nℹ️ ${skipped.map((s) => `@${s.name} (${s.reason})`).join(", ")} was not asked.`

@@ -40,7 +40,7 @@ import {
   AttachmentTitle,
 } from "@zetta/ui/components/attachment";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@zetta/ui/components/input-group";
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
 import { useQueryClient } from "@tanstack/react-query";
 import { Separator } from "@zetta/ui/components/separator";
@@ -236,7 +236,18 @@ export function Composer({
       }),
     );
   }
-  async function addFiles(files: File[]) {
+  async function addFiles(picked: File[]) {
+    // A pasted or dropped File can be a lazy reference that the browser invalidates after the
+    // event (NotReadableError). Start every read now, in the event tick, and work on the copies.
+    let files: File[];
+    try {
+      files = await Promise.all(
+        picked.map(async (f) => new File([await f.arrayBuffer()], f.name, { type: f.type })),
+      );
+    } catch {
+      onError(new Error("The browser could not read the pasted file. Save it and attach it again."));
+      return;
+    }
     let room = MAX_ATTACHMENTS - total - fileRefs.length;
     for (const f of files) {
       if (room <= 0) {

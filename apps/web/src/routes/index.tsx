@@ -26,13 +26,13 @@ function HomeComponent() {
       <div className="flex justify-center gap-3">
         <Link
           to="/chat/{-$chatId}"
-          className="rounded-md bg-primary px-5 py-2.5 font-medium text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
+          className="rounded-md bg-primary px-5 py-2.5 font-medium text-primary-foreground shadow-sm transition-[opacity,transform] ease-[cubic-bezier(0.23,1,0.32,1)] hover:opacity-90 active:scale-[0.98] motion-reduce:active:scale-[0.99]"
         >
           Open chat
         </Link>
         <Link
           to="/routines"
-          className="rounded-md border bg-card px-5 py-2.5 font-medium transition-colors hover:bg-muted"
+          className="rounded-md border bg-card px-5 py-2.5 font-medium transition-[color,background-color,transform] ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-muted active:scale-[0.98] motion-reduce:active:scale-[0.99]"
         >
           Routines
         </Link>

@@ -116,20 +116,20 @@ export function SkillPicker({
                   </a>
                 )}
               </div>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 aria-label={
                   open === i.key ? `Hide details of ${i.name}` : `Show details of ${i.name}`
                 }
                 aria-expanded={open === i.key}
                 onClick={() => setOpen(open === i.key ? undefined : i.key)}
-                className="rounded p-1 text-muted-foreground hover:bg-muted"
               >
                 <CaretDownIcon
                   aria-hidden
                   className={`size-4 transition-transform ${open === i.key ? "rotate-180" : ""}`}
                 />
-              </button>
+              </Button>
             </div>
           </li>
         ))}

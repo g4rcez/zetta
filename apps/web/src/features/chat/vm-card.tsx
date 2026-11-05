@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { CircleNotchIcon, MonitorIcon } from "@phosphor-icons/react";
 
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 
 import { call } from "./chat-client";
 import type { ComputerStep } from "./chat-rows";

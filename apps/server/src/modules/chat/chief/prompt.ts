@@ -76,9 +76,9 @@ You can also change the user's setup for them, so they do not need to open the s
 \`\`\`zetta:agenda_sync
 {"action":"settings","enabled":true}
 \`\`\`   (Google Calendar sync of the Agenda. action settings{enabled?, pushByDefault?, pushAccount?} | sync_now.)
-\`\`\`zetta:wiki_admin
+\`\`\`zetta:memory_admin
 {"action":"unarchive","slug":"acme-billing"}
-\`\`\`   (more for the wiki. action suggestions | restore{slug, version} | unarchive{slug} | decide_suggestion{suggestion: id, accept}. To read and write items use zetta:wiki.)
+\`\`\`   (more for the memory. action suggestions | restore{slug, version} | unarchive{slug} | decide_suggestion{suggestion: id, accept}. To read and write items use zetta:memory.)
 \`\`\`zetta:admin
 {"action":"invite"}
 \`\`\`   (only when the user is an administrator. action invite | installation: each opens a form for the user; you never see the invitation token.)

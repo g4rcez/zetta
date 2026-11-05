@@ -13,6 +13,7 @@ import {
 import type { ReactNode } from "react";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Checkbox, Input } from "@/components/ui";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import type { Bot } from "../chat/chat-client";
 import { LabelChip, PriorityIcon, StatusIcon } from "./task-badges";
 import {
@@ -167,30 +168,52 @@ function AssigneeRow({
   selected: string[];
   onChange: (ids: string[]) => void;
 }) {
-  const avatar = (id: string, name: string, face: ReactNode) => {
+  /** The popover (hover or keyboard focus) names the avatar and says who it is; the avatar alone does not. */
+  const avatar = (id: string, name: string, detail: string, face: ReactNode) => {
     const on = selected.includes(id);
     return (
-      <Button
-        key={id}
-        type="button"
-        variant="ghost"
-        title={name}
-        aria-label={name}
-        aria-pressed={on}
-        onClick={() => onChange(toggle(selected, id, !on))}
-        className={`!h-8 !w-8 !min-w-0 !p-0 ${on ? "ring-2 ring-foreground" : selected.length > 0 ? "opacity-50 hover:opacity-100" : ""}`}
-      >
-        {face}
-      </Button>
+      <Tooltip key={id}>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label={name}
+              aria-pressed={on}
+              onClick={() => onChange(toggle(selected, id, !on))}
+              className={`!h-8 !w-8 !min-w-0 !p-0 ${on ? "ring-2 ring-foreground" : selected.length > 0 ? "opacity-50 hover:opacity-100" : ""}`}
+            />
+          }
+        >
+          {face}
+        </TooltipTrigger>
+        <TooltipContent className="flex-col items-start gap-0.5">
+          <span className="font-medium">{name}</span>
+          <span className="opacity-70">{detail}</span>
+        </TooltipContent>
+      </Tooltip>
     );
   };
   return (
     <div role="group" aria-label="Filter by assignee" className="flex flex-wrap items-center gap-1">
-      {avatar(FOR_ME, "For me", <UserCircleIcon aria-hidden className="size-6 text-foreground" />)}
-      {bots.map((b) => avatar(b.id, b.name, <BotAvatar bot={b} size={24} square />))}
+      {avatar(
+        FOR_ME,
+        "For me",
+        "Tasks a bot asked of you",
+        <UserCircleIcon aria-hidden className="size-6 text-foreground" />,
+      )}
+      {bots.map((b) =>
+        avatar(
+          b.id,
+          b.name,
+          b.description.trim() || (b.kind === "chief" ? "Chief" : "Specialist"),
+          <BotAvatar bot={b} size={24} square />,
+        ),
+      )}
       {avatar(
         NO_BOT,
         "Unassigned",
+        "Tasks nobody owns",
         <UserCircleDashedIcon aria-hidden className="size-6 text-muted-foreground" />,
       )}
     </div>

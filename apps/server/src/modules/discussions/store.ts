@@ -958,7 +958,7 @@ export function createDiscussionStore(
             ),
           );
         if (readable.length !== wikiIds.length)
-          throw new DiscussionError("NOT_FOUND", "A wiki item is no longer available.");
+          throw new DiscussionError("NOT_FOUND", "A memory item is no longer available.");
       }
       // Skills the person picked: each must belong to a bot in this room, so a pick never reaches a bot that does not have the skill.
       const skills = [

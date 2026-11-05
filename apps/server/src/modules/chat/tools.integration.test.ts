@@ -254,6 +254,31 @@ suite("bot tools against compose postgres", () => {
     expect(await memories()).toContain("money");
   });
 
+  test("a wiki save after the bot read outside content waits for approval instead of being dropped, even when the person asked for it", async () => {
+    const { bot, say } = await setup(A, "Reader");
+    await db.$client.query(
+      "update bot set harness = 'claude-code', code_access = true where id = $1",
+      [bot.id],
+    );
+    const block = (o: object) => `\`\`\`zetta:wiki\n${JSON.stringify(o)}\n\`\`\``;
+    script = [
+      `Looking.\n${block({ action: "search", query: "fernet" })}`,
+      `Saving.\n${block({ action: "write", slug: "fernet-note", title: "Fernet note", content: "Fernet Branca with syrup", type: "solo", tags: ["memory"] })}`,
+      "Asked you to approve it.",
+    ];
+    const r = await say("Remember the Fernet recipe");
+    expect(r.json.assistant.content).toContain("waits for your approval");
+    expect(r.json.assistant.content).not.toContain("ignored");
+    const titles = async () =>
+      ((await call(A, "GET", "/api/wiki")).json.pages as { title: string }[]).map((m) => m.title);
+    expect(await titles()).not.toContain("Fernet note");
+    const proposal = (
+      (await call(A, "GET", "/api/proposals")).json.proposals as { id: string; kind: string }[]
+    ).find((p) => p.kind === "create_wiki_page")!;
+    await call(A, "POST", `/api/proposals/${proposal.id}/decision`, { approve: true });
+    expect(await titles()).toContain("Fernet note");
+  });
+
   test("deciding a proposal closes its attention card: approved is resolved, rejected is cancelled", async () => {
     const { bot, say } = await setup(A, "Decider");
     await db.$client.query(
@@ -338,7 +363,7 @@ suite("bot tools against compose postgres", () => {
       'Done.\n```zetta:wiki\n{"action":"write","slug":"units","title":"Units","content":"prefers metric units","type":"solo","tags":["memory"]}\n```\n```zetta:wiki\n{"action":"write","slug":"expense-report","title":"Expense report","content":"1. Sum by category.","howto":"when asked for the expense report","tags":["instruction"]}\n```',
     ];
     const r = await say("learn");
-    expect(r.json.assistant.content).toContain("Added a wiki item: Units");
+    expect(r.json.assistant.content).toContain("Added a memory item: Units");
     expect(r.json.assistant.content).not.toContain("zetta:");
     // A bot's own note is a solo item of that bot; a procedure is for all the owner's bots. Both are active at once.
     const pages = (await call(A, "GET", "/api/wiki")).json.pages as { slug: string }[];

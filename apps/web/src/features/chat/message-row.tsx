@@ -17,7 +17,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@zetta/ui/components/avatar";
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 import {
   DropdownMenu,
   DropdownMenuContent,

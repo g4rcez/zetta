@@ -168,3 +168,10 @@
   padding: 0 0.25rem;
   white-space: nowrap;
 }
+
+/* iOS zooms the page when an editable under 16px takes focus. */
+@media (pointer: coarse) {
+  .cm-editor .cm-content {
+    font-size: 16px;
+  }
+}

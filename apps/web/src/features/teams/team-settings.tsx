@@ -11,6 +11,7 @@ import { MentionTextarea } from "../chat/mention";
 import { useSidebarData } from "../chat/sidebar-data";
 import { Badge, Empty, list, listItem, Loading, Panel } from "../shared/ui";
 import { InvitationManager } from "../identity/invitation-manager";
+import { DeleteTeamPanel, TeamRoomPanel } from "./team-actions";
 import { TeamPeoplePanel } from "./team-people";
 import { RoleField, useTeamRoles } from "./team-roles";
 import {
@@ -39,7 +40,7 @@ function BackLink({ roomId }: { roomId?: string | undefined }) {
 }
 
 /**
- * Settings of one team, opened from the room header like a bot's settings. Adding or removing bots stays on the Teams canvas.
+ * Settings of one team, opened from the room header or the Teams canvas. Adding or removing bots stays on the canvas.
  * A team has many rooms, so a room's title, goal and context are edited in the room itself; `roomId` only gives the way back.
  */
 export function TeamSettingsPage({
@@ -277,15 +278,19 @@ export function TeamSettingsPage({
           </Button>
         </div>
       </form>
-      {isAdmin && (
-        // Outside the team form: a form cannot contain another form.
-        <div className="mx-auto max-w-3xl px-4 pb-8 md:px-8">
-          <InvitationManager />
-          <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            Once the person has an account, add them to this team in People above.
-          </p>
-        </div>
-      )}
+      {/* Outside the team form: a form cannot contain another form, and Enter in a room title must not save the team. */}
+      <div className="mx-auto max-w-3xl space-y-6 px-4 pb-8 md:px-8">
+        <TeamRoomPanel team={team} unsaved={dirty} />
+        {isAdmin && (
+          <div>
+            <InvitationManager />
+            <p className="mt-2 max-w-md text-sm text-muted-foreground">
+              Once the person has an account, add them to this team in People above.
+            </p>
+          </div>
+        )}
+        <DeleteTeamPanel team={team} />
+      </div>
     </div>
   );
 }

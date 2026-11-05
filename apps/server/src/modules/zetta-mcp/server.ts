@@ -133,7 +133,7 @@ export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveAc
     {
       instructions:
         "Zetta runs AI bots for a team. Use these tools to inspect the signed-in member's bots, chats, integrations, connections, " +
-        "routines, workflows, output styles, wiki (which holds the bots' memory) and tasks. Bots shared with the team are listed with canEdit=false. " +
+        "routines, workflows, output styles, memory and tasks. Bots shared with the team are listed with canEdit=false. " +
         "Tools that change something need the write scope and are recorded in the member's activity log.",
     },
   );
@@ -431,9 +431,9 @@ export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveAc
   server.registerTool(
     "search_wiki",
     {
-      title: "Search wiki",
+      title: "Search memory",
       description:
-        "Search the member's wiki items (a graph: each has tags, a howto, a score and typed links), or list them (with items shared with the installation) when `query` is empty.",
+        "Search the member's memory items (a graph: each has tags, a howto, a score and typed links), or list them (with items shared with the installation) when `query` is empty.",
       inputSchema: z.object({ query: z.string().max(200).optional() }),
       ...READ,
     },
@@ -448,8 +448,8 @@ export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveAc
   server.registerTool(
     "read_wiki_page",
     {
-      title: "Read wiki page",
-      description: "One wiki item by slug, with its links to and from other items.",
+      title: "Read memory item",
+      description: "One memory item by slug, with its links to and from other items.",
       inputSchema: z.object({ slug: z.string().trim().min(1).max(WIKI_LIMITS.slug) }),
       ...READ,
     },

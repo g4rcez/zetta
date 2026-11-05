@@ -2,6 +2,7 @@
 export const TIME_FORMATS = ["24h", "12h"] as const;
 export type TimeFormat = (typeof TIME_FORMATS)[number];
 export const DEFAULT_TIME_FORMAT: TimeFormat = "24h";
+export const TIME_FORMAT_LABEL: Record<TimeFormat, string> = { "24h": "24-hour", "12h": "12-hour" };
 
 // `hourCycle` (not `hour12`) so 24h shows 00:30 and never 24:30 in any locale.
 const cycle = (f: TimeFormat) => ({ hourCycle: f === "12h" ? "h12" : "h23" }) as const;

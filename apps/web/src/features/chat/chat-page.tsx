@@ -1,9 +1,18 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ComputerActivity } from "../computer/computer-activity";
 import { DesktopButton } from "../computer/desktop-button";
 import {
+  BrainIcon,
   CaretRightIcon,
   LockIcon,
   ShareNetworkIcon,
@@ -18,7 +27,7 @@ import { ArtifactPanel } from "./artifact-panel";
 import { ThreadTabs } from "./thread-tabs";
 import { Skeleton } from "@g4rcez/components";
 
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
@@ -103,7 +112,7 @@ export function ChatPage() {
   const { bots, refreshBots, chats, setChats, chatsLoaded, loadChats } = useSidebarData();
   const qc = useQueryClient();
   const [error, setError] = useState<string>();
-  const [notice, setNotice] = useState<string>();
+  const [notice, setNotice] = useState<ReactNode>();
   const [publishing, setPublishing] = useState(false);
   const [details, setDetails] = useState(false); // the context panel's bot and files view
   const [artifactWidth, setArtifactWidth] = useState(readArtifactWidth);
@@ -408,7 +417,19 @@ export function ChatPage() {
     onSaveToWiki: (row) =>
       void chatClient
         .saveToWiki(`From chat: ${row.content.slice(0, 40)}`, row.content)
-        .then(() => setNotice("Saved to your memory."), fail),
+        .then(
+          (r) =>
+            setNotice(
+              <>
+                Saved to your{" "}
+                <Link to="/memory/$slug" params={{ slug: r.slug }} className="underline">
+                  memory
+                </Link>
+                .
+              </>,
+            ),
+          fail,
+        ),
     onQueue: (row, action) => {
       if (!chatId) return;
       void (
@@ -636,6 +657,17 @@ export function ChatPage() {
               <div className="ml-auto flex shrink-0 items-center gap-1">
                 {current?.computerMode === "desktop" && (
                   <DesktopButton botName={current.name} onError={fail} />
+                )}
+                {current && (
+                  <Link
+                    to="/memory"
+                    search={{ createdBy: current.id }}
+                    title="Memories this bot created"
+                    aria-label="Memories this bot created"
+                    className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <BrainIcon aria-hidden="true" className="size-4" />
+                  </Link>
                 )}
                 {chatId && saved.length > 0 && (
                   <Button

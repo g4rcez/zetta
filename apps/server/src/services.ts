@@ -40,6 +40,7 @@ import { createWikiGraph } from "./modules/wiki/graph";
 import { createWiki } from "./modules/wiki/service";
 import { createSearch } from "./modules/search/service";
 import { createPreferenceStore } from "./modules/preferences/store";
+import { createProfileStore } from "./modules/profile/store";
 import { createTaskStore } from "./modules/tasks/store";
 import { createArtifactStore } from "./modules/artifacts/store";
 import { createAgendaScheduler } from "./modules/agenda/scheduler";
@@ -482,6 +483,13 @@ export const taskServices = { access: identity.access, tasks };
 export const preferenceServices = {
   access: identity.access,
   preferences,
+};
+export const profileServices = {
+  access: identity.access,
+  profile: createProfileStore(db),
+  // The session lookup is memoized per request, so this adds no query.
+  currentSessionId: async (headers: Headers) =>
+    (await auth.api.getSession({ headers }))?.session.id,
 };
 export const knowledgeServices = { access: identity.access, knowledge: companyKnowledge };
 export const wikiServices = {

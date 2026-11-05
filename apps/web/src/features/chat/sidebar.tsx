@@ -33,7 +33,6 @@ import {
   type RefObject,
 } from "react";
 
-import { Button } from "@zetta/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,7 +42,7 @@ import {
 } from "@zetta/ui/components/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
-import { Input, Select } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotStatusDot } from "@/components/bot-status";
 import { usePreferences } from "../preferences/preferences";
@@ -504,15 +503,15 @@ function BotSection({
       </button>
       <span className="flex h-7 shrink-0 items-center gap-0.5 pr-1">
         <Hint title="New chat" description={`Start a new conversation with ${bot.name}.`}>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-xs"
             disabled={blocked}
             aria-label={`New chat with ${bot.name}`}
             onClick={() => onNewChat(bot.id)}
-            className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-sidebar hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
           >
             <PlusIcon aria-hidden="true" className="size-3.5" />
-          </button>
+          </Button>
         </Hint>
         <DropdownMenu>
           <Hint title="Bot actions" description="Reorder this bot or open its settings.">

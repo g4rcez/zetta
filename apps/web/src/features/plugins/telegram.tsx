@@ -6,7 +6,7 @@ import {
   UserIcon,
   UsersIcon,
 } from "@phosphor-icons/react";
-import { useEffect, useState, type ButtonHTMLAttributes, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Input } from "@/components/ui";
@@ -18,26 +18,6 @@ import { TELEGRAM, TelegramLogo } from "./telegram-logo";
 import { ToggleCard } from "./toggle-card";
 import { Alert } from "@g4rcez/components/alert";
 
-/** The page's call to action. It uses the app's primary colors: white on Telegram blue (#229ED9) is 2.9:1, below the 7:1 the
- * app requires; the Telegram logo carries the brand. */
-function TgButton({
-  loading,
-  children,
-  className = "",
-  disabled,
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { loading?: boolean }) {
-  return (
-    <button
-      {...props}
-      disabled={disabled || loading}
-      aria-busy={loading || undefined}
-      className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-(--var-color-primary-hover) focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
 const Link = ({ href, children }: { href: string; children: React.ReactNode }) => (
   <a
     href={href}
@@ -198,9 +178,9 @@ export function TelegramInstall({
             <Button type="button" variant="outline" size="sm" onClick={onClose}>
               Cancel
             </Button>
-            <TgButton type="submit" loading={busy}>
+            <Button type="submit" loading={busy}>
               Connect Telegram
-            </TgButton>
+            </Button>
           </span>
         </div>
         <p className="text-xs leading-snug text-muted-foreground">{FOOTNOTE}</p>
@@ -326,10 +306,10 @@ export function TelegramConnect({
             )}
           </p>
         </div>
-        <TgButton loading={busy === "sync"} onClick={() => void sync()}>
+        <Button loading={busy === "sync"} onClick={() => void sync()}>
           <ArrowsClockwiseIcon aria-hidden className="size-3.5" />
           Sync chats
-        </TgButton>
+        </Button>
       </div>
 
       {confirmHook && (
@@ -344,9 +324,9 @@ export function TelegramConnect({
             webhook will stop receiving messages.
           </p>
           <div className="flex gap-2">
-            <TgButton loading={busy === "sync"} onClick={() => void sync(true)}>
+            <Button loading={busy === "sync"} onClick={() => void sync(true)}>
               Remove webhook and sync
-            </TgButton>
+            </Button>
             <Button size="sm" variant="outline" onClick={() => setConfirmHook(false)}>
               Keep it
             </Button>
@@ -413,9 +393,9 @@ export function TelegramConnect({
           autoComplete="off"
         />
         <div className="flex items-center gap-2">
-          <TgButton loading={busy === "save"} disabled={!dirty} onClick={() => void save()}>
+          <Button loading={busy === "save"} disabled={!dirty} onClick={() => void save()}>
             Save permissions
-          </TgButton>
+          </Button>
           {!dirty && info && <span className="text-xs text-muted-foreground">Saved</span>}
         </div>
       </fieldset>

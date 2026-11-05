@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { XIcon } from "@phosphor-icons/react";
 
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 
 import { errorMessage, type Bot } from "./chat-client";
 import { isSavedUserEcho, type Row } from "./chat-rows";

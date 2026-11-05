@@ -348,6 +348,10 @@ suite("chat experience against compose postgres", () => {
     ).rows as { content: string }[];
     expect(rows.map((r) => r.content)).toContain("my badge number is 4242");
     expect(rows.some((r) => /badge\.png|image/i.test(r.content))).toBe(false);
+    // The answer links to the item it saved.
+    expect(sent.json.assistant.meta.receipts).toMatchObject([
+      { kind: "wiki", text: "my badge number is 4242", created: true },
+    ]);
   });
 
   test("server file references stay inside the user's area and the shared area", async () => {

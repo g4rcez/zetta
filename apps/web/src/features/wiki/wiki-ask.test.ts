@@ -5,7 +5,7 @@ import { askPrompt, sourcesOf } from "./wiki-ask";
 describe("askPrompt", () => {
   test("asks for citations in the wiki's link form", () => {
     expect(askPrompt("  How do refunds work? ")).toBe(
-      "Answer from my wiki and cite the items you use as [[slug]]. Question: How do refunds work?",
+      "Answer from my memory and cite the items you use as [[slug]]. Question: How do refunds work?",
     );
   });
 });

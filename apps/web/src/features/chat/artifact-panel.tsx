@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowSquareOutIcon, DownloadSimpleIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 
 import { artifactsApi, contentUrl, kindLabel, type Artifact } from "../artifacts/artifacts-api";
 import { ArtifactViewer } from "../artifacts/viewers";

@@ -170,10 +170,6 @@ export const makeChief = (nodes: TeamsNode[], id: string): TeamsNode[] => {
   );
 };
 
-/** Takes a bot out of its team; a removed chief passes the role on. */
-export const removeBot = (nodes: TeamsNode[], id: string): TeamsNode[] =>
-  arrange(normalizeChiefs(nodes.filter((n) => n.id !== id)));
-
 /** Puts a bot in a team at a position inside the group. Returns the same nodes when the team already has that bot. */
 export function addBot(
   nodes: TeamsNode[],

@@ -26,9 +26,9 @@ A failure is information. Do these steps in order.
 2. Name the cause type: wrong input or assumption, missing environment (file, tool, network), permission or sign-in, flaky (timeout, rate limit), or a logic error in your own work.
 3. Check the real state before you act again. A step may have worked in part. Do not repeat an action that already took effect.
 4. Change one thing, then try again. Never send the same call again. A flaky error may need one more try after a short wait; every other cause needs a different approach.
-5. Use another path to the same goal: another tool, route or smaller step. Stay inside the user's request: never switch to a source or site the user did not name. Search the wiki for a gotcha item first (zetta:wiki search).
+5. Use another path to the same goal: another tool, route or smaller step. Stay inside the user's request: never switch to a source or site the user did not name. Search the memory for a gotcha item first (zetta:memory search).
 6. After two different approaches fail, stop and ask for help with one specific question. Say what you tried and what each attempt returned. A bot that is not the Chief sends zetta:escalate. The Chief sends zetta:handoff only for a blocker that only a person can clear.
-7. When you recover from a failure that another bot could meet, save it as a zetta:wiki item tagged gotcha: the problem, the cause, and the fix.
+7. When you recover from a failure that another bot could meet, save it as a zetta:memory item tagged gotcha: the problem, the cause, and the fix.
 `,
   ),
   skill(

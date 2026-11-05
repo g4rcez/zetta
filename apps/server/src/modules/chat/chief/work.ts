@@ -229,14 +229,14 @@ export async function applyCompanyDocs(
 
 export async function runWikiAdmin(ctx: ChiefCtx, a: ChiefArgs<"wiki_admin">): Promise<Outcome> {
   const wiki = ctx.deps.wiki;
-  if (!wiki) return { error: "the wiki is not available on this server." };
+  if (!wiki) return { error: "memory is not available on this server." };
   if (a.action === "suggestions")
     return {
-      read: `wiki_admin.suggestions:\n${JSON.stringify(await wiki.suggestions(ctx.actor.userId))}`,
+      read: `memory_admin.suggestions:\n${JSON.stringify(await wiki.suggestions(ctx.actor.userId))}`,
     };
   if (a.action === "decide_suggestion")
     return plan(
-      `${a.accept ? "Accept" : "Reject"} a wiki suggestion`,
+      `${a.accept ? "Accept" : "Reject"} a memory suggestion`,
       [
         { field: "suggestion", from: null, to: a.suggestion },
         { field: "decision", from: null, to: a.accept ? "accept" : "reject" },
@@ -250,7 +250,7 @@ export async function runWikiAdmin(ctx: ChiefCtx, a: ChiefArgs<"wiki_admin">): P
     );
   if (a.action === "restore")
     return plan(
-      `Restore wiki item ${a.slug} to version ${a.version}`,
+      `Restore memory item ${a.slug} to version ${a.version}`,
       [
         { field: "item", from: null, to: a.slug },
         { field: "version", from: null, to: a.version },
@@ -258,7 +258,7 @@ export async function runWikiAdmin(ctx: ChiefCtx, a: ChiefArgs<"wiki_admin">): P
       { tool: "wiki_admin", op: "restore", slug: a.slug, version: a.version },
     );
   return plan(
-    `Bring back wiki item ${a.slug}`,
+    `Bring back memory item ${a.slug}`,
     [
       { field: "item", from: "archived", to: "current" },
       { field: "slug", from: null, to: a.slug },
@@ -272,7 +272,7 @@ export async function runWikiAdmin(ctx: ChiefCtx, a: ChiefArgs<"wiki_admin">): P
 }
 export async function applyWikiAdmin(ctx: ApplyCtx, p: Record<string, unknown>): Promise<Applied> {
   const wiki = ctx.deps.wiki;
-  if (!wiki) throw new Error("wiki unavailable");
+  if (!wiki) throw new Error("memory unavailable");
   const v = p as {
     op: string;
     id: string;

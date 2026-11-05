@@ -3,7 +3,7 @@ import { pollEvery } from "@/lib/query-policy";
 import { useCallback, useState } from "react";
 import { HourglassMediumIcon, NotePencilIcon, SquareIcon } from "@phosphor-icons/react";
 
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 
 import { BotIdentity } from "@/components/bot-identity";
 import { useTimeFormat } from "@/features/preferences/preferences";

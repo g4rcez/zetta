@@ -94,6 +94,8 @@ export type WikiFilter = {
   access?: "own" | "shared";
   by?: "user" | "bot" | "system";
   botId?: string;
+  /** The bot that created the item (`author_bot_id`), not the one that wrote the last version. */
+  createdByBotId?: string;
   teamId?: string;
   minScore?: number;
   maxScore?: number;
@@ -245,6 +247,7 @@ function filterSql(f: WikiFilter, userId: string): ReturnType<typeof sql> {
   if (f.access === "shared") parts.push(sql`wiki_page.owner_user_id <> ${userId}`);
   if (f.by) parts.push(sql`wiki_page.updated_by = ${f.by}`);
   if (f.botId) parts.push(sql`wiki_page.updated_by_bot_id = ${f.botId}`);
+  if (f.createdByBotId) parts.push(sql`wiki_page.author_bot_id = ${f.createdByBotId}`);
   if (f.teamId)
     parts.push(
       sql`exists (select 1 from wiki_page_team wt where wt.page_id = wiki_page.id and wt.team_id = ${f.teamId})`,
@@ -1202,9 +1205,9 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
       })
       .returning();
     await raiseAttention(db, p.ownerUserId, {
-      title: `Suggested change to the wiki page “${p.title}”`,
+      title: `Suggested change to the memory item “${p.title}”`,
       detail: reason || "Another member suggested a new text for a page you shared.",
-      nextAction: "Accept or reject it in the Wiki.",
+      nextAction: "Accept or reject it in Memory.",
       resultLink: pageLink(p.slug),
       source: "bot",
       sourceKey: `wiki-suggestion:${p.id}`,
@@ -1494,7 +1497,7 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
         if (d.status === "current")
           await setStatus(d.s.ownerUserId, d.slug, "stale", { by: "system" }).catch(() => {});
         await raiseAttention(db, d.s.ownerUserId, {
-          title: `The wiki page “${d.title}” may be out of date`,
+          title: `The memory item “${d.title}” may be out of date`,
           detail: `Its source “${d.s.label}” (${d.s.kind}) ${status === "gone" ? "is gone" : "changed"} since the page was saved.`,
           nextAction: "Check the page, then save it or ask a bot to update it.",
           resultLink: pageLink(d.slug),

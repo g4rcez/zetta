@@ -8,7 +8,6 @@ import SignUpForm from "@/components/sign-up-form";
 import { authClient } from "@/lib/auth-client";
 import { getIdentityError, identityClient, type IdentityStatus } from "@/lib/identity-client";
 
-import { installationQueries } from "../onboarding/installation-api";
 import { EnrollmentForm } from "./enrollment-form";
 import { identityQueries } from "./identity-queries";
 
@@ -23,19 +22,8 @@ export function LoginJourney() {
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
 
-  // An administrator whose install onboarding is unfinished resumes it instead of landing in chat.
-  const enter = useCallback(
-    async (status: Extract<IdentityStatus, { state: "active" }>) => {
-      // Fresh on purpose: the answer decides where the administrator lands.
-      const installation = status.isAdmin
-        ? await qc.fetchQuery({ ...installationQueries.get(), staleTime: 0 }).catch(() => null)
-        : null;
-      if (installation?.onboarding === "pending")
-        await navigate({ to: "/onboarding", replace: true });
-      else await navigate({ to: "/chat/{-$chatId}", replace: true });
-    },
-    [navigate, qc],
-  );
+  // An existing account never re-runs the setup: "/" sends a signed-in person to the dashboard.
+  const enter = useCallback(() => navigate({ to: "/", replace: true }), [navigate]);
 
   const checkStatus = useCallback(async () => {
     const status = await identityClient.status();
@@ -43,7 +31,7 @@ export function LoginJourney() {
     setIdentity(status);
     if (status.state === "active") {
       setToken("");
-      await enter(status);
+      await enter();
     }
     return status;
   }, [enter, qc]);
@@ -59,7 +47,7 @@ export function LoginJourney() {
           const setup = await identityClient.setup().catch(() => ({ required: false }));
           if (alive && setup.required) await navigate({ to: "/onboarding", replace: true });
         }
-        if (status.state === "active") await enter(status);
+        if (status.state === "active") await enter();
       })
       .catch((failure: unknown) => {
         if (alive) setError(getIdentityError(failure));

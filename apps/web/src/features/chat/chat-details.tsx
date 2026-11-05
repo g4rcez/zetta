@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { GearSixIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
-import { Button } from "@zetta/ui/components/button";
+import { Button } from "@/components/ui";
 
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotStatusLabel } from "@/components/bot-status";

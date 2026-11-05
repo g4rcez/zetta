@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { ShieldWarningIcon } from "@phosphor-icons/react";
 
@@ -149,7 +149,7 @@ export function ProposalsPanel({
   bots: Bot[];
   onResolved: (id: string) => void;
   onBotsChanged: () => void;
-  notify: (m: string) => void;
+  notify: (m: ReactNode) => void;
 }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState<string>();
@@ -172,6 +172,15 @@ export function ProposalsPanel({
           p.kind === "install_skills" ? "Nothing was installed." : "Rejected. Nothing was changed.",
         );
       else if (r.skills) notify(skillsResult(r.skills));
+      else if (r.memory)
+        notify(
+          <>
+            {r.memory.created ? "Added to memory" : "Updated memory"}:{" "}
+            <Link to="/memory/$slug" params={{ slug: r.memory.slug }} className="underline">
+              {r.memory.title}
+            </Link>
+          </>,
+        );
       else if (r.note) {
         notify(`Done: ${summarize(p)}. ${r.note}`);
         onBotsChanged();

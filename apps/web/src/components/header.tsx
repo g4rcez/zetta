@@ -20,6 +20,7 @@ export const APP_PREFIXES = [
   "/memory",
   "/skills",
   "/search",
+  "/preferences",
 ];
 export const inApp = (pathname: string) =>
   APP_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));

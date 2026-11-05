@@ -10,6 +10,7 @@ import { motion, useReducedMotion } from "motion/react";
 import type { KeyboardEvent } from "react";
 import { toast } from "sonner";
 import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
+import { Button } from "@/components/ui";
 import { useMedia } from "@/lib/use-media";
 import { StatusIcon } from "./task-badges";
 import { TaskDetail } from "./task-page";
@@ -70,24 +71,25 @@ function PeekPanel({
             {index + 1} of {tasks.length}
           </span>
         )}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           aria-label="Previous task"
           disabled={!previous}
           onClick={() => previous && onOpen(previous.id)}
-          className={`${iconButton} ml-1`}
+          className="ml-1"
         >
           <CaretUpIcon aria-hidden className="size-4" />
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
           aria-label="Next task"
           disabled={!next}
           onClick={() => next && onOpen(next.id)}
-          className={iconButton}
         >
           <CaretDownIcon aria-hidden className="size-4" />
-        </button>
+        </Button>
         <span className="ml-auto" />
         <Link
           to="/tasks/$taskId"
@@ -98,24 +100,18 @@ function PeekPanel({
         >
           <ArrowsOutSimpleIcon aria-hidden className="size-4" />
         </Link>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           aria-label="Copy link"
           title="Copy link"
           onClick={() => void copyLink()}
-          className={iconButton}
         >
           <LinkSimpleIcon aria-hidden className="size-4" />
-        </button>
-        <button
-          type="button"
-          aria-label="Close"
-          title="Close"
-          onClick={onClose}
-          className={iconButton}
-        >
+        </Button>
+        <Button variant="ghost" size="icon" aria-label="Close" title="Close" onClick={onClose}>
           <XIcon aria-hidden className="size-4" />
-        </button>
+        </Button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {/* `key` gives each task its own state, so the thread of the last task never shows on the next. */}

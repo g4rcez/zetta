@@ -29,7 +29,7 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       tsconfigPaths: true,
-      // three-render-objects imports the WebGPU renderer for an option the wiki graph never uses (it draws with WebGL). The real one is
+      // three-render-objects imports the WebGPU renderer for an option the memory graph never uses (it draws with WebGL). The real one is
       // 2.4 MB of source in the 3D chunk, so it is replaced by a stub.
       alias: {
         "three/webgpu": fileURLToPath(new URL("./src/lib/three-webgpu-stub.ts", import.meta.url)),

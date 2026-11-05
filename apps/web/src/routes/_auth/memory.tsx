@@ -1,11 +1,11 @@
 import { Outlet, createFileRoute, useChildMatches } from "@tanstack/react-router";
 
-import { WikiExplorer } from "@/features/wiki/explorer";
-import { parseWikiSearch, type WikiSearch } from "@/features/wiki/wiki-filters";
+import { MemoryExplorer } from "@/features/memory/explorer";
+import { parseMemorySearch, type MemorySearch } from "@/features/memory/memory-filters";
 
 export const Route = createFileRoute("/_auth/memory")({
   head: () => ({ meta: [{ title: "Memory · zetta" }] }),
-  validateSearch: (search: Record<string, unknown>): WikiSearch => parseWikiSearch(search),
+  validateSearch: (search: Record<string, unknown>): MemorySearch => parseMemorySearch(search),
   component: RouteComponent,
 });
 
@@ -13,5 +13,5 @@ export const Route = createFileRoute("/_auth/memory")({
 function RouteComponent() {
   const search = Route.useSearch();
   const child = useChildMatches();
-  return child.length ? <Outlet /> : <WikiExplorer search={search} />;
+  return child.length ? <Outlet /> : <MemoryExplorer search={search} />;
 }

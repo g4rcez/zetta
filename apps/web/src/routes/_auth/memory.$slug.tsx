@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { WikiItemPage } from "@/features/wiki/item-page";
+import { MemoryItemPage } from "@/features/memory/item-page";
 
 export const Route = createFileRoute("/_auth/memory/$slug")({
   validateSearch: (
@@ -17,5 +17,5 @@ export const Route = createFileRoute("/_auth/memory/$slug")({
 function RouteComponent() {
   const { slug } = Route.useParams();
   const { edit, assist } = Route.useSearch();
-  return <WikiItemPage slug={slug} edit={edit === "1"} assist={assist} />;
+  return <MemoryItemPage slug={slug} edit={edit === "1"} assist={assist} />;
 }

@@ -1,0 +1,140 @@
+import { Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+
+import { Response } from "../chat/response";
+import { Badge, Empty, Loading } from "../shared/ui";
+import { decodeDraft, type MemoryDraft } from "./draft";
+import { useMemoryIndex } from "./use-memory-index";
+import { memoryError, memoryQueries } from "./memory-api";
+
+const Shell = ({ title, children }: { title: string; children: ReactNode }) => (
+  <div className="h-full overflow-y-auto">
+    <div className="mx-auto w-full max-w-4xl space-y-5 p-4 md:p-8">
+      <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground">
+        <Link to="/memory" className="hover:underline">
+          Memory
+        </Link>{" "}
+        / {title}
+      </nav>
+      {children}
+    </div>
+  </div>
+);
+
+const Draft = ({ note, children }: { note: ReactNode; children?: ReactNode }) => (
+  <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+    <Badge tone="warning">Draft</Badge>
+    {note} Not saved: this page lives only in the link. Approve the suggestion in the chat to apply
+    it.
+    {children}
+  </p>
+);
+
+/** What the change would do to an item that exists, shown on the item as it is now (patch: as it would be after). */
+const NOTE: Record<"link" | "confirm" | "sources" | "archive" | "mark_stale", string> = {
+  link: "Would add a link to another item.",
+  confirm: "Would confirm the item is still right.",
+  sources: "Would add sources to the item.",
+  archive: "Would archive the item and hide it from your bots.",
+  mark_stale: "Would mark the item as stale.",
+};
+
+function Change({ draft }: { draft: Exclude<MemoryDraft, { action: "write" }> }) {
+  const { memoryLinks } = useMemoryIndex();
+  const { data: detail, error: failure } = useQuery(memoryQueries.item(draft.slug));
+  const error = failure ? memoryError(failure) : undefined;
+  if (error && !detail)
+    return (
+      <Shell title={draft.slug}>
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      </Shell>
+    );
+  if (!detail)
+    return (
+      <Shell title={draft.slug}>
+        <Loading />
+      </Shell>
+    );
+  const p = detail.page;
+  const hits = draft.action === "patch" ? p.content.split(draft.match).length - 1 : 0;
+  const content =
+    draft.action === "patch" && draft.match && hits === 1
+      ? p.content.replace(draft.match, () => draft.content)
+      : p.content;
+  return (
+    <Shell title={p.title}>
+      <header className="space-y-2">
+        <h1 className="text-balance">{p.title}</h1>
+        {draft.action === "patch" ? (
+          <Draft
+            note={
+              hits === 1
+                ? "The item as it would be after the change."
+                : "The change would fail: the text to replace is not in the item exactly once."
+            }
+          />
+        ) : (
+          <Draft note={NOTE[draft.action]}>
+            {draft.action === "link" && (
+              <span>
+                {draft.relation} → <code>[[{draft.to}]]</code>
+              </span>
+            )}
+          </Draft>
+        )}
+      </header>
+      <article className="rounded-xl border bg-card p-5">
+        <Response text={content} memoryLinks={memoryLinks} />
+      </article>
+    </Shell>
+  );
+}
+
+/** Read-only preview of what a bot wants to do to the memory. The state is in the URL; nothing is written. */
+export function MemoryDraftPage({ d }: { d: string | undefined }) {
+  const draft = decodeDraft(d);
+  const { memoryLinks } = useMemoryIndex();
+  if (!draft)
+    return (
+      <Shell title="Draft not found">
+        <h1>Draft not found</h1>
+        <Empty>
+          This link holds no draft. It may be cut short. Ask the bot to suggest the change again.
+        </Empty>
+      </Shell>
+    );
+  if (draft.action !== "write") return <Change draft={draft} />;
+  return (
+    <Shell title={draft.title}>
+      <header className="space-y-2">
+        <h1 className="text-balance">{draft.title}</h1>
+        <Draft
+          note={
+            <>
+              Would be saved as <code>[[{draft.slug}]]</code>.
+            </>
+          }
+        />
+        {draft.tags.length > 0 && (
+          <p className="flex flex-wrap gap-1.5">
+            {draft.tags.map((t) => (
+              <Badge key={t}>#{t}</Badge>
+            ))}
+          </p>
+        )}
+      </header>
+      {draft.howto && (
+        <section aria-label="When to use" className="rounded-lg border bg-muted/40 p-4 text-sm">
+          <h2 className="text-xs font-medium text-muted-foreground">When to use</h2>
+          <p className="mt-1">{draft.howto}</p>
+        </section>
+      )}
+      <article className="rounded-xl border bg-card p-5">
+        <Response text={draft.content} memoryLinks={memoryLinks} />
+      </article>
+    </Shell>
+  );
+}

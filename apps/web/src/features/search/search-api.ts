@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 
 import { call } from "../chat/chat-client";
 
-export type SearchKind = "conversation" | "message" | "wiki" | "artifact" | "task";
+export type SearchKind = "conversation" | "message" | "memory" | "artifact" | "task";
 export type SearchHit = {
   kind: SearchKind;
   id: string;
@@ -17,7 +17,7 @@ export type SearchHit = {
 export const KIND_LABEL: Record<SearchKind, string> = {
   conversation: "Chat",
   message: "Message",
-  wiki: "Memory",
+  memory: "Memory",
   artifact: "Artifact",
   task: "Task",
 };
@@ -48,8 +48,8 @@ export function hitTarget(h: SearchHit): {
       return { to: "/tasks" };
     case "artifact":
       return { to: "/artifacts/$artifactId", params: { artifactId: h.id } };
-    case "wiki":
-      // The id of a wiki hit is its slug.
+    case "memory":
+      // The id of a memory hit is its slug.
       return { to: "/memory/$slug", params: { slug: h.id } };
   }
 }

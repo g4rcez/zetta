@@ -334,7 +334,7 @@ export const configProposal = zetta.table(
         "start_loop",
         "team_goals",
         "bot_permission",
-        "create_wiki_page",
+        "create_memory_item",
         "install_skills",
         "chief_action",
       ],

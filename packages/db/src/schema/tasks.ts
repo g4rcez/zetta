@@ -59,7 +59,7 @@ export const task = zetta.table(
     index("task_conversation_id_idx").on(t.conversationId),
     index("task_message_id_idx").on(t.messageId),
     index("task_owner_idx").on(t.ownerUserId, t.status, t.updatedAt),
-    // wiki jobs scan finished tasks of the last day across owners
+    // memory jobs scan finished tasks of the last day across owners
     index("task_status_updated_idx").on(t.status, t.updatedAt),
     index("task_search_idx").using("gin", searchVector(sql`${t.title} || ' ' || ${t.description}`)),
   ],

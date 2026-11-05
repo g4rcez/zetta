@@ -3,7 +3,7 @@ import { index, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
-import { wikiPage } from "./wiki";
+import { memoryItem } from "./memory";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 /** Documents only exist as a copy of a source, so they go with it. */
@@ -71,8 +71,8 @@ export const knowledgeDoc = zetta.table(
       .default("pending")
       .notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-    /** The wiki item that holds this document's text (type owner, tag drive). Sync keeps it up to date; the item is read-only. The same file seen through two Google accounts is two documents with one item. */
-    pageId: uuid("page_id").references(() => wikiPage.id, {
+    /** The memory item that holds this document's text (type owner, tag drive). Sync keeps it up to date; the item is read-only. The same file seen through two Google accounts is two documents with one item. */
+    pageId: uuid("page_id").references(() => memoryItem.id, {
       onDelete: "set null",
       onUpdate: "restrict",
     }),

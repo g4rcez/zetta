@@ -17,7 +17,7 @@ export * from "./tasks";
 export * from "./artifacts";
 export * from "./installation";
 export * from "./knowledge";
-export * from "./wiki";
+export * from "./memory";
 export * from "./preferences";
 export * from "./runtime";
 export * from "./pg-schema";

@@ -164,12 +164,12 @@ export const conversation = zetta.table(
     /** Threads: an archived conversation leaves the tab bar and lists, and opening it restores it. */
     archived: boolean("archived").default(false).notNull(),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
-    /** Frozen memory prompt block per bot, captured at the first turn so the prefix stays stable for the whole conversation. */
-    memorySnapshot:
-      jsonb("memory_snapshot").$type<
+    /** Frozen notes prompt block per bot (profile and the bot's own notes), captured at the first turn so the prefix stays stable for the whole conversation. */
+    notesSnapshot:
+      jsonb("notes_snapshot").$type<
         Record<
           string,
-          { user: { id: string; content: string }[]; memory: { id: string; content: string }[] }
+          { user: { id: string; content: string }[]; notes: { id: string; content: string }[] }
         >
       >(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -254,7 +254,7 @@ export const chatQueue = zetta.table(
     // Starts of this answer; a message that keeps failing (or crashing the process) stops at a limit instead of looping.
     attempts: integer("attempts").default(0).notNull(),
     reasonCode: text("reason_code"),
-    // Send options read when the answer runs: { fileRefs, wikiIds }.
+    // Send options read when the answer runs: { fileRefs, memoryIds }.
     input: jsonb("input"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     /** The server instance running this row (see server_instance). Recovery leaves the rows of a live instance alone. */
@@ -348,7 +348,7 @@ export const goalLoop = zetta.table(
     index("goal_loop_running_retry_idx")
       .on(table.retryAt)
       .where(sql`${table.status} = 'running'`),
-    // wiki jobs scan finished loops of the last day across owners
+    // memory jobs scan finished loops of the last day across owners
     index("goal_loop_status_updated_idx").on(table.status, table.updatedAt),
     // One active loop per bot in a conversation: team members each pursue their own goal in the room's conversation.
     uniqueIndex("goal_loop_one_active")

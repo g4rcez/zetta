@@ -25,7 +25,7 @@ Make rooms multiplayer, as described in the confirmed intent: human team members
 
 ## Non-goals
 
-Multiplayer 1:1 chats, presence and typing indicators, co-editing artifacts or the wiki, cross-user bot calls outside rooms, push or email notifications, per-tool-call approval. No change to the installation model: one admin, one membership set, no organizations.
+Multiplayer 1:1 chats, presence and typing indicators, co-editing artifacts or the memory, cross-user bot calls outside rooms, push or email notifications, per-tool-call approval. No change to the installation model: one admin, one membership set, no organizations.
 
 ## Source anchors and planned changes
 

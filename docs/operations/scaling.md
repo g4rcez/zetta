@@ -4,11 +4,11 @@ Zetta runs as one process by default (`ZETTA_ROLE=all`). To spread HTTP traffic 
 
 ## Roles
 
-| `ZETTA_ROLE`    | What the process does                                                                                                                                                                                                                                            |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `all` (default) | Everything, as before. One process per installation.                                                                                                                                                                                                             |
-| `api`           | HTTP: reads, writes, auth, server-sent events (`/api/events`). Never starts a turn, a ticker, boot recovery, a sweep, a routine job or a VM service.                                                                                                             |
-| `worker`        | Everything an `api` does, plus all work that owns running things: bot turns and their streams, the 30 s ticker (agenda, wiki, knowledge, discussions, inbound, loops, queue), boot recovery, routine jobs, harness containers, browsers, VMs and the Laya model. |
+| `ZETTA_ROLE`    | What the process does                                                                                                                                                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `all` (default) | Everything, as before. One process per installation.                                                                                                                                                                                                               |
+| `api`           | HTTP: reads, writes, auth, server-sent events (`/api/events`). Never starts a turn, a ticker, boot recovery, a sweep, a routine job or a VM service.                                                                                                               |
+| `worker`        | Everything an `api` does, plus all work that owns running things: bot turns and their streams, the 30 s ticker (agenda, memory, knowledge, discussions, inbound, loops, queue), boot recovery, routine jobs, harness containers, browsers, VMs and the Laya model. |
 
 Run **exactly one worker**. Two workers are not supported yet (see "Not covered yet"). You can restart, add and remove `api` instances at any time: they own no running work, so restarting one marks nothing as interrupted.
 
@@ -18,7 +18,7 @@ The load balancer sends these requests to the worker (`apps/server/src/worker-on
 
 - Starting, following and cancelling turns: `POST /api/conversations/:id/(stream|chat|messages|queue|cancel|turn/wait)`, `POST .../queue/:messageId/retry`, `GET .../(stream|chat/stream|turn)`.
 - `POST /api/proposals/:id/decision` (an approval can restart a stopped turn), `/api/bots/:id/onboarding/*`.
-- Anything that runs a CLI, model or container in the request: `POST /api/(workflows|routines)/:id/run`, `POST /api/bots/interview`, `POST /api/wiki-assist`, `/api/harnesses`, `/api/decisions/*`.
+- Anything that runs a CLI, model or container in the request: `POST /api/(workflows|routines)/:id/run`, `POST /api/bots/interview`, `POST /api/memory-assist` (also its old name `/api/wiki-assist`), `/api/harnesses`, `/api/decisions/*`.
 - Computers and VNC: `/api/computer/*` (including the WebSocket), and `/api/bots/:id/database*` (bot database roles allow 3 connections cluster-wide).
 - `/api/inbound/*` (plugin hooks).
 - Sealed credentials and plugin sign-in: `GET /api/connections/transport-key`, `POST /api/connections`, `POST /api/plugins`, `PUT /api/plugins/:id/config`, `/api/plugins/:id/(test|connect|disconnect|callback)`. The key a browser seals a secret to is generated in the memory of one process, and a sealed body that reaches another instance is refused with 409.
@@ -49,7 +49,7 @@ Every process registers in `server_instance` and writes a heartbeat every 10 s (
 - **Rows written before owners existed** (no `owner_instance`) are taken at boot, but only when no other worker or `all` instance is alive.
 - **A process that loses its database for 60 s (`ZETTA_FENCE_AFTER_MS`), or finds its row stopped because another process started with the same name, stops itself.** Instance names default to `host:port`; set `ZETTA_INSTANCE_NAME` when two containers could share one.
 - **`ZETTA_RECOVERY=legacy`** restores the old behaviour (every `running` row is recovered) if you need it.
-- **Claims are safe across instances:** one running queued answer per conversation (unique index), discussion turns are claimed one at a time under an advisory lock, a goal loop is driven by the instance that holds its lease, routine runs and inbound, wiki, knowledge and agenda work use atomic claims.
+- **Claims are safe across instances:** one running queued answer per conversation (unique index), discussion turns are claimed one at a time under an advisory lock, a goal loop is driven by the instance that holds its lease, routine runs and inbound, memory, knowledge and agenda work use atomic claims.
 
 ## Not covered yet
 

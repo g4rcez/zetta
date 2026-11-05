@@ -47,13 +47,13 @@ Changes to existing tables:
 **Table classes:**
 
 - **Tenant-direct (57):** every table with `owner_user_id`. They get `workspace_id NOT NULL`.
-- **Tenant-child (11):** `bot_revision, bot_claude_config, bot_claude_asset, bot_database, discussion_member, team_member, team_person, wiki_link, wiki_page_team, bot_skill, workflow_version`. They also get `workspace_id`, plus a composite FK `(parent_id, workspace_id)` to a `unique(id, workspace_id)` on the parent. FK checks ignore RLS, so without the composite FK a row in workspace A could point at a row in B. This also lets every policy be the same one-line rule.
+- **Tenant-child (11):** `bot_revision, bot_claude_config, bot_claude_asset, bot_database, discussion_member, team_member, team_person, memory_link, memory_item_team, bot_skill, workflow_version`. They also get `workspace_id`, plus a composite FK `(parent_id, workspace_id)` to a `unique(id, workspace_id)` on the parent. FK checks ignore RLS, so without the composite FK a row in workspace A could point at a row in B. This also lets every policy be the same one-line rule.
 - **Global, no RLS (20):** auth (`user, session, account, verification, jwks, oauth_*`), `installation_*`, `server_instance, rate_limit, transport_key, dispatch_capacity, connection_nonce, connection_key_check`.
 
 **Unique constraints that gain `workspace_id`:**
 
 - `bot_slug_key` (`chat.ts:127`; today it leaks bot names across companies)
-- `mcp_server_team_name`, `wiki_page_shared_slug`, `bot_one_chief_per_owner`
+- `mcp_server_team_name`, `memory_item_shared_slug`, `bot_one_chief_per_owner`
 - `agenda_sync.owner_user_id`, `user_preference` PK, `connection_user_key` PK
 - every other unique constraint that starts with `owner_user_id`
 
@@ -68,7 +68,7 @@ Changes to existing tables:
 | `zetta_scheduler` | NOBYPASSRLS, SELECT only, with `USING (true)` policies on queue tables only | Finds due rows across workspaces                           |
 | `zetta_operator`  | BYPASSRLS                                                                   | Provisioning, export and delete from the operator CLI only |
 
-Queue tables for `zetta_scheduler`: routine, goal_loop, chat_queue, discussion_turn, wiki_job, inbound_route, agenda_sync, knowledge_source, runs.
+Queue tables for `zetta_scheduler`: routine, goal_loop, chat_queue, discussion_turn, memory_job, inbound_route, agenda_sync, knowledge_source, runs.
 
 Reuse the grant and catalog check ideas from `docs/decisions/membership-runtime-role.md`.
 
@@ -111,7 +111,7 @@ create policy workspace_wall on zetta.<t> to zetta_app
 **Background work:**
 
 - Each scheduler selects as `zetta_scheduler`, then for each row runs `issueBackgroundActor(userId, row.workspaceId)` and `tenant.run`.
-- Call sites: `services.ts:289-417`, `discussions/worker.ts:38`, `wiki/jobs.ts:276`, `knowledge/service.ts:611`, `agenda/scheduler.ts:132`, `inbound/service.ts:210/295/593`, `chat/service.ts:5773`.
+- Call sites: `services.ts:289-417`, `discussions/worker.ts:38`, `memory/jobs.ts:276`, `knowledge/service.ts:611`, `agenda/scheduler.ts:132`, `inbound/service.ts:210/295/593`, `chat/service.ts:5773`.
 - Schedulers start at boot outside any context, and they assert that they have none.
 
 **Events:** the bus key becomes `${workspaceId}:${userId}` (`events/bus.ts:21`), and `BusItem` carries `w` through NOTIFY (`pg-signals.ts:37`).

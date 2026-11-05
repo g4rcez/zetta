@@ -16,7 +16,7 @@ Status: confirmed intent. Authority: the user confirmed the statement of intent 
 - **Out of scope:**
   - multiplayer 1:1 chats
   - live presence and typing indicators
-  - co-editing artifacts or the wiki
+  - co-editing artifacts or the memory
   - cross-user bot calls outside rooms
   - push or email notifications
   - per-tool-call approval

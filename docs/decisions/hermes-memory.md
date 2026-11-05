@@ -1,6 +1,6 @@
 # Hermes-style persistent memory
 
-> **Replaced 2026-11-02 by the unified wiki** (see [operator-wiki](operator-wiki.md), "Unified wiki"). The `memory` table and the `zetta:remember` block are gone. A bot's notes are wiki items of type `solo` tagged `memory`, the person's profile is items of type `owner` tagged `profile`, and the same bounded blocks (1375 and 2200 characters) are built from them. This page stays as the record of the research.
+> **Replaced 2026-11-02 by the unified memory** (see [operator-memory](operator-memory.md), "Unified memory"). The `memory` table and the `zetta:remember` block are gone. A bot's notes are memory items of type `solo` tagged `memory`, the person's profile is items of type `owner` tagged `profile`, and the same bounded blocks (1375 and 2200 characters) are built from them. This page stays as the record of the research.
 
 Status: source-backed proposal, 2026-10-22. [054a](../../tasks/054a-record-hermes-memory-contract.md) records research before full runtime prerequisites. This does not complete RFC-054, authorize schema changes or claim Hermes is installed/connected. Source reads only; no private memory import, dependency install, model call or database migration. All upstream references accessed 2026-10-22.
 

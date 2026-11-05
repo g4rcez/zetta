@@ -6,20 +6,20 @@
 
 ## Choose the right kind of change
 
-| Your goal                                  | Use                                   | Example                                                                                 |
-| ------------------------------------------ | ------------------------------------- | --------------------------------------------------------------------------------------- |
-| Correct a retained fact or preference      | Wiki item (a note, or tagged profile) | “My briefing timezone is Lisbon, not London.”                                           |
-| Keep a useful method                       | Wiki item tagged instruction          | “Compare conflicting sources and include links.”                                        |
-| Change the bot's setup or behavior         | Configuration                         | Change its model or assigned integration. Bot-proposed edits require explicit approval. |
-| Run stable work at known times             | Routine                               | Prepare the briefing each weekday.                                                      |
-| Choose different steps based on conditions | Visual workflow                       | Summarize available sources; take a different branch when required sources are missing. |
+| Your goal                                  | Use                                     | Example                                                                                 |
+| ------------------------------------------ | --------------------------------------- | --------------------------------------------------------------------------------------- |
+| Correct a retained fact or preference      | Memory item (a note, or tagged profile) | “My briefing timezone is Lisbon, not London.”                                           |
+| Keep a useful method                       | Memory item tagged instruction          | “Compare conflicting sources and include links.”                                        |
+| Change the bot's setup or behavior         | Configuration                           | Change its model or assigned integration. Bot-proposed edits require explicit approval. |
+| Run stable work at known times             | Routine                                 | Prepare the briefing each weekday.                                                      |
+| Choose different steps based on conditions | Visual workflow                         | Summarize available sources; take a different branch when required sources are missing. |
 
 A workflow describes the steps and conditions. A routine describes when a task or published workflow runs. Neither is a visual folder, which only groups bots.
 
 ## Correct a mistake
 
 1. Open the result and inspect the recorded knowledge sources, when available. Zetta must not invent an explanation of why the model answered incorrectly.
-2. Open the wiki item the answer used (the notes under the answer link to it) and correct it, archive it, or update the method it describes.
+2. Open the memory item the answer used (the notes under the answer link to it) and correct it, archive it, or update the method it describes.
 3. Return to the original result. The historical answer stays unchanged.
 4. In a later task, check that the corrected knowledge is selected and forgotten knowledge is excluded from retrieval.
 

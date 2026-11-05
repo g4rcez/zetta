@@ -4,7 +4,7 @@
 	@worker_any path_regexp ^/api/(computer(/|$)|harnesses$|inbound/|decisions(/|$)|bots/[^/]+/(database|onboarding)(/|$)|bot-database/|plugins/[^/]+/(test|connect|disconnect|callback)$)
 	@worker_post {
 		method POST
-		path_regexp ^/api/(workflows/[^/]+/run|routines/[^/]+/run|bots/interview|wiki-assist|proposals/[^/]+/decision|conversations/[^/]+/(stream|chat|messages|queue|cancel|turn/wait)|conversations/[^/]+/queue/[^/]+/retry|connections|plugins)$
+		path_regexp ^/api/(workflows/[^/]+/run|routines/[^/]+/run|bots/interview|(memory|wiki)-assist|proposals/[^/]+/decision|conversations/[^/]+/(stream|chat|messages|queue|cancel|turn/wait)|conversations/[^/]+/queue/[^/]+/retry|connections|plugins)$
 	}
 	@worker_put {
 		method PUT

@@ -2,6 +2,7 @@
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 @import "@g4rcez/components/index.css";
+@import "./themes.css";
 @import "./components/editor/codemirror.css";
 @source "../node_modules/streamdown/dist/*.js";
 
@@ -108,14 +109,16 @@ html.dark {
 
 /* Status tokens of @g4rcez/components (also Tailwind's success, warn and info colors); dark warn is the app's attention amber.
    Success is a yellow-green so it never reads as the emerald primary. */
-:root {
+:root,
+[data-theme-preview="light"] {
   --var-color-success: #1a4f18;
   --var-color-info: #16457e;
   --var-color-warn: #6a4100;
   --var-color-warn-foreground: #ffffff;
 }
 
-html.dark {
+html.dark,
+[data-theme-preview="dark"] {
   --var-color-success: #8fd98a;
   --var-color-info: #8db8f2;
   --var-color-warn: var(--attention);

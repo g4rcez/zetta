@@ -8,8 +8,9 @@
 
 /* DESIGN.md: cool neutrals, one emerald signal, amber only for attention. Values are #rrggbb so tokens.test.ts can
    measure them: every text pair is 7:1 or more, every non-text indicator 3:1 or more. A new color scheme sets these
-   same tokens under its own selector. */
-:root {
+   same tokens under its own selector. `[data-theme-preview]` lets the theme picker draw a sample of a theme inside the page. */
+:root,
+[data-theme-preview="light"] {
   --background: #fbfbfc;
   --foreground: #18181b;
   --card: #ffffff;
@@ -46,7 +47,8 @@
   --sidebar-ring: var(--primary);
 }
 
-.dark {
+.dark,
+[data-theme-preview="dark"] {
   --background: #0f0f11;
   --foreground: #ededf0;
   --card: #141417;

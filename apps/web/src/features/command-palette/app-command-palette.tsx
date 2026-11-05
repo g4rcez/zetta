@@ -23,6 +23,8 @@ import {
 import { BotAvatar } from "@/components/bot-avatar";
 import { appLinks } from "@/components/app-links";
 import { useTheme } from "@/components/theme-provider";
+import { usePreferences } from "@/features/preferences/preferences";
+import type { Theme } from "@/features/preferences/theme";
 
 import type { Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
@@ -65,7 +67,8 @@ export function AppCommandPalette({
   onOpenChange: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
-  const { resolvedTheme, setTheme } = useTheme();
+  const { resolvedTheme } = useTheme();
+  const { set: setPreferences } = usePreferences();
   const qc = useQueryClient();
   const [text, setText] = useState("");
   const searching = text.trim() !== "";
@@ -138,10 +141,10 @@ export function AppCommandPalette({
           );
     };
     const theme =
-      (value: string): Action =>
+      (value: Theme): Action =>
       ({ setOpen }) => {
         setOpen(false);
-        setTheme(value);
+        setPreferences({ theme: value });
       };
 
     const q = text.trim();
@@ -308,7 +311,7 @@ export function AppCommandPalette({
         ],
       },
     ];
-  }, [botRows, chatRows, searching, text, hits, navigate, resolvedTheme, setTheme]);
+  }, [botRows, chatRows, searching, text, hits, navigate, resolvedTheme, setPreferences]);
 
   return (
     <CommandPalette

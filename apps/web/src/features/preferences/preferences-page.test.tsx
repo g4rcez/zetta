@@ -62,6 +62,8 @@ const api = (path: string, method: string, body: unknown): Answer => {
           railWidth: 224,
           listWidth: 320,
           timeFormat: "24h",
+          theme: null,
+          primaryColor: null,
           botOrder: [],
         },
       },
@@ -242,4 +244,96 @@ test("choosing the 12-hour format saves it", async () => {
   expect(writes()).toEqual([
     { method: "PATCH", path: "/api/preferences", body: { timeFormat: "12h" } },
   ]);
+});
+
+const html = () => win.document.documentElement;
+const resetLook = () => {
+  delete html().dataset.theme;
+  html().removeAttribute("style");
+};
+// The cards draw a sample ("Aa" and "~/") next to each name; only the name is read by a person using a screen reader.
+const themeName = (radio: Element) => radio.closest("label")?.textContent?.replaceAll("Aa~/", "");
+const chooseTheme = async (label: string) => {
+  const radio = [...win.document.querySelectorAll('input[name="theme"]')].find((r) =>
+    r.closest("label")?.textContent?.includes(label),
+  ) as unknown as HTMLInputElement;
+  await act(
+    async () => void radio.dispatchEvent(new win.MouseEvent("click", { bubbles: true }) as never),
+  );
+  await settle(500);
+};
+
+test("choosing Nord saves it on the account and puts it on the page", async () => {
+  resetLook();
+  await mount();
+  await chooseTheme("Nord");
+  expect(writes()).toEqual([
+    { method: "PATCH", path: "/api/preferences", body: { theme: "nord" } },
+  ]);
+  expect(html().dataset.theme).toBe("nord");
+  const checked = [...win.document.querySelectorAll('input[name="theme"]')].filter(
+    (r) => (r as unknown as HTMLInputElement).checked,
+  );
+  expect(checked.map(themeName)).toEqual(["Nord"]);
+});
+
+test("the picker offers the nine themes, grouped by light and dark", async () => {
+  await mount();
+  const names = [...win.document.querySelectorAll('input[name="theme"]')].map(themeName);
+  expect(names).toEqual([
+    "Same as my device",
+    "Light",
+    "Darcula Light",
+    "Dark",
+    "Darcula",
+    "Catppuccin",
+    "Tokyo Night",
+    "One Dark",
+    "Nord",
+  ]);
+});
+
+test("choosing Light takes the color theme off the page", async () => {
+  resetLook();
+  html().dataset.theme = "nord";
+  await mount();
+  await chooseTheme("Light");
+  expect(writes()).toEqual([
+    { method: "PATCH", path: "/api/preferences", body: { theme: "light" } },
+  ]);
+  expect(html().dataset.theme).toBeUndefined();
+});
+
+test("a main color is saved and applied, and the theme color brings the theme's own back", async () => {
+  resetLook();
+  await mount();
+  await type("primary-color", "#cc3300");
+  await settle(500);
+  expect(writes()).toEqual([
+    { method: "PATCH", path: "/api/preferences", body: { primaryColor: "#cc3300" } },
+  ]);
+  expect(html().style.getPropertyValue("--primary")).toBe("#cc3300");
+  expect(html().style.getPropertyValue("--primary-foreground")).toBe("#ffffff");
+
+  await press("Use the theme color");
+  await settle(500);
+  expect(writes().at(-1)).toEqual({
+    method: "PATCH",
+    path: "/api/preferences",
+    body: { primaryColor: null },
+  });
+  expect(html().style.getPropertyValue("--primary")).toBe("");
+});
+
+test("a main color under 5:1 on the theme shows a warning, a strong one does not", async () => {
+  resetLook();
+  for (const ground of ["--background", "--card", "--sidebar", "--muted", "--accent", "--popover"])
+    html().style.setProperty(ground, "#ffffff");
+  await mount();
+  await type("primary-color", "#ffff66");
+  await settle(80);
+  expect(text()).toContain("contrast on this theme");
+  await type("primary-color", "#003366");
+  await settle(80);
+  expect(text()).not.toContain("contrast on this theme");
 });

@@ -5,6 +5,8 @@ import { expect, test } from "bun:test";
 const globals = await Bun.file(`${import.meta.dir}/globals.css`).text();
 const bridge = await Bun.file(`${import.meta.dir}/../../../../apps/web/src/index.css`).text();
 
+const themesCss = await Bun.file(`${import.meta.dir}/../../../../apps/web/src/themes.css`).text();
+
 type Theme = Record<string, string>;
 
 const declarations = (css: string, isTheme: (selector: string) => boolean): Theme => {
@@ -30,6 +32,31 @@ const dark = {
   ...declarations(globals, (s) => s === ".dark"),
   ...declarations(bridge, (s) => s === "html.dark"),
 };
+
+// Color themes of apps/web/src/themes.css. A dark one sits on the dark base, a light one on the light base, as in the app.
+const SCHEMES = {
+  darcula: "dark",
+  "darcula-light": "light",
+  catppuccin: "dark",
+  tokyonight: "dark",
+  onedark: "dark",
+  nord: "dark",
+} as const;
+const schemes = Object.entries(SCHEMES).map(
+  ([name, base]) =>
+    [
+      name,
+      {
+        ...(base === "dark" ? dark : light),
+        ...declarations(themesCss, (s) => s === `:root[data-theme="${name}"]`),
+      },
+    ] as const,
+);
+
+test("every theme block in themes.css is checked here", () => {
+  const names = [...themesCss.matchAll(/:root\[data-theme="([\w-]+)"\]/g)].map((m) => m[1]);
+  expect(names.sort()).toEqual(Object.keys(SCHEMES).sort());
+});
 
 const resolve = (theme: Theme, name: string): string => {
   const value = theme[name];
@@ -72,10 +99,7 @@ const status = [
   "--var-color-danger",
 ];
 
-for (const [mode, theme] of [
-  ["light", light],
-  ["dark", dark],
-] as const) {
+for (const [mode, theme] of [["light", light], ["dark", dark], ...schemes] as const) {
   const pair = (fg: string, bg: string, min: number) =>
     test(`${mode}: ${fg} on ${bg} is ${min}:1 or more`, () => {
       expect(contrast(resolve(theme, fg), resolve(theme, bg))).toBeGreaterThanOrEqual(min);

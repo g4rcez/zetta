@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
-import { RAIL_MODES, SIDEBAR_LIMITS, TIME_FORMATS } from "@zetta/db/schema/preferences";
+import { RAIL_MODES, SIDEBAR_LIMITS, THEMES, TIME_FORMATS } from "@zetta/db/schema/preferences";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import type { PreferenceStore } from "./store";
 import { fail, out, rejectUntrustedOrigin } from "../http-response";
@@ -15,6 +15,13 @@ const patch = z.strictObject({
   railWidth: width(SIDEBAR_LIMITS.railWidth).optional(),
   listWidth: width(SIDEBAR_LIMITS.listWidth).optional(),
   timeFormat: z.enum(TIME_FORMATS).optional(),
+  theme: z.enum(THEMES).nullable().optional(),
+  primaryColor: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .transform((v) => v.toLowerCase())
+    .nullable()
+    .optional(),
   // Ids only, never names: a stale or foreign id is harmless because only this person reads the list.
   botOrder: z.array(z.uuid()).max(500).optional(),
 });

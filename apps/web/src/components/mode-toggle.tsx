@@ -7,7 +7,7 @@ import {
 } from "@zetta/ui/components/dropdown-menu";
 import { MoonIcon, SunIcon } from "@phosphor-icons/react";
 
-import { useTheme } from "@/components/theme-provider";
+import { usePreferences } from "@/features/preferences/preferences";
 import { railLabel, railRow, railRowExpanded } from "@/components/rail-row";
 
 export function ModeToggle({
@@ -19,7 +19,7 @@ export function ModeToggle({
   inline?: boolean;
   rail?: "collapsed" | "expanded";
 }) {
-  const { setTheme } = useTheme();
+  const { set } = usePreferences();
 
   return (
     <DropdownMenu>
@@ -65,9 +65,9 @@ export function ModeToggle({
         align={compact || rail ? "start" : "end"}
         side={compact || rail ? "right" : "bottom"}
       >
-        <DropdownMenuItem onClick={() => setTheme("light")}>Light</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("dark")}>Dark</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("system")}>System</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => set({ theme: "light" })}>Light</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => set({ theme: "dark" })}>Dark</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => set({ theme: "system" })}>System</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

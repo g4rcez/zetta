@@ -1,0 +1,157 @@
+/* Color themes. Each block sets the same tokens as `:root` and `.dark` in packages/ui/src/styles/globals.css, so every component
+   follows. The mode (light or dark) of a theme is fixed: the app sets the `.dark` class for the dark ones, and the `data-theme`
+   attribute picks these values. The selector is `:root[data-theme]` so it wins over `:root`, `.dark` and the `html.dark` bridge in index.css.
+   Hues come from each scheme; lightness is moved until the pairs pass the contrast table in DESIGN.md (tokens.test.ts runs it
+   for every block). `[data-theme-preview]` is the same block on a sample inside the theme picker. To add a theme, add a block here, its entry in features/preferences/theme.ts and in THEMES (packages/db). */
+
+/* Darcula (dark) */
+:root[data-theme="darcula"],
+[data-theme-preview="darcula"] {
+  --background: #212223;
+  --foreground: #c8d3de;
+  --card: #252628;
+  --popover: #292a2c;
+  --primary: #f0ae71;
+  --primary-foreground: #1e1f22;
+  --secondary: #252628;
+  --muted: #252628;
+  --muted-foreground: #b6c2ce;
+  --accent: #2d2f31;
+  --attention: #ffc66d;
+  --attention-foreground: #1e1f22;
+  --destructive: #ffa9a6;
+  --border: #393b3e;
+  --input: #80848a;
+  --chart-2: #9dc4e6;
+  --chart-3: #ffc66d;
+  --sidebar: #161719;
+  --var-color-success: #b0ca73;
+  --var-color-info: #9dc4e6;
+}
+
+/* Darcula Light (light) */
+:root[data-theme="darcula-light"],
+[data-theme-preview="darcula-light"] {
+  --background: #ffffff;
+  --foreground: #1a1a1a;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --primary: #1b4b84;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f1f3;
+  --muted: #f0f1f3;
+  --muted-foreground: #464b51;
+  --accent: #e6e9ee;
+  --attention: #f0a63a;
+  --attention-foreground: #2b1a00;
+  --destructive: #951a1a;
+  --border: #d6d7d9;
+  --input: #80848c;
+  --chart-2: #1d4f8c;
+  --chart-3: #6a4100;
+  --sidebar: #f2f2f2;
+  --var-color-success: #2d5710;
+  --var-color-info: #1d4f8c;
+  --var-color-warn: #6a4100;
+  --var-color-warn-foreground: #ffffff;
+}
+
+/* Catppuccin Mocha (dark) */
+:root[data-theme="catppuccin"],
+[data-theme-preview="catppuccin"] {
+  --background: #1e1e2e;
+  --foreground: #cdd6f4;
+  --card: #24243a;
+  --popover: #2a2b3d;
+  --primary: #d2b2f7;
+  --primary-foreground: #11111b;
+  --secondary: #262638;
+  --muted: #262638;
+  --muted-foreground: #bac2de;
+  --accent: #2f3043;
+  --attention: #f9e2af;
+  --attention-foreground: #11111b;
+  --destructive: #f3a6bc;
+  --border: #3a3b4f;
+  --input: #8087a2;
+  --chart-2: #99befa;
+  --chart-3: #f9e2af;
+  --sidebar: #11111b;
+  --var-color-success: #a6e3a1;
+  --var-color-info: #99befa;
+}
+
+/* Tokyo Night (dark) */
+:root[data-theme="tokyonight"],
+[data-theme-preview="tokyonight"] {
+  --background: #1a1b26;
+  --foreground: #c0caf5;
+  --card: #1f2335;
+  --popover: #24283b;
+  --primary: #a0bcf7;
+  --primary-foreground: #16161e;
+  --secondary: #222639;
+  --muted: #222639;
+  --muted-foreground: #b2bbe2;
+  --accent: #292e42;
+  --attention: #e0af68;
+  --attention-foreground: #16161e;
+  --destructive: #f79dae;
+  --border: #353a50;
+  --input: #7982ad;
+  --chart-2: #7dcfff;
+  --chart-3: #e0af68;
+  --sidebar: #16161e;
+  --var-color-success: #9ece6a;
+  --var-color-info: #7dcfff;
+}
+
+/* One Dark (dark) */
+:root[data-theme="onedark"],
+[data-theme-preview="onedark"] {
+  --background: #1e2127;
+  --foreground: #d0d6e0;
+  --card: #22262c;
+  --popover: #262a31;
+  --primary: #8bc3ef;
+  --primary-foreground: #21252b;
+  --secondary: #22262c;
+  --muted: #22262c;
+  --muted-foreground: #b6bdc9;
+  --accent: #2a2f37;
+  --attention: #e5c07b;
+  --attention-foreground: #21252b;
+  --destructive: #f0acb1;
+  --border: #373b42;
+  --input: #7d8493;
+  --chart-2: #7fd3de;
+  --chart-3: #e5c07b;
+  --sidebar: #16181d;
+  --var-color-success: #a4cb89;
+  --var-color-info: #7fd3de;
+}
+
+/* Nord (dark) */
+:root[data-theme="nord"],
+[data-theme-preview="nord"] {
+  --background: #222730;
+  --foreground: #eceff4;
+  --card: #272c36;
+  --popover: #2b313c;
+  --primary: #9fd0df;
+  --primary-foreground: #242933;
+  --secondary: #272c36;
+  --muted: #272c36;
+  --muted-foreground: #d8dee9;
+  --accent: #323847;
+  --attention: #ebcb8b;
+  --attention-foreground: #242933;
+  --destructive: #efbac0;
+  --border: #3f434d;
+  --input: #8089a0;
+  --chart-2: #b1c9e4;
+  --chart-3: #ebcb8b;
+  --sidebar: #1b1f27;
+  --var-color-success: #b4cf9e;
+  --var-color-info: #b1c9e4;
+}

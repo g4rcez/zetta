@@ -4,6 +4,7 @@ import {
   SIDEBAR_LIMITS,
   userPreference,
   type RailMode,
+  type Theme,
   type TimeFormat,
 } from "@zetta/db/schema/preferences";
 import type { ActiveActor } from "../identity/access";
@@ -13,6 +14,8 @@ export type Preferences = {
   railWidth: number;
   listWidth: number;
   timeFormat: TimeFormat;
+  theme: Theme | null;
+  primaryColor: string | null;
   botOrder: string[];
 };
 export type PreferencesPatch = Partial<Preferences>;
@@ -23,6 +26,8 @@ export function createPreferenceStore(db: Database) {
     railWidth: r.railWidth,
     listWidth: r.listWidth,
     timeFormat: r.timeFormat,
+    theme: r.theme,
+    primaryColor: r.primaryColor,
     botOrder: r.botOrder,
   });
   return {
@@ -39,6 +44,8 @@ export function createPreferenceStore(db: Database) {
             railWidth: SIDEBAR_LIMITS.railWidth.fallback,
             listWidth: SIDEBAR_LIMITS.listWidth.fallback,
             timeFormat: "24h",
+            theme: null,
+            primaryColor: null,
             botOrder: [],
           };
     },

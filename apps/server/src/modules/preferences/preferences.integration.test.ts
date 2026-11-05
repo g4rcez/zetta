@@ -75,6 +75,8 @@ suite("layout preferences against compose postgres", () => {
       railWidth: 224,
       listWidth: 320,
       timeFormat: "24h",
+      theme: null,
+      primaryColor: null,
       botOrder: [],
     });
   });
@@ -87,6 +89,8 @@ suite("layout preferences against compose postgres", () => {
       railWidth: 260,
       listWidth: 400,
       timeFormat: "24h",
+      theme: null,
+      primaryColor: null,
       botOrder: [],
     });
     expect(await read(ids[1]!)).toEqual({
@@ -94,6 +98,8 @@ suite("layout preferences against compose postgres", () => {
       railWidth: 224,
       listWidth: 320,
       timeFormat: "24h",
+      theme: null,
+      primaryColor: null,
       botOrder: [],
     });
   });
@@ -110,11 +116,24 @@ suite("layout preferences against compose postgres", () => {
     expect(await read(ids[1]!)).toMatchObject({ timeFormat: "24h" });
     expect((await call(ids[1]!, "PATCH", { timeFormat: "am/pm" })).status).toBe(400);
   });
+  test("a theme and a main color are kept for that person only, and null resets them", async () => {
+    expect((await call(ids[0]!, "PATCH", { theme: "nord", primaryColor: "#AA3300" })).status).toBe(
+      200,
+    );
+    expect(await read(ids[0]!)).toMatchObject({ theme: "nord", primaryColor: "#aa3300" });
+    expect(await read(ids[1]!)).toMatchObject({ theme: null, primaryColor: null });
+    expect((await call(ids[0]!, "PATCH", { theme: null, primaryColor: null })).status).toBe(200);
+    expect(await read(ids[0]!)).toMatchObject({ theme: null, primaryColor: null });
+    expect((await call(ids[1]!, "PATCH", { theme: "solarized" })).status).toBe(400);
+    expect((await call(ids[1]!, "PATCH", { primaryColor: "red" })).status).toBe(400);
+    expect((await call(ids[1]!, "PATCH", { primaryColor: "#fff" })).status).toBe(400);
+  });
+
   test("widths outside the limits and unknown fields are refused", async () => {
     expect((await call(ids[1]!, "PATCH", { listWidth: 5000 })).status).toBe(400);
     expect((await call(ids[1]!, "PATCH", { railWidth: 100 })).status).toBe(400);
     expect((await call(ids[1]!, "PATCH", { railMode: "hidden" })).status).toBe(400);
-    expect((await call(ids[1]!, "PATCH", { theme: "dark" })).status).toBe(400);
+    expect((await call(ids[1]!, "PATCH", { fontSize: 14 })).status).toBe(400);
     expect((await call(ids[1]!, "PATCH", { botOrder: ["not-a-bot"] })).status).toBe(400);
     expect(
       (await call(ids[1]!, "PATCH", { botOrder: "00000000-0000-7000-8000-000000000001" })).status,

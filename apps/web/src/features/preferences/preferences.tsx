@@ -11,8 +11,10 @@ import {
 } from "react";
 import { toast } from "sonner";
 
-import { call } from "../chat/chat-client";
+import { ApiError, call } from "../chat/chat-client";
+import { useTheme } from "@/components/theme-provider";
 import { saveLocal } from "@/lib/local-storage";
+import { applyTheme, type Theme } from "./theme";
 import { DEFAULT_TIME_FORMAT, type TimeFormat } from "./time-format";
 
 export type RailMode = "expanded" | "collapsed";
@@ -23,6 +25,10 @@ export type Preferences = {
   listWidth: number;
   /** How hours show everywhere in the app. */
   timeFormat: TimeFormat;
+  /** Null = never chosen on the account: the device keeps its own light/dark choice. */
+  theme: Theme | null;
+  /** `#rrggbb`. Null = the theme's own main color. */
+  primaryColor: string | null;
   botOrder: string[];
 };
 
@@ -37,6 +43,8 @@ const DEFAULTS: Preferences = {
   railWidth: SIDEBAR_LIMITS.railWidth.fallback,
   listWidth: SIDEBAR_LIMITS.listWidth.fallback,
   timeFormat: DEFAULT_TIME_FORMAT,
+  theme: null,
+  primaryColor: null,
   botOrder: [],
 };
 // The server is the source of truth. This copy only stops the layout from jumping while the first request is in flight.
@@ -92,12 +100,22 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       timer.current = setTimeout(() => {
         const body = pending.current;
         pending.current = {};
-        call("/api/preferences", "PATCH", body).catch(() =>
-          toast.error("Could not save your preferences. They will reset on your next visit."),
-        );
+        call("/api/preferences", "PATCH", body).catch((e) => {
+          // Signed out (the public pages): the choice stays on this device through the cache, so there is nothing to report.
+          if (e instanceof ApiError && e.status === 401) return;
+          toast.error("Could not save your preferences. They will reset on your next visit.");
+        });
       }, SAVE_DELAY_MS);
     },
     [qc],
+  );
+
+  // The theme is a preference, so it follows the person to any device. next-themes only applies the light/dark base.
+  const { setTheme } = useTheme();
+  useEffect(
+    () =>
+      applyTheme(document.documentElement, preferences.theme, preferences.primaryColor, setTheme),
+    [preferences.theme, preferences.primaryColor, setTheme],
   );
 
   const value = useMemo(() => ({ preferences, set }), [preferences, set]);

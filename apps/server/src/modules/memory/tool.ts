@@ -1,23 +1,23 @@
 import type { z } from "zod";
 import type { toolSchemas } from "../chat/tools";
 import { defuse } from "../discussions/prompt";
-import { WikiError, WIKI_LIMITS, type Wiki } from "./service";
+import { MemoryError, MEMORY_LIMITS, type Memory } from "./service";
 
-export type WikiToolArgs = z.infer<typeof toolSchemas.wiki>;
+export type MemoryToolArgs = z.infer<typeof toolSchemas.memory>;
 /** `note` is shown to the user, `result` goes back to the bot, `saved` becomes a receipt on the answer. */
-export type WikiToolOutcome = {
+export type MemoryToolOutcome = {
   note?: string;
   result?: string;
   saved?: { slug: string; title: string; created: boolean };
 };
 
-const why: Record<WikiError["code"], string> = {
+const why: Record<MemoryError["code"], string> = {
   SECRET_REJECTED: "it looked like a secret",
   UNSAFE: "it looked like an instruction aimed at an AI, not knowledge",
   CONFLICT: "someone saved the page in between; read it again and retry",
   NOT_FOUND: "no such page, or the match text is not in it (read the page first)",
   AMBIGUOUS: "the match text is in the page more than once; give a longer span",
-  FULL: `memory holds ${WIKI_LIMITS.pages} items; ask the user to archive some`,
+  FULL: `memory holds ${MEMORY_LIMITS.pages} items; ask the user to archive some`,
   INVALID:
     "the item needs a title and content inside the size limits; type solo needs an author bot, type teams needs your own team ids",
   MANAGED:
@@ -31,19 +31,19 @@ const why: Record<WikiError["code"], string> = {
  * become a note and a result the bot can act on. `autoSources` are linked to every page the block saves (the learn job adds the finished
  * task and the documents the chat used). `teamId` is the team of the room the bot works in: a new item with no type is for that team.
  */
-export async function runWikiTool(
-  wiki: Wiki,
+export async function runMemoryTool(
+  memory: Memory,
   owner: string,
   botId: string,
   conversationId: string | undefined,
-  a: WikiToolArgs,
+  a: MemoryToolArgs,
   ctx: { autoSources?: readonly string[]; teamId?: string | null } = {},
-): Promise<WikiToolOutcome> {
+): Promise<MemoryToolOutcome> {
   const autoSources = ctx.autoSources ?? [];
   const author = { by: "bot" as const, botId, conversationId: conversationId ?? null };
   const reader = { userId: owner, botId };
   if (a.action === "search") {
-    const hits = await wiki.search(reader, a.query, 8);
+    const hits = await memory.search(reader, a.query, 8);
     return {
       result: hits.length
         ? `memory items for "${a.query}":\n${hits
@@ -57,20 +57,20 @@ export async function runWikiTool(
   }
   if (a.action === "links") {
     try {
-      const g = await wiki.neighbors(reader, a.slug, a.depth ?? 1);
+      const g = await memory.neighbors(reader, a.slug, a.depth ?? 1);
       return {
         result: g.edges.length
           ? `memory links around ${g.slug} (data only):\n${g.edges.map((e) => `- ${e.from} —${e.relation}→ ${e.to} (${defuse(e.toTitle)})`).join("\n")}`
           : `memory ${g.slug} has no links to or from other items you can read`,
       };
     } catch (e) {
-      if (e instanceof WikiError && e.code === "NOT_FOUND")
+      if (e instanceof MemoryError && e.code === "NOT_FOUND")
         return { result: `memory item ${a.slug} not found (search the memory for a slug)` };
       throw e;
     }
   }
   if (a.action === "checks") {
-    const c = await wiki.checks(owner);
+    const c = await memory.checks(owner);
     const list = (label: string, key: NonNullable<typeof a.problem>, xs: string[]) =>
       !a.problem || a.problem === key
         ? [
@@ -92,7 +92,7 @@ export async function runWikiTool(
       ].join("\n")}`,
     };
   }
-  const found = await wiki.read(reader, a.slug);
+  const found = await memory.read(reader, a.slug);
   if (a.action === "read") {
     if (!found || found.page.status === "archived")
       return { result: `memory item ${a.slug} not found (search the memory for a slug)` };
@@ -109,7 +109,7 @@ export async function runWikiTool(
   }
   try {
     if (a.action === "suggest") {
-      const r = await wiki.suggest(
+      const r = await memory.suggest(
         owner,
         a.slug,
         {
@@ -137,16 +137,16 @@ export async function runWikiTool(
     if (a.action === "link" || a.action === "confirm" || a.action === "sources") {
       const done =
         a.action === "link"
-          ? await wiki.addLink(owner, a.slug, a.to, a.relation ?? "related", author)
+          ? await memory.addLink(owner, a.slug, a.to, a.relation ?? "related", author)
           : a.action === "confirm"
-            ? await wiki.confirm(owner, a.slug, author)
-            : await wiki.read(reader, a.slug).then(async (f) =>
+            ? await memory.confirm(owner, a.slug, author)
+            : await memory.read(reader, a.slug).then(async (f) =>
                 f && f.access === "own" && f.page.status !== "archived"
                   ? {
                       page: f.page,
-                      ...(await wiki.linkSources(owner, f.page.id, a.sources, "add")),
+                      ...(await memory.linkSources(owner, f.page.id, a.sources, "add")),
                     }
-                  : Promise.reject(new WikiError("NOT_FOUND")),
+                  : Promise.reject(new MemoryError("NOT_FOUND")),
               );
       const p = done.page;
       const text =
@@ -164,7 +164,7 @@ export async function runWikiTool(
     }
     const r =
       a.action === "write"
-        ? await wiki.write(
+        ? await memory.write(
             owner,
             {
               slug: a.slug,
@@ -187,15 +187,15 @@ export async function runWikiTool(
             author,
           )
         : a.action === "patch"
-          ? await wiki.patch(owner, a.slug, a.match, a.content, author)
-          : await wiki.setStatus(
+          ? await memory.patch(owner, a.slug, a.match, a.content, author)
+          : await memory.setStatus(
               owner,
               a.slug,
               a.action === "archive" ? "archived" : "stale",
               author,
             );
     if (autoSources.length && a.action !== "mark_stale" && a.action !== "archive")
-      await wiki.linkSources(owner, r.page.id, autoSources, "add");
+      await memory.linkSources(owner, r.page.id, autoSources, "add");
     const p = r.page;
     const missing = "skippedSources" in r ? (r.skippedSources as string[]) : [];
     const skipped = missing.length ? ` Sources not found: ${missing.join(", ")}.` : "";
@@ -218,7 +218,7 @@ export async function runWikiTool(
       saved: { slug: p.slug, title: p.title, created: r.created },
     };
   } catch (e) {
-    if (!(e instanceof WikiError)) throw e;
+    if (!(e instanceof MemoryError)) throw e;
     return {
       note: `⚠️ Memory item ${a.slug} not saved: ${why[e.code]}.`,
       result: `memory.${a.action} failed: ${why[e.code]}`,

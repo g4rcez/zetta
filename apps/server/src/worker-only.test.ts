@@ -127,7 +127,8 @@ describe("docker/scale/Caddyfile", () => {
     ["DELETE", "/api/conversations/c1/queue/m1"],
     ["GET", "/api/proposals"],
     ["POST", "/api/bots/b1/onboarding/question"],
-    ["POST", "/api/wiki-assist"],
+    ["POST", "/api/memory-assist"],
+    ["POST", "/api/wiki-assist"], // the old name of the route
     ["GET", "/api/connections/transport-key"],
     ["POST", "/api/connections"],
     ["POST", "/api/plugins"],

@@ -13,7 +13,7 @@ import { BUILTIN_KEYS } from "../output-styles/builtins";
 import { STYLE_LIMITS } from "../output-styles/format";
 import { OutputStyleError, type OutputStyles } from "../output-styles/service";
 import type { TaskStore } from "../tasks/store";
-import { WIKI_LIMITS, WikiError, type Wiki } from "../wiki/service";
+import { MEMORY_LIMITS, MemoryError, type Memory } from "../memory/service";
 
 /**
  * Zetta's own MCP server: external AI clients (Claude Code, Cursor, …) act as one member through the same services as the web app, so
@@ -24,7 +24,7 @@ export type ZettaMcpServices = {
   mcp: Mcp;
   connections: ConnectionsService;
   features: FeaturesService;
-  wiki: Wiki;
+  memory: Memory;
   tasks: TaskStore;
   outputStyles: OutputStyles;
   /** Records a write the client made on the member's behalf (best effort, never throws). */
@@ -57,7 +57,7 @@ function failure(e: unknown): CallToolResult {
       ? e.message
       : e instanceof z.ZodError
         ? `Invalid input: ${e.issues.map((i) => `${i.path.join(".") || "input"} ${i.message}`).join("; ")}`
-        : e instanceof McpError || e instanceof WikiError || e instanceof OutputStyleError
+        : e instanceof McpError || e instanceof MemoryError || e instanceof OutputStyleError
           ? e.code
           : (console.error("zetta-mcp: unhandled tool error", e),
             "Something went wrong. Please retry.");
@@ -100,7 +100,7 @@ function botView(actor: ActiveActor, b: Bot) {
 
 /** One server per request: it acts only as `actor`. */
 export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveActor) {
-  const { chat, mcp, connections, features, wiki, tasks, outputStyles } = services;
+  const { chat, mcp, connections, features, memory, tasks, outputStyles } = services;
   /** Runs a write and records it. The audit row names the tool and the thing changed, never the content. */
   async function runWrite(
     tool: string,
@@ -428,38 +428,46 @@ export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveAc
     () => run(() => tasks.list(actor)),
   );
 
-  server.registerTool(
-    "search_wiki",
-    {
-      title: "Search memory",
-      description:
-        "Search the member's memory items (a graph: each has tags, a howto, a score and typed links), or list them (with items shared with the installation) when `query` is empty.",
-      inputSchema: z.object({ query: z.string().max(200).optional() }),
-      ...READ,
-    },
-    ({ query }) =>
-      run(async () =>
-        query?.trim()
-          ? { pages: await wiki.search(actor.userId, query, 50) }
-          : { pages: await wiki.list(actor.userId), shared: await wiki.listShared(actor.userId) },
-      ),
-  );
+  // `search_wiki` and `read_wiki_page` are the old names of these two tools: clients that saved them keep working.
+  for (const [searchName, readName, legacy] of [
+    ["search_memory", "read_memory_item", ""],
+    ["search_wiki", "read_wiki_page", " (old name of the memory tool)"],
+  ] as const) {
+    server.registerTool(
+      searchName,
+      {
+        title: "Search memory",
+        description: `Search the member's memory items (a graph: each has tags, a howto, a score and typed links), or list them (with items shared with the installation) when \`query\` is empty.${legacy}`,
+        inputSchema: z.object({ query: z.string().max(200).optional() }),
+        ...READ,
+      },
+      ({ query }) =>
+        run(async () =>
+          query?.trim()
+            ? { pages: await memory.search(actor.userId, query, 50) }
+            : {
+                pages: await memory.list(actor.userId),
+                shared: await memory.listShared(actor.userId),
+              },
+        ),
+    );
 
-  server.registerTool(
-    "read_wiki_page",
-    {
-      title: "Read memory item",
-      description: "One memory item by slug, with its links to and from other items.",
-      inputSchema: z.object({ slug: z.string().trim().min(1).max(WIKI_LIMITS.slug) }),
-      ...READ,
-    },
-    ({ slug }) =>
-      run(async () => {
-        const r = await wiki.read(actor.userId, slug);
-        if (!r) throw new WikiError("NOT_FOUND");
-        return { access: r.access, page: r.page, links: r.links, linkedFrom: r.linkedFrom };
-      }),
-  );
+    server.registerTool(
+      readName,
+      {
+        title: "Read memory item",
+        description: `One memory item by slug, with its links to and from other items.${legacy}`,
+        inputSchema: z.object({ slug: z.string().trim().min(1).max(MEMORY_LIMITS.slug) }),
+        ...READ,
+      },
+      ({ slug }) =>
+        run(async () => {
+          const r = await memory.read(actor.userId, slug);
+          if (!r) throw new MemoryError("NOT_FOUND");
+          return { access: r.access, page: r.page, links: r.links, linkedFrom: r.linkedFrom };
+        }),
+    );
+  }
 
   return server;
 }

@@ -9,29 +9,29 @@ import { knowledgeDoc } from "@zetta/db/schema/knowledge";
 import { task } from "@zetta/db/schema/tasks";
 import { team } from "@zetta/db/schema/teams";
 import {
-  WIKI_RELATIONS,
-  WIKI_SCORE_DEFAULT,
-  WIKI_SCORE_MAX,
-  WIKI_TYPES,
-  wikiChunk,
-  wikiLink,
-  wikiPage,
-  wikiPageTeam,
-  wikiRevision,
-  wikiSource,
-  wikiSuggestion,
-  type WikiPageStatus,
-  type WikiRelation,
-  type WikiSourceKind,
-  type WikiType,
-} from "@zetta/db/schema/wiki";
+  MEMORY_RELATIONS,
+  MEMORY_SCORE_DEFAULT,
+  MEMORY_SCORE_MAX,
+  MEMORY_TYPES,
+  memoryChunk,
+  memoryLink,
+  memoryItem,
+  memoryItemTeam,
+  memoryRevision,
+  memorySource,
+  memorySuggestion,
+  type MemoryItemStatus,
+  type MemoryRelation,
+  type MemorySourceKind,
+  type MemoryType,
+} from "@zetta/db/schema/memory";
 import { raiseAttention } from "../features/attention";
-import { MEMORY_MAX_ENTRIES, unsafeMemory } from "../features/knowledge";
+import { NOTES_MAX_ENTRIES, unsafeMemory } from "../features/knowledge";
 import { looksSecret } from "../features/safety";
 import { chunkText } from "../knowledge/chunk";
 import { embedQuery, type Embedder } from "../knowledge/embed";
 
-export type WikiCode =
+export type MemoryCode =
   | "SECRET_REJECTED"
   | "UNSAFE"
   | "CONFLICT"
@@ -41,13 +41,13 @@ export type WikiCode =
   | "INVALID"
   | "SLUG_TAKEN"
   | "MANAGED";
-export class WikiError extends Error {
-  constructor(readonly code: WikiCode) {
+export class MemoryError extends Error {
+  constructor(readonly code: MemoryCode) {
     super(code);
   }
 }
 /** Who changes a page. A bot write also records the chat it came from; `system` is the source check. */
-export type WikiAuthor =
+export type MemoryAuthor =
   | { by: "user" }
   | { by: "system" }
   | { by: "bot"; botId: string; conversationId?: string | null | undefined };
@@ -55,28 +55,28 @@ export type WikiAuthor =
  * Who reads. A person (a plain user id) sees all of their own items. A bot also needs the items' `type` to allow it: `solo` items only
  * for their author bot, `teams` items only for bots in one of the item's teams.
  */
-export type WikiReader = string | { userId: string; botId?: string | undefined };
-export type WikiPage = typeof wikiPage.$inferSelect;
+export type MemoryReader = string | { userId: string; botId?: string | undefined };
+export type MemoryItem = typeof memoryItem.$inferSelect;
 /** own: the asker's page. shared: another active member published it; the asker reads it and can only suggest changes. */
-export type WikiAccess = "own" | "shared";
-export type WikiNeighbor = {
-  relation: WikiRelation;
+export type MemoryAccess = "own" | "shared";
+export type MemoryNeighbor = {
+  relation: MemoryRelation;
   direction: "out" | "in";
   slug: string;
   title: string;
 };
-export type WikiHit = {
+export type MemoryHit = {
   slug: string;
   title: string;
-  type: WikiType;
+  type: MemoryType;
   howto: string;
   tags: string[];
   score: number;
-  status: WikiPageStatus;
-  access: WikiAccess;
+  status: MemoryItemStatus;
+  access: MemoryAccess;
   ownerName: string | null;
   /** Items linked to or from this one (up to 3), so a bot can follow the graph without another search. */
-  neighbors: WikiNeighbor[];
+  neighbors: MemoryNeighbor[];
 };
 export type Explained = {
   id: string;
@@ -84,11 +84,11 @@ export type Explained = {
   /** Which rankings found the item: words in the text, words that are tags, or the nearest passage by meaning. */
   why: { keyword: boolean; tags: string[]; meaning: boolean; passage: string };
 };
-export type WikiHitExplained = WikiHit & Explained;
+export type MemoryHitExplained = MemoryHit & Explained;
 /** Narrows the items a search looks at. */
-export type WikiFilter = {
-  types?: WikiType[];
-  statuses?: WikiPageStatus[];
+export type MemoryFilter = {
+  types?: MemoryType[];
+  statuses?: MemoryItemStatus[];
   tags?: string[];
   tagMode?: "any" | "all";
   access?: "own" | "shared";
@@ -105,15 +105,15 @@ export type WikiFilter = {
 const PASSAGE = "MaxFragments=1,MaxWords=28,MinWords=10,StartSel=\u0001,StopSel=\u0002";
 
 /** What a version holds. type, teams, score and the author bot are metadata: changing them is not a new version. */
-type Content = Pick<WikiPage, "title" | "howto" | "content" | "tags" | "status">;
-export type WikiMeta = {
-  type?: WikiType | undefined;
+type Content = Pick<MemoryItem, "title" | "howto" | "content" | "tags" | "status">;
+export type MemoryMeta = {
+  type?: MemoryType | undefined;
   teams?: readonly string[] | undefined;
   score?: number | undefined;
   authorBotId?: string | null | undefined;
 };
 
-export const WIKI_LIMITS = {
+export const MEMORY_LIMITS = {
   slug: 80,
   title: 160,
   howto: 300,
@@ -152,14 +152,14 @@ const strip = (s: string) =>
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
 /** "Acme – Billing API" -> "acme-billing-api". Empty when nothing usable is left. */
-export const wikiSlug = (s: string) =>
+export const memorySlug = (s: string) =>
   strip(s)
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, WIKI_LIMITS.slug)
+    .slice(0, MEMORY_LIMITS.slug)
     .replace(/-+$/, "");
 /** Tags are slugs too: lower-case words joined by hyphens, no duplicates, a bounded number. */
-export const wikiTags = (tags: readonly string[]) =>
+export const memoryTags = (tags: readonly string[]) =>
   [
     ...new Set(
       tags
@@ -167,30 +167,30 @@ export const wikiTags = (tags: readonly string[]) =>
           strip(t)
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/^-+|-+$/g, "")
-            .slice(0, WIKI_LIMITS.tag),
+            .slice(0, MEMORY_LIMITS.tag),
         )
         .filter(Boolean),
     ),
-  ].slice(0, WIKI_LIMITS.tags);
-const LINK = new RegExp(`\\[\\[(?:(${WIKI_RELATIONS.join("|")}):)?([a-z0-9-]+)\\]\\]`, "g");
+  ].slice(0, MEMORY_LIMITS.tags);
+const LINK = new RegExp(`\\[\\[(?:(${MEMORY_RELATIONS.join("|")}):)?([a-z0-9-]+)\\]\\]`, "g");
 /** The edges a content writes: `[[slug]]` is `related`, `[[depends-on:slug]]` (also part-of, supersedes) is typed. A link to itself is no edge. */
-export function wikiLinks(content: string, self: string) {
-  const out = new Map<string, { relation: WikiRelation; slug: string }>();
+export function memoryLinks(content: string, self: string) {
+  const out = new Map<string, { relation: MemoryRelation; slug: string }>();
   for (const m of content.matchAll(LINK)) {
-    const relation = (m[1] ?? "related") as WikiRelation,
+    const relation = (m[1] ?? "related") as MemoryRelation,
       slug = m[2]!;
     if (slug !== self) out.set(`${relation}:${slug}`, { relation, slug });
   }
   return [...out.values()];
 }
-export type WikiLinkRelation = "related" | "depends-on" | "part-of" | "supersedes";
-const LINK_LABEL: Record<WikiLinkRelation, string> = {
+export type MemoryLinkRelation = "related" | "depends-on" | "part-of" | "supersedes";
+const LINK_LABEL: Record<MemoryLinkRelation, string> = {
   related: "Related",
   "depends-on": "Depends on",
   "part-of": "Part of",
   supersedes: "Supersedes",
 };
-const contentOf = (p: WikiPage): Content => ({
+const contentOf = (p: MemoryItem): Content => ({
   title: p.title,
   howto: p.howto,
   content: p.content,
@@ -207,7 +207,7 @@ const same = (a: Content, b: Content) =>
 const sameSet = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((x) => b.includes(x));
 const pageLink = (slug: string) => `/memory/${encodeURIComponent(slug)}`;
-const who = (r: WikiReader) => (typeof r === "string" ? { userId: r, botId: undefined } : r);
+const who = (r: MemoryReader) => (typeof r === "string" ? { userId: r, botId: undefined } : r);
 const uniqueViolation = (e: unknown) =>
   (e as { code?: string }).code === "23505" ||
   (e as { cause?: { code?: string } }).cause?.code === "23505";
@@ -217,69 +217,71 @@ const uniqueViolation = (e: unknown) =>
  * another active member published (`all`). A published item counts only while its owner is an active member, so removing a member
  * withdraws what they published.
  */
-export function visibleTo(reader: WikiReader, t = "wiki_page"): ReturnType<typeof sql> {
+export function visibleTo(reader: MemoryReader, t = "memory_item"): ReturnType<typeof sql> {
   const { userId, botId } = who(reader);
   const c = (col: string) => sql`${sql.identifier(t)}.${sql.identifier(col)}`;
   const own = botId
     ? sql`(${c("type")} in ('owner', 'all') or (${c("type")} = 'solo' and ${c("author_bot_id")} = ${botId})
-        or (${c("type")} = 'teams' and exists (select 1 from wiki_page_team wt join team_member tm on tm.team_id = wt.team_id
+        or (${c("type")} = 'teams' and exists (select 1 from memory_item_team wt join team_member tm on tm.team_id = wt.team_id
           where wt.page_id = ${c("id")} and tm.bot_id = ${botId})))`
     : sql`true`;
   return sql`((${c("owner_user_id")} = ${userId} and ${own}) or (${c("type")} = 'all' and ${c("status")} <> 'archived'
     and exists (select 1 from membership m where m.user_id = ${c("owner_user_id")} and m.status = 'active')))`;
 }
 
-/** The facets of a search as one SQL condition on `wiki_page`. */
-function filterSql(f: WikiFilter, userId: string): ReturnType<typeof sql> {
+/** The facets of a search as one SQL condition on `memory_item`. */
+function filterSql(f: MemoryFilter, userId: string): ReturnType<typeof sql> {
   const list = (xs: readonly string[]) =>
     sql.join(
       xs.map((x) => sql`${x}`),
       sql`, `,
     );
   const parts: ReturnType<typeof sql>[] = [];
-  if (f.types?.length) parts.push(sql`wiki_page.type in (${list(f.types)})`);
-  if (f.statuses?.length) parts.push(sql`wiki_page.status in (${list(f.statuses)})`);
+  if (f.types?.length) parts.push(sql`memory_item.type in (${list(f.types)})`);
+  if (f.statuses?.length) parts.push(sql`memory_item.status in (${list(f.statuses)})`);
   if (f.tags?.length) {
     const arr = sql`array[${list(f.tags)}]::text[]`;
-    parts.push(f.tagMode === "all" ? sql`wiki_page.tags @> ${arr}` : sql`wiki_page.tags && ${arr}`);
+    parts.push(
+      f.tagMode === "all" ? sql`memory_item.tags @> ${arr}` : sql`memory_item.tags && ${arr}`,
+    );
   }
-  if (f.access === "own") parts.push(sql`wiki_page.owner_user_id = ${userId}`);
-  if (f.access === "shared") parts.push(sql`wiki_page.owner_user_id <> ${userId}`);
-  if (f.by) parts.push(sql`wiki_page.updated_by = ${f.by}`);
-  if (f.botId) parts.push(sql`wiki_page.updated_by_bot_id = ${f.botId}`);
-  if (f.createdByBotId) parts.push(sql`wiki_page.author_bot_id = ${f.createdByBotId}`);
+  if (f.access === "own") parts.push(sql`memory_item.owner_user_id = ${userId}`);
+  if (f.access === "shared") parts.push(sql`memory_item.owner_user_id <> ${userId}`);
+  if (f.by) parts.push(sql`memory_item.updated_by = ${f.by}`);
+  if (f.botId) parts.push(sql`memory_item.updated_by_bot_id = ${f.botId}`);
+  if (f.createdByBotId) parts.push(sql`memory_item.author_bot_id = ${f.createdByBotId}`);
   if (f.teamId)
     parts.push(
-      sql`exists (select 1 from wiki_page_team wt where wt.page_id = wiki_page.id and wt.team_id = ${f.teamId})`,
+      sql`exists (select 1 from memory_item_team wt where wt.page_id = memory_item.id and wt.team_id = ${f.teamId})`,
     );
-  if (f.minScore !== undefined) parts.push(sql`wiki_page.score >= ${f.minScore}`);
-  if (f.maxScore !== undefined) parts.push(sql`wiki_page.score <= ${f.maxScore}`);
+  if (f.minScore !== undefined) parts.push(sql`memory_item.score >= ${f.minScore}`);
+  if (f.maxScore !== undefined) parts.push(sql`memory_item.score <= ${f.maxScore}`);
   if (f.updatedSince)
-    parts.push(sql`wiki_page.updated_at >= ${f.updatedSince.toISOString()}::timestamptz`);
+    parts.push(sql`memory_item.updated_at >= ${f.updatedSince.toISOString()}::timestamptz`);
   return parts.length ? sql.join(parts, sql` and `) : sql`true`;
 }
 
 /**
- * The operator's wiki (see schema/wiki.ts). An item belongs to one user and is read by the bots its type allows; the owner may publish
+ * The operator's memory (see schema/memory.ts). An item belongs to one user and is read by the bots its type allows; the owner may publish
  * it to every active member, who read it and suggest changes but never write it. Writes are serialised per item, keep a revision of
  * every version, and refuse secrets; a bot's text is also screened for injection phrasing, because items are replayed into prompts.
- * Items link to each other (`wiki_link`) and to their evidence (`wiki_source`), and are marked stale when the evidence changes.
+ * Items link to each other (`memory_link`) and to their evidence (`memory_source`), and are marked stale when the evidence changes.
  */
-export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
+export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
   let busy = false,
     checking = false;
 
-  function check(c: Content, author: WikiAuthor) {
-    if (!c.title.trim() || !c.content.trim()) throw new WikiError("INVALID");
+  function check(c: Content, author: MemoryAuthor) {
+    if (!c.title.trim() || !c.content.trim()) throw new MemoryError("INVALID");
     if (
-      c.title.length > WIKI_LIMITS.title ||
-      c.howto.length > WIKI_LIMITS.howto ||
-      c.content.length > WIKI_LIMITS.content
+      c.title.length > MEMORY_LIMITS.title ||
+      c.howto.length > MEMORY_LIMITS.howto ||
+      c.content.length > MEMORY_LIMITS.content
     )
-      throw new WikiError("INVALID");
+      throw new MemoryError("INVALID");
     const text = `${c.title}\n${c.howto}\n${c.tags.join(" ")}\n${c.content}`;
-    if (looksSecret(text)) throw new WikiError("SECRET_REJECTED");
-    if (author.by === "bot" && unsafeMemory(text)) throw new WikiError("UNSAFE");
+    if (looksSecret(text)) throw new MemoryError("SECRET_REJECTED");
+    if (author.by === "bot" && unsafeMemory(text)) throw new MemoryError("UNSAFE");
   }
 
   /**
@@ -290,35 +292,37 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   async function save(
     owner: string,
     slug: string,
-    author: WikiAuthor,
-    change: (cur: WikiPage | undefined) => Content & { meta?: WikiMeta },
+    author: MemoryAuthor,
+    change: (cur: MemoryItem | undefined) => Content & { meta?: MemoryMeta },
     expectedVersion?: number,
   ) {
-    const key = wikiSlug(slug);
-    if (!key) throw new WikiError("INVALID");
+    const key = memorySlug(slug);
+    if (!key) throw new MemoryError("INVALID");
     try {
       return await db.transaction(async (tx) => {
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`wiki:${owner}:${key}`}))`);
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`memory:${owner}:${key}`}))`);
         const [cur] = await tx
           .select()
-          .from(wikiPage)
-          .where(and(eq(wikiPage.ownerUserId, owner), eq(wikiPage.slug, key)));
+          .from(memoryItem)
+          .where(and(eq(memoryItem.ownerUserId, owner), eq(memoryItem.slug, key)));
         if (cur && author.by === "bot") {
           // A bot edits only what it can read; a slug it cannot see is taken by an item of another bot or team.
           const seen = await tx
-            .select({ id: wikiPage.id })
-            .from(wikiPage)
-            .where(and(eq(wikiPage.id, cur.id), visibleTo({ userId: owner, botId: author.botId })));
-          if (!seen.length) throw new WikiError("SLUG_TAKEN");
+            .select({ id: memoryItem.id })
+            .from(memoryItem)
+            .where(
+              and(eq(memoryItem.id, cur.id), visibleTo({ userId: owner, botId: author.botId })),
+            );
+          if (!seen.length) throw new MemoryError("SLUG_TAKEN");
         }
         if (expectedVersion !== undefined && (cur?.version ?? 0) !== expectedVersion)
-          throw new WikiError("CONFLICT");
+          throw new MemoryError("CONFLICT");
         const next = change(cur);
         const c: Content = {
           title: next.title.trim(),
           howto: next.howto.trim(),
           content: next.content.trim(),
-          tags: wikiTags(next.tags),
+          tags: memoryTags(next.tags),
           status: next.status,
         };
         check(c, author);
@@ -327,9 +331,9 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
         const curTeams = cur
           ? (
               await tx
-                .select({ id: wikiPageTeam.teamId })
-                .from(wikiPageTeam)
-                .where(eq(wikiPageTeam.pageId, cur.id))
+                .select({ id: memoryItemTeam.teamId })
+                .from(memoryItemTeam)
+                .where(eq(memoryItemTeam.pageId, cur.id))
             ).map((r) => r.id)
           : [];
         const type = m.type ?? cur?.type ?? "owner";
@@ -338,34 +342,34 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
             ? m.authorBotId
             : cur.authorBotId
           : (m.authorBotId ?? (author.by === "bot" ? author.botId : null));
-        const score = m.score ?? cur?.score ?? WIKI_SCORE_DEFAULT;
+        const score = m.score ?? cur?.score ?? MEMORY_SCORE_DEFAULT;
         const teams = type === "teams" ? [...new Set(m.teams ?? curTeams)] : [];
         if (
-          !WIKI_TYPES.includes(type) ||
+          !MEMORY_TYPES.includes(type) ||
           !Number.isInteger(score) ||
           score < 0 ||
-          score > WIKI_SCORE_MAX
+          score > MEMORY_SCORE_MAX
         )
-          throw new WikiError("INVALID");
+          throw new MemoryError("INVALID");
         // A bot never publishes: `all` is a person's choice (routes only).
         if (author.by === "bot" && type === "all" && cur?.type !== "all")
-          throw new WikiError("INVALID");
-        if (type === "solo" && !authorBotId) throw new WikiError("INVALID");
+          throw new MemoryError("INVALID");
+        if (type === "solo" && !authorBotId) throw new MemoryError("INVALID");
         if (authorBotId && authorBotId !== cur?.authorBotId && author.by !== "bot") {
           // A person names the bot an item belongs to: it must be one of their own.
           const [mine] = await tx
             .select({ id: bot.id })
             .from(bot)
             .where(and(eq(bot.id, authorBotId), eq(bot.ownerUserId, owner)));
-          if (!mine) throw new WikiError("INVALID");
+          if (!mine) throw new MemoryError("INVALID");
         }
         if (type === "teams") {
-          if (!teams.length || teams.length > WIKI_LIMITS.teams) throw new WikiError("INVALID");
+          if (!teams.length || teams.length > MEMORY_LIMITS.teams) throw new MemoryError("INVALID");
           const mine = await tx
             .select({ id: team.id })
             .from(team)
             .where(and(inArray(team.id, teams), eq(team.ownerUserId, owner)));
-          if (mine.length !== teams.length) throw new WikiError("INVALID");
+          if (mine.length !== teams.length) throw new MemoryError("INVALID");
         }
         // An item that holds a Drive document is written by the sync: its title and text are the document's, and it is never published
         // (the document was read with one person's token).
@@ -376,7 +380,7 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
             .where(eq(knowledgeDoc.pageId, cur.id))
             .limit(1);
           if (managed && (c.title !== cur.title || c.content !== cur.content || type === "all"))
-            throw new WikiError("MANAGED");
+            throw new MemoryError("MANAGED");
         }
         // Mentions are stored by id (`[@Dev](bot:<id>)`), so a rename never breaks a page. Only text that is new is changed: an unchanged
         // text stays as it is, which also keeps a synced document equal to its source.
@@ -392,20 +396,20 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
         if (entersSet) {
           const [{ n } = { n: 0 }] = await tx
             .select({ n: sql<number>`count(*)::int` })
-            .from(wikiPage)
+            .from(memoryItem)
             .where(
               and(
-                eq(wikiPage.ownerUserId, owner),
-                ne(wikiPage.status, "archived"),
+                eq(memoryItem.ownerUserId, owner),
+                ne(memoryItem.status, "archived"),
                 type === "solo"
-                  ? and(eq(wikiPage.type, "solo"), eq(wikiPage.authorBotId, authorBotId!))
+                  ? and(eq(memoryItem.type, "solo"), eq(memoryItem.authorBotId, authorBotId!))
                   : and(
-                      eq(wikiPage.type, "owner"),
-                      sql`${wikiPage.tags} @> array['profile']::text[]`,
+                      eq(memoryItem.type, "owner"),
+                      sql`${memoryItem.tags} @> array['profile']::text[]`,
                     ),
               ),
             );
-          if (n >= MEMORY_MAX_ENTRIES) throw new WikiError("FULL");
+          if (n >= NOTES_MAX_ENTRIES) throw new MemoryError("FULL");
         }
         const metaChanged =
           !cur ||
@@ -418,7 +422,7 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
           return { page: cur, created: false, changed: false };
 
         const botId = author.by === "bot" ? author.botId : null;
-        let page: WikiPage;
+        let page: MemoryItem;
         if (cur) {
           const by = contentChanged
             ? {
@@ -430,18 +434,18 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
               }
             : {};
           [page] = (await tx
-            .update(wikiPage)
+            .update(memoryItem)
             .set({ ...by, type, score, authorBotId })
-            .where(eq(wikiPage.id, cur.id))
-            .returning()) as [WikiPage];
+            .where(eq(memoryItem.id, cur.id))
+            .returning()) as [MemoryItem];
         } else {
           const [{ n } = { n: 0 }] = await tx
             .select({ n: sql<number>`count(*)::int` })
-            .from(wikiPage)
-            .where(eq(wikiPage.ownerUserId, owner));
-          if (n >= WIKI_LIMITS.pages) throw new WikiError("FULL");
+            .from(memoryItem)
+            .where(eq(memoryItem.ownerUserId, owner));
+          if (n >= MEMORY_LIMITS.pages) throw new MemoryError("FULL");
           [page] = (await tx
-            .insert(wikiPage)
+            .insert(memoryItem)
             .values({
               ownerUserId: owner,
               slug: key,
@@ -452,27 +456,27 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
               updatedBy: author.by,
               updatedByBotId: botId,
             })
-            .returning()) as [WikiPage];
+            .returning()) as [MemoryItem];
         }
         if (!cur || !sameSet(curTeams, teams)) {
-          await tx.delete(wikiPageTeam).where(eq(wikiPageTeam.pageId, page.id));
+          await tx.delete(memoryItemTeam).where(eq(memoryItemTeam.pageId, page.id));
           if (teams.length)
             await tx
-              .insert(wikiPageTeam)
+              .insert(memoryItemTeam)
               .values(teams.map((teamId) => ({ pageId: page.id, teamId })));
         }
         if (contentChanged) {
           // Edges follow the content; chunks are rebuilt (and embedded) by the ticker.
-          await tx.delete(wikiLink).where(eq(wikiLink.fromPageId, page.id));
-          const edges = wikiLinks(c.content, key);
+          await tx.delete(memoryLink).where(eq(memoryLink.fromPageId, page.id));
+          const edges = memoryLinks(c.content, key);
           if (edges.length)
             await tx
-              .insert(wikiLink)
+              .insert(memoryLink)
               .values(
                 edges.map((e) => ({ fromPageId: page.id, relation: e.relation, toSlug: e.slug })),
               );
-          await tx.delete(wikiChunk).where(eq(wikiChunk.pageId, page.id));
-          await tx.insert(wikiRevision).values({
+          await tx.delete(memoryChunk).where(eq(memoryChunk.pageId, page.id));
+          await tx.insert(memoryRevision).values({
             pageId: page.id,
             ownerUserId: owner,
             version: page.version,
@@ -485,7 +489,7 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
         return { page, created: !cur, changed: true };
       });
     } catch (e) {
-      if (uniqueViolation(e)) throw new WikiError("SLUG_TAKEN");
+      if (uniqueViolation(e)) throw new MemoryError("SLUG_TAKEN");
       throw e;
     }
   }
@@ -493,7 +497,7 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   /** What a source reference points to right now, read only from the owner's own rows. Undefined when it does not exist (any more). */
   async function lookup(
     owner: string,
-    kind: WikiSourceKind,
+    kind: MemorySourceKind,
     ref: string,
   ): Promise<{ label: string; version: string } | undefined> {
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref);
@@ -539,11 +543,11 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
 
   /** "task:<id>", "doc:<id>", "artifact:<id>" or "url:https://…" -> a source row, or the reference back in `skipped`. */
   async function resolve(owner: string, refs: readonly string[]) {
-    const found: { kind: WikiSourceKind; ref: string; label: string; seenVersion: string }[] = [];
+    const found: { kind: MemorySourceKind; ref: string; label: string; seenVersion: string }[] = [];
     const skipped: string[] = [];
-    for (const raw of [...new Set(refs.map((r) => r.trim()))].slice(0, WIKI_LIMITS.sources)) {
+    for (const raw of [...new Set(refs.map((r) => r.trim()))].slice(0, MEMORY_LIMITS.sources)) {
       const at = raw.indexOf(":");
-      const kind = raw.slice(0, at) as WikiSourceKind,
+      const kind = raw.slice(0, at) as MemorySourceKind,
         ref = raw.slice(at + 1).trim();
       const hit = ["task", "doc", "artifact", "url"].includes(kind)
         ? await lookup(owner, kind, ref)
@@ -565,14 +569,14 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
     await db.transaction(async (tx) => {
       if (mode === "replace")
         await tx
-          .delete(wikiSource)
-          .where(and(eq(wikiSource.pageId, pageId), eq(wikiSource.ownerUserId, owner)));
+          .delete(memorySource)
+          .where(and(eq(memorySource.pageId, pageId), eq(memorySource.ownerUserId, owner)));
       for (const s of found)
         await tx
-          .insert(wikiSource)
+          .insert(memorySource)
           .values({ pageId, ownerUserId: owner, ...s })
           .onConflictDoUpdate({
-            target: [wikiSource.pageId, wikiSource.kind, wikiSource.ref],
+            target: [memorySource.pageId, memorySource.kind, memorySource.ref],
             set: {
               label: s.label,
               seenVersion: s.seenVersion,
@@ -588,18 +592,18 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   async function rebaseline(owner: string, pageId: string) {
     const rows = await db
       .select()
-      .from(wikiSource)
-      .where(and(eq(wikiSource.pageId, pageId), eq(wikiSource.ownerUserId, owner)));
+      .from(memorySource)
+      .where(and(eq(memorySource.pageId, pageId), eq(memorySource.ownerUserId, owner)));
     for (const s of rows) {
       const now = await lookup(owner, s.kind, s.ref);
       await db
-        .update(wikiSource)
+        .update(memorySource)
         .set(
           now
             ? { seenVersion: now.version, status: "current", checkedAt: new Date() }
             : { status: "gone", checkedAt: new Date() },
         )
-        .where(eq(wikiSource.id, s.id));
+        .where(eq(memorySource.id, s.id));
     }
   }
 
@@ -610,17 +614,17 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
    */
   async function write(
     owner: string,
-    v: WikiMeta & {
+    v: MemoryMeta & {
       slug: string;
       title: string;
       content: string;
       howto?: string | undefined;
       tags?: readonly string[] | undefined;
-      status?: WikiPageStatus | undefined;
+      status?: MemoryItemStatus | undefined;
       expectedVersion?: number | undefined;
       sources?: readonly string[] | undefined;
     },
-    author: WikiAuthor,
+    author: MemoryAuthor,
   ) {
     const r = await save(
       owner,
@@ -643,30 +647,30 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   }
 
   /**
-   * A short fact kept without a bot tool call (the "remember that ..." message). target "memory" is a note only that bot reads
+   * A short fact kept without a bot tool call (the "remember that ..." message). target "notes" is a note only that bot reads
    * (type solo, tag memory); "user" is about the person and every bot of theirs reads it (type owner, tag profile). The slug follows the
    * text, so saying the same thing twice saves it once.
    */
   async function remember(
     owner: string,
-    v: { content: string; botId: string; target: "user" | "memory" },
-    author: WikiAuthor,
+    v: { content: string; botId: string; target: "user" | "notes" },
+    author: MemoryAuthor,
   ) {
     const text = v.content.trim();
     const hash = createHash("sha256")
-      .update(`${v.target === "memory" ? v.botId : ""}\n${text.toLowerCase().replace(/\s+/g, " ")}`)
+      .update(`${v.target === "notes" ? v.botId : ""}\n${text.toLowerCase().replace(/\s+/g, " ")}`)
       .digest("hex")
       .slice(0, 12);
     const slug = `memory-${hash}`;
     // The same fact in other letters or spacing is the fact already saved.
     const [have] = await db
       .select()
-      .from(wikiPage)
+      .from(memoryItem)
       .where(
         and(
-          eq(wikiPage.ownerUserId, owner),
-          eq(wikiPage.slug, slug),
-          ne(wikiPage.status, "archived"),
+          eq(memoryItem.ownerUserId, owner),
+          eq(memoryItem.slug, slug),
+          ne(memoryItem.status, "archived"),
         ),
       );
     if (have) return { page: have, created: false, changed: false, skippedSources: [] as string[] };
@@ -676,22 +680,28 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
         slug,
         title: text.slice(0, 60),
         content: text,
-        tags: [v.target === "user" ? "profile" : "memory"],
+        tags: [v.target === "user" ? "profile" : "note"],
         type: v.target === "user" ? "owner" : "solo",
         score: v.target === "user" ? 90 : 80,
-        ...(v.target === "memory" && { authorBotId: v.botId }),
+        ...(v.target === "notes" && { authorBotId: v.botId }),
       },
       author,
     );
   }
 
   /** Replaces one unique span of the content; a page that was marked stale stays stale until someone saves it in full. */
-  function patch(owner: string, slug: string, match: string, content: string, author: WikiAuthor) {
+  function patch(
+    owner: string,
+    slug: string,
+    match: string,
+    content: string,
+    author: MemoryAuthor,
+  ) {
     return save(owner, slug, author, (cur) => {
-      if (!cur || cur.status === "archived") throw new WikiError("NOT_FOUND");
+      if (!cur || cur.status === "archived") throw new MemoryError("NOT_FOUND");
       const hits = cur.content.split(match).length - 1;
-      if (!match || hits === 0) throw new WikiError("NOT_FOUND");
-      if (hits > 1) throw new WikiError("AMBIGUOUS");
+      if (!match || hits === 0) throw new MemoryError("NOT_FOUND");
+      if (hits > 1) throw new MemoryError("AMBIGUOUS");
       return { ...contentOf(cur), content: cur.content.replace(match, () => content) };
     });
   }
@@ -699,11 +709,11 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   async function setStatus(
     owner: string,
     slug: string,
-    status: WikiPageStatus,
-    author: WikiAuthor,
+    status: MemoryItemStatus,
+    author: MemoryAuthor,
   ) {
     const r = await save(owner, slug, author, (cur) => {
-      if (!cur) throw new WikiError("NOT_FOUND");
+      if (!cur) throw new MemoryError("NOT_FOUND");
       return { ...contentOf(cur), status };
     });
     if (status === "current" && r.changed && author.by !== "system")
@@ -715,17 +725,17 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
    * "Checked, still true": a stale item becomes current, and a current one counts as saved now (it leaves the 90-day list). The text and
    * the version stay as they are; the evidence is measured again from this moment.
    */
-  async function confirm(owner: string, slug: string, author: WikiAuthor) {
+  async function confirm(owner: string, slug: string, author: MemoryAuthor) {
     const [cur] = await db
       .select()
-      .from(wikiPage)
-      .where(and(eq(wikiPage.ownerUserId, owner), eq(wikiPage.slug, slug)));
-    if (!cur || cur.status === "archived") throw new WikiError("NOT_FOUND");
+      .from(memoryItem)
+      .where(and(eq(memoryItem.ownerUserId, owner), eq(memoryItem.slug, slug)));
+    if (!cur || cur.status === "archived") throw new MemoryError("NOT_FOUND");
     if (cur.status === "stale") return setStatus(owner, slug, "current", author);
     const [page] = await db
-      .update(wikiPage)
+      .update(memoryItem)
       .set({ updatedAt: new Date() })
-      .where(eq(wikiPage.id, cur.id))
+      .where(eq(memoryItem.id, cur.id))
       .returning();
     await rebaseline(owner, cur.id);
     return { page: page!, created: false, changed: true };
@@ -739,22 +749,22 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
     owner: string,
     slug: string,
     to: string,
-    relation: WikiLinkRelation,
-    author: WikiAuthor,
+    relation: MemoryLinkRelation,
+    author: MemoryAuthor,
   ) {
     const [target] = await db
-      .select({ slug: wikiPage.slug })
-      .from(wikiPage)
+      .select({ slug: memoryItem.slug })
+      .from(memoryItem)
       .where(
         and(
-          eq(wikiPage.slug, to),
+          eq(memoryItem.slug, to),
           visibleTo({ userId: owner, botId: author.by === "bot" ? author.botId : undefined }),
-          ne(wikiPage.status, "archived"),
+          ne(memoryItem.status, "archived"),
         ),
       );
-    if (!target || to === slug) throw new WikiError("NOT_FOUND");
+    if (!target || to === slug) throw new MemoryError("NOT_FOUND");
     return save(owner, slug, author, (cur) => {
-      if (!cur || cur.status === "archived") throw new WikiError("NOT_FOUND");
+      if (!cur || cur.status === "archived") throw new MemoryError("NOT_FOUND");
       if ([...cur.content.matchAll(LINK)].some((m) => m[2] === to)) return contentOf(cur);
       const link = relation === "related" ? `[[${to}]]` : `[[${relation}:${to}]]`;
       return {
@@ -768,29 +778,29 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
    * Who may read the item, how important it is, and which bot wrote it. Publishing (`all`) is a person's choice (routes only, never a
    * bot tool). It is not a new version: the text does not change.
    */
-  async function setMeta(owner: string, slug: string, meta: WikiMeta, author: WikiAuthor) {
+  async function setMeta(owner: string, slug: string, meta: MemoryMeta, author: MemoryAuthor) {
     const r = await save(owner, slug, author, (cur) => {
-      if (!cur) throw new WikiError("NOT_FOUND");
+      if (!cur) throw new MemoryError("NOT_FOUND");
       return { ...contentOf(cur), meta };
     });
     return r.page;
   }
 
   /** Writes the text of an old version as the newest one. */
-  async function restore(owner: string, slug: string, version: number, author: WikiAuthor) {
+  async function restore(owner: string, slug: string, version: number, author: MemoryAuthor) {
     const [r] = await db
       .select()
-      .from(wikiRevision)
-      .innerJoin(wikiPage, eq(wikiPage.id, wikiRevision.pageId))
+      .from(memoryRevision)
+      .innerJoin(memoryItem, eq(memoryItem.id, memoryRevision.pageId))
       .where(
         and(
-          eq(wikiPage.ownerUserId, owner),
-          eq(wikiPage.slug, wikiSlug(slug)),
-          eq(wikiRevision.version, version),
+          eq(memoryItem.ownerUserId, owner),
+          eq(memoryItem.slug, memorySlug(slug)),
+          eq(memoryRevision.version, version),
         ),
       );
-    if (!r) throw new WikiError("NOT_FOUND");
-    const old = r.wiki_revision;
+    if (!r) throw new MemoryError("NOT_FOUND");
+    const old = r.memory_revision;
     return save(owner, slug, author, () => ({
       title: old.title,
       howto: old.howto,
@@ -801,24 +811,24 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   }
 
   /** The reader's own page with that slug, else a page another active member shared. */
-  async function read(reader: WikiReader, slug: string) {
-    const key = wikiSlug(slug);
+  async function read(reader: MemoryReader, slug: string) {
+    const key = memorySlug(slug);
     if (!key) return undefined;
     const rows = await db
-      .select({ page: wikiPage, ownerName: user.name })
-      .from(wikiPage)
-      .innerJoin(user, eq(user.id, wikiPage.ownerUserId))
-      .where(and(eq(wikiPage.slug, key), visibleTo(reader)));
+      .select({ page: memoryItem, ownerName: user.name })
+      .from(memoryItem)
+      .innerJoin(user, eq(user.id, memoryItem.ownerUserId))
+      .where(and(eq(memoryItem.slug, key), visibleTo(reader)));
     const own = rows.find((r) => r.page.ownerUserId === who(reader).userId);
     const hit = own ?? rows[0];
     if (!hit) return undefined;
-    const access: WikiAccess = own ? "own" : "shared";
+    const access: MemoryAccess = own ? "own" : "shared";
     const teams = own
       ? (
           await db
-            .select({ id: wikiPageTeam.teamId })
-            .from(wikiPageTeam)
-            .where(eq(wikiPageTeam.pageId, hit.page.id))
+            .select({ id: memoryItemTeam.teamId })
+            .from(memoryItemTeam)
+            .where(eq(memoryItemTeam.pageId, hit.page.id))
         ).map((r) => r.id)
       : [];
     const near = (await graph(reader, [key], { limit: GRAPH_NODES })).edges;
@@ -839,20 +849,20 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   }
 
   /** Items a person picked for a message: the reader's own or published ones that are not archived, in the order given. */
-  async function byIds(reader: WikiReader, ids: readonly string[]) {
+  async function byIds(reader: MemoryReader, ids: readonly string[]) {
     if (!ids.length) return [];
     const rows = await db
       .select({
-        id: wikiPage.id,
-        slug: wikiPage.slug,
-        title: wikiPage.title,
-        howto: wikiPage.howto,
-        content: wikiPage.content,
-        tags: wikiPage.tags,
+        id: memoryItem.id,
+        slug: memoryItem.slug,
+        title: memoryItem.title,
+        howto: memoryItem.howto,
+        content: memoryItem.content,
+        tags: memoryItem.tags,
       })
-      .from(wikiPage)
+      .from(memoryItem)
       .where(
-        and(inArray(wikiPage.id, [...ids]), ne(wikiPage.status, "archived"), visibleTo(reader)),
+        and(inArray(memoryItem.id, [...ids]), ne(memoryItem.status, "archived"), visibleTo(reader)),
       );
     return ids.flatMap((id) => rows.find((r) => r.id === id) ?? []);
   }
@@ -860,12 +870,12 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   type Edge = {
     from: string;
     fromTitle: string;
-    relation: WikiRelation;
+    relation: MemoryRelation;
     to: string;
     toTitle: string;
   };
   /** Edges between items the reader can see, where one end is in `slugs`. A link to an item the reader cannot see is not shown. */
-  async function edgesAround(reader: WikiReader, slugs: readonly string[]): Promise<Edge[]> {
+  async function edgesAround(reader: MemoryReader, slugs: readonly string[]): Promise<Edge[]> {
     if (!slugs.length) return [];
     const list = sql.join(
       slugs.map((x) => sql`${x}`),
@@ -873,9 +883,9 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
     );
     const { rows } = await db.execute(sql`
       select pf.slug as "from", pf.title as "fromTitle", l.relation, pt.slug as "to", pt.title as "toTitle"
-      from wiki_link l
-      join wiki_page pf on pf.id = l.from_page_id
-      join wiki_page pt on pt.slug = l.to_slug
+      from memory_link l
+      join memory_item pf on pf.id = l.from_page_id
+      join memory_item pt on pt.slug = l.to_slug
       where (pf.slug in (${list}) or pt.slug in (${list}))
         and pf.status <> 'archived' and pt.status <> 'archived'
         and ${visibleTo(reader, "pf")} and ${visibleTo(reader, "pt")}
@@ -889,7 +899,7 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
 
   /** The items around `slugs`, walking links in both directions up to `depth` steps and `limit` items. */
   async function graph(
-    reader: WikiReader,
+    reader: MemoryReader,
     slugs: readonly string[],
     o: { depth?: number; limit?: number } = {},
   ) {
@@ -922,9 +932,9 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   }
 
   /** The items linked to or from `slug`, up to `depth` (at most 2) steps away. */
-  async function neighbors(reader: WikiReader, slug: string, depth = 1) {
-    const key = wikiSlug(slug);
-    if (!key || !(await read(reader, key))) throw new WikiError("NOT_FOUND");
+  async function neighbors(reader: MemoryReader, slug: string, depth = 1) {
+    const key = memorySlug(slug);
+    if (!key || !(await read(reader, key))) throw new MemoryError("NOT_FOUND");
     const g = await graph(reader, [key], { depth });
     return { slug: key, nodes: g.nodes.filter((n) => n.slug !== key), edges: g.edges };
   }
@@ -932,18 +942,18 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   async function history(owner: string, slug: string) {
     return db
       .select({
-        version: wikiRevision.version,
-        title: wikiRevision.title,
-        status: wikiRevision.status,
-        author: wikiRevision.author,
-        botId: wikiRevision.botId,
-        conversationId: wikiRevision.conversationId,
-        createdAt: wikiRevision.createdAt,
+        version: memoryRevision.version,
+        title: memoryRevision.title,
+        status: memoryRevision.status,
+        author: memoryRevision.author,
+        botId: memoryRevision.botId,
+        conversationId: memoryRevision.conversationId,
+        createdAt: memoryRevision.createdAt,
       })
-      .from(wikiRevision)
-      .innerJoin(wikiPage, eq(wikiPage.id, wikiRevision.pageId))
-      .where(and(eq(wikiPage.ownerUserId, owner), eq(wikiPage.slug, wikiSlug(slug))))
-      .orderBy(desc(wikiRevision.version))
+      .from(memoryRevision)
+      .innerJoin(memoryItem, eq(memoryItem.id, memoryRevision.pageId))
+      .where(and(eq(memoryItem.ownerUserId, owner), eq(memoryItem.slug, memorySlug(slug))))
+      .orderBy(desc(memoryRevision.version))
       .limit(100);
   }
 
@@ -951,67 +961,67 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   async function sources(owner: string, slug: string) {
     return db
       .select({
-        kind: wikiSource.kind,
-        ref: wikiSource.ref,
-        label: wikiSource.label,
-        status: wikiSource.status,
-        checkedAt: wikiSource.checkedAt,
+        kind: memorySource.kind,
+        ref: memorySource.ref,
+        label: memorySource.label,
+        status: memorySource.status,
+        checkedAt: memorySource.checkedAt,
       })
-      .from(wikiSource)
-      .innerJoin(wikiPage, eq(wikiPage.id, wikiSource.pageId))
-      .where(and(eq(wikiPage.ownerUserId, owner), eq(wikiPage.slug, wikiSlug(slug))))
-      .orderBy(wikiSource.id);
+      .from(memorySource)
+      .innerJoin(memoryItem, eq(memoryItem.id, memorySource.pageId))
+      .where(and(eq(memoryItem.ownerUserId, owner), eq(memoryItem.slug, memorySlug(slug))))
+      .orderBy(memorySource.id);
   }
 
   /** All of the owner's items (a person sees every type), newest first. */
   async function list(owner: string) {
     return db
       .select({
-        id: wikiPage.id,
-        slug: wikiPage.slug,
-        title: wikiPage.title,
-        type: wikiPage.type,
-        howto: wikiPage.howto,
-        tags: wikiPage.tags,
-        score: wikiPage.score,
-        status: wikiPage.status,
-        version: wikiPage.version,
-        authorBotId: wikiPage.authorBotId,
-        updatedByBotId: wikiPage.updatedByBotId,
-        createdAt: wikiPage.createdAt,
+        id: memoryItem.id,
+        slug: memoryItem.slug,
+        title: memoryItem.title,
+        type: memoryItem.type,
+        howto: memoryItem.howto,
+        tags: memoryItem.tags,
+        score: memoryItem.score,
+        status: memoryItem.status,
+        version: memoryItem.version,
+        authorBotId: memoryItem.authorBotId,
+        updatedByBotId: memoryItem.updatedByBotId,
+        createdAt: memoryItem.createdAt,
         teams: sql<
           string[]
-        >`coalesce((select array_agg(wt.team_id::text) from wiki_page_team wt where wt.page_id = ${wikiPage.id}), '{}')`,
-        updatedBy: wikiPage.updatedBy,
-        updatedAt: wikiPage.updatedAt,
+        >`coalesce((select array_agg(wt.team_id::text) from memory_item_team wt where wt.page_id = ${memoryItem.id}), '{}')`,
+        updatedBy: memoryItem.updatedBy,
+        updatedAt: memoryItem.updatedAt,
       })
-      .from(wikiPage)
-      .where(eq(wikiPage.ownerUserId, owner))
-      .orderBy(desc(wikiPage.updatedAt))
-      .limit(WIKI_LIMITS.pages);
+      .from(memoryItem)
+      .where(eq(memoryItem.ownerUserId, owner))
+      .orderBy(desc(memoryItem.updatedAt))
+      .limit(MEMORY_LIMITS.pages);
   }
 
   /** Items other active members published, newest first. */
   async function listShared(reader: string) {
     return db
       .select({
-        id: wikiPage.id,
-        slug: wikiPage.slug,
-        title: wikiPage.title,
-        type: wikiPage.type,
-        howto: wikiPage.howto,
-        tags: wikiPage.tags,
-        score: wikiPage.score,
-        status: wikiPage.status,
+        id: memoryItem.id,
+        slug: memoryItem.slug,
+        title: memoryItem.title,
+        type: memoryItem.type,
+        howto: memoryItem.howto,
+        tags: memoryItem.tags,
+        score: memoryItem.score,
+        status: memoryItem.status,
         ownerName: user.name,
-        createdAt: wikiPage.createdAt,
-        version: wikiPage.version,
-        updatedAt: wikiPage.updatedAt,
+        createdAt: memoryItem.createdAt,
+        version: memoryItem.version,
+        updatedAt: memoryItem.updatedAt,
       })
-      .from(wikiPage)
-      .innerJoin(user, eq(user.id, wikiPage.ownerUserId))
-      .where(and(ne(wikiPage.ownerUserId, reader), visibleTo(reader)))
-      .orderBy(desc(wikiPage.updatedAt))
+      .from(memoryItem)
+      .innerJoin(user, eq(user.id, memoryItem.ownerUserId))
+      .where(and(ne(memoryItem.ownerUserId, reader), visibleTo(reader)))
+      .orderBy(desc(memoryItem.updatedAt))
       .limit(500);
   }
 
@@ -1022,11 +1032,11 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
    * hit, which rankings found it and the best passage (the nearest chunk, or the words in context).
    */
   async function rank(
-    reader: WikiReader,
+    reader: MemoryReader,
     text: string,
     k: number,
-    o: { filter?: WikiFilter | undefined; explain?: boolean } = {},
-  ): Promise<{ hits: (WikiHit & Partial<Explained>)[]; meaning: boolean }> {
+    o: { filter?: MemoryFilter | undefined; explain?: boolean } = {},
+  ): Promise<{ hits: (MemoryHit & Partial<Explained>)[]; meaning: boolean }> {
     const q = text.trim().slice(0, 500);
     if (!q) return { hits: [], meaning: false };
     const { userId } = who(reader);
@@ -1034,9 +1044,9 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
       ? sql`${visibleTo(reader)} and ${filterSql(o.filter, userId)}`
       : visibleTo(reader);
     const [any] = await db
-      .select({ id: wikiPage.id })
-      .from(wikiPage)
-      .where(and(visibleTo(reader), ne(wikiPage.status, "archived")))
+      .select({ id: memoryItem.id })
+      .from(memoryItem)
+      .where(and(visibleTo(reader), ne(memoryItem.status, "archived")))
       .limit(1);
     if (!any) return { hits: [], meaning: false };
     let qv: number[] | undefined;
@@ -1067,37 +1077,37 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
           sql`, `,
         )}]::text[]`
       : sql`array[]::text[]`;
-    const doc = sql`to_tsvector('simple', f_unaccent(wiki_page.title || ' ' || wiki_page.howto || ' ' || wiki_page.content))`;
+    const doc = sql`to_tsvector('simple', f_unaccent(memory_item.title || ' ' || memory_item.howto || ' ' || memory_item.content))`;
     const extra = o.explain
-      ? sql`, f.kw, f.tg, f.vc, wiki_page.id, wiki_page.updated_at as "updatedAt",
-          array(select t from unnest(wiki_page.tags) t where t = any(${wordArray})) as "matchedTags",
-          case when f.vc then (select c.text from wiki_chunk c where c.page_id = wiki_page.id and c.embedding is not null
+      ? sql`, f.kw, f.tg, f.vc, memory_item.id, memory_item.updated_at as "updatedAt",
+          array(select t from unnest(memory_item.tags) t where t = any(${wordArray})) as "matchedTags",
+          case when f.vc then (select c.text from memory_chunk c where c.page_id = memory_item.id and c.embedding is not null
               order by c.embedding <=> ${vector}::vector limit 1)
-            else ts_headline('simple', wiki_page.content, qq.q, ${PASSAGE}::text) end as passage`
+            else ts_headline('simple', memory_item.content, qq.q, ${PASSAGE}::text) end as passage`
       : sql``;
     const rows = await db.transaction(async (tx) => {
       await tx.execute(sql`set local hnsw.iterative_scan = strict_order`); // the visibility filter is applied after the index scan
       const { rows } = await tx.execute(sql`
         with qq as (select ${tsq} as q),
-          kw as (select wiki_page.id, row_number() over (order by ts_rank(${doc}, qq.q) desc) as r
-            from wiki_page, qq where ${visible} and wiki_page.status <> 'archived' and ${doc} @@ qq.q limit ${CANDIDATES}),
-          tg as (select wiki_page.id, row_number() over (order by wiki_page.score desc) as r
-            from wiki_page where ${words.length ? sql`wiki_page.tags && ${wordArray}` : sql`false`}
-              and ${visible} and wiki_page.status <> 'archived' limit ${CANDIDATES}),
+          kw as (select memory_item.id, row_number() over (order by ts_rank(${doc}, qq.q) desc) as r
+            from memory_item, qq where ${visible} and memory_item.status <> 'archived' and ${doc} @@ qq.q limit ${CANDIDATES}),
+          tg as (select memory_item.id, row_number() over (order by memory_item.score desc) as r
+            from memory_item where ${words.length ? sql`memory_item.tags && ${wordArray}` : sql`false`}
+              and ${visible} and memory_item.status <> 'archived' limit ${CANDIDATES}),
           near as (select c.page_id, c.embedding <=> ${vector}::vector as d
-            from wiki_chunk c join wiki_page on wiki_page.id = c.page_id
-            where ${qv ? sql`true` : sql`false`} and c.embedding is not null and ${visible} and wiki_page.status <> 'archived'
+            from memory_chunk c join memory_item on memory_item.id = c.page_id
+            where ${qv ? sql`true` : sql`false`} and c.embedding is not null and ${visible} and memory_item.status <> 'archived'
               and (c.embedding <=> ${vector}::vector) <= ${MAX_DISTANCE}
             order by c.embedding <=> ${vector}::vector limit ${CANDIDATES * 2}),
           vc as (select page_id as id, row_number() over (order by min(d)) as r from near group by page_id),
           fused as (select id, sum(1.0 / (${RRF_K} + r)) as s, bool_or(src = 'kw') as kw, bool_or(src = 'tg') as tg, bool_or(src = 'vc') as vc
             from (select id, r, 'kw' as src from kw union all select id, r, 'tg' from tg union all select id, r, 'vc' from vc) x group by id)
-        select wiki_page.slug, wiki_page.title, wiki_page.type, wiki_page.howto, wiki_page.tags, wiki_page.score, wiki_page.status,
-          case when wiki_page.owner_user_id = ${userId} then 'own' else 'shared' end as access,
-          case when wiki_page.owner_user_id = ${userId} then null else u.name end as "ownerName" ${extra}
-        from fused f join wiki_page on wiki_page.id = f.id join "user" u on u.id = wiki_page.owner_user_id, qq
-        order by f.s * (0.5 + wiki_page.score / 100.0) desc limit ${k}`);
-      return rows as unknown as (Omit<WikiHit, "neighbors"> & {
+        select memory_item.slug, memory_item.title, memory_item.type, memory_item.howto, memory_item.tags, memory_item.score, memory_item.status,
+          case when memory_item.owner_user_id = ${userId} then 'own' else 'shared' end as access,
+          case when memory_item.owner_user_id = ${userId} then null else u.name end as "ownerName" ${extra}
+        from fused f join memory_item on memory_item.id = f.id join "user" u on u.id = memory_item.owner_user_id, qq
+        order by f.s * (0.5 + memory_item.score / 100.0) desc limit ${k}`);
+      return rows as unknown as (Omit<MemoryHit, "neighbors"> & {
         kw?: boolean;
         tg?: boolean;
         vc?: boolean;
@@ -1117,7 +1127,7 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
       return {
         ...hit,
         neighbors: edges
-          .flatMap((e): WikiNeighbor[] =>
+          .flatMap((e): MemoryNeighbor[] =>
             e.from === r.slug
               ? [{ relation: e.relation, direction: "out", slug: e.to, title: e.toTitle }]
               : e.to === r.slug
@@ -1140,19 +1150,19 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
     return { hits, meaning: Boolean(qv) };
   }
 
-  async function search(reader: WikiReader, text: string, k = 8): Promise<WikiHit[]> {
+  async function search(reader: MemoryReader, text: string, k = 8): Promise<MemoryHit[]> {
     return (await rank(reader, text, k)).hits;
   }
 
-  /** The search of the Wiki page: filtered, with the reason each item matched. `meaning` tells whether search by meaning was available. */
+  /** The search of the Memory item: filtered, with the reason each item matched. `meaning` tells whether search by meaning was available. */
   async function explore(
-    reader: WikiReader,
+    reader: MemoryReader,
     text: string,
-    filter: WikiFilter = {},
+    filter: MemoryFilter = {},
     k = 50,
-  ): Promise<{ hits: WikiHitExplained[]; meaning: boolean }> {
+  ): Promise<{ hits: MemoryHitExplained[]; meaning: boolean }> {
     const r = await rank(reader, text, k, { filter, explain: true });
-    return { hits: r.hits as WikiHitExplained[], meaning: r.meaning };
+    return { hits: r.hits as MemoryHitExplained[], meaning: r.meaning };
   }
 
   /**
@@ -1172,19 +1182,19 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
     author: { by: "user" } | { by: "bot"; botId: string },
   ) {
     const r = await read(reader, slug);
-    if (!r || r.access !== "shared") throw new WikiError("NOT_FOUND");
+    if (!r || r.access !== "shared") throw new MemoryError("NOT_FOUND");
     const p = r.page;
     const c: Content = {
       title: (v.title ?? p.title).trim(),
       howto: (v.howto ?? p.howto).trim(),
       content: v.content.trim(),
-      tags: wikiTags(v.tags ?? p.tags),
+      tags: memoryTags(v.tags ?? p.tags),
       status: "current",
     };
     check(c, author);
     const reason = (v.reason ?? "").trim().slice(0, 500);
     if (looksSecret(reason) || (author.by === "bot" && unsafeMemory(reason)))
-      throw new WikiError(looksSecret(reason) ? "SECRET_REJECTED" : "UNSAFE");
+      throw new MemoryError(looksSecret(reason) ? "SECRET_REJECTED" : "UNSAFE");
     const fields = {
       title: c.title,
       howto: await normalizeMentionText(db, p.ownerUserId, c.howto),
@@ -1196,11 +1206,11 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
       createdAt: new Date(),
     };
     const [row] = await db
-      .insert(wikiSuggestion)
+      .insert(memorySuggestion)
       .values({ pageId: p.id, pageOwnerUserId: p.ownerUserId, authorUserId: reader, ...fields })
       .onConflictDoUpdate({
-        target: [wikiSuggestion.pageId, wikiSuggestion.authorUserId],
-        targetWhere: sql`${wikiSuggestion.status} = 'open'`,
+        target: [memorySuggestion.pageId, memorySuggestion.authorUserId],
+        targetWhere: sql`${memorySuggestion.status} = 'open'`,
         set: fields,
       })
       .returning();
@@ -1210,7 +1220,7 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
       nextAction: "Accept or reject it in Memory.",
       resultLink: pageLink(p.slug),
       source: "bot",
-      sourceKey: `wiki-suggestion:${p.id}`,
+      sourceKey: `memory-suggestion:${p.id}`,
     }).catch(() => {});
     return { suggestion: row!, page: { slug: p.slug, title: p.title, ownerName: r.ownerName } };
   }
@@ -1219,46 +1229,46 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   async function suggestions(owner: string) {
     const incoming = await db
       .select({
-        id: wikiSuggestion.id,
-        slug: wikiPage.slug,
-        pageTitle: wikiPage.title,
-        currentContent: wikiPage.content,
-        pageVersion: wikiPage.version,
-        title: wikiSuggestion.title,
-        howto: wikiSuggestion.howto,
-        tags: wikiSuggestion.tags,
-        content: wikiSuggestion.content,
-        reason: wikiSuggestion.reason,
-        baseVersion: wikiSuggestion.baseVersion,
+        id: memorySuggestion.id,
+        slug: memoryItem.slug,
+        pageTitle: memoryItem.title,
+        currentContent: memoryItem.content,
+        pageVersion: memoryItem.version,
+        title: memorySuggestion.title,
+        howto: memorySuggestion.howto,
+        tags: memorySuggestion.tags,
+        content: memorySuggestion.content,
+        reason: memorySuggestion.reason,
+        baseVersion: memorySuggestion.baseVersion,
         authorName: user.name,
-        createdAt: wikiSuggestion.createdAt,
+        createdAt: memorySuggestion.createdAt,
       })
-      .from(wikiSuggestion)
-      .innerJoin(wikiPage, eq(wikiPage.id, wikiSuggestion.pageId))
-      .innerJoin(user, eq(user.id, wikiSuggestion.authorUserId))
+      .from(memorySuggestion)
+      .innerJoin(memoryItem, eq(memoryItem.id, memorySuggestion.pageId))
+      .innerJoin(user, eq(user.id, memorySuggestion.authorUserId))
       .where(
         and(
-          eq(wikiSuggestion.pageOwnerUserId, owner),
-          eq(wikiPage.ownerUserId, owner),
-          eq(wikiSuggestion.status, "open"),
+          eq(memorySuggestion.pageOwnerUserId, owner),
+          eq(memoryItem.ownerUserId, owner),
+          eq(memorySuggestion.status, "open"),
         ),
       )
-      .orderBy(desc(wikiSuggestion.createdAt))
+      .orderBy(desc(memorySuggestion.createdAt))
       .limit(100);
     const outgoing = await db
       .select({
-        id: wikiSuggestion.id,
-        slug: wikiPage.slug,
-        pageTitle: wikiPage.title,
-        status: wikiSuggestion.status,
-        reason: wikiSuggestion.reason,
-        createdAt: wikiSuggestion.createdAt,
-        decidedAt: wikiSuggestion.decidedAt,
+        id: memorySuggestion.id,
+        slug: memoryItem.slug,
+        pageTitle: memoryItem.title,
+        status: memorySuggestion.status,
+        reason: memorySuggestion.reason,
+        createdAt: memorySuggestion.createdAt,
+        decidedAt: memorySuggestion.decidedAt,
       })
-      .from(wikiSuggestion)
-      .innerJoin(wikiPage, eq(wikiPage.id, wikiSuggestion.pageId))
-      .where(eq(wikiSuggestion.authorUserId, owner))
-      .orderBy(desc(wikiSuggestion.createdAt))
+      .from(memorySuggestion)
+      .innerJoin(memoryItem, eq(memoryItem.id, memorySuggestion.pageId))
+      .where(eq(memorySuggestion.authorUserId, owner))
+      .orderBy(desc(memorySuggestion.createdAt))
       .limit(50);
     return { incoming, outgoing };
   }
@@ -1266,23 +1276,23 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   /** The page owner accepts (a new version, refused when the page changed after the suggestion was written) or rejects it. */
   async function decide(owner: string, id: string, decision: "accept" | "reject") {
     const [s] = await db
-      .select({ s: wikiSuggestion, slug: wikiPage.slug })
-      .from(wikiSuggestion)
-      .innerJoin(wikiPage, eq(wikiPage.id, wikiSuggestion.pageId))
+      .select({ s: memorySuggestion, slug: memoryItem.slug })
+      .from(memorySuggestion)
+      .innerJoin(memoryItem, eq(memoryItem.id, memorySuggestion.pageId))
       .where(
         and(
-          eq(wikiSuggestion.id, id),
-          eq(wikiSuggestion.pageOwnerUserId, owner),
-          eq(wikiPage.ownerUserId, owner),
-          eq(wikiSuggestion.status, "open"),
+          eq(memorySuggestion.id, id),
+          eq(memorySuggestion.pageOwnerUserId, owner),
+          eq(memoryItem.ownerUserId, owner),
+          eq(memorySuggestion.status, "open"),
         ),
       );
-    if (!s) throw new WikiError("NOT_FOUND");
+    if (!s) throw new MemoryError("NOT_FOUND");
     const close = (status: "accepted" | "rejected" | "outdated") =>
       db
-        .update(wikiSuggestion)
+        .update(memorySuggestion)
         .set({ status, decidedAt: new Date() })
-        .where(eq(wikiSuggestion.id, id));
+        .where(eq(memorySuggestion.id, id));
     if (decision === "reject") {
       await close("rejected");
       return { status: "rejected" as const };
@@ -1304,24 +1314,24 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
       await close("accepted");
       return { status: "accepted" as const, version: r.page.version };
     } catch (e) {
-      if (e instanceof WikiError && e.code === "CONFLICT") await close("outdated");
+      if (e instanceof MemoryError && e.code === "CONFLICT") await close("outdated");
       throw e;
     }
   }
 
   async function withdraw(author: string, id: string) {
     const [row] = await db
-      .update(wikiSuggestion)
+      .update(memorySuggestion)
       .set({ status: "withdrawn", decidedAt: new Date() })
       .where(
         and(
-          eq(wikiSuggestion.id, id),
-          eq(wikiSuggestion.authorUserId, author),
-          eq(wikiSuggestion.status, "open"),
+          eq(memorySuggestion.id, id),
+          eq(memorySuggestion.authorUserId, author),
+          eq(memorySuggestion.status, "open"),
         ),
       )
-      .returning({ id: wikiSuggestion.id });
-    if (!row) throw new WikiError("NOT_FOUND");
+      .returning({ id: memorySuggestion.id });
+    if (!row) throw new MemoryError("NOT_FOUND");
   }
 
   /**
@@ -1331,32 +1341,32 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
   async function checks(owner: string) {
     const pages = await db
       .select({
-        id: wikiPage.id,
-        slug: wikiPage.slug,
-        title: wikiPage.title,
-        status: wikiPage.status,
-        tags: wikiPage.tags,
-        updatedAt: wikiPage.updatedAt,
+        id: memoryItem.id,
+        slug: memoryItem.slug,
+        title: memoryItem.title,
+        status: memoryItem.status,
+        tags: memoryItem.tags,
+        updatedAt: memoryItem.updatedAt,
       })
-      .from(wikiPage)
-      .where(and(eq(wikiPage.ownerUserId, owner), ne(wikiPage.status, "archived")));
+      .from(memoryItem)
+      .where(and(eq(memoryItem.ownerUserId, owner), ne(memoryItem.status, "archived")));
     const links = await db
-      .select({ slug: wikiPage.slug, target: wikiLink.toSlug })
-      .from(wikiLink)
-      .innerJoin(wikiPage, eq(wikiPage.id, wikiLink.fromPageId))
-      .where(and(eq(wikiPage.ownerUserId, owner), ne(wikiPage.status, "archived")));
+      .select({ slug: memoryItem.slug, target: memoryLink.toSlug })
+      .from(memoryLink)
+      .innerJoin(memoryItem, eq(memoryItem.id, memoryLink.fromPageId))
+      .where(and(eq(memoryItem.ownerUserId, owner), ne(memoryItem.status, "archived")));
     const targets = [...new Set(links.map((l) => l.target))];
     const existing = new Set(
       targets.length
         ? (
             await db
-              .select({ slug: wikiPage.slug })
-              .from(wikiPage)
+              .select({ slug: memoryItem.slug })
+              .from(memoryItem)
               .where(
                 and(
-                  inArray(wikiPage.slug, targets),
+                  inArray(memoryItem.slug, targets),
                   visibleTo(owner),
-                  ne(wikiPage.status, "archived"),
+                  ne(memoryItem.status, "archived"),
                 ),
               )
           ).map((r) => r.slug)
@@ -1365,9 +1375,9 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
     const sourced = new Set(
       (
         await db
-          .selectDistinct({ pageId: wikiSource.pageId })
-          .from(wikiSource)
-          .where(eq(wikiSource.ownerUserId, owner))
+          .selectDistinct({ pageId: memorySource.pageId })
+          .from(memorySource)
+          .where(eq(memorySource.ownerUserId, owner))
       ).map((r) => r.pageId),
     );
     const linked = new Set(
@@ -1377,8 +1387,8 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
     const brief = (p: (typeof pages)[number]) => ({ slug: p.slug, title: p.title });
     const [{ n } = { n: 0 }] = await db
       .select({ n: sql<number>`count(*)::int` })
-      .from(wikiSuggestion)
-      .where(and(eq(wikiSuggestion.pageOwnerUserId, owner), eq(wikiSuggestion.status, "open")));
+      .from(memorySuggestion)
+      .where(and(eq(memorySuggestion.pageOwnerUserId, owner), eq(memorySuggestion.status, "open")));
     return {
       brokenLinks: links.filter((l) => !existing.has(l.target)),
       unlinked: pages.filter((p) => !linked.has(p.slug)).map(brief),
@@ -1400,32 +1410,32 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
     try {
       const bare = await db
         .select({
-          id: wikiPage.id,
-          owner: wikiPage.ownerUserId,
-          version: wikiPage.version,
-          content: wikiPage.content,
+          id: memoryItem.id,
+          owner: memoryItem.ownerUserId,
+          version: memoryItem.version,
+          content: memoryItem.content,
         })
-        .from(wikiPage)
+        .from(memoryItem)
         .where(
           and(
-            ne(wikiPage.status, "archived"),
-            sql`not exists (select 1 from wiki_chunk c where c.page_id = ${wikiPage.id})`,
+            ne(memoryItem.status, "archived"),
+            sql`not exists (select 1 from memory_chunk c where c.page_id = ${memoryItem.id})`,
           ),
         )
-        .orderBy(wikiPage.updatedAt)
+        .orderBy(memoryItem.updatedAt)
         .limit(PAGES_PER_TICK);
       for (const p of bare)
         await db.transaction(async (tx) => {
           const [now] = await tx
-            .select({ version: wikiPage.version })
-            .from(wikiPage)
-            .where(eq(wikiPage.id, p.id))
+            .select({ version: memoryItem.version })
+            .from(memoryItem)
+            .where(eq(memoryItem.id, p.id))
             .for("share");
           if (!now || now.version !== p.version) return;
           const pieces = chunkText(p.content);
           if (pieces.length)
             await tx
-              .insert(wikiChunk)
+              .insert(memoryChunk)
               .values(
                 pieces.map((text, ord) => ({ pageId: p.id, ownerUserId: p.owner, ord, text })),
               )
@@ -1433,16 +1443,16 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
         });
       const todo = await db
         .select({
-          id: wikiChunk.id,
-          text: wikiChunk.text,
-          title: wikiPage.title,
-          howto: wikiPage.howto,
-          tags: wikiPage.tags,
+          id: memoryChunk.id,
+          text: memoryChunk.text,
+          title: memoryItem.title,
+          howto: memoryItem.howto,
+          tags: memoryItem.tags,
         })
-        .from(wikiChunk)
-        .innerJoin(wikiPage, eq(wikiPage.id, wikiChunk.pageId))
-        .where(and(sql`${wikiChunk.embedding} is null`, ne(wikiPage.status, "archived")))
-        .orderBy(wikiChunk.createdAt)
+        .from(memoryChunk)
+        .innerJoin(memoryItem, eq(memoryItem.id, memoryChunk.pageId))
+        .where(and(sql`${memoryChunk.embedding} is null`, ne(memoryItem.status, "archived")))
+        .orderBy(memoryChunk.createdAt)
         .limit(BACKFILL);
       if (!todo.length) return;
       const vs = await deps.embedder.embed(
@@ -1453,7 +1463,7 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
       );
       for (const [i, c] of todo.entries())
         if (vs[i])
-          await db.update(wikiChunk).set({ embedding: vs[i]! }).where(eq(wikiChunk.id, c.id));
+          await db.update(memoryChunk).set({ embedding: vs[i]! }).where(eq(memoryChunk.id, c.id));
     } finally {
       busy = false;
     }
@@ -1469,30 +1479,30 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
     try {
       const due = await db
         .select({
-          s: wikiSource,
-          slug: wikiPage.slug,
-          title: wikiPage.title,
-          status: wikiPage.status,
+          s: memorySource,
+          slug: memoryItem.slug,
+          title: memoryItem.title,
+          status: memoryItem.status,
         })
-        .from(wikiSource)
-        .innerJoin(wikiPage, eq(wikiPage.id, wikiSource.pageId))
+        .from(memorySource)
+        .innerJoin(memoryItem, eq(memoryItem.id, memorySource.pageId))
         .where(
           and(
-            eq(wikiSource.status, "current"),
-            ne(wikiSource.kind, "url"),
-            lt(wikiSource.checkedAt, new Date(now.getTime() - CHECK_EVERY_MS)),
-            ne(wikiPage.status, "archived"),
+            eq(memorySource.status, "current"),
+            ne(memorySource.kind, "url"),
+            lt(memorySource.checkedAt, new Date(now.getTime() - CHECK_EVERY_MS)),
+            ne(memoryItem.status, "archived"),
           ),
         )
-        .orderBy(wikiSource.checkedAt)
+        .orderBy(memorySource.checkedAt)
         .limit(CHECKS_PER_TICK);
       for (const d of due) {
         const cur = await lookup(d.s.ownerUserId, d.s.kind, d.s.ref);
         const status = !cur ? "gone" : cur.version !== d.s.seenVersion ? "changed" : "current";
         await db
-          .update(wikiSource)
+          .update(memorySource)
           .set({ status, checkedAt: now })
-          .where(eq(wikiSource.id, d.s.id));
+          .where(eq(memorySource.id, d.s.id));
         if (status === "current") continue;
         if (d.status === "current")
           await setStatus(d.s.ownerUserId, d.slug, "stale", { by: "system" }).catch(() => {});
@@ -1502,7 +1512,7 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
           nextAction: "Check the page, then save it or ask a bot to update it.",
           resultLink: pageLink(d.slug),
           source: "bot",
-          sourceKey: `wiki-stale:${d.s.pageId}`,
+          sourceKey: `memory-stale:${d.s.pageId}`,
         }).catch(() => {});
       }
     } finally {
@@ -1538,4 +1548,4 @@ export function createWiki(db: Database, deps: { embedder?: Embedder } = {}) {
     checkSources,
   };
 }
-export type Wiki = ReturnType<typeof createWiki>;
+export type Memory = ReturnType<typeof createMemory>;

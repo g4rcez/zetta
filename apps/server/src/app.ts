@@ -18,7 +18,7 @@ import { createDecisionRoutes, type DecisionServices } from "./modules/decisions
 import { createFeatureRoutes, type FeatureServices } from "./modules/features/routes";
 import { createAgendaRoutes, type AgendaServices } from "./modules/agenda/routes";
 import { createKnowledgeRoutes, type KnowledgeServices } from "./modules/knowledge/routes";
-import { createWikiRoutes, type WikiServices } from "./modules/wiki/routes";
+import { createMemoryRoutes, type MemoryServices } from "./modules/memory/routes";
 import { createOutputStyleRoutes, type OutputStyleServices } from "./modules/output-styles/routes";
 import { createSkillRoutes, type SkillServices } from "./modules/skills/routes";
 import { createSearchRoutes, type SearchServices } from "./modules/search/routes";
@@ -55,7 +55,7 @@ export type CreateAppOptions = {
   profile?: ProfileServices;
   search?: SearchServices;
   knowledge?: KnowledgeServices;
-  wiki?: WikiServices;
+  memory?: MemoryServices;
   outputStyles?: OutputStyleServices;
   skills?: SkillServices;
   artifacts?: ArtifactServices;
@@ -92,7 +92,7 @@ export function createApp({
   profile,
   search,
   knowledge,
-  wiki,
+  memory,
   outputStyles,
   skills,
   artifacts,
@@ -202,7 +202,7 @@ export function createApp({
       .use(
         knowledge ? createKnowledgeRoutes(knowledge, [webOrigin, ...desktopOrigins]) : new Elysia(),
       )
-      .use(wiki ? createWikiRoutes(wiki, [webOrigin, ...desktopOrigins]) : new Elysia())
+      .use(memory ? createMemoryRoutes(memory, [webOrigin, ...desktopOrigins]) : new Elysia())
       .use(
         outputStyles
           ? createOutputStyleRoutes(outputStyles, [webOrigin, ...desktopOrigins])

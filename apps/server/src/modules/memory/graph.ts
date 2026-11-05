@@ -1,7 +1,7 @@
 import type { Database } from "@zetta/db";
 import { sql } from "@zetta/db/query";
-import type { WikiPageStatus, WikiRelation, WikiType } from "@zetta/db/schema/wiki";
-import { visibleTo, type WikiReader } from "./service";
+import type { MemoryItemStatus, MemoryRelation, MemoryType } from "@zetta/db/schema/memory";
+import { visibleTo, type MemoryReader } from "./service";
 
 const MAX_NODES = 2500,
   MAX_EDGES = 10_000,
@@ -11,20 +11,20 @@ export type GraphNode = {
   id: string;
   slug: string;
   title: string;
-  type: WikiType;
+  type: MemoryType;
   tags: string[];
   score: number;
-  status: WikiPageStatus;
+  status: MemoryItemStatus;
   access: "own" | "shared";
   inDegree: number;
   outDegree: number;
   updatedAt: string;
 };
-export type WikiGraph = {
+export type MemoryGraph = {
   nodes: GraphNode[];
-  edges: { from: string; to: string; relation: WikiRelation }[];
+  edges: { from: string; to: string; relation: MemoryRelation }[];
   /** Links of the person's own items to a slug no readable item has (the same ones the checks list as broken). */
-  dangling: { from: string; to: string; relation: WikiRelation }[];
+  dangling: { from: string; to: string; relation: MemoryRelation }[];
   /** True when there are more items or links than one graph holds. */
   truncated: boolean;
 };
@@ -34,15 +34,15 @@ export type WikiGraph = {
  * own item and to a published one, and a link goes to the reader's own item first. A link to an item the reader cannot see is not
  * an edge, so the graph never shows what a page may not.
  */
-export function createWikiGraph(db: Database) {
-  return async function wikiGraph(reader: WikiReader): Promise<WikiGraph> {
+export function createMemoryGraph(db: Database) {
+  return async function memoryGraph(reader: MemoryReader): Promise<MemoryGraph> {
     const userId = typeof reader === "string" ? reader : reader.userId;
     return db.transaction(async (tx) => {
       const nodes = (
         await tx.execute(sql`
           select p.id, p.slug, p.title, p.type, p.tags, p.score, p.status, p.updated_at as "updatedAt",
             case when p.owner_user_id = ${userId} then 'own' else 'shared' end as access
-          from wiki_page p where ${visibleTo(reader, "p")} and p.status <> 'archived'
+          from memory_item p where ${visibleTo(reader, "p")} and p.status <> 'archived'
           order by (p.owner_user_id = ${userId}) desc, p.updated_at desc limit ${MAX_NODES + 1}`)
       ).rows as unknown as (Omit<GraphNode, "inDegree" | "outDegree" | "updatedAt"> & {
         updatedAt: Date;
@@ -60,21 +60,21 @@ export function createWikiGraph(db: Database) {
         : ((
             await tx.execute(sql`
               select distinct on (l.from_page_id, l.relation, l.to_slug) l.from_page_id as "from", t.id as "to", l.relation
-              from wiki_link l
-              join wiki_page f on f.id = l.from_page_id and f.id in (${list})
-              join wiki_page t on t.slug = l.to_slug and t.id in (${list}) and t.id <> f.id
+              from memory_link l
+              join memory_item f on f.id = l.from_page_id and f.id in (${list})
+              join memory_item t on t.slug = l.to_slug and t.id in (${list}) and t.id <> f.id
               order by l.from_page_id, l.relation, l.to_slug, (t.owner_user_id = ${userId}) desc
               limit ${MAX_EDGES + 1}`)
-          ).rows as unknown as { from: string; to: string; relation: WikiRelation }[]);
+          ).rows as unknown as { from: string; to: string; relation: MemoryRelation }[]);
       const dangling = none
         ? []
         : ((
             await tx.execute(sql`
               select l.from_page_id as "from", l.to_slug as "to", l.relation
-              from wiki_link l join wiki_page f on f.id = l.from_page_id and f.owner_user_id = ${userId} and f.id in (${list})
-              where not exists (select 1 from wiki_page t where t.slug = l.to_slug and t.id in (${list}))
+              from memory_link l join memory_item f on f.id = l.from_page_id and f.owner_user_id = ${userId} and f.id in (${list})
+              where not exists (select 1 from memory_item t where t.slug = l.to_slug and t.id in (${list}))
               limit ${MAX_DANGLING}`)
-          ).rows as unknown as { from: string; to: string; relation: WikiRelation }[]);
+          ).rows as unknown as { from: string; to: string; relation: MemoryRelation }[]);
       const out = new Map<string, number>(),
         into = new Map<string, number>();
       for (const e of edges.slice(0, MAX_EDGES)) {
@@ -95,4 +95,4 @@ export function createWikiGraph(db: Database) {
     });
   };
 }
-export type WikiGraphReader = ReturnType<typeof createWikiGraph>;
+export type MemoryGraphReader = ReturnType<typeof createMemoryGraph>;

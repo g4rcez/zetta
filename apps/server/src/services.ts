@@ -34,10 +34,10 @@ import { audit } from "./modules/features/audit";
 import { createOutputStyles } from "./modules/output-styles/service";
 import { createMarket } from "./modules/skills/market";
 import { createSkills } from "./modules/skills/service";
-import { createWikiJobs } from "./modules/wiki/jobs";
-import { createWikiAssist } from "./modules/wiki/assist";
-import { createWikiGraph } from "./modules/wiki/graph";
-import { createWiki } from "./modules/wiki/service";
+import { createMemoryJobs } from "./modules/memory/jobs";
+import { createMemoryAssist } from "./modules/memory/assist";
+import { createMemoryGraph } from "./modules/memory/graph";
+import { createMemory } from "./modules/memory/service";
 import { createSearch } from "./modules/search/service";
 import { createPreferenceStore } from "./modules/preferences/store";
 import { createProfileStore } from "./modules/profile/store";
@@ -245,21 +245,21 @@ const companyKnowledge = createCompanyKnowledge(db, {
   lookup: membershipLookup,
   embedder,
 });
-// The operator's wiki: pages all of a user's bots share (see modules/wiki).
-const wiki = createWiki(db, { embedder });
+// The operator's memory: pages all of a user's bots share (see modules/memory).
+const memory = createMemory(db, { embedder });
 // Decision-only bots (harness "decision") answer from the chosen option's text; the actor is rebuilt from the turn's authenticated user id.
 const decisionRouting = createRouting(db, decisions, jev);
 const turnRunner = createTurnRunner(
   db,
   undefined,
   undefined,
-  wiki,
+  memory,
   createAttention(decisions),
   (b, text, userId) =>
     decisionRouting.reply(b, text, userId ? { userId, isAdmin: false } : undefined),
 );
-// Bots learn from finished work and the chief reviews the wiki, through the same turn runner as the chat.
-const wikiJobs = createWikiJobs(db, { wiki, run: turnRunner, lookup: membershipLookup });
+// Bots learn from finished work and the chief reviews the memory, through the same turn runner as the chat.
+const memoryJobs = createMemoryJobs(db, { memory, run: turnRunner, lookup: membershipLookup });
 const agendaScheduler = createAgendaScheduler(db, mcp.plugins, membershipLookup);
 const skillsLibrary = createSkills(db);
 const outputStyles = createOutputStyles(db);
@@ -290,7 +290,7 @@ export const chatServices = {
       routines: features.routines,
       tasks,
       artifacts,
-      wiki,
+      memory,
       skills: { skills: skillsLibrary, market: skillsMarket },
       teams: teamStore,
       outputStyles,
@@ -333,8 +333,8 @@ features.routines.useChat(async (userId, conversationId, prompt, requestKey) => 
     }
   }
 });
-// The chief's wiki review is a real chat turn too, in a conversation the lists leave out (see listConversations).
-wikiJobs.useChat(async (userId, conversationId, prompt, requestKey) => {
+// The chief's memory review is a real chat turn too, in a conversation the lists leave out (see listConversations).
+memoryJobs.useChat(async (userId, conversationId, prompt, requestKey) => {
   const actor = await issueBackgroundActor(membershipLookup, userId);
   if (!actor) return { ok: false, text: "", slugs: [], error: "OWNER_INACTIVE" };
   for (let attempt = 0; ; attempt++) {
@@ -352,7 +352,7 @@ wikiJobs.useChat(async (userId, conversationId, prompt, requestKey) => {
       return {
         ok: saved?.status === "complete",
         text: saved?.content ?? "",
-        slugs: (meta?.receipts ?? []).flatMap((r) => (r.kind === "wiki" ? [r.id] : [])),
+        slugs: (meta?.receipts ?? []).flatMap((r) => (r.kind === "memory" ? [r.id] : [])),
         error: meta?.error,
       };
     } catch (e) {
@@ -492,12 +492,12 @@ export const profileServices = {
     (await auth.api.getSession({ headers }))?.session.id,
 };
 export const knowledgeServices = { access: identity.access, knowledge: companyKnowledge };
-export const wikiServices = {
+export const memoryServices = {
   access: identity.access,
-  wiki,
-  jobs: wikiJobs,
-  graph: createWikiGraph(db),
-  assist: createWikiAssist(db, { wiki }),
+  memory,
+  jobs: memoryJobs,
+  graph: createMemoryGraph(db),
+  assist: createMemoryAssist(db, { memory }),
 };
 export const searchServices = { access: identity.access, search: createSearch(db) };
 export const artifactServices = { access: identity.access, artifacts };
@@ -517,7 +517,7 @@ export const zettaMcpServices = {
   mcp,
   connections,
   features,
-  wiki,
+  memory,
   tasks,
   outputStyles: outputStyleServices.styles,
   audit: (ownerUserId: string, event: Parameters<typeof audit>[2]) => audit(db, ownerUserId, event),

@@ -16,7 +16,7 @@ import {
   profileServices,
   searchServices,
   knowledgeServices,
-  wikiServices,
+  memoryServices,
   outputStyleServices,
   skillServices,
   artifactServices,
@@ -76,7 +76,7 @@ createApp({
   profile: profileServices,
   search: searchServices,
   knowledge: knowledgeServices,
-  wiki: wikiServices,
+  memory: memoryServices,
   outputStyles: outputStyleServices,
   artifacts: artifactServices,
   discussions: discussionServices,
@@ -158,9 +158,9 @@ if (runsWork) {
     void recoverDead(false).catch(() => {});
     void agendaServices.scheduler.tick().catch(() => {});
     void knowledgeServices.knowledge.tick().catch(() => {});
-    void wikiServices.wiki.tick().catch(() => {});
-    void wikiServices.wiki.checkSources().catch(() => {});
-    void wikiServices.jobs.tick().catch(() => {});
+    void memoryServices.memory.tick().catch(() => {});
+    void memoryServices.memory.checkSources().catch(() => {});
+    void memoryServices.jobs.tick().catch(() => {});
     void discussionServices.worker.tick().catch(() => {});
     void inboundServices.inbound.tick().catch(() => {});
     void loopServices.driver.tick().catch(() => {});

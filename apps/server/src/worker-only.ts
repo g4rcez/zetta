@@ -22,7 +22,7 @@ export const WORKER_ONLY: readonly Rule[] = [
   { methods: ["PUT"], path: /^\/api\/plugins\/[^/]+\/config$/ },
   { path: /^\/api\/bots\/[^/]+\/onboarding(\/|$)/ },
   { methods: ["POST"], path: /^\/api\/(workflows|routines)\/[^/]+\/run$/ },
-  { methods: ["POST"], path: /^\/api\/(bots\/interview|wiki-assist)$/ },
+  { methods: ["POST"], path: /^\/api\/(bots\/interview|(memory|wiki)-assist)$/ },
   { methods: ["POST"], path: /^\/api\/proposals\/[^/]+\/decision$/ },
   // Turns: start, follow, cancel and read state.
   {

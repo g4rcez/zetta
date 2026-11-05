@@ -12,15 +12,15 @@ import { createChatService } from "../chat/service";
 import { createFeaturesService } from "../features/service";
 import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
 import type { Embedder } from "../knowledge/embed";
-import { createWikiJobs } from "./jobs";
-import { createWikiAssist } from "./assist";
-import { createWikiGraph } from "./graph";
-import { createWiki, WikiError } from "./service";
-import { runWikiTool } from "./tool";
+import { createMemoryJobs } from "./jobs";
+import { createMemoryAssist } from "./assist";
+import { createMemoryGraph } from "./graph";
+import { createMemory, MemoryError } from "./service";
+import { runMemoryTool } from "./tool";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const [A, B] = [`wiki-a-${uuidv7()}`, `wiki-b-${uuidv7()}`];
+const [A, B] = [`memory-a-${uuidv7()}`, `memory-b-${uuidv7()}`];
 
 /** A bag-of-words embedder: texts that share words get close vectors, so search by meaning can be tested without the model. */
 const bagOfWords: Embedder = {
@@ -38,16 +38,16 @@ const bagOfWords: Embedder = {
   },
 };
 
-suite("operator wiki against compose postgres", () => {
+suite("operator memory against compose postgres", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
-  const wiki = createWiki(db, { embedder: bagOfWords });
+  const memory = createMemory(db, { embedder: bagOfWords });
   const person = { by: "user" } as const;
   let botA = "";
   const asBot = () => ({ by: "bot" as const, botId: botA });
   const code = async (p: Promise<unknown>) =>
     p.then(
       () => "ok",
-      (e) => (e instanceof WikiError ? e.code : String(e)),
+      (e) => (e instanceof MemoryError ? e.code : String(e)),
     );
 
   const access = createIdentityAccess(
@@ -96,17 +96,17 @@ suite("operator wiki against compose postgres", () => {
     undefined,
     undefined,
     undefined,
-    { wiki },
+    { memory },
   );
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: { access, chat },
     features: { access, features },
-    wiki: {
+    memory: {
       access,
-      wiki,
-      graph: createWikiGraph(db),
-      assist: createWikiAssist(db, { wiki, cli: fakeCli }),
+      memory,
+      graph: createMemoryGraph(db),
+      assist: createMemoryAssist(db, { memory, cli: fakeCli }),
     },
     webOrigin: "http://web.test",
     desktopOrigins: [],
@@ -167,7 +167,7 @@ suite("operator wiki against compose postgres", () => {
 
   test("every save keeps a version; an unchanged save is not a version; a restore writes the old text as a new version", async () => {
     expect(
-      await wiki.write(
+      await memory.write(
         A,
         {
           slug: "Acme Billing",
@@ -190,7 +190,7 @@ suite("operator wiki against compose postgres", () => {
       },
     });
     expect(
-      await wiki.write(
+      await memory.write(
         A,
         { slug: "acme-billing", title: "Acme billing", content: "Acme pays by invoice on day 15." },
         asBot(),
@@ -201,22 +201,22 @@ suite("operator wiki against compose postgres", () => {
       page: { version: 2, tags: ["entity"], howto: "How Acme pays us", updatedBy: "bot" },
     });
     expect(
-      await wiki.write(
+      await memory.write(
         A,
         { slug: "acme-billing", title: "Acme billing", content: "Acme pays by invoice on day 15." },
         asBot(),
       ),
     ).toMatchObject({ changed: false, page: { version: 2 } });
-    expect((await wiki.history(A, "acme-billing")).map((h) => [h.version, h.author])).toEqual([
+    expect((await memory.history(A, "acme-billing")).map((h) => [h.version, h.author])).toEqual([
       [2, "bot"],
       [1, "user"],
     ]);
-    expect(await wiki.restore(A, "acme-billing", 1, person)).toMatchObject({
+    expect(await memory.restore(A, "acme-billing", 1, person)).toMatchObject({
       page: { version: 3, content: "Acme pays by invoice on day 10." },
     });
     expect(
       await code(
-        wiki.write(
+        memory.write(
           A,
           { slug: "acme-billing", title: "Acme billing", content: "late edit", expectedVersion: 1 },
           person,
@@ -225,7 +225,7 @@ suite("operator wiki against compose postgres", () => {
     ).toBe("CONFLICT");
     expect(
       await code(
-        wiki.write(
+        memory.write(
           A,
           { slug: "brand-new", title: "New", content: "x", expectedVersion: 0 },
           person,
@@ -235,7 +235,7 @@ suite("operator wiki against compose postgres", () => {
   });
 
   test("a bot named in a page is stored by id, so a rename keeps the mention; saving the same text again is not a new version", async () => {
-    const saved = await wiki.write(
+    const saved = await memory.write(
       A,
       {
         slug: "handoff",
@@ -250,7 +250,7 @@ suite("operator wiki against compose postgres", () => {
       content: `Tell [@Scribe](bot:${botA}), not @ghost.`,
       version: 1,
     });
-    const again = await wiki.write(
+    const again = await memory.write(
       A,
       {
         slug: "handoff",
@@ -264,7 +264,7 @@ suite("operator wiki against compose postgres", () => {
   });
 
   test("patch changes one unique span; missing or repeated text is refused", async () => {
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "deploy-gotchas",
@@ -275,26 +275,26 @@ suite("operator wiki against compose postgres", () => {
       person,
     );
     expect(
-      await wiki.patch(A, "deploy-gotchas", "Run migrations", "Apply the migrations", asBot()),
+      await memory.patch(A, "deploy-gotchas", "Run migrations", "Apply the migrations", asBot()),
     ).toMatchObject({
       page: {
         version: 2,
         content: "Apply the migrations first. Then restart. Then restart the worker.",
       },
     });
-    expect(await code(wiki.patch(A, "deploy-gotchas", "not in the page", "x", asBot()))).toBe(
+    expect(await code(memory.patch(A, "deploy-gotchas", "not in the page", "x", asBot()))).toBe(
       "NOT_FOUND",
     );
-    expect(await code(wiki.patch(A, "deploy-gotchas", "Then restart", "x", asBot()))).toBe(
+    expect(await code(memory.patch(A, "deploy-gotchas", "Then restart", "x", asBot()))).toBe(
       "AMBIGUOUS",
     );
-    expect(await code(wiki.patch(B, "deploy-gotchas", "Then", "x", person))).toBe("NOT_FOUND"); // not B's page
+    expect(await code(memory.patch(B, "deploy-gotchas", "Then", "x", person))).toBe("NOT_FOUND"); // not B's page
   });
 
   test("secrets are refused from anyone; injection phrasing is refused from bots", async () => {
     expect(
       await code(
-        wiki.write(
+        memory.write(
           A,
           {
             slug: "bad-1",
@@ -307,7 +307,7 @@ suite("operator wiki against compose postgres", () => {
     ).toBe("UNSAFE");
     expect(
       await code(
-        wiki.write(
+        memory.write(
           A,
           {
             slug: "bad-2",
@@ -320,7 +320,7 @@ suite("operator wiki against compose postgres", () => {
     ).toBe("SECRET_REJECTED");
     expect(
       await code(
-        wiki.write(
+        memory.write(
           A,
           {
             slug: "support-bot",
@@ -334,7 +334,7 @@ suite("operator wiki against compose postgres", () => {
   });
 
   test("search finds the owner's pages by keywords and by meaning, flags stale pages and hides archived ones", async () => {
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "vpn-access",
@@ -345,7 +345,7 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "lunch-order",
@@ -354,26 +354,26 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    await wiki.write(
+    await memory.write(
       B,
       { slug: "vpn-b", title: "VPN of B", content: "B uses the WireGuard profile too." },
       person,
     );
-    expect((await wiki.search(A, "WireGuard")).map((h) => h.slug)).toEqual(["vpn-access"]);
-    expect((await wiki.search(B, "WireGuard")).map((h) => h.slug)).toEqual(["vpn-b"]);
-    await wiki.tick();
-    await wiki.tick();
+    expect((await memory.search(A, "WireGuard")).map((h) => h.slug)).toEqual(["vpn-access"]);
+    expect((await memory.search(B, "WireGuard")).map((h) => h.slug)).toEqual(["vpn-b"]);
+    await memory.tick();
+    await memory.tick();
     // A whole message matches on its content words (not on "the" or "from"); the vector match brings the page by meaning.
     expect(
       (
-        await wiki.search(
+        await memory.search(
           A,
           "vpn access office network from home the office vpn needs the wireguard profile please",
         )
       ).map((h) => h.slug),
     ).toEqual(["vpn-access"]);
-    await wiki.setStatus(A, "vpn-access", "stale", asBot());
-    expect(await wiki.search(A, "WireGuard")).toEqual([
+    await memory.setStatus(A, "vpn-access", "stale", asBot());
+    expect(await memory.search(A, "WireGuard")).toEqual([
       {
         slug: "vpn-access",
         title: "VPN access",
@@ -387,12 +387,12 @@ suite("operator wiki against compose postgres", () => {
         neighbors: [],
       },
     ]);
-    await wiki.setStatus(A, "vpn-access", "archived", person);
-    expect(await wiki.search(A, "WireGuard")).toEqual([]);
+    await memory.setStatus(A, "vpn-access", "archived", person);
+    expect(await memory.search(A, "WireGuard")).toEqual([]);
   });
 
   test("a page lists the pages that link to it", async () => {
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "invoice-flow",
@@ -401,7 +401,7 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "payments-runbook",
@@ -410,14 +410,14 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    expect((await wiki.read(A, "invoice-flow"))?.linkedFrom).toEqual([
+    expect((await memory.read(A, "invoice-flow"))?.linkedFrom).toEqual([
       { slug: "payments-runbook", title: "Payments runbook", relation: "related" },
     ]);
-    expect(await wiki.read(B, "invoice-flow")).toBeUndefined();
+    expect(await memory.read(B, "invoice-flow")).toBeUndefined();
   });
 
   test("the turn prompt lists the asker's matching pages as data, never another user's", async () => {
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "crm-export",
@@ -430,8 +430,8 @@ suite("operator wiki against compose postgres", () => {
     const q = (sql: string, p: unknown[]) => db.$client.query(sql, p);
     const id = (
       await q(
-        "insert into bot (owner_user_id, kind, visibility, name, slug, harness) values ($1, 'custom', 'private', 'Wiki bot', $2, 'claude-code') returning id",
-        [A, `wiki-bot-${uuidv7().slice(-8)}`],
+        "insert into bot (owner_user_id, kind, visibility, name, slug, harness) values ($1, 'custom', 'private', 'Memory bot', $2, 'claude-code') returning id",
+        [A, `memory-bot-${uuidv7().slice(-8)}`],
       )
     ).rows[0].id as string;
     const [row] = await db.select().from(bot).where(eq(bot.id, id));
@@ -443,7 +443,7 @@ suite("operator wiki against compose postgres", () => {
         return "ok";
       },
       undefined,
-      wiki,
+      memory,
     );
     await runner({ userId: A, bot: row!, history: [], prompt: "CRM export" });
     expect(seen[0]).toContain(
@@ -456,23 +456,50 @@ suite("operator wiki against compose postgres", () => {
     expect(seen[2]).not.toContain("crm-export");
   });
 
-  test("a bot saves and reads pages with zetta:wiki in chat; the user edits them over HTTP; another user sees nothing", async () => {
+  test("the old wiki names keep working: /api/wiki routes, zetta:wiki blocks and wikiIds", async () => {
+    const put = await call(A, "PUT", "/api/wiki/old-name", {
+      title: "Old name",
+      content: "Saved through the old route.",
+      expectedVersion: 0,
+    });
+    expect(put.json).toEqual({ slug: "old-name", version: 1, created: true });
+    expect((await call(A, "GET", "/api/memory/old-name")).json.page).toMatchObject({
+      slug: "old-name",
+      title: "Old name",
+    });
+    const bot = (await call(A, "POST", "/api/bots", { name: "Legacy" })).json.bot as { id: string };
+    const c = (await call(A, "POST", "/api/conversations", { botId: bot.id })).json.conversation
+      .id as string;
+    script = [
+      'Saved.\n```zetta:wiki\n{"action":"write","slug":"old-fence","title":"Old fence","content":"Written with the old block."}\n```',
+    ];
+    const r = await call(A, "POST", `/api/conversations/${c}/messages`, {
+      content: "save something",
+      wikiIds: [(await call(A, "GET", "/api/memory/old-name")).json.page.id],
+    });
+    expect(r.status).toBe(201);
+    expect(r.json.assistant.meta.receipts).toEqual([
+      { kind: "memory", id: "old-fence", text: "Old fence", created: true },
+    ]);
+  });
+
+  test("a bot saves and reads pages with zetta:memory in chat; the user edits them over HTTP; another user sees nothing", async () => {
     const created = (await call(A, "POST", "/api/bots", { name: "Notes" })).json.bot as {
       id: string;
     };
     const c = (await call(A, "POST", "/api/conversations", { botId: created.id })).json.conversation
       .id as string;
     script = [
-      'Saved it.\n```zetta:wiki\n{"action":"write","slug":"crm-login","title":"CRM login","tags":["howto"],"howto":"Where the CRM login is","content":"Use SSO from the Okta tile named CRM."}\n```',
+      'Saved it.\n```zetta:memory\n{"action":"write","slug":"crm-login","title":"CRM login","tags":["howto"],"howto":"Where the CRM login is","content":"Use SSO from the Okta tile named CRM."}\n```',
     ];
     const r = await call(A, "POST", `/api/conversations/${c}/messages`, {
       content: "we found the CRM login",
     });
     expect(r.json.assistant.content).toContain("📖 Added a memory item: CRM login.");
     expect(r.json.assistant.meta.receipts).toEqual([
-      { kind: "wiki", id: "crm-login", text: "CRM login", created: true },
+      { kind: "memory", id: "crm-login", text: "CRM login", created: true },
     ]);
-    const got = await call(A, "GET", "/api/wiki/crm-login");
+    const got = await call(A, "GET", "/api/memory/crm-login");
     expect(got.json.page).toMatchObject({
       slug: "crm-login",
       tags: ["howto"],
@@ -484,10 +511,10 @@ suite("operator wiki against compose postgres", () => {
     expect(got.json.history).toMatchObject([
       { version: 1, author: "bot", botId: created.id, conversationId: c },
     ]);
-    expect((await call(B, "GET", "/api/wiki/crm-login")).status).toBe(404);
+    expect((await call(B, "GET", "/api/memory/crm-login")).status).toBe(404);
 
     script = [
-      '```zetta:wiki\n{"action":"read","slug":"crm-login"}\n```',
+      '```zetta:memory\n{"action":"read","slug":"crm-login"}\n```',
       "It is the Okta tile named CRM.",
     ];
     await call(A, "POST", `/api/conversations/${c}/messages`, {
@@ -504,23 +531,23 @@ suite("operator wiki against compose postgres", () => {
       content: "Use SSO from the Okta tile named Salesforce.",
     };
     expect(
-      (await call(A, "PUT", "/api/wiki/crm-login", { ...edit, expectedVersion: 0 })).json.error
+      (await call(A, "PUT", "/api/memory/crm-login", { ...edit, expectedVersion: 0 })).json.error
         .code,
     ).toBe("CONFLICT");
     expect(
-      (await call(A, "PUT", "/api/wiki/crm-login", { ...edit, expectedVersion: 1 })).json,
+      (await call(A, "PUT", "/api/memory/crm-login", { ...edit, expectedVersion: 1 })).json,
     ).toEqual({ slug: "crm-login", version: 2, created: false });
-    expect((await call(B, "PATCH", "/api/wiki/crm-login", { status: "archived" })).status).toBe(
+    expect((await call(B, "PATCH", "/api/memory/crm-login", { status: "archived" })).status).toBe(
       404,
     );
-    expect((await call(A, "PATCH", "/api/wiki/crm-login", { status: "archived" })).json).toEqual({
+    expect((await call(A, "PATCH", "/api/memory/crm-login", { status: "archived" })).json).toEqual({
       slug: "crm-login",
       version: 3,
       status: "archived",
     });
-    expect((await call(A, "GET", "/api/wiki?q=Okta")).json.pages).toEqual([]);
+    expect((await call(A, "GET", "/api/memory?q=Okta")).json.pages).toEqual([]);
     expect(
-      (await call(B, "GET", "/api/wiki")).json.pages.map((p: { slug: string }) => p.slug),
+      (await call(B, "GET", "/api/memory")).json.pages.map((p: { slug: string }) => p.slug),
     ).toEqual(["vpn-b"]); // B's own page only
   });
 
@@ -534,7 +561,7 @@ suite("operator wiki against compose postgres", () => {
     ).rows as { title: string; source_key: string | null }[];
 
   test("phase 3: a shared page is read by other members' bots, who only suggest; the owner decides; removal withdraws it", async () => {
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "release-process",
@@ -544,14 +571,14 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    await wiki.write(
+    await memory.write(
       A,
       { slug: "private-notes", title: "Private notes", content: "Only for A about the release." },
       person,
     );
-    expect((await wiki.search(B, "release")).map((h) => h.slug)).toEqual([]);
-    expect((await wiki.setMeta(A, "release-process", { type: "all" }, person)).type).toBe("all");
-    expect(await wiki.search(B, "release")).toEqual([
+    expect((await memory.search(B, "release")).map((h) => h.slug)).toEqual([]);
+    expect((await memory.setMeta(A, "release-process", { type: "all" }, person)).type).toBe("all");
+    expect(await memory.search(B, "release")).toEqual([
       {
         slug: "release-process",
         title: "Release process",
@@ -566,11 +593,11 @@ suite("operator wiki against compose postgres", () => {
       },
     ]);
     expect(
-      (await runWikiTool(wiki, B, botA, undefined, { action: "read", slug: "release-process" }))
+      (await runMemoryTool(memory, B, botA, undefined, { action: "read", slug: "release-process" }))
         .result,
     ).toContain("shared by " + A + ": read only");
 
-    const refused = await runWikiTool(wiki, B, botA, undefined, {
+    const refused = await runMemoryTool(memory, B, botA, undefined, {
       action: "write",
       slug: "release-process",
       title: "Mine",
@@ -579,17 +606,17 @@ suite("operator wiki against compose postgres", () => {
     expect(refused.result).toContain(
       "release-process is shared by " + A + "; you cannot change it.",
     );
-    expect(await wiki.list(B)).not.toContainEqual(
+    expect(await memory.list(B)).not.toContainEqual(
       expect.objectContaining({ slug: "release-process" }),
     );
 
-    await runWikiTool(wiki, B, botA, undefined, {
+    await runMemoryTool(memory, B, botA, undefined, {
       action: "suggest",
       slug: "release-process",
       content: "Tag the release, then deploy on Wednesday.",
       reason: "Tuesday is the freeze day now",
     });
-    const inbox = await wiki.suggestions(A);
+    const inbox = await memory.suggestions(A);
     expect(inbox.incoming).toMatchObject([
       {
         slug: "release-process",
@@ -599,44 +626,44 @@ suite("operator wiki against compose postgres", () => {
         baseVersion: 1,
       },
     ]);
-    expect((await wiki.suggestions(B)).outgoing).toMatchObject([
+    expect((await memory.suggestions(B)).outgoing).toMatchObject([
       { slug: "release-process", status: "open" },
     ]);
     expect((await attention(A)).map((a) => a.title)).toContain(
       "Suggested change to the memory item “Release process”",
     );
-    expect(await code(wiki.decide(B, inbox.incoming[0]!.id, "accept"))).toBe("NOT_FOUND"); // only the owner decides
-    expect(await wiki.decide(A, inbox.incoming[0]!.id, "accept")).toEqual({
+    expect(await code(memory.decide(B, inbox.incoming[0]!.id, "accept"))).toBe("NOT_FOUND"); // only the owner decides
+    expect(await memory.decide(A, inbox.incoming[0]!.id, "accept")).toEqual({
       status: "accepted",
       version: 2,
     });
-    expect((await wiki.read(B, "release-process"))?.page.content).toBe(
+    expect((await memory.read(B, "release-process"))?.page.content).toBe(
       "Tag the release, then deploy on Wednesday.",
     );
 
     // A suggestion written against an old version is not applied over newer text.
-    await wiki.suggest(B, "release-process", { content: "Deploy on Thursday." }, person);
-    await wiki.patch(A, "release-process", "Wednesday", "Friday", person);
-    const late = (await wiki.suggestions(A)).incoming[0]!;
-    expect(await code(wiki.decide(A, late.id, "accept"))).toBe("CONFLICT");
-    expect((await wiki.suggestions(B)).outgoing[0]).toMatchObject({ status: "outdated" });
+    await memory.suggest(B, "release-process", { content: "Deploy on Thursday." }, person);
+    await memory.patch(A, "release-process", "Wednesday", "Friday", person);
+    const late = (await memory.suggestions(A)).incoming[0]!;
+    expect(await code(memory.decide(A, late.id, "accept"))).toBe("CONFLICT");
+    expect((await memory.suggestions(B)).outgoing[0]).toMatchObject({ status: "outdated" });
 
-    await wiki.write(
+    await memory.write(
       B,
       { slug: "release-process-b", title: "Release", content: "B's own." },
       person,
     );
-    await wiki.write(B, { slug: "private-notes", title: "B notes", content: "B only." }, person);
-    expect(await code(wiki.setMeta(B, "private-notes", { type: "all" }, person))).toBe("ok"); // A's page of that slug is private
-    expect(await code(wiki.setMeta(A, "private-notes", { type: "all" }, person))).toBe(
+    await memory.write(B, { slug: "private-notes", title: "B notes", content: "B only." }, person);
+    expect(await code(memory.setMeta(B, "private-notes", { type: "all" }, person))).toBe("ok"); // A's page of that slug is private
+    expect(await code(memory.setMeta(A, "private-notes", { type: "all" }, person))).toBe(
       "SLUG_TAKEN",
     );
 
     await q("update membership set status = 'removed', removed_at = now() where user_id = $1", [A]);
-    expect((await wiki.search(B, "release")).map((h) => h.slug)).toEqual(["release-process-b"]);
-    expect(await wiki.read(B, "release-process")).toBeUndefined();
+    expect((await memory.search(B, "release")).map((h) => h.slug)).toEqual(["release-process-b"]);
+    expect(await memory.read(B, "release-process")).toBeUndefined();
     await q("update membership set status = 'active', removed_at = null where user_id = $1", [A]);
-    expect((await wiki.read(B, "release-process"))?.access).toBe("shared");
+    expect((await memory.read(B, "release-process"))?.access).toBe("shared");
   });
 
   test("phase 4: a page links to its evidence, goes stale when the evidence changes, and the checks list what needs work", async () => {
@@ -650,7 +677,7 @@ suite("operator wiki against compose postgres", () => {
       await q("insert into task (owner_user_id, title) values ($1, 'B task') returning id", [B])
     ).rows[0].id as string;
     const missing = "01900000-0000-7000-8000-000000000000";
-    const w = await wiki.write(
+    const w = await memory.write(
       A,
       {
         slug: "billing-migration",
@@ -667,7 +694,7 @@ suite("operator wiki against compose postgres", () => {
     );
     expect(w.skippedSources).toEqual([`doc:${missing}`, `task:${taskB}`]); // unknown, or not A's own
     expect(
-      (await wiki.sources(A, "billing-migration")).map((x) => [x.kind, x.label, x.status]),
+      (await memory.sources(A, "billing-migration")).map((x) => [x.kind, x.label, x.status]),
     ).toEqual([
       ["task", "Migrate billing", "current"],
       ["url", "example.invalid/runbook", "current"],
@@ -675,24 +702,24 @@ suite("operator wiki against compose postgres", () => {
 
     await q("update task set status = 'done', updated_at = now() where id = $1", [taskA]);
     await q(
-      "update wiki_source set checked_at = now() - interval '10 minutes' where page_id = $1",
+      "update memory_source set checked_at = now() - interval '10 minutes' where page_id = $1",
       [w.page.id],
     );
-    await wiki.checkSources();
-    expect((await wiki.read(A, "billing-migration"))?.page).toMatchObject({
+    await memory.checkSources();
+    expect((await memory.read(A, "billing-migration"))?.page).toMatchObject({
       status: "stale",
       updatedBy: "system",
     });
-    expect((await wiki.sources(A, "billing-migration")).map((x) => x.status)).toEqual([
+    expect((await memory.sources(A, "billing-migration")).map((x) => x.status)).toEqual([
       "changed",
       "current",
     ]);
     expect(await attention(A)).toContainEqual({
       title: "The memory item “Billing migration” may be out of date",
-      source_key: `wiki-stale:${w.page.id}`,
+      source_key: `memory-stale:${w.page.id}`,
     });
 
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "billing-migration",
@@ -701,13 +728,13 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    expect((await wiki.read(A, "billing-migration"))?.page.status).toBe("current");
-    expect((await wiki.sources(A, "billing-migration")).map((x) => x.status)).toEqual([
+    expect((await memory.read(A, "billing-migration"))?.page.status).toBe("current");
+    expect((await memory.sources(A, "billing-migration")).map((x) => x.status)).toEqual([
       "current",
       "current",
     ]); // measured again on a full save
 
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "ledger",
@@ -716,7 +743,7 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    const c = await wiki.checks(A);
+    const c = await memory.checks(A);
     expect(c.brokenLinks).toEqual([{ slug: "ledger", target: "gone-page" }]);
     expect(c.unsourced.map((p) => p.slug)).toContain("ledger");
     expect(c.unsourced.map((p) => p.slug)).not.toContain("billing-migration");
@@ -730,8 +757,8 @@ suite("operator wiki against compose postgres", () => {
       noCode?: boolean | undefined;
     }[] = [];
     let reply = "";
-    const jobs = createWikiJobs(db, {
-      wiki,
+    const jobs = createMemoryJobs(db, {
+      memory,
       lookup: async () => ({ isAdmin: false }),
       run: async (t) => {
         turns.push(t);
@@ -771,7 +798,7 @@ suite("operator wiki against compose postgres", () => {
       [A, worker, outside],
     );
     reply =
-      'Saving.\n```zetta:wiki\n{"action":"write","slug":"invoice-export","title":"Invoice export","tags":["gotcha"],"howto":"Export needs the EUR locale","content":"The invoice export fails unless Settings > Region uses the EUR locale."}\n```\n```zetta:task\n{"action":"add","title":"ignored"}\n```';
+      'Saving.\n```zetta:memory\n{"action":"write","slug":"invoice-export","title":"Invoice export","tags":["gotcha"],"howto":"Export needs the EUR locale","content":"The invoice export fails unless Settings > Region uses the EUR locale."}\n```\n```zetta:task\n{"action":"add","title":"ignored"}\n```';
 
     const now = Date.now();
     await jobs.tick(new Date(now));
@@ -787,12 +814,12 @@ suite("operator wiki against compose postgres", () => {
     expect(turns[0]!.prompt).toContain(
       'You finished this work: the task "Fix the invoice export".',
     );
-    expect((await wiki.read(A, "invoice-export"))?.page).toMatchObject({
+    expect((await memory.read(A, "invoice-export"))?.page).toMatchObject({
       tags: ["gotcha"],
       updatedBy: "bot",
       updatedByBotId: worker,
     });
-    expect((await wiki.sources(A, "invoice-export")).map((x) => `${x.kind}:${x.ref}`)).toEqual([
+    expect((await memory.sources(A, "invoice-export")).map((x) => `${x.kind}:${x.ref}`)).toEqual([
       `task:${done}`,
     ]);
     expect(
@@ -800,7 +827,7 @@ suite("operator wiki against compose postgres", () => {
         "select count(*)::int as n from task where owner_user_id = $1 and title = 'ignored'",
         [A],
       ).then((r) => r.rows[0].n),
-    ).toBe(0); // only wiki blocks apply
+    ).toBe(0); // only memory blocks apply
     expect(await jobs.recent(A)).toMatchObject([
       {
         kind: "learn",
@@ -817,8 +844,8 @@ suite("operator wiki against compose postgres", () => {
 
   test("phase 4 review: the chief fixes one group in a chat that no list shows, with the new upkeep actions", async () => {
     const asked: { prompt: string; conversationId: string }[] = [];
-    const jobs = createWikiJobs(db, {
-      wiki,
+    const jobs = createMemoryJobs(db, {
+      memory,
       lookup: async () => ({ isAdmin: false }),
       run: fakeRun as never,
     });
@@ -829,11 +856,11 @@ suite("operator wiki against compose postgres", () => {
         [A, `chief-${uuidv7().slice(-8)}`],
       )
     ).rows[0].id as string;
-    // The chief of the test answers like the real one would: it calls the wiki actions the prompt names.
+    // The chief of the test answers like the real one would: it calls the memory actions the prompt names.
     jobs.useChat(async (userId, conversationId, prompt) => {
       asked.push({ prompt, conversationId });
-      const run = (a: Parameters<typeof runWikiTool>[4]) =>
-        runWikiTool(wiki, userId, chiefId, conversationId, a);
+      const run = (a: Parameters<typeof runMemoryTool>[4]) =>
+        runMemoryTool(memory, userId, chiefId, conversationId, a);
       const checks = await run({ action: "checks", problem: "unlinked" });
       expect(checks.result).toContain("not linked to or from any item");
       expect(checks.result).not.toContain("broken links");
@@ -862,7 +889,7 @@ suite("operator wiki against compose postgres", () => {
       botId: chiefId,
       botName: "Chief",
     });
-    const page = (await wiki.read(A, "billing-migration"))!;
+    const page = (await memory.read(A, "billing-migration"))!;
     expect(page.page.content.match(/\[\[part-of:ledger\]\]/g)).toHaveLength(1);
     expect(page.links.map((l) => l.slug)).toContain("ledger");
     // The chat is the chief's, named for the job, and no list shows it; opening it by id still works.
@@ -876,7 +903,7 @@ suite("operator wiki against compose postgres", () => {
     expect(await chat.getConversation(actor, first.conversationId!)).toMatchObject({
       id: first.conversationId,
       botId: chiefId,
-      title: "Wiki: link items that stand alone",
+      title: "Memory: link items that stand alone",
     });
     // A failed turn is recorded, and a new request is allowed again.
     jobs.useChat(async () => ({ ok: false, text: "", slugs: [], error: "RUN_FAILED" }));
@@ -905,7 +932,7 @@ suite("operator wiki against compose postgres", () => {
       await q("insert into team (owner_user_id, name) values ($1, 'Not A') returning id", [B])
     ).rows[0].id as string;
 
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "vis-solo",
@@ -916,12 +943,12 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    await wiki.write(
+    await memory.write(
       A,
       { slug: "vis-owner", title: "Owner", content: "visprobe for every bot of A." },
       person,
     );
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "vis-team",
@@ -933,32 +960,32 @@ suite("operator wiki against compose postgres", () => {
       person,
     );
 
-    const slugs = async (r: Parameters<typeof wiki.search>[0]) =>
-      (await wiki.search(r, "visprobe")).map((h) => h.slug).sort();
+    const slugs = async (r: Parameters<typeof memory.search>[0]) =>
+      (await memory.search(r, "visprobe")).map((h) => h.slug).sort();
     expect(await slugs(A)).toEqual(["vis-owner", "vis-solo", "vis-team"]);
     expect(await slugs({ userId: A, botId: botA })).toEqual(["vis-owner", "vis-solo", "vis-team"]);
     expect(await slugs({ userId: A, botId: botB })).toEqual(["vis-owner"]);
-    expect(await wiki.read({ userId: A, botId: botB }, "vis-solo")).toBeUndefined();
-    expect((await wiki.read(A, "vis-team"))?.page.teams).toEqual([teamId]);
+    expect(await memory.read({ userId: A, botId: botB }, "vis-solo")).toBeUndefined();
+    expect((await memory.read(A, "vis-team"))?.page.teams).toEqual([teamId]);
 
     // A bot edits only what it can read, never publishes, and the type must be consistent.
     const other = { by: "bot" as const, botId: botB };
     expect(
-      await code(wiki.write(A, { slug: "vis-solo", title: "Mine now", content: "x" }, other)),
+      await code(memory.write(A, { slug: "vis-solo", title: "Mine now", content: "x" }, other)),
     ).toBe("SLUG_TAKEN");
     expect(
       await code(
-        wiki.write(A, { slug: "vis-pub", title: "Pub", content: "x", type: "all" }, other),
+        memory.write(A, { slug: "vis-pub", title: "Pub", content: "x", type: "all" }, other),
       ),
     ).toBe("INVALID");
     expect(
       await code(
-        wiki.write(A, { slug: "vis-bad1", title: "Bad", content: "x", type: "solo" }, person),
+        memory.write(A, { slug: "vis-bad1", title: "Bad", content: "x", type: "solo" }, person),
       ),
     ).toBe("INVALID"); // no author bot
     expect(
       await code(
-        wiki.write(
+        memory.write(
           A,
           { slug: "vis-bad2", title: "Bad", content: "x", type: "teams", teams: [] },
           person,
@@ -967,7 +994,7 @@ suite("operator wiki against compose postgres", () => {
     ).toBe("INVALID");
     expect(
       await code(
-        wiki.write(
+        memory.write(
           A,
           { slug: "vis-bad3", title: "Bad", content: "x", type: "teams", teams: [foreignTeam] },
           person,
@@ -976,7 +1003,7 @@ suite("operator wiki against compose postgres", () => {
     ).toBe("INVALID");
     expect(
       await code(
-        wiki.write(
+        memory.write(
           A,
           { slug: "vis-bad4", title: "Bad", content: "x", type: "solo", authorBotId: uuidv7() },
           person,
@@ -985,32 +1012,32 @@ suite("operator wiki against compose postgres", () => {
     ).toBe("INVALID");
 
     // A new item written by a bot inside a team room is for that team; elsewhere for all of the owner's bots.
-    await runWikiTool(
-      wiki,
+    await runMemoryTool(
+      memory,
       A,
       botA,
       undefined,
       { action: "write", slug: "vis-room", title: "Room", content: "Made in the room." },
       { teamId },
     );
-    await runWikiTool(wiki, A, botA, undefined, {
+    await runMemoryTool(memory, A, botA, undefined, {
       action: "write",
       slug: "vis-chat",
       title: "Chat",
       content: "Made in a chat.",
     });
-    expect((await wiki.read(A, "vis-room"))?.page).toMatchObject({
+    expect((await memory.read(A, "vis-room"))?.page).toMatchObject({
       type: "teams",
       teams: [teamId],
       authorBotId: botA,
     });
-    expect((await wiki.read(A, "vis-chat"))?.page).toMatchObject({ type: "owner", teams: [] });
+    expect((await memory.read(A, "vis-chat"))?.page).toMatchObject({ type: "owner", teams: [] });
   });
 
   test("links form a typed graph that follows the content; hits list neighbours; an item the reader cannot read is not shown", async () => {
     const botB = (await q("select id from bot where owner_user_id = $1 and name = 'Other'", [A]))
       .rows[0].id as string;
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "g-gateway",
@@ -1020,12 +1047,12 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    await wiki.write(
+    await memory.write(
       A,
       { slug: "g-platform", title: "Platform", content: "The platform." },
       person,
     );
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "g-auth",
@@ -1034,8 +1061,8 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    await wiki.write(A, { slug: "g-deep", title: "Deep", content: "Two steps away." }, person);
-    await wiki.write(
+    await memory.write(A, { slug: "g-deep", title: "Deep", content: "Two steps away." }, person);
+    await memory.write(
       A,
       {
         slug: "g-secret",
@@ -1047,20 +1074,20 @@ suite("operator wiki against compose postgres", () => {
       person,
     );
 
-    const g = (await wiki.read(A, "g-gateway"))!;
+    const g = (await memory.read(A, "g-gateway"))!;
     expect(g.links).toHaveLength(3);
     expect(g.links).toContainEqual({ slug: "g-platform", title: "Platform", relation: "part-of" });
     expect(g.links).toContainEqual({ slug: "g-auth", title: "Auth", relation: "depends-on" });
     expect(g.links).toContainEqual({ slug: "g-secret", title: "Secret", relation: "related" });
-    expect((await wiki.read(A, "g-auth"))?.linkedFrom).toContainEqual({
+    expect((await memory.read(A, "g-auth"))?.linkedFrom).toContainEqual({
       slug: "g-gateway",
       title: "Gateway",
       relation: "depends-on",
     });
     // The other bot cannot read g-secret, so the edge to it is hidden.
-    expect((await wiki.read({ userId: A, botId: botB }, "g-gateway"))?.links).toHaveLength(2);
+    expect((await memory.read({ userId: A, botId: botB }, "g-gateway"))?.links).toHaveLength(2);
 
-    const hit = (await wiki.search(A, "Gateway")).find((h) => h.slug === "g-gateway")!;
+    const hit = (await memory.search(A, "Gateway")).find((h) => h.slug === "g-gateway")!;
     expect(hit.neighbors).toHaveLength(3);
     expect(hit.neighbors).toContainEqual({
       relation: "depends-on",
@@ -1069,17 +1096,17 @@ suite("operator wiki against compose postgres", () => {
       title: "Auth",
     });
 
-    const one = await wiki.neighbors(A, "g-gateway", 1);
+    const one = await memory.neighbors(A, "g-gateway", 1);
     expect(one.nodes.map((n) => n.slug).sort()).toEqual(["g-auth", "g-platform", "g-secret"]);
-    const two = await wiki.neighbors(A, "g-gateway", 2);
+    const two = await memory.neighbors(A, "g-gateway", 2);
     expect(two.nodes.map((n) => n.slug).sort()).toEqual([
       "g-auth",
       "g-deep",
       "g-platform",
       "g-secret",
     ]);
-    expect(await code(wiki.neighbors(A, "no-such-item"))).toBe("NOT_FOUND");
-    const viaTool = await runWikiTool(wiki, A, botA, undefined, {
+    expect(await code(memory.neighbors(A, "no-such-item"))).toBe("NOT_FOUND");
+    const viaTool = await runMemoryTool(memory, A, botA, undefined, {
       action: "links",
       slug: "g-gateway",
       depth: 1,
@@ -1087,7 +1114,7 @@ suite("operator wiki against compose postgres", () => {
     expect(viaTool.result).toContain("g-gateway —depends-on→ g-auth");
 
     // Edges are rebuilt from the content: dropping a link removes the edge, and a broken one shows in the checks.
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "g-gateway",
@@ -1096,18 +1123,18 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    expect((await wiki.read(A, "g-gateway"))?.links).toEqual(
+    expect((await memory.read(A, "g-gateway"))?.links).toEqual(
       expect.arrayContaining([{ slug: "g-platform", title: "Platform", relation: "related" }]),
     );
-    expect((await wiki.read(A, "g-gateway"))?.links).toHaveLength(1); // the dangling g-missing is not shown
-    expect((await wiki.checks(A)).brokenLinks).toContainEqual({
+    expect((await memory.read(A, "g-gateway"))?.links).toHaveLength(1); // the dangling g-missing is not shown
+    expect((await memory.checks(A)).brokenLinks).toContainEqual({
       slug: "g-gateway",
       target: "g-missing",
     });
   });
 
   test("tags, howto and score: a tag finds an item, a higher score ranks first, metadata is not a new version", async () => {
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "s-high",
@@ -1117,7 +1144,7 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "s-low",
@@ -1127,12 +1154,11 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    expect((await wiki.search(A, "refund approval limit")).map((h) => h.slug).slice(0, 2)).toEqual([
-      "s-high",
-      "s-low",
-    ]);
+    expect(
+      (await memory.search(A, "refund approval limit")).map((h) => h.slug).slice(0, 2),
+    ).toEqual(["s-high", "s-low"]);
 
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "s-tagged",
@@ -1143,62 +1169,62 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    const tagged = (await wiki.read(A, "s-tagged"))!;
+    const tagged = (await memory.read(A, "s-tagged"))!;
     expect(tagged.page.tags).toEqual(["payroll", "bad-tag"]);
-    expect((await wiki.search(A, "payroll")).map((h) => h.slug)).toEqual(["s-tagged"]);
+    expect((await memory.search(A, "payroll")).map((h) => h.slug)).toEqual(["s-tagged"]);
 
     const before = tagged.page.version;
-    await wiki.setMeta(A, "s-tagged", { score: 80 }, person);
-    expect((await wiki.read(A, "s-tagged"))?.page).toMatchObject({ score: 80, version: before });
-    expect(await code(wiki.setMeta(A, "s-tagged", { score: 101 }, person))).toBe("INVALID");
+    await memory.setMeta(A, "s-tagged", { score: 80 }, person);
+    expect((await memory.read(A, "s-tagged"))?.page).toMatchObject({ score: 80, version: before });
+    expect(await code(memory.setMeta(A, "s-tagged", { score: 101 }, person))).toBe("INVALID");
     expect(
-      await code(wiki.write(A, { slug: "s-neg", title: "x", content: "x", score: -1 }, person)),
+      await code(memory.write(A, { slug: "s-neg", title: "x", content: "x", score: -1 }, person)),
     ).toBe("INVALID");
 
     // Chunks are rebuilt after a content change, so a vector never describes old text.
-    await wiki.tick();
+    await memory.tick();
     const chunks = async () =>
       Number(
         (
           await q(
-            "select count(*) n from wiki_chunk c join wiki_page p on p.id = c.page_id where p.slug = 's-high' and p.owner_user_id = $1",
+            "select count(*) n from memory_chunk c join memory_item p on p.id = c.page_id where p.slug = 's-high' and p.owner_user_id = $1",
             [A],
           )
         ).rows[0].n,
       );
     expect(await chunks()).toBe(1);
-    await wiki.write(
+    await memory.write(
       A,
       { slug: "s-high", title: "Refund rule A", content: "A new text about refunds.", score: 95 },
       person,
     );
     expect(await chunks()).toBe(0);
-    await wiki.tick();
+    await memory.tick();
     expect(await chunks()).toBe(1);
   });
 
   test("the graph has every readable item and the links between them, and hides what the reader cannot read", async () => {
-    await wiki.write(
+    await memory.write(
       A,
       { slug: "gr-x", title: "X", content: "Needs [[depends-on:gr-y]] and [[gr-missing]]." },
       person,
     );
-    await wiki.write(A, { slug: "gr-y", title: "Y", content: "Plain." }, person);
-    await wiki.write(A, { slug: "gr-z", title: "Z", content: "Alone." }, person);
-    await wiki.write(
+    await memory.write(A, { slug: "gr-y", title: "Y", content: "Plain." }, person);
+    await memory.write(A, { slug: "gr-z", title: "Z", content: "Alone." }, person);
+    await memory.write(
       A,
       { slug: "gr-gone", title: "Gone", content: "Linked [[gr-x]].", status: "archived" },
       person,
     );
-    await wiki.write(
+    await memory.write(
       B,
       { slug: "gr-s", title: "S", content: "Points to [[gr-x]] and [[gr-b-private]]." },
       person,
     );
-    await wiki.write(B, { slug: "gr-b-private", title: "B private", content: "Only B." }, person);
-    await wiki.setMeta(B, "gr-s", { type: "all" }, person);
+    await memory.write(B, { slug: "gr-b-private", title: "B private", content: "Only B." }, person);
+    await memory.setMeta(B, "gr-s", { type: "all" }, person);
 
-    const g = await createWikiGraph(db)(A);
+    const g = await createMemoryGraph(db)(A);
     const mine = g.nodes.filter((n) => n.slug.startsWith("gr-"));
     expect(mine.map((n) => `${n.slug}:${n.access}`).sort()).toEqual([
       "gr-s:shared",
@@ -1219,7 +1245,7 @@ suite("operator wiki against compose postgres", () => {
     // B's private item and its link are invisible to A; over HTTP the same graph needs a signed-in person.
     expect(g.nodes.some((n) => n.slug === "gr-b-private")).toBe(false);
     expect(
-      (await call(A, "GET", "/api/wiki-graph")).json.nodes.some(
+      (await call(A, "GET", "/api/memory-graph")).json.nodes.some(
         (n: { slug: string }) => n.slug === "gr-y",
       ),
     ).toBe(true);
@@ -1227,26 +1253,26 @@ suite("operator wiki against compose postgres", () => {
 
   test("search takes filters and says why an item matched", async () => {
     const text = "quarterly refund policy";
-    await wiki.write(
+    await memory.write(
       A,
       { slug: "ft-a", title: "Policy A", content: text, tags: ["alpha", "beta"], score: 90 },
       person,
     );
-    await wiki.write(
+    await memory.write(
       A,
       { slug: "ft-b", title: "Policy B", content: text, tags: ["alpha"], score: 10 },
       person,
     );
-    await wiki.write(
+    await memory.write(
       A,
       { slug: "ft-c", title: "Policy C", content: text, tags: ["beta"], score: 95 },
       person,
     );
 
-    const all = (await wiki.explore(A, text)).hits.filter((h) => h.slug.startsWith("ft-"));
+    const all = (await memory.explore(A, text)).hits.filter((h) => h.slug.startsWith("ft-"));
     expect(all.map((h) => h.slug).sort()).toEqual(["ft-a", "ft-b", "ft-c"]);
-    const slugs = async (f: Parameters<typeof wiki.explore>[2]) =>
-      (await wiki.explore(A, text, f)).hits
+    const slugs = async (f: Parameters<typeof memory.explore>[2]) =>
+      (await memory.explore(A, text, f)).hits
         .filter((h) => h.slug.startsWith("ft-"))
         .map((h) => h.slug)
         .sort();
@@ -1265,34 +1291,34 @@ suite("operator wiki against compose postgres", () => {
     ).toEqual(["ft-a", "ft-b", "ft-c"]);
     expect(await slugs({ updatedSince: new Date(Date.now() + 30 * 86_400_000) })).toEqual([]);
 
-    const hit = (await wiki.explore(A, text, { tags: ["alpha"], minScore: 50 })).hits.find(
+    const hit = (await memory.explore(A, text, { tags: ["alpha"], minScore: 50 })).hits.find(
       (h) => h.slug === "ft-a",
     )!;
     expect(hit.why.keyword).toBe(true);
     expect(hit.why.passage).toContain("\u0001quarterly\u0002");
     expect(typeof hit.id).toBe("string");
     // A word that is only a tag matches through the tag ranking.
-    const byTag = (await wiki.explore(A, "alpha")).hits.find((h) => h.slug === "ft-a")!;
+    const byTag = (await memory.explore(A, "alpha")).hits.find((h) => h.slug === "ft-a")!;
     expect(byTag.why).toMatchObject({ keyword: false, tags: ["alpha"] });
     // Without an embedder, search by meaning reports itself as off.
-    expect((await createWiki(db).explore(A, text)).meaning).toBe(false);
-    expect((await wiki.explore(A, text)).meaning).toBe(true);
+    expect((await createMemory(db).explore(A, text)).meaning).toBe(false);
+    expect((await memory.explore(A, text)).meaning).toBe(true);
     // Over HTTP the facets come from the query string; a bad one is refused.
-    const http = await call(A, "GET", `/api/wiki?q=${encodeURIComponent(text)}&tag=alpha&min=50`);
+    const http = await call(A, "GET", `/api/memory?q=${encodeURIComponent(text)}&tag=alpha&min=50`);
     expect(
       http.json.pages
         .filter((p: { slug: string }) => p.slug.startsWith("ft-"))
         .map((p: { slug: string }) => p.slug),
     ).toEqual(["ft-a"]);
-    expect((await call(A, "GET", "/api/wiki?q=x&type=nope")).status).toBe(400);
+    expect((await call(A, "GET", "/api/memory?q=x&type=nope")).status).toBe(400);
   });
 
   test("createdBy keeps the items a bot created, not the ones it only edited", async () => {
-    await wiki.write(A, { slug: "cb-bot", title: "By bot", content: "made by the bot" }, asBot());
-    await wiki.write(A, { slug: "cb-person", title: "By person", content: "made by me" }, person);
-    await wiki.patch(A, "cb-person", "made by me", "made by me, edited by the bot", asBot());
-    const mine = async (f: Parameters<typeof wiki.explore>[2]) =>
-      (await wiki.explore(A, "made", f)).hits
+    await memory.write(A, { slug: "cb-bot", title: "By bot", content: "made by the bot" }, asBot());
+    await memory.write(A, { slug: "cb-person", title: "By person", content: "made by me" }, person);
+    await memory.patch(A, "cb-person", "made by me", "made by me, edited by the bot", asBot());
+    const mine = async (f: Parameters<typeof memory.explore>[2]) =>
+      (await memory.explore(A, "made", f)).hits
         .map((h) => h.slug)
         .filter((s) => s.startsWith("cb-"))
         .sort();
@@ -1301,17 +1327,17 @@ suite("operator wiki against compose postgres", () => {
     expect(await mine({ createdByBotId: uuidv7() })).toEqual([]);
     // The last-writer facet still sees both edits.
     expect(await mine({ botId: botA })).toEqual(["cb-bot", "cb-person"]);
-    const http = await call(A, "GET", `/api/wiki?q=made&createdBy=${botA}`);
+    const http = await call(A, "GET", `/api/memory?q=made&createdBy=${botA}`);
     expect(
       http.json.pages
         .map((p: { slug: string }) => p.slug)
         .filter((s: string) => s.startsWith("cb-")),
     ).toEqual(["cb-bot"]);
-    expect((await call(A, "GET", "/api/wiki?q=made&createdBy=nope")).status).toBe(400);
+    expect((await call(A, "GET", "/api/memory?q=made&createdBy=nope")).status).toBe(400);
   });
 
   test("editor help suggests tags, how-to, score, links and a tidy version, and never trusts what comes back", async () => {
-    const assist = createWikiAssist(db, { wiki, cli: fakeCli });
+    const assist = createMemoryAssist(db, { memory, cli: fakeCli });
     const draft = {
       title: "Billing runbook",
       howto: "",
@@ -1335,7 +1361,7 @@ suite("operator wiki against compose postgres", () => {
       reason: "Help needs a chief bot. Create one in the chat first.",
     });
 
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "as-known",
@@ -1345,7 +1371,7 @@ suite("operator wiki against compose postgres", () => {
       },
       person,
     );
-    await wiki.write(
+    await memory.write(
       A,
       { slug: "as-self", title: "Billing runbook", content: "Billing steps for the month." },
       person,
@@ -1426,10 +1452,10 @@ suite("operator wiki against compose postgres", () => {
   test("editor help is rate limited per person and refuses bad requests", async () => {
     cliReply = "{}";
     const body = { draft: { title: "T", howto: "", content: "c", tags: [] }, ask: ["tags"] };
-    expect((await call(A, "POST", "/api/wiki-assist", { ...body, ask: [] })).status).toBe(400);
+    expect((await call(A, "POST", "/api/memory-assist", { ...body, ask: [] })).status).toBe(400);
     const statuses: number[] = [];
     for (let n = 0; n < 11; n++)
-      statuses.push((await call(A, "POST", "/api/wiki-assist", body)).status);
+      statuses.push((await call(A, "POST", "/api/memory-assist", body)).status);
     expect(statuses.filter((s) => s === 200)).toHaveLength(10); // a request refused as invalid is not counted
     expect(statuses.at(-1)).toBe(429);
   });

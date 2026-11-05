@@ -13,7 +13,7 @@ const query = z.object({
   kinds: z
     .string()
     .optional()
-    .transform((v) => (v ? v.split(",") : undefined))
+    .transform((v) => (v ? v.split(",").map((k) => (k === "wiki" ? "memory" : k)) : undefined)) // `wiki` is the old name of `memory`
     .pipe(z.array(z.enum(SEARCH_KINDS)).max(SEARCH_KINDS.length).optional()),
   limit: z.coerce.number().int().min(1).max(50).optional(),
 });

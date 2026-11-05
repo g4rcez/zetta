@@ -1,7 +1,7 @@
 import type { Database } from "@zetta/db";
 import type { ActiveActor } from "../identity/access";
 
-export const SEARCH_KINDS = ["conversation", "message", "wiki", "artifact", "task"] as const;
+export const SEARCH_KINDS = ["conversation", "message", "memory", "artifact", "task"] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
 export type SearchHit = {
   kind: SearchKind;
@@ -33,10 +33,10 @@ const BRANCH: Record<SearchKind, string> = {
     where m.owner_user_id = $2 and c.owner_user_id = $2 and not c.archived and m.role <> 'system'
       and to_tsvector('simple', f_unaccent(m.content)) @@ q.q
     order by 7 desc, m.created_at desc limit $3`,
-  // The id of a wiki hit is its slug, which is how the wiki page opens.
-  wiki: `select 'wiki', w.slug, w.title, ts_headline('simple', w.content, q.q || q.h, ${HEADLINE}), null::uuid, null::uuid,
+  // The id of a memory hit is its slug, which is how the memory item opens.
+  memory: `select 'memory', w.slug, w.title, ts_headline('simple', w.content, q.q || q.h, ${HEADLINE}), null::uuid, null::uuid,
       ts_rank(to_tsvector('simple', f_unaccent(w.title || ' ' || w.howto || ' ' || w.content)), q.q), w.updated_at
-    from wiki_page w, q where w.owner_user_id = $2 and w.status <> 'archived'
+    from memory_item w, q where w.owner_user_id = $2 and w.status <> 'archived'
       and to_tsvector('simple', f_unaccent(w.title || ' ' || w.howto || ' ' || w.content)) @@ q.q
     order by 7 desc, w.updated_at desc limit $3`,
   artifact: `select 'artifact', a.id::text, a.title, ts_headline('simple', a.description, q.q || q.h, ${HEADLINE}), null::uuid, null::uuid,
@@ -50,7 +50,7 @@ const BRANCH: Record<SearchKind, string> = {
     order by 7 desc, t.updated_at desc limit $3`,
 };
 
-/** Full-text search over everything the signed-in user owns: chats, messages, wiki items (which hold what bots remember), artifacts and tasks. */
+/** Full-text search over everything the signed-in user owns: chats, messages, memory items (which hold what bots remember), artifacts and tasks. */
 export function createSearch(db: Database) {
   return {
     async search(

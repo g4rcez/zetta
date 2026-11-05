@@ -1,7 +1,7 @@
 import type { Database } from "@zetta/db";
 import { and, asc, eq, inArray, ne, sql } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
-import { WIKI_RELATIONS, wikiPage, type WikiRelation } from "@zetta/db/schema/wiki";
+import { MEMORY_RELATIONS, memoryItem, type MemoryRelation } from "@zetta/db/schema/memory";
 import { z } from "zod";
 import { firstObject } from "../chat/bot-interview";
 import {
@@ -13,7 +13,7 @@ import {
 } from "../chat/harness";
 import { unsafeMemory } from "../features/knowledge";
 import { looksSecret } from "../features/safety";
-import { visibleTo, wikiLinks, wikiSlug, wikiTags, type Wiki } from "./service";
+import { visibleTo, memoryLinks, memorySlug, memoryTags, type Memory } from "./service";
 
 const TIMEOUT_MS = 60_000;
 const CANDIDATES = 20,
@@ -39,7 +39,7 @@ export type Suggestions = {
   tags?: string[];
   howto?: string;
   score?: { value: number; reason: string };
-  links?: { slug: string; title: string; relation: WikiRelation; reason: string }[];
+  links?: { slug: string; title: string; relation: MemoryRelation; reason: string }[];
   tidy?: { content: string; summary: string };
 };
 export type AssistResult =
@@ -60,7 +60,7 @@ const reply = z.object({
     .array(
       z.object({
         slug: z.string(),
-        relation: z.enum(WIKI_RELATIONS).catch("related"),
+        relation: z.enum(MEMORY_RELATIONS).catch("related"),
         reason: z.string().max(200).default(""),
       }),
     )
@@ -112,8 +112,8 @@ function prompt(
   ].join("\n\n");
 }
 
-/** One-shot help for the wiki editor, run on the person's chief. It suggests; nothing is saved until the person accepts and saves. */
-export function createWikiAssist(db: Database, deps: { wiki: Wiki; cli?: RunCli }) {
+/** One-shot help for the memory editor, run on the person's chief. It suggests; nothing is saved until the person accepts and saves. */
+export function createMemoryAssist(db: Database, deps: { memory: Memory; cli?: RunCli }) {
   const cli = deps.cli ?? runCli;
   return async function assist(owner: string, input: AssistInput): Promise<AssistResult> {
     const [chief] = await db
@@ -140,8 +140,8 @@ export function createWikiAssist(db: Database, deps: { wiki: Wiki; cli?: RunCli 
         reason:
           "The item looks like it holds a secret, so it was not sent. Remove it and try again.",
       };
-    const self = input.slug ? wikiSlug(input.slug) : undefined;
-    const found = await deps.wiki.search(
+    const self = input.slug ? memorySlug(input.slug) : undefined;
+    const found = await deps.memory.search(
       owner,
       `${d.title} ${d.howto} ${d.content.slice(0, 1500)}`,
       CANDIDATES,
@@ -150,22 +150,22 @@ export function createWikiAssist(db: Database, deps: { wiki: Wiki; cli?: RunCli 
     const known = (
       (
         await db.execute(sql`
-          select t from wiki_page p, unnest(p.tags) t
+          select t from memory_item p, unnest(p.tags) t
           where p.owner_user_id = ${owner} and p.status <> 'archived' group by t order by count(*) desc limit ${TAGS_KNOWN}`)
       ).rows as { t: string }[]
     ).map((r) => r.t);
-    const targets = [...new Set(wikiLinks(d.content, self ?? "").map((l) => l.slug))];
+    const targets = [...new Set(memoryLinks(d.content, self ?? "").map((l) => l.slug))];
     const real = targets.length
       ? new Set(
           (
             await db
-              .select({ slug: wikiPage.slug })
-              .from(wikiPage)
+              .select({ slug: memoryItem.slug })
+              .from(memoryItem)
               .where(
                 and(
-                  inArray(wikiPage.slug, targets),
+                  inArray(memoryItem.slug, targets),
                   visibleTo(owner),
-                  ne(wikiPage.status, "archived"),
+                  ne(memoryItem.status, "archived"),
                 ),
               )
           ).map((r) => r.slug),
@@ -200,7 +200,7 @@ export function createWikiAssist(db: Database, deps: { wiki: Wiki; cli?: RunCli 
       const titles = new Map(candidates.map((c) => [c.slug, c.title]));
       const wanted = new Set<string>(input.ask);
       const suggestions: Suggestions = {
-        ...(wanted.has("tags") && r.tags && { tags: wikiTags(r.tags).filter(ok) }),
+        ...(wanted.has("tags") && r.tags && { tags: memoryTags(r.tags).filter(ok) }),
         ...(wanted.has("howto") && r.howto && ok(r.howto) && { howto: r.howto.trim() }),
         ...(wanted.has("score") && r.score && ok(r.score.reason) && { score: r.score }),
         ...(wanted.has("links") &&
@@ -225,4 +225,4 @@ export function createWikiAssist(db: Database, deps: { wiki: Wiki; cli?: RunCli 
     return { kind: "unavailable", reason: "The engine's answer couldn't be read. Try again." };
   };
 }
-export type WikiAssist = ReturnType<typeof createWikiAssist>;
+export type MemoryAssist = ReturnType<typeof createMemoryAssist>;

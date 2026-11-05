@@ -4,13 +4,13 @@ import type { Database } from "@zetta/db";
 export async function cleanupTestUsers(db: Database, ids: string[]) {
   const q = (sql: string) => db.$client.query(sql, [ids]);
   await q(
-    "delete from wiki_suggestion where author_user_id = any($1) or page_owner_user_id = any($1)",
+    "delete from memory_suggestion where author_user_id = any($1) or page_owner_user_id = any($1)",
   );
   for (const t of [
-    "wiki_job",
-    "wiki_source",
-    "wiki_revision",
-    "wiki_page",
+    "memory_job",
+    "memory_source",
+    "memory_revision",
+    "memory_item",
     "knowledge_doc",
     "knowledge_source",
     "audit_event",

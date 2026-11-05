@@ -13,7 +13,7 @@ import { createBotClaude } from "./bot-claude/store";
 import { createChatService } from "./chat/service";
 import { HarnessError } from "./chat/harness";
 import { createTurnRunner } from "./chat/pipeline";
-import { createWiki } from "./wiki/service";
+import { createMemory } from "./memory/service";
 import { createFeaturesService } from "./features/service";
 import { createIdentityAccess } from "./identity/access";
 
@@ -57,8 +57,8 @@ suite("v1 user journeys", () => {
     installed = t.profile?.files ?? {};
     yield script.shift() ?? "OK";
   };
-  const wiki = createWiki(db);
-  const run = createTurnRunner(db, cli as never, stream as never, wiki);
+  const memory = createMemory(db);
+  const run = createTurnRunner(db, cli as never, stream as never, memory);
   const features = createFeaturesService(db, run);
   const chat = createChatService(
     db,
@@ -73,13 +73,13 @@ suite("v1 user journeys", () => {
     undefined,
     undefined,
     undefined,
-    { wiki },
+    { memory },
   );
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: { access, chat },
     features: { access, features },
-    wiki: { access, wiki },
+    memory: { access, memory },
     webOrigin: "http://web.test",
     desktopOrigins: [],
     drain: () => {},
@@ -157,22 +157,22 @@ suite("v1 user journeys", () => {
     };
     // A team that is not the owner's cannot be used.
     expect(
-      (await call("PUT", "/api/wiki/nope", { ...item, title: "Nope", teams: [uuidv7()] })).status,
+      (await call("PUT", "/api/memory/nope", { ...item, title: "Nope", teams: [uuidv7()] })).status,
     ).toBe(400);
-    const made = await call("PUT", "/api/wiki/release-checklist", { ...item, teams: [t!.id] });
+    const made = await call("PUT", "/api/memory/release-checklist", { ...item, teams: [t!.id] });
     expect(made.status).toBe(200);
     const id = (
       await db.$client.query(
-        "select id from wiki_page where slug = 'release-checklist' and owner_user_id = $1",
+        "select id from memory_item where slug = 'release-checklist' and owner_user_id = $1",
         [A],
       )
     ).rows[0].id as string;
-    const say = async (b: { id: string }, content: string, wikiIds?: string[]) => {
+    const say = async (b: { id: string }, content: string, memoryIds?: string[]) => {
       const conv = (await call("POST", "/api/conversations", { botId: b.id })).json.conversation.id;
       prompts.length = 0;
       return call("POST", `/api/conversations/${conv}/messages`, {
         content,
-        ...(wikiIds ? { wikiIds } : {}),
+        ...(memoryIds ? { memoryIds } : {}),
       });
     };
     await say(inside, "Prepare the release candidate today");
@@ -316,12 +316,12 @@ suite("v1 user journeys", () => {
     }
   });
 
-  test("journey: successful task -> reusable wiki procedure -> routine -> first occurrence -> durable result", async () => {
+  test("journey: successful task -> reusable memory procedure -> routine -> first occurrence -> durable result", async () => {
     const bot = (await call("POST", "/api/bots", { name: "Worker", harness: "pi" })).json.bot;
     await db.$client.query("update bot set onboarded = true where id = $1", [bot.id]);
     const conv = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation.id;
     script.push(
-      'Here is the weekly summary.\n```zetta:wiki\n{"action":"write","slug":"weekly-metrics-summary","title":"Weekly metrics summary","tags":["instruction"],"howto":"the weekly metrics summary","content":"1) pull metrics 2) compare to last week 3) three bullets"}\n```',
+      'Here is the weekly summary.\n```zetta:memory\n{"action":"write","slug":"weekly-metrics-summary","title":"Weekly metrics summary","tags":["instruction"],"howto":"the weekly metrics summary","content":"1) pull metrics 2) compare to last week 3) three bullets"}\n```',
     );
     const first = await call("POST", `/api/conversations/${conv}/messages`, {
       content: "Summarize this week's metrics",
@@ -338,7 +338,7 @@ suite("v1 user journeys", () => {
         })
       ).json.status,
     ).toBe("approved");
-    const ins = (await call("GET", "/api/wiki")).json.pages.find(
+    const ins = (await call("GET", "/api/memory")).json.pages.find(
       (i: { title: string }) => i.title === "Weekly metrics summary",
     );
     expect(ins).toMatchObject({ tags: ["instruction"], type: "owner" });
@@ -383,17 +383,17 @@ suite("v1 user journeys", () => {
     const bot = (await call("POST", "/api/bots", { name: "Fact", harness: "pi" })).json.bot;
     await db.$client.query("update bot set onboarded = true where id = $1", [bot.id]);
     const note = (content: string, expectedVersion: number) =>
-      call("PUT", "/api/wiki/office-hours", {
+      call("PUT", "/api/memory/office-hours", {
         title: "Office hours",
         content,
         type: "solo",
         authorBotId: bot.id,
-        tags: ["memory"],
+        tags: ["note"],
         expectedVersion,
       });
     expect((await note("The office closes at 17:00 on Fridays", 0)).status).toBe(200);
     const mem = {
-      id: (await call("GET", "/api/wiki")).json.pages.find(
+      id: (await call("GET", "/api/memory")).json.pages.find(
         (p: { slug: string }) => p.slug === "office-hours",
       ).id as string,
     };
@@ -402,7 +402,7 @@ suite("v1 user journeys", () => {
       content: "When does the office close on Fridays?",
     });
     const used = (await call("GET", `/api/messages/${wrong.json.assistant.id}/knowledge`)).json;
-    expect(used.memories.map((m: { id: string }) => m.id)).toContain(mem.id); // the person can see which note drove the answer
+    expect(used.notes.map((m: { id: string }) => m.id)).toContain(mem.id); // the person can see which note drove the answer
     expect((await note("The office closes at 15:00 on Fridays", 1)).status).toBe(200);
     prompts.length = 0;
     // memory is frozen per conversation (stable prompt prefix): the correction shows in the next conversation

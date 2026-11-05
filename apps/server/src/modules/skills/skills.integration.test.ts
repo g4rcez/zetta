@@ -10,7 +10,7 @@ import { createTurnRunner } from "../chat/pipeline";
 import { createChatService } from "../chat/service";
 import { createFeaturesService } from "../features/service";
 import { createIdentityAccess } from "../identity/access";
-import { createWiki } from "../wiki/service";
+import { createMemory } from "../memory/service";
 import { createMarket } from "./market";
 import { createSkills } from "./service";
 
@@ -107,8 +107,8 @@ suite("skill library", () => {
   ];
   const library = createSkills(db);
   const market = createMarket({ fetch: github, suggestions });
-  const wiki = createWiki(db);
-  const run = createTurnRunner(db, cli as never, stream as never, wiki);
+  const memory = createMemory(db);
+  const run = createTurnRunner(db, cli as never, stream as never, memory);
   const features = createFeaturesService(db, run);
   const chat = createChatService(
     db,
@@ -123,7 +123,7 @@ suite("skill library", () => {
     undefined,
     undefined,
     undefined,
-    { wiki, skills: { skills: library, market } },
+    { memory, skills: { skills: library, market } },
   );
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,

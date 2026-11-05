@@ -2,14 +2,14 @@ import type { Database } from "@zetta/db";
 import { and, eq, inArray, lte, ne, sql } from "@zetta/db/query";
 import { message } from "@zetta/db/schema/chat";
 import { knowledgeDoc, knowledgeSource } from "@zetta/db/schema/knowledge";
-import { wikiChunk, wikiPage } from "@zetta/db/schema/wiki";
+import { memoryChunk, memoryItem } from "@zetta/db/schema/memory";
 import { raiseAttention } from "../features/attention";
 import { issueBackgroundActor, type ActiveActor, type MembershipLookup } from "../identity/access";
 import * as realDrive from "../integrations/plugins/google/drive-index";
 import { accountCtx, grantedScopes, readAccounts } from "../integrations/plugins/google/oauth";
 import { PluginError, type PluginContext } from "../integrations/plugins/registry";
 import { chunkText } from "./chunk";
-import { wikiSlug } from "../wiki/service";
+import { memorySlug } from "../memory/service";
 import { type Embedder } from "./embed";
 
 export type KnowledgePlugins = {
@@ -23,7 +23,7 @@ const SYNC_EVERY_MS = 10 * 60_000,
   RETRY_MS = 30 * 60_000,
   SOON_MS = 5_000,
   SOURCES_PER_TICK = 2;
-// How much of a document's text its wiki item shows (the item keeps 20 000 characters of content; the link below is added too).
+// How much of a document's text its memory item shows (the item keeps 20 000 characters of content; the link below is added too).
 const EXCERPT_CHARS = 18_000;
 const MAX_FILES_FULL = 5000,
   DOCS_PER_RUN = 20,
@@ -111,7 +111,7 @@ export function createKnowledge(
       .where(and(eq(knowledgeSource.ownerUserId, userId), eq(knowledgeSource.provider, PROVIDER)));
 
   /**
-   * Deletes indexes with their documents. A wiki item goes with them unless a document of another index (the same file seen through
+   * Deletes indexes with their documents. A memory item goes with them unless a document of another index (the same file seen through
    * another Google account) still holds it.
    */
   async function dropSources(sourceIds: string[]) {
@@ -133,7 +133,7 @@ export function createKnowledge(
       ).flatMap((r) => (r.id ? [r.id] : [])),
     );
     const free = [...new Set(pages)].filter((p) => !held.has(p));
-    if (free.length) await db.delete(wikiPage).where(inArray(wikiPage.id, free));
+    if (free.length) await db.delete(memoryItem).where(inArray(memoryItem.id, free));
   }
 
   /** An index made before accounts existed belongs to the first account (the one the old single connection became). */
@@ -197,9 +197,9 @@ export function createKnowledge(
     const n = (st: string) => byState.find((r) => r.state === st)?.n ?? 0;
     const [counted] = await db
       .select({ chunks: count() })
-      .from(wikiChunk)
-      .innerJoin(knowledgeDoc, eq(knowledgeDoc.pageId, wikiChunk.pageId))
-      .where(eq(wikiChunk.ownerUserId, a.userId));
+      .from(memoryChunk)
+      .innerJoin(knowledgeDoc, eq(knowledgeDoc.pageId, memoryChunk.pageId))
+      .where(eq(memoryChunk.ownerUserId, a.userId));
     // One status for all accounts: the most urgent one wins (an account that must reconnect matters more than one that is idle).
     const worst = (["syncing", "needs_auth", "error"] as const).find((st) =>
       sources.some((s) => s.status === st),
@@ -232,14 +232,14 @@ export function createKnowledge(
     return status(a);
   }
 
-  /** Turns indexing off and deletes every copy of the user's documents (docs, wiki items and chunks). */
+  /** Turns indexing off and deletes every copy of the user's documents (docs, memory items and chunks). */
   async function disable(a: ActiveActor) {
-    // The wiki items are copies too: they go with the documents (their chunks and links cascade).
+    // The memory items are copies too: they go with the documents (their chunks and links cascade).
     await dropSources((await ownSources(a.userId)).map((r) => r.id));
     return status(a);
   }
 
-  /** A document that is gone or no longer readable leaves the wiki: its item is archived (bots and search skip it) and its text dropped. */
+  /** A document that is gone or no longer readable leaves the memory: its item is archived (bots and search skip it) and its text dropped. */
   async function archiveItems(docIds: string[]) {
     if (!docIds.length) return;
     const pages = (
@@ -266,11 +266,11 @@ export function createKnowledge(
     );
     const free = pages.filter((p) => !held.has(p));
     if (!free.length) return;
-    await db.delete(wikiChunk).where(inArray(wikiChunk.pageId, free));
+    await db.delete(memoryChunk).where(inArray(memoryChunk.pageId, free));
     await db
-      .update(wikiPage)
+      .update(memoryItem)
       .set({ status: "archived", updatedAt: new Date() })
-      .where(inArray(wikiPage.id, free));
+      .where(inArray(memoryItem.id, free));
   }
   async function markRemoved(sourceId: string, externalIds: string[]) {
     if (!externalIds.length) return;
@@ -479,7 +479,7 @@ export function createKnowledge(
           const title = d.name.trim().slice(0, 160) || "Document";
           if (pageId) {
             await tx
-              .update(wikiPage)
+              .update(memoryItem)
               .set({
                 title,
                 content,
@@ -487,13 +487,13 @@ export function createKnowledge(
                 updatedBy: "system",
                 updatedAt: new Date(),
               })
-              .where(eq(wikiPage.id, pageId));
+              .where(eq(memoryItem.id, pageId));
           } else {
             [{ id: pageId }] = (await tx
-              .insert(wikiPage)
+              .insert(memoryItem)
               .values({
                 ownerUserId: s.ownerUserId,
-                slug: `drive-${wikiSlug(d.name).slice(0, 50) || "document"}-${d.id.slice(-6)}`,
+                slug: `drive-${memorySlug(d.name).slice(0, 50) || "document"}-${d.id.slice(-6)}`,
                 title,
                 type: "owner",
                 howto:
@@ -506,11 +506,11 @@ export function createKnowledge(
                 score: 40,
                 updatedBy: "system",
               })
-              .returning({ id: wikiPage.id })) as [{ id: string }];
+              .returning({ id: memoryItem.id })) as [{ id: string }];
             await tx.update(knowledgeDoc).set({ pageId }).where(eq(knowledgeDoc.id, d.id));
           }
-          await tx.delete(wikiChunk).where(eq(wikiChunk.pageId, pageId));
-          await tx.insert(wikiChunk).values(
+          await tx.delete(memoryChunk).where(eq(memoryChunk.pageId, pageId));
+          await tx.insert(memoryChunk).values(
             chunks.map((text, ord) => ({
               pageId: pageId!,
               ownerUserId: s.ownerUserId,
@@ -520,11 +520,11 @@ export function createKnowledge(
             })),
           );
         } else if (pageId) {
-          await tx.delete(wikiChunk).where(eq(wikiChunk.pageId, pageId));
+          await tx.delete(memoryChunk).where(eq(memoryChunk.pageId, pageId));
           await tx
-            .update(wikiPage)
+            .update(memoryItem)
             .set({ status: "archived", updatedAt: new Date() })
-            .where(eq(wikiPage.id, pageId));
+            .where(eq(memoryItem.id, pageId));
         }
         await tx
           .update(knowledgeDoc)
@@ -705,13 +705,13 @@ export function createKnowledge(
       ).map((d) => d.id),
     );
     const chunks = await db
-      .select({ id: wikiChunk.id, text: wikiChunk.text })
-      .from(wikiChunk)
+      .select({ id: memoryChunk.id, text: memoryChunk.text })
+      .from(memoryChunk)
       .where(
         and(
-          eq(wikiChunk.ownerUserId, a.userId),
+          eq(memoryChunk.ownerUserId, a.userId),
           inArray(
-            wikiChunk.id,
+            memoryChunk.id,
             used.map((d) => d.chunkId),
           ),
         ),

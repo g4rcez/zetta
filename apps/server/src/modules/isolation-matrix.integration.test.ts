@@ -11,7 +11,7 @@ import { createChatService } from "./chat/service";
 import { createFeaturesService } from "./features/service";
 import { createIdentityAccess } from "./identity/access";
 import { createMcp } from "./integrations/mcp";
-import { createWiki } from "./wiki/service";
+import { createMemory } from "./memory/service";
 import { createSources } from "./integrations/sources";
 
 /**
@@ -61,7 +61,7 @@ suite("cross-user isolation matrix", () => {
     fetcher: async () => "<rss/>",
   });
   const discussions = createDiscussionStore(db);
-  const wiki = createWiki(db);
+  const memory = createMemory(db);
   const chat = createChatService(
     db,
     undefined,
@@ -75,7 +75,7 @@ suite("cross-user isolation matrix", () => {
     undefined,
     undefined,
     undefined,
-    { discussions, wiki },
+    { discussions, memory },
   );
   const inbound = createInbound(db, mcp.plugins, chat, async () => ({ isAdmin: false }));
   const app = createApp({
@@ -90,7 +90,7 @@ suite("cross-user isolation matrix", () => {
       chat,
     },
     inbound: { access: realAccess, inbound },
-    wiki: { access: realAccess, wiki },
+    memory: { access: realAccess, memory },
     webOrigin: "http://web.test",
     desktopOrigins: [],
     drain: () => {},
@@ -145,8 +145,8 @@ suite("cross-user isolation matrix", () => {
       })
     ).json;
     owned.msg = sent.user.id;
-    owned.wiki = `note-${uuidv7().slice(-8)}`;
-    await call(A, "PUT", `/api/wiki/${owned.wiki}`, {
+    owned.memory = `note-${uuidv7().slice(-8)}`;
+    await call(A, "PUT", `/api/memory/${owned.memory}`, {
       title: "Isolated note",
       content: `fact ${SECRET}`,
       expectedVersion: 0,
@@ -237,7 +237,7 @@ suite("cross-user isolation matrix", () => {
         o = owned as Record<string, string>;
       // lists never contain A's data (C, a removed member, is denied outright)
       for (const path of [
-        "/api/wiki",
+        "/api/memory",
         "/api/routines",
         "/api/workflows",
         "/api/attention",
@@ -273,8 +273,8 @@ suite("cross-user isolation matrix", () => {
         ["DELETE", `/api/bots/${o.bot}`],
         ["POST", `/api/messages/${o.msg}/reactions`, { emoji: "👍" }],
         ["GET", `/api/messages/${o.msg}/knowledge`],
-        ["GET", `/api/wiki/${o.wiki}`],
-        ["PATCH", `/api/wiki/${o.wiki}`, { status: "archived" }],
+        ["GET", `/api/memory/${o.memory}`],
+        ["PATCH", `/api/memory/${o.memory}`, { status: "archived" }],
         ["DELETE", `/api/attachments/${o.att}`],
         ["GET", `/api/bots/${o.bot}/hooks`],
         ["POST", `/api/bots/${o.bot}/hooks`, { kind: "stop", pattern: "x" }],
@@ -365,7 +365,7 @@ suite("cross-user isolation matrix", () => {
         "user",
         "assistant",
       ]);
-      expect((await call(A, "GET", "/api/wiki")).json.pages).toHaveLength(2); // the typed note + the "remember that" fact
+      expect((await call(A, "GET", "/api/memory")).json.pages).toHaveLength(2); // the typed note + the "remember that" fact
       expect((await call(A, "GET", "/api/routines")).json.routines[0].paused).toBe(true);
     });
   }

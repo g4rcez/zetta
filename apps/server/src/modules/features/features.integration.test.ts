@@ -6,7 +6,7 @@ import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createChatService } from "../chat/service";
-import { createWiki } from "../wiki/service";
+import { createMemory } from "../memory/service";
 import { createIdentityAccess } from "../identity/access";
 import { createFeaturesService } from "./service";
 import { nextDailyRun } from "./schedule";
@@ -42,7 +42,7 @@ suite("features against compose postgres", () => {
     async () => ({ isAdmin: false }),
   );
   const features = createFeaturesService(db);
-  const wiki = createWiki(db);
+  const memory = createMemory(db);
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: {
@@ -60,11 +60,11 @@ suite("features against compose postgres", () => {
         undefined,
         undefined,
         undefined,
-        { wiki },
+        { memory },
       ),
     },
     features: { access, features },
-    wiki: { access, wiki },
+    memory: { access, memory },
     webOrigin: "http://web.test",
     desktopOrigins: [],
     drain: () => {},
@@ -124,7 +124,7 @@ suite("features against compose postgres", () => {
     await chat(A, bot.id, "remember that my favourite colour is teal");
     expect((await chat(A, bot.id, "what colour?")).reply).toContain("favourite colour is teal");
     expect((await chat(B, bot.id, "what colour?")).reply).not.toContain("teal");
-    expect((await call(B, "GET", "/api/wiki")).json.pages).toHaveLength(0);
+    expect((await call(B, "GET", "/api/memory")).json.pages).toHaveLength(0);
   });
 
   test("hooks add context, redact, and stop; only the bot owner configures them", async () => {

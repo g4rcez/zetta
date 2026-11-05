@@ -7,7 +7,7 @@ import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createChatService } from "../chat/service";
 import { createIdentityAccess } from "../identity/access";
-import { createWiki } from "../wiki/service";
+import { createMemory } from "../memory/service";
 import { createFeaturesService } from "./service";
 import { computeNextRun, nextDailyRun, previewRuns } from "./schedule";
 import { executeGraph, graphSchema } from "./workflow";
@@ -120,7 +120,7 @@ suite("feature wave against compose postgres", () => {
     },
     async () => ({ isAdmin: false }),
   );
-  const wiki = createWiki(db);
+  const memory = createMemory(db);
   const features = createFeaturesService(db);
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
@@ -467,14 +467,14 @@ suite("feature wave against compose postgres", () => {
 
   test("memory: shown whole in the prompt, provenance of what an answer used, untrusted label", async () => {
     const b = await newBot(A, "Knower");
-    await wiki.remember(
+    await memory.remember(
       A,
-      { content: "Prefers metric units and Celsius", botId: b.id, target: "memory" },
+      { content: "Prefers metric units and Celsius", botId: b.id, target: "notes" },
       { by: "user" },
     );
-    await wiki.remember(
+    await memory.remember(
       A,
-      { content: "Unrelated trivia about volcano geology", botId: b.id, target: "memory" },
+      { content: "Unrelated trivia about volcano geology", botId: b.id, target: "notes" },
       { by: "user" },
     );
     const conv = (await call(A, "POST", "/api/conversations", { botId: b.id })).json.conversation
@@ -486,10 +486,10 @@ suite("feature wave against compose postgres", () => {
     expect(r.json.assistant.content).toContain("Prefers metric units and Celsius");
     expect(r.json.assistant.content).toContain("volcano"); // bounded stores are injected whole, like Hermes: no relevance filtering
     const used = (await call(A, "GET", `/api/messages/${r.json.assistant.id}/knowledge`)).json;
-    expect(used.memories.map((x: { content: string }) => x.content)).toContain(
+    expect(used.notes.map((x: { content: string }) => x.content)).toContain(
       "Prefers metric units and Celsius",
     );
-    expect(used.wiki).toEqual([]); // no wiki item was listed for this fixture bot (its notes are in the prompt whole)
+    expect(used.items).toEqual([]); // no memory item was listed for this fixture bot (its notes are in the prompt whole)
     expect((await call(B, "GET", `/api/messages/${r.json.assistant.id}/knowledge`)).status).toBe(
       404,
     );

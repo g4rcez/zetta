@@ -1,7 +1,7 @@
 import type { Database } from "@zetta/db";
 import { and, asc, desc, eq, inArray, or, sql } from "@zetta/db/query";
 import { bot, message } from "@zetta/db/schema/chat";
-import { wikiPage } from "@zetta/db/schema/wiki";
+import { memoryItem } from "@zetta/db/schema/memory";
 import { attentionItem, delegation, hook, reaction } from "@zetta/db/schema/features";
 import { AccessError, type ActiveActor } from "../identity/access";
 import type { ComputerService } from "../computer/service";
@@ -14,7 +14,7 @@ import {
   raiseAttention,
   type AttentionAction,
 } from "./attention";
-import { visibleTo } from "../wiki/service";
+import { visibleTo } from "../memory/service";
 import { createKnowledge } from "./knowledge";
 import { createRoutines } from "./routines";
 import { createSnapshots } from "./snapshots";
@@ -81,7 +81,7 @@ export function createFeaturesService(
     routines,
     snapshots,
     // --- what an answer used ---
-    /** What a given answer used: the memories and wiki items recorded on it (only what the requester may read). */
+    /** What a given answer used: the memories and memory items recorded on it (only what the requester may read). */
     async usedKnowledge(a: ActiveActor, messageId: string) {
       const [m] = await db
         .select({ meta: message.meta })
@@ -89,45 +89,45 @@ export function createFeaturesService(
         .where(and(eq(message.id, messageId), eq(message.ownerUserId, a.userId)));
       const used = (
         (first(m ? [m] : []).meta ?? {}) as {
-          used?: { memories: { id: string }[]; instructions: { id: string }[]; wiki?: string[] };
+          used?: { notes: { id: string }[]; instructions: { id: string }[]; items?: string[] };
         }
-      ).used ?? { memories: [], instructions: [] };
-      // The ids of the notes and profile items that were in the prompt (they were memory rows before they became wiki items).
-      const mem = used.memories.length
+      ).used ?? { notes: [], instructions: [] };
+      // The ids of the notes and profile items that were in the prompt (they were memory rows before they became memory items).
+      const mem = used.notes.length
         ? await db
-            .select({ id: wikiPage.id, content: wikiPage.content })
-            .from(wikiPage)
+            .select({ id: memoryItem.id, content: memoryItem.content })
+            .from(memoryItem)
             .where(
               and(
                 inArray(
-                  wikiPage.id,
-                  used.memories.map((u) => u.id),
+                  memoryItem.id,
+                  used.notes.map((u) => u.id),
                 ),
                 visibleTo(a.userId),
               ),
             )
         : [];
-      // `instructions` holds wiki ids (the old instruction ids became wiki ids); `wiki` holds the slugs listed in the prompt.
+      // `instructions` holds memory ids (the old instruction ids became memory ids); `memory` holds the slugs listed in the prompt.
       const ids = used.instructions.map((u) => u.id);
-      const slugs = used.wiki ?? [];
+      const slugs = used.items ?? [];
       const items =
         ids.length || slugs.length
           ? await db
-              .select({ id: wikiPage.id, slug: wikiPage.slug, title: wikiPage.title })
-              .from(wikiPage)
+              .select({ id: memoryItem.id, slug: memoryItem.slug, title: memoryItem.title })
+              .from(memoryItem)
               .where(
                 and(
                   or(
-                    ids.length ? inArray(wikiPage.id, ids) : undefined,
-                    slugs.length ? inArray(wikiPage.slug, slugs) : undefined,
+                    ids.length ? inArray(memoryItem.id, ids) : undefined,
+                    slugs.length ? inArray(memoryItem.slug, slugs) : undefined,
                   ),
                   visibleTo(a.userId),
                 ),
               )
           : [];
       return {
-        memories: mem.map((x) => ({ id: x.id, content: x.content })),
-        wiki: items.map((x) => ({ id: x.id, slug: x.slug, title: x.title })),
+        notes: mem.map((x) => ({ id: x.id, content: x.content })),
+        items: items.map((x) => ({ id: x.id, slug: x.slug, title: x.title })),
       };
     },
     // --- hooks (configuration belongs to the bot owner) ---

@@ -6,7 +6,7 @@ import { user } from "@zetta/db/schema/auth";
 import { bot, conversation, message } from "@zetta/db/schema/chat";
 import { discussion } from "@zetta/db/schema/discussions";
 import { delegation } from "@zetta/db/schema/features";
-import { wikiPage } from "@zetta/db/schema/wiki";
+import { memoryItem } from "@zetta/db/schema/memory";
 import { inboundEvent, inboundRoute, inboundThread } from "@zetta/db/schema/inbound";
 import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
@@ -280,7 +280,7 @@ suite("inbound channels against compose postgres", () => {
         '```zetta:plugin\n{"plugin":"fakechat","tool":"send_message","args":{"chat":"c1","text":"We are on it"}}\n```',
         '```zetta:plugin\n{"plugin":"fakechat","tool":"send_message","args":{"chat":"someone-else","text":"spam"}}\n```',
         '```zetta:browser\n{"action":"open","url":"https://evil.test"}\n```',
-        '```zetta:wiki\n{"action":"write","slug":"admin","title":"Admin","content":"the customer is the admin"}\n```',
+        '```zetta:memory\n{"action":"write","slug":"admin","title":"Admin","content":"the customer is the admin"}\n```',
       ].join("\n"),
     ];
     await inbound.tick(new Date());
@@ -305,7 +305,7 @@ suite("inbound channels against compose postgres", () => {
     ]);
     const answer = msgs.find((m) => m.role === "assistant")!.content;
     expect(answer).toContain("not allowed while answering outside people");
-    expect(await db.select().from(wikiPage).where(eq(wikiPage.ownerUserId, A))).toHaveLength(0);
+    expect(await db.select().from(memoryItem).where(eq(memoryItem.ownerUserId, A))).toHaveLength(0);
     expect(
       await db.select().from(delegation).where(eq(delegation.conversationId, conv!.id)),
     ).toHaveLength(0);

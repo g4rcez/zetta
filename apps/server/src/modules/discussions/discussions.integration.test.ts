@@ -9,7 +9,7 @@ import { discussion, discussionTurn } from "@zetta/db/schema/discussions";
 import { membership } from "@zetta/db/schema/identity";
 import { task } from "@zetta/db/schema/tasks";
 import { createApp } from "../../app";
-import { createWiki } from "../wiki/service";
+import { createMemory } from "../memory/service";
 import { createBotClaude } from "../bot-claude/store";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
@@ -83,7 +83,7 @@ suite("group discussions against compose postgres", () => {
   });
   const features = createFeaturesService(db, fakeRun as never);
   const store = createDiscussionStore(db);
-  const wiki = createWiki(db);
+  const memory = createMemory(db);
   /** Stands for Laya (the model is the one thing not run here): a reply that says "Aguardando" waits for the user, the rest keeps working. */
   const laya = {
     status: () => ({ state: "ready" }),
@@ -106,7 +106,7 @@ suite("group discussions against compose postgres", () => {
     undefined,
     undefined,
     undefined,
-    { discussions: store, wiki },
+    { discussions: store, memory },
   );
   const worker = createDiscussionWorker(db, store, chat, lookup);
   store.onEnqueue = worker.kick;
@@ -664,7 +664,7 @@ suite("group discussions against compose postgres", () => {
       })
     ).json.discussion;
     await worker.drain();
-    await wiki.write(
+    await memory.write(
       A,
       {
         slug: "launch-steps",
@@ -674,10 +674,10 @@ suite("group discussions against compose postgres", () => {
       },
       { by: "user" },
     );
-    const ins = { id: (await wiki.read(A, "launch-steps"))!.page.id };
+    const ins = { id: (await memory.read(A, "launch-steps"))!.page.id };
     const posted = await call(A, "POST", `/api/discussions/${d.id}/messages`, {
       content: "@Steps2 do the launch",
-      wikiIds: [ins.id],
+      memoryIds: [ins.id],
     });
     expect(posted.status).toBe(201);
     await worker.drain();
@@ -689,7 +689,7 @@ suite("group discussions against compose postgres", () => {
       (
         await call(A, "POST", `/api/discussions/${d.id}/messages`, {
           content: "again",
-          wikiIds: [uuidv7()],
+          memoryIds: [uuidv7()],
         })
       ).status,
     ).toBe(404);

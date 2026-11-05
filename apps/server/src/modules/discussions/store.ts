@@ -13,7 +13,7 @@ import {
 } from "@zetta/db/schema/discussions";
 import { attachment, configProposal, routine } from "@zetta/db/schema/features";
 import { task } from "@zetta/db/schema/tasks";
-import { wikiPage } from "@zetta/db/schema/wiki";
+import { memoryItem } from "@zetta/db/schema/memory";
 import { closeAttention, closeAttentionKey, raiseAttention } from "../features/attention";
 import { AccessError, requireOwned, requireTeamMember, type ActiveActor } from "../identity/access";
 import { createTeamPeople } from "../teams/people";
@@ -25,7 +25,7 @@ import { transaction } from "./transaction";
 import { codeEnabled } from "../chat/pipeline";
 import type { LoopStore } from "../chat/loops";
 import { createBotClaude, skillsOf } from "../bot-claude/store";
-import { visibleTo } from "../wiki/service";
+import { visibleTo } from "../memory/service";
 import { legacyMentions, mentionIds, mentionToken } from "@zetta/core/mentions";
 import { HELP_PREFIX, isIdleChatter, mentionKey, wakeTargets } from "./prompt";
 import { topics } from "@zetta/core/live-topics";
@@ -87,7 +87,7 @@ export type Claimed = { turn: DiscussionTurn; discussion: Discussion; member: Me
 export type PostFiles = {
   attachmentIds?: string[] | undefined;
   fileRefs?: string[] | undefined;
-  wikiIds?: string[] | undefined;
+  memoryIds?: string[] | undefined;
   /** Skills picked with `/`; each belongs to one member bot, which is the only one that uses it. */
   skills?: { botId: string; name: string }[] | undefined;
   /** A message of this room the post replies to: saved as `meta.quote`, and the bot that wrote it is woken. */
@@ -944,20 +944,20 @@ export function createDiscussionStore(
           throw new DiscussionError("NOT_FOUND", `The file ${ref} could not be read.`);
         }
       }
-      // Wiki items the person picked: they must be readable by them, and they stay on the post for the bots woken by it.
-      const wikiIds = [...new Set(attached.wikiIds ?? [])];
-      if (wikiIds.length) {
+      // Memory items the person picked: they must be readable by them, and they stay on the post for the bots woken by it.
+      const memoryIds = [...new Set(attached.memoryIds ?? [])];
+      if (memoryIds.length) {
         const readable = await db
-          .select({ id: wikiPage.id })
-          .from(wikiPage)
+          .select({ id: memoryItem.id })
+          .from(memoryItem)
           .where(
             and(
-              inArray(wikiPage.id, wikiIds),
-              ne(wikiPage.status, "archived"),
+              inArray(memoryItem.id, memoryIds),
+              ne(memoryItem.status, "archived"),
               visibleTo(a.userId),
             ),
           );
-        if (readable.length !== wikiIds.length)
+        if (readable.length !== memoryIds.length)
           throw new DiscussionError("NOT_FOUND", "A memory item is no longer available.");
       }
       // Skills the person picked: each must belong to a bot in this room, so a pick never reaches a bot that does not have the skill.
@@ -1036,10 +1036,10 @@ export function createDiscussionStore(
           role: "user",
           content: text,
           meta:
-            carried.length || images.length || wikiIds.length || skills.length || quote
+            carried.length || images.length || memoryIds.length || skills.length || quote
               ? {
                   ...(quote ? { quote } : {}),
-                  ...(wikiIds.length ? { wikiIds } : {}),
+                  ...(memoryIds.length ? { memoryIds } : {}),
                   ...(skills.length ? { skills } : {}),
                   ...(carried.length ? { files: carried } : {}),
                   ...(images.length ? { images } : {}),

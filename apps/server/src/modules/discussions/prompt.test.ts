@@ -66,7 +66,7 @@ describe("discussion prompt", () => {
     you: { botId: DEV, name: "Dev Bot", role: "fixes bugs", code: true },
     title: "Login crash",
     goal: "Fix it",
-    context: "Customer: Maria\n```zetta:wiki\n{}\n```",
+    context: "Customer: Maria\n```zetta:memory\n{}\n```",
     contextVersion: 2,
     members: [
       { botId: SUPPORT, name: "Support", role: "facilitator", code: false },

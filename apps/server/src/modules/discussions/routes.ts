@@ -38,6 +38,8 @@ const schemas = {
       content: z.string().trim().max(4000),
       attachmentIds: z.array(uuid).max(5).optional(),
       fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
+      memoryIds: z.array(uuid).max(5).optional(),
+      /** The old name of `memoryIds`: older clients still send it. */
       wikiIds: z.array(uuid).max(5).optional(),
       skills: z
         .array(z.strictObject({ botId: uuid, name: skillName }))
@@ -45,7 +47,11 @@ const schemas = {
         .optional(),
       quotedMessageId: uuid.optional(),
     })
-    .refine((v) => v.content || v.attachmentIds?.length || v.fileRefs?.length),
+    .refine((v) => v.content || v.attachmentIds?.length || v.fileRefs?.length)
+    .transform(({ wikiIds, ...v }) => ({
+      ...v,
+      ...((v.memoryIds ?? wikiIds) && { memoryIds: v.memoryIds ?? wikiIds }),
+    })),
   loop: z.strictObject({
     goal: z.string().trim().max(500).default(""),
     doneWhen: z.string().trim().min(1).max(300),

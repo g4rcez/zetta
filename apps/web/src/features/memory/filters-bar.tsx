@@ -1,6 +1,7 @@
-import { FunnelSimpleIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
+import { FunnelSimpleIcon, MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { Drawer } from "@/components/drawer";
 import { Button } from "@/components/ui";
 import { cn } from "@zetta/ui/lib/utils";
 import { field } from "../shared/ui";
@@ -14,7 +15,6 @@ const SORT_LABEL = {
   score: "Most important",
   title: "Title",
 } as const;
-const TAGS_SHOWN = 12;
 // The component library sets `input, select { font-size: 16px }` outside any layer, so only an important utility keeps these at 14px.
 const control = cn(field, "h-8 py-0 text-sm!");
 
@@ -46,7 +46,7 @@ function Chip({
 
 function Facet({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="block space-y-1">
+    <label className="block space-y-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       {children}
     </label>
@@ -57,7 +57,68 @@ const toggle = <T extends string>(list: readonly T[], value: T) =>
   (list.includes(value) ? list.filter((x) => x !== value) : [...list, value]).join(",") ||
   undefined;
 
-/** The search box, sort, view and every facet. The address holds the state, so a filtered list can be shared and reloaded. */
+const ACCESS = { own: "Mine", shared: "Shared by others" } as const;
+const AUTHOR = { user: "You", bot: "A bot", system: "The source check" } as const;
+
+type Applied = { key: string; label: string; patch: Record<string, unknown> };
+
+/** One entry per value set in the address, so each can be taken off alone. */
+function appliedFilters(f: MemoryFilter, bots: Bot[] | undefined, teams: TeamName[] | undefined) {
+  const bot = (id: string) => bots?.find((b) => b.id === id)?.name ?? "A bot";
+  const out: Applied[] = [
+    ...f.types.map((t) => ({
+      key: `type:${t}`,
+      label: `Who can read it: ${TYPE[t]}`,
+      patch: { type: toggle(f.types, t) },
+    })),
+    ...f.statuses.map((s) => ({
+      key: `status:${s}`,
+      label: `Status: ${STATUS[s]}`,
+      patch: { status: toggle(f.statuses, s) },
+    })),
+    ...f.tags.map((t) => ({
+      key: `tag:${t}`,
+      label: `Tag: ${t}`,
+      patch: { tag: toggle(f.tags, t) },
+    })),
+  ];
+  if (f.access)
+    out.push({ key: "access", label: `Whose: ${ACCESS[f.access]}`, patch: { access: undefined } });
+  if (f.by)
+    out.push({
+      key: "by",
+      label: `Last written by: ${AUTHOR[f.by]}`,
+      patch: { by: undefined, bot: undefined },
+    });
+  if (f.bot) out.push({ key: "bot", label: `Bot: ${bot(f.bot)}`, patch: { bot: undefined } });
+  if (f.createdBy)
+    out.push({
+      key: "createdBy",
+      label: `Created by: ${bot(f.createdBy)}`,
+      patch: { createdBy: undefined },
+    });
+  if (f.team)
+    out.push({
+      key: "team",
+      label: `Team: ${teams?.find((t) => t.id === f.team)?.name ?? "A team"}`,
+      patch: { team: undefined },
+    });
+  if (f.since)
+    out.push({
+      key: "since",
+      label: `Updated: last ${SINCE[f.since]} days`,
+      patch: { since: undefined },
+    });
+  if (f.min !== undefined || f.max !== undefined)
+    out.push({
+      key: "score",
+      label: `Score: ${f.min ?? 0}–${f.max ?? 100}`,
+      patch: { min: undefined, max: undefined },
+    });
+  return out;
+}
+
+/** The search box, sort and a Filters button. Every other facet lives in a drawer; what is set shows as removable chips. The address holds the state, so a filtered list can be shared and reloaded. */
 export function FiltersBar({
   search,
   filter,
@@ -82,8 +143,7 @@ export function FiltersBar({
   total: number | undefined;
 }) {
   const [text, setText] = useState(search.q ?? "");
-  // The facets stay out of the way until the person asks for them, or until a link arrives with some already set.
-  const [open, setOpen] = useState(active > 0);
+  const [open, setOpen] = useState(false);
   // The text reaches the address after a pause, so typing does not rewrite history on every key.
   useEffect(() => {
     if (text === (search.q ?? "")) return;
@@ -91,10 +151,9 @@ export function FiltersBar({
     return () => clearTimeout(id);
   }, [text, search.q, set]);
   useEffect(() => setText(search.q ?? ""), [search.q]);
-  const [moreTags, setMoreTags] = useState(false);
-  const visibleTags = moreTags ? tags : tags.slice(0, TAGS_SHOWN);
+  const applied = appliedFilters(filter, bots, teams);
   return (
-    <section aria-label="Filters" className="space-y-3">
+    <section aria-label="Filters" className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-60 flex-1 sm:max-w-xs">
           <MagnifyingGlassIcon
@@ -126,13 +185,11 @@ export function FiltersBar({
         </select>
         <button
           type="button"
-          aria-expanded={open}
-          aria-controls="memory-facets"
-          onClick={() => setOpen((o) => !o)}
+          aria-haspopup="dialog"
+          onClick={() => setOpen(true)}
           className={cn(
             control,
             "inline-flex w-auto cursor-pointer items-center gap-2 font-medium hover:bg-accent",
-            open && "bg-accent",
           )}
         >
           <FunnelSimpleIcon aria-hidden="true" className="size-4" />
@@ -144,108 +201,122 @@ export function FiltersBar({
             </span>
           )}
         </button>
-        {active > 0 && (
-          <Button variant="ghost" onClick={clear}>
-            Clear filters
-          </Button>
-        )}
-        <div className="ml-auto flex flex-wrap items-center gap-3">
-          <p
-            role="status"
-            aria-live="polite"
-            className="text-sm tabular-nums text-muted-foreground"
-          >
-            {total === undefined
-              ? ""
-              : shown === total
-                ? `${total} ${total === 1 ? "item" : "items"}`
-                : `${shown} of ${total} items`}
-          </p>
-        </div>
+        <p
+          role="status"
+          aria-live="polite"
+          className="ml-auto text-sm tabular-nums text-muted-foreground"
+        >
+          {total === undefined
+            ? ""
+            : shown === total
+              ? `${total} ${total === 1 ? "item" : "items"}`
+              : `${shown} of ${total} items`}
+        </p>
       </div>
-      {open && (
-        <div id="memory-facets" className="space-y-4 border-t pt-4">
-          <div className="flex flex-wrap gap-x-8 gap-y-3">
-            <fieldset className="space-y-1.5">
-              <legend className="text-xs font-medium text-muted-foreground">Who can read it</legend>
-              <div className="flex flex-wrap gap-1.5">
-                {(Object.keys(TYPE) as MemoryType[]).map((t) => (
-                  <Chip
-                    key={t}
-                    pressed={filter.types.includes(t)}
-                    onClick={() => set({ type: toggle(filter.types, t) })}
-                  >
-                    {TYPE[t]}
-                  </Chip>
-                ))}
-              </div>
-            </fieldset>
-            <fieldset className="space-y-1.5">
-              <legend className="text-xs font-medium text-muted-foreground">Status</legend>
-              <div className="flex flex-wrap gap-1.5">
-                {(Object.keys(STATUS) as Status[]).map((s) => (
-                  <Chip
-                    key={s}
-                    pressed={filter.statuses.includes(s)}
-                    onClick={() => set({ status: toggle(filter.statuses, s) })}
-                  >
-                    {STATUS[s]}
-                  </Chip>
-                ))}
-              </div>
-            </fieldset>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Facet label="Whose">
-              <select
-                name="access"
-                value={filter.access ?? ""}
-                onChange={(e) => set({ access: e.target.value })}
-                className={control}
+      {applied.length > 0 && (
+        <ul aria-label="Active filters" className="flex flex-wrap items-center gap-1.5">
+          {applied.map((a) => (
+            <li key={a.key}>
+              <button
+                type="button"
+                aria-label={`Remove ${a.label}`}
+                onClick={() => set(a.patch)}
+                className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
               >
-                <option value="">Mine and shared</option>
-                <option value="own">Mine</option>
-                <option value="shared">Shared by others</option>
-              </select>
-            </Facet>
-            <Facet label="Last written by">
-              <select
-                name="by"
-                value={filter.by ?? ""}
-                onChange={(e) => set({ by: e.target.value, bot: undefined })}
-                className={control}
-              >
-                <option value="">Anyone</option>
-                <option value="user">You</option>
-                <option value="bot">A bot</option>
-                <option value="system">The source check</option>
-              </select>
-            </Facet>
-            {filter.by === "bot" && (
-              <Facet label="Which bot">
-                <select
-                  name="bot"
-                  value={filter.bot ?? ""}
-                  onChange={(e) => set({ bot: e.target.value })}
-                  className={control}
-                >
-                  <option value="">Any bot</option>
-                  {(bots ?? []).map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </Facet>
+                {a.label}
+                <XIcon aria-hidden="true" className="size-3" />
+              </button>
+            </li>
+          ))}
+          <li>
+            <Button size="xs" variant="ghost" onClick={clear}>
+              Clear all
+            </Button>
+          </li>
+        </ul>
+      )}
+      <Drawer
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Filters"
+        footer={
+          <div className="flex items-center justify-between gap-2">
+            {active > 0 ? (
+              <Button variant="ghost" onClick={clear}>
+                Clear all
+              </Button>
+            ) : (
+              <span />
             )}
-            <Facet label="Created by">
+            <Button onClick={() => setOpen(false)}>
+              Show {shown} {shown === 1 ? "item" : "items"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-5">
+          <fieldset className="space-y-1.5">
+            <legend className="text-xs font-medium text-muted-foreground">Status</legend>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(STATUS) as Status[]).map((s) => (
+                <Chip
+                  key={s}
+                  pressed={filter.statuses.includes(s)}
+                  onClick={() => set({ status: toggle(filter.statuses, s) })}
+                >
+                  {STATUS[s]}
+                </Chip>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="space-y-1.5">
+            <legend className="text-xs font-medium text-muted-foreground">Who can read it</legend>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(TYPE) as MemoryType[]).map((t) => (
+                <Chip
+                  key={t}
+                  pressed={filter.types.includes(t)}
+                  onClick={() => set({ type: toggle(filter.types, t) })}
+                >
+                  {TYPE[t]}
+                </Chip>
+              ))}
+            </div>
+          </fieldset>
+          <Facet label="Whose">
+            <select
+              name="access"
+              value={filter.access ?? ""}
+              onChange={(e) => set({ access: e.target.value })}
+              className={control}
+            >
+              <option value="">Mine and shared</option>
+              <option value="own">Mine</option>
+              <option value="shared">Shared by others</option>
+            </select>
+          </Facet>
+          <Facet label="Last written by">
+            <select
+              name="by"
+              value={filter.by ?? ""}
+              onChange={(e) => set({ by: e.target.value, bot: undefined })}
+              className={control}
+            >
+              <option value="">Anyone</option>
+              <option value="user">You</option>
+              <option value="bot">A bot</option>
+              <option value="system">The source check</option>
+            </select>
+          </Facet>
+          {filter.by === "bot" && (
+            <Facet label="Which bot">
               <select
-                name="createdBy"
-                value={filter.createdBy ?? ""}
-                onChange={(e) => set({ createdBy: e.target.value })}
+                name="bot"
+                value={filter.bot ?? ""}
+                onChange={(e) => set({ bot: e.target.value })}
                 className={control}
               >
-                <option value="">Anyone</option>
+                <option value="">Any bot</option>
                 {(bots ?? []).map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
@@ -253,60 +324,77 @@ export function FiltersBar({
                 ))}
               </select>
             </Facet>
-            <Facet label="Team">
-              <select
-                name="team"
-                value={filter.team ?? ""}
-                onChange={(e) => set({ team: e.target.value })}
+          )}
+          <Facet label="Created by">
+            <select
+              name="createdBy"
+              value={filter.createdBy ?? ""}
+              onChange={(e) => set({ createdBy: e.target.value })}
+              className={control}
+            >
+              <option value="">Anyone</option>
+              {(bots ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </Facet>
+          <Facet label="Team">
+            <select
+              name="team"
+              value={filter.team ?? ""}
+              onChange={(e) => set({ team: e.target.value })}
+              className={control}
+            >
+              <option value="">Any team</option>
+              {(teams ?? []).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </Facet>
+          <Facet label="Updated">
+            <select
+              name="since"
+              value={filter.since ?? ""}
+              onChange={(e) => set({ since: e.target.value })}
+              className={control}
+            >
+              <option value="">Any time</option>
+              {(Object.keys(SINCE) as (keyof typeof SINCE)[]).map((k) => (
+                <option key={k} value={k}>
+                  Last {SINCE[k]} days
+                </option>
+              ))}
+            </select>
+          </Facet>
+          <div className="grid grid-cols-2 gap-3">
+            <Facet label="Score from">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                name="min"
+                placeholder="0"
+                value={filter.min ?? ""}
+                onChange={(e) => set({ min: e.currentTarget.value })}
                 className={control}
-              >
-                <option value="">Any team</option>
-                {(teams ?? []).map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+              />
             </Facet>
-            <Facet label="Updated">
-              <select
-                name="since"
-                value={filter.since ?? ""}
-                onChange={(e) => set({ since: e.target.value })}
+            <Facet label="Score to">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                name="max"
+                placeholder="100"
+                value={filter.max ?? ""}
+                onChange={(e) => set({ max: e.currentTarget.value })}
                 className={control}
-              >
-                <option value="">Any time</option>
-                {(Object.keys(SINCE) as (keyof typeof SINCE)[]).map((k) => (
-                  <option key={k} value={k}>
-                    Last {SINCE[k]} days
-                  </option>
-                ))}
-              </select>
+              />
             </Facet>
-            <div className="grid grid-cols-2 gap-2">
-              <Facet label="Score from">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  name="min"
-                  value={filter.min ?? ""}
-                  onChange={(e) => set({ min: e.currentTarget.value })}
-                  className={control}
-                />
-              </Facet>
-              <Facet label="to">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  name="max"
-                  value={filter.max ?? ""}
-                  onChange={(e) => set({ max: e.currentTarget.value })}
-                  className={control}
-                />
-              </Facet>
-            </div>
           </div>
           {tags.length > 0 && (
             <fieldset className="space-y-1.5">
@@ -322,7 +410,7 @@ export function FiltersBar({
                 )}
               </legend>
               <div className="flex flex-wrap gap-1.5">
-                {visibleTags.map(({ tag, count }) => (
+                {tags.map(({ tag, count }) => (
                   <Chip
                     key={tag}
                     pressed={filter.tags.includes(tag)}
@@ -331,16 +419,11 @@ export function FiltersBar({
                     {tag} <span className="font-normal tabular-nums">{count}</span>
                   </Chip>
                 ))}
-                {tags.length > TAGS_SHOWN && (
-                  <Button size="xs" variant="ghost" onClick={() => setMoreTags((m) => !m)}>
-                    {moreTags ? "Fewer tags" : `All ${tags.length} tags`}
-                  </Button>
-                )}
               </div>
             </fieldset>
           )}
         </div>
-      )}
+      </Drawer>
     </section>
   );
 }

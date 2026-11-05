@@ -1,0 +1,89 @@
+---
+// A desktop window around a screenshot, so the product reads as running on a computer: title bar with the three dots, a centered title,
+// rounded corners and the soft shadow of a floating window. The dots and the title are decoration (aria-hidden); the group is named
+// by `label`, which is the screenshot's description. The group is focusable because on a phone the body scrolls sideways.
+interface Props {
+  title: string;
+  label: string;
+}
+
+const { title, label } = Astro.props;
+---
+
+<div class="window" role="group" aria-label={label} tabindex="0">
+  <div class="bar" aria-hidden="true">
+    <span class="dots"><i class="close"></i><i class="minimize"></i><i class="zoom"></i></span>
+    <span class="title">{title}</span>
+  </div>
+  <div class="body"><slot /></div>
+</div>
+
+<style>
+  .window {
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--foreground) 22%, transparent);
+    border-radius: var(--radius-xl);
+    background: var(--card);
+    /* A window floats above the page, so it is one of the few things here with a shadow. */
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.08),
+      0 24px 48px -16px rgb(0 0 0 / 0.22);
+  }
+  .bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 36px;
+    padding-inline: 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--sidebar);
+  }
+  .dots {
+    display: flex;
+    gap: 8px;
+  }
+  .dots i {
+    display: block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.14);
+  }
+  /* The usual three colors of a window's controls. Decorative only, so they are outside the amber and emerald rules. */
+  .close {
+    background: #ff5f57;
+  }
+  .minimize {
+    background: #febc2e;
+  }
+  .zoom {
+    background: #28c840;
+  }
+  .title {
+    position: absolute;
+    inset-inline: 72px;
+    color: var(--muted-foreground);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 36px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .body {
+    overflow-x: auto;
+  }
+  .body :global(img) {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  /* Phones: keep the screenshot readable and let the window scroll sideways, instead of shrinking the whole app. */
+  @media (max-width: 720px) {
+    .body :global(img) {
+      width: 880px;
+      max-width: none;
+    }
+  }
+</style>

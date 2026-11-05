@@ -1,0 +1,238 @@
+---
+// The hero's background: a smoke shader, plain WebGL, no dependency. Ported from the smoke shader in the author's warehouse repo
+// (packages/ui/.../smoke.tsx) and re-tinted for a light page: four plumes rise from the bottom edge with turbulence, widen and thin
+// out as they climb, with ambient wisps and soft light rays; thin smoke is mint, dense smoke deepens to emerald and teal.
+// The pointer stirs the plume: turbulence grows around it.
+// Legibility: the shader is told where the hero text is (uText) and caps its opacity there, so text pairs stay at 7:1 or more.
+// Without WebGL it draws nothing. With reduced motion it draws one still frame and ignores the pointer.
+---
+
+<canvas class="shader" aria-hidden="true" data-hero-shader></canvas>
+
+<style>
+  .shader {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+</style>
+
+<script>
+  const canvas = document.querySelector<HTMLCanvasElement>("[data-hero-shader]");
+  const hero = canvas?.parentElement;
+  const gl = canvas?.getContext("webgl", { alpha: true, premultipliedAlpha: true, antialias: false, powerPreference: "low-power" });
+
+  if (canvas && hero && gl) {
+    const SCALE = 0.75; // Fraction of CSS pixels rendered. Lines stay crisp enough and the cost stays small.
+    const TEXT_CAP = 0.06; // Highest opacity behind the hero text. Measured: keeps the muted text above 7:1.
+
+    const vertex = `attribute vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
+    const fragment = `
+      precision mediump float;
+      uniform vec2 uRes;
+      uniform float uTime;
+      uniform vec4 uText;     // x0, y0, x1, y1 of the hero text, 0..1, y from the top
+      uniform vec3 uPointer;  // x, y (y from the top), pulse 0..1
+
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+      }
+      // The original uses 8 octaves; 3 give a soft, smooth plume and are far cheaper.
+      float fbm(vec2 p) {
+        float v = 0.0;
+        float amp = 0.5;
+        for (int i = 0; i < 3; i++) {
+          v += amp * noise(p);
+          p *= 2.0;
+          amp *= 0.5;
+        }
+        return v;
+      }
+
+      // One column of smoke rising from the bottom edge. q is x across the hero (0..1 in width units) and y up from the bottom.
+      float column(vec2 q, float t, float idx, float turb) {
+        float baseX = 0.1 + idx * 0.27 + sin(t * 0.5 + idx * 1.7) * 0.06;
+        vec2 flowPos = q;
+        flowPos.y -= t * 0.5;
+        flowPos.x += sin(q.y * 6.0 + t * 2.0 + idx) * 0.07;
+        float t1 = fbm(flowPos * 4.0 + vec2(t, 0.0)) * turb;
+        float t2 = fbm(flowPos * 8.0 - vec2(t * 0.7, 0.0)) * turb * 0.5;
+        flowPos.x += (t1 + t2) * 0.3;
+
+        float distFromCenter = abs(flowPos.x - baseX);
+        float width = 0.1 + q.y * 0.3; // The plume widens as it rises.
+        float shape = 1.0 - smoothstep(0.0, width * 1.3, distFromCenter);
+        shape *= shape;
+
+        float maxHeight = 0.72 + fbm(vec2(baseX * 10.0, t * 0.3)) * 0.3;
+        shape *= 1.0 - smoothstep(0.0, maxHeight, q.y);
+
+        // Volume: layered noise gives the plume its billows.
+        vec2 vp = vec2(flowPos.x * 8.0, q.y * 12.0 - t * 2.0 + idx * 10.0);
+        float volume = noise(vp) * 0.6 + noise(vp * 2.0) * 0.3 + noise(vp * 4.0) * 0.1;
+        return shape * (0.5 + volume);
+      }
+
+      void main() {
+        vec2 uv = gl_FragCoord.xy / uRes;
+        uv.y = 1.0 - uv.y;
+        float aspect = uRes.x / uRes.y;
+        vec2 p = vec2(uv.x * aspect, uv.y);
+        float t = uTime * 0.25;
+
+        // The pointer stirs the plume: the turbulence grows near it.
+        float near = exp(-length(p - vec2(uPointer.x * aspect, uPointer.y)) * 4.0) * uPointer.z;
+        float turb = 1.0 + near * 2.5;
+
+        vec2 q = vec2(uv.x, 1.0 - uv.y); // y up from the bottom edge, x 0..1: the original's frame
+        float smoke = 0.0;
+        for (int i = 0; i < 4; i++) smoke += column(q, t, float(i), turb);
+
+        // Ambient wisps in the upper part.
+        vec2 ap = q * 6.0 + vec2(t * 0.2, -t * 0.3);
+        float ambient = (fbm(ap) * 0.3 + fbm(ap * 1.7 + vec2(t * 0.4, 0.0)) * 0.2) * smoothstep(0.2, 0.8, q.y);
+        smoke += ambient * 0.5;
+
+        // Dissipation: the higher the smoke, the thinner it gets.
+        float dissipation = (1.0 + q.y * 2.0) * (0.7 + fbm(q * 12.0 + vec2(t * 0.8, 0.0)) * 0.6);
+        smoke *= 1.0 - dissipation * 0.3;
+
+        // Light scattering: soft rays through the smoke, as in the original.
+        vec2 lightDir = normalize(vec2(0.3, 0.8));
+        float rays = exp(-abs(dot(q - vec2(0.2, 0.0), lightDir)) * 4.0) * 0.3;
+        smoke += smoke * rays;
+        smoke = clamp(smoke, 0.0, 1.0);
+
+        // Color: soft pastel greens that blend into each other, never darker than a light emerald, so the smoke stays airy.
+        vec3 mint = vec3(0.70, 0.93, 0.82);
+        vec3 emerald = vec3(0.46, 0.82, 0.70);
+        vec3 teal = vec3(0.50, 0.80, 0.80);
+        smoke = smoothstep(0.0, 1.0, smoke); // An ease on the density, so the edges of the plumes blur out instead of cutting.
+        vec3 tint = mix(mint, emerald, smoothstep(0.0, 0.7, smoke));
+        tint = mix(tint, teal, smoothstep(0.4, 1.0, smoke) * 0.5);
+
+        float alpha = smoke * 0.75;
+        alpha += (hash(gl_FragCoord.xy + floor(uTime * 10.0)) - 0.5) * 0.012 * smoothstep(0.02, 0.15, alpha);
+        alpha = clamp(alpha, 0.0, 0.3);
+
+        // The plumes start at the bottom edge, so only the last sliver fades, to avoid a seam with the next section.
+        alpha *= smoothstep(1.0, 0.95, uv.y);
+
+        // Quiet behind the text: the opacity cap follows the distance to the text box (a box SDF in height units), so the
+        // smoke thins gradually around the words instead of ending at an edge.
+        vec2 center = (uText.xy + uText.zw) * 0.5 * vec2(aspect, 1.0);
+        vec2 halfSize = (uText.zw - uText.xy) * 0.5 * vec2(aspect, 1.0);
+        vec2 dd = abs(p - center) - halfSize;
+        float dist = length(max(dd, 0.0)) + min(max(dd.x, dd.y), 0.0);
+        float inside = 1.0 - smoothstep(0.0, 0.3, dist);
+        alpha = min(alpha, mix(0.3, ${TEXT_CAP.toFixed(2)}, inside * inside));
+
+        gl_FragColor = vec4(tint * alpha, alpha);
+      }
+    `;
+
+    const compile = (type: number, source: string) => {
+      const shader = gl.createShader(type)!;
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      return shader;
+    };
+    const program = gl.createProgram()!;
+    gl.attachShader(program, compile(gl.VERTEX_SHADER, vertex));
+    gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragment));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) console.warn("Hero shader failed:", gl.getProgramInfoLog(program));
+
+    if (gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+      const position = gl.getAttribLocation(program, "p");
+      gl.enableVertexAttribArray(position);
+      gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+      const uRes = gl.getUniformLocation(program, "uRes");
+      const uTime = gl.getUniformLocation(program, "uTime");
+      const uText = gl.getUniformLocation(program, "uText");
+      const uPointer = gl.getUniformLocation(program, "uPointer");
+
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+      const pointer = { x: 0.7, y: 0.3, pulse: 0 };
+      let frame = 0;
+      let visible = true;
+      const start = performance.now();
+
+      /** The box of the hero's text (headline, lead, actions, note), as fractions of the canvas, padded a little. */
+      const textBox = () => {
+        const area = canvas.getBoundingClientRect();
+        // The words themselves (a Range), not the blocks that hold them, so a wide headline box does not widen the quiet area.
+        const parts = [...hero.querySelectorAll<HTMLElement>("h1, .lead, .row, .note")].map((el) => {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          return range.getBoundingClientRect();
+        });
+        if (!parts.length || !area.width || !area.height) return [0, 0, 0, 0];
+        const pad = 16;
+        const x0 = Math.min(...parts.map((r) => r.left)) - pad;
+        const y0 = Math.min(...parts.map((r) => r.top)) - pad;
+        const x1 = Math.max(...parts.map((r) => r.right)) + pad;
+        const y1 = Math.max(...parts.map((r) => r.bottom)) + pad;
+        return [(x0 - area.left) / area.width, (y0 - area.top) / area.height, (x1 - area.left) / area.width, (y1 - area.top) / area.height];
+      };
+
+      const draw = (now: number) => {
+        const w = Math.max(1, Math.round(canvas.clientWidth * SCALE));
+        const h = Math.max(1, Math.round(canvas.clientHeight * SCALE));
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+        gl.viewport(0, 0, w, h);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.uniform2f(uRes, w, h);
+        // A still frame with reduced motion: the time is fixed to a pleasant moment.
+        gl.uniform1f(uTime, reduce.matches ? 14 : (now - start) / 1000 + 14);
+        const [x0, y0, x1, y1] = textBox();
+        gl.uniform4f(uText, x0, y0, x1, y1);
+        gl.uniform3f(uPointer, pointer.x, pointer.y, reduce.matches ? 0 : pointer.pulse);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      };
+      const loop = (now: number) => {
+        pointer.pulse = Math.max(0, pointer.pulse - 0.012);
+        draw(now);
+        frame = visible && !reduce.matches && !document.hidden ? requestAnimationFrame(loop) : 0;
+      };
+      const run = () => {
+        if (!frame) frame = requestAnimationFrame(loop);
+      };
+
+      hero.addEventListener("pointermove", (event) => {
+        const area = canvas.getBoundingClientRect();
+        pointer.x = (event.clientX - area.left) / area.width;
+        pointer.y = (event.clientY - area.top) / area.height;
+        pointer.pulse = 1;
+      });
+      draw(start);
+      new IntersectionObserver(([entry]) => {
+        visible = entry.isIntersecting;
+        if (visible) run();
+      }).observe(canvas);
+      document.addEventListener("visibilitychange", () => !document.hidden && run());
+      reduce.addEventListener("change", () => (reduce.matches ? draw(performance.now()) : run()));
+      addEventListener("resize", () => draw(performance.now()));
+      run();
+    }
+  }
+</script>

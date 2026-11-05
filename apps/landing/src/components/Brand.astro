@@ -11,7 +11,7 @@ const { name, size = 20 } = Astro.props;
 const logo = logoOf(name);
 ---
 
-{logo ? <img class:list={["brand", { plate: logo.plate }]} src={logo.src} width={size} height={size} alt="" loading="lazy" decoding="async" /> : null}
+{logo ? <img class:list={["brand", { plate: logo.plate }]} src={logo.src} width={size} height={size} alt="" decoding="async" /> : null}
 
 <style>
   .brand {

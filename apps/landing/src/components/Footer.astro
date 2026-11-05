@@ -1,5 +1,4 @@
 ---
-import Logo from "./Logo.astro";
 import { getCopy, type Locale } from "../i18n";
 import { DOCS, ISSUES, LICENSE, REPO } from "../links";
 
@@ -8,13 +7,8 @@ interface Props {
 }
 
 const { locale } = Astro.props;
-const { footer: t, header } = getCopy(locale);
+const { footer: t } = getCopy(locale);
 const external = { target: "_blank", rel: "noopener noreferrer" };
-const nav = [
-  { href: "#examples", label: header.nav.examples },
-  { href: "#features", label: header.nav.features },
-  { href: "#self-host", label: header.nav.selfHost },
-];
 const languages = [
   { href: "/", label: "English", lang: "en", current: locale === "en" },
   { href: "/pt-br/", label: "Português (Brasil)", lang: "pt-BR", current: locale === "pt-br" },
@@ -22,110 +16,57 @@ const languages = [
 ---
 
 <footer class="footer">
-  <div class="wrap">
-    <div class="top">
-      <div class="brand">
-        <p class="name"><Logo size={32} tile id="footer" /><b>Zetta</b></p>
-        <p class="tagline">{t.tagline}</p>
-      </div>
-
-      <nav aria-label={t.columns.product}>
-        <h2>{t.columns.product}</h2>
-        <ul>{nav.map((l) => <li><a href={l.href}>{l.label}</a></li>)}</ul>
-      </nav>
-
-      <nav aria-label={t.columns.developers}>
-        <h2>{t.columns.developers}</h2>
-        <ul>
-          <li><a href={REPO} {...external}>{t.links.repo}</a></li>
-          <li><a href={DOCS} {...external}>{t.links.docs}</a></li>
-          <li><a href={ISSUES} {...external}>{t.links.issues}</a></li>
-        </ul>
-      </nav>
-
-      <nav aria-label={t.columns.language}>
-        <h2>{t.columns.language}</h2>
-        <ul>
-          {languages.map((l) => (
-            <li><a href={l.href} lang={l.lang} hreflang={l.lang} aria-current={l.current ? "page" : undefined}>{l.label}</a></li>
-          ))}
-        </ul>
-      </nav>
-    </div>
-
-    <p class="bar"><a href={LICENSE} {...external}>{t.license}</a></p>
+  <div class="wrap bar">
+    <p class="tagline">{t.tagline}</p>
+    <nav aria-label="Zetta">
+      <ul>
+        <li><a href={REPO} {...external}>{t.links.repo}</a></li>
+        <li><a href={DOCS} {...external}>{t.links.docs}</a></li>
+        <li><a href={ISSUES} {...external}>{t.links.issues}</a></li>
+        <li><a href={LICENSE} {...external}>{t.license}</a></li>
+        {languages.map((l) => (
+          <li><a href={l.href} lang={l.lang} hreflang={l.lang} aria-current={l.current ? "page" : undefined}>{l.label}</a></li>
+        ))}
+      </ul>
+    </nav>
   </div>
 </footer>
 
 <style>
   .footer {
     border-top: 1px solid var(--border);
-    padding-top: 64px;
-  }
-  .top {
-    display: grid;
-    grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
-    gap: 48px;
-    padding-bottom: 56px;
-  }
-  .brand {
-    display: grid;
-    align-content: start;
-    gap: 12px;
-  }
-  .name {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 18px;
-    letter-spacing: -0.02em;
-  }
-  .tagline {
-    max-width: 32ch;
-    color: var(--muted-foreground);
-    font-size: 15px;
-    line-height: 22px;
-  }
-  nav h2 {
-    margin-bottom: 16px;
-    font-size: 14px;
-    line-height: 20px;
-    letter-spacing: 0;
-  }
-  nav ul {
-    display: grid;
-    gap: 10px;
-  }
-  nav a {
-    color: var(--muted-foreground);
-    font-size: 15px;
-    text-decoration: none;
-  }
-  nav a:hover {
-    color: var(--foreground);
-    text-decoration: underline;
-  }
-  nav a[aria-current="page"] {
-    color: var(--foreground);
-    font-weight: 500;
+    background: var(--background);
   }
   .bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px 32px;
     padding-block: 24px;
-    border-top: 1px solid var(--border);
+  }
+  .tagline {
     color: var(--muted-foreground);
     font-size: 14px;
     line-height: 20px;
   }
-  .bar a {
-    color: inherit;
+  ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
   }
-  @media (max-width: 860px) {
-    .top {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 40px 24px;
-    }
-    .brand {
-      grid-column: 1 / -1;
-    }
+  a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    color: var(--foreground);
+    font-size: 14px;
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+  a[aria-current="page"] {
+    font-weight: 600;
   }
 </style>

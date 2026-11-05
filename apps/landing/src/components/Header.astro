@@ -13,8 +13,8 @@ const { header: t } = getCopy(locale);
 const home = locale === "pt-br" ? "/pt-br/" : "/";
 const other = locale === "pt-br" ? "en" : "pt-BR";
 const links = [
-  { href: "#examples", label: t.nav.examples },
-  { href: "#features", label: t.nav.features },
+  { href: "#product", label: t.nav.product },
+  { href: "#network", label: t.nav.network },
   { href: "#self-host", label: t.nav.selfHost },
 ];
 ---
@@ -33,7 +33,6 @@ const links = [
     <div class="actions">
       <a class="lang" href={t.switchHref} hreflang={other} lang={other} title={t.switchName}>{t.switchLabel}</a>
       <a class="btn btn-ghost btn-sm github" href={REPO} target="_blank" rel="noopener noreferrer"><GithubMark />{t.github}</a>
-      <a class="btn btn-primary btn-sm" href="#self-host">{t.cta}</a>
     </div>
   </div>
 </header>
@@ -46,13 +45,16 @@ const links = [
     border-bottom: 1px solid var(--border);
     background: var(--background);
   }
+  /* Three columns: the outer two take the same share, so the links stay centered whatever the logo and the actions measure. */
   .bar {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
     gap: 32px;
-    height: 64px;
+    height: 56px;
   }
   .brand {
+    justify-self: start;
     display: inline-flex;
     align-items: center;
     gap: 10px;
@@ -61,9 +63,6 @@ const links = [
     font-weight: 600;
     letter-spacing: -0.02em;
     text-decoration: none;
-  }
-  .links {
-    flex: 1;
   }
   .links ul {
     display: flex;
@@ -83,7 +82,7 @@ const links = [
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-left: auto;
+    justify-self: end;
   }
   .lang {
     display: inline-flex;
@@ -103,7 +102,15 @@ const links = [
     color: var(--foreground);
   }
   @media (max-width: 880px) {
+    .bar {
+      grid-template-columns: 1fr auto;
+    }
     .links {
+      display: none;
+    }
+  }
+  @media (max-width: 1100px) {
+    .github {
       display: none;
     }
   }

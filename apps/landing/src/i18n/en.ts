@@ -1,22 +1,14 @@
 // English is the source of truth. pt-br.ts must satisfy the same shape, so a missing key fails type-checking.
 // Claims here match code that exists in the repo. No testimonials, pricing or metrics: PRODUCT.md forbids inventing them.
+// The screenshots in public/screens are real captures of the app in light mode, taken on a throwaway install with demo data.
 
-export type Outcome = {
-  kind: "done" | "needs";
+export type ProductRow = {
+  id: "inbox" | "chat" | "tasks" | "routines";
   title: string;
   body: string;
-  actions?: [string, string];
+  alt: string;
 };
-export type DemoTab = {
-  id: string;
-  label: string;
-  pitch: string;
-  user: string;
-  chief: string;
-  steps: string[];
-  outcome: Outcome;
-};
-export type HubBot = { name: string; status: string; kind: "working" | "needs" };
+export type Station = { title: string; body: string; tags: string[] };
 
 export const en = {
   meta: {
@@ -27,149 +19,71 @@ export const en = {
   header: {
     home: "Zetta home",
     nav: {
-      examples: "Examples",
-      features: "Features",
+      product: "Product",
+      network: "Integrations",
       selfHost: "Self-host",
     },
     github: "Star on GitHub",
-    cta: "Self-host",
     switchLabel: "PT",
     switchName: "Português (Brasil)",
     switchHref: "/pt-br/",
   },
   hero: {
     title: "Ask for the outcome. Your chief does the rest.",
-    lead: "Zetta is an open source web app that you host yourself. Each person gets a personal chief. Tell your chief what you need. It coordinates specialist bots on your server. You come back to the result, or to the one thing that needs you.",
+    lead: "Zetta is an open source web app that you host yourself. Give your personal chief a job, such as a weekly brief or a pull request review. It hands the work to specialist bots on your server, and you come back to the result, or to the one question it cannot answer alone.",
     primary: "Self-host Zetta",
     secondary: "Star on GitHub",
     note: "Open source under the MIT license. Runs on your server.",
-    hub: {
-      label: "Illustrated example",
-      description:
-        "Illustration: you ask your chief for an outcome. The chief calls three specialist bots. The bots run on the six agents installed on your server. One bot waits for your approval.",
-      you: "You",
-      ask: "Send the weekly brief to the team",
-      chief: "Zetta",
-      chiefRole: "Your chief",
-      botsTitle: "Specialist bots",
-      agentsTitle: "Agents on your server",
-      needs: "Needs you",
-      writing: "Drafting the brief",
-      bots: [
-        { name: "Writer", status: "Send it to the whole team list?", kind: "needs" },
-        { name: "Reviewer", status: "Reading pull requests", kind: "working" },
-        { name: "Researcher", status: "Collecting sources", kind: "working" },
-      ] satisfies HubBot[],
-      agents: ["Pi", "Codex", "OMP", "Claude Code", "OpenCode", "Cursor"],
-    },
+    screenAlt:
+      "The Zetta chat in light mode: the chief answers that it asked three bots, and one stopped to ask before sending. Demo data.",
   },
-  demo: {
-    title: "See a run from start to finish",
-    lead: "Three example runs. One finishes. Two stop and ask for you.",
-    pause: "Pause",
-    resume: "Resume",
-    label: "Example runs",
-    tabsLabel: "Choose an example",
-    replay: "Replay",
-    illustrated: "Illustrated example",
-    working: "Working…",
-    you: "You",
-    tabs: [
+  product: {
+    title: "See what your bots did, and what they need from you",
+    note: "Screenshots of Zetta in light mode, with demo data.",
+    rows: [
       {
-        id: "briefing",
-        label: "Morning briefing",
-        pitch: "A routine reads your calendar and your pull requests before you open the laptop.",
-        user: "Every weekday at 8, brief me on my calendar, open pull requests and anything blocked.",
-        chief: "Done. I created a routine and asked Reviewer to help with the pull requests.",
-        steps: ["Read today's calendar", "Listed open pull requests", "Summarised blocked tasks"],
-        outcome: {
-          kind: "done",
-          title: "Routine created",
-          body: "First briefing: 3 meetings, 2 pull requests waiting, 1 task blocked.",
-        },
+        id: "inbox",
+        title: "Your bots ask only when they need you",
+        body: "The Inbox lists what is working, what is blocked and what has a new result. Deleting files, administrator commands and sending mail wait for your approval. A task is marked done only when it is done.",
+        alt: "The Inbox lists two items that need you: send the newsletter to the whole team list, and a blocked GitHub login. Demo data.",
       },
       {
-        id: "review",
-        label: "Code review",
-        pitch: "A bot starts the work, meets a blocked login, and asks you instead of guessing.",
-        user: "Review the new authentication pull request for security problems.",
-        chief: "I asked Reviewer. It started, then hit a problem.",
-        steps: ["Opened the pull request", "Read the changed files"],
-        outcome: {
-          kind: "needs",
-          title: "Blocked: GitHub login expired",
-          body: "Reviewer cannot read the next files. Sign in to GitHub again and it continues from here.",
-          actions: ["Sign in again", "Stop the task"],
-        },
+        id: "chat",
+        title: "One chat for each intention",
+        body: "Each bot keeps many chats, one for each intention, so the context stays clean and you can find the work later. Rooms put several bots and people in one conversation.",
+        alt: "A chat with the Writer bot. The newsletter draft ends with a question that waits for approval. Demo data.",
       },
       {
-        id: "newsletter",
-        label: "Weekly newsletter",
-        pitch: "A bot writes the draft. Sending mail waits for your yes.",
-        user: "Write the Friday newsletter from this week's updates.",
-        chief: "Writer has a draft. Sending mail needs your approval.",
-        steps: ["Collected this week's updates", "Drafted the newsletter", "Checked links"],
-        outcome: {
-          kind: "needs",
-          title: "Needs you: send mail",
-          body: "Send the newsletter to the whole team list?",
-          actions: ["Approve", "Decline"],
-        },
+        id: "tasks",
+        title: "Who has what, and what is stuck",
+        body: "Tasks move from backlog to in progress, blocked, review and done. Each card shows the bot that owns it, so blocked work stands out.",
+        alt: "The task board with columns backlog, in progress, blocked and review, each card showing its bot. Demo data.",
       },
-    ] satisfies DemoTab[],
+      {
+        id: "routines",
+        title: "Work that starts without you",
+        body: "Schedule a briefing, a newsletter or a review queue to run on its own. The agenda syncs both ways with the main calendar of each Google account you connect.",
+        alt: "The routines page: a morning briefing, a Friday newsletter and a pull request queue, each with its next run. Demo data.",
+      },
+    ] satisfies ProductRow[],
   },
-  features: {
-    title: "What your bots can do",
+  network: {
+    title: "Connect the accounts and agents you already have",
     lead: "Everything below exists in the repository today. Ordinary actions run on their own. A blocked or uncertain result always comes back to you.",
-    scenes: {
-      chats: ["Weekly brief", "Friday newsletter", "Launch notes"],
-      room: "launch",
-      days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-      routine: "Briefing",
-      routine2: "Newsletter",
-      columns: ["Working", "Needs you", "Done"],
-      tasks: ["Review the auth pull request", "Send the newsletter", "Morning briefing"],
-      pages: ["Changelog", "Status page", "Team updates"],
-    },
     items: [
       {
-        title: "Chats and rooms",
-        body: "Each bot has many chats. Start a new chat for each intention so the context stays clean and the work is easy to find. Rooms put several bots and people in one conversation.",
-        tags: [],
-      },
-      {
-        title: "Routines and agenda",
-        body: "Schedule work to run without you. The agenda syncs both ways with the main calendar of each Google account you connect.",
-        tags: ["Google Calendar"],
-      },
-      {
-        title: "Attention and tasks",
-        body: "One Inbox for what is working, what needs input, what is blocked and what has a new result. Deleting files, running as an administrator and sending mail wait for you. Nothing is shown as done when it is not.",
-        tags: [],
-      },
-      {
-        title: "Browser and computer",
-        body: "Bots can use a browser or a Linux desktop that runs on your server, with limits on memory, CPU and how many run at once.",
-        tags: [],
-      },
-      {
         title: "Connected apps",
-        body: "Add GitHub, Linear, Notion, Sentry, PostHog, Cloudflare and others from Studio. Google Calendar, Gmail and Drive are supported too.",
+        body: "Connect the accounts your bots need from Studio. Sharing a bot never shares your credentials.",
         tags: ["GitHub", "Linear", "Notion", "Sentry", "PostHog", "Cloudflare", "Gmail", "Drive"],
       },
       {
         title: "Telegram and WhatsApp",
-        body: "Talk to your bots from Telegram with your own bot token, or from WhatsApp through your own WAHA server. Sending from WhatsApp is off until you turn it on.",
+        body: "Message your bots from Telegram with your own bot token, or from WhatsApp through your own WAHA server. Sending from WhatsApp stays off until you turn it on.",
         tags: ["Telegram", "WhatsApp"],
       },
       {
-        title: "Memory and knowledge",
-        body: "Bots keep what matters between chats. Company knowledge is searchable, and it can run with a local embedding model.",
-        tags: [],
-      },
-      {
         title: "Your coding tools",
-        body: "Claude Code or Cursor can act as a team member through the built-in MCP server. It uses the same permission checks as the web app.",
+        body: "Claude Code or Cursor can work as a member of your team through a built-in connection, with the same permission checks as the web app.",
         tags: ["Claude Code", "Cursor"],
       },
       {
@@ -177,11 +91,23 @@ export const en = {
         body: "The server runs Pi, Codex, OMP, Claude Code, OpenCode and Cursor. Each bot can use a different one.",
         tags: ["Pi", "Codex", "OMP", "Claude Code", "OpenCode", "Cursor"],
       },
-    ],
+      {
+        title: "Browser and computer",
+        body: "Bots can use a browser or a Linux desktop on your server. At a sign-in, a person takes over and the bot carries on after. You set limits on memory, CPU and how many run at once.",
+        tags: [],
+      },
+      {
+        title: "Memory and knowledge",
+        body: "Bots keep what matters between chats. Company knowledge is searchable, even with a local embedding model.",
+        tags: [],
+      },
+    ] satisfies Station[],
   },
   selfHost: {
     title: "Run it on your server",
     lead: "You need Git and Docker. Zetta starts a web app, an API and a Postgres database.",
+    note: "Free under the MIT license. It is early: read the repository and its issues before you depend on it.",
+    docs: "Read the docs on GitHub",
     steps: [
       { title: "Get the code", body: "Clone the repository." },
       {
@@ -196,22 +122,18 @@ export const en = {
     ],
     copy: "Copy",
     copied: "Copied",
-    docs: "Read the docs on GitHub",
-    note: "Free under the MIT license. It is early: read the repository and its issues before you depend on it.",
-    mock: { address: "localhost:3001", inbox: "Inbox", bots: "Bots" },
-  },
-  cta: {
-    title: "Like where this is going? Star Zetta on GitHub.",
-    lead: "A star helps other teams find the project. Issues and pull requests are welcome too.",
-    primary: "Star on GitHub",
-    secondary: "Open an issue",
-    repo: "github.com/g4rcez/zetta",
+    last: {
+      title: "Help other teams find Zetta",
+      body: "A star on GitHub is the fastest way to help. Issues and pull requests are welcome too.",
+      primary: "Star on GitHub",
+      secondary: "Open an issue",
+      repo: "github.com/g4rcez/zetta",
+    },
   },
   footer: {
     tagline: "Bots that work on your server while you do something else.",
     license: "MIT license",
     links: { repo: "Repository", docs: "Docs", issues: "Issues" },
-    columns: { product: "Product", developers: "Developers", language: "Language" },
   },
 };
 

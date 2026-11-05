@@ -278,7 +278,7 @@ A theme passes when all these pairs pass. The current values pass. The lowest te
 ```
 
 - **Ground and panel.** The sidebar and the frame use `--sidebar`. The content sits in one panel on `--background`, inset by 8px, with a 1px `--border` edge and a 12px radius. On screens below 768px the panel fills the screen with no inset.
-- **One sidebar.** 224px by default; the user drags its edge (or uses the arrow keys on it) between 192 and 360px. It collapses to a 48px rail: the top row, the fixed block, Rooms, the bot avatars and the More icons, with the attention dots kept. Width and collapsed state are saved per user (`user_preference`). Below 768px it is a sheet that opens from a 48px top bar.
+- **One sidebar.** 224px by default; the user drags its edge (or uses the arrow keys on it) between 192 and 360px. It collapses to a 56px rail: the top row, the fixed block, Rooms, the bot avatars and the More icons, with the attention dots kept. Width and collapsed state are saved per user (`user_preference`). Below 768px it is a sheet that opens from a 48px top bar.
 - **Where it lives.** `AppShell` (`apps/web/src/components/app-shell.tsx`) wraps every in-app page in the signed-in layout; pages never draw their own sidebar or list column.
 - **Context panel.** 360px, on the right, opened on demand for thread replies, bot details and the chat's files. It is not a permanent column. Below 1024px it is a sheet.
 - **Spacing.** A 4px grid with even values only: 4, 8, 12, 16, 24, 32, 48. 16px is the standard padding of a card and of the panel; 8px separates related controls; 4px separates a row's icon from its text.

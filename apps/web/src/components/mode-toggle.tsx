@@ -2,13 +2,54 @@ import { Button } from "@/components/ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
 import { MoonIcon, SunIcon } from "@phosphor-icons/react";
 
 import { usePreferences } from "@/features/preferences/preferences";
+import {
+  THEME_LABEL,
+  THEME_MODE,
+  THEMES,
+  type Mode,
+  type Theme,
+} from "@/features/preferences/theme";
 import { railLabel, railRow, railRowExpanded } from "@/components/rail-row";
+
+const GROUPS: { mode: Mode; title: string }[] = [
+  { mode: "system", title: "Follow my device" },
+  { mode: "light", title: "Light" },
+  { mode: "dark", title: "Dark" },
+];
+
+/** A dot in the theme's own colors (themes.css, keyed by `data-theme-preview`). The device theme is half light, half dark. */
+function Swatch({ theme }: { theme: Theme }) {
+  const dot = (preview: string) => (
+    <span data-theme-preview={preview} className="grid size-full place-items-center bg-background">
+      <span className="size-1.5 rounded-full bg-primary" />
+    </span>
+  );
+  return (
+    <span
+      aria-hidden="true"
+      className="flex size-5 shrink-0 overflow-hidden rounded-full border border-border"
+    >
+      {theme === "system" ? (
+        <>
+          {dot("light")}
+          {dot("dark")}
+        </>
+      ) : (
+        dot(theme)
+      )}
+    </span>
+  );
+}
 
 export function ModeToggle({
   compact = false,
@@ -19,7 +60,8 @@ export function ModeToggle({
   inline?: boolean;
   rail?: "collapsed" | "expanded";
 }) {
-  const { set } = usePreferences();
+  const { preferences, set } = usePreferences();
+  const current = preferences.theme ?? "system";
 
   return (
     <DropdownMenu>
@@ -50,8 +92,17 @@ export function ModeToggle({
               <SunIcon className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
               <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
             </span>
-            {rail === "expanded" ? <span className={railLabel}>Theme</span> : null}
-            <span className="sr-only">Toggle theme</span>
+            {rail === "expanded" ? (
+              <>
+                <span className={railLabel}>Theme</span>
+                <span className="max-w-24 truncate text-xs font-normal text-muted-foreground">
+                  {THEME_LABEL[current]}
+                </span>
+              </>
+            ) : null}
+            <span className="sr-only">
+              {rail === "expanded" ? ", change theme" : "Change theme"}
+            </span>
           </>
         ) : (
           <>
@@ -62,12 +113,28 @@ export function ModeToggle({
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        align={compact || rail ? "start" : "end"}
+        // The rail sits at the bottom of the screen: align the menu's bottom edge to the row so it opens upward.
+        align={rail ? "end" : compact ? "start" : "end"}
         side={compact || rail ? "right" : "bottom"}
+        className="max-h-[min(32rem,var(--available-height))] w-56 bg-card"
       >
-        <DropdownMenuItem onClick={() => set({ theme: "light" })}>Light</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => set({ theme: "dark" })}>Dark</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => set({ theme: "system" })}>System</DropdownMenuItem>
+        <DropdownMenuRadioGroup
+          value={current}
+          onValueChange={(theme) => set({ theme: theme as Theme })}
+        >
+          {GROUPS.map(({ mode, title }, i) => (
+            <DropdownMenuGroup key={mode}>
+              {i > 0 ? <DropdownMenuSeparator /> : null}
+              <DropdownMenuLabel>{title}</DropdownMenuLabel>
+              {THEMES.filter((theme) => THEME_MODE[theme] === mode).map((theme) => (
+                <DropdownMenuRadioItem key={theme} value={theme}>
+                  <Swatch theme={theme} />
+                  {THEME_LABEL[theme]}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuGroup>
+          ))}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

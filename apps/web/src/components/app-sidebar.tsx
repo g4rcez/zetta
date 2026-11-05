@@ -51,7 +51,7 @@ const MORE = [
   linkOf("Artifacts"),
 ];
 const MORE_KEY = "zetta.sidebar-more";
-const RAIL_WIDTH = 48;
+const RAIL_WIDTH = 56;
 
 function isActive(link: AppLink, pathname: string) {
   const params = "params" in link ? link.params : undefined;
@@ -238,7 +238,8 @@ function RailRooms() {
       >
         <HashIcon className="size-4 shrink-0" aria-hidden="true" />
         <span className="sr-only">
-          Rooms{waiting ? `, ${waiting} ${waiting === 1 ? "needs" : "need"} you` : ""}
+          Rooms
+          {waiting ? `, ${waiting} ${waiting === 1 ? "needs" : "need"} you` : ""}
         </span>
         {waiting > 0 && (
           <span
@@ -416,17 +417,20 @@ export function AppSidebar({
         ))}
       </nav>
       {collapsed ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto px-2 py-2">
-          <span aria-hidden="true" className="h-px w-6 shrink-0 bg-sidebar-border" />
-          <RailRooms />
-          <RailBots />
-          <span aria-hidden="true" className="h-px w-6 shrink-0 bg-sidebar-border" />
-          <nav aria-label="More" className="flex flex-col items-center gap-px">
-            {MORE.map((l) => (
-              <NavRow key={l.label} link={l} collapsed />
-            ))}
-          </nav>
-        </div>
+        <>
+          {/* Outside the scroll box, so it stays in place while the rooms, bots and More icons scroll under it. */}
+          <span aria-hidden="true" className="mx-auto mt-2 h-px w-6 shrink-0 bg-sidebar-border" />
+          <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto px-2 py-2 [scrollbar-width:none] hover:[scrollbar-width:thin]">
+            <RailRooms />
+            <RailBots />
+            <span aria-hidden="true" className="h-px w-6 shrink-0 bg-sidebar-border" />
+            <nav aria-label="More" className="flex flex-col items-center gap-px">
+              {MORE.map((l) => (
+                <NavRow key={l.label} link={l} collapsed />
+              ))}
+            </nav>
+          </div>
+        </>
       ) : (
         <SidebarTree>
           <MoreGroup />
@@ -438,31 +442,36 @@ export function AppSidebar({
           collapsed && "flex flex-col items-center",
         )}
       >
-        <RailHint
-          collapsed={collapsed}
-          label="Theme"
-          icon={<MoonIcon className="size-4" aria-hidden="true" />}
-        >
-          <ModeToggle rail={rail} />
-        </RailHint>
-        {!mobile && (
+        {/* Expanded: theme and collapse share one row, so the footer is two rows (tools, then the account). */}
+        <div className={cn("flex gap-1", collapsed ? "flex-col items-center" : "items-center")}>
           <RailHint
             collapsed={collapsed}
-            label="Expand sidebar"
-            icon={<SidebarSimpleIcon className="size-4" aria-hidden="true" />}
+            label="Theme"
+            icon={<MoonIcon className="size-4" aria-hidden="true" />}
           >
-            <button
-              type="button"
-              onClick={() => set({ railMode: collapsed ? "expanded" : "collapsed" })}
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              aria-expanded={!collapsed}
-              className={cn(railRow, !collapsed && railRowExpanded)}
-            >
-              <SidebarSimpleIcon className="size-4 shrink-0" aria-hidden="true" />
-              {!collapsed && <span className={railLabel}>Collapse</span>}
-            </button>
+            <div className={cn(!collapsed && "min-w-0 flex-1")}>
+              <ModeToggle rail={rail} />
+            </div>
           </RailHint>
-        )}
+          {!mobile && (
+            <RailHint
+              collapsed={collapsed}
+              label="Expand sidebar"
+              icon={<SidebarSimpleIcon className="size-4" aria-hidden="true" />}
+            >
+              <button
+                type="button"
+                onClick={() => set({ railMode: collapsed ? "expanded" : "collapsed" })}
+                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                title={collapsed ? undefined : "Collapse sidebar"}
+                aria-expanded={!collapsed}
+                className={cn(railRow, !collapsed && "h-7 w-7 min-w-7")}
+              >
+                <SidebarSimpleIcon className="size-4 shrink-0" aria-hidden="true" />
+              </button>
+            </RailHint>
+          )}
+        </div>
         <UserMenu rail={rail} />
       </div>
       {!mobile && !collapsed && (

@@ -119,7 +119,7 @@ const decision = z.strictObject({
   selection: z
     .strictObject({
       paths: z.array(z.string().min(1).max(300)).min(1).max(25),
-      target: z.enum(["bot", "all"]),
+      target: z.enum(["bot", "all", "picked"]),
     })
     .optional(),
 });

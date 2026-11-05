@@ -47,7 +47,10 @@ const FIELDS = [
 
 export async function runBot(ctx: ChiefCtx, a: ChiefArgs<"bot">): Promise<Outcome> {
   const bots = await owned(ctx);
-  if (a.action === "list") return { read: `bot.list:\n${JSON.stringify(bots.map(summary))}` };
+  if (a.action === "list")
+    return {
+      read: `bot.list:\n${JSON.stringify(bots.map((b) => ({ ...summary(b), description: b.description.slice(0, 200) })))}`,
+    };
   if (a.action === "get") {
     const r = pick(bots, a.bot, (b) => b.name, "bot");
     if ("error" in r) return r;

@@ -17,8 +17,12 @@ import { createOutputStyles } from "../output-styles/service";
 import { createPreferenceStore } from "../preferences/store";
 import { createSkills } from "../skills/service";
 import { createTaskStore } from "../tasks/store";
+import { createDiscussionStore } from "../discussions/store";
 import { createTeamStore } from "../teams/store";
 import { createWiki } from "../wiki/service";
+import { topics } from "@zetta/core/live-topics";
+import { events } from "../events/bus";
+import { createLoopStore } from "./loops";
 import { createChatService } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
@@ -54,7 +58,8 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
     },
   );
   const features = createFeaturesService(db, fakeRun as never);
-  const teamStore = createTeamStore(db, {} as never);
+  const discussions = createDiscussionStore(db, undefined, createLoopStore(db));
+  const teamStore = createTeamStore(db, discussions);
   const outputStyles = createOutputStyles(db);
   const tasks = createTaskStore(db);
   // The bot database needs CREATEROLE on the server's database user: a recording fake stands in for it.
@@ -304,6 +309,224 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
       "Coder:member:Developer",
       "Zetta:chief:",
     ]);
+  });
+
+  test("a team build: bots and a team with context exist at once and the cards of the next round are kept", async () => {
+    const { say } = await chiefOf(A);
+    prompts.length = 0;
+    await say(
+      [
+        '```zetta:create_bot\n{"name":"Dana","personality":"analyst"}\n```\n```zetta:create_bot\n{"name":"Eli","personality":"writer"}\n```\n```zetta:create_team\n{"name":"Atlas","goal":"Ship the blog","context":"We publish on Fridays.","members":[{"bot":"Dana"},{"bot":"Eli"}]}\n```',
+        '```zetta:team\n{"action":"role_create","name":"Analyst","description":"Reads the numbers"}\n```\n```zetta:skill_library\n{"action":"create","name":"atlas-playbook","description":"How Atlas works","body":"Publish on Fridays."}\n```',
+      ],
+      "build a team called Atlas for the blog",
+    );
+    const team = (
+      (await call(A, "GET", "/api/teams")).json.teams as {
+        name: string;
+        goal: string;
+        context: string;
+        members: { name: string }[];
+      }[]
+    ).find((t) => t.name === "Atlas")!;
+    expect(team.goal).toBe("Ship the blog");
+    expect(team.context).toBe("We publish on Fridays.");
+    expect(team.members.map((m) => m.name).sort()).toEqual(["Dana", "Eli", "Zetta"]);
+    expect((await pending(A)).map((p) => p.patch.title).sort()).toEqual([
+      "New skill atlas-playbook",
+      "New team role Analyst",
+    ]);
+    expect(prompts.join("\n")).not.toContain("ignored");
+    // Decided so no card is left for the next test; the skill is declined to keep the library as the other tests expect it.
+    for (const p of await pending(A))
+      await call(A, "POST", `/api/proposals/${p.id}/decision`, {
+        approve: p.patch.title.includes("role"),
+      });
+  });
+
+  test("the project room is a card; once approved it is linked to the team, has its members and wakes nobody", async () => {
+    const { say } = await chiefOf(A);
+    await say(
+      [
+        '```zetta:team\n{"action":"open_room","team":"Atlas","title":"Blog launch","goal":"Publish the first post","context":"Audience: developers."}\n```',
+      ],
+      "open the project room",
+    );
+    const [card] = await pending(A);
+    expect(card!.patch.title).toBe('Open room "Blog launch" for team Atlas');
+    const rooms = () =>
+      db.$client.query(
+        "select d.id, d.goal, d.context, d.team_id is not null as linked, (select count(*)::int from discussion_member m where m.discussion_id = d.id) as members, (select count(*)::int from discussion_turn t where t.discussion_id = d.id) as turns from discussion d where d.owner_user_id = $1 and d.title = 'Blog launch'",
+        [A],
+      );
+    expect((await rooms()).rows).toEqual([]);
+    await approve(A, card!.id);
+    const [room] = (await rooms()).rows;
+    expect(room).toMatchObject({
+      goal: "Publish the first post",
+      context: "Audience: developers.",
+      linked: true,
+      members: 3,
+      turns: 0,
+    });
+  });
+
+  test("a second room with the same title is refused before any card, and an empty team has no room", async () => {
+    const { say } = await chiefOf(A);
+    prompts.length = 0;
+    await say(
+      [
+        '```zetta:team\n{"action":"open_room","team":"Atlas","title":"blog LAUNCH","goal":"again"}\n```',
+      ],
+      "open the project room again",
+    );
+    expect(prompts.join("\n")).toContain('A team room called "blog LAUNCH" already exists');
+    expect(await pending(A)).toEqual([]);
+  });
+
+  test("only one change per team waits at a time", async () => {
+    const { say } = await chiefOf(A);
+    prompts.length = 0;
+    await say(
+      [
+        '```zetta:team\n{"action":"update","team":"Atlas","goal":"Ship the blog and the newsletter"}\n```\n```zetta:team\n{"action":"update","team":"Atlas","context":"We publish on Mondays."}\n```',
+      ],
+      "change the team goal and context",
+    );
+    expect((await pending(A)).map((p) => p.patch.title)).toEqual(["Change team Atlas"]);
+    expect(prompts.join("\n")).toContain('A change to "Atlas" already waits');
+    for (const p of await pending(A)) await approve(A, p.id);
+  });
+
+  /** Waits until `cond` holds: a wave continues in the background after the user's click. */
+  const until = async (cond: () => boolean, ms = 8000) => {
+    const end = Date.now() + ms;
+    while (!cond()) {
+      if (Date.now() > end) throw new Error("timed out waiting");
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  };
+  const quiet = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+  const block = (kind: string, json: object) =>
+    "```zetta:" + kind + "\n" + JSON.stringify(json) + "\n```";
+  const decide = (id: string, approve: boolean) =>
+    call(A, "POST", `/api/proposals/${id}/decision`, { approve });
+
+  test("waves: once the user decided every card of a step the chief is called again with the result, once", async () => {
+    const { say } = await chiefOf(A);
+    prompts.length = 0;
+    await say(
+      [
+        block("team", { action: "role_create", name: "Scribe", description: "Writes the posts" }) +
+          block("team", {
+            action: "role_create",
+            name: "Proofreader",
+            description: "Checks them",
+          }) +
+          block("next_wave", { next: "give Dana the Scribe role" }),
+        "Step one waits for your approval.",
+      ],
+      "start the team setup",
+    );
+    expect(prompts.join("\n")).toContain("next_wave: noted");
+    const cards = await pending(A);
+    expect(cards.map((c) => c.patch.title).sort()).toEqual([
+      "New team role Proofreader",
+      "New team role Scribe",
+    ]);
+    const before = prompts.length;
+    script = ["Step two: sent."];
+    await decide(cards.find((c) => c.patch.title.includes("Scribe"))!.id, true);
+    await quiet();
+    expect(prompts.length).toBe(before); // one card still waits: nothing yet
+    await decide(cards.find((c) => c.patch.title.includes("Proofreader"))!.id, false);
+    await until(() => prompts.length > before);
+    await quiet();
+    const next = prompts.at(-1)!;
+    expect(next).toContain("The user decided the cards of your step 1.");
+    expect(next).toContain("Approved: New team role Scribe.");
+    expect(next).toContain("Rejected: New team role Proofreader.");
+    expect(next).toContain("give Dana the Scribe role");
+    expect(prompts.length).toBe(before + 1); // one continuation, no more
+  });
+
+  test("waves: two cards decided at the same moment start one continuation", async () => {
+    const { say } = await chiefOf(A);
+    await say(
+      [
+        block("team", { action: "role_create", name: "Courier", description: "Moves files" }) +
+          block("team", { action: "role_create", name: "Archivist", description: "Keeps files" }) +
+          block("next_wave", { next: "carry on" }),
+        "Waiting.",
+      ],
+      "start another setup",
+    );
+    const cards = await pending(A);
+    const before = prompts.length;
+    script = ["Carried on."];
+    await Promise.all(cards.map((c) => decide(c.id, false)));
+    await until(() => prompts.length > before);
+    await quiet(800);
+    expect(prompts.length).toBe(before + 1);
+  });
+
+  test("a turn that leaves a card waiting tells the open page, so a card from a turn nobody follows still shows at once", async () => {
+    const { say } = await chiefOf(A);
+    const told: string[] = [];
+    const stop = events.subscribe(A, (topic) => told.push(topic));
+    await say(
+      [block("team", { action: "role_create", name: "Notified", description: "x" }), "Waiting."],
+      "one card, then wait",
+    );
+    await quiet(600);
+    stop();
+    expect(told).toContain(topics.proposals);
+    for (const p of await pending(A)) await decide(p.id, false);
+  });
+
+  test("waves: a card sent without next_wave never calls the chief again", async () => {
+    const { say } = await chiefOf(A);
+    await say(
+      [block("team", { action: "role_create", name: "Lonely", description: "x" }), "Waiting."],
+      "one plain card",
+    );
+    const [card] = await pending(A);
+    const before = prompts.length;
+    await decide(card!.id, false);
+    await quiet(600);
+    expect(prompts.length).toBe(before);
+  });
+
+  test("waves: a team build has at most four steps; next_wave in the last one is refused", async () => {
+    const { say } = await chiefOf(A);
+    const step = (n: number) =>
+      block("team", { action: "role_create", name: `Step${n}`, description: "x" }) +
+      block("next_wave", { next: `do step ${n + 1}` });
+    prompts.length = 0;
+    script = [
+      step(1),
+      "Waiting 1.",
+      step(2),
+      "Waiting 2.",
+      step(3),
+      "Waiting 3.",
+      step(4),
+      "Waiting 4.",
+    ];
+    await say(script.slice(), "build it in steps");
+    for (let n = 1; n <= 3; n++) {
+      const calls = prompts.length;
+      const [card] = await pending(A);
+      await decide(card!.id, false);
+      await until(() => prompts.length >= calls + 2);
+      await quiet();
+    }
+    expect(prompts.join("\n")).toContain("this is already step 4, the last one");
+    const [last] = await pending(A);
+    const calls = prompts.length;
+    await decide(last!.id, false);
+    await quiet(600);
+    expect(prompts.length).toBe(calls); // the fourth step set no mark: nothing follows
   });
 
   test("an output style is created only after the user approves it", async () => {

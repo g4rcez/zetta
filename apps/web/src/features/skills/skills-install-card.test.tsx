@@ -44,7 +44,10 @@ const offer = (trust: "official" | "trusted" | null) => ({
   ],
 });
 
-const render = async (trust: "official" | "trusted" | null) => {
+const render = async (
+  trust: "official" | "trusted" | null,
+  extra: { forBots?: { id: string; name: string }[] } = {},
+) => {
   const { SkillsInstallCard } = await import("./skills-install-card");
   const decisions: unknown[][] = [];
   const host = win.document.createElement("div");
@@ -53,7 +56,7 @@ const render = async (trust: "official" | "trusted" | null) => {
   await act(async () =>
     root.render(
       <SkillsInstallCard
-        offer={offer(trust) as never}
+        offer={{ ...offer(trust), ...extra } as never}
         busy={false}
         onDecide={(...args) => void decisions.push(args)}
       />,
@@ -117,5 +120,39 @@ test("a skill the person already has can be chosen to give it to more bots", asy
 test("a repository that is not on the trusted list is marked", async () => {
   const { host, unmount } = await render(null);
   expect(host.textContent).toContain("Not on the trusted list");
+  await unmount();
+});
+
+test("bots the chief named come first and are chosen by default; the person can still pick another group", async () => {
+  const { host, decisions, press, unmount } = await render("trusted", {
+    forBots: [
+      { id: "b1", name: "Dana" },
+      { id: "b2", name: "Eli" },
+    ],
+  });
+  const pressed = (label: string) =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent?.trim() === label)
+      ?.getAttribute("aria-pressed");
+  expect(pressed("Dana, Eli")).toBe("true");
+  expect(pressed("This bot")).toBe("false");
+  await press("Install 1 skill");
+  expect(decisions).toEqual([
+    [true, { paths: ["skills/interview-me/SKILL.md"], target: "picked" }],
+  ]);
+  await press("All bots");
+  await press("Install 1 skill");
+  expect(decisions.at(-1)).toEqual([
+    true,
+    { paths: ["skills/interview-me/SKILL.md"], target: "all" },
+  ]);
+  await unmount();
+});
+
+test("without named bots there is no picked group", async () => {
+  const { host, unmount } = await render("trusted");
+  expect([...host.querySelectorAll("button")].map((b) => b.textContent?.trim())).not.toContain(
+    "Dana, Eli",
+  );
   await unmount();
 });

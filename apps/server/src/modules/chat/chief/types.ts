@@ -88,6 +88,7 @@ export type ChiefDeps = {
         | "roles"
         | "save"
         | "archive"
+        | "startRoom"
         | "createRole"
         | "updateRole"
         | "deleteRole"

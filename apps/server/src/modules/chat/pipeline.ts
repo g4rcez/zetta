@@ -20,6 +20,7 @@ import { createBotClaude, skillsOf } from "../bot-claude/store";
 import { resolveOutputStyle } from "../output-styles/service";
 import type { WikiHit, WikiReader } from "../wiki/service";
 import type { Attention, AttentionService } from "./attention";
+import { loadChiefRoster } from "./chief/roster";
 import { buildHistory } from "./context";
 import { fixtureResponder } from "./fixture";
 import { DECISION_FALLBACK } from "./routing";
@@ -367,7 +368,13 @@ export function createTurnRunner(
       fixture
         ? []
         : db
-            .select({ id: botTable.id, name: botTable.name })
+            .select({
+              id: botTable.id,
+              name: botTable.name,
+              kind: botTable.kind,
+              harness: botTable.harness,
+              description: botTable.description,
+            })
             .from(botTable)
             .where(and(eq(botTable.ownerUserId, userId), eq(botTable.archived, false))),
       !fixture && b.computerMode === "desktop"
@@ -394,6 +401,9 @@ export function createTurnRunner(
         : [],
       level,
     ]);
+    // The chief plans teams from this: which bot is good at what, with which skills, in which teams. Specialists keep the plain list.
+    const chiefView = !fixture && b.kind === "chief" && !noCode;
+    const roster = chiefView ? await loadChiefRoster(db, userId, bots) : "";
     // The machines (ssh, sftp, ftp) the user shared with this bot. Not with outside people in play; the names carry no secret.
     const machines =
       !fixture && !noCode && b.computerMode !== "off"
@@ -437,11 +447,11 @@ export function createTurnRunner(
     });
     const toolText = fixture
       ? ""
-      : `${toolPreamble(b.computerMode, codeEnabled(b, userId, noCode), b.kind === "chief" && !noCode, b.harness === "claude-code" || b.harness === "hermes")}\nThe user's bots: ${bots
-          .map((x) => `${x.name} (${x.id})`)
-          .join(
-            ", ",
-          )}\nTo mention a bot, write [@Name](bot:<id>) with its id from this list.${teams.length ? `\nThe user's teams: ${teams.map((x) => `${x.name} (${x.id})`).join(", ")}` : ""}${roles.length ? `\nThe team roles: ${roles.map((x) => (x.description ? `${x.name} (${x.description})` : x.name)).join(", ")}` : ""}\nCurrent time: ${new Date().toISOString()} (UTC). Resolve relative dates such as "tomorrow at 9" from it and the user's timezone when you know it.` +
+      : `${toolPreamble(b.computerMode, codeEnabled(b, userId, noCode), b.kind === "chief" && !noCode, b.harness === "claude-code" || b.harness === "hermes")}\nThe user's bots${chiefView ? " (name, id, engine: what it is good at | skills | teams)" : ""}: ${
+          chiefView
+            ? `\n${roster || "none besides you"}`
+            : bots.map((x) => `${x.name} (${x.id})`).join(", ")
+        }\nTo mention a bot, write [@Name](bot:<id>) with its id from this list.${teams.length ? `\nThe user's teams: ${teams.map((x) => `${x.name} (${x.id})`).join(", ")}` : ""}${roles.length ? `\nThe team roles: ${roles.map((x) => (x.description ? `${x.name} (${x.description})` : x.name)).join(", ")}` : ""}\nCurrent time: ${new Date().toISOString()} (UTC). Resolve relative dates such as "tomorrow at 9" from it and the user's timezone when you know it.` +
         (b.computerMode === "desktop"
           ? `\nThe user's computers (desktop "vm" ids): ${
               vms

@@ -41,6 +41,14 @@ _Demo video (1 min 12 s): in Studio > Computer a second computer (Ubuntu 24.04, 
 
 A new computer is a name, a **system** and a **driver**, chosen in Studio > Computer. The list shows Linux (Debian 13, Ubuntu 24.04), Windows and macOS: the Linux ones work, and Windows and macOS say why they cannot (a Linux container cannot run them; macOS would only be the server's own desktop). The Ubuntu computer is a desktop with a terminal and no browser, because Ubuntu ships Chromium only as a snap, which does not run in a container. The operator turns it on with `ZETTA_VM_OS=debian,ubuntu` and builds its image ([setup](docs/operations/runtime-modes.md#desktop-computers-vms)). To record it yourself, run `docs/demo/computer/stack.sh up` (with `ZETTA_VM_IMAGE_UBUNTU` naming the Ubuntu image) and `bun docs/demo/computer/record.ts machines`, then `docs/demo/build-vm-demo.ts <dir> machines`.
 
+### The Chief builds a team
+
+[![Zetta dashboard: the Chief asks for a brief, posts a team design, then builds the team in three steps of cards and opens a waiting project room](docs/demo/zetta-demo-chief-team.gif)](docs/demo/zetta-demo-chief-team.mp4)
+
+_Demo video (1 min 37 s): you ask the Chief to build a team for a blog launch. Like a manager, it asks for the brief (goal, deliverables, limits), reads your bots and posts a design: **Researcher** and **Writer** are reused, **Editor** is hired, and Writer is taught your blog style with a new skill. Nothing is created until you say go ahead. Then the Chief creates Editor and the team (with its goal and context) and sends the changes as cards: three roles and a skill. Each card waits for your **Approve**. When you have decided every card of a step, the Chief goes on by itself: it gives each member its role and attaches the skill, then asks for a project room. The room is linked to the team and waits: nobody works in it until you write there. The bot replies are scripted by a stand-in `claude` command, so no model is called. Waits are shortened. Select the image to open the full video (mp4)._
+
+The Chief reuses a bot whose description, skills or teams fit a role and hires only what is missing. It teaches with skills, the team's context and role descriptions, and never edits a bot's own instructions. It looks for a skill in your library first, then on the GitHub marketplace (an install is one more card; the video does not show it, because it needs the network), and writes one only when none fits. A build has at most four steps. To record it yourself, run `docs/demo/computer/stack.sh up`, `bun docs/demo/computer/record.ts team`, and then `bun docs/demo/build-vm-demo.ts <rec dir> team` (it needs `ffmpeg` and ImageMagick; no desktop image is needed for this one).
+
 ## The experience
 
 1. **Configure a bot** through guided forms or a conversation with any bot—not only the chief. Explain its job and connect the accounts it needs. Use the same validation and authorization for both paths.

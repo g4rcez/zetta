@@ -142,7 +142,8 @@ import {
   isChiefWrite,
   type ChiefPatch,
 } from "./chief";
-import { norm } from "./chief/resolve";
+import { norm, pick } from "./chief/resolve";
+import { cardTitle, MAX_WAVES, wavePrompt } from "./chief/waves";
 import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
 import { topics } from "@zetta/core/live-topics";
 import { events } from "../events/bus";
@@ -341,7 +342,7 @@ export type Converse = {
    */
   retry?: { prompt: string; requestId: string };
   /** Something happened that the bot waits for (a person moved a task it asked for): `content` is the short label, `prompt` what the bot gets. */
-  notice?: { prompt: string };
+  notice?: { prompt: string; wave?: number };
   /** A queued user message (see `enqueue`), already saved: the turn answers it in its thread instead of saving a new one. */
   answer?: string;
 };
@@ -432,6 +433,7 @@ export type ChatDeps = {
     | "save"
     | "roles"
     | "archive"
+    | "startRoom"
     | "createRole"
     | "updateRole"
     | "deleteRole"
@@ -610,7 +612,7 @@ export function createChatService(
     calls: ToolCall[],
     proposals: string[],
     receipts: Receipt[],
-    budget: { failed?: Set<string> },
+    budget: { failed?: Set<string>; waveNo?: number; wave?: { next: string } },
     mcpScope?: {
       callTool: (
         botId: string,
@@ -941,6 +943,25 @@ export function createChatService(
           installed: have.has(k.path),
         }));
         const wanted = new Set(c.args.names ?? []);
+        // The chief may name the bots the skills are for (a team build): the card offers exactly them.
+        let forBots: { id: string; name: string }[] = [];
+        if (c.args.bots?.length) {
+          if (who.kind !== "chief") {
+            browserResults.push("skills: only the chief can pick other bots.");
+            continue;
+          }
+          const mine = await db
+            .select({ id: bot.id, name: bot.name })
+            .from(bot)
+            .where(and(eq(bot.ownerUserId, actor.userId), eq(bot.archived, false)));
+          const picked = c.args.bots.map((q) => pick(mine, q, (b) => b.name, "bot"));
+          const bad = picked.find((r) => "error" in r);
+          if (bad && "error" in bad) {
+            browserResults.push(`skills: ${bad.error}`);
+            continue;
+          }
+          forBots = picked.flatMap((r) => ("hit" in r ? [r.hit] : []));
+        }
         const [row] = await db
           .insert(configProposal)
           .values({
@@ -957,10 +978,14 @@ export function createChatService(
               preselected: offered
                 .filter((k) => wanted.has(k.name) && !k.installed && !k.warnings.length)
                 .map((k) => k.path),
+              ...(forBots.length ? { forBots } : {}),
             },
             diff: [
               { field: "bot", from: null, to: who.name },
               { field: "repo", from: null, to: found.repo },
+              ...(forBots.length
+                ? [{ field: "for bots", from: null, to: forBots.map((b) => b.name).join(", ") }]
+                : []),
             ],
           })
           .returning();
@@ -1238,6 +1263,24 @@ export function createChatService(
           );
           fail(`Create bot: ${c.args.name}`, e);
         }
+      } else if (c.kind === "next_wave") {
+        if (
+          who.kind !== "chief" ||
+          scope?.discussionId ||
+          scope?.loopId ||
+          scope?.policy === "inbound"
+        ) {
+          browserResults.push("next_wave: only the chief can use this, in a chat with the user.");
+        } else if ((budget.waveNo ?? 0) + 1 >= MAX_WAVES) {
+          browserResults.push(
+            `next_wave: this is already step ${MAX_WAVES}, the last one. Tell the user what is left to do.`,
+          );
+        } else {
+          budget.wave = { next: c.args.next };
+          browserResults.push(
+            "next_wave: noted. You are called again once the user has decided every card of this reply. Do not send the next step's cards now.",
+          );
+        }
       } else if (c.kind === "create_team") {
         if (who.kind !== "chief" || !deps.teams) {
           browserResults.push("create_team: only the chief can create a team.");
@@ -1285,6 +1328,7 @@ export function createChatService(
           await deps.teams.save(actor, made.id, made.version, {
             name: c.args.name,
             goal: c.args.goal,
+            ...(c.args.context ? { context: c.args.context } : {}),
             canvas: box,
             members,
           });
@@ -2954,6 +2998,7 @@ export function createChatService(
     "task",
     "artifact",
     "bot_claude",
+    "next_wave",
   ]);
   /** Reading the Agenda stays allowed after outside content; only its writes are persistent. An artifact with inline content only adds a file
    * the user opens later (a digest of what the bot just read); one with a `path` reads the code directory, so it stays blocked. A
@@ -2979,6 +3024,7 @@ export function createChatService(
     "id" | "role" | "content" | "parentMessageId" | "status"
   > & { images?: string[] };
   type Ctx = {
+    /** The step of a team build this turn is (0 = a normal turn). */ wave?: number | undefined;
     memorySnapshot?: MemorySnapshot | undefined;
     retrieval?: TurnRetrieval | undefined;
     prompt: string;
@@ -3044,8 +3090,11 @@ export function createChatService(
     let current = reply;
     const allNotes: string[] = [];
     const allViews: WhatsappBody[] = [];
-    const budget: { failed?: Set<string> } = {};
+    const budget: { failed?: Set<string>; waveNo?: number; wave?: { next: string } } = {
+      waveNo: ctx.wave ?? 0,
+    };
     const done = (text: string) => ({
+      wave: budget.wave?.next,
       text: [text.replace(/```zetta:whatsapp[\s\S]*?```/g, "").trim(), ...whatsappBlocks(allViews)]
         .filter(Boolean)
         .join("\n\n"),
@@ -3231,7 +3280,15 @@ export function createChatService(
         if (log.length > 20) log.splice(0, log.length - 20);
         // Tool output is outside content from here on, except a round of only chief tools: their results are the user's own setup, and
         // every change they ask for is a card the user approves. Without this the chief could not list a routine and then pause it.
-        if (!calls.every(isChiefCall)) untrusted = true;
+        // The chief's own bot and team setup is also the user's setup: its result is a line the server wrote, so a team build can
+        // create bots in one round and send cards that use them in the next.
+        const teamSetup = (c: ToolCall) =>
+          who.kind === "chief" &&
+          (c.kind === "create_bot" ||
+            c.kind === "create_team" ||
+            c.kind === "add_to_team" ||
+            c.kind === "next_wave");
+        if (!calls.every((c) => isChiefCall(c) || teamSetup(c))) untrusted = true;
         checkpointed = round + 1 >= CHECKPOINT_ROUNDS;
         const next = !checkpointed
           ? "Continue the task. Put several steps in one reply when you are sure of them."
@@ -3262,6 +3319,9 @@ export function createChatService(
     historyRoot?: string | null;
     untrusted: boolean;
     proposals: string[];
+    /** The step of a team build this turn continues (see `next_wave`). */ wave?:
+      | number
+      | undefined;
     signal?: AbortSignal | undefined;
     /** In-app path of the thread. With it, a reply that says `@user` raises an attention card pointing here. */
     link?: string | undefined;
@@ -3513,6 +3573,7 @@ export function createChatService(
       }
     }
     let plan: PlanStep[] | undefined;
+    let nextWave: string | undefined;
     if (status === "complete") {
       // The tool loop runs while this generator keeps yielding: the moment a bot starts using a computer, the chat shows it live.
       const live: ChatEvent[] = [];
@@ -3522,6 +3583,7 @@ export function createChatService(
       const ran = fallback ? (fallbackOf(who) ?? who) : who;
       const work = finishReply(actor, ran, reply, a.hist, a.proposals, receipts, {
         prompt: a.prompt,
+        wave: a.wave,
         extraEnv: runEnv,
         mcp: mcpRun,
         memorySnapshot: snapshot,
@@ -3598,7 +3660,9 @@ export function createChatService(
           });
       }
       try {
-        reply = (await work).text;
+        const finished = await work;
+        reply = finished.text;
+        nextWave = finished.wave;
       } catch {
         // The tool loop broke off (Stop, or an error): keep the first reply's prose, never its raw tool blocks.
         reply = parseTools(reply).text || (signal?.aborted ? "(cancelled)" : reply);
@@ -3635,6 +3699,28 @@ export function createChatService(
       .where(eq(message.id, row.id))
       .returning();
     events.publish([actor.userId], topics.conversation(a.convId));
+    // Cards the reply left waiting: a turn nobody follows (a team-build step) has no stream to carry them to the open page.
+    if (a.proposals.length) events.publish([actor.userId], topics.proposals, topics.attention);
+    // A team-build step: its cards carry the mark, and once the user has decided all of them the chief is called again.
+    if (status === "complete" && nextWave && a.proposals.length) {
+      const mark = {
+        key: saved!.id,
+        conversationId: a.convId,
+        n: (a.wave ?? 0) + 1,
+        next: nextWave,
+      };
+      await db
+        .update(configProposal)
+        .set({ patch: sql`${configProposal.patch} || ${JSON.stringify({ wave: mark })}::jsonb` })
+        .where(
+          and(
+            inArray(configProposal.id, a.proposals),
+            eq(configProposal.ownerUserId, actor.userId),
+          ),
+        );
+      // The user may have decided every card while the reply was still being saved.
+      void continueWaveKey(actor, mark).catch(() => {});
+    }
     // The bot is calling the person (`@user`): one card per reply, which also becomes an OS notification in the browser.
     if (status === "complete" && !a.untrusted && a.link && mentionsUser(reply)) {
       const title = `${who.name} needs you`;
@@ -4208,6 +4294,58 @@ export function createChatService(
     }
   }
 
+  type WaveMark = { key: string; conversationId: string; n: number; next: string };
+  /**
+   * A team-build step ends when the user has decided every card it marked: the chief is called again in the same chat with what was
+   * approved, rejected or not applied, and its own plan for the next step. One turn per step (the key makes a repeat replay).
+   */
+  async function continueWaveKey(actor: ActiveActor, w: WaveMark) {
+    const cards = await db
+      .select({
+        kind: configProposal.kind,
+        patch: configProposal.patch,
+        status: configProposal.status,
+      })
+      .from(configProposal)
+      .where(
+        and(
+          eq(configProposal.ownerUserId, actor.userId),
+          sql`${configProposal.patch}->'wave'->>'key' = ${w.key}`,
+        ),
+      );
+    if (!cards.length || cards.some((c) => c.status === "pending")) return;
+    const prompt = wavePrompt({
+      n: w.n,
+      next: w.next,
+      cards: cards.map((c) => ({
+        title: cardTitle(c),
+        status: c.status as "approved" | "rejected" | "stale",
+      })),
+    });
+    // A turn that is just ending still holds the chat: try again soon, then back off to 5 s.
+    for (let attempt = 0; attempt < 30; attempt++) {
+      try {
+        const run = await self!.startTurn(actor, w.conversationId, {
+          content: `Cards decided: continuing the team setup (step ${w.n + 1}).`,
+          clientRequestId: `wave:${w.key}`,
+          notice: { prompt, wave: w.n },
+        });
+        for await (const _ of run.follow());
+        return;
+      } catch (err) {
+        if (!(err instanceof TurnBusyError)) throw err;
+        await new Promise((ok) => setTimeout(ok, Math.min(5_000, 250 * 2 ** attempt)));
+      }
+    }
+  }
+  async function continueWave(actor: ActiveActor, proposalId: string) {
+    const [row] = await db
+      .select({ wave: sql<WaveMark | null>`${configProposal.patch}->'wave'` })
+      .from(configProposal)
+      .where(and(eq(configProposal.id, proposalId), eq(configProposal.ownerUserId, actor.userId)));
+    if (row?.wave) await continueWaveKey(actor, row.wave);
+  }
+
   /** Runs again, in the bot's own chat, the request it stopped on while it waited for the Chief (a permission or an answer to a blocker). */
   async function rerunStopped(
     actor: ActiveActor,
@@ -4246,6 +4384,7 @@ export function createChatService(
   const service = {
     routing,
     notifyTask,
+    continueWave,
     harnessReadiness: (userId: string) => harnessReadiness(db, userId),
     async ensureChief(actor: ActiveActor) {
       const chief = async () =>
@@ -4679,7 +4818,7 @@ export function createChatService(
       actor: ActiveActor,
       id: string,
       approve: boolean,
-      selection?: { paths: string[]; target: "bot" | "all" },
+      selection?: { paths: string[]; target: "bot" | "all" | "picked" },
     ) {
       // Skills: the user's choice must be among the skills the bot offered, and is checked before the proposal is claimed.
       if (approve) {
@@ -4698,6 +4837,12 @@ export function createChatService(
             (peek.patch as { skills: { path: string }[] }).skills.map((k) => k.path),
           );
           if (!selection?.paths.length || !selection.paths.every((p) => offered.has(p)))
+            throw new ProposalSelectionError();
+          // "Picked" only exists when the chief named the bots.
+          if (
+            selection.target === "picked" &&
+            !(peek.patch as { forBots?: unknown[] }).forBots?.length
+          )
             throw new ProposalSelectionError();
         }
       }
@@ -4880,7 +5025,15 @@ export function createChatService(
               .where(and(eq(bot.ownerUserId, actor.userId), eq(bot.archived, false)))
           ).map((b) => b.id);
           // "This bot" only when the person owns it (a team bot of someone else gets nothing); "all" is every bot the person owns now.
-          const wanted = selection.target === "all" ? owned : owned.filter((b) => b === asked?.by);
+          const forBots = new Set(
+            ((a as { forBots?: { id: string }[] }).forBots ?? []).map((b) => b.id),
+          );
+          const wanted =
+            selection.target === "all"
+              ? owned
+              : selection.target === "picked"
+                ? owned.filter((b) => forBots.has(b))
+                : owned.filter((b) => b === asked?.by);
           const botIds = await deps.skills.skills.withRoom(wanted, selection.paths.length);
           const r = await installSelection(deps.skills, actor, {
             repo: offer.repo,
@@ -5640,6 +5793,7 @@ export function createChatService(
           prompt,
           ...where,
           untrusted: untrustedConv || files.length > 0,
+          wave: input.notice?.wave,
           images,
           referenced,
           // Only the addressed bot gets the picks; a bot it hands the work to does not own those skills.
@@ -6159,7 +6313,7 @@ export function createChatService(
           : (names.get(trigger.botId ?? "") ?? "A member");
       const [roomTeam] = d.teamId
         ? await db
-            .select({ name: teamTable.name, context: teamTable.context })
+            .select({ name: teamTable.name, goal: teamTable.goal, context: teamTable.context })
             .from(teamTable)
             .where(and(eq(teamTable.id, d.teamId), eq(teamTable.ownerUserId, d.ownerUserId)))
         : [];
@@ -6446,6 +6600,9 @@ export function createChatService(
     inbound: deps.inbound,
   });
   tellPagesAfter(service);
+  after(service, "decideProposal", (args) => {
+    void service.continueWave(args[0] as ActiveActor, String(args[1])).catch(() => {});
+  });
   return service;
 }
 

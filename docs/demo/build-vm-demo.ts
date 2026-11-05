@@ -8,6 +8,9 @@
  *   bun docs/demo/computer/record.ts machines    # -> $ZETTA_DEMO_DIR/rec/machines   -> zetta-demo-two-machines.mp4
  *   bun docs/demo/build-vm-demo.ts $ZETTA_DEMO_DIR/rec browse
  *   bun docs/demo/build-vm-demo.ts $ZETTA_DEMO_DIR/rec machines
+ *   docs/demo/computer/stack.sh up
+ *   bun docs/demo/computer/record.ts team        # -> $ZETTA_DEMO_DIR/rec/team       -> zetta-demo-chief-team.mp4
+ *   bun docs/demo/build-vm-demo.ts $ZETTA_DEMO_DIR/rec team
  *
  * Needs ffmpeg and ImageMagick (`magick`) on PATH. Captions use FONT (a .ttf/.ttc file; default: Helvetica on macOS, DejaVu on Linux).
  * The recordings show the dashboard with fake data and a dummy sign-in; waits (a computer starting, a bot working) are sped up.
@@ -19,14 +22,16 @@ import { $ } from "bun";
 
 const root = process.argv[2];
 const kind = process.argv[3];
-if (!root || (kind !== "browse" && kind !== "machines")) {
-  console.error("usage: bun docs/demo/build-vm-demo.ts <recordings dir> browse|machines");
+if (!root || (kind !== "browse" && kind !== "machines" && kind !== "team")) {
+  console.error("usage: bun docs/demo/build-vm-demo.ts <recordings dir> browse|machines|team");
   process.exit(2);
 }
 const demo = import.meta.dir;
 const FONT =
   process.env.FONT ??
-  ["/System/Library/Fonts/Helvetica.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"].find((f) => existsSync(f));
+  ["/System/Library/Fonts/Helvetica.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"].find(
+    (f) => existsSync(f),
+  );
 if (!FONT) throw new Error("set FONT to a .ttf/.ttc file");
 
 // The recording is 1600x1000; the caption bar sits under it so that it never covers the dashboard.
@@ -55,7 +60,15 @@ async function card(file: string, lines: Line[]) {
   const args = ["-size", `${W}x${H}`, `xc:${INK}`, "-font", FONT!, "-gravity", "center"];
   let y = -((lines.length - 1) * 30);
   for (const l of lines) {
-    args.push("-pointsize", String(l.size), "-fill", l.color ?? "white", "-annotate", `+0${y >= 0 ? "+" : ""}${y}`, l.text);
+    args.push(
+      "-pointsize",
+      String(l.size),
+      "-fill",
+      l.color ?? "white",
+      "-annotate",
+      `+0${y >= 0 ? "+" : ""}${y}`,
+      l.text,
+    );
     y += l.size + 26;
   }
   await $`magick ${args} ${file}`.quiet();
@@ -64,9 +77,27 @@ async function card(file: string, lines: Line[]) {
 /** The caption bar: the text on the left, the chip (driver or system) on the right. */
 async function bar(file: string, text: string, chip: string) {
   const args = [
-    "-size", `${W}x${BAR_H}`, `xc:${INK}`, "-font", FONT!, "-pointsize", "28",
-    "-fill", "white", "-gravity", "west", "-annotate", "+32+0", text,
-    "-fill", ACCENT, "-gravity", "east", "-annotate", "+32+0", chip,
+    "-size",
+    `${W}x${BAR_H}`,
+    `xc:${INK}`,
+    "-font",
+    FONT!,
+    "-pointsize",
+    "28",
+    "-fill",
+    "white",
+    "-gravity",
+    "west",
+    "-annotate",
+    "+32+0",
+    text,
+    "-fill",
+    ACCENT,
+    "-gravity",
+    "east",
+    "-annotate",
+    "+32+0",
+    chip,
   ];
   await $`magick ${args} ${file}`.quiet();
 }
@@ -115,7 +146,9 @@ async function clip(name: string, defaultChip: string) {
   }));
   for (const c of caps) await bar(c.file, c.text, c.chip);
 
-  const cut = segs.map((s, i) => `[0:v]trim=start=${s.from}:end=${s.to},setpts=(PTS-STARTPTS)/${s.speed}[v${i}]`);
+  const cut = segs.map(
+    (s, i) => `[0:v]trim=start=${s.from}:end=${s.to},setpts=(PTS-STARTPTS)/${s.speed}[v${i}]`,
+  );
   const joined = `${segs.map((_, i) => `[v${i}]`).join("")}concat=n=${segs.length}:v=1:a=0,fps=25,pad=${W}:${H}:0:0:color=${INK}[base]`;
   const over = caps.map(
     (c, i) =>
@@ -159,7 +192,11 @@ const intro = join(work, "intro.png"),
 if (kind === "browse") {
   await card(intro, [
     { text: "A bot uses a computer in Zetta", size: 60 },
-    { text: "In the dashboard: ask in chat, watch live, take over, hand back", size: 32, color: GREY },
+    {
+      text: "In the dashboard: ask in chat, watch live, take over, hand back",
+      size: 32,
+      color: GREY,
+    },
     { text: "The same steps with two drivers: Cua, then agent-desktop", size: 32, color: ACCENT },
     { text: "Scripted bot replies, no model call · waits shortened", size: 26, color: DIM },
   ]);
@@ -172,19 +209,71 @@ if (kind === "browse") {
   const mp4 = join(demo, "zetta-demo-computer-vm.mp4");
   await join_(parts, mp4);
   console.log(`wrote ${mp4} and its GIF`);
+} else if (kind === "team") {
+  await card(intro, [
+    { text: "The Chief builds a team", size: 60 },
+    {
+      text: "Brief, design, then hire or reuse bots, set roles, teach skills, open a room",
+      size: 32,
+      color: GREY,
+    },
+    {
+      text: "You approve each change; the Chief goes on after every step",
+      size: 32,
+      color: ACCENT,
+    },
+    { text: "Scripted bot replies, no model call · waits shortened", size: 26, color: DIM },
+  ]);
+  await card(outro, [
+    { text: "A team in three steps, every change approved by you", size: 44 },
+    {
+      text: "Reused bots are taught with skills and the team's context, never by editing the bot",
+      size: 30,
+      color: GREY,
+    },
+    {
+      text: "Run it yourself: docs/demo/computer/stack.sh, then record.ts team",
+      size: 26,
+      color: DIM,
+    },
+  ]);
+  const parts = [
+    await still(intro, 4.5),
+    await clip("team", "Chief builds a team"),
+    await still(outro, 6),
+  ];
+  const mp4 = join(demo, "zetta-demo-chief-team.mp4");
+  await join_(parts, mp4);
+  console.log(`wrote ${mp4} and its GIF`);
 } else {
   await card(intro, [
     { text: "Two computers in Zetta", size: 60 },
     { text: "A new computer is a name, a system and a driver", size: 32, color: GREY },
     { text: "Debian 13 with Cua, then Ubuntu 24.04 with agent-desktop", size: 32, color: ACCENT },
-    { text: "One bot runs the same commands on both · scripted, no model call", size: 26, color: DIM },
+    {
+      text: "One bot runs the same commands on both · scripted, no model call",
+      size: 26,
+      color: DIM,
+    },
   ]);
   await card(outro, [
     { text: "Two computers, two systems, two drivers", size: 44 },
-    { text: "uname -a prints the host's kernel on both (they are containers): the os-release line tells them apart", size: 26, color: GREY },
-    { text: "Debian has a browser behind the terminal; Ubuntu is a desktop with a terminal only", size: 26, color: GREY },
+    {
+      text: "uname -a prints the host's kernel on both (they are containers): the os-release line tells them apart",
+      size: 26,
+      color: GREY,
+    },
+    {
+      text: "Debian has a browser behind the terminal; Ubuntu is a desktop with a terminal only",
+      size: 26,
+      color: GREY,
+    },
   ]);
-  const parts = [await still(intro, 4.5), await clip("machines", "Debian 13 · Cua"), await still(outro, 6)];
+  const parts = [
+    await still(intro, 4.5),
+    await clip("machines", "Debian 13 · Cua"),
+    await still(outro, 6),
+  ];
   const mp4 = join(demo, "zetta-demo-two-machines.mp4");
   await join_(parts, mp4);
   console.log(`wrote ${mp4} and its GIF`);

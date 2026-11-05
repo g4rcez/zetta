@@ -269,6 +269,9 @@ test("private session failures remain opaque while actual identity access return
         issueInvitation: async () => {
           throw new Error("unused");
         },
+        listPendingInvitations: async () => {
+          throw new Error("unused");
+        },
         acceptInvitation: async () => {
           throw new Error("unused");
         },

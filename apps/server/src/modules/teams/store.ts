@@ -310,7 +310,7 @@ export function createTeamStore(
     async startRoom(
       a: ActiveActor,
       id: string,
-      v: { title: string; goal: string; firstMessage?: string },
+      v: { title: string; goal: string; context?: string; firstMessage?: string },
     ) {
       const t = await loadOwned(a, id);
       const members = await membersOf([id]);
@@ -346,7 +346,7 @@ export function createTeamStore(
         .open(a, {
           title: v.title,
           goal: v.goal,
-          context: "",
+          context: v.context ?? "",
           members: members
             .filter((m) => m !== chief)
             .map((m) => ({ bot: m.m.botId, role: roleText(m.role) })),

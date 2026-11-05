@@ -4,6 +4,8 @@
 // runs the blocks in a reply and then asks again, so one message is several rounds. Placeholders: `{{n:words}}` is the number of the first
 // element on the last screen read that has those words, and `{{vm:Name}}` is the id of the computer with that name.
 
+import { teamRules } from "./team-replies.ts";
+
 export type Rule = { req: string; steps: number; reply: string };
 
 const desktop = (a: Record<string, unknown>) => `\`\`\`zetta:desktop\n${JSON.stringify(a)}\n\`\`\``;
@@ -17,7 +19,7 @@ const commands = (vm?: string) =>
     desktop({ action: "key", key: "Return", ...(vm ? { vm } : {}) }),
   ]);
 
-export const rules: Rule[] = [
+const computerRules: Rule[] = [
   // The person filled in the sign-in form and handed the computer back (listed first: this message also holds the earlier request).
   {
     req: "handed the computer back",
@@ -117,3 +119,6 @@ export const rules: Rule[] = [
       "Done. Both computers are containers, so uname -a prints the same host kernel on both. The os-release line tells them apart: Debian GNU/Linux 13 on the default computer and Ubuntu 24.04 on the second.",
   },
 ];
+
+/** The computer demos and the team demo share one stand-in; their requests do not overlap. */
+export const rules: Rule[] = [...teamRules, ...computerRules];

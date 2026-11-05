@@ -15,6 +15,16 @@ describe("zetta:skills", () => {
     expect(r.text).toBe("Looking.\n\n\nDone.");
     expect(r.rejected).toEqual([]);
   });
+  test("an install can name the bots it is for; more than 12 are rejected", () => {
+    const ok = parseTools(
+      fence({ action: "install", source: "acme/skills", bots: ["Dana", "Eli"] }),
+    );
+    expect(ok.calls[0]?.args).toMatchObject({ bots: ["Dana", "Eli"] });
+    const many = Array.from({ length: 13 }, (_, i) => `Bot${i}`);
+    expect(
+      parseTools(fence({ action: "install", source: "acme/skills", bots: many })).calls,
+    ).toEqual([]);
+  });
   test("an unknown action, a missing source and too many names are rejected with a reason", () => {
     const r = parseTools(
       [

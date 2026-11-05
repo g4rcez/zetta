@@ -11,10 +11,12 @@ export async function runSkillLibrary(
   const lib = ctx.deps.skills;
   if (!lib) return { error: "the skill library is not available on this server." };
   const rows = await lib.list(ctx.actor);
-  if (a.action === "list")
+  if (a.action === "list") {
+    const names = new Map((await owned(ctx)).map((b) => [b.id, b.name]));
     return {
-      read: `skill_library.list:\n${JSON.stringify(rows.map((s) => ({ id: s.id, name: s.name, description: s.description, version: s.version })))}`,
+      read: `skill_library.list:\n${JSON.stringify(rows.map((s) => ({ id: s.id, name: s.name, description: s.description, version: s.version, bots: s.botIds.flatMap((id) => names.get(id) ?? []) })))}`,
     };
+  }
   if (a.action === "create") {
     if (rows.some((s) => s.name === a.name))
       return { error: `a skill called "${a.name}" already exists.` };

@@ -447,7 +447,11 @@ export const chatClient = {
     call<{ proposals: Proposal[] }>(
       botId ? `/api/proposals?botId=${encodeURIComponent(botId)}` : "/api/proposals",
     ).then((r) => r.proposals),
-  decide: (id: string, approve: boolean, selection?: { paths: string[]; target: "bot" | "all" }) =>
+  decide: (
+    id: string,
+    approve: boolean,
+    selection?: { paths: string[]; target: "bot" | "all" | "picked" },
+  ) =>
     call<DecisionResult>(`/api/proposals/${id}/decision`, "POST", {
       approve,
       ...(selection ? { selection } : {}),

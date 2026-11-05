@@ -1,5 +1,7 @@
-import { and, eq } from "@zetta/db/query";
+import { and, eq, inArray, sql } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
+import { configProposal } from "@zetta/db/schema/features";
+import { discussion } from "@zetta/db/schema/discussions";
 
 import { pick, short } from "./resolve";
 import type { ChiefArgs } from "./schemas";
@@ -75,7 +77,7 @@ export async function runTeam(ctx: ChiefCtx, a: ChiefArgs<"team">): Promise<Outc
   const all = await teams.list(ctx.actor);
   if (a.action === "list")
     return {
-      read: `team.list:\n${JSON.stringify({ teams: all.map((t) => ({ id: t.id, name: t.name, goal: t.goal, version: t.version, members: t.members.map((m) => ({ bot: m.name, botId: m.botId, kind: m.kind, role: m.role })) })), roles: roles.map((r) => ({ id: r.id, name: r.name, description: r.description })) })}`,
+      read: `team.list:\n${JSON.stringify({ teams: all.map((t) => ({ id: t.id, name: t.name, goal: t.goal, context: t.context.slice(0, 400), version: t.version, members: t.members.map((m) => ({ bot: m.name, botId: m.botId, kind: m.kind, role: m.role })) })), roles: roles.map((r) => ({ id: r.id, name: r.name, description: r.description })) })}`,
     };
   const f = pick(all, a.team, (x) => x.name, "team");
   if ("error" in f) return f;
@@ -88,6 +90,62 @@ export async function runTeam(ctx: ChiefCtx, a: ChiefArgs<"team">): Promise<Outc
         patch: { tool: "team", op: "archive", id: t.id },
       },
     };
+
+  if (a.action === "open_room") {
+    if (t.members.length < 2)
+      return { error: `"${t.name}" has no bot besides its chief yet. Add the team's bots first.` };
+    const [taken] = await db
+      .select({ id: discussion.id })
+      .from(discussion)
+      .where(
+        and(
+          eq(discussion.ownerUserId, ctx.actor.userId),
+          sql`${discussion.teamId} is not null`,
+          sql`lower(${discussion.title}) = lower(${a.title})`,
+          inArray(discussion.status, ["open", "paused", "stalled"]),
+        ),
+      );
+    if (taken)
+      return { error: `A team room called "${a.title}" already exists. Use another title.` };
+    return {
+      plan: {
+        title: `Open room "${a.title}" for team ${t.name}`,
+        diff: [
+          { field: "team", from: null, to: t.name },
+          { field: "room", from: null, to: a.title },
+          { field: "goal", from: null, to: short(a.goal) },
+          ...(a.context ? [{ field: "context", from: null, to: short(a.context) }] : []),
+          { field: "starts", from: null, to: "waits: nobody is woken until you write in it" },
+        ],
+        patch: {
+          tool: "team",
+          op: "open_room",
+          id: t.id,
+          input: { title: a.title, goal: a.goal, ...(a.context ? { context: a.context } : {}) },
+        },
+      },
+    };
+  }
+
+  // Two pending updates of one team would both carry the same version: the second fails once the first is approved.
+  if (a.action === "update") {
+    const [waiting] = await db
+      .select({ id: configProposal.id })
+      .from(configProposal)
+      .where(
+        and(
+          eq(configProposal.ownerUserId, ctx.actor.userId),
+          eq(configProposal.status, "pending"),
+          sql`${configProposal.patch}->>'tool' = 'team'`,
+          sql`${configProposal.patch}->>'op' = 'update'`,
+          sql`${configProposal.patch}->>'id' = ${t.id}`,
+        ),
+      );
+    if (waiting)
+      return {
+        error: `A change to "${t.name}" already waits for the user's approval. Send the next change to this team after it is decided.`,
+      };
+  }
 
   // update: work out the full member list, because save() replaces it.
   const bots = await db
@@ -196,6 +254,7 @@ export async function applyTeam(ctx: ApplyCtx, p: Record<string, unknown>): Prom
   };
   if (v.op === "update") await teams.save(ctx.actor, v.id, v.expectedVersion, v.input);
   else if (v.op === "archive") await teams.archive(ctx.actor, v.id);
+  else if (v.op === "open_room") await teams.startRoom(ctx.actor, v.id, v.input);
   else if (v.op === "role_create") await teams.createRole(ctx.actor, v.input);
   else if (v.op === "role_update") await teams.updateRole(ctx.actor, v.id, v.input);
   else await teams.deleteRole(ctx.actor, v.id);

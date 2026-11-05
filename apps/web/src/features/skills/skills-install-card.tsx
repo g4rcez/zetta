@@ -18,8 +18,10 @@ export type SkillsOffer = {
     installed: boolean;
   }[];
   preselected: string[];
+  /** The bots the chief named for a team build: offered as the first choice. */
+  forBots?: { id: string; name: string }[];
 };
-export type SkillsChoice = { paths: string[]; target: "bot" | "all" };
+export type SkillsChoice = { paths: string[]; target: "bot" | "all" | "picked" };
 
 const TRUST_LABEL: Record<Trust, string> = { official: "Official", trusted: "Trusted" };
 
@@ -39,7 +41,11 @@ export function SkillsInstallCard({
   onDecide: (approve: boolean, choice?: SkillsChoice) => void;
 }) {
   const [selected, setSelected] = useState<string[]>(offer.preselected);
-  const [target, setTarget] = useState<"bot" | "all">("bot");
+  const named = offer.forBots?.map((b) => b.name).join(", ") ?? "";
+  const [target, setTarget] = useState<SkillsChoice["target"]>(named ? "picked" : "bot");
+  const targets: SkillsChoice["target"][] = named ? ["picked", "bot", "all"] : ["bot", "all"];
+  const targetLabel = (t: SkillsChoice["target"]) =>
+    t === "picked" ? named : t === "bot" ? "This bot" : "All bots";
   // Skills the person already has can be chosen too, to give them to more bots.
   const onlyInstalled =
     selected.length > 0 &&
@@ -78,7 +84,7 @@ export function SkillsInstallCard({
       >
         <span>Who gets it</span>
         <span className="flex gap-1 rounded-full bg-muted p-1">
-          {(["bot", "all"] as const).map((t) => (
+          {targets.map((t) => (
             <Button
               key={t}
               size="sm"
@@ -87,7 +93,7 @@ export function SkillsInstallCard({
               aria-pressed={target === t}
               onClick={() => setTarget(t)}
             >
-              {t === "bot" ? "This bot" : "All bots"}
+              {targetLabel(t)}
             </Button>
           ))}
         </span>
@@ -109,7 +115,7 @@ export function SkillsInstallCard({
           {selected.length === 0
             ? "Install"
             : onlyInstalled
-              ? `Add ${selected.length} ${selected.length === 1 ? "skill" : "skills"} to ${target === "all" ? "all bots" : "this bot"}`
+              ? `Add ${selected.length} ${selected.length === 1 ? "skill" : "skills"} to ${target === "all" ? "all bots" : target === "picked" ? named : "this bot"}`
               : `Install ${selected.length} ${selected.length === 1 ? "skill" : "skills"}`}
         </Button>
         <Button type="button" variant="outline" disabled={busy} onClick={() => onDecide(false)}>

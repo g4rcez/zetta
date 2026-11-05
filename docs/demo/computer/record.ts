@@ -2,23 +2,23 @@
 //
 //   bun docs/demo/computer/record.ts browse     # Operator reads pages and asks for a sign-in; once with Cua, once with agent-desktop
 //   bun docs/demo/computer/record.ts machines   # a second computer (Ubuntu) and a terminal on each
+//   bun docs/demo/computer/record.ts team       # the Chief builds a team: brief, design, three steps of cards, a waiting room
 //
 // Run `stack.sh up` before each recording (the scripts expect a fresh installation). Output: $DEMO/rec/<name>/raw.webm and events.json
 // (caption times and the waits that build-vm-demo.ts speeds up). The bot's replies come from the stand-in `claude` (no model call).
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEMO, ORIGIN, STATE, loadChromium } from "./lib.ts";
 
 const scenario = process.argv[2];
-if (scenario !== "browse" && scenario !== "machines") {
-  console.error("usage: bun docs/demo/computer/record.ts browse|machines");
+if (scenario !== "browse" && scenario !== "machines" && scenario !== "team") {
+  console.error("usage: bun docs/demo/computer/record.ts browse|machines|team");
   process.exit(2);
 }
 const SIZE = { width: 1600, height: 1000 };
 const out = join(DEMO, "rec", scenario);
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
-const operator = JSON.parse(readFileSync(join(DEMO, "operator.json"), "utf8")).id as string;
 
 const browser = await (await loadChromium()).launch();
 const context = await browser.newContext({
@@ -70,14 +70,16 @@ await page.addInitScript(() => {
       }
     }).observe(document.body, { childList: true, subtree: true });
   };
-  document.readyState === "loading" ? addEventListener("DOMContentLoaded", boot) : boot();
+  if (document.readyState === "loading") addEventListener("DOMContentLoaded", boot);
+  else boot();
 });
 
 // What build-vm-demo.ts needs: when each caption starts, and which waits to speed up.
 const now = () => Date.now() - t0;
 const events: { t: number; text: string; chip?: string }[] = [];
 const idles: { from: number; to: number }[] = [];
-const caption = (text: string, chip?: string) => events.push({ t: now(), text, ...(chip ? { chip } : {}) });
+const caption = (text: string, chip?: string) =>
+  events.push({ t: now(), text, ...(chip ? { chip } : {}) });
 /** A wait that nobody wants to watch (a computer starting, a bot thinking): kept short in the video. */
 async function idle<T>(work: () => Promise<T>): Promise<T> {
   const from = now();
@@ -91,7 +93,8 @@ const wait = (ms: number) => page.waitForTimeout(ms);
 const textMatches = (re: string, timeout = 120_000) =>
   page.waitForFunction((r) => new RegExp(r).test(document.body.innerText), re, { timeout });
 
-const raise = () => page.evaluate(() => (window as unknown as { __raise?: () => void }).__raise?.());
+const raise = () =>
+  page.evaluate(() => (window as unknown as { __raise?: () => void }).__raise?.());
 async function go(target: import("playwright-core").Locator) {
   await target.scrollIntoViewIfNeeded();
   const box = (await target.boundingBox())!;
@@ -106,13 +109,15 @@ const type = (text: string, delay = 22) => page.keyboard.type(text, { delay });
 
 const fail = async (e: unknown) => {
   await page.screenshot({ path: join(DEMO, "record-fail.png") }).catch(() => undefined);
-  console.error(`recording failed at ${page.url()}: ${e instanceof Error ? e.message : e}\nscreenshot: ${join(DEMO, "record-fail.png")}`);
+  console.error(
+    `recording failed at ${page.url()}: ${e instanceof Error ? e.message : e}\nscreenshot: ${join(DEMO, "record-fail.png")}`,
+  );
   process.exit(1);
 };
 
-/** A new chat with Operator, from the sidebar. */
-async function newChat() {
-  await go(page.getByRole("button", { name: "New chat with Operator" }));
+/** A new chat with a bot, from the sidebar (the first button of that name: the bot's row also has one). */
+async function newChat(bot = "Operator") {
+  await go(page.getByRole("button", { name: `New chat with ${bot}` }).first());
   await wait(900);
 }
 async function say(message: string) {
@@ -241,7 +246,10 @@ async function machines() {
   await go(page.getByRole("button", { name: /^Watch/ }).last());
   await page.locator('[aria-label="Computer screen"] canvas').waitFor();
   await raise();
-  caption("Ubuntu computer: its own terminal and its own os-release", "Ubuntu 24.04 · agent-desktop");
+  caption(
+    "Ubuntu computer: its own terminal and its own os-release",
+    "Ubuntu 24.04 · agent-desktop",
+  );
   await wait(9000);
   await idle(() => textMatches("Done\\. Both computers"));
   await wait(2500);
@@ -251,8 +259,105 @@ async function machines() {
   await wait(5000);
 
   await studioComputer();
-  caption("Both computers stay in Studio > Computer, each with its own system and driver", "2 computers");
+  caption(
+    "Both computers stay in Studio > Computer, each with its own system and driver",
+    "2 computers",
+  );
   await wait(5000);
+  await finish(ready);
+}
+
+const BRIEF = "Build a team for our blog launch.";
+const ANSWERS =
+  "Goal: publish 3 posts in two weeks. Deliverables: the posts and a short newsletter. Limit: no paid tools.";
+const GO_AHEAD = "Yes, go ahead.";
+
+/** The cards of one step: the person approves each one. */
+async function approveCards(count: number, chip: string) {
+  for (let i = 0; i < count; i++) {
+    const approve = page.getByRole("button", { name: "Approve", exact: true }).first();
+    await approve.waitFor();
+    await wait(1200);
+    await go(approve);
+    await wait(900);
+  }
+  log(`${chip}: ${count} approved`);
+}
+
+/** The Chief acts as a manager: it asks, posts a design, and after the go-ahead builds the team in three steps of cards. */
+async function team() {
+  await page.goto(`${ORIGIN}/chat`);
+  // Two bots the person already has (made before the recording starts): the Chief reuses them and hires only what is missing.
+  for (const [name, description] of [
+    ["Researcher", "Finds sources and checks facts."],
+    ["Writer", "Drafts blog posts and newsletters."],
+  ] as const) {
+    const made = await page.evaluate(
+      async ([name, description]) =>
+        (
+          await fetch("/api/bots", {
+            method: "POST",
+            credentials: "include",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              name,
+              description,
+              personality: `You are ${name}.`,
+              instructions: "Do the job well and say what you did.",
+              visibility: "team",
+              harness: "claude-code",
+            }),
+          })
+        ).status,
+      [name, description] as const,
+    );
+    if (made >= 300) throw new Error(`creating ${name} failed: ${made}`);
+  }
+  await page.reload();
+  await page.getByRole("button", { name: "New chat with Chief" }).first().waitFor();
+  const ready = now();
+  caption("Ask the Chief to build a team", "Brief");
+  await wait(2500);
+  await newChat("Chief");
+  await say(BRIEF);
+  log("brief sent");
+  await idle(() => textMatches("Three quick questions"));
+  caption("Like a manager, it asks for the brief first", "Brief");
+  await wait(3500);
+
+  await say(ANSWERS);
+  await idle(() => textMatches("Shall I go ahead"));
+  caption("It looks at your bots and posts a design. Nothing is created yet", "Design");
+  await wait(9000);
+
+  await say(GO_AHEAD);
+  await idle(() => textMatches("Four cards wait"));
+  caption("After your OK: Editor is hired and the team exists, with its goal and context", "Build");
+  await wait(5000);
+  caption("Roles and a new skill come as cards: you approve each one", "Cards");
+  await wait(3500);
+  await approveCards(4, "step 1");
+
+  await idle(() => textMatches("Two cards wait for you"));
+  caption("When you have decided every card, the Chief goes on by itself", "Next step");
+  await wait(3500);
+  await approveCards(2, "step 2");
+
+  await idle(() => textMatches("Approve the room"));
+  caption("Last step: the project room. It waits for you to start it", "Room");
+  await wait(3500);
+  await approveCards(1, "step 3");
+  await wait(2500);
+
+  await page.goto(`${ORIGIN}/teams`);
+  await page.getByText("Blog launch", { exact: true }).first().waitFor();
+  await raise();
+  caption("The team: Researcher and Writer reused, Editor hired, each with a role", "Result");
+  await wait(6000);
+  await go(page.getByRole("link", { name: "Blog launch kickoff" }).first());
+  await wait(2500);
+  caption("The room is linked to the team. Nobody works in it until you write", "Result");
+  await wait(6000);
   await finish(ready);
 }
 
@@ -263,8 +368,13 @@ async function finish(ready: number) {
   const webm = readdirSync(out).find((f) => f.endsWith(".webm"));
   if (!webm) throw new Error("Playwright wrote no video");
   renameSync(join(out, webm), join(out, "raw.webm"));
-  writeFileSync(join(out, "events.json"), JSON.stringify({ scenario, ready, end, events, idles }, null, 2));
+  writeFileSync(
+    join(out, "events.json"),
+    JSON.stringify({ scenario, ready, end, events, idles }, null, 2),
+  );
   log(`done: ${join(out, "raw.webm")}`);
 }
 
-await (scenario === "browse" ? browse() : machines()).catch(fail);
+await (scenario === "browse" ? browse() : scenario === "machines" ? machines() : team()).catch(
+  fail,
+);

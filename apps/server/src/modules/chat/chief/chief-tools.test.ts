@@ -80,6 +80,34 @@ describe("parseTools: chief setup blocks", () => {
     ).toEqual([]);
   });
 
+  test("a team can open a waiting project room; an empty title or a goal over 1000 characters is rejected", () => {
+    const ok = parseTools(
+      fence("team", '{"action":"open_room","team":"Launch","title":"Blog","goal":"Ship it"}'),
+    );
+    expect(ok.calls.map((c) => c.args)).toEqual([
+      { action: "open_room", team: "Launch", title: "Blog", goal: "Ship it" },
+    ]);
+    expect(isChiefWrite(ok.calls[0]!)).toBe(true);
+    const bad = [
+      '{"action":"open_room","team":"Launch","title":""}',
+      `{"action":"open_room","team":"Launch","title":"Blog","goal":"${"x".repeat(1001)}"}`,
+    ];
+    for (const json of bad) expect(parseTools(fence("team", json)).calls).toEqual([]);
+  });
+
+  test("create_team takes the team context; a goal over 1000 characters is rejected", () => {
+    const ok = parseTools(
+      fence("create_team", '{"name":"Launch","goal":"g","context":"Use bun.","members":[]}'),
+    );
+    expect(ok.calls[0]?.args).toMatchObject({ context: "Use bun." });
+    expect(
+      parseTools(fence("create_team", `{"name":"L","goal":"${"x".repeat(1001)}"}`)).calls,
+    ).toEqual([]);
+    expect(parseTools(fence("create_team", '{"name":"L"}')).calls[0]?.args).toMatchObject({
+      context: "",
+    });
+  });
+
   test("the task board can remove a task by id, with priority and labels on add", () => {
     const r = parseTools(
       [

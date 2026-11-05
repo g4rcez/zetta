@@ -581,4 +581,71 @@ suite("skill library", () => {
     expect((await pending(C)).length).toBe(before);
     expect(prompts.at(-1)).not.toContain("zetta:skills");
   });
+
+  test("the chief names the bots a skill is for: the card offers exactly them; a plain bot cannot name bots", async () => {
+    const found = (await call(C, "GET", "/api/bots")).json.bots as {
+      id: string;
+      kind: string;
+      version: number;
+    }[];
+    const chief = found.find((b) => b.kind === "chief")!;
+    await call(C, "PATCH", `/api/bots/${chief.id}`, {
+      expectedVersion: chief.version,
+      patch: { harness: "claude-code" },
+    });
+    await db.$client.query("update bot set onboarded = true where id = $1", [chief.id]);
+    const dana = await makeBot(C, "Dana");
+    const eli = await makeBot(C, "Eli");
+    const fay = await makeBot(C, "Fay");
+    const askFor = (bots: string[]) =>
+      "On it.\n```zetta:skills\n" +
+      JSON.stringify({ action: "install", source: "free/stuff", names: ["notes"], bots }) +
+      "\n```";
+
+    script.push(askFor(["Dana", "nobody"]));
+    const before = (await pending(C)).length;
+    await talk(C, chief.id, "Give the note skill to Dana");
+    expect(prompts.join("\n")).toContain('no bot called "nobody"');
+    expect((await pending(C)).length).toBe(before);
+
+    script.push(askFor(["Dana", eli.id]));
+    await talk(C, chief.id, "Give the note skill to Dana and Eli");
+    const [card] = (await pending(C)).filter(
+      (p) => p.kind === "install_skills" && p.patch.repo === "free/stuff",
+    );
+    expect(card!.patch.forBots).toEqual([
+      { id: dana.id, name: "Dana" },
+      { id: eli.id, name: "Eli" },
+    ]);
+    const done = await decide(C, card!.id, {
+      approve: true,
+      selection: { paths: ["stuff/notes/SKILL.md"], target: "picked" },
+    });
+    expect(done.json.skills).toMatchObject({ installed: ["notes"], failed: [] });
+    expect(await namesOf(C, dana.id)).toContain("notes");
+    expect(await namesOf(C, eli.id)).toContain("notes");
+    expect(await namesOf(C, fay.id)).not.toContain("notes");
+    expect(await namesOf(C, chief.id)).not.toContain("notes");
+
+    // "Picked" exists only on a card that named bots; a plain bot cannot name any.
+    script.push(ask("acme/skills", ["pdf"]));
+    await talk(C, dana.id, "Add the pdf skill");
+    const [plain] = (await pending(C)).filter(
+      (p) => p.kind === "install_skills" && p.patch.repo === "acme/skills",
+    );
+    expect(plain!.patch.forBots).toBeUndefined();
+    expect(
+      (
+        await decide(C, plain!.id, {
+          approve: true,
+          selection: { paths: ["skills/pdf/SKILL.md"], target: "picked" },
+        })
+      ).status,
+    ).toBe(400);
+    script.push(askFor(["Fay"]));
+    const beforePlain = (await pending(C)).length;
+    await talk(C, dana.id, "Give Fay the note skill");
+    expect(prompts.join("\n")).toContain("only the chief can pick other bots");
+    expect((await pending(C)).length).toBe(beforePlain);
+  });
 });

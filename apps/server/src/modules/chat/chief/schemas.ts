@@ -114,7 +114,7 @@ export const chiefSchemas = {
         action: z.literal("update"),
         team: ref,
         name: bounded(80).optional(),
-        goal: z.string().max(2000).optional(),
+        goal: z.string().max(1000).optional(),
         context: z.string().max(8000).optional(),
         /** Bots to add; "role" is a name from the team roles list. */
         add: z
@@ -131,6 +131,14 @@ export const chiefSchemas = {
       })
       .refine((v) => Object.keys(v).length > 2, { message: "give at least one field to change" }),
     z.strictObject({ action: z.literal("archive"), team: ref }),
+    /** A project room for the team that waits: the chief leads it, the team's bots join, nobody is woken until the user writes. */
+    z.strictObject({
+      action: z.literal("open_room"),
+      team: ref,
+      title: bounded(120),
+      goal: z.string().max(1000).default(""),
+      context: z.string().max(8000).optional(),
+    }),
     z.strictObject({
       action: z.literal("role_create"),
       name: bounded(60),

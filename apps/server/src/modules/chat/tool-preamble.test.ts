@@ -218,9 +218,18 @@ describe("chief creation tools", () => {
     ]);
     expect(parseTools('```zetta:add_to_team\n{"team":"devs","members":[]}\n```').calls).toEqual([]);
   });
-  test("create_team defaults to no goal and no members", () => {
+  test("the chief's prompt carries the manager playbook, and it stays short", () => {
+    const chief = toolPreamble("off", false, true);
+    for (const needed of ["zetta:next_wave", "open_room", "Ask at most 3 short questions"])
+      expect(chief).toContain(needed);
+    expect(chief).not.toContain("asks for a new bot or a team, create it yourself");
+    // A playbook that grows creeps into every Chief turn: raise this limit on purpose, not by accident.
+    expect(chief.length).toBeLessThan(30_000);
+    expect(toolPreamble("off", false, false)).not.toContain("next_wave");
+  });
+  test("create_team defaults to no goal, no context and no members", () => {
     expect(parseTools('```zetta:create_team\n{"name":"Launch"}\n```').calls).toEqual([
-      { kind: "create_team", args: { name: "Launch", goal: "", members: [] } },
+      { kind: "create_team", args: { name: "Launch", goal: "", context: "", members: [] } },
     ]);
   });
 });

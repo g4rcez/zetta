@@ -162,7 +162,7 @@ describe("tasks a bot asked of a person", () => {
       assigneeUserId: "ana",
       assigneeName: "Ana",
     }),
-    task({ id: "b1", title: "Tidy the wiki", botId: "writer" }),
+    task({ id: "b1", title: "Tidy the memory", botId: "writer" }),
     task({ id: "b2", title: "Loose task" }),
   ];
   const forViewer = (botIds: string[], viewer: string) =>

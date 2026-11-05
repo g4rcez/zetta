@@ -876,22 +876,20 @@ function RoomView({
                 onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
                 onReply: () => {},
                 onQuote: setQuoting,
-                onSaveToWiki: (row) =>
-                  void chatClient
-                    .saveToWiki(d.title, row.content)
-                    .then(
-                      (r) =>
-                        toast.success(
-                          <span>
-                            Saved to your{" "}
-                            <Link to="/memory/$slug" params={{ slug: r.slug }} className="underline">
-                              memory
-                            </Link>
-                            .
-                          </span>,
-                        ),
-                      fail,
-                    ),
+                onSaveToMemory: (row) =>
+                  void chatClient.saveToMemory(d.title, row.content).then(
+                    (r) =>
+                      toast.success(
+                        <span>
+                          Saved to your{" "}
+                          <Link to="/memory/$slug" params={{ slug: r.slug }} className="underline">
+                            memory
+                          </Link>
+                          .
+                        </span>,
+                      ),
+                    fail,
+                  ),
               }}
               intro={
                 rows.length === 0 ? (
@@ -940,7 +938,7 @@ function RoomView({
                   bots={bots.filter((b) => names.has(b.id))}
                   busy={busy}
                   conversationId={d.conversationId}
-                  wiki
+                  memory
                   skillBots={detail.members.map((m) => m.botId)}
                   replyTo={
                     quoting && {

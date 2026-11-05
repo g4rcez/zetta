@@ -123,7 +123,7 @@ export const discussionsApi = {
     files: {
       attachmentIds?: string[];
       fileRefs?: string[];
-      wikiIds?: string[];
+      memoryIds?: string[];
       skills?: { botId: string; name: string }[];
       /** A message of this room the post replies to. */
       quotedMessageId?: string;
@@ -133,7 +133,7 @@ export const discussionsApi = {
       content,
       ...(files.attachmentIds?.length ? { attachmentIds: files.attachmentIds } : {}),
       ...(files.fileRefs?.length ? { fileRefs: files.fileRefs } : {}),
-      ...(files.wikiIds?.length ? { wikiIds: files.wikiIds } : {}),
+      ...(files.memoryIds?.length ? { memoryIds: files.memoryIds } : {}),
       ...(files.skills?.length ? { skills: files.skills } : {}),
       ...(files.quotedMessageId ? { quotedMessageId: files.quotedMessageId } : {}),
     }),

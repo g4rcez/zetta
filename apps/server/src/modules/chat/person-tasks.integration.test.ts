@@ -219,8 +219,8 @@ suite("a bot that needs a person assigns them a task", () => {
 
   test("a task without an assignee stays a plain task of the bot", async () => {
     const { bot, say } = await setup(A, "Plain adder");
-    await say('```zetta:task\n{"action":"add","title":"Tidy the wiki"}\n```');
-    expect((await tasksOf(A)).find((t) => t.title === "Tidy the wiki")).toMatchObject({
+    await say('```zetta:task\n{"action":"add","title":"Tidy the memory"}\n```');
+    expect((await tasksOf(A)).find((t) => t.title === "Tidy the memory")).toMatchObject({
       assignee: "bot",
       assigneeUserId: null,
       botId: bot.id,

@@ -227,12 +227,15 @@ export async function applyCompanyDocs(
   else await k.syncUser(ctx.actor);
 }
 
-export async function runWikiAdmin(ctx: ChiefCtx, a: ChiefArgs<"wiki_admin">): Promise<Outcome> {
-  const wiki = ctx.deps.wiki;
-  if (!wiki) return { error: "memory is not available on this server." };
+export async function runMemoryAdmin(
+  ctx: ChiefCtx,
+  a: ChiefArgs<"memory_admin">,
+): Promise<Outcome> {
+  const memory = ctx.deps.memory;
+  if (!memory) return { error: "memory is not available on this server." };
   if (a.action === "suggestions")
     return {
-      read: `memory_admin.suggestions:\n${JSON.stringify(await wiki.suggestions(ctx.actor.userId))}`,
+      read: `memory_admin.suggestions:\n${JSON.stringify(await memory.suggestions(ctx.actor.userId))}`,
     };
   if (a.action === "decide_suggestion")
     return plan(
@@ -242,7 +245,7 @@ export async function runWikiAdmin(ctx: ChiefCtx, a: ChiefArgs<"wiki_admin">): P
         { field: "decision", from: null, to: a.accept ? "accept" : "reject" },
       ],
       {
-        tool: "wiki_admin",
+        tool: "memory_admin",
         op: "decide",
         id: a.suggestion,
         decision: a.accept ? "accept" : "reject",
@@ -255,7 +258,7 @@ export async function runWikiAdmin(ctx: ChiefCtx, a: ChiefArgs<"wiki_admin">): P
         { field: "item", from: null, to: a.slug },
         { field: "version", from: null, to: a.version },
       ],
-      { tool: "wiki_admin", op: "restore", slug: a.slug, version: a.version },
+      { tool: "memory_admin", op: "restore", slug: a.slug, version: a.version },
     );
   return plan(
     `Bring back memory item ${a.slug}`,
@@ -264,15 +267,18 @@ export async function runWikiAdmin(ctx: ChiefCtx, a: ChiefArgs<"wiki_admin">): P
       { field: "slug", from: null, to: a.slug },
     ],
     {
-      tool: "wiki_admin",
+      tool: "memory_admin",
       op: "unarchive",
       slug: a.slug,
     },
   );
 }
-export async function applyWikiAdmin(ctx: ApplyCtx, p: Record<string, unknown>): Promise<Applied> {
-  const wiki = ctx.deps.wiki;
-  if (!wiki) throw new Error("memory unavailable");
+export async function applyMemoryAdmin(
+  ctx: ApplyCtx,
+  p: Record<string, unknown>,
+): Promise<Applied> {
+  const memory = ctx.deps.memory;
+  if (!memory) throw new Error("memory unavailable");
   const v = p as {
     op: string;
     id: string;
@@ -281,8 +287,8 @@ export async function applyWikiAdmin(ctx: ApplyCtx, p: Record<string, unknown>):
     version: number;
   };
   const uid = ctx.actor.userId;
-  if (v.op === "decide") await wiki.decide(uid, v.id, v.decision);
+  if (v.op === "decide") await memory.decide(uid, v.id, v.decision);
   else if (v.op === "restore")
-    await wiki.restore(uid, v.slug, v.version, { kind: "user", userId: uid } as never);
-  else await wiki.setStatus(uid, v.slug, "current", { kind: "user", userId: uid } as never);
+    await memory.restore(uid, v.slug, v.version, { kind: "user", userId: uid } as never);
+  else await memory.setStatus(uid, v.slug, "current", { kind: "user", userId: uid } as never);
 }

@@ -452,7 +452,7 @@ export const chiefSchemas = {
     z.strictObject({ action: z.literal("invite") }),
     z.strictObject({ action: z.literal("installation") }),
   ]),
-  wiki_admin: z.discriminatedUnion("action", [
+  memory_admin: z.discriminatedUnion("action", [
     z.strictObject({ action: z.literal("suggestions") }),
     z.strictObject({
       action: z.literal("restore"),

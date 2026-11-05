@@ -19,7 +19,7 @@ import { createSkills } from "../skills/service";
 import { createTaskStore } from "../tasks/store";
 import { createDiscussionStore } from "../discussions/store";
 import { createTeamStore } from "../teams/store";
-import { createWiki } from "../wiki/service";
+import { createMemory } from "../memory/service";
 import { topics } from "@zetta/core/live-topics";
 import { events } from "../events/bus";
 import { createLoopStore } from "./loops";
@@ -122,7 +122,7 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
         botClaude: createBotClaude(db),
         skills: { skills: createSkills(db), market: {} as never },
         botDatabase: dbFake,
-        wiki: createWiki(db),
+        memory: createMemory(db),
       },
     );
     app = createApp({
@@ -581,7 +581,7 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
     prompts.length = 0;
     await say(
       [
-        '```zetta:wiki\n{"action":"search","query":"digest"}\n```',
+        '```zetta:memory\n{"action":"search","query":"digest"}\n```',
         '```zetta:routine\n{"action":"remove","routine":"Morning digest"}\n```',
       ],
       "look it up and delete the digest",

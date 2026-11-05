@@ -86,7 +86,7 @@ import {
 import { isTransient, TURN_RETRY_MS, withRetry } from "./retry";
 import { fallbackOf, type FallbackUse } from "./fallback";
 import { type AttentionInput, closeAttentionKey, raiseAttention } from "../features/attention";
-import { createKnowledge, type MemorySnapshot } from "../features/knowledge";
+import { createKnowledge, type NotesSnapshot } from "../features/knowledge";
 import { configHash, looksSecret } from "../features/safety";
 import { createLiveBots, loadBotStatus, phaseAfterRound, type RunPhase } from "./bot-status";
 import { listProcesses, redactCommand, runsOf } from "./processes";
@@ -166,8 +166,8 @@ import {
   type LoopStore,
 } from "./loops";
 import type { PersonTaskEvent, TaskStore } from "../tasks/store";
-import type { Wiki } from "../wiki/service";
-import { runWikiTool } from "../wiki/tool";
+import type { Memory } from "../memory/service";
+import { runMemoryTool } from "../memory/tool";
 import { ArtifactFileError, type ArtifactStore } from "../artifacts/store";
 
 /** Why a desktop credential fill typed nothing, for the user and the bot. */
@@ -291,15 +291,15 @@ export type Creators = {
 };
 export type Receipt = {
   kind:
-    | "memory"
-    | "instruction"
+    /** Notes saved in older answers; nothing creates one now. */
+    | "note"
     | "proposal"
     | "computer"
     | "agenda"
     | "task"
     | "discussion"
     | "artifact"
-    | "wiki"
+    | "memory"
     | "bot"
     | "team";
   id: string;
@@ -325,8 +325,8 @@ export type Converse = {
   quotedMessageId?: string | undefined;
   attachmentIds?: string[];
   fileRefs?: string[];
-  /** Wiki items (ids) the user picked with `/`; the bot follows them for this turn. */
-  wikiIds?: string[];
+  /** Memory items (ids) the user picked with `/`; the bot follows them for this turn. */
+  memoryIds?: string[];
   /** Skills (names) the user picked with `/`; the addressed bot uses them for this turn. */
   skills?: string[];
   external?: External;
@@ -441,7 +441,7 @@ export type ChatDeps = {
   >;
   /** The shared task board (modules/tasks): bots add and move tasks with zetta:task. */ tasks?: TaskStore;
   /** Files bots deliver (modules/artifacts): published with zetta:artifact. */ artifacts?: ArtifactStore;
-  /** The user's wiki (modules/wiki): bots search, read and write it with zetta:memory. */ wiki?: Wiki;
+  /** The user's memory (modules/memory): bots search, read and write it with zetta:memory. */ memory?: Memory;
   /** The skill library and the GitHub marketplace (modules/skills): bots ask to install skills with zetta:skills. */ skills?: {
     skills: Skills;
     market: Market;
@@ -555,13 +555,13 @@ export function createChatService(
     visibility: r.visibility,
   });
   /** Memory is frozen per conversation and bot at its first turn (stable prompt prefix); writes show in tool results and in the next conversation. */
-  async function frozenMemory(
+  async function frozenNotes(
     conversationId: string,
     botId: string,
     ownerUserId: string,
-  ): Promise<MemorySnapshot> {
+  ): Promise<NotesSnapshot> {
     const [c] = await db
-      .select({ snap: conversation.memorySnapshot })
+      .select({ snap: conversation.notesSnapshot })
       .from(conversation)
       .where(eq(conversation.id, conversationId));
     const hit = c?.snap?.[botId];
@@ -570,7 +570,7 @@ export function createChatService(
     await db
       .update(conversation)
       .set({
-        memorySnapshot: sql`coalesce(${conversation.memorySnapshot}, '{}'::jsonb) || ${JSON.stringify({ [botId]: snap })}::jsonb`,
+        notesSnapshot: sql`coalesce(${conversation.notesSnapshot}, '{}'::jsonb) || ${JSON.stringify({ [botId]: snap })}::jsonb`,
       })
       .where(eq(conversation.id, conversationId));
     return snap;
@@ -685,9 +685,9 @@ export function createChatService(
       unknownRoles.length
         ? ` No role called ${unknownRoles.map((r) => `"${r}"`).join(", ")}: those members have no role. Use a name from the team roles list.`
         : "";
-    /** A memory, instruction or wiki write the user did not ask for in a turn that may have read outside text: shown as a card, applied on approval. */
+    /** A memory, instruction or memory write the user did not ask for in a turn that may have read outside text: shown as a card, applied on approval. */
     const askBeforeSaving = async (
-      kind: "create_wiki_page",
+      kind: "create_memory_item",
       field: string,
       title: string,
       patch: Record<string, unknown>,
@@ -1710,8 +1710,8 @@ export function createChatService(
             browserResults.push(`artifact failed: ${why}`);
           } else fail(`Artifact: ${c.args.title}`, e);
         }
-      } else if (c.kind === "wiki") {
-        if (!deps.wiki) {
+      } else if (c.kind === "memory") {
+        if (!deps.memory) {
           browserResults.push("memory unavailable");
           continue;
         }
@@ -1732,8 +1732,8 @@ export function createChatService(
           c.args.action !== "suggest"
         ) {
           await askBeforeSaving(
-            "create_wiki_page",
-            "wiki",
+            "create_memory_item",
+            "memory",
             c.args.action === "write" ? c.args.title : c.args.slug,
             {
               args: c.args,
@@ -1746,14 +1746,14 @@ export function createChatService(
         }
         try {
           // The asker's own memory, never the bot owner's (same rule as memory).
-          const r = await runWikiTool(deps.wiki, actor.userId, who.id, conversationId, c.args, {
+          const r = await runMemoryTool(deps.memory, actor.userId, who.id, conversationId, c.args, {
             teamId,
           });
           if (r.note) notes.push(r.note);
           if (r.result) browserResults.push(r.result);
           if (r.saved)
             receipts.push({
-              kind: "wiki",
+              kind: "memory",
               id: r.saved.slug,
               text: r.saved.title.slice(0, 120),
               created: r.saved.created,
@@ -2986,7 +2986,7 @@ export function createChatService(
     (/^(I'll|I will|I'm going to|Let me|Now I'll|Next,? I'll|Going to)\b/i.test(text.trim()) ||
       /:\s*$/.test(text));
   const PERSISTENT_WRITES = new Set([
-    "wiki",
+    "memory",
     "config",
     "create_bot",
     "create_team",
@@ -3011,7 +3011,7 @@ export function createChatService(
     (PERSISTENT_WRITES.has(c.kind) &&
       !(
         ((c.kind === "agenda" || c.kind === "task") && c.args.action === "list") ||
-        (c.kind === "wiki" &&
+        (c.kind === "memory" &&
           (c.args.action === "search" ||
             c.args.action === "read" ||
             c.args.action === "links" ||
@@ -3025,7 +3025,7 @@ export function createChatService(
   > & { images?: string[] };
   type Ctx = {
     /** The step of a team build this turn is (0 = a normal turn). */ wave?: number | undefined;
-    memorySnapshot?: MemorySnapshot | undefined;
+    notesSnapshot?: NotesSnapshot | undefined;
     retrieval?: TurnRetrieval | undefined;
     prompt: string;
     extraEnv?: Record<string, string> | undefined;
@@ -3128,7 +3128,7 @@ export function createChatService(
               signal: ctx.signal,
               extraEnv: ctx.extraEnv,
               mcp: ctx.mcp,
-              memorySnapshot: ctx.memorySnapshot,
+              notesSnapshot: ctx.notesSnapshot,
               retrieval: ctx.retrieval,
               pluginTools,
               noCode: ctx.noCode,
@@ -3148,9 +3148,11 @@ export function createChatService(
       for (let round = 0; ; round++) {
         const parsed = parseTools(current);
         if (parsed.plan) ctx.onPlan?.(parsed.plan);
-        // After outside content a wiki write is not dropped: it becomes an Approve card (see runTools). A `suggest` is still dropped.
-        const asksFirst = (c: ToolCall) => c.kind === "wiki" && c.args.action !== "suggest";
-        let calls = untrusted ? parsed.calls.filter((c) => !writes(c) || asksFirst(c)) : parsed.calls;
+        // After outside content a memory write is not dropped: it becomes an Approve card (see runTools). A `suggest` is still dropped.
+        const asksFirst = (c: ToolCall) => c.kind === "memory" && c.args.action !== "suggest";
+        let calls = untrusted
+          ? parsed.calls.filter((c) => !writes(c) || asksFirst(c))
+          : parsed.calls;
         // A block that does not run is never silent: the user gets a note and the bot is told, so it cannot claim the work was done.
         const dropped: RejectedTool[] = [...parsed.rejected];
         const titleOf = (c: ToolCall): Pick<RejectedTool, "title"> => {
@@ -3426,7 +3428,7 @@ export function createChatService(
     const ready = a.canned === undefined && !foreignKeyHost;
     // Independent lookups run together; the plugin and MCP ones never reject. The retrieval cache lasts for this whole turn.
     const [snapshot, pluginTools, bound] = await Promise.all([
-      frozenMemory(a.convId, who.id, actor.userId),
+      frozenNotes(a.convId, who.id, actor.userId),
       ready ? mcp?.plugins.promptFor(actor, who.id).catch(() => "") : undefined,
       // Claude Code also gets the MCP servers this user bound to the bot (tokens in the run environment, never in the arguments).
       ready && who.harness === "claude-code"
@@ -3502,7 +3504,7 @@ export function createChatService(
               signal,
               extraEnv: runEnv,
               mcp: mcpRun,
-              memorySnapshot: snapshot,
+              notesSnapshot: snapshot,
               pluginTools,
               retrieval,
               noCode: a.noCode,
@@ -3590,7 +3592,7 @@ export function createChatService(
         wave: a.wave,
         extraEnv: runEnv,
         mcp: mcpRun,
-        memorySnapshot: snapshot,
+        notesSnapshot: snapshot,
         retrieval,
         untrusted: a.untrusted,
         signal,
@@ -3684,7 +3686,7 @@ export function createChatService(
     const meta =
       used || receipts.length || a.decision || errCode || timeline.length || plan || repos.length
         ? {
-            used: used ?? { memories: [], instructions: [] },
+            used: used ?? { notes: [], instructions: [] },
             receipts,
             // What the bot did, step by step: shown live while it works and kept after the answer.
             ...(timeline.length ? { timeline } : {}),
@@ -3861,7 +3863,7 @@ export function createChatService(
     return !!d?.teamId && teamPeople.isPerson(userId, d.teamId);
   }
 
-  // No memorySnapshot: it is the frozen memory prompt of every bot in the chat, large and only read by the server.
+  // No notesSnapshot: it is the frozen memory prompt of every bot in the chat, large and only read by the server.
   const conversationRow = {
     id: conversation.id,
     ownerUserId: conversation.ownerUserId,
@@ -3924,7 +3926,7 @@ export function createChatService(
           .select({ content: message.content })
           .from(message)
           .where(eq(message.id, row.messageId));
-        const options = (row.input ?? {}) as Pick<Converse, "fileRefs" | "wikiIds" | "skills">;
+        const options = (row.input ?? {}) as Pick<Converse, "fileRefs" | "memoryIds" | "skills">;
         try {
           const { rec } = await service.startTurn(actor, conversationId, {
             content: asked?.content ?? "",
@@ -4008,14 +4010,14 @@ export function createChatService(
       const plain = pending.filter((p) => {
         const o = (p.input ?? {}) as {
           fileRefs?: unknown[];
-          wikiIds?: unknown[];
+          memoryIds?: unknown[];
           skills?: unknown[];
         };
         return (
           !withFiles.has(p.messageId) &&
           !savedQuote(p.meta) &&
           !o.fileRefs?.length &&
-          !o.wikiIds?.length &&
+          !o.memoryIds?.length &&
           !o.skills?.length
         );
       });
@@ -4598,7 +4600,7 @@ export function createChatService(
       return row;
     },
     /**
-     * Deletes a specialist: the row stays (archived) with its chats, wiki and memories, but everything that lets it act is removed:
+     * Deletes a specialist: the row stays (archived) with its chats, memory and memories, but everything that lets it act is removed:
      * plugin and account bindings, inbound channels, team places, peers, computer use, routines and running work. Safe to repeat.
      */
     async archiveBot(actor: ActiveActor, id: string) {
@@ -4967,8 +4969,8 @@ export function createChatService(
       try {
         const a = res.create.args as Record<string, unknown>;
         if (res.create.kind === "create_bot") await this.createBot(actor, a as never);
-        else if (res.create.kind === "create_wiki_page") {
-          if (!deps.wiki) throw new Error("memory unavailable");
+        else if (res.create.kind === "create_memory_item") {
+          if (!deps.memory) throw new Error("memory unavailable");
           const w = a as {
             args: never;
             botId: string;
@@ -4976,8 +4978,8 @@ export function createChatService(
             teamId?: string | null;
           };
           savedMemory = (
-            await runWikiTool(
-              deps.wiki,
+            await runMemoryTool(
+              deps.memory,
               actor.userId,
               w.botId,
               w.conversationId ?? undefined,
@@ -5109,8 +5111,8 @@ export function createChatService(
               kind ? eq(conversation.kind, kind) : ne(conversation.kind, "discussion"),
               // A routine's chat is opened from Routines, not from a bot's list.
               sql`not exists (select 1 from routine_run rr where rr.conversation_id = ${conversation.id})`,
-              // The chat of a wiki review ("Ask the chief to fix") is opened from the Wiki page.
-              sql`not exists (select 1 from wiki_job wj where wj.conversation_id = ${conversation.id} and wj.kind = 'review')`,
+              // The chat of a memory review ("Ask the chief to fix") is opened from the Memory item.
+              sql`not exists (select 1 from memory_job wj where wj.conversation_id = ${conversation.id} and wj.kind = 'review')`,
             ),
           )
           // Pinned and favorite first, so the limit never hides them behind newer chats.
@@ -5556,9 +5558,9 @@ export function createChatService(
       for (const a of earlier.reverse())
         if (a.path && isImageType(a.mimeType))
           images.push({ name: a.name, path: imagePath(a.path) });
-      const pickedIds = [...new Set(input.wikiIds ?? [])];
+      const pickedIds = [...new Set(input.memoryIds ?? [])];
       const referenced = pickedIds.length
-        ? ((await deps.wiki?.byIds(actor.userId, pickedIds)) ?? [])
+        ? ((await deps.memory?.byIds(actor.userId, pickedIds)) ?? [])
         : [];
       if (referenced.length !== pickedIds.length) throw new AccessError("NOT_FOUND");
       const skills = await pickedSkills(b, input.skills);
@@ -5673,12 +5675,12 @@ export function createChatService(
       // The saved item becomes a receipt on the bot's answer, so the chat links to it.
       const rememberReceipts: Receipt[] = [];
       if (fact) {
-        const r = await deps.wiki
-          ?.remember(actor.userId, { content: fact, botId: b.id, target: "memory" }, { by: "user" })
+        const r = await deps.memory
+          ?.remember(actor.userId, { content: fact, botId: b.id, target: "notes" }, { by: "user" })
           .catch(() => undefined);
         if (r)
           rememberReceipts.push({
-            kind: "wiki",
+            kind: "memory",
             id: r.page.slug,
             text: r.page.title.slice(0, 120),
             created: r.created,
@@ -5946,7 +5948,7 @@ export function createChatService(
         | "quotedMessageId"
         | "attachmentIds"
         | "fileRefs"
-        | "wikiIds"
+        | "memoryIds"
         | "skills"
       >,
     ) {
@@ -5975,10 +5977,10 @@ export function createChatService(
         if (!parent) throw new AccessError("NOT_FOUND");
       }
       const quote = input.quotedMessageId ? await loadQuote(conv.id, input.quotedMessageId) : null;
-      const wikiIds = [...new Set(input.wikiIds ?? [])];
+      const memoryIds = [...new Set(input.memoryIds ?? [])];
       if (
-        wikiIds.length &&
-        (await deps.wiki?.byIds(actor.userId, wikiIds))?.length !== wikiIds.length
+        memoryIds.length &&
+        (await deps.memory?.byIds(actor.userId, memoryIds))?.length !== memoryIds.length
       )
         throw new AccessError("NOT_FOUND");
       const skills = await pickedSkills(b, input.skills);
@@ -6020,7 +6022,7 @@ export function createChatService(
           ownerUserId: actor.userId,
           conversationId: conv.id,
           messageId: m.id,
-          input: { fileRefs: input.fileRefs ?? [], wikiIds, skills },
+          input: { fileRefs: input.fileRefs ?? [], memoryIds, skills },
         });
         return m;
       });
@@ -6258,16 +6260,16 @@ export function createChatService(
       const rawTranscript = await store.transcript(d);
       // Instructions on the person's latest post apply to every bot woken until the person posts again.
       const latestMeta = rawTranscript.findLast((m) => m.role === "user")?.meta as {
-        wikiIds?: string[];
+        memoryIds?: string[];
         skills?: { botId: string; name: string }[];
       } | null;
-      const pickedIds = latestMeta?.wikiIds ?? [];
+      const pickedIds = latestMeta?.memoryIds ?? [];
       // Each bot gets only the skills picked for it.
       const pickedSkillNames = (latestMeta?.skills ?? [])
         .filter((k) => k.botId === who.id)
         .map((k) => k.name);
       const referenced = pickedIds.length
-        ? ((await deps.wiki?.byIds(actor.userId, pickedIds)) ?? [])
+        ? ((await deps.memory?.byIds(actor.userId, pickedIds)) ?? [])
         : [];
       type Pic = { id: string; name: string };
       const picsOf = (m: { meta: unknown }) => (m.meta as { images?: Pic[] } | null)?.images ?? [];
@@ -6611,7 +6613,7 @@ export function createChatService(
     vms,
     connections,
     agenda,
-    wiki: deps.wiki,
+    memory: deps.memory,
     computer,
     routing,
     inbound: deps.inbound,

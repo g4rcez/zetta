@@ -17,7 +17,7 @@ import type { PreferenceStore } from "../../preferences/store";
 import type { Skills } from "../../skills/service";
 import type { VmService } from "../../computer/vm";
 import type { ComputerService } from "../../computer/service";
-import type { Wiki } from "../../wiki/service";
+import type { Memory } from "../../memory/service";
 import type { createRouting } from "../routing";
 import type { Routines } from "../../features/routines";
 import type { ActiveActor } from "../../identity/access";
@@ -135,7 +135,7 @@ export type ChiefDeps = {
   connections?: Pick<ConnectionsService, "configured" | "list" | "revoke"> | undefined;
   agenda?: Pick<AgendaService, "setSyncSettings"> | undefined;
   agendaScheduler?: Pick<AgendaScheduler, "syncUser"> | undefined;
-  wiki?: Pick<Wiki, "suggestions" | "decide" | "restore" | "setStatus"> | undefined;
+  memory?: Pick<Memory, "suggestions" | "decide" | "restore" | "setStatus"> | undefined;
 };
 
 export type ChiefCtx = {

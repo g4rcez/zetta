@@ -23,7 +23,7 @@ const QUESTION = {
   },
 } as const;
 
-// A wrong "trivial" costs the answer its documents and wiki pages, so that class needs the most confidence.
+// A wrong "trivial" costs the answer its documents and memory items, so that class needs the most confidence.
 export const TRIVIAL_BELOW = 0.5;
 export const TRIVIAL_MIN_CONFIDENCE = 0.7;
 export const COMPLEX_FROM = 2.4;

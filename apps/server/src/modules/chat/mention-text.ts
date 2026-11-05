@@ -75,7 +75,7 @@ export async function normalizeMentionText(
   );
 }
 
-/** Where stored text can hold a mention token: table, key column, text column. Wiki history (`wiki_revision`) and bot snapshots stay as they were. */
+/** Where stored text can hold a mention token: table, key column, text column. Memory history (`memory_revision`) and bot snapshots stay as they were. */
 const TEXT_COLUMNS = [
   ["message", "id", "content"],
   ["routine", "id", "prompt"],
@@ -92,14 +92,14 @@ const TEXT_COLUMNS = [
   ["goal_loop", "id", "done_when"],
   ["goal_loop", "id", "progress"],
   ["bot_claude_config", "bot_id", "append_prompt"],
-  ["wiki_page", "id", "howto"],
-  ["wiki_page", "id", "content"],
-  ["wiki_suggestion", "id", "howto"],
-  ["wiki_suggestion", "id", "content"],
+  ["memory_item", "id", "howto"],
+  ["memory_item", "id", "content"],
+  ["memory_suggestion", "id", "howto"],
+  ["memory_suggestion", "id", "content"],
 ] as const;
 
 /**
- * After a bot, team or room is renamed: sets the label of every stored token that points to it to the new name (chat, rooms, wiki,
+ * After a bot, team or room is renamed: sets the label of every stored token that points to it to the new name (chat, rooms, memory,
  * routines, tasks, loops, bot instructions). The label is only a hint, but models and the MCP server read the stored text as it is.
  * Call it when a name is saved, also when it did not change, so a retry after a failure still finishes the job.
  */

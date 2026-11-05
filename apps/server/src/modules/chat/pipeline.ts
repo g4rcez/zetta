@@ -12,13 +12,13 @@ import {
 } from "@zetta/db/schema/features";
 import { team as teamTable, teamRole } from "@zetta/db/schema/teams";
 import { raiseAttention } from "../features/attention";
-import { createKnowledge, renderMemory, type MemorySnapshot } from "../features/knowledge";
+import { createKnowledge, renderNotes, type NotesSnapshot } from "../features/knowledge";
 import { applyRedaction, matches, safeRegex } from "../features/safety";
 import { pickedFirst, withBuiltinSkills } from "../bot-claude/profile";
 import { hostSkill, hostSkillFiles, type HostSkill } from "../bot-claude/host-skills";
 import { createBotClaude, skillsOf } from "../bot-claude/store";
 import { resolveOutputStyle } from "../output-styles/service";
-import type { WikiHit, WikiReader } from "../wiki/service";
+import type { MemoryHit, MemoryReader } from "../memory/service";
 import type { Attention, AttentionService } from "./attention";
 import { loadChiefRoster } from "./chief/roster";
 import { buildHistory } from "./context";
@@ -45,30 +45,30 @@ import { runWithFallback, streamWithFallback, type FallbackUse } from "./fallbac
 type Bot = typeof bot.$inferSelect;
 type Hook = typeof hooks.$inferSelect;
 export type Used = {
-  memories: { id: string }[];
-  /** Wiki items shown in full: the ones the user picked and the procedures (tag `instruction`) that fit the message. Ids are wiki ids; older messages hold the ids of the instructions that became wiki items. */
+  notes: { id: string }[];
+  /** Memory items shown in full: the ones the user picked and the procedures (tag `instruction`) that fit the message. Ids are memory ids; older messages hold the ids of the instructions that became memory items. */
   instructions: { id: string }[];
-  /** Company documents shown to older answers, in citation order (Drive documents are wiki items now and show up in `wiki`). */
+  /** Company documents shown to older answers, in citation order (Drive documents are memory items now and show up in `memory`). */
   docs?: { docId: string; chunkId: string }[];
-  /** Wiki pages listed for the bot (slugs). */
-  wiki?: string[];
+  /** Memory items listed for the bot (slugs). */
+  items?: string[];
   /** How much work Laya judged the message to ask for (only when the builtin Laya model is on and ready). */
   attention?: Attention;
 };
-/** Finds the wiki items the asker's bot may read that fit a message (see modules/wiki). */
-export type WikiSource = {
-  search(reader: WikiReader, text: string, k?: number): Promise<WikiHit[]>;
+/** Finds the memory items the asker's bot may read that fit a message (see modules/memory). */
+export type MemorySource = {
+  search(reader: MemoryReader, text: string, k?: number): Promise<MemoryHit[]>;
   /** Loads one item, to show a procedure in full. */
   read?(
-    reader: WikiReader,
+    reader: MemoryReader,
     slug: string,
   ): Promise<{ page: { id: string; title: string; content: string; status: string } } | undefined>;
 };
-/** At most this many procedures (wiki items tagged instruction) are shown in full in a prompt, within this many bytes. */
+/** At most this many procedures (memory items tagged instruction) are shown in full in a prompt, within this many bytes. */
 const PROCEDURES_MAX = 3,
   PROCEDURES_BYTES = 3000;
 export type TurnRetrieval = {
-  wiki?: Promise<WikiHit[]>;
+  memory?: Promise<MemoryHit[]>;
   attention?: Promise<Attention | undefined>;
 };
 /** userId is the requesting user: memory and instructions always come from them, never from the bot owner. */
@@ -79,7 +79,7 @@ export type Turn = {
   bot: Bot;
   history: readonly { role: string; content: string }[];
   prompt: string;
-  /** Shared by all runs of one turn (the first answer and every tool-loop round): documents and wiki pages are searched once, with the first prompt. */
+  /** Shared by all runs of one turn (the first answer and every tool-loop round): documents and memory items are searched once, with the first prompt. */
   retrieval?: TurnRetrieval | undefined;
   /** Called with the knowledge that went into the prompt (for provenance on the answer). */
   onUsed?: ((u: Used) => void) | undefined;
@@ -88,14 +88,14 @@ export type Turn = {
   /** Claude Code: the MCP servers this user bound to the bot (their tokens travel in `extraEnv`). */
   mcp?: McpRun | undefined;
   /** Frozen memory for this conversation; without one (routines, workflows) the live stores are read. */
-  memorySnapshot?: MemorySnapshot | undefined;
+  notesSnapshot?: NotesSnapshot | undefined;
   /** Plugins this user bound to the bot (see integrations/plugins): tool list + call format. Built by the chat service. */
   pluginTools?: string | undefined;
   /** Forces code access off for this turn (outside content in play: inbound threads, unapproved group discussions). */
   noCode?: boolean | undefined;
   /** Turn-specific tool text appended after the plugin tools (e.g. group discussions). */
   extraTools?: string | undefined;
-  /** Wiki items the user picked for this message (already loaded, readable by the bot): the bot must follow them in order. */
+  /** Memory items the user picked for this message (already loaded, readable by the bot): the bot must follow them in order. */
   referenced?:
     | { id: string; slug: string; title: string; howto: string; content: string }[]
     | undefined;
@@ -200,7 +200,7 @@ export function createTurnRunner(
   db: Database,
   cli: RunCli = runCli,
   stream: StreamCli = streamCli,
-  wiki?: WikiSource,
+  memory?: MemorySource,
   attention?: AttentionService,
   /** The whole answer of a decision-only bot (harness `decision`): no AI is called. Without it the bot sends the fallback text. */
   decide?: (b: Bot, text: string, userId?: string) => Promise<string>,
@@ -315,7 +315,7 @@ export function createTurnRunner(
     prompt,
     parentMessageId,
     onUsed,
-    memorySnapshot,
+    notesSnapshot,
     pluginTools,
     noCode,
     extraTools,
@@ -350,20 +350,20 @@ export function createTurnRunner(
       key: K,
       find: () => NonNullable<TurnRetrieval[K]>,
     ): NonNullable<TurnRetrieval[K]> => (retrieval ? (retrieval[key] ??= find()) : find());
-    // Laya reads the message once per turn. A trivial one (a greeting, thanks) gets no documents or wiki pages in its prompt.
+    // Laya reads the message once per turn. A trivial one (a greeting, thanks) gets no documents or memory items in its prompt.
     const level =
       fixture || !attention
         ? undefined
         : cached("attention", () => attention.assess(ev.text, userId));
     const [snap, pages, bots, vms, teams, roles, judged] = await Promise.all([
-      memorySnapshot ?? knowledge.snapshot(userId, b.id),
+      notesSnapshot ?? knowledge.snapshot(userId, b.id),
       // Not with outside people in play (noCode): the operator's notes must not reach them through the reply.
-      fixture || !wiki || noCode
+      fixture || !memory || noCode
         ? []
-        : cached("wiki", async () =>
+        : cached("memory", async () =>
             (await level)?.level === "trivial"
               ? []
-              : wiki.search({ userId, botId: b.id }, ev.text, 5).catch(() => []),
+              : memory.search({ userId, botId: b.id }, ev.text, 5).catch(() => []),
           ),
       fixture
         ? []
@@ -431,7 +431,7 @@ export function createTurnRunner(
     for (const p of pages) {
       if (procedures.length >= PROCEDURES_MAX || !p.tags.includes("instruction")) continue;
       if (referenced.some((r) => r.slug === p.slug)) continue;
-      const page = await wiki?.read?.({ userId, botId: b.id }, p.slug).catch(() => undefined);
+      const page = await memory?.read?.({ userId, botId: b.id }, p.slug).catch(() => undefined);
       if (!page || page.page.status === "archived") continue;
       const size = Buffer.byteLength(page.page.title) + Buffer.byteLength(page.page.content) + 10;
       if (procedureBytes + size > PROCEDURES_BYTES) continue;
@@ -440,9 +440,9 @@ export function createTurnRunner(
     }
     const shownIds = [...referencedIds, ...procedures.map((i) => i.id)];
     onUsed?.({
-      memories: [...snap.user, ...snap.memory].map((m) => ({ id: m.id })),
+      notes: [...snap.user, ...snap.notes].map((m) => ({ id: m.id })),
       instructions: shownIds.map((id) => ({ id })),
-      ...(pages.length ? { wiki: pages.map((p) => p.slug) } : {}),
+      ...(pages.length ? { items: pages.map((p) => p.slug) } : {}),
       ...(judged ? { attention: judged } : {}),
     });
     const toolText = fixture
@@ -473,7 +473,7 @@ export function createTurnRunner(
       b.instructions && `Instructions: ${b.instructions}`,
       style && `Output style (how to write every reply):\n${style}`,
       // Stored notes are data written by the user or by bots: they must never be followed as instructions.
-      b.harness === "fixture" && !snap.user.length && !snap.memory.length ? "" : renderMemory(snap),
+      b.harness === "fixture" && !snap.user.length && !snap.notes.length ? "" : renderNotes(snap),
       referenced.length
         ? `The user asked you to follow these memory items. Do every step in order and check the result:\n${referenced.map((i) => `## ${i.title}\n${i.content}`).join("\n")}`
         : "",

@@ -1,5 +1,5 @@
 import { uiPrompt } from "@zetta/render/prompt";
-import { WIKI_SCORE_MAX } from "@zetta/db/schema/wiki";
+import { MEMORY_SCORE_MAX } from "@zetta/db/schema/memory";
 import { z } from "zod";
 import { designSystemPrompt } from "../artifacts/design-system";
 import { TASK_PRIORITIES } from "@zetta/db/schema/tasks";
@@ -9,7 +9,7 @@ import { chiefSchemas } from "./chief/schemas";
 
 /**
  * Text protocol for bots (works with any harness that only returns text). A bot reply may contain fenced blocks:
- *   ```zetta:memory        {"action": "search", "query"} | read {slug} | links {slug, depth?} | write {slug, title, content, howto?, tags?, type?, teams?, score?, ...} | patch {slug, match, content} | mark_stale {slug} | archive {slug} | checks {problem?} | link {slug, to, relation?} | confirm {slug} | sources {slug, sources} | suggest {slug, content, reason} -> the user's memory (a graph of items) and items other members shared (modules/wiki)
+ *   ```zetta:memory        {"action": "search", "query"} | read {slug} | links {slug, depth?} | write {slug, title, content, howto?, tags?, type?, teams?, score?, ...} | patch {slug, match, content} | mark_stale {slug} | archive {slug} | checks {problem?} | link {slug, to, relation?} | confirm {slug} | sources {slug, sources} | suggest {slug, content, reason} -> the user's memory (a graph of items) and items other members shared (modules/memory)
  *   ```zetta:config      {"botId": "<id>", "patch": {"personality": "...", "outputStyle": "concise"}}   -> becomes a proposal the user must approve
  *   ```zetta:create_bot / create_routine / create_workflow / create_vm  -> proposals shown as a creation summary; nothing exists until the user approves (the chief's create_bot, create_team and add_to_team run at once, see CHIEF_TOOLS)
  *   ```zetta:browser     {"action": "open", "url": "https://..."} | click_text | type | key | read
@@ -45,7 +45,7 @@ export const AUTONOMY = `The user's request sets hard limits: the sources, sites
 export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks in your reply (the block name follows the opening backticks):
 \`\`\`zetta:memory
 {"action":"search","query":"words about the task"}
-\`\`\`   (the user's memory: a graph of items that their bots share about clients, systems, accounts, decisions, procedures and known problems. Before work that may have been done before, search it, then load an item with {"action":"read","slug":"..."}; a search hit lists linked items, and {"action":"links","slug","depth":2} walks the graph around an item. When you finish work and learned something another bot will need (where a thing is, how a system behaves, why a choice was made, a problem and its fix, steps that worked), save it: {"action":"write","slug":"acme-billing","title":"Acme billing","howto":"one line: when to use this item and how","tags":["system","billing"],"score":50,"type":"owner|teams|solo","content":"Markdown; link other items as [[slug]] or with a relation: [[depends-on:slug]], [[part-of:slug]], [[supersedes:slug]]","sources":["task:<id>","doc:<id>","artifact:<id>","url:https://..."]} replaces the whole item, so read it first and keep what is still true. "howto" is what a bot reads in a search result to decide whether to open the item: say when it applies. "tags" are short labels (gotcha, instruction, decision, profile...). "score" (0-100) is how important it is; 50 is normal, 80+ only for what every bot must know. "type" says who reads it: "owner" (all the user's bots, the default), "teams" with "teams":[team ids] (only bots in those teams; inside a team room the default is that team), "solo" (only you: your own notes about working for this user, at most 64; keep each one short, tag it memory). Facts about the user that every bot should know (who they are, how they like to work) are items of type "owner" tagged profile, with score 90; the best ones of both kinds are shown to you at the start of every message, so keep them short and true, and archive the ones that no longer apply. Ordered steps you or another bot must follow next time go in an item tagged instruction, written as numbered steps in "content", with "howto" saying when to use them. List in "sources" where the facts came from (ids from the task board, the Company documents list or published artifacts): when one changes, the item is marked stale. {"action":"patch","slug","match":"exact text","content":"new text"} changes one unique span. {"action":"mark_stale","slug"} flags an item that is wrong or old when you cannot fix it now. {"action":"archive","slug"} hides one that no longer applies. Upkeep of the memory: {"action":"checks"} lists what the automatic checks found (broken links, items linked to nothing, stale, not saved for 90 days, without sources; add "problem" to list one kind); {"action":"link","slug","to":"other-slug","relation":"related|depends-on|part-of|supersedes"} adds a link from an item to another with no rewrite; {"action":"confirm","slug"} says an item was checked and is still true (clears stale and the 90-day flag); {"action":"sources","slug","sources":["task:<id>","doc:<id>","artifact:<id>","url:https://..."]} adds the evidence behind an item. Items "shared by" another member are read only: to change one, send {"action":"suggest","slug","content":"the full new text","reason":"why"} and its owner decides. One topic per item. Never save secrets or one-off details.)
+\`\`\`   (the user's memory: a graph of items that their bots share about clients, systems, accounts, decisions, procedures and known problems. Before work that may have been done before, search it, then load an item with {"action":"read","slug":"..."}; a search hit lists linked items, and {"action":"links","slug","depth":2} walks the graph around an item. When you finish work and learned something another bot will need (where a thing is, how a system behaves, why a choice was made, a problem and its fix, steps that worked), save it: {"action":"write","slug":"acme-billing","title":"Acme billing","howto":"one line: when to use this item and how","tags":["system","billing"],"score":50,"type":"owner|teams|solo","content":"Markdown; link other items as [[slug]] or with a relation: [[depends-on:slug]], [[part-of:slug]], [[supersedes:slug]]","sources":["task:<id>","doc:<id>","artifact:<id>","url:https://..."]} replaces the whole item, so read it first and keep what is still true. "howto" is what a bot reads in a search result to decide whether to open the item: say when it applies. "tags" are short labels (gotcha, instruction, decision, profile...). "score" (0-100) is how important it is; 50 is normal, 80+ only for what every bot must know. "type" says who reads it: "owner" (all the user's bots, the default), "teams" with "teams":[team ids] (only bots in those teams; inside a team room the default is that team), "solo" (only you: your own notes about working for this user, at most 64; keep each one short, tag it note). Facts about the user that every bot should know (who they are, how they like to work) are items of type "owner" tagged profile, with score 90; the best ones of both kinds are shown to you at the start of every message, so keep them short and true, and archive the ones that no longer apply. Ordered steps you or another bot must follow next time go in an item tagged instruction, written as numbered steps in "content", with "howto" saying when to use them. List in "sources" where the facts came from (ids from the task board, the Company documents list or published artifacts): when one changes, the item is marked stale. {"action":"patch","slug","match":"exact text","content":"new text"} changes one unique span. {"action":"mark_stale","slug"} flags an item that is wrong or old when you cannot fix it now. {"action":"archive","slug"} hides one that no longer applies. Upkeep of the memory: {"action":"checks"} lists what the automatic checks found (broken links, items linked to nothing, stale, not saved for 90 days, without sources; add "problem" to list one kind); {"action":"link","slug","to":"other-slug","relation":"related|depends-on|part-of|supersedes"} adds a link from an item to another with no rewrite; {"action":"confirm","slug"} says an item was checked and is still true (clears stale and the 90-day flag); {"action":"sources","slug","sources":["task:<id>","doc:<id>","artifact:<id>","url:https://..."]} adds the evidence behind an item. Items "shared by" another member are read only: to change one, send {"action":"suggest","slug","content":"the full new text","reason":"why"} and its owner decides. One topic per item. Never save secrets or one-off details.)
 \`\`\`zetta:config
 {"botId":"<id of one of the user's bots>","patch":{"personality":"...","instructions":"..."}}
 \`\`\`   (only a proposal: the user approves the exact change. "outputStyle" is how a bot writes its answers: ${BUILTIN_KEYS.join(", ")}. Users choose their own custom styles themselves.)
@@ -182,7 +182,7 @@ export const toolSchemas = {
       bots: z.array(bounded(80)).max(12).optional(),
     }),
   ]),
-  wiki: z.discriminatedUnion("action", [
+  memory: z.discriminatedUnion("action", [
     z.strictObject({ action: z.literal("search"), query: bounded(300) }),
     z.strictObject({ action: z.literal("read"), slug: bounded(80) }),
     z.strictObject({
@@ -200,7 +200,7 @@ export const toolSchemas = {
       // `all` (published to every member) is a person's choice and has no value here.
       type: z.enum(["solo", "owner", "teams"]).optional(),
       teams: z.array(z.string().uuid()).max(20).optional(),
-      score: z.number().int().min(0).max(WIKI_SCORE_MAX).optional(),
+      score: z.number().int().min(0).max(MEMORY_SCORE_MAX).optional(),
       version: z.number().int().min(0).optional(),
       sources: z.array(z.string().trim().min(3).max(2000)).max(12).optional(),
     }),
@@ -575,8 +575,8 @@ export const planSchema = z.strictObject({
 });
 export type PlanStep = z.infer<typeof planSchema>["steps"][number];
 
-/** The user's memory is `zetta:memory` for bots. `zetta:wiki` is its old name: still accepted, never shown. The internal kinds keep their names. */
-const FENCE_ALIAS: Record<string, string> = { memory: "wiki", memory_admin: "wiki_admin" };
+/** The user's memory is `zetta:memory` for bots. `zetta:wiki` is its old name: still accepted (bot instructions saved earlier use it), never shown. */
+const FENCE_ALIAS: Record<string, string> = { wiki: "memory", wiki_admin: "memory_admin" };
 
 /** A block that did not become a call, with the reason the bot and the user are told. */
 export type RejectedTool = { kind: string; title?: string; reason: string };
@@ -598,12 +598,11 @@ export function parseTools(reply: string): {
       /```zetta:(memory|wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|machine|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal_stop|next_wave|goal|team_goals|artifact|setup|inbound|skills|bot|folder|routine|team|output_style|artifacts|plugins|mcp_server|skill_library|hook|claude|room|bot_database|preferences|conversation|attention|workflow|computer|snapshot|source|company_docs|connection|agenda_sync|memory_admin|wiki_admin|browser_profile|decision|inbound_route|admin)\s*\n([\s\S]*?)```/g,
       (_, fence: string, body: string) => {
         const kind = (FENCE_ALIAS[fence] ?? fence) as keyof typeof toolSchemas;
-        const shown = fence === "wiki" ? "memory" : fence === "wiki_admin" ? "memory_admin" : fence;
         let json: unknown;
         try {
           json = JSON.parse(body);
         } catch {
-          rejected.push({ kind: shown, reason: "the block is not valid JSON" });
+          rejected.push({ kind, reason: "the block is not valid JSON" });
           return "";
         }
         const title =
@@ -612,7 +611,7 @@ export function parseTools(reply: string): {
             : undefined;
         if (calls.length >= MAX_TOOL_BLOCKS) {
           rejected.push({
-            kind: shown,
+            kind,
             ...(title && { title }),
             reason: `over the ${MAX_TOOL_BLOCKS}-block limit for one reply; send it in your next reply`,
           });
@@ -624,7 +623,7 @@ export function parseTools(reply: string): {
           const issue = parsed.error.issues[0];
           const where = issue?.path.join(".");
           rejected.push({
-            kind: shown,
+            kind,
             ...(title && { title }),
             reason: `${where ? `${where}: ` : ""}${issue?.message ?? "invalid block"}`,
           });

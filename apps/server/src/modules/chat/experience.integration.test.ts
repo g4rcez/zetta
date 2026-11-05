@@ -10,7 +10,7 @@ import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess } from "../identity/access";
 import { createFileStore } from "./files";
-import { createWiki } from "../wiki/service";
+import { createMemory } from "../memory/service";
 import { createChatService } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
@@ -73,7 +73,7 @@ suite("chat experience against compose postgres", () => {
           undefined,
           undefined,
           undefined,
-          { wiki: createWiki(db) },
+          { memory: createMemory(db) },
         ),
         files: createFileStore(root),
       },
@@ -342,7 +342,7 @@ suite("chat experience against compose postgres", () => {
     expect(sent.status).toBeLessThan(300);
     const rows = (
       await db.$client.query(
-        "select content from wiki_page where author_bot_id = $1 and owner_user_id = $2 and type = 'solo'",
+        "select content from memory_item where author_bot_id = $1 and owner_user_id = $2 and type = 'solo'",
         [bot.id, A],
       )
     ).rows as { content: string }[];
@@ -350,7 +350,7 @@ suite("chat experience against compose postgres", () => {
     expect(rows.some((r) => /badge\.png|image/i.test(r.content))).toBe(false);
     // The answer links to the item it saved.
     expect(sent.json.assistant.meta.receipts).toMatchObject([
-      { kind: "wiki", text: "my badge number is 4242", created: true },
+      { kind: "memory", text: "my badge number is 4242", created: true },
     ]);
   });
 

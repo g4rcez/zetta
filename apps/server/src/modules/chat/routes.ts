@@ -130,6 +130,8 @@ const sendBody = z.strictObject({
   quotedMessageId: uuid.optional(),
   attachmentIds: z.array(uuid).max(5).optional(),
   fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
+  memoryIds: z.array(uuid).max(5).optional(),
+  /** The old name of `memoryIds`: older clients still send it. */
   wikiIds: z.array(uuid).max(5).optional(),
   skills: z.array(skillName).max(5).optional(),
 });
@@ -139,7 +141,10 @@ const hasBody = (v: {
   attachmentIds?: string[] | undefined;
   fileRefs?: string[] | undefined;
 }) => !!v.content || !!v.attachmentIds?.length || !!v.fileRefs?.length;
-const send = sendBody.refine(hasBody);
+const send = sendBody.refine(hasBody).transform(({ wikiIds, ...v }) => ({
+  ...v,
+  ...((v.memoryIds ?? wikiIds) && { memoryIds: v.memoryIds ?? wikiIds }),
+}));
 const conversationPatch = z.strictObject({
   title: z.string().trim().min(1).max(120).optional(),
   pinned: z.boolean().optional(),
@@ -807,7 +812,7 @@ export function createChatRoutes(
           quotedMessageId: v.quotedMessageId,
           attachmentIds: v.attachmentIds,
           fileRefs: v.fileRefs,
-          wikiIds: v.wikiIds,
+          memoryIds: v.memoryIds,
           skills: v.skills,
           clientRequestId: v.clientRequestId,
         });

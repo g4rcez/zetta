@@ -10,7 +10,7 @@ describe("answersOf", () => {
     const events = [
       ev({ type: "start", messageId: "m1", botId: "b1", botName: "tester" }),
       ev({ type: "activity", messageId: "m1", botId: "b1", label: "Thinking", at: 1000 }),
-      ev({ type: "activity", messageId: "m1", botId: "b1", label: "wiki search", at: 2000 }),
+      ev({ type: "activity", messageId: "m1", botId: "b1", label: "memory search", at: 2000 }),
       ev({ type: "activity", messageId: "m1", botId: "b1", label: "Thinking", at: 3000 }),
     ];
     expect(answersOf(events)).toEqual([
@@ -20,7 +20,7 @@ describe("answersOf", () => {
         botName: "tester",
         step: "Thinking",
         stepSince: 3000,
-        timeline: [{ at: 2000, label: "wiki search" }],
+        timeline: [{ at: 2000, label: "memory search" }],
       },
     ]);
   });

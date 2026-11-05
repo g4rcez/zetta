@@ -85,7 +85,7 @@ describe("zetta:plan", () => {
     expect(r.text).toBe("Hi");
   });
   test("a plan does not count toward the eight-block limit", () => {
-    const remember = '```zetta:wiki\n{"action":"search","query":"x"}\n```\n';
+    const remember = '```zetta:memory\n{"action":"search","query":"x"}\n```\n';
     const r = parseTools(remember.repeat(8) + fence('{"steps":[{"id":"1","title":"Only"}]}'));
     expect(r.calls).toHaveLength(8);
     expect(r.rejected).toEqual([]);
@@ -173,24 +173,24 @@ describe("chief tools", () => {
       { kind: "memory", reason: "the block is not valid JSON" },
     ]);
   });
-  test("wiki accepts the graph fields and never lets a bot publish", () => {
-    const wiki = (json: string) => parseTools("```zetta:wiki\n" + json + "\n```").calls;
+  test("memory accepts the graph fields and never lets a bot publish", () => {
+    const memory = (json: string) => parseTools("```zetta:memory\n" + json + "\n```").calls;
     expect(
-      wiki(
+      memory(
         '{"action":"write","slug":"close-month","title":"Close the month","content":"1. pull 2. sum","howto":"month end","tags":["instruction"],"type":"teams","teams":["0192f5a0-7b1c-7000-8000-000000000001"],"score":80}',
       ),
     ).toHaveLength(1);
-    expect(wiki('{"action":"links","slug":"close-month","depth":2}')).toHaveLength(1);
-    expect(wiki('{"action":"archive","slug":"close-month"}')).toHaveLength(1);
+    expect(memory('{"action":"links","slug":"close-month","depth":2}')).toHaveLength(1);
+    expect(memory('{"action":"archive","slug":"close-month"}')).toHaveLength(1);
     // `all` publishes to every member: only a person does that. Out-of-range score, depth and old field names are refused.
     expect(
-      wiki('{"action":"write","slug":"a","title":"A","content":"x","type":"all"}'),
+      memory('{"action":"write","slug":"a","title":"A","content":"x","type":"all"}'),
     ).toHaveLength(0);
     expect(
-      wiki('{"action":"write","slug":"a","title":"A","content":"x","score":101}'),
+      memory('{"action":"write","slug":"a","title":"A","content":"x","score":101}'),
     ).toHaveLength(0);
-    expect(wiki('{"action":"links","slug":"a","depth":3}')).toHaveLength(0);
-    expect(wiki('{"action":"write","slug":"a","title":"A","body":"x"}')).toHaveLength(0);
+    expect(memory('{"action":"links","slug":"a","depth":3}')).toHaveLength(0);
+    expect(memory('{"action":"write","slug":"a","title":"A","body":"x"}')).toHaveLength(0);
   });
   test("the old instruction block is not a tool any more", () => {
     expect(

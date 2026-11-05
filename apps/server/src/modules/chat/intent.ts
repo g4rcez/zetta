@@ -1,5 +1,5 @@
 /**
- * Did the person ask to keep something? Used for memory, instruction and wiki writes in a turn where the bot could have read outside text
+ * Did the person ask to keep something? Used for memory, instruction and memory writes in a turn where the bot could have read outside text
  * (code access or MCP servers), which the server cannot see: only a request in the user's own message lets such a write apply at once.
  * Anything else becomes a proposal the user approves. A miss costs one click; a false hit needs an injected page and a message that
  * already talks about saving, so the match is deliberately wide rather than exact.

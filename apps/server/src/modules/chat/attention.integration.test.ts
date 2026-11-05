@@ -1,14 +1,14 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
-import type { WikiHit } from "../wiki/service";
+import type { MemoryHit } from "../memory/service";
 import { createAttention } from "./attention";
 import { createTurnRunner, type Used } from "./pipeline";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 
-const page: WikiHit = {
+const page: MemoryHit = {
   slug: "refunds",
   title: "Refunds",
   type: "owner",
@@ -24,7 +24,7 @@ const page: WikiHit = {
 /** Laya is the only fake (an external model). Everything else is the real turn runner reading the real database. */
 function turn(laya: { state: string; score?: number; confidence?: number }) {
   const prompts: string[] = [];
-  const searched = { wiki: 0 };
+  const searched = { memory: 0 };
   const decisions = {
     status: () => ({ state: laya.state, model: "laya" as const }),
     decide: async () =>
@@ -39,7 +39,7 @@ function turn(laya: { state: string; score?: number; confidence?: number }) {
       return "ok";
     }) as never,
     undefined,
-    { search: async () => (searched.wiki++, [page]) },
+    { search: async () => (searched.memory++, [page]) },
     createAttention(decisions as never),
   );
   const userId = `attention-${uuidv7()}`;
@@ -67,14 +67,14 @@ function turn(laya: { state: string; score?: number; confidence?: number }) {
 }
 
 suite("Laya attention in a chat turn (real database)", () => {
-  test("a greeting gets no wiki items", async () => {
+  test("a greeting gets no memory items", async () => {
     const t = turn({ state: "ready", score: 0.1, confidence: 0.92 });
     const { prompt, used } = await t.ask("thanks!");
     expect(prompt).not.toContain("Memory items that may help");
-    expect(t.searched).toEqual({ wiki: 0 });
+    expect(t.searched).toEqual({ memory: 0 });
     expect(used?.attention?.level).toBe("trivial");
   });
-  test("a normal request keeps the wiki items", async () => {
+  test("a normal request keeps the memory items", async () => {
     const t = turn({ state: "ready", score: 1.4, confidence: 0.8 });
     const { prompt, used } = await t.ask("how long do refunds take?");
     expect(prompt).toContain("Memory items that may help");

@@ -20,13 +20,13 @@ import {
   applyComputer,
   applySnapshot,
   applySource,
-  applyWikiAdmin,
+  applyMemoryAdmin,
   applyWorkflow,
   runCompanyDocs,
   runComputer,
   runSnapshot,
   runSource,
-  runWikiAdmin,
+  runMemoryAdmin,
   runWorkflow,
 } from "./work";
 import { applyMcpServer, runMcpServer } from "./mcp-server";
@@ -106,8 +106,8 @@ export function createChief(deps: ChiefDeps) {
           return runConnection(ctx, args as never);
         case "agenda_sync":
           return runAgendaSync(ctx, args as never);
-        case "wiki_admin":
-          return runWikiAdmin(ctx, args as never);
+        case "memory_admin":
+          return runMemoryAdmin(ctx, args as never);
         case "admin":
           return runAdmin(ctx, args as never);
         case "inbound_route":
@@ -170,8 +170,8 @@ export function createChief(deps: ChiefDeps) {
           return applyConnection(ctx, patch);
         case "agenda_sync":
           return applyAgendaSync(ctx, patch);
-        case "wiki_admin":
-          return applyWikiAdmin(ctx, patch);
+        case "memory_admin":
+          return applyMemoryAdmin(ctx, patch);
         case "inbound_route":
           return applyInboundRoute(ctx, patch);
         case "browser_profile":

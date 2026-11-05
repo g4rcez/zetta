@@ -204,7 +204,7 @@ describe("parseTools: preferences, chats, sources and accounts", () => {
         fence("company_docs", '{"action":"disable"}'),
         fence("connection", '{"action":"add","provider":"openai"}'),
         fence("agenda_sync", '{"action":"settings","enabled":true}'),
-        fence("wiki_admin", '{"action":"restore","slug":"acme","version":2}'),
+        fence("memory_admin", '{"action":"restore","slug":"acme","version":2}'),
       ].join("\n"),
     );
     expect(r.rejected).toEqual([]);
@@ -247,7 +247,7 @@ describe("which calls change something", () => {
     expect(isChiefWrite(call("output_style", { action: "export" }))).toBe(false);
     expect(isChiefWrite(call("routine", { action: "pause" }))).toBe(true);
     expect(isChiefWrite(call("artifacts", { action: "remove" }))).toBe(true);
-    expect(isChiefWrite(call("wiki", { action: "write" }))).toBe(false);
+    expect(isChiefWrite(call("memory", { action: "write" }))).toBe(false);
     // Testing a plugin and trying a hook change nothing.
     expect(isChiefWrite(call("plugins", { action: "test" }))).toBe(false);
     expect(isChiefWrite(call("hook", { action: "dry_run" }))).toBe(false);

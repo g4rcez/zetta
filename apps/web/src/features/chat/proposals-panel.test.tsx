@@ -71,15 +71,15 @@ test("a permission request shows the bot that asks, and the bot it is about, wit
   await unmount();
 });
 
-test("a wiki save request shows the bot that asks", async () => {
+test("a memory save request shows the bot that asks", async () => {
   const { host, unmount } = await render({
     id: "p2",
-    kind: "create_wiki_page",
+    kind: "create_memory_item",
     botId: ASKER,
     proposedByBotId: ASKER,
     diff: [
       { field: "bot", from: null, to: "Treinador" },
-      { field: "wiki", from: null, to: "Interview notes" },
+      { field: "memory", from: null, to: "Interview notes" },
     ],
     patch: {},
   });

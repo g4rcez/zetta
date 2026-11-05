@@ -54,7 +54,7 @@ function mount(props: Record<string, unknown>) {
           continued={false}
           onReact={() => {}}
           onReply={() => {}}
-          onSaveToWiki={() => {}}
+          onSaveToMemory={() => {}}
           {...props}
         />,
       ),

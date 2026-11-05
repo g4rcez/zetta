@@ -96,7 +96,7 @@ export type ProposalKind =
   | "start_loop"
   | "team_goals"
   | "bot_permission"
-  | "create_wiki_page"
+  | "create_memory_item"
   | "install_skills"
   /** A change to the user's setup that the chief asked for (routines, teams, bots, styles...). `patch.title` says what. */
   | "chief_action";
@@ -148,15 +148,15 @@ export const isImage = (a: { mimeType?: string | undefined }) => !!a.mimeType?.s
 export type Reaction = { emoji: string; count: number; mine: boolean };
 export type Receipt = {
   kind:
-    | "memory"
-    | "instruction"
+    /** Notes saved in older answers. */
+    | "note"
     | "proposal"
     | "computer"
     | "agenda"
     | "task"
     | "discussion"
     | "artifact"
-    | "wiki"
+    | "memory"
     | "bot"
     | "team";
   id: string;
@@ -168,9 +168,9 @@ export type Receipt = {
 export type PlanStep = { id: string; title: string; status: "pending" | "active" | "done" };
 export type MessageMeta = {
   used?: {
-    memories?: string[];
+    notes?: string[];
     instructions?: string[];
-    wiki?: string[];
+    items?: string[];
     /** Company documents the bot was shown, in citation order. */ docs?: {
       docId: string;
       chunkId: string;
@@ -222,8 +222,8 @@ export type Message = {
   queue?: "pending" | "running" | "failed";
 };
 export type UsedKnowledge = {
-  memories: { id: string; content: string }[];
-  wiki: { id: string; slug: string; title: string }[];
+  notes: { id: string; content: string }[];
+  items: { id: string; slug: string; title: string }[];
 };
 export type ConnectionState = "active" | "revoked" | string;
 export type Connection = {
@@ -427,7 +427,7 @@ export const chatClient = {
       quotedMessageId?: string;
       attachmentIds?: string[];
       fileRefs?: string[];
-      wikiIds?: string[];
+      memoryIds?: string[];
       skills?: string[];
     },
   ) =>
@@ -491,9 +491,9 @@ export const chatClient = {
       sources: { n: number; docId: string; name: string; link: string | null; snippet: string }[];
     }>(`/api/messages/${messageId}/sources`).then((r) => r.sources),
   usedKnowledge: (messageId: string) => call<UsedKnowledge>(`/api/messages/${messageId}/knowledge`),
-  /** Saves text as a wiki procedure (tag instruction) the bots find when a similar task comes up. */
-  saveToWiki: (title: string, content: string) =>
-    call<{ slug: string }>(`/api/wiki/${encodeURIComponent(title.slice(0, 80))}`, "PUT", {
+  /** Saves text as a memory procedure (tag instruction) the bots find when a similar task comes up. */
+  saveToMemory: (title: string, content: string) =>
+    call<{ slug: string }>(`/api/memory/${encodeURIComponent(title.slice(0, 80))}`, "PUT", {
       title,
       content,
       tags: ["instruction"],

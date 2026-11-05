@@ -77,7 +77,7 @@ export function DashboardPage() {
   const now = Date.now();
   const firstName = session?.user.name?.split(" ")[0];
 
-  async function submit({ text, attachmentIds, fileRefs, wikiIds }: Outgoing) {
+  async function submit({ text, attachmentIds, fileRefs, memoryIds }: Outgoing) {
     if (!chief) return false;
     setSending(true);
     try {
@@ -88,7 +88,7 @@ export function DashboardPage() {
         content: text,
         attachmentIds,
         fileRefs,
-        ...(wikiIds ? { wikiIds } : {}),
+        ...(memoryIds ? { memoryIds } : {}),
       });
       setChats((list) => [chat, ...list]);
       draft.clear();
@@ -229,7 +229,7 @@ export function DashboardPage() {
           busy={sending}
           disabled={!chief}
           autoFocus
-          wiki
+          memory
           onSubmit={submit}
           onError={(e) => toast.error(errorMessage(e))}
         />

@@ -102,7 +102,7 @@ export function ThreadPanel({
           </p>
         )}
         <Composer
-          wiki
+          memory
           skillBots={bot ? [bot.id] : []}
           value={draft.value}
           onChange={draft.set}
@@ -121,7 +121,7 @@ export function ThreadPanel({
             }
           }
           onStop={() => void chat.stop()}
-          onSubmit={async ({ text, attachmentIds, fileRefs, wikiIds, skills }) => {
+          onSubmit={async ({ text, attachmentIds, fileRefs, memoryIds, skills }) => {
             draft.clear();
             setSent((n) => n + 1);
             const quotedMessageId = quoting?.id;
@@ -131,7 +131,7 @@ export function ThreadPanel({
                 ...(quotedMessageId ? { quotedMessageId } : {}),
                 attachmentIds,
                 fileRefs,
-                wikiIds,
+                memoryIds,
                 skills: skills?.map((k) => k.name),
               });
               return true;

@@ -20,7 +20,9 @@ describe("stripToolFences", () => {
     );
     expect(stripToolFences('Starting.\n```zetta:plan\n{"st')).toBe("Starting.");
   });
-  it("removes wiki, task, escalate and setup blocks", () => {
+  it("removes memory, task, escalate and setup blocks", () => {
+    expect(stripToolFences('Done.\n```zetta:memory\n{"action":"search"}\n```')).toBe("Done.");
+    // `zetta:wiki` is the old name of the same block.
     expect(stripToolFences('Done.\n```zetta:wiki\n{"action":"search"}\n```')).toBe("Done.");
     expect(stripToolFences('Done.\n```zetta:task\n{"action":"list"}\n```')).toBe("Done.");
     expect(stripToolFences('Done.\n```zetta:escalate\n{"problem":"x"}\n```')).toBe("Done.");

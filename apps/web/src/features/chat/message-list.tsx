@@ -24,7 +24,7 @@ export type RowActions = {
   onReply: (row: Row) => void;
   /** Reply in the channel: the next message quotes this one. Without it the toolbar has no Reply button (threads, rooms). */
   onQuote?: (row: Row) => void;
-  onSaveToWiki: (row: Row) => void;
+  onSaveToMemory: (row: Row) => void;
   onQueue?: (row: Row, action: "remove" | "retry") => void;
   /** Open a published file beside the chat. Without it, an artifact receipt is a plain link to the artifact page. */
   onOpenArtifact?: (id: string) => void;

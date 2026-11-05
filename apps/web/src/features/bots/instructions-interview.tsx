@@ -42,7 +42,7 @@ type Props = {
 
 const TOTAL = 5;
 const noop = () => {};
-const actions = { onReact: noop, onReply: noop, onSaveToWiki: noop };
+const actions = { onReact: noop, onReply: noop, onSaveToMemory: noop };
 
 /** The first question is fixed text, so the engine runs only after the person sends an answer. */
 const OPENING = {

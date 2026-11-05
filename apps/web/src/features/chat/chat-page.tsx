@@ -324,13 +324,13 @@ export function ChatPage() {
     text,
     attachmentIds,
     fileRefs,
-    wikiIds,
+    memoryIds,
     skills,
   }: {
     text: string;
     attachmentIds: string[];
     fileRefs: string[];
-    wikiIds?: string[] | undefined;
+    memoryIds?: string[] | undefined;
     skills?: { botId: string; name: string }[] | undefined;
   }) {
     if (!botId) return false;
@@ -367,7 +367,7 @@ export function ChatPage() {
           ...(quotedMessageId ? { quotedMessageId } : {}),
           attachmentIds,
           fileRefs,
-          wikiIds,
+          memoryIds,
           skills: skills?.map((k) => k.name),
         })
         .catch(fail);
@@ -414,22 +414,20 @@ export function ChatPage() {
     onReply: (row) => setThread(row.id),
     onQuote: (row) => setQuoting(row),
     onOpenArtifact: (id) => setArtifact(id),
-    onSaveToWiki: (row) =>
-      void chatClient
-        .saveToWiki(`From chat: ${row.content.slice(0, 40)}`, row.content)
-        .then(
-          (r) =>
-            setNotice(
-              <>
-                Saved to your{" "}
-                <Link to="/memory/$slug" params={{ slug: r.slug }} className="underline">
-                  memory
-                </Link>
-                .
-              </>,
-            ),
-          fail,
-        ),
+    onSaveToMemory: (row) =>
+      void chatClient.saveToMemory(`From chat: ${row.content.slice(0, 40)}`, row.content).then(
+        (r) =>
+          setNotice(
+            <>
+              Saved to your{" "}
+              <Link to="/memory/$slug" params={{ slug: r.slug }} className="underline">
+                memory
+              </Link>
+              .
+            </>,
+          ),
+        fail,
+      ),
     onQueue: (row, action) => {
       if (!chatId) return;
       void (
@@ -444,7 +442,7 @@ export function ChatPage() {
       onReact: (row, emoji) => latestActions.current.onReact(row, emoji),
       onReply: (row) => latestActions.current.onReply(row),
       onQuote: (row) => latestActions.current.onQuote?.(row),
-      onSaveToWiki: (row) => latestActions.current.onSaveToWiki(row),
+      onSaveToMemory: (row) => latestActions.current.onSaveToMemory(row),
       onQueue: (row, action) => latestActions.current.onQueue?.(row, action),
       onOpenArtifact: (id) => latestActions.current.onOpenArtifact?.(id),
     }),
@@ -848,7 +846,7 @@ export function ChatPage() {
                 </div>
               ) : (
                 <DraftComposer
-                  wiki
+                  memory
                   skillBots={botId ? [botId] : []}
                   replyTo={
                     quoting && {

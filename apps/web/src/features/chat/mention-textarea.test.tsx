@@ -91,9 +91,9 @@ test("an empty chat text box shows its placeholder", async () => {
       value=""
       onChange={() => {}}
       bots={bots}
-      placeholder="Ask the wiki"
+      placeholder="Ask the memory"
     />,
   );
-  expect(host.querySelector(".cm-placeholder")?.textContent).toBe("Ask the wiki");
+  expect(host.querySelector(".cm-placeholder")?.textContent).toBe("Ask the memory");
   await unmount();
 });

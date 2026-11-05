@@ -59,7 +59,7 @@ import {
 import { matchTrigger } from "./triggers";
 import { useMention } from "./mention";
 import { chatQueries } from "./chat-queries";
-import { wikiQueries } from "../wiki/wiki-api";
+import { memoryQueries } from "../memory/memory-api";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Editor } from "@/components/editor/editor";
 import { BotIdentity, BotsContext } from "@/components/bot-identity";
@@ -69,21 +69,21 @@ export type Outgoing = {
   text: string;
   attachmentIds: string[];
   fileRefs: string[];
-  wikiIds?: string[];
+  memoryIds?: string[];
   /** Skills picked with `/`; `botId` is the bot that owns the skill (in a room, the one that uses it). */
   skills?: { botId: string; name: string }[];
 };
 /** A skill of a bot that the person can pick with `/`: the bot uses it for this message. */
 type SkillItem = { botId: string; name: string; description: string };
-/** What `/` picked: a wiki item or a skill. Both count toward MAX_PICKED. */
-type Picked = { kind: "wiki"; item: WikiItem } | ({ kind: "skill" } & SkillItem);
+/** What `/` picked: a memory item or a skill. Both count toward MAX_PICKED. */
+type Picked = { kind: "memory"; item: MemoryItem } | ({ kind: "skill" } & SkillItem);
 /** A row of the `/` list, in the order the arrow keys walk it. */
 type Candidate = Picked;
-/** Rows sit in groups under a heading: one group per bot's skills, then the wiki. */
-const groupOf = (c: Candidate) => (c.kind === "wiki" ? "wiki" : c.botId);
+/** Rows sit in groups under a heading: one group per bot's skills, then the memory. */
+const groupOf = (c: Candidate) => (c.kind === "memory" ? "memory" : c.botId);
 const sameSkill = (a: SkillItem, b: SkillItem) => a.botId === b.botId && a.name === b.name;
-/** A wiki item the person can pick with `/`: the bot follows it for this message. */
-type WikiItem = {
+/** A memory item the person can pick with `/`: the bot follows it for this message. */
+type MemoryItem = {
   id: string;
   title: string;
   howto: string;
@@ -142,7 +142,7 @@ export function Composer({
   onError,
   autoFocus,
   minimal,
-  wiki,
+  memory,
   skillBots = [],
   replyTo,
 }: {
@@ -157,9 +157,9 @@ export function Composer({
   onStop?: () => void;
   onError: (e: unknown) => void;
   autoFocus?: boolean;
-  /** Turn on the `/` picker: only for screens whose submit forwards `wikiIds`. */
-  wiki?: boolean;
-  /** Bots whose skills the `/` picker lists (the chat's bot; in a room, its members). Needs `wiki`, since both share the picker. */
+  /** Turn on the `/` picker: only for screens whose submit forwards `memoryIds`. */
+  memory?: boolean;
+  /** Bots whose skills the `/` picker lists (the chat's bot; in a room, its members). Needs `memory`, since both share the picker. */
   skillBots?: readonly string[];
   /** Text only: no attachments, server files or @mentions (the setup interview). */ minimal?: boolean;
   /** The message the next send replies to in this channel (not a thread): shown as a chip, and the cursor moves into the box when it changes. */
@@ -190,7 +190,7 @@ export function Composer({
   const mention = useMention({ bots, viewRef: input, onError });
   const botsById = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
   const [slash, setSlash] = useState<{ query: string; at: number; index: number }>();
-  const [library, setLibrary] = useState<WikiItem[]>();
+  const [library, setLibrary] = useState<MemoryItem[]>();
   const [skillLib, setSkillLib] = useState<SkillItem[]>();
   const skillsAsked = useRef(false);
   const [chosen, setChosen] = useState<Picked[]>([]);
@@ -206,18 +206,18 @@ export function Composer({
           .slice(0, 6)
           .map((k) => ({ kind: "skill", ...k }))
       : [];
-  const wikiCandidates: Candidate[] =
+  const memoryCandidates: Candidate[] =
     slash && library
       ? library
           .filter(
             (i) =>
-              !chosen.some((c) => c.kind === "wiki" && c.item.id === i.id) &&
+              !chosen.some((c) => c.kind === "memory" && c.item.id === i.id) &&
               `${i.title} ${i.tags.join(" ")}`.toLowerCase().includes(query),
           )
           .slice(0, 6)
-          .map((item) => ({ kind: "wiki", item }))
+          .map((item) => ({ kind: "memory", item }))
       : [];
-  const candidates = [...skillCandidates, ...wikiCandidates];
+  const candidates = [...skillCandidates, ...memoryCandidates];
   const pictures = staged.filter((x) => x.id);
   const total = attached.length + staged.length;
   const canSend =
@@ -245,7 +245,9 @@ export function Composer({
         picked.map(async (f) => new File([await f.arrayBuffer()], f.name, { type: f.type })),
       );
     } catch {
-      onError(new Error("The browser could not read the pasted file. Save it and attach it again."));
+      onError(
+        new Error("The browser could not read the pasted file. Save it and attach it again."),
+      );
       return;
     }
     let room = MAX_ATTACHMENTS - total - fileRefs.length;
@@ -311,9 +313,9 @@ export function Composer({
   }
   function trackMention(text: string, caret: number) {
     mention.track(text, caret);
-    const s = wiki ? matchTrigger(text, caret, "/") : undefined;
+    const s = memory ? matchTrigger(text, caret, "/") : undefined;
     setSlash(s ? { ...s, index: 0 } : undefined);
-    // A bot that fails to answer (or has no skills) just adds none: the wiki part of the list still works.
+    // A bot that fails to answer (or has no skills) just adds none: the memory part of the list still works.
     if (s && !skillsAsked.current && skillBots.length && chosen.length < MAX_PICKED) {
       skillsAsked.current = true;
       void Promise.all(
@@ -326,7 +328,7 @@ export function Composer({
       ).then((l) => setSkillLib(l.flat()));
     }
     if (s && !library && chosen.length < MAX_PICKED)
-      void qc.fetchQuery(wikiQueries.index()).then(
+      void qc.fetchQuery(memoryQueries.index()).then(
         (r) =>
           setLibrary(
             [...r.pages, ...r.shared]
@@ -366,7 +368,7 @@ export function Composer({
     setSlash(undefined);
     view.focus();
   }
-  const wikiPicks = chosen.filter((c) => c.kind === "wiki");
+  const memoryPicks = chosen.filter((c) => c.kind === "memory");
   const skillPicks = chosen.filter((c) => c.kind === "skill");
   async function submit(e?: FormEvent) {
     e?.preventDefault();
@@ -379,7 +381,7 @@ export function Composer({
       text: value.trim(),
       attachmentIds: [...attached.map((a) => a.id), ...pictures.map((x) => x.id!)],
       fileRefs,
-      ...(wikiPicks.length ? { wikiIds: wikiPicks.map((c) => c.item.id) } : {}),
+      ...(memoryPicks.length ? { memoryIds: memoryPicks.map((c) => c.item.id) } : {}),
       ...(skillPicks.length
         ? { skills: skillPicks.map((c) => ({ botId: c.botId, name: c.name })) }
         : {}),
@@ -504,13 +506,13 @@ export function Composer({
             </li>
           )}
           {candidates.map((c, k) => (
-            <Fragment key={c.kind === "wiki" ? c.item.id : `${c.botId}/${c.name}`}>
+            <Fragment key={c.kind === "memory" ? c.item.id : `${c.botId}/${c.name}`}>
               {(k === 0 || groupOf(c) !== groupOf(candidates[k - 1]!)) && (
                 <li
                   className="flex items-center justify-between px-2 py-1 text-xs font-medium text-muted-foreground"
                   role="presentation"
                 >
-                  {c.kind === "wiki" ? (
+                  {c.kind === "memory" ? (
                     <>
                       Memory
                       <Link
@@ -531,7 +533,7 @@ export function Composer({
               <li
                 role="option"
                 aria-selected={k === slash.index}
-                title={c.kind === "wiki" ? c.item.howto : c.description}
+                title={c.kind === "memory" ? c.item.howto : c.description}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   pickItem(c);
@@ -541,17 +543,17 @@ export function Composer({
                   k === slash.index ? "bg-accent text-accent-foreground" : "hover:bg-muted",
                 )}
               >
-                {c.kind === "wiki" ? (
+                {c.kind === "memory" ? (
                   <BrainIcon className="size-4 shrink-0" />
                 ) : (
                   <LightningIcon className="size-4 shrink-0" />
                 )}
                 <span className="min-w-0">
                   <span className="block truncate font-medium">
-                    {c.kind === "wiki" ? c.item.title : c.name}
+                    {c.kind === "memory" ? c.item.title : c.name}
                   </span>
                   <span className="block truncate text-xs text-muted-foreground">
-                    {c.kind === "wiki" ? c.item.howto : c.description}
+                    {c.kind === "memory" ? c.item.howto : c.description}
                   </span>
                 </span>
               </li>
@@ -662,18 +664,18 @@ export function Composer({
                 </Attachment>
               ))}
               {chosen.map((c) => {
-                const key = c.kind === "wiki" ? c.item.id : `${c.botId}/${c.name}`;
-                const title = c.kind === "wiki" ? c.item.title : c.name;
+                const key = c.kind === "memory" ? c.item.id : `${c.botId}/${c.name}`;
+                const title = c.kind === "memory" ? c.item.title : c.name;
                 const owner =
                   c.kind === "skill" && skillBots.length > 1 ? botsById.get(c.botId) : undefined;
                 return (
                   <Attachment
                     key={key}
                     size="sm"
-                    title={c.kind === "wiki" ? c.item.howto : c.description}
+                    title={c.kind === "memory" ? c.item.howto : c.description}
                   >
                     <AttachmentMedia>
-                      {c.kind === "wiki" ? <BrainIcon /> : <LightningIcon />}
+                      {c.kind === "memory" ? <BrainIcon /> : <LightningIcon />}
                     </AttachmentMedia>
                     <AttachmentContent>
                       <AttachmentTitle className="flex max-w-40 items-center gap-1 truncate">
@@ -687,8 +689,8 @@ export function Composer({
                         onClick={() =>
                           setChosen((l) =>
                             l.filter((x) =>
-                              x.kind === "wiki"
-                                ? c.kind !== "wiki" || x.item.id !== c.item.id
+                              x.kind === "memory"
+                                ? c.kind !== "memory" || x.item.id !== c.item.id
                                 : c.kind !== "skill" || !sameSkill(x, c),
                             ),
                           )
@@ -767,7 +769,7 @@ export function Composer({
                   void addFiles(picked);
                 }}
               />
-              {wiki && (
+              {memory && (
                 <Tool label="Use a memory item (/)" onClick={openPicker}>
                   <BrainIcon />
                 </Tool>

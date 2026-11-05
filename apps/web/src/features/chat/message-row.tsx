@@ -68,8 +68,8 @@ function UsedNotes({ row }: { row: Row }) {
   const { data, error } = useQuery({ ...chatQueries.usedKnowledge(row.id), enabled: opened });
   const used = row.meta?.used,
     n =
-      (used?.memories?.length ?? 0) +
-      Math.max(used?.instructions?.length ?? 0, used?.wiki?.length ?? 0);
+      (used?.notes?.length ?? 0) +
+      Math.max(used?.instructions?.length ?? 0, used?.items?.length ?? 0);
   if (n === 0) return null;
   return (
     <details
@@ -88,11 +88,11 @@ function UsedNotes({ row }: { row: Row }) {
             {errorMessage(error)}
           </p>
         )}
-        {data?.memories.length ? (
+        {data?.notes.length ? (
           <div>
             <p className="font-medium">Notes and profile</p>
             <ul className="list-disc pl-4">
-              {data.memories.map((m) => (
+              {data.notes.map((m) => (
                 <li key={m.id} className="break-words">
                   {m.content}
                 </li>
@@ -100,11 +100,11 @@ function UsedNotes({ row }: { row: Row }) {
             </ul>
           </div>
         ) : null}
-        {data?.wiki.length ? (
+        {data?.items.length ? (
           <div>
             <p className="font-medium">Memory</p>
             <ul className="list-disc pl-4">
-              {data.wiki.map((m) => (
+              {data.items.map((m) => (
                 <li key={m.id} className="break-words">
                   <Link
                     to="/memory/$slug"
@@ -118,7 +118,7 @@ function UsedNotes({ row }: { row: Row }) {
             </ul>
           </div>
         ) : null}
-        {data && !data.memories.length && !data.wiki.length && <p>Those notes no longer exist.</p>}
+        {data && !data.notes.length && !data.items.length && <p>Those notes no longer exist.</p>}
       </div>
     </details>
   );
@@ -222,7 +222,7 @@ function HoverBar({
   onReact,
   onReply,
   onQuote,
-  onSaveToWiki,
+  onSaveToMemory,
 }: {
   row: Row;
   inThread: boolean;
@@ -231,7 +231,7 @@ function HoverBar({
   onReact: (emoji: string) => void;
   onReply: () => void;
   onQuote: (() => void) | undefined;
-  onSaveToWiki: () => void;
+  onSaveToMemory: () => void;
 }) {
   const bar = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -282,7 +282,7 @@ function HoverBar({
             </DropdownMenuTrigger>
           </Tip>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onSaveToWiki}>
+            <DropdownMenuItem onClick={onSaveToMemory}>
               <BookmarkSimpleIcon />
               Save to memory
             </DropdownMenuItem>
@@ -372,7 +372,7 @@ export const MessageRow = memo(function MessageRow({
   onReact,
   onReply,
   onQuote,
-  onSaveToWiki,
+  onSaveToMemory,
   onQueue,
   onOpenArtifact,
 }: {
@@ -389,7 +389,7 @@ export const MessageRow = memo(function MessageRow({
   onReply: (row: Row) => void;
   /** Reply in the channel. Without it the toolbar has no Reply button. */
   onQuote?: (row: Row) => void;
-  onSaveToWiki: (row: Row) => void;
+  onSaveToMemory: (row: Row) => void;
   /** A queued message: drop it before it is answered, or put a failed one back in line. */
   onQueue?: (row: Row, action: "remove" | "retry") => void;
   /** Open a published file beside the chat instead of leaving it. */
@@ -446,7 +446,7 @@ export const MessageRow = memo(function MessageRow({
             onReact={(e) => onReact(row, e)}
             onReply={() => onReply(row)}
             onQuote={onQuote && (() => onQuote(row))}
-            onSaveToWiki={() => onSaveToWiki(row)}
+            onSaveToMemory={() => onSaveToMemory(row)}
           />
         ))}
       {continued ? (
@@ -697,7 +697,7 @@ export const MessageRow = memo(function MessageRow({
                     <FileArchiveIcon aria-hidden="true" className="size-3.5" />
                     published “{r.text}”
                   </Link>
-                ) : r.kind === "wiki" ? (
+                ) : r.kind === "memory" ? (
                   <Link
                     to="/memory/$slug"
                     params={{ slug: r.id }}
@@ -715,7 +715,7 @@ export const MessageRow = memo(function MessageRow({
                     <UsersIcon aria-hidden="true" className="size-3.5" />“{r.text}”
                   </Link>
                 ) : (
-                  // Receipts of older messages: notes and procedures are wiki items now, so they read the same way.
+                  // Receipts of older messages: notes and procedures are memory items now, so they read the same way.
                   <>
                     <BrainIcon aria-hidden="true" className="size-3.5" />
                     saved to memory{r.text ? ` “${r.text}”` : ""}

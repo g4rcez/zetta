@@ -11,7 +11,7 @@ import {
   type SkillsChoice,
   type SkillsOffer,
 } from "../skills/skills-install-card";
-import { draftFromProposal } from "../wiki/draft";
+import { draftFromProposal } from "../memory/draft";
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@zetta/ui/components/item";
 
 import {
@@ -34,7 +34,7 @@ const KIND_LABEL: Record<ProposalKind, string> = {
   start_loop: "Start a loop",
   team_goals: "Give the team goals",
   bot_permission: "Change what a bot may do",
-  create_wiki_page: "Save to memory",
+  create_memory_item: "Save to memory",
   install_skills: "Install skills",
   chief_action: "Change your setup",
 };
@@ -44,7 +44,7 @@ const FIELD_LABEL: Record<string, string> = {
   goal: "Goal",
   members: "Bots",
   context: "Shared context",
-  wiki: "Memory item",
+  memory: "Memory item",
   request: "What it was asked",
   bot: "Bot",
   preset: "Preset",
@@ -222,7 +222,7 @@ export function ProposalsPanel({
             </div>
           );
         const creating = p.kind && p.kind !== "config";
-        const draft = p.kind === "create_wiki_page" ? draftFromProposal(p.patch) : undefined;
+        const draft = p.kind === "create_memory_item" ? draftFromProposal(p.patch) : undefined;
         return (
           <Item
             key={p.id}
@@ -312,7 +312,7 @@ export function ProposalsPanel({
                       ? "Approve this brief"
                       : p.kind === "chief_action"
                         ? "Approve"
-                        : p.kind === "create_wiki_page"
+                        : p.kind === "create_memory_item"
                           ? "Save it"
                           : p.kind === "open_discussion"
                             ? "Approve and open"

@@ -8,9 +8,9 @@ import { BotsContext } from "@/components/bot-identity";
 import { BotTag } from "@/components/bot-tag";
 import { MentionTag } from "@/components/mention-tag";
 
-import { RELATION } from "@/features/wiki/wiki-api";
-import type { Relation } from "@/features/wiki/wiki-api";
-import { rehypeWikiLinks } from "@/features/wiki/wiki-markdown";
+import { RELATION } from "@/features/memory/memory-api";
+import type { Relation } from "@/features/memory/memory-api";
+import { rehypeMemoryLinks } from "@/features/memory/memory-markdown";
 import { rehypeBotTags } from "./bot-tags";
 import { rehypeGithubRefs } from "./github-refs";
 import { rehypeMentionLinks } from "./mention-tags";
@@ -76,20 +76,20 @@ function GithubRef({ children, ...props }: { children?: ReactNode }) {
 }
 
 /** What a `[[slug]]` of a text points to: the item's title when it exists. `undefined` for a slug nothing has. */
-export type WikiLinkInfo = (slug: string) => { title: string } | undefined;
+export type MemoryLinkInfo = (slug: string) => { title: string } | undefined;
 
-const WIKI_LINK =
+const MEMORY_LINK =
   "link rounded-md bg-muted px-1 text-[0.95em] text-primary hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-ring";
 
-/** A wiki item named in a text, drawn as a router link; one that does not exist links to the page that creates it. */
-function WikiRef({ info, ...props }: { info: WikiLinkInfo; children?: ReactNode }) {
+/** A memory item named in a text, drawn as a router link; one that does not exist links to the page that creates it. */
+function MemoryRef({ info, ...props }: { info: MemoryLinkInfo; children?: ReactNode }) {
   const p = props as Record<string, unknown>;
   const slug = String(p["data-slug"] ?? ""),
     relation = String(p["data-relation"] ?? "related") as Relation;
   const hit = info(slug);
   const prefix = relation === "related" ? "" : `${RELATION[relation]} `;
   return hit ? (
-    <Link to="/memory/$slug" params={{ slug }} className={WIKI_LINK}>
+    <Link to="/memory/$slug" params={{ slug }} className={MEMORY_LINK}>
       {prefix}
       {hit.title}
     </Link>
@@ -109,13 +109,13 @@ const Markdown = memo(function Markdown({
   streaming,
   className,
   repo,
-  wikiLinks,
+  memoryLinks,
 }: {
   text: string;
   streaming: boolean;
   className?: string | undefined;
   repo?: string | undefined;
-  wikiLinks?: WikiLinkInfo | undefined;
+  memoryLinks?: MemoryLinkInfo | undefined;
 }) {
   const bots = useContext(BotsContext);
   // Bot names and GitHub references become tags and links. Our plugins run after the default ones (sanitize included), so their elements are not stripped.
@@ -126,15 +126,17 @@ const Markdown = memo(function Markdown({
         ...Object.values(withMentionProtocols),
         rehypeMentionLinks,
         rehypeGithubRefs(repo),
-        ...(wikiLinks ? [rehypeWikiLinks] : []),
+        ...(memoryLinks ? [rehypeMemoryLinks] : []),
         ...(list.length ? [rehypeBotTags(list)] : []),
       ],
       components: {
         ...NO_REMOTE_IMAGES,
         "gh-ref": GithubRef,
         "mention-tag": (props: { children?: ReactNode }) => <MentionTag bots={bots} {...props} />,
-        ...(wikiLinks && {
-          "wiki-link": (props: { children?: ReactNode }) => <WikiRef info={wikiLinks} {...props} />,
+        ...(memoryLinks && {
+          "memory-link": (props: { children?: ReactNode }) => (
+            <MemoryRef info={memoryLinks} {...props} />
+          ),
         }),
         ...(list.length && {
           "bot-tag": ({ children, ...props }: { children?: ReactNode }) => {
@@ -148,7 +150,7 @@ const Markdown = memo(function Markdown({
         }),
       },
     };
-  }, [bots, repo, wikiLinks]);
+  }, [bots, repo, memoryLinks]);
   return (
     <Streamdown
       mode={streaming ? "streaming" : "static"}
@@ -175,15 +177,15 @@ export const Response = memo(function Response({
   streaming = false,
   className,
   repo,
-  wikiLinks,
+  memoryLinks,
 }: {
   text: string;
   streaming?: boolean;
   className?: string;
   /** `owner/repo` the `#12` and commit ids of this text belong to. */
   repo?: string | undefined;
-  /** Turns `[[slug]]` into links to the wiki item. Chat leaves it out and shows the text as written. */
-  wikiLinks?: WikiLinkInfo | undefined;
+  /** Turns `[[slug]]` into links to the memory item. Chat leaves it out and shows the text as written. */
+  memoryLinks?: MemoryLinkInfo | undefined;
 }) {
   const text = streaming ? stripToolFences(raw) : raw;
   const whatsapp = !streaming && /```zetta:(whatsapp|setup-card|inbound-card|form-card)/.test(text);
@@ -245,7 +247,7 @@ export const Response = memo(function Response({
         streaming={streaming}
         className={className}
         repo={repo}
-        wikiLinks={wikiLinks}
+        memoryLinks={memoryLinks}
       />
     );
   return (
@@ -257,7 +259,7 @@ export const Response = memo(function Response({
             text={s.text}
             streaming={streaming && i === segments.length - 1}
             repo={repo}
-            wikiLinks={wikiLinks}
+            memoryLinks={memoryLinks}
           />
         ) : s.spec ? (
           <UiView key={i} spec={s.spec} streaming={!s.complete} />

@@ -13,6 +13,16 @@ The product is for people who want useful work done, not another technical syste
 - [Small-model task execution rules](tasks/README.md)
 - [Repository stack and development setup](TECH.md)
 
+## Install
+
+On macOS, Linux or WSL, you need Git, OpenSSL and a running Docker or Podman:
+
+```bash
+curl -fsSL https://zettabot.app/install | bash
+```
+
+The script ([install.sh](install.sh)) clones the repository into `~/zetta` (set `ZETTA_DIR` to change it), writes the two `.env` files and starts the containers. Run it again to update: it keeps your `.env` files. Then open http://localhost:3001. The manual steps are on the [landing page](https://zettabot.app/#self-host).
+
 ## See it in action
 
 [![Zetta: a chat with Chief that hands work to two bots in a room](docs/demo/zetta-demo-poster.png)](docs/demo/zetta-demo-chat-workflow.mp4)

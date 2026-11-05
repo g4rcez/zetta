@@ -34,6 +34,9 @@ export const en = {
     primary: "Self-host Zetta",
     secondary: "Star on GitHub",
     note: "Open source under the MIT license. Runs on your server.",
+    installLabel: "macOS, Linux, WSL",
+    copy: "Copy",
+    copied: "Copied",
     screenAlt:
       "The Zetta chat in light mode: the chief answers that it asked three bots, and one stopped to ask before sending. Demo data.",
   },

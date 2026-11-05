@@ -24,6 +24,9 @@ export const ptBr = {
     primary: "Hospedar o Zetta",
     secondary: "Deixa o like",
     note: "Código aberto sob a licença MIT. Roda no seu servidor.",
+    installLabel: "macOS, Linux, WSL",
+    copy: "Copiar",
+    copied: "Copiado",
     screenAlt:
       "O chat do Zetta no modo claro: o chief responde que chamou três bots, e um parou para perguntar antes de enviar. Dados de demonstração.",
   },

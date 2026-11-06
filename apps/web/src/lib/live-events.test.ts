@@ -10,6 +10,9 @@ describe("keysFor", () => {
       { queryKey: ["conversations", "abc"], exact: false },
     ]);
   });
+  test("a playground topic refreshes what is on screen of the playground: the list, the files, the runs and the run", () => {
+    expect(keysFor("playground:p1")).toEqual([{ queryKey: ["playground"] }]);
+  });
   test("a room topic refreshes the room, its proposals and, once the room is cached, its transcript", () => {
     expect(keysFor("discussion:r1")).toEqual([
       { queryKey: ["discussions", "r1"] },

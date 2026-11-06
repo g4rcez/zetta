@@ -47,6 +47,7 @@ const MORE = [
   linkOf("Studio"),
   linkOf("Plugins"),
   linkOf("Skills"),
+  linkOf("Playground"),
   linkOf("Computer"),
   linkOf("Dashboard"),
   linkOf("Teams"),

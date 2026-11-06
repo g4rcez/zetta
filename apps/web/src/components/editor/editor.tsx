@@ -10,6 +10,7 @@ import {
   bracketMatching,
   indentOnInput,
   indentUnit,
+  LanguageDescription,
   syntaxHighlighting,
 } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
@@ -82,7 +83,19 @@ export type EditorProps = {
   extensions?: Extension | undefined;
   /** The user can drag the bottom edge to change the height, as in a textarea. */
   resizable?: boolean | undefined;
+  /**
+   * Edits the whole text as code in this language (`typescript`, `python`, `bash`, `html`, ...), loaded on demand, instead of as Markdown.
+   * For a code file: the Markdown typing helps are off. An unknown name leaves the text plain.
+   */
+  language?: string | undefined;
 };
+
+/** What makes the text Markdown: its typing helps and its parser (which also highlights a fenced block). */
+const markdownMode: Extension = [
+  EditorView.lineWrapping,
+  Prec.high(markdownTyping),
+  markdown({ codeLanguages: languages, addKeymap: false }),
+];
 
 const contentAttributes = (p: EditorProps) =>
   EditorView.contentAttributes.of(
@@ -105,7 +118,7 @@ const contentAttributes = (p: EditorProps) =>
  * Gutters (line numbers, folding) and the active-line highlight are left out on purpose: they are for code editors, not for a text box.
  */
 export function Editor(props: EditorProps) {
-  const { name, required, rows, className, disabled, placeholder, resizable } = props;
+  const { name, required, rows, className, disabled, placeholder, resizable, language } = props;
   const host = useRef<HTMLDivElement>(null);
   const mirror = useRef<HTMLTextAreaElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -115,6 +128,7 @@ export function Editor(props: EditorProps) {
     live.current = props;
   });
   const [slots] = useState(() => ({
+    mode: new Compartment(),
     editable: new Compartment(),
     placeholder: new Compartment(),
     attributes: new Compartment(),
@@ -150,10 +164,8 @@ export function Editor(props: EditorProps) {
           closeBrackets(),
           autocompletion({ icons: false }),
           highlightSelectionMatches(),
-          Prec.high(markdownTyping),
           keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
-          EditorView.lineWrapping,
-          markdown({ codeLanguages: languages, addKeymap: false }),
+          slots.mode.of(p.language ? [] : markdownMode),
           syntaxHighlighting(classHighlighter),
           p.extensions ?? [],
           slots.editable.of([
@@ -236,6 +248,27 @@ export function Editor(props: EditorProps) {
     });
   }, [slots, disabled, placeholder, attributesKey]);
 
+  // `language` swaps the Markdown mode for the language of a code file. The language loads on demand; until then the text is plain.
+  useEffect(() => {
+    const v = view.current;
+    if (!v) return;
+    if (!language) {
+      v.dispatch({ effects: slots.mode.reconfigure(markdownMode) });
+      return;
+    }
+    v.dispatch({ effects: slots.mode.reconfigure([]) });
+    let stale = false;
+    void LanguageDescription.matchLanguageName(languages, language, true)
+      ?.load()
+      .then((support) => {
+        if (!stale) view.current?.dispatch({ effects: slots.mode.reconfigure(support) });
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [slots, language]);
+
   // A new `value` from the parent replaces the text, unless it is only the echo of what the user typed.
   useEffect(() => {
     const v = view.current,
@@ -260,6 +293,7 @@ export function Editor(props: EditorProps) {
     <div
       className={cn("cm-root relative min-w-0", className)}
       data-resizable={resizable ? "" : undefined}
+      data-code={language ? "" : undefined}
       style={{ "--editor-rows": rows ?? 1 } as CSSProperties}
       // A click on the padding around the text still puts the caret in the editor.
       onClick={(e) => e.target === e.currentTarget && view.current?.focus()}

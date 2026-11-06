@@ -19,6 +19,7 @@ import {
   memoryServices,
   outputStyleServices,
   skillServices,
+  playgroundServices,
   artifactServices,
   chatServices,
   databaseReady,
@@ -83,6 +84,7 @@ createApp({
   inbound: inboundServices,
   botClaude: botClaudeServices,
   skills: skillServices,
+  playground: playgroundServices,
   zettaMcp: zettaMcpServices,
   webOrigin: ENV.CORS_ORIGIN,
   desktopOrigins: trustedExtraOrigins,
@@ -170,6 +172,38 @@ if (runsWork) {
 
   // Generations that were running when the previous process died are marked interrupted (never silently "complete").
   void recoverDead(true).catch(() => {});
+
+  // Skills installed before their folder was kept get their files from GitHub. Once per process: `bun --hot` re-runs this module on every edit.
+  const skillsBoot = globalThis as { zettaSkillFiles?: boolean };
+  if (!skillsBoot.zettaSkillFiles) {
+    skillsBoot.zettaSkillFiles = true;
+    void skillServices.skills
+      .backfillFiles(skillServices.market)
+      .catch((e) =>
+        console.error(`skills: backfill failed name=${(e as Error | undefined)?.name ?? typeof e}`),
+      );
+  }
+
+  // Runs that were going when the previous process died are marked interrupted, once per process (`bun --hot` re-runs this module on every
+  // edit, and marking then would cut the runs that are still going).
+  const playgroundBoot = globalThis as { zettaPlaygroundSwept?: boolean };
+  if (!playgroundBoot.zettaPlaygroundSwept) {
+    playgroundBoot.zettaPlaygroundSwept = true;
+    void playgroundServices.playground
+      .interruptRunning()
+      .catch((e) =>
+        console.error(
+          `playground: boot sweep failed name=${(e as Error | undefined)?.name ?? typeof e}`,
+        ),
+      );
+    void playgroundServices.containers
+      ?.sweep()
+      .catch((e) =>
+        console.error(
+          `playground: container sweep failed name=${(e as Error | undefined)?.name ?? typeof e}`,
+        ),
+      );
+  }
 
   // Containers and Spaces left by a previous process are removed at boot (this server assumes it is the only instance).
   void sweepHarnessContainers().catch(() => {});

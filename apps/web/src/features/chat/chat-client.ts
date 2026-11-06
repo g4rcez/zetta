@@ -162,6 +162,7 @@ export type Receipt = {
     | "task"
     | "discussion"
     | "artifact"
+    | "playground"
     | "memory"
     | "bot"
     | "team";

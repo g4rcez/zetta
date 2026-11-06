@@ -19,6 +19,7 @@ export const APP_PREFIXES = [
   "/artifacts",
   "/memory",
   "/skills",
+  "/playground",
   "/search",
   "/preferences",
 ];

@@ -6,6 +6,7 @@ import {
   BookmarkSimpleIcon,
   CaretRightIcon,
   CalendarPlusIcon,
+  CodeIcon,
   FileArchiveIcon,
   BrainIcon,
   ListChecksIcon,
@@ -696,6 +697,15 @@ export const MessageRow = memo(function MessageRow({
                   >
                     <FileArchiveIcon aria-hidden="true" className="size-3.5" />
                     published “{r.text}”
+                  </Link>
+                ) : r.kind === "playground" ? (
+                  <Link
+                    to="/playground/$id"
+                    params={{ id: r.id }}
+                    className="flex items-center gap-1 hover:text-foreground hover:underline"
+                  >
+                    <CodeIcon aria-hidden="true" className="size-3.5" />
+                    {r.created === false ? "ran or changed" : "created"} “{r.text}”
                   </Link>
                 ) : r.kind === "memory" ? (
                   <Link

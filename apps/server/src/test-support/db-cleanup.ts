@@ -80,6 +80,13 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
   await q(
     "delete from bot_skill where bot_id in (select id from bot where owner_user_id = any($1)) or skill_id in (select id from skill where owner_user_id = any($1))",
   );
+  // A team playground may hold runs by another test user, so runs go by playground or actor.
+  const mine = "select id from playground where owner_user_id = any($1)";
+  const runs = `select id from playground_run where actor_user_id = any($1) or playground_id in (${mine})`;
+  await q(`delete from playground_run_output where run_id in (${runs})`);
+  await q(`delete from playground_run where id in (${runs})`);
+  await q(`delete from playground_file where playground_id in (${mine})`);
+  await q("delete from playground where owner_user_id = any($1)");
   await q("delete from task where assignee_user_id = any($1)");
   await q("delete from bot where owner_user_id = any($1)");
   await q(

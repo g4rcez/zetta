@@ -21,6 +21,7 @@ import { createKnowledgeRoutes, type KnowledgeServices } from "./modules/knowled
 import { createMemoryRoutes, type MemoryServices } from "./modules/memory/routes";
 import { createOutputStyleRoutes, type OutputStyleServices } from "./modules/output-styles/routes";
 import { createSkillRoutes, type SkillServices } from "./modules/skills/routes";
+import { createPlaygroundRoutes, type PlaygroundServices } from "./modules/playground/routes";
 import { createSearchRoutes, type SearchServices } from "./modules/search/routes";
 import { createPreferenceRoutes, type PreferenceServices } from "./modules/preferences/routes";
 import { createProfileRoutes, type ProfileServices } from "./modules/profile/routes";
@@ -57,6 +58,7 @@ export type CreateAppOptions = {
   memory?: MemoryServices;
   outputStyles?: OutputStyleServices;
   skills?: SkillServices;
+  playground?: PlaygroundServices;
   artifacts?: ArtifactServices;
   discussions?: DiscussionServices;
   teams?: TeamServices;
@@ -93,6 +95,7 @@ export function createApp({
   memory,
   outputStyles,
   skills,
+  playground,
   artifacts,
   discussions,
   teams,
@@ -206,6 +209,11 @@ export function createApp({
           : new Elysia(),
       )
       .use(skills ? createSkillRoutes(skills, [webOrigin, ...desktopOrigins]) : new Elysia())
+      .use(
+        playground
+          ? createPlaygroundRoutes(playground, [webOrigin, ...desktopOrigins])
+          : new Elysia(),
+      )
       .use(
         artifacts ? createArtifactRoutes(artifacts, [webOrigin, ...desktopOrigins]) : new Elysia(),
       )

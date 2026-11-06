@@ -175,3 +175,33 @@
     font-size: 16px;
   }
 }
+
+/* Line numbers of a code file (the `language` prop with `lineNumbers()`): the app's colors, not CodeMirror's light default. */
+.cm-root .cm-gutters {
+  background: transparent;
+  color: var(--muted-foreground);
+  border-right: 1px solid var(--border);
+}
+.cm-root .cm-gutterElement {
+  padding-inline: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.cm-root[data-code] {
+  height: 100%;
+}
+.cm-root[data-code] .cm-editor {
+  height: 100%;
+}
+.cm-root[data-code] .cm-scroller {
+  overflow: auto;
+}
+.cm-root[data-code] .cm-content {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  min-height: 100%;
+  padding-block: 0.5rem;
+}
+.cm-root[data-code] .cm-line {
+  padding-inline: 0.75rem 1rem;
+}

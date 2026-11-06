@@ -133,6 +133,10 @@ Routines run tasks or published workflows on a schedule. The calendar should reu
 
 Successful chat work should connect naturally to reusable instructions and routines. Users can configure through forms or chat, with the same server-side validation, preview and version/conflict rules.
 
+### Playground
+
+Bots and people write code, run it and keep the result. A playground has several files, typed inputs and a history of runs. It runs on the server host, in a container per language, or in the browser (HTML, JavaScript, TypeScript), and a script can leave files in `out/` (a report as a page, a chart as an image). A bot makes and runs one with the `zetta:playground` tool, and you open, change and run it again at `/playground`. Examples, limits and setup: [docs/operations/playground.md](docs/operations/playground.md).
+
 ### Browser and computer use
 
 **Both are essential to v1**, not optional future scope.

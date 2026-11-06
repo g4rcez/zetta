@@ -43,6 +43,8 @@ export function keysFor(topic: string): { queryKey: Key; exact?: boolean }[] {
   if (topic === topics.agents) return [{ queryKey: ["preferences"], exact: true }];
   if (topic === topics.routines) return [{ queryKey: ["routines"] }];
   if (topic === topics.proposals) return [{ queryKey: ["proposals"] }];
+  // A run started or ended, or the playground changed: refetch the ones on screen (detail, runs, the run).
+  if (kind === "playground" && id) return [{ queryKey: ["playground"] }];
   if (topic === topics.resync) return [{ queryKey: [] }]; // every query on screen
   return [];
 }

@@ -36,6 +36,8 @@ import { audit } from "./modules/features/audit";
 import { createOutputStyles } from "./modules/output-styles/service";
 import { createMarket } from "./modules/skills/market";
 import { createSkills } from "./modules/skills/service";
+import { createPlayground } from "./modules/playground/service";
+import { containerConfig, createContainerRunner } from "./modules/playground/runner-container";
 import { createMemoryJobs } from "./modules/memory/jobs";
 import { createMemoryAssist } from "./modules/memory/assist";
 import { createMemoryGraph } from "./modules/memory/graph";
@@ -245,6 +247,13 @@ const turnRunner = createTurnRunner(
 const memoryJobs = createMemoryJobs(db, { memory, run: turnRunner, lookup: membershipLookup });
 const agendaScheduler = createAgendaScheduler(db, mcp.plugins, membershipLookup);
 const skillsLibrary = createSkills(db);
+const containerConfigPlayground = containerConfig();
+const playgroundContainers = containerConfigPlayground
+  ? createContainerRunner(containerConfigPlayground)
+  : undefined;
+const playgrounds = createPlayground(db, {
+  runners: playgroundContainers ? { container: playgroundContainers.run } : {},
+});
 const outputStyles = createOutputStyles(db);
 const botClaude = createBotClaude(db);
 const preferences = createPreferenceStore(db);
@@ -272,6 +281,7 @@ export const chatServices = {
       routines: features.routines,
       tasks,
       artifacts,
+      playground: playgrounds,
       memory,
       skills: { skills: skillsLibrary, market: skillsMarket },
       teams: teamStore,
@@ -503,6 +513,11 @@ export const skillServices = {
   db,
   skills: skillsLibrary,
   market: skillsMarket,
+};
+export const playgroundServices = {
+  access: identity.access,
+  playground: playgrounds,
+  containers: playgroundContainers,
 };
 export const zettaMcpServices = {
   auth,

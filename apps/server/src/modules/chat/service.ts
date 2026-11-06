@@ -175,6 +175,8 @@ import type { PersonTaskEvent, TaskStore } from "../tasks/store";
 import type { Memory } from "../memory/service";
 import { runMemoryTool } from "../memory/tool";
 import { ArtifactFileError, type ArtifactStore } from "../artifacts/store";
+import type { Playground } from "../playground/service";
+import { PLAYGROUND_ERRORS, PlaygroundError } from "../playground/types";
 
 /** Why a desktop credential fill typed nothing, for the user and the bot. */
 /** Plugin failures the person can fix in a setup card: not signed in, not configured, or a permission not granted. */
@@ -318,6 +320,7 @@ export type Receipt = {
     | "task"
     | "discussion"
     | "artifact"
+    | "playground"
     | "memory"
     | "bot"
     | "team";
@@ -462,6 +465,7 @@ export type ChatDeps = {
   >;
   /** The shared task board (modules/tasks): bots add and move tasks with zetta:task. */ tasks?: TaskStore;
   /** Files bots deliver (modules/artifacts): published with zetta:artifact. */ artifacts?: ArtifactStore;
+  /** Saved code that bots and people run (modules/playground): zetta:playground. */ playground?: Playground;
   /** The user's memory (modules/memory): bots search, read and write it with zetta:memory. */ memory?: Memory;
   /** The skill library and the GitHub marketplace (modules/skills): bots ask to install skills with zetta:skills. */ skills?: {
     skills: Skills;
@@ -1779,6 +1783,18 @@ export function createChatService(
             browserResults.push(`artifact failed: ${why}`);
           } else fail(`Artifact: ${c.args.title}`, e);
         }
+      } else if (c.kind === "playground") {
+        try {
+          const r = await runPlayground(actor, who, c.args, receipts, conversationId);
+          notes.push(r.note);
+          browserResults.push(r.result);
+        } catch (e) {
+          if (e instanceof PlaygroundError) {
+            const why = e.detail ?? PLAYGROUND_ERRORS[e.code][1];
+            notes.push(`⚠️ Playground (${c.args.action}): ${why}`);
+            browserResults.push(`playground failed: ${why}`);
+          } else fail(`Playground: ${c.args.action}`, e);
+        }
       } else if (c.kind === "memory") {
         if (!deps.memory) {
           browserResults.push("memory unavailable");
@@ -2933,6 +2949,122 @@ export function createChatService(
       result: `artifact ok: id ${row.id}`,
     };
   }
+  /** Where a bot's output of a run is cut for the bot: the full text is on the playground page. */
+  const RUN_TEXT = 3500;
+  /**
+   * Saved code: a bot makes, edits, runs and reads playgrounds for the human it acts for. A run on the server host or in a container is
+   * code execution, so it needs code access, as a bot's own Bash does. What a run printed is third-party text: it comes back framed as
+   * untrusted data. A reply shows the link once per playground.
+   */
+  async function runPlayground(
+    actor: ActiveActor,
+    who: typeof bot.$inferSelect,
+    a: Extract<ToolCall, { kind: "playground" }>["args"],
+    receipts: Receipt[],
+    conversationId?: string,
+  ) {
+    const svc = deps.playground;
+    if (!svc)
+      return {
+        note: "🧪 Playgrounds are not available on this server.",
+        result: "playground unavailable",
+      };
+    const origin = { botId: who.id, conversationId: conversationId ?? null };
+    const link = (p: { id: string; title: string }, created: boolean) => {
+      if (!receipts.some((r) => r.kind === "playground" && r.id === p.id))
+        receipts.push({ kind: "playground", id: p.id, text: p.title.slice(0, 120), created });
+    };
+    if (a.action === "create") {
+      const { action: _action, ...fields } = a;
+      const p = await svc.create(actor, fields, origin);
+      link(p, true);
+      return {
+        note: `🧪 Created playground “${p.title}”.`,
+        result: `playground ok: id ${p.id}, entry ${p.entry}, runner ${p.runner}, version ${p.version}`,
+      };
+    }
+    if (a.action === "edit") {
+      const { action: _action, id, ...patch } = a;
+      const p = await svc.update(actor, id, (await svc.get(actor, id)).version, patch);
+      link(p, false);
+      return {
+        note: `🧪 Changed playground “${p.title}”.`,
+        result: `playground ok: id ${p.id}, version ${p.version}`,
+      };
+    }
+    if (a.action === "list") {
+      const found = await svc.list(actor, "mine", a.q);
+      return {
+        note: `🧪 Listed your playgrounds (${found.length}).`,
+        result: untrustedList(
+          "playground titles",
+          "playgrounds",
+          found
+            .slice(0, 50)
+            .map((p) => ({ id: p.id, title: p.title, language: p.language, runner: p.runner })),
+        ),
+      };
+    }
+    if (a.action === "get") {
+      const p = await svc.get(actor, a.id);
+      const runs = await svc.runs(actor, a.id);
+      const last = a.runId ?? runs[0]?.id;
+      const run = last ? await svc.getRun(actor, last) : undefined;
+      link(p, false);
+      const files = p.files.map((f) => `--- ${f.path}\n${f.content.slice(0, RUN_TEXT)}`).join("\n");
+      return {
+        note: `🧪 Read playground “${p.title}”.`,
+        result: untrustedDoc(
+          "a playground",
+          {
+            id: p.id,
+            title: p.title,
+            language: p.language,
+            runner: p.runner,
+            entry: p.entry,
+            inputs: JSON.stringify(p.inputs),
+            ...(run
+              ? {
+                  lastRun: `${run.status}, exit ${run.exitCode ?? "none"}, files in out/: ${run.outputs.map((o) => o.path).join(", ") || "none"}`,
+                }
+              : {}),
+          },
+          `${files}${run ? `\n=== stdout of the run\n${run.stdout.slice(-RUN_TEXT)}\n=== stderr of the run\n${run.stderr.slice(-RUN_TEXT)}` : ""}`,
+        ),
+      };
+    }
+    // run
+    const p = await svc.get(actor, a.id);
+    if (p.runner !== "browser" && !codeEnabled(who, actor.userId))
+      return {
+        note: `⚠️ Playground “${p.title}”: this bot has no code access, so it cannot run code. The user can press Run.`,
+        result:
+          "playground failed: no code access; tell the user to open the playground and press Run",
+      };
+    const started = await svc.run(actor, a.id, {
+      ...(a.inputs ? { inputs: a.inputs } : {}),
+      ...(a.timeoutSeconds ? { timeoutMs: a.timeoutSeconds * 1000 } : {}),
+      botId: who.id,
+    });
+    await started.done;
+    const run = await svc.getRun(actor, started.run.id);
+    link(p, false);
+    return {
+      note: `🧪 Ran playground “${p.title}”: ${run.status}.`,
+      result: untrustedDoc(
+        "the output of a playground run",
+        {
+          id: p.id,
+          runId: run.id,
+          status: run.status,
+          exitCode: String(run.exitCode ?? "none"),
+          durationMs: String(run.durationMs ?? 0),
+          outFiles: run.outputs.map((o) => `${o.path} (${o.size} B)`).join(", ") || "none",
+        },
+        `=== stdout\n${run.stdout.slice(-RUN_TEXT)}\n=== stderr\n${run.stderr.slice(-RUN_TEXT)}`,
+      ),
+    };
+  }
   const when = (d: Date, allDay: boolean) =>
     allDay ? d.toISOString().slice(0, 10) : d.toISOString().replace(/:\d\d\.\d{3}Z$/, "Z");
   /** The user's Agenda: bots add and change items directly (the chat shows a receipt); reading returns the items as untrusted data. */
@@ -3068,6 +3200,7 @@ export function createChatService(
     "agenda",
     "task",
     "artifact",
+    "playground",
     "bot_claude",
     "next_wave",
   ]);
@@ -3088,6 +3221,7 @@ export function createChatService(
             c.args.action === "links" ||
             c.args.action === "list" ||
             c.args.action === "checks")) ||
+        (c.kind === "playground" && (c.args.action === "get" || c.args.action === "list")) ||
         (c.kind === "artifact" && c.args.path === undefined)
       ));
   /** The writes that apply at once on a normal turn. After outside content they wait for the user's card; every other write already makes

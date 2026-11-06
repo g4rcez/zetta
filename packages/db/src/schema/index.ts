@@ -12,6 +12,7 @@ export * from "./discussions";
 export * from "./inbound";
 export * from "./bot-claude";
 export * from "./skills";
+export * from "./playground";
 export * from "./tasks";
 export * from "./artifacts";
 export * from "./installation";

@@ -175,7 +175,7 @@ suite("profile against compose postgres", () => {
     await call(A, "PATCH", "/api/profile", { avatar: PRESET });
     const res = await call(A, "GET", "/api/preferences");
     expect(Object.keys(((await res.json()) as { preferences: object }).preferences).sort()).toEqual(
-      ["botOrder", "listWidth", "railMode", "railWidth", "timeFormat"],
+      ["botOrder", "listWidth", "primaryColor", "railMode", "railWidth", "theme", "timeFormat"],
     );
     await call(A, "PATCH", "/api/profile", { avatar: null });
   });

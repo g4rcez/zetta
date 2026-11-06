@@ -2,6 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 import Header from "./Header.astro";
 import Hero from "./Hero.astro";
+import Pain from "./Pain.astro";
 import Live from "./Live.astro";
 import Features from "./Features.astro";
 import Engines from "./Engines.astro";
@@ -20,10 +21,11 @@ const { locale } = Astro.props;
 const { meta } = getCopy(locale);
 ---
 
-<Layout lang={locale} title={meta.title} description={meta.description}>
+<Layout lang={locale} title={meta.title} description={meta.description} image={locale === "pt-br" ? "/og-pt-br.png" : "/og.png"} imageAlt={meta.imageAlt}>
   <Header locale={locale} />
   <main>
     <Hero locale={locale} />
+    <Pain locale={locale} />
     <Live locale={locale} />
     <Features locale={locale} />
     <Engines locale={locale} />

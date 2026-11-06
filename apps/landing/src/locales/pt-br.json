@@ -1,37 +1,37 @@
 {
   "meta": {
+    "imageAlt": "Zetta: peça o resultado e um time de bots cuida do resto. O robô do Zetta no centro de quatro bots, e um deles precisa de você.",
     "title": "Zetta: bots que trabalham no seu servidor enquanto você faz outra coisa",
-    "description": "Zetta é um espaço de trabalho open source e auto-hospedado para bots. Peça um resultado ao seu chief. Volte para o resultado, ou para a única coisa que precisa de você."
+    "description": "Zetta é um app gratuito e open source que roda um time de bots no seu próprio servidor. Diga ao Zetta o que você precisa e volte para o resultado."
   },
   "header": {
     "home": "Início do Zetta",
     "nav": {
       "live": "Ao vivo",
       "features": "O que faz",
-      "chief": "O chief",
+      "chief": "Zetta, o chief",
       "faq": "Perguntas"
     },
-    "github": "Deixa o like",
+    "github": "Estrela no GitHub",
     "install": "Instalar",
     "switchLabel": "EN",
     "switchName": "English",
     "switchHref": "/"
   },
   "hero": {
-    "eyebrow": "Grátis, open source, roda no seu servidor",
     "title": {
       "before": "Peça o ",
       "mark": "resultado",
-      "after": ". Seu chief cuida do resto."
+      "after": ".",
+      "rest": "O Zetta cuida do resto."
     },
-    "lead": "Zetta é um app web open source que você hospeda por conta própria. Dê um trabalho ao seu chief pessoal, como um resumo semanal ou a revisão de um pull request. Ele passa o serviço a bots especialistas no seu servidor, e você volta para o resultado, ou para a única pergunta que ele não resolve sozinho.",
-    "primary": "Hospedar o Zetta",
+    "lead": "Zetta é um app gratuito e open source que roda no seu próprio servidor. Diga ao Zetta o que você precisa, como um resumo semanal ou uma revisão de código. Um time de bots faz o trabalho e só chama você quando precisa de uma decisão.",
+    "primary": "Instalar com um comando",
     "secondary": "Ver ao vivo",
-    "github": "Deixa o like",
     "installLabel": "Uma linha no macOS, Linux ou WSL",
     "copy": "Copiar",
     "copied": "Copiado",
-    "note": "Os bots rodam os agentes de código instalados no seu servidor: Pi, Codex, OMP, Claude Code, OpenCode e Cursor.",
+    "note": "Um bot é um trabalhador que você configura, como Writer ou Reviewer. Ele roda num agente que você já usa: Claude Code, Codex, Cursor e outros.",
     "robotAlt": "O robô do Zetta no centro de um grafo. Quatro bots estão ligados a ele e entre si, e uma linha sai do robô até uma nuvem ligada a GitHub, Notion, Cloudflare, Sentry e Linear. Um bot espera por você. Ilustração.",
     "mates": [
       {
@@ -54,7 +54,13 @@
         "doing": "Esperando o seu OK",
         "tone": "needs"
       }
-    ]
+    ],
+    "proof": ["6 agentes", "1 comando", "Licença MIT", "Seus dados ficam no seu servidor"]
+  },
+  "pain": {
+    "before": "Cada agente que você roda é mais um terminal para vigiar. O Zetta junta todos num time no seu servidor e ",
+    "mark": "só chama você quando um trava.",
+    "after": ""
   },
   "live": {
     "eyebrow": "Ao vivo",
@@ -63,9 +69,9 @@
       "mark": "um time funcionando",
       "after": ""
     },
-    "lead": "Uma gravação real do app, com dados de demonstração. O chief recebe um briefing, desenha um pequeno time de bots e pede a sua aprovação em cada passo.",
+    "lead": "Uma gravação real do app, com dados de demonstração. Você descreve um projeto. O Zetta desenha um pequeno time de bots e pede a sua aprovação em cada passo.",
     "note": "Zetta no modo claro, com dados de demonstração. O tempo de espera foi acelerado.",
-    "videoLabel": "Uma gravação do app Zetta no modo claro: o chief desenha um time de bots a partir de um briefing, e cada passo espera aprovação. Dados de demonstração.",
+    "videoLabel": "Uma gravação do app Zetta no modo claro: o Zetta desenha um time de bots a partir de um briefing, e cada passo espera aprovação. Dados de demonstração.",
     "replay": "Ver de novo",
     "play": "Tocar a gravação",
     "pause": "Pausar a gravação"
@@ -77,7 +83,7 @@
       "mark": "enquanto você não está",
       "after": ""
     },
-    "lead": "Rotinas, memória, tarefas, um navegador e um desktop. Cada vídeo abaixo é o app de verdade, com dados de demonstração.",
+    "lead": "Rotinas, memória, tarefas e um desktop. Cada vídeo abaixo é o app de verdade, com dados de demonstração.",
     "play": "Tocar o vídeo",
     "pause": "Pausar o vídeo",
     "tiles": [
@@ -85,36 +91,22 @@
         "id": "routines",
         "tag": "Rotinas",
         "title": "Trabalho que começa sem você",
-        "body": "Agende um resumo, uma newsletter ou uma fila de revisão para rodar sozinha. A agenda sincroniza nos dois sentidos com o calendário principal de cada conta Google que você conectar.",
+        "body": "Agende um resumo diário, uma newsletter semanal ou a revisão de um pull request. A agenda sincroniza nos dois sentidos com o calendário principal de cada conta Google que você conectar.",
         "alt": "A página de rotinas: um resumo da manhã, uma newsletter de sexta e uma fila de pull requests, cada uma com a próxima execução. Dados de demonstração."
       },
       {
         "id": "memory",
         "tag": "Memória",
-        "title": "O que importa fica",
-        "body": "Os bots guardam o que importa entre chats. O conhecimento da empresa é pesquisável, até com um modelo de embeddings local.",
+        "title": "Nada para explicar duas vezes",
+        "body": "Os bots guardam anotações de um chat para o outro. O conhecimento da empresa é pesquisável, e a busca pode rodar num modelo no seu próprio servidor.",
         "alt": "Três notas que um bot guarda na memória. Ilustração."
       },
       {
         "id": "computer",
         "tag": "Computador",
         "title": "Um desktop no seu servidor",
-        "body": "Bots podem usar um desktop Linux no seu servidor. Você define limites de memória, CPU e de quantos rodam ao mesmo tempo.",
+        "body": "Cada bot pode trabalhar num desktop Linux que roda no seu servidor. Você define limites de memória, CPU e de quantos rodam ao mesmo tempo.",
         "alt": "Uma gravação de um bot usando um computador e um terminal no painel do Zetta. Dados de demonstração."
-      },
-      {
-        "id": "browser",
-        "tag": "Navegador",
-        "title": "Uma pessoa assume no login",
-        "body": "Bots podem usar um navegador. Num login, uma pessoa assume o controle e o bot segue depois.",
-        "alt": "Uma gravação de um bot lendo páginas num navegador e pedindo a uma pessoa que faça login. Dados de demonstração."
-      },
-      {
-        "id": "inbox",
-        "tag": "Caixa de entrada",
-        "title": "Só perguntam quando precisam de você",
-        "body": "A caixa de entrada lista o que está trabalhando, o que está bloqueado e o que tem resultado novo.",
-        "alt": "A caixa de entrada lista dois itens que precisam de você: enviar a newsletter para toda a lista do time e um login do GitHub bloqueado. Dados de demonstração."
       },
       {
         "id": "tasks",
@@ -122,13 +114,6 @@
         "title": "Quem está com o quê, e o que travou",
         "body": "As tarefas passam de backlog para em andamento, bloqueado, revisão e feito. Cada cartão mostra o bot responsável.",
         "alt": "O quadro de tarefas com as colunas backlog, em andamento, bloqueado e revisão, cada cartão com o seu bot. Dados de demonstração."
-      },
-      {
-        "id": "chats",
-        "tag": "Chats",
-        "title": "Um chat para cada intenção",
-        "body": "Cada bot guarda vários chats, assim o contexto fica limpo e você acha o trabalho depois. Salas colocam vários bots e pessoas na mesma conversa.",
-        "alt": "Um chat com o bot Writer. O rascunho da newsletter termina com uma pergunta que espera aprovação. Dados de demonstração."
       }
     ]
   },
@@ -139,7 +124,7 @@
       "mark": "que você já usa",
       "after": ""
     },
-    "lead": "Tudo abaixo existe hoje no repositório. Cada bot pode rodar num agente diferente.",
+    "lead": "Cada bot roda um destes agentes, e cada um pode usar um diferente.",
     "badge": "Roda no seu servidor",
     "agents": ["Pi", "Codex", "OMP", "Claude Code", "OpenCode", "Cursor"],
     "groups": [
@@ -150,39 +135,39 @@
       },
       {
         "title": "Suas ferramentas de código",
-        "body": "Claude Code ou Cursor podem trabalhar como membros do seu time por uma conexão embutida, com as mesmas checagens de permissão do app web.",
+        "body": "Claude Code ou Cursor podem trabalhar como membros do seu time, por uma conexão embutida. Eles seguem as mesmas checagens de permissão do app web.",
         "tags": []
       },
       {
         "title": "Mensagens",
-        "body": "Telegram com o token do seu próprio bot, e WhatsApp pelo seu próprio servidor WAHA.",
+        "body": "Fale com seus bots pelo Telegram, com o token do seu próprio bot, ou pelo WhatsApp, usando o seu próprio servidor WAHA.",
         "tags": ["Telegram", "WhatsApp"]
       }
     ]
   },
   "chief": {
-    "eyebrow": "O chief",
+    "eyebrow": "Zetta, o chief",
     "title": {
       "before": "Descreva o trabalho. ",
-      "mark": "O chief monta a equipe.",
+      "mark": "O Zetta monta a equipe.",
       "after": ""
     },
-    "lead": "O Zetta é o chief dos seus bots. Ele os contrata, passa o trabalho, mantém as rotinas rodando e traz para você só o que precisa de você. Ele propõe, e você decide.",
+    "lead": "O Zetta é o seu bot principal, o chief de todos os outros. Você fala com o Zetta primeiro. Ele configura os outros bots, distribui o trabalho e mantém as suas rotinas rodando. Ele propõe, e você decide.",
     "points": [
       {
         "title": "Peça um resultado",
         "body": "Sem telas de configuração para aprender antes. Diga o que você quer ver feito."
       },
       {
-        "title": "Toda escrita é um cartão de aprovação",
-        "body": "O chief propõe um bot, uma rotina ou uma tarefa. Nada é criado até você aprovar."
+        "title": "Toda mudança é um cartão de aprovação",
+        "body": "O Zetta propõe um bot, uma rotina ou uma tarefa. Nada é criado até você aprovar."
       },
       {
         "title": "Segredos ficam fora do chat",
-        "body": "Quando um bot precisa de uma senha ou de uma chave, o chief abre um formulário. O segredo nunca passa pela conversa."
+        "body": "Quando um bot precisa de uma senha ou de uma chave, o Zetta abre um formulário privado. O segredo nunca passa pela conversa."
       }
     ],
-    "alt": "Um chat com o chief. A pessoa pede um resumo semanal dos seus repositórios, e o chief propõe um bot Researcher com um botão de aprovar. Ilustração.",
+    "alt": "Um chat com o Zetta. A pessoa pede um resumo semanal dos seus repositórios, e o Zetta propõe um bot Researcher com um botão de aprovar. Ilustração.",
     "ask": "Toda segunda, resuma o que mudou nos nossos repositórios e me mande um briefing.",
     "reply": "Consigo configurar isso. Eu adicionaria um bot para o serviço:",
     "proposal": {
@@ -211,7 +196,7 @@
       "decline": "Recusar"
     },
     "badge": "Chief",
-    "role": "Seu chief pessoal",
+    "role": "Zetta, o seu bot principal",
     "orgAlt": "O robô do Zetta no topo, como chief, com quatro bots abaixo: Writer e Researcher trabalhando, Reviewer pronto e Editor precisando de você. Ilustração.",
     "crew": [
       {
@@ -235,12 +220,12 @@
         "tone": "needs"
       }
     ],
-    "capsTitle": "O que o chief gerencia por você",
+    "capsTitle": "O que o Zetta gerencia por você",
     "caps": [
       {
         "id": "bot",
         "title": "Contratar um bot",
-        "body": "Descreva o papel. O chief propõe o agente, o acesso e a primeira tarefa."
+        "body": "Descreva o papel. O Zetta propõe o agente, o acesso e a primeira tarefa."
       },
       {
         "id": "team",
@@ -254,8 +239,8 @@
       },
       {
         "id": "tools",
-        "title": "Adicionar skills, plugins e servidores MCP",
-        "body": "Dê a um bot as ferramentas de que ele precisa, da biblioteca de skills aos seus apps conectados."
+        "title": "Adicionar skills e ferramentas",
+        "body": "Dê a um bot o que ele precisa: skills da biblioteca, plugins, servidores MCP e os seus apps conectados."
       },
       {
         "id": "room",
@@ -284,15 +269,15 @@
     "steps": [
       {
         "title": "Rode o instalador",
-        "body": "No macOS, Linux ou WSL. Ele clona o repositório, escreve os dois arquivos .env com segredos novos e inicia os containers. Rode de novo para atualizar."
+        "body": "Funciona no macOS, Linux e WSL. Ele baixa o Zetta, cria os dois arquivos .env com segredos novos e inicia os containers. Rode de novo para atualizar."
       },
       {
         "title": "Termine a configuração no navegador",
         "body": "Abra http://localhost:3001 e cole a chave de setup de apps/server/.env. Você vira o admin desta instalação."
       },
       {
-        "title": "Peça algo ao seu chief",
-        "body": "Descreva um trabalho no chat. O chief propõe os bots, e você aprova."
+        "title": "Peça algo ao Zetta",
+        "body": "Descreva um trabalho no chat. O Zetta propõe os bots, e você aprova."
       }
     ],
     "manual": {
@@ -310,20 +295,24 @@
     },
     "items": [
       {
+        "q": "O que é o Zetta?",
+        "a": "Um app web onde bots trabalham para você. Você pede um resultado ao Zetta, como um resumo diário, uma newsletter ou uma revisão de código. O Zetta configura bots especialistas, eles fazem o trabalho no seu servidor, e você volta quando há um resultado ou uma decisão para você."
+      },
+      {
         "q": "O Zetta é grátis?",
-        "a": "É. Ele é open source sob a licença MIT. Você paga pelo seu servidor e pelos agentes que roda nele, e nada ao Zetta."
+        "a": "É. O Zetta é open source sob a licença MIT. Você paga só pelo seu servidor e pelos agentes que os seus bots usam."
       },
       {
         "q": "Onde ficam os meus dados?",
-        "a": "No seu servidor. O Zetta sobe lá um app web, uma API e um banco Postgres, e os seus chats, tarefas e memória ficam nesse banco."
+        "a": "No seu servidor, num banco Postgres que o Zetta sobe para você. Os seus chats, tarefas e memória ficam lá."
       },
       {
         "q": "Preciso de chaves de API?",
-        "a": "O Zetta não tem uma conta de modelo própria. Cada bot roda um dos agentes instalados no seu servidor (Pi, Codex, OMP, Claude Code, OpenCode ou Cursor), autenticado do jeito que esse agente costuma se autenticar."
+        "a": "O Zetta não tem um modelo de IA próprio, nem cobra por um. Cada bot usa um agente instalado no seu servidor, como Claude Code ou Codex, e entra do jeito que esse agente costuma entrar."
       },
       {
         "q": "O que precisa da minha aprovação?",
-        "a": "Apagar arquivos, comandos de administrador e enviar e-mail. As mudanças do chief também são cartões de aprovação. Ações comuns rodam sozinhas, e um resultado bloqueado ou incerto sempre volta para você."
+        "a": "Apagar arquivos, comandos de administrador e enviar e-mail. Toda mudança que o Zetta propõe também é um cartão de aprovação. O resto roda sozinho, e um resultado bloqueado ou incerto volta para você."
       },
       {
         "q": "Dá para usar pelo celular?",
@@ -337,16 +326,17 @@
   },
   "cta": {
     "title": {
-      "before": "Dê ao seu chief ",
+      "before": "Dê ao Zetta ",
       "mark": "o primeiro trabalho",
       "after": ""
     },
     "lead": "Um comando num servidor que você controla. Open source, MIT.",
-    "primary": "Hospedar o Zetta",
-    "secondary": "Deixa o like"
+    "primary": "Instalar com um comando",
+    "secondary": "Estrela no GitHub"
   },
   "footer": {
-    "tagline": "Zetta: bots que trabalham no seu servidor.",
+    "share": "Chega de vigiar os seus agentes.",
+    "tagline": "Zetta: bots que trabalham por você, no seu servidor.",
     "license": "Licença MIT",
     "links": {
       "repo": "Repositório",

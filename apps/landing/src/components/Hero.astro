@@ -2,7 +2,7 @@
 import HeroShader from "./HeroShader.astro";
 import RobotHero from "./RobotHero.astro";
 import { getCopy, type Locale } from "../i18n";
-import { INSTALL, REPO } from "../links";
+import { INSTALL } from "../links";
 
 interface Props {
   locale: Locale;
@@ -16,9 +16,8 @@ const t = getCopy(locale).hero;
   <HeroShader />
   <div class="wrap grid">
     <div class="text">
-      <p class="eyebrow rv">{t.eyebrow}</p>
       <h1 id="hero-title" class="rv">
-        {t.title.before}<span class="mark">{t.title.mark}</span>{t.title.after}
+        {t.title.before}<span class="mark">{t.title.mark}</span>{t.title.after}{" "}<span class="rest">{t.title.rest}</span>
       </h1>
       <p class="lead rv">{t.lead}</p>
       <div class="install rv">
@@ -31,8 +30,10 @@ const t = getCopy(locale).hero;
       <div class="row rv">
         <a class="btn btn-primary" href="#install">{t.primary}</a>
         <a class="btn" href="#live">{t.secondary}<span aria-hidden="true">↓</span></a>
-        <a class="btn btn-ghost" href={REPO} target="_blank" rel="noopener noreferrer">{t.github}</a>
       </div>
+      <ul class="proof rv">
+        {t.proof.map((item) => <li>{item}</li>)}
+      </ul>
       <p class="note rv">{t.note}</p>
     </div>
     <RobotHero locale={locale} />
@@ -60,10 +61,13 @@ const t = getCopy(locale).hero;
     justify-items: start;
   }
   h1 {
-    max-width: 12em;
-    margin-top: 20px;
+    max-width: 14em;
     font-size: clamp(40px, 5.3vw, 78px);
     line-height: 1.04;
+  }
+  /* The promise and who keeps it sit on two lines, so a line never ends halfway through a sentence. */
+  .rest {
+    display: block;
   }
   /* The key word: bolder, in the main color (the same as the emphasis of every other heading). */
   .mark {
@@ -115,8 +119,31 @@ const t = getCopy(locale).hero;
   .code .btn:hover {
     background: #3a434e;
   }
+  /* Four facts in one line, each one in the copy of the page: the strip that proves the promise above it. */
+  .proof {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+    margin-top: 28px;
+    color: var(--foreground);
+    font-size: 14px;
+    font-weight: 560;
+    line-height: 20px;
+  }
+  .proof li {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .proof li::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--brand);
+  }
   .note {
-    margin-top: 20px;
+    margin-top: 16px;
     max-width: 52ch;
     color: var(--muted-foreground);
     font-size: 14px;

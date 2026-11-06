@@ -1,0 +1,41 @@
+---
+// One sentence under the hero: the problem in the reader's words, then what Zetta does about it. One idea for the whole screen.
+import { getCopy, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const t = getCopy(Astro.props.locale).pain;
+---
+
+<section class="pain">
+  <div class="wrap">
+    <p class="rv">{t.before}<em>{t.mark}</em>{t.after}</p>
+  </div>
+</section>
+
+<style>
+  .pain {
+    padding-block: 24px 96px;
+  }
+  p {
+    max-width: 24em;
+    font-size: clamp(26px, 3.4vw, 44px);
+    font-weight: 560;
+    line-height: 1.16;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
+  }
+  /* The same emphasis as a heading: bolder, in the main color. */
+  em {
+    color: var(--primary);
+    font-style: normal;
+    font-weight: 800;
+  }
+  @media (max-width: 720px) {
+    .pain {
+      padding-block: 8px 64px;
+    }
+  }
+</style>

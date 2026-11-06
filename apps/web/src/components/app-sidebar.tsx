@@ -5,6 +5,7 @@ import {
   MagnifyingGlassIcon,
   MoonIcon,
   NotePencilIcon,
+  PauseIcon,
   SidebarSimpleIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -31,6 +32,7 @@ import { SIDEBAR_LIMITS, usePreferences, useSidebarSide } from "@/features/prefe
 import { isRailTab } from "@/features/studio/studio-tabs";
 
 import { Logo } from "./logo";
+import { PauseAgentsButton } from "@/features/agents/pause-agents";
 import { ModeToggle } from "./mode-toggle";
 import { railLabel, railRow, railRowActive, railRowExpanded } from "./rail-row";
 import { ResizeHandle } from "./resize-handle";
@@ -460,6 +462,13 @@ export function AppSidebar({
             <div className={cn(!collapsed && "min-w-0 flex-1")}>
               <ModeToggle rail={rail} />
             </div>
+          </RailHint>
+          <RailHint
+            collapsed={collapsed}
+            label="Pause agents"
+            icon={<PauseIcon className="size-4" aria-hidden="true" />}
+          >
+            <PauseAgentsButton collapsed={collapsed} />
           </RailHint>
           {!mobile && (
             <RailHint

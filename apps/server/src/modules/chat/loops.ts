@@ -12,6 +12,7 @@ import type { NativeHarness, RunCli } from "./harness";
 import { failureKind, retryDelayMs } from "./retry";
 import { AUTONOMY, FEEDBACK, LOOP_STOP } from "./tools";
 import { instanceId, recoverable } from "../runtime/instance";
+import { AgentsPausedError, agentsPaused } from "../preferences/agents-state";
 
 export type GoalLoop = typeof goalLoop.$inferSelect;
 /** Completed steps in a row without new progress before a loop pauses and asks the user. Failed steps wait and retry instead (see retry.ts). */
@@ -142,6 +143,8 @@ export function createLoopStore(db: Database) {
         .where(and(eq(goalLoop.id, id), eq(goalLoop.ownerInstance, me)));
     },
     /** Running loops that are not waiting for a retry. */
+    /** True while the owner's agents are paused ("pause everything"): the driver takes no step for them, and their loops stay as they are. */
+    ownerPaused: (userId: string) => agentsPaused(db, userId),
     running() {
       return db
         .select()
@@ -461,6 +464,8 @@ export function createLoopDriver(store: LoopStore, runTurn: LoopTurn) {
         const loop = await store.get(id);
         if (!loop || loop.status !== "running") return;
         if (loop.retryAt && loop.retryAt > new Date()) return; // waiting out a failure: the tick picks it up when due
+        // Paused agents: leave the loop as it is. The tick picks it up again after "resume".
+        if (await store.ownerPaused(loop.ownerUserId)) return;
         const step = loop.iterations + 1;
         let status: string;
         let error: string | undefined;
@@ -473,6 +478,8 @@ export function createLoopDriver(store: LoopStore, runTurn: LoopTurn) {
             `loop:${id}:${step}`,
           ));
         } catch (e) {
+          // The pause came between the check above and the start of the step: nothing ran, so nothing failed.
+          if (e instanceof AgentsPausedError) return;
           status = "failed";
           if (e instanceof Error && e.message === "owner_inactive") error = "owner_inactive";
         }
@@ -483,6 +490,8 @@ export function createLoopDriver(store: LoopStore, runTurn: LoopTurn) {
           return;
         }
         if (status === "cancelled") {
+          // "Pause everything" stops the step the way Stop does, but it must not end the goal: the loop waits and goes on after "resume".
+          if (await store.ownerPaused(loop.ownerUserId)) return;
           await store.end(id, "cancelled", "stopped by you");
           return;
         }

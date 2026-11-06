@@ -22,6 +22,7 @@ import {
   type Recurrence,
 } from "./schedule";
 import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
+import { AgentsPausedError, agentsPaused } from "../preferences/agents-state";
 
 export class RoutineError extends Error {
   constructor(
@@ -312,6 +313,11 @@ export function createRoutines(
       });
     }
     await finish(status, output, reason, convId);
+    if (status === "failed" && (await agentsPaused(db, r.ownerUserId))) {
+      // The pause stopped (or refused) this run: it goes again after "resume", with no alert about a failure that is not one.
+      await db.update(routineRun).set({ retryAt: new Date() }).where(eq(routineRun.id, runId));
+      return;
+    }
     if (status === "failed") {
       // A failed bot run is tried again after a wait (retryDue); the user is asked only when waiting cannot help or the tries ran out.
       // A workflow is not retried: its steps may already have had effects.
@@ -367,6 +373,9 @@ export function createRoutines(
 
   /** Claims the routine's due occurrence, advances `nextRunAt` (re-arming the job), then runs it. False when another worker owns it. */
   async function occur(r: Routine, now: Date) {
+    // Paused agents: claim nothing and move nothing. `nextRunAt` stays in the past, so the 5-minute sweep (runDue) runs the routine once
+    // after "resume" instead of dropping the occurrence.
+    if (await agentsPaused(db, r.ownerUserId)) return false;
     const claimed = await claim(r, `sched:${r.nextRunAt!.toISOString()}`, "schedule", now);
     const advance =
       r.kind === "once"
@@ -451,6 +460,7 @@ export function createRoutines(
     );
     const results = await Promise.allSettled(
       todo.map(async ({ run, r }) => {
+        if (await agentsPaused(db, r.ownerUserId)) return false;
         const claimed = await claim(r, `retry:${run.id}`, "recovery", now);
         if (!claimed) return false;
         await execute(r, claimed.id, {
@@ -491,6 +501,8 @@ export function createRoutines(
       .where(and(eq(routineRun.status, "failed"), lte(routineRun.retryAt, now)));
     let ran = 0;
     for (const { run, r } of due) {
+      // The retry stays due (its `retryAt` is kept) and goes after "resume".
+      if (await agentsPaused(db, r.ownerUserId)) continue;
       const eligible = !r.archived && (!r.paused || r.kind === "once");
       const claimed = eligible
         ? await claim(r, `retry:${run.id}`, "recovery", now, run.attempt + 1)
@@ -903,6 +915,7 @@ export function createRoutines(
         .from(routine)
         .where(and(eq(routine.id, id), eq(routine.ownerUserId, a.userId)));
       const r = first(cur ? [cur] : []);
+      if (await agentsPaused(db, a.userId)) throw new AgentsPausedError();
       const key = `manual:${requestKey}`;
       const claimed = await claim(r, key, "manual", new Date());
       if (!claimed)

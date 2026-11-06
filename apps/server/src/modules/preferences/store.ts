@@ -3,6 +3,8 @@ import { eq } from "@zetta/db/query";
 import {
   SIDEBAR_LIMITS,
   userPreference,
+  type AgentsState,
+  type ApprovalMode,
   type RailMode,
   type SidebarSide,
   type Theme,
@@ -20,8 +22,10 @@ export type Preferences = {
   theme: Theme | null;
   primaryColor: string | null;
   botOrder: string[];
+  /** Read-only here: it changes only through `PUT /api/agents/state`, which also stops the running turns. */
+  agentsState: AgentsState;
 };
-export type PreferencesPatch = Partial<Preferences>;
+export type PreferencesPatch = Partial<Omit<Preferences, "agentsState">>;
 
 export function createPreferenceStore(db: Database) {
   const pick = (r: typeof userPreference.$inferSelect): Preferences => ({
@@ -34,6 +38,7 @@ export function createPreferenceStore(db: Database) {
     theme: r.theme,
     primaryColor: r.primaryColor,
     botOrder: r.botOrder,
+    agentsState: r.agentsState,
   });
   return {
     /** No row yet means a person who never changed anything: the column defaults. */
@@ -54,6 +59,7 @@ export function createPreferenceStore(db: Database) {
             theme: null,
             primaryColor: null,
             botOrder: [],
+            agentsState: "running",
           };
     },
     async update(a: ActiveActor, patch: PreferencesPatch): Promise<Preferences> {

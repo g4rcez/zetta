@@ -98,6 +98,43 @@ export const routine = zetta.table(
   ],
 );
 
+/**
+ * An extra way to start a routine, next to its schedule. `webhook`: a POST to the trigger's URL with its secret. `gmail` and
+ * `home_assistant`: polled by the worker (`cursor` remembers where it stopped, so the first poll fires nothing). `filter` is a Gmail search
+ * query or a Home Assistant entity, per kind. Only the hash of a webhook secret is kept.
+ */
+export const routineTrigger = zetta.table(
+  "routine_trigger",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    routineId: uuid("routine_id")
+      .notNull()
+      .references(() => routine.id, restrict),
+    ownerUserId: owner(),
+    kind: text("kind", { enum: ["webhook", "gmail", "home_assistant"] }).notNull(),
+    secretHash: text("secret_hash"),
+    filter: jsonb("filter").default({}).notNull(),
+    cursor: jsonb("cursor"),
+    status: text("status", { enum: ["active", "paused", "failing"] })
+      .default("active")
+      .notNull(),
+    statusReason: text("status_reason"),
+    /** Polls that failed in a row. At 5 the trigger becomes `failing` and the owner gets an attention card. */
+    failures: integer("failures").default(0).notNull(),
+    nextPollAt: timestamp("next_poll_at", { withTimezone: true }),
+    createdAt: created(),
+  },
+  (t) => [
+    index("routine_trigger_routine_id_idx").on(t.routineId),
+    index("routine_trigger_owner_user_id_idx").on(t.ownerUserId),
+    index("routine_trigger_poll_idx")
+      .on(t.nextPollAt)
+      .where(sql`${t.status} = 'active' and ${t.kind} <> 'webhook'`),
+  ],
+);
+
 export const routineRun = zetta.table(
   "routine_run",
   {

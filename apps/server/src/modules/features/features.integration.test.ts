@@ -8,6 +8,7 @@ import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createChatService } from "../chat/service";
 import { createMemory } from "../memory/service";
 import { createIdentityAccess } from "../identity/access";
+import { agentsPaused, writeAgentsState } from "../preferences/agents-state";
 import { createFeaturesService } from "./service";
 import { nextDailyRun } from "./schedule";
 
@@ -196,6 +197,47 @@ suite("features against compose postgres", () => {
       (await call(A, "POST", `/api/attention/${paused.id}/status`, { status: "acknowledged" })).json
         .item.status,
     ).toBe("acknowledged");
+  });
+
+  test("paused agents: a due routine waits unmoved, manual and workflow runs answer 409, and it runs once after resume", async () => {
+    const bot = await newBot(A, "Sleeper", false);
+    const created = await call(A, "POST", "/api/routines", {
+      botId: bot.id,
+      title: "Pause test",
+      prompt: "brief me",
+      timezone: "America/Sao_Paulo",
+      everyMinutes: 5,
+    });
+    const rid = created.json.routine.id as string;
+    await db.$client.query("update bot set onboarded = true where id = $1", [bot.id]);
+    await call(A, "POST", `/api/routines/${rid}/paused`, { paused: false });
+    const nextRun = async () =>
+      (await db.$client.query("select next_run_at from routine where id = $1", [rid])).rows[0]
+        .next_run_at as Date;
+    const before = await nextRun();
+    const due = new Date(Date.now() + 6 * 60_000);
+    await writeAgentsState(db, A, "paused");
+    try {
+      // Nothing is claimed and nothing moves: the occurrence is still there when the agents come back.
+      expect(await features.runDue(due)).toBe(0);
+      expect((await call(A, "GET", `/api/routines/${rid}/runs`)).json.runs).toHaveLength(0);
+      expect((await nextRun()).getTime()).toBe(before.getTime());
+      const manual = await call(A, "POST", `/api/routines/${rid}/run`, {
+        requestKey: "pause-test-1",
+      });
+      expect(manual.status).toBe(409);
+      expect(manual.json.error?.code ?? manual.json.code).toBe("AGENTS_PAUSED");
+      // Another person's agents are not affected.
+      expect(await agentsPaused(db, B)).toBe(false);
+    } finally {
+      await writeAgentsState(db, A, "running");
+    }
+    expect(await features.runDue(due)).toBe(1);
+    const runs = (await call(A, "GET", `/api/routines/${rid}/runs`)).json.runs as {
+      status: string;
+    }[];
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.status).toBe("succeeded");
   });
 
   test("workflows branch on conditions, record a trace and reject invalid graphs", async () => {

@@ -46,7 +46,11 @@ export type Preferences = {
   /** `#rrggbb`. Null = the theme's own main color. */
   primaryColor: string | null;
   botOrder: string[];
+  /** Read-only here: it changes only through `setAgentsState`, which also stops the turns running now. */
+  agentsState: AgentsState;
 };
+/** What `set` may change. The agents state has its own route; the server refuses it in a patch. */
+export type PreferencesPatch = Partial<Omit<Preferences, "agentsState">>;
 
 /** Same limits as the server (packages/db/src/schema/preferences.ts), which rejects anything outside them. */
 export const SIDEBAR_LIMITS = {
@@ -64,28 +68,39 @@ const DEFAULTS: Preferences = {
   theme: null,
   primaryColor: null,
   botOrder: [],
+  agentsState: "running",
 };
 // The server is the source of truth. This copy only stops the layout from jumping while the first request is in flight.
 const CACHE_KEY = "zetta:preferences";
 const SAVE_DELAY_MS = 400;
 
+/** The layout cache never keeps the agents state: a stale "paused" would show for a moment on the next visit. */
+const cacheable = (p: Preferences) => ({ ...p, agentsState: undefined });
+
 const readCache = (): Preferences => {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null");
-    return raw && typeof raw === "object" ? { ...DEFAULTS, ...raw } : DEFAULTS;
+    return raw && typeof raw === "object"
+      ? { ...DEFAULTS, ...raw, agentsState: "running" }
+      : DEFAULTS;
   } catch {
     return DEFAULTS;
   }
 };
 
-type Value = { preferences: Preferences; set: (patch: Partial<Preferences>) => void };
+type Value = {
+  preferences: Preferences;
+  set: (patch: PreferencesPatch) => void;
+  /** Pauses or resumes every agent. Resolves with how many running turns the pause stopped. */
+  setAgentsState: (state: AgentsState) => Promise<{ stopped: number }>;
+};
 const Ctx = createContext<Value | null>(null);
 
 /** The signed-in person's layout preferences. A change shows at once and is saved to their account after a short pause. */
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [preferences, setPreferences] = useState(readCache);
-  const pending = useRef<Partial<Preferences>>({});
+  const pending = useRef<PreferencesPatch>({});
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Read once per visit: the cache entry is kept in step with every change below, so a remount does not ask again.
@@ -102,14 +117,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     // A change made before the answer arrived is newer than what the server holds.
     const next = { ...saved, ...pending.current };
     setPreferences(next);
-    saveLocal(CACHE_KEY, next);
+    saveLocal(CACHE_KEY, cacheable(next));
   }, [saved]);
 
   const set = useCallback(
-    (patch: Partial<Preferences>) => {
+    (patch: PreferencesPatch) => {
       setPreferences((current) => {
         const next = { ...current, ...patch };
-        saveLocal(CACHE_KEY, next);
+        saveLocal(CACHE_KEY, cacheable(next));
         qc.setQueryData(["preferences"], next);
         return next;
       });
@@ -128,6 +143,23 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     [qc],
   );
 
+  const setAgentsState = useCallback(
+    async (state: AgentsState) => {
+      const done = await call<{ agentsState: AgentsState; stopped: number }>(
+        "/api/agents/state",
+        "PUT",
+        { state },
+      );
+      setPreferences((current) => {
+        const next = { ...current, agentsState: done.agentsState };
+        qc.setQueryData(["preferences"], next);
+        return next;
+      });
+      return { stopped: done.stopped };
+    },
+    [qc],
+  );
+
   // The theme is a preference, so it follows the person to any device. next-themes only applies the light/dark base.
   const { setTheme } = useTheme();
   useEffect(
@@ -136,13 +168,28 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     [preferences.theme, preferences.primaryColor, setTheme],
   );
 
-  const value = useMemo(() => ({ preferences, set }), [preferences, set]);
+  const value = useMemo(
+    () => ({ preferences, set, setAgentsState }),
+    [preferences, set, setAgentsState],
+  );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 /** The chosen hour format. Outside the provider (tests, public pages) it falls back to the default. */
 export const useTimeFormat = (): TimeFormat =>
   useContext(Ctx)?.preferences.timeFormat ?? DEFAULT_TIME_FORMAT;
+
+/** The edge the sidebar sits on. Outside the provider (tests, public pages) it is the default: left. */
+export const useSidebarSide = (): SidebarSide =>
+  useContext(Ctx)?.preferences.sidebarSide ?? DEFAULT_SIDEBAR_SIDE;
+
+/** How this person confirms the approvals that ask for a hold. Outside the provider (tests, public pages) it is the default: hold. */
+export const useApprovalMode = (): ApprovalMode =>
+  useContext(Ctx)?.preferences.approvalMode ?? DEFAULT_APPROVAL_MODE;
+
+/** Whether this person's agents are paused. Outside the provider (tests, public pages) they are running. */
+export const useAgentsState = (): AgentsState =>
+  useContext(Ctx)?.preferences.agentsState ?? "running";
 
 export function usePreferences(): Value {
   const value = useContext(Ctx);

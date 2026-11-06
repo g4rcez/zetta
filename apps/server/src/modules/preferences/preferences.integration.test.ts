@@ -80,6 +80,7 @@ suite("layout preferences against compose postgres", () => {
       theme: null,
       primaryColor: null,
       botOrder: [],
+      agentsState: "running",
     });
   });
   test("a change is kept for that person only, and a later change keeps the rest", async () => {
@@ -96,6 +97,7 @@ suite("layout preferences against compose postgres", () => {
       theme: null,
       primaryColor: null,
       botOrder: [],
+      agentsState: "running",
     });
     expect(await read(ids[1]!)).toEqual({
       railMode: "expanded",
@@ -107,7 +109,13 @@ suite("layout preferences against compose postgres", () => {
       theme: null,
       primaryColor: null,
       botOrder: [],
+      agentsState: "running",
     });
+  });
+  test("the agents state is shown with the preferences but cannot be set through them", async () => {
+    const refused = await call(ids[0]!, "PATCH", { agentsState: "paused" });
+    expect(refused.status).toBe(400);
+    expect(await read(ids[0]!)).toMatchObject({ agentsState: "running" });
   });
   test("a bot order is kept for that person only, in the order sent", async () => {
     const order = ["00000000-0000-7000-8000-000000000002", "00000000-0000-7000-8000-000000000001"];

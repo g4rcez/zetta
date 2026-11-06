@@ -1766,6 +1766,8 @@ export function createDiscussionStore(
             id: string;
           }>(sql`select t.id from discussion_turn t join discussion d on d.id = t.discussion_id
             where t.status = 'queued' and (d.status = 'open' or (t.kind = 'wrapup' and d.status = 'resolved'))
+              -- "Pause everything": a paused owner's turns stay queued, and the worker takes them after "resume".
+              and not exists (select 1 from user_preference up where up.owner_user_id = t.owner_user_id and up.agents_state = 'paused')
               and ${
                 lane === "user"
                   ? sql`t.kind = 'reply' and exists (select 1 from message m where m.id = t.trigger_message_id and m.role = 'user')`

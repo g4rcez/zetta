@@ -1,9 +1,11 @@
 import { OUTPUT_STYLE_KEYS } from "@zetta/db/schema/output-styles";
+import { AGENTS_STATES } from "@zetta/db/schema/preferences";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { skillName } from "../bot-claude/profile";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { OutputStyleError } from "../output-styles/service";
+import { AgentsPausedError } from "../preferences/agents-state";
 import {
   AttachmentError,
   DiscussionConversationError,
@@ -372,6 +374,8 @@ export function createChatRoutes(
         "BOT_NOT_READY",
         "This bot is not ready yet. Its owner has to finish setting it up first.",
       );
+    if (error instanceof AgentsPausedError)
+      return fail(409, "AGENTS_PAUSED", "Your agents are paused. Resume them to start new work.");
     if (error instanceof TurnBusyError)
       return fail(
         409,
@@ -457,6 +461,15 @@ export function createChatRoutes(
       "/conversations/:id/queue/:messageId/retry",
       guarded(async ({ actor, params }) =>
         chat.retryQueued(actor, parse(uuid, params.id), parse(uuid, params.messageId)),
+      ),
+    )
+    .put(
+      "/agents/state",
+      guarded(async ({ actor, body }) =>
+        chat.setAgentsState(
+          actor,
+          parse(z.strictObject({ state: z.enum(AGENTS_STATES) }), body).state,
+        ),
       ),
     )
     .post(

@@ -22,6 +22,7 @@ import {
   sql,
 } from "@zetta/db/query";
 import { botClaudeConfig } from "@zetta/db/schema/bot-claude";
+import type { AgentsState } from "@zetta/db/schema/preferences";
 import { configInput, DEFAULT_CONFIG } from "../bot-claude/profile";
 import { createBotClaude, skillsOf } from "../bot-claude/store";
 import { installSelection } from "../skills/install";
@@ -92,6 +93,12 @@ import { createLiveBots, loadBotStatus, phaseAfterRound, type RunPhase } from ".
 import { listProcesses, redactCommand, runsOf } from "./processes";
 import { answersOf, slowDetail, type SlowAnswer } from "./turn-snapshot";
 import { createTurnRegistry, TurnBusyError } from "./turns";
+import {
+  AgentsPausedError,
+  agentsPaused,
+  assertAgentsRunning,
+  writeAgentsState,
+} from "../preferences/agents-state";
 import { createRouting, DECISION_FALLBACK, type Route } from "./routing";
 import { clip, insertMessage, quoteLine, quoteOf, savedQuote, type Quote } from "./messages";
 import { normalizeMentionText, refreshMentionLabels } from "./mention-text";
@@ -4009,8 +4016,9 @@ export function createChatService(
             .then(() => events.publish([actor.userId], topics.conversation(conversationId)));
           return;
         } catch (e) {
-          // Another turn (a loop step, a routine) got there first: wait for it to end, which kicks the queue again.
-          if (e instanceof TurnBusyError) {
+          // Another turn (a loop step, a routine) got there first: wait for it to end, which kicks the queue again. Paused agents
+          // keep the message too; resuming drains the queues (see setAgentsState).
+          if (e instanceof TurnBusyError || e instanceof AgentsPausedError) {
             await db
               .update(chatQueue)
               .set({ status: "pending", attempts: row.attempts - 1 })
@@ -6071,6 +6079,9 @@ export function createChatService(
     /** Starts (or rejects, when one is already running) the single active turn of a conversation. The turn outlives the caller. */
     async startTurn(actor: ActiveActor, conversationId: string, input: Converse) {
       await loadConversation(actor, conversationId);
+      // Every chat turn starts here (a message, a queued message, a routine, a goal loop, an outside message), so this one check is
+      // what "pause everything" means for new work.
+      await assertAgentsRunning(db, actor.userId);
       const key = `${actor.userId}:${conversationId}`;
       const rec = turns.start(key, (signal) => this.converse(actor, conversationId, input, signal));
       // Whatever started this turn, its end lets the next queued message of the conversation start.
@@ -6323,6 +6334,24 @@ export function createChatService(
       );
       return rec ? { rec, follow: () => turns.follow(rec, after) } : undefined;
     },
+    /**
+     * "Pause everything" and its undo. Pausing stops the person's running turns (the same way Stop does, so they end as stopped, not
+     * failed) and nothing new starts until `running`; resuming answers the messages that waited in the queues.
+     */
+    async setAgentsState(actor: ActiveActor, state: AgentsState) {
+      await writeAgentsState(db, actor.userId, state);
+      let stopped = 0;
+      if (state === "paused") stopped = turns.cancelPrefix(`${actor.userId}:`);
+      events.publish([actor.userId], topics.agents, topics.conversations, topics.attention);
+      if (state === "running") {
+        const waiting = await db
+          .selectDistinct({ conversationId: chatQueue.conversationId })
+          .from(chatQueue)
+          .where(and(eq(chatQueue.ownerUserId, actor.userId), eq(chatQueue.status, "pending")));
+        for (const w of waiting) void drainQueue(actor, w.conversationId).catch(() => {});
+      }
+      return { agentsState: state, stopped };
+    },
     async cancelTurn(actor: ActiveActor, conversationId: string) {
       await loadConversation(actor, conversationId);
       await closeAttentionKey(db, actor.userId, slowKey(conversationId), "resolved");
@@ -6391,6 +6420,11 @@ export function createChatService(
       if (!store) return "skipped";
       const d = c.discussion,
         t = c.turn;
+      // The worker never claims a paused owner's turn (see claimNext); this covers a pause that came right after the claim.
+      if (await agentsPaused(db, actor.userId)) {
+        await store.finishTurn(t.id, "queued");
+        return "busy";
+      }
       const [who] = await db
         .select()
         .from(bot)

@@ -9,6 +9,7 @@ import { raiseAttention } from "./attention";
 import { audit } from "./audit";
 import { executeGraph, graphSchema, type Graph, type TraceStep } from "./workflow";
 import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
+import { assertAgentsRunning } from "../preferences/agents-state";
 
 export class WorkflowError extends Error {
   constructor(
@@ -63,6 +64,8 @@ export function createWorkflows(
     requestKey?: string,
     signal?: AbortSignal,
   ) {
+    // Workflow nodes run bots directly (not through a chat turn), so "pause everything" has to be checked here too.
+    await assertAgentsRunning(db, userId);
     const [w] = await db
       .select()
       .from(workflow)

@@ -20,6 +20,7 @@ import {
 } from "../integrations/plugins/registry";
 import type { Plugins } from "../integrations/plugins/service";
 import { TurnBusyError, type ChatService } from "../chat/service";
+import { AgentsPausedError, agentsPaused } from "../preferences/agents-state";
 import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
 
 type Route = typeof inboundRoute.$inferSelect;
@@ -294,6 +295,8 @@ export function createInbound(
       inbound = def?.inbound;
     const a = await issueBackgroundActor(lookup, r.ownerUserId);
     if (!a || !inbound) return;
+    // Paused agents: the outside messages stay pending, unclaimed, and are delivered on the first pass after "resume".
+    if (await agentsPaused(db, r.ownerUserId)) return;
     if (
       (await recentTurns(eq(inboundEvent.threadId, t.id))) >= CAPS.perChat ||
       (await recentTurns(eq(inboundEvent.routeId, r.id))) >= CAPS.perRoute
@@ -361,7 +364,7 @@ export function createInbound(
           ),
         );
     } catch (e) {
-      if (e instanceof TurnBusyError) {
+      if (e instanceof TurnBusyError || e instanceof AgentsPausedError) {
         await db
           .update(inboundEvent)
           .set({ status: "pending", attempts: sql`${inboundEvent.attempts} - 1` })

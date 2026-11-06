@@ -17,12 +17,15 @@ import {
   SunIcon,
   SunDimIcon,
   FlowArrowIcon,
+  PauseIcon,
+  PlayIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 
 import { BotAvatar } from "@/components/bot-avatar";
 import { appLinks } from "@/components/app-links";
 import { useTheme } from "@/components/theme-provider";
+import { useToggleAgents } from "@/features/agents/pause-agents";
 import { usePreferences } from "@/features/preferences/preferences";
 import type { Theme } from "@/features/preferences/theme";
 
@@ -69,6 +72,7 @@ export function AppCommandPalette({
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   const { set: setPreferences } = usePreferences();
+  const { paused, toggle: toggleAgents } = useToggleAgents();
   const qc = useQueryClient();
   const [text, setText] = useState("");
   const searching = text.trim() !== "";
@@ -203,6 +207,22 @@ export function AppCommandPalette({
       },
       {
         type: "group",
+        title: "Agents",
+        items: [
+          {
+            type: "shortcut",
+            title: paused ? "Resume agents" : "Pause agents",
+            hint: ["pause", "stop", "resume", "agents", "everything", "halt"],
+            Icon: icon(paused ? PlayIcon : PauseIcon),
+            action: ({ setOpen }) => {
+              setOpen(false);
+              void toggleAgents();
+            },
+          },
+        ],
+      },
+      {
+        type: "group",
         title: "Studio",
         items: studioTabs
           .filter((t) => !isRailTab(t.slug))
@@ -311,7 +331,18 @@ export function AppCommandPalette({
         ],
       },
     ];
-  }, [botRows, chatRows, searching, text, hits, navigate, resolvedTheme, setPreferences]);
+  }, [
+    botRows,
+    chatRows,
+    searching,
+    text,
+    hits,
+    navigate,
+    resolvedTheme,
+    setPreferences,
+    paused,
+    toggleAgents,
+  ]);
 
   return (
     <CommandPalette

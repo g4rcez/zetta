@@ -101,6 +101,16 @@ export function createTurnRegistry<E>(
         }
       return any;
     },
+    /** Cancels every running turn whose key starts with `prefix` (`<userId>:` stops all of one person's turns). Returns how many. */
+    cancelPrefix(prefix: string) {
+      let n = 0;
+      for (const [k, r] of turns)
+        if (k.startsWith(prefix) && !r.done) {
+          r.abort.abort();
+          n++;
+        }
+      return n;
+    },
     /** Yields events with index > after (1-based cursor), waiting for new ones until the turn is done. */
     async *follow(rec: TurnRecord<E>, after = 0): AsyncGenerator<{ n: number; event: E }, void> {
       let i = Math.max(0, after);

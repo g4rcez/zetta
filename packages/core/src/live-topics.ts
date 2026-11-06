@@ -12,6 +12,10 @@ export const topics = {
   attention: "attention",
   routines: "routines",
   proposals: "proposals",
+  /** The person paused or resumed all their agents. */
+  agents: "agents",
+  /** A run of a playground started or finished, or the playground changed. */
+  playground: (id: string) => `playground:${id}`,
   /** Events may have been missed (a server link dropped, or the stream reconnected): refetch what is on screen. */
   resync: "resync",
 } as const;

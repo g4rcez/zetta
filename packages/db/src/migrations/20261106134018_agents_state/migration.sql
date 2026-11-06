@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."user_preference" ADD COLUMN "agents_state" text DEFAULT 'running' NOT NULL;

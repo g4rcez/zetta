@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode 
 import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
 
 import { useBackgroundNotifications } from "@/features/attention/background-notifications";
+import { PausedBanner } from "@/features/agents/pause-agents";
+import { useSidebarSide } from "@/features/preferences/preferences";
 import { AppCommandPalette } from "@/features/command-palette/app-command-palette";
 
 import { AppSidebar } from "./app-sidebar";
@@ -75,7 +77,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Sheet>
         </>
       )}
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-background text-foreground md:my-2 md:mr-2 md:rounded-xl md:border md:border-border">
+      <main
+        className={`min-h-0 min-w-0 flex-1 overflow-y-auto bg-background text-foreground md:my-2 ${side === "right" ? "md:ml-2" : "md:mr-2"} md:rounded-xl md:border md:border-border`}
+      >
+        <PausedBanner />
         {children}
       </main>
       <AppCommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />

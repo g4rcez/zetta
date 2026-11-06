@@ -39,6 +39,8 @@ export function keysFor(topic: string): { queryKey: Key; exact?: boolean }[] {
   if (topic === topics.botStatus) return [{ queryKey: ["bots", "status"], exact: true }];
   if (topic === topics.bots) return [{ queryKey: ["bots"], exact: true }];
   if (topic === topics.attention) return [{ queryKey: ["attention"], exact: true }];
+  // Paused or resumed here or on another device: the preferences carry the state.
+  if (topic === topics.agents) return [{ queryKey: ["preferences"], exact: true }];
   if (topic === topics.routines) return [{ queryKey: ["routines"] }];
   if (topic === topics.proposals) return [{ queryKey: ["proposals"] }];
   if (topic === topics.resync) return [{ queryKey: [] }]; // every query on screen

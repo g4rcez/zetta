@@ -351,7 +351,9 @@ export function createMemoryJobs(
         .where(and(eq(memoryJob.status, "running"), sql`${memoryJob.runAfter} < ${now}`));
       const { rows } = await db.$client.query(
         `update memory_job set status = 'running', attempts = attempts + 1, run_after = $2::timestamptz
-          where id in (select id from memory_job where status = 'pending' and run_after <= $1::timestamptz order by run_after limit ${JOBS_PER_TICK} for update skip locked)
+          where id in (select id from memory_job where status = 'pending' and run_after <= $1::timestamptz
+            and not exists (select 1 from user_preference up where up.owner_user_id = memory_job.owner_user_id and up.agents_state = 'paused')
+            order by run_after limit ${JOBS_PER_TICK} for update skip locked)
           returning id`,
         [now, new Date(now.getTime() + RUN_MS)],
       );

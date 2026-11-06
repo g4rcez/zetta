@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { HookError, isReactionEmoji, type FeaturesService } from "./service";
 import { RoutineError } from "./routines";
+import { AgentsPausedError } from "../preferences/agents-state";
 import { SnapshotError } from "./snapshots";
 import { WorkflowError } from "./workflows";
 import { accessFail, createGuardedRoute, fail } from "../http-response";
@@ -103,6 +104,8 @@ export function createFeatureRoutes(
   };
   function mapError(e: unknown) {
     if (e instanceof AccessError) return accessFail(e);
+    if (e instanceof AgentsPausedError)
+      return fail(409, "AGENTS_PAUSED", "Your agents are paused. Resume them to start new work.");
     if (e instanceof RoutineError)
       return e.code === "NOT_READY"
         ? fail(409, "NOT_READY", "Finish the missing steps before activating this.", {

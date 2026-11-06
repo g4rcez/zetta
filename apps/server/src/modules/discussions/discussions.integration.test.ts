@@ -1,9 +1,9 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
-import { and, eq, inArray } from "@zetta/db/query";
+import { and, desc, eq, inArray } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
-import { bot } from "@zetta/db/schema/chat";
+import { bot, message } from "@zetta/db/schema/chat";
 import { attentionItem } from "@zetta/db/schema/features";
 import { discussion, discussionTurn } from "@zetta/db/schema/discussions";
 import { membership } from "@zetta/db/schema/identity";
@@ -1415,6 +1415,43 @@ suite("group discussions against compose postgres", () => {
       expect((await messagesOf(A, d.conversationId)).map((m) => m.content)).toContain(
         `🗑 Deleted by ${fac.name}: wrong place ${fac.name}`,
       );
+    });
+
+    test("a member's reply that lands while the room is being deleted queues no turn", async () => {
+      const { fac, mem } = await pair();
+      replies[fac.name] = [open("Racy room", [mem.name], `@${mem.name} start`)];
+      await (await chatWith(A, fac.id)).say("open a room");
+      await worker.drain(); // the member's first turn has run: only the reply below is left
+      const d = await roomTitled("Racy room");
+      const [room] = await db.select().from(discussion).where(eq(discussion.id, d.id));
+      const [last] = await db
+        .select()
+        .from(message)
+        .where(eq(message.conversationId, d.conversationId))
+        .orderBy(desc(message.createdAt))
+        .limit(1);
+      // The delete has cancelled the room but has not committed yet. The reply must not queue a turn in that window.
+      let commit!: () => void;
+      let cancelled!: () => void;
+      const deleted = new Promise<void>((r) => (cancelled = r));
+      const delete_ = db.transaction(async (tx) => {
+        await tx.update(discussion).set({ status: "cancelled" }).where(eq(discussion.id, d.id));
+        cancelled();
+        await new Promise<void>((r) => (commit = r));
+      });
+      await deleted;
+      const reply = store.afterReply(room!, mem.id, last!.content, last!.id);
+      // With the room row locked the reply waits for the delete; without it the reply finishes at once and queues its turn.
+      await Promise.race([reply, Bun.sleep(300)]);
+      commit();
+      await delete_;
+      await reply;
+      expect(
+        await db
+          .select()
+          .from(discussionTurn)
+          .where(and(eq(discussionTurn.discussionId, d.id), eq(discussionTurn.status, "queued"))),
+      ).toEqual([]);
     });
 
     test("a room request still waiting for approval is withdrawn", async () => {

@@ -271,6 +271,27 @@ export function createDiscussionStore(
     return rows.length;
   }
 
+  /**
+   * Wakes members only while the room is open. The room row is locked for the check and the insert, so a delete or a resolve that runs at
+   * the same time either finishes first (nothing is queued) or waits and then drops the turns queued here. Without the lock a turn could
+   * be queued just after the room was cancelled, and nothing would drop it.
+   */
+  async function enqueueWakesIfOpen(
+    db: Pick<Database, "transaction">,
+    id: string,
+    authorBotId: string | null,
+    text: string,
+    messageId: string,
+    fallback = true,
+  ) {
+    return transaction(db, async (tx) => {
+      const [cur] = await tx.select().from(discussion).where(eq(discussion.id, id)).for("update");
+      return cur?.status === "open"
+        ? enqueueWakes(tx, cur, authorBotId, text, messageId, false, fallback)
+        : 0;
+    });
+  }
+
   async function open(a: ActiveActor, input: OpenInput) {
     const bots = await resolveBots(
       a,
@@ -382,7 +403,7 @@ export function createDiscussionStore(
   }
 
   async function post(
-    tx: Pick<Database, "select" | "insert">,
+    tx: Pick<Database, "select" | "insert" | "transaction">,
     d: Discussion,
     author: Bot,
     text: string,
@@ -394,7 +415,7 @@ export function createDiscussionStore(
       botId: author.id,
       botVersion: author.version,
     });
-    const n = d.status === "open" ? await enqueueWakes(tx, d, author.id, row.content, row.id) : 0;
+    const n = await enqueueWakesIfOpen(tx, d.id, author.id, row.content, row.id);
     if (n) onEnqueue?.();
     return row;
   }
@@ -897,7 +918,7 @@ export function createDiscussionStore(
         await transaction(db, (tx) => silenceRoom(tx, cur, "auto"));
         return 0;
       }
-      const n = await enqueueWakes(db, cur, authorBotId, text, messageId, false, !mentionsOnly);
+      const n = await enqueueWakesIfOpen(db, cur.id, authorBotId, text, messageId, !mentionsOnly);
       if (n) onEnqueue?.();
       return n;
     },

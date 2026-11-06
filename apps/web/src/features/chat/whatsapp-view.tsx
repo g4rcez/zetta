@@ -1,6 +1,7 @@
 import { ChecksIcon, ImageIcon, ChatCircleIcon } from "@phosphor-icons/react";
 
 import { cn } from "@zetta/ui/lib/utils";
+import { IconHint } from "@zetta/ui/components/icon-hint";
 
 type ChatsView = {
   kind: "chats";
@@ -73,7 +74,9 @@ export function WhatsappView({ data }: { data: WhatsappData }) {
                   <p className="truncate font-medium">{c.name || who(c.id)}</p>
                   <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
                     {c.fromMe && (
-                      <ChecksIcon aria-label="You sent" className="size-3.5 shrink-0 text-info" />
+                      <IconHint label="You sent">
+                        <ChecksIcon className="size-3.5 shrink-0 text-info" />
+                      </IconHint>
                     )}
                     <span className="truncate">{c.last || "No messages"}</span>
                   </p>

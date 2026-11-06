@@ -58,6 +58,7 @@ import {
   teamsQueries,
   type TeamSave,
 } from "./teams-api";
+import { IconHint } from "@zetta/ui/components/icon-hint";
 
 /** What the server holds for a team, apart from its version. */
 const saveKey = (v: TeamSave) => JSON.stringify({ ...v, expectedVersion: 0 });
@@ -175,7 +176,9 @@ function BotCard({ data, selected }: NodeProps<BotNode>) {
         sub={sub}
         trailing={
           data.kind === "chief" ? (
-            <CrownIcon className="size-3 shrink-0 text-warn" aria-label="Chief" />
+            <IconHint label="Chief">
+              <CrownIcon className="size-3 shrink-0 text-warn" />
+            </IconHint>
           ) : undefined
         }
       />

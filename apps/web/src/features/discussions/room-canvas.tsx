@@ -17,6 +17,7 @@ import type { Bot } from "../chat/chat-client";
 import { useTheme } from "../../components/theme-provider";
 import type { DiscussionMember, RoomTask, RoomTurn } from "./discussions-api";
 import { NODE_W, roomToFlow, type MemberNode, type MemberState } from "./room-graph";
+import { IconHint } from "@zetta/ui/components/icon-hint";
 
 const STATE_LABEL: Record<MemberState, string> = {
   idle: "Idle",
@@ -59,7 +60,9 @@ function MemberCard({ data, selected }: NodeProps<MemberNode>) {
         trailing={
           <>
             {data.kind === "chief" && (
-              <CrownIcon className="size-3.5 shrink-0 text-warn" aria-label="Chief" />
+              <IconHint label="Chief">
+                <CrownIcon className="size-3.5 shrink-0 text-warn" />
+              </IconHint>
             )}
             <span
               className={cn("shrink-0 rounded px-1.5 py-0.5 font-medium", STATE_CLASS[data.state])}

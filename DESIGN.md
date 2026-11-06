@@ -376,6 +376,14 @@ Flat at rest. Surfaces separate by tone (`--sidebar` → `--background` → `--c
 
 - 20px, sm radius, 12px medium text, 8px side padding (6px for the attention count in the sidebar). Neutral: `--muted` with `--foreground`. Attention: `--attention` with `--attention-foreground`. Status: 10% tint with status text and an icon.
 
+### Icons
+
+- An icon that carries meaning and has no visible title next to it (for example "Pinned", "Chief", "Paused") shows its name in a `Popover`: use `IconHint` from `@zetta/ui/components/icon-hint`. It opens on hover, on keyboard focus and on tap; Escape closes it. The `aria-label` stays on the trigger, so the screen reader name is the same.
+- The trigger is a `<span tabIndex={0}>` that Base UI exposes as `role="button"` with `aria-expanded`, because ARIA does not allow `aria-expanded` on `img`. It does no action. The hit area is at least 24x24px (WCAG 2.5.8). It keeps the 2px `--ring` focus outline.
+- **Exception:** a decorative icon next to visible text (`aria-hidden="true"`) needs no Popover.
+- **Never nest it** in a link or a button: a focusable trigger inside one is invalid (WCAG 4.1.2). Keep the `aria-label` there and let the row's own label and tooltip carry the meaning.
+- **Open point:** an icon-only button that acts on click keeps `Tooltip` + `aria-label` until the owner decides.
+
 ### Empty, loading and error states
 
 - Empty: one sentence that says what goes here and one action. No illustration.

@@ -29,6 +29,7 @@ import {
   dockerConfig,
   HarnessError,
   PLUGIN_NAME,
+  joinSystem,
   runCli,
   streamCli,
   type CliImage,
@@ -115,6 +116,15 @@ export type Turn = {
   onFallback?: ((use: FallbackUse) => void) | undefined;
 };
 export type TurnResult = { text: string; stopped: boolean };
+/**
+ * A prepared turn. `system` is the stable half (the tool docs and the owner's configuration); `text` is everything that changes. A harness
+ * with a system-prompt flag gets them apart so its cache can keep `system`; the rest get them joined (see `withSystem`).
+ */
+type Prepared = { system: string; text: string; background: string[] };
+
+/** The time as the bot sees it, to the minute: a timestamp with seconds would make every turn's prompt different for no gain. */
+export const currentTimeLine = (now = new Date()) =>
+  `Current time: ${now.toISOString().slice(0, 16)}Z (UTC). Resolve relative dates such as "tomorrow at 9" from it and the user's timezone when you know it.`;
 
 /**
  * `ZETTA_CODE_ACCESS=off` is the operator's kill switch; otherwise the bot owner's `codeAccess` setting decides. Fixture bots never run code.
@@ -282,8 +292,10 @@ export function createTurnRunner(
     onUsage?: (usage: TokenUsage) => void,
     onFallback?: (use: FallbackUse) => void,
     skills?: readonly string[],
+    system?: string,
   ) {
-    if (b.harness === "fixture") return fixtureResponder({ bot: b, history, prompt });
+    if (b.harness === "fixture")
+      return fixtureResponder({ bot: b, history, prompt: joinSystem(system, prompt) });
     if (b.harness === "decision") return decide ? decide(b, prompt, userId) : DECISION_FALLBACK;
     return runWithFallback(
       b,
@@ -292,6 +304,7 @@ export function createTurnRunner(
         return cli({
           harness: x.harness as NativeHarness,
           prompt,
+          ...(system ? { system } : {}),
           model: x.model,
           userId,
           botId: x.id,
@@ -322,7 +335,7 @@ export function createTurnRunner(
     referenced = [],
     skills = [],
     retrieval,
-  }: Turn): Promise<{ stop: TurnResult } | { text: string; background: string[] }> {
+  }: Turn): Promise<{ stop: TurnResult } | Prepared> {
     const active = await db
       .select()
       .from(hooks)
@@ -341,7 +354,7 @@ export function createTurnRunner(
       });
     if (ev.stop !== undefined) return { stop: { text: ev.stop, stopped: true } };
     // A decision-only bot has no AI to brief: it needs only the (redacted) message, and has nothing to run in the background.
-    if (b.harness === "decision") return { text: ev.text, background: [] };
+    if (b.harness === "decision") return { system: "", text: ev.text, background: [] };
     const referencedIds = referenced.map((i) => i.id);
     const skillText = await skillParts(b, skills);
     const fixture = b.harness === "fixture";
@@ -376,7 +389,9 @@ export function createTurnRunner(
               description: botTable.description,
             })
             .from(botTable)
-            .where(and(eq(botTable.ownerUserId, userId), eq(botTable.archived, false))),
+            .where(and(eq(botTable.ownerUserId, userId), eq(botTable.archived, false)))
+            // A fixed order keeps the system text byte-identical between turns, which is what lets the CLI's prompt cache hit.
+            .orderBy(asc(botTable.createdAt), asc(botTable.id)),
       !fixture && b.computerMode === "desktop"
         ? db
             .select({ id: computerVm.id, name: computerVm.name, kind: computerVm.kind })
@@ -451,7 +466,7 @@ export function createTurnRunner(
           chiefView
             ? `\n${roster || "none besides you"}`
             : bots.map((x) => `${x.name} (${x.id})`).join(", ")
-        }\nTo mention a bot, write [@Name](bot:<id>) with its id from this list.${teams.length ? `\nThe user's teams: ${teams.map((x) => `${x.name} (${x.id})`).join(", ")}` : ""}${roles.length ? `\nThe team roles: ${roles.map((x) => (x.description ? `${x.name} (${x.description})` : x.name)).join(", ")}` : ""}\nCurrent time: ${new Date().toISOString()} (UTC). Resolve relative dates such as "tomorrow at 9" from it and the user's timezone when you know it.` +
+        }\nTo mention a bot, write [@Name](bot:<id>) with its id from this list.${teams.length ? `\nThe user's teams: ${teams.map((x) => `${x.name} (${x.id})`).join(", ")}` : ""}${roles.length ? `\nThe team roles: ${roles.map((x) => (x.description ? `${x.name} (${x.description})` : x.name)).join(", ")}` : ""}` +
         (b.computerMode === "desktop"
           ? `\nThe user's computers (desktop "vm" ids): ${
               vms
@@ -465,13 +480,20 @@ export function createTurnRunner(
               .join(", ")}`
           : "");
     const style = await resolveOutputStyle(db, b);
-    const parts = [
+    // The stable half: it does not change between the rounds of one reply or between turns of the same bot, so Claude Code can cache it.
+    // It holds only configuration the owner wrote. Memory, notes and anything else that came from conversations stay in the turn text,
+    // where they carry no system authority. `extraTools` stays there too: a goal loop's text counts its steps.
+    const system = [
       toolText,
       b.harness !== "fixture" && pluginTools,
-      b.harness !== "fixture" && extraTools,
       b.personality && `Personality: ${b.personality}`,
       b.instructions && `Instructions: ${b.instructions}`,
       style && `Output style (how to write every reply):\n${style}`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const parts = [
+      b.harness !== "fixture" && extraTools,
       // Stored notes are data written by the user or by bots: they must never be followed as instructions.
       b.harness === "fixture" && !snap.user.length && !snap.notes.length ? "" : renderNotes(snap),
       referenced.length
@@ -491,10 +513,16 @@ export function createTurnRunner(
       ev.past.length
         ? `Conversation so far${scoped.truncated ? " (earlier messages omitted)" : ""}:\n${ev.past.map((m) => `${m.role}: ${m.content}`).join("\n")}`
         : "",
+      // Last before the request, and only to the minute: the one part that changes on every turn must not sit in front of stable text.
+      !fixture && currentTimeLine(),
       `User: ${ev.text}`,
     ].filter(Boolean);
     // Background hooks are the owner's own automation: they never run on behalf of another user who merely chats with a shared bot.
-    return { text: parts.join("\n\n"), background: b.ownerUserId === userId ? ev.background : [] };
+    return {
+      system,
+      text: parts.join("\n\n"),
+      background: b.ownerUserId === userId ? ev.background : [],
+    };
   }
   function startBackground(userId: string, b: Bot, tasks: string[]) {
     for (const task of tasks) {
@@ -545,6 +573,7 @@ export function createTurnRunner(
       turn.onUsage,
       turn.onFallback,
       turn.skills,
+      p.system,
     );
     startBackground(turn.userId, turn.bot, p.background);
     return { text: reply, stopped: false };
@@ -558,7 +587,11 @@ export function createTurnRunner(
       return;
     }
     if (turn.bot.harness === "fixture") {
-      const text = await fixtureResponder({ bot: turn.bot, history: turn.history, prompt: p.text });
+      const text = await fixtureResponder({
+        bot: turn.bot,
+        history: turn.history,
+        prompt: joinSystem(p.system, p.text),
+      });
       for (const w of text.split(/(?<= )/)) {
         if (turn.signal?.aborted) throw new HarnessError("cancelled");
         yield w;
@@ -580,6 +613,7 @@ export function createTurnRunner(
           yield* stream({
             harness: x.harness as NativeHarness,
             prompt: p.text,
+            ...(p.system ? { system: p.system } : {}),
             model: x.model,
             userId: turn.userId,
             botId: x.id,

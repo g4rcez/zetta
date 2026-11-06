@@ -6,6 +6,7 @@ import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createTurnRunner } from "../chat/pipeline";
+import { joinSystem } from "../chat/harness";
 import { createChatService } from "../chat/service";
 import { createIdentityAccess } from "../identity/access";
 import { createOutputStyles } from "./service";
@@ -28,10 +29,13 @@ suite("output styles against compose postgres", () => {
     },
     async () => ({ isAdmin: false }),
   );
-  /** Every prompt the harness received, in order. */
+  /** Every prompt the harness received, in order. The output style travels in `system`, so the fake keeps both halves, as a CLI would see them. */
   const prompts: string[] = [];
-  const cli = async function* (opts: { prompt: string }) {
-    prompts.push(opts.prompt);
+  /** The two halves as the harness got them, for the tests of the split itself. */
+  const halves: { system?: string; prompt: string }[] = [];
+  const cli = async function* (opts: { prompt: string; system?: string }) {
+    prompts.push(joinSystem(opts.system, opts.prompt));
+    halves.push({ ...(opts.system ? { system: opts.system } : {}), prompt: opts.prompt });
     yield "ok";
   };
   const app = createApp({
@@ -132,6 +136,25 @@ suite("output styles against compose postgres", () => {
     const prompt = await promptOf(A, bot.id);
     expect(prompt).toContain("Output style (how to write every reply):");
     expect(prompt).toContain("Lead with the result or the answer.");
+  });
+
+  test("the stable half of the prompt is the same text on every turn, and the time and the request are in the other half", async () => {
+    const { bot } = await newBot(A, { outputStyle: "concise", outputStyleId: null });
+    const before = halves.length;
+    await promptOf(A, bot.id);
+    await Bun.sleep(1100);
+    await promptOf(A, bot.id);
+    const [first, second] = halves.slice(before) as [
+      (typeof halves)[number],
+      (typeof halves)[number],
+    ];
+    expect(first.system).toBeTruthy();
+    // Same bytes: this is what lets the CLI read the text back from its cache instead of writing it again.
+    expect(second.system).toBe(first.system!);
+    expect(first.system).toContain("Lead with the result or the answer.");
+    expect(first.system).not.toContain("Current time");
+    expect(first.prompt).toContain("Current time:");
+    expect(first.prompt.trimEnd().endsWith("User: go")).toBe(true);
   });
 
   test("a new bot may name a built-in style without an id", async () => {

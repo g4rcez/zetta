@@ -17,8 +17,11 @@ import {
   harnessCommands,
   harnessHome,
   harnessMessage,
+  joinSystem,
   runCli,
   streamCli,
+  CLAUDE_PROGRESS_NOTE,
+  SYSTEM_FLAG_MAX_BYTES,
 } from "./harness";
 
 async function script(body: string) {
@@ -120,6 +123,97 @@ describe.skipIf(process.platform === "win32")("cli harness", () => {
     } finally {
       delete process.env.ZETTA_HARNESS_SLOT_MS;
     }
+  });
+  test("claude code takes the stable prompt text as system prompt, after the progress note, and keeps the prompt last", () => {
+    const argv = harnessCommands["claude-code"]("the turn", null, undefined, {
+      system: "STABLE TEXT",
+    });
+    const at = argv.indexOf("--append-system-prompt");
+    expect(argv[at + 1]).toBe(`${CLAUDE_PROGRESS_NOTE}\n\nSTABLE TEXT`);
+    expect(argv).toContain("--exclude-dynamic-system-prompt-sections");
+    expect(argv[argv.length - 1]).toBe("the turn");
+    expect(argv.join(" ")).not.toContain("STABLE TEXT the turn");
+  });
+  test("without stable text claude code keeps today's argv: no dynamic-section flag", () => {
+    const argv = claudeArgs("the turn", null);
+    expect(argv).not.toContain("--exclude-dynamic-system-prompt-sections");
+    expect(argv[argv.indexOf("--append-system-prompt") + 1]).toBe(CLAUDE_PROGRESS_NOTE);
+  });
+  test("the system prompt is the same bytes for two turns that only differ in the prompt", () => {
+    const a = claudeArgs(
+      "first",
+      null,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      "S",
+    );
+    const b = claudeArgs(
+      "second",
+      null,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      "S",
+    );
+    expect(a.slice(0, -1)).toEqual(b.slice(0, -1));
+  });
+  test("every other harness gets the stable text in front of the prompt, as before the split", () => {
+    expect(joinSystem("S", "P")).toBe("S\n\nP");
+    expect(joinSystem(undefined, "P")).toBe("P");
+    expect(joinSystem("", "P")).toBe("P");
+  });
+  test("a harness other than claude code never receives the system flag", async () => {
+    const argvFile = join(await mkdtemp(join(tmpdir(), "zetta-argv-")), "argv");
+    const bin = await script(`printf '%s\\n' "$@" > '${argvFile}'; echo ok`);
+    await runCli({
+      harness: "codex",
+      prompt: "P",
+      system: "S",
+      model: null,
+      resolve: () => bin,
+    });
+    const seen = (await Bun.file(argvFile).text()).trimEnd().split("\n");
+    expect(seen.join(" ")).not.toContain("--append-system-prompt");
+    // One argv element, "S\n\nP", which printf shows as three lines.
+    expect(seen.slice(-3)).toEqual(["S", "", "P"]);
+  });
+  test("a system text over the argv limit travels in the prompt instead of in the flag", async () => {
+    const argvFile = join(await mkdtemp(join(tmpdir(), "zetta-argv-")), "argv");
+    const bin = await script(`printf '%s\\n---\\n' "$@" > '${argvFile}'; echo ok`);
+    const big = "x".repeat(SYSTEM_FLAG_MAX_BYTES + 1);
+    await runCli({
+      harness: "claude-code",
+      prompt: "P",
+      system: big,
+      model: null,
+      resolve: () => bin,
+    });
+    const seen = await Bun.file(argvFile).text();
+    expect(seen).not.toContain("--exclude-dynamic-system-prompt-sections");
+    expect(seen).toContain(`${big}\n\nP`);
+  });
+  test("claude code runs with the optional traffic switched off, unless the caller sets it", async () => {
+    const out = join(await mkdtemp(join(tmpdir(), "zetta-env-")), "env");
+    const bin = await script(
+      `printf '%s' "$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" > '${out}'; echo ok`,
+    );
+    await runCli({ harness: "claude-code", prompt: "P", model: null, resolve: () => bin });
+    expect(await Bun.file(out).text()).toBe("1");
+    await runCli({
+      harness: "claude-code",
+      prompt: "P",
+      model: null,
+      extraEnv: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "0" },
+      resolve: () => bin,
+    });
+    expect(await Bun.file(out).text()).toBe("0");
   });
   test("claude code resumes a code directory session by id and names new ones", () => {
     const fresh = claudeArgs("go", null, "git", undefined, undefined, {

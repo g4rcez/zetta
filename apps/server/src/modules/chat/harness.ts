@@ -95,6 +95,15 @@ export const CLAUDE_PROGRESS_NOTE =
   "Before each group of tool calls, write one short sentence that says what you will do next.";
 
 /**
+ * The stable half of a prompt (`system`) goes to Claude Code as system prompt, where its cache can keep it between turns; every other
+ * harness has no such flag and gets both halves as one text, in the order they always had.
+ */
+export const joinSystem = (system: string | undefined, prompt: string) =>
+  system ? `${system}\n\n${prompt}` : prompt;
+/** One argv element is limited to 128 KiB on Linux. Past this size the system text travels in the prompt instead of in a flag. */
+export const SYSTEM_FLAG_MAX_BYTES = 100_000;
+
+/**
  * Pure builder for the claude argv. `auto` and `full` run any command and use the web without asking, on the host and in the container;
  * deletes, root and mail stay denied until granted (CLAUDE_GUARDED), and the deny list always wins. Without code access the preset and
  * allow rules do nothing; deny rules, prompt, effort, budget and the plugin still apply. The prompt stays the last element.
@@ -108,6 +117,7 @@ export function claudeArgs(
   session?: CliSession,
   github = false,
   mcp?: McpRun,
+  system?: string,
 ): string[] {
   const args = ["claude", "-p", ...(model ? ["--model", model] : [])];
   // Only a code directory outlives the run, so only there can a cut-off session be found again.
@@ -174,8 +184,11 @@ export function claudeArgs(
     "stream-json",
     "--verbose",
     "--append-system-prompt",
-    [CLAUDE_PROGRESS_NOTE, profile?.appendPrompt].filter(Boolean).join("\n\n"),
+    // Stable text only, and in a fixed order, so the prefix is the same on every turn and the CLI can read it back from its cache.
+    [CLAUDE_PROGRESS_NOTE, profile?.appendPrompt, system].filter(Boolean).join("\n\n"),
   );
+  // The working directory, environment and git status would otherwise sit in that prefix, and the run's temp directory differs every time.
+  if (system) args.push("--exclude-dynamic-system-prompt-sections");
   return [...args, prompt];
 }
 
@@ -267,6 +280,8 @@ export const harnessCommands: Record<
       session?: CliSession;
       github?: boolean;
       mcp?: McpRun;
+      /** Stable prompt text for `--append-system-prompt` (see joinSystem for every other harness). */
+      system?: string;
     },
   ) => string[]
 > = {
@@ -652,6 +667,8 @@ const AUTH_PATTERN =
 export type CliInput = {
   harness: NativeHarness;
   prompt: string;
+  /** The stable half of the prompt: Claude Code gets it as system prompt (cacheable), every other harness has it put in front of `prompt`. */
+  system?: string;
   model: string | null;
   userId?: string;
   /** The bot that runs, so the slow-turn card can tell which CLI belongs to which answer (see processes.ts). */
@@ -774,7 +791,8 @@ export function killGroup(pid: number, platform: string = process.platform) {
  * deadline unless the caller passes `timeoutMs`; a bot may work for days. Only the first minutes of a run hold a concurrency slot. */
 export const streamCli: StreamCli = async function* ({
   harness,
-  prompt,
+  prompt: givenPrompt,
+  system,
   model,
   userId,
   extraEnv: givenEnv,
@@ -790,11 +808,17 @@ export const streamCli: StreamCli = async function* ({
   heartbeatMs = HEARTBEAT_MS,
   onUsage,
 }) {
+  // Only Claude Code has a system-prompt flag, and a flag value has a size limit; anywhere else the text goes in front of the prompt.
+  const systemFlag =
+    harness === "claude-code" && system && Buffer.byteLength(system) <= SYSTEM_FLAG_MAX_BYTES
+      ? system
+      : undefined;
+  const prompt = systemFlag ? givenPrompt : joinSystem(system, givenPrompt);
   const docker = dockerConfig();
   const codePath = code && userId ? codeDir(userId) : undefined;
   const profile = harness === "claude-code" || harness === "hermes" ? given : undefined;
   const { [GITHUB_CLI_ENV]: viaCli, ...baseEnv } = givenEnv ?? {};
-  const extraEnv = codePath
+  const callerEnv = codePath
     ? {
         ...baseEnv,
         ...gitEnv(
@@ -806,6 +830,12 @@ export const streamCli: StreamCli = async function* ({
     : givenEnv
       ? baseEnv
       : undefined;
+  // Claude Code makes a summary call after each reply (a few seconds, sometimes over ten) that no bot uses: this turns off that and other
+  // optional traffic. What the caller set wins.
+  const extraEnv =
+    harness === "claude-code"
+      ? { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", ...callerEnv }
+      : callerEnv;
   const exe = docker ? docker.bin : resolve(harnessCommands[harness]("x", null)[0]!);
   if (!exe) throw new HarnessError("not_installed");
   const release = await defaultLimiter.acquire(userId ?? "anonymous", signal);
@@ -854,9 +884,10 @@ export const streamCli: StreamCli = async function* ({
       imagePaths.length ? prompt + imageNote(imagePaths) : prompt,
       model,
       codePath ? (docker ? "full" : "git") : undefined,
-      profile || mcp || viaCli || (codePath && baseEnv.GITHUB_TOKEN)
+      profile || mcp || viaCli || systemFlag || (codePath && baseEnv.GITHUB_TOKEN)
         ? {
             profile,
+            ...(systemFlag ? { system: systemFlag } : {}),
             ...(mcp ? { mcp } : {}),
             ...((codePath && baseEnv.GITHUB_TOKEN) || viaCli ? { github: true } : {}),
             ...(pluginDir ? { pluginDir: docker ? CONTAINER_PLUGIN_DIR : pluginDir } : {}),

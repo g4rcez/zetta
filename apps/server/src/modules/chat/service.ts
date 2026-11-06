@@ -364,6 +364,8 @@ export type Converse = {
   notice?: { prompt: string; wave?: number };
   /** A queued user message (see `enqueue`), already saved: the turn answers it in its thread instead of saving a new one. */
   answer?: string;
+  /** Internal only (no HTTP route sets it): the prompt carries outside content (a routine started by a webhook or an event), so the turn is tainted like one that read a page. */
+  untrusted?: boolean;
 };
 /**
  * Where a turn's tools act. `inbound`: the bot answers outside people, so it may only read, reply to the origin chat, hand off or open a
@@ -5953,7 +5955,7 @@ export function createChatService(
           }
         : {
             policy: conv.kind === "inbound" ? "inbound" : "default",
-            tainted: untrustedConv || files.length > 0,
+            tainted: untrustedConv || files.length > 0 || input.untrusted === true,
             origin: {
               conversationId: conv.id,
               messageId: input.retry?.requestId ?? userMsg.id,
@@ -5977,7 +5979,7 @@ export function createChatService(
           hist: botHist,
           prompt,
           ...where,
-          untrusted: untrustedConv || files.length > 0,
+          untrusted: untrustedConv || files.length > 0 || input.untrusted === true,
           wave: input.notice?.wave,
           images,
           referenced,
@@ -6050,7 +6052,7 @@ export function createChatService(
             bots: others,
             text: input.content,
             leadReply: hist.at(-1)?.content ?? "",
-            tainted: untrustedConv || files.length > 0,
+            tainted: untrustedConv || files.length > 0 || input.untrusted === true,
           });
           if (room) yield await note(`👥 ${who} will answer in the room "${room.title}".`, room);
           else if (!deps.discussions)

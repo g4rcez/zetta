@@ -12,6 +12,8 @@ export const WORKER_ONLY: readonly Rule[] = [
   { path: /^\/api\/computer(\/|$)/ },
   { path: /^\/api\/harnesses$/ },
   { path: /^\/api\/inbound\// },
+  // A webhook starts a run in the worker: the bot turn and its stream live in that process.
+  { methods: ["POST"], path: /^\/api\/routines\/hook\/[^/]+$/ },
   { path: /^\/api\/decisions(\/|$)/ },
   // Sealed credentials: the key a browser seals to lives in one process's memory, and so do the single-use OAuth callback guards.
   { path: /^\/api\/plugins\/[^/]+\/(test|connect|disconnect|callback)$/ },

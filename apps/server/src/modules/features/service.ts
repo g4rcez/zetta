@@ -17,6 +17,7 @@ import {
 import { visibleTo } from "../memory/service";
 import { createKnowledge } from "./knowledge";
 import { createRoutines } from "./routines";
+import { createRoutineTriggers } from "./routine-triggers";
 import { createSnapshots } from "./snapshots";
 import { safeRegex } from "./safety";
 import { createWorkflows } from "./workflows";
@@ -57,6 +58,7 @@ export function createFeaturesService(
       .runForOwner(userId, id, input)
       .then((r) => ({ status: r.run.status, output: r.output })),
   );
+  const routineTriggers = createRoutineTriggers(db, routines.fireEvent);
   const snapshots = createSnapshots(db);
   const usableBot = async (actor: ActiveActor, botId: string) =>
     first(
@@ -79,6 +81,7 @@ export function createFeaturesService(
     knowledge,
     workflows,
     routines,
+    routineTriggers,
     snapshots,
     // --- what an answer used ---
     /** What a given answer used: the memories and memory items recorded on it (only what the requester may read). */

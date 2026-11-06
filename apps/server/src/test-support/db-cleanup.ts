@@ -18,6 +18,7 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
     "attachment",
     "delegation",
     "routine_run",
+    "routine_trigger",
     "workflow_run",
     "snapshot",
     "config_proposal",

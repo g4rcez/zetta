@@ -21,6 +21,7 @@ The load balancer sends these requests to the worker (`apps/server/src/worker-on
 - Anything that runs a CLI, model or container in the request: `POST /api/(workflows|routines)/:id/run`, `POST /api/bots/interview`, `POST /api/memory-assist` (also its old name `/api/wiki-assist`), `/api/harnesses`, `/api/decisions/*`.
 - Computers and VNC: `/api/computer/*` (including the WebSocket).
 - `/api/inbound/*` (plugin hooks).
+- `POST /api/routines/hook/:triggerId` (a routine webhook starts the run in the worker).
 - Sealed credentials and plugin sign-in: `GET /api/connections/transport-key`, `POST /api/connections`, `POST /api/plugins`, `PUT /api/plugins/:id/config`, `/api/plugins/:id/(test|connect|disconnect|callback)`. The key a browser seals a secret to is generated in the memory of one process, and a sealed body that reaches another instance is refused with 409.
 
 Everything else, including the polled reads (`/api/bots`, `/api/conversations`, `/api/conversations/:id/messages`, `/api/discussions`, ...), `/api/events` and auth, can be served by any `api`.

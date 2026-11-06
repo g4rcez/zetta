@@ -9,6 +9,7 @@ import { Button, Input, Radiobox, Select } from "@/components/ui";
 
 import { ApiError, call, errorMessage, type Bot } from "../chat/chat-client";
 import { MentionTextarea } from "../chat/mention";
+import { RoutineTriggers, runOrigin } from "./routine-triggers";
 import { Badge, ConfirmButton, Empty, Modal, list, listItem, useList, when } from "../shared/ui";
 import { relativeTime } from "../shared/relative-time";
 import { summarize } from "../studio/routine-format";
@@ -69,6 +70,8 @@ type Run = {
   startedAt: string;
   finishedAt: string | null;
   trigger: string;
+  /** What started a webhook or event run (a body, a mail, a state change): outside data. */
+  event?: unknown;
 };
 type Flow = { id: string; name: string };
 const NO_RUNS: Run[] = [];
@@ -230,9 +233,17 @@ function History({ routineId }: { routineId: string }) {
           <li key={r.id} className="min-w-0 rounded-md border bg-card p-3">
             <p>
               <strong>{RUN_STATUS[r.status]}</strong>
-              {r.reasonCode ? ` (${human(r.reasonCode)})` : ""} ·{" "}
-              {r.trigger === "manual" ? "started by you" : "scheduled"} · {when(r.startedAt, tf)}
+              {r.reasonCode ? ` (${human(r.reasonCode)})` : ""} · {runOrigin(r)} ·{" "}
+              {when(r.startedAt, tf)}
             </p>
+            {r.event != null && (
+              <details>
+                <summary className="cursor-pointer text-xs">Event</summary>
+                <pre className="max-w-full whitespace-pre-wrap break-words text-xs">
+                  {JSON.stringify(r.event, null, 2).slice(0, 2000)}
+                </pre>
+              </details>
+            )}
             {r.output && (
               <details>
                 <summary className="cursor-pointer text-xs">Output</summary>
@@ -370,7 +381,7 @@ function EditForm({
 }
 
 const NEEDS_ATTENTION: RoutineStatus[] = ["failed", "interrupted", "blocked"];
-type View = "history" | "edit" | "activate";
+type View = "history" | "triggers" | "edit" | "activate";
 const statusOf = (r: Routine): RoutineStatus => r.status ?? (r.paused ? "paused" : "scheduled");
 
 /** Creating a routine is one focused task, so it gets its own dialog instead of sitting above the list. */
@@ -668,6 +679,7 @@ function RoutineRow({
               {(
                 [
                   ["history", "History"],
+                  ["triggers", "Triggers"],
                   ["edit", "Edit"],
                 ] as const
               ).map(([v, l]) => (
@@ -729,6 +741,7 @@ function RoutineRow({
             />
           )}
           {open === "history" && <History routineId={r.id} />}
+          {open === "triggers" && <RoutineTriggers routineId={r.id} paused={r.paused} />}
         </div>
       )}
     </li>

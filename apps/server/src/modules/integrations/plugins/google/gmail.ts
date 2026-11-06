@@ -1,4 +1,4 @@
-import { PluginError, type PluginTool } from "../registry";
+import { PluginError, type PluginContext, type PluginTool } from "../registry";
 import { createSendLimit } from "../send-limit";
 import {
   ACCOUNT_ARG,
@@ -69,6 +69,48 @@ const recipients = (v: unknown) => {
 const SEND_PER_HOUR = 10;
 const sendLimit = createSendLimit({ perHour: SEND_PER_HOUR });
 
+/** One message as the search tools show it: sender, subject, date and a short snippet. Outside content, so callers frame it as data. */
+async function messageMeta(g: PluginContext, id: string) {
+  const mu = new URL(`${settings().gmailBase}/users/me/messages/${encodeURIComponent(id)}`);
+  mu.searchParams.set("format", "metadata");
+  for (const h of ["From", "Subject", "Date"]) mu.searchParams.append("metadataHeaders", h);
+  const j = (await (await gfetch(g, mu.toString())).json()) as {
+    id: string;
+    snippet?: string;
+    payload?: { headers?: { name?: string; value?: string }[] };
+  };
+  const h = j.payload?.headers;
+  return {
+    id: j.id,
+    from: clip(hdr(h, "from"), 120),
+    subject: clip(hdr(h, "subject"), 160),
+    date: clip(hdr(h, "date"), 40),
+    snippet: clip(j.snippet, 200),
+  };
+}
+
+/**
+ * Messages that match a Gmail search and arrived after `afterSeconds` (epoch seconds), oldest first, at most 25. For routine triggers: the
+ * caller overlaps its window a little and de-duplicates by message id, so a mail that Gmail indexes late is not missed.
+ */
+export async function newMessages(
+  ctx: PluginContext,
+  query: string,
+  afterSeconds: number,
+  account?: string,
+) {
+  const g = pickAccount(ctx, account, "gmail.readonly");
+  const u = new URL(`${settings().gmailBase}/users/me/messages`);
+  u.searchParams.set("q", `${str(query, 300)} after:${Math.max(0, Math.floor(afterSeconds))}`);
+  u.searchParams.set("maxResults", "25");
+  const list = (await (await gfetch(g, u.toString())).json()) as { messages?: { id: string }[] };
+  const found = await Promise.all(
+    (list.messages ?? []).slice(0, 25).map((m) => messageMeta(g, m.id)),
+  );
+  // Gmail lists the newest first.
+  return found.reverse();
+}
+
 export const gmailTools: PluginTool[] = [
   {
     name: "gmail_search",
@@ -93,26 +135,7 @@ export const gmailTools: PluginTool[] = [
         messages?: { id: string }[];
       };
       const items = await Promise.all(
-        (list.messages ?? []).slice(0, 10).map(async (m) => {
-          const mu = new URL(
-            `${settings().gmailBase}/users/me/messages/${encodeURIComponent(m.id)}`,
-          );
-          mu.searchParams.set("format", "metadata");
-          for (const h of ["From", "Subject", "Date"]) mu.searchParams.append("metadataHeaders", h);
-          const j = (await (await gfetch(g, mu.toString())).json()) as {
-            id: string;
-            snippet?: string;
-            payload?: { headers?: { name?: string; value?: string }[] };
-          };
-          const h = j.payload?.headers;
-          return {
-            id: j.id,
-            from: clip(hdr(h, "from"), 120),
-            subject: clip(hdr(h, "subject"), 160),
-            date: clip(hdr(h, "date"), 40),
-            snippet: clip(j.snippet, 200),
-          };
-        }),
+        (list.messages ?? []).slice(0, 10).map((m) => messageMeta(g, m.id)),
       );
       return untrustedList(SRC, "messages", items);
     },

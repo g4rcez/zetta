@@ -29,8 +29,8 @@ const TIMEOUT_MS = 10_000,
   MAX_TEXT = 500;
 /** The built-in (non-LLM) Assist agent. Pinned, so a user whose default agent is an LLM still gets the deterministic one. */
 const ASSIST_AGENT = "conversation.home_assistant";
-const SLUG = /^[a-z0-9_]{1,64}$/,
-  ENTITY = /^[a-z0-9_]{1,64}\.[a-z0-9_]{1,64}$/;
+const SLUG = /^[a-z0-9_]{1,64}$/;
+export const ENTITY = /^[a-z0-9_]{1,64}\.[a-z0-9_]{1,64}$/;
 
 const base = (c: PluginContext) => {
   try {
@@ -46,7 +46,7 @@ const base = (c: PluginContext) => {
   }
 };
 
-async function haFetch(
+export async function haFetch(
   c: PluginContext,
   path: string,
   init: { method?: string; body?: unknown } = {},
@@ -113,6 +113,18 @@ const compact = (s: State) => ({
   state: String(s.state ?? ""),
 });
 
+/** The state of one entity now, for routine triggers: its state text, name and when it last changed. */
+export async function entityState(c: PluginContext, entityId: string) {
+  if (!ENTITY.test(entityId)) throw new PluginError("INVALID_ARGS", "The entity id is not valid.");
+  const s = (await haFetch(c, `/api/states/${entityId}`)) as State & { last_changed?: unknown };
+  return {
+    entityId,
+    name: typeof s.attributes?.friendly_name === "string" ? s.attributes.friendly_name : undefined,
+    state: String(s.state ?? ""),
+    changedAt: String(s.last_changed ?? ""),
+  };
+}
+
 export type AssistResult = { type: string; speech: string };
 
 const MAX_LANGUAGES = 5;
@@ -172,12 +184,12 @@ const def: PluginDef = {
   description:
     "Read the state of your smart home and control it through your own Home Assistant server.",
   notes:
-    "Needs a Home Assistant server that Zetta can reach. Home Assistant is usually on a private network, so the administrator must set ZETTA_ALLOW_PRIVATE_NETWORK=1. The token has the full power of your Home Assistant user. 'Fast control' answers simple commands with Home Assistant's own Assist engine instead of the AI; it needs the decision model (Laya) turned on and only acts on entities you expose to Assist in Home Assistant.",
+    "Needs a Home Assistant server that Zetta can reach. Home Assistant is usually on a private network, so the administrator must set ZETTA_ALLOW_PRIVATE_NETWORK=1. The token has the full power of your Home Assistant user. 'Fast control' answers simple commands without the AI: Zetta keeps a copy of your devices, areas and scenes (refreshed every 30 minutes), reads the command itself in English or Brazilian Portuguese (device names match with any case, accents or spaces), and calls the service. It can control any entity the token reaches, and it does nothing when it is not sure. Then, if the decision model (Laya) is on, Home Assistant's own Assist engine tries, and last the AI.",
   guide: () => [
     "In Home Assistant open your profile (bottom left) > Security > Long-lived access tokens > Create token.",
     "Copy the token now: Home Assistant shows it only once.",
     "Enter the address of your server (for example http://homeassistant.local:8123) and the token here.",
-    "Optional: set 'Fast control' to on. In Home Assistant, Settings > Voice assistants > Expose decides which entities it may control.",
+    "Optional: set 'Fast control' to on. It may control every entity that the token reaches. Assist, as a fallback, only acts on entities exposed in Settings > Voice assistants > Expose.",
   ],
   fields: [
     {
@@ -203,7 +215,7 @@ const def: PluginDef = {
         { value: "off", label: "Off: the AI handles every message" },
         { value: "on", label: "On: simple commands skip the AI" },
       ],
-      help: "Simple home commands are sent straight to Home Assistant Assist. Needs the decision model (Laya) turned on.",
+      help: "Simple home commands in English or Portuguese skip the AI: Zetta finds the device and calls Home Assistant itself. When it is not sure, Assist tries (needs the decision model, Laya, turned on), then the AI.",
     },
     {
       key: "language",

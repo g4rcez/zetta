@@ -1,6 +1,8 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { getPlugin, type PluginContext } from "../registry";
+import { createRoutinePollers } from "../../../features/routine-pollers";
+import { newMessages } from "./gmail";
 import { configureGoogleForTests, redirectUri } from "./oauth";
 import "./index";
 
@@ -418,6 +420,29 @@ describe("google tools", () => {
     expect(doc.length).toBeLessThanOrEqual(7500);
     expect(doc.startsWith("UNTRUSTED EXTERNAL CONTENT")).toBe(true);
     expect(doc).toContain("[truncated]");
+  });
+  test("new messages are asked for as the search plus an after window", async () => {
+    calls = [];
+    const mails = await newMessages(fresh("gmail.readonly").ctx, "from:billing", 1_700_000_000);
+    const list = calls.find((c) => c.path === "/gmail/users/me/messages")!;
+    const q = new URLSearchParams(list.query);
+    expect(q.get("q")).toBe("from:billing after:1700000000");
+    expect(q.get("maxResults")).toBe("25");
+    expect(mails).toHaveLength(10);
+    expect(mails[0]).toMatchObject({ id: "m1aaaaaa", from: "a@b.c" });
+  });
+  test("the Gmail poller fires nothing at first, then one event per mail keyed by its id", async () => {
+    const poll = createRoutinePollers(async () => fresh("gmail.readonly").ctx).gmail;
+    const first = await poll("u1", { query: "from:billing" }, null);
+    expect(first.events).toEqual([]);
+    const next = await poll("u1", { query: "from:billing" }, first.cursor);
+    expect(next.events[0]).toMatchObject({
+      key: "gmail:m1aaaaaa",
+      event: { source: "gmail", from: "a@b.c" },
+    });
+    // A cursor from before a long gap is not trusted: nothing old fires.
+    const afterGap = await poll("u1", { query: "from:billing" }, { at: Date.now() - 7_200_000 });
+    expect(afterGap.events).toEqual([]);
   });
 });
 

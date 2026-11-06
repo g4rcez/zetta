@@ -27,6 +27,8 @@ import {
   vmOsFrom,
 } from "./modules/computer/vm";
 import { createFeaturesService } from "./modules/features/service";
+import { createRoutinePollers } from "./modules/features/routine-pollers";
+import { PluginError } from "./modules/integrations/plugins/registry";
 import { createAgenda } from "./modules/agenda/service";
 import { createLocalEmbedder } from "./modules/knowledge/embed";
 import { createKnowledge as createCompanyKnowledge } from "./modules/knowledge/service";
@@ -287,9 +289,21 @@ export const chatServices = {
   ),
   files,
 };
+// Gmail and Home Assistant triggers poll with the owner's own plugin connections, the ones the bot's tools use.
+features.routineTriggers.usePollers(
+  createRoutinePollers(async (userId, pluginId) => {
+    const actor = await issueBackgroundActor(membershipLookup, userId);
+    if (!actor)
+      throw new PluginError(
+        "OWNER_INACTIVE",
+        "The routine owner no longer has an active membership.",
+      );
+    return mcp.plugins.contextFor(actor, pluginId);
+  }),
+);
 // Routines run as real chat turns (tools, computers, plugins) in their conversation, as the owner. A busy conversation (the owner is
 // chatting in a routine that continues one chat) is retried for a while instead of failing the occurrence.
-features.routines.useChat(async (userId, conversationId, prompt, requestKey) => {
+features.routines.useChat(async (userId, conversationId, prompt, requestKey, opts) => {
   const actor = await issueBackgroundActor(membershipLookup, userId);
   if (!actor) throw new Error("owner_inactive");
   for (let attempt = 0; ; attempt++) {
@@ -299,6 +313,8 @@ features.routines.useChat(async (userId, conversationId, prompt, requestKey) => 
         clientRequestId: requestKey,
         // A routine has one chat for all its runs; the bot gets only the run before this one.
         history: "previous_turn",
+        // A run started by an outside event reads that event: the turn is tainted, so writes wait for the owner's approval.
+        ...(opts?.untrusted ? { untrusted: true } : {}),
       });
       let saved: { status: string; content: string; meta?: unknown } | undefined;
       for await (const { event } of follow()) if (event.type === "message") saved = event.message;

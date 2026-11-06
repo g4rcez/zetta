@@ -153,9 +153,13 @@ export const routineRun = zetta.table(
     conversationId: uuid("conversation_id").references(() => conversation.id, restrict),
     // Unique per (routine, scheduled instant) or per run-now request, so a crash/retry/second worker never repeats an occurrence.
     occurrenceKey: text("occurrence_key"),
-    trigger: text("trigger", { enum: ["schedule", "manual", "recovery"] })
+    trigger: text("trigger", { enum: ["schedule", "manual", "recovery", "webhook", "event"] })
       .default("schedule")
       .notNull(),
+    /** The trigger that started a `webhook` or `event` run. */
+    triggerId: uuid("trigger_id").references(() => routineTrigger.id, setNull),
+    /** What started a `webhook` or `event` run: the webhook body, a new mail, a state change. Outside data, cut to 16 KB. */
+    event: jsonb("event"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     /** 0 for the scheduled run, then 1, 2, … for each retry of it. */
@@ -173,6 +177,7 @@ export const routineRun = zetta.table(
       .where(sql`${t.readAt} is null`),
     index("routine_run_owner_user_id_idx").on(t.ownerUserId),
     index("routine_run_conversation_id_idx").on(t.conversationId),
+    index("routine_run_trigger_id_idx").on(t.triggerId, t.startedAt),
     index("routine_run_routine_idx").on(t.routineId, t.startedAt),
     index("routine_run_started_idx").on(t.startedAt),
     index("routine_run_retry_idx")

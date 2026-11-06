@@ -33,7 +33,7 @@ export function IconHint({ label, children, side = "top" }: IconHintProps) {
             }}
             onBlur={() => setOpen(false)}
             // The ::after widens the hit area to 24x24px (WCAG 2.5.8) without changing the layout.
-            className="relative inline-flex shrink-0 rounded-sm after:absolute after:-inset-1.5 focus-visible:outline-2 focus-visible:outline-ring"
+            className="relative inline-flex shrink-0 rounded-sm after:absolute after:-inset-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           />
         }
       >

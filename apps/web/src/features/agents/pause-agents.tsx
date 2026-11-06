@@ -1,5 +1,5 @@
 import { PauseIcon, PlayIcon } from "@phosphor-icons/react";
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ComponentProps } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui";
@@ -41,23 +41,35 @@ export function useToggleAgents() {
   return { paused, busy, toggle };
 }
 
-/** The sidebar footer control: an icon square that shows the state (pause bars, or play while paused) and flips it. */
-export function PauseAgentsButton({ collapsed }: { collapsed: boolean }) {
+/**
+ * The sidebar footer control: an icon square that shows the state (pause bars, or play while paused) and flips it.
+ * The other props go to the `<button>`, so `ActionHint` can use it as its trigger.
+ */
+export function PauseAgentsButton({
+  collapsed,
+  onClick,
+  className,
+  ...props
+}: { collapsed: boolean } & Omit<ComponentProps<"button">, "children">) {
   const { paused, busy, toggle } = useToggleAgents();
   const label = paused ? "Resume agents" : "Pause agents";
   const Icon = paused ? PlayIcon : PauseIcon;
   return (
     <button
+      {...props}
       type="button"
-      onClick={() => void toggle()}
+      onClick={(e) => {
+        onClick?.(e);
+        void toggle();
+      }}
       disabled={busy}
       aria-label={label}
       aria-pressed={paused}
-      title={collapsed ? undefined : label}
       className={cn(
         railRow,
         !collapsed && "h-7 w-7 min-w-7",
         paused && "bg-attention/15 [&_svg]:text-attention",
+        className,
       )}
     >
       <Icon className="size-4 shrink-0" weight={paused ? "fill" : "regular"} aria-hidden="true" />

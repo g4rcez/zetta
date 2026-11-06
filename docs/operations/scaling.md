@@ -19,7 +19,7 @@ The load balancer sends these requests to the worker (`apps/server/src/worker-on
 - Starting, following and cancelling turns: `POST /api/conversations/:id/(stream|chat|messages|queue|cancel|turn/wait)`, `POST .../queue/:messageId/retry`, `GET .../(stream|chat/stream|turn)`.
 - `POST /api/proposals/:id/decision` (an approval can restart a stopped turn), `/api/bots/:id/onboarding/*`.
 - Anything that runs a CLI, model or container in the request: `POST /api/(workflows|routines)/:id/run`, `POST /api/bots/interview`, `POST /api/memory-assist` (also its old name `/api/wiki-assist`), `/api/harnesses`, `/api/decisions/*`.
-- Computers and VNC: `/api/computer/*` (including the WebSocket), and `/api/bots/:id/database*` (bot database roles allow 3 connections cluster-wide).
+- Computers and VNC: `/api/computer/*` (including the WebSocket).
 - `/api/inbound/*` (plugin hooks).
 - Sealed credentials and plugin sign-in: `GET /api/connections/transport-key`, `POST /api/connections`, `POST /api/plugins`, `PUT /api/plugins/:id/config`, `/api/plugins/:id/(test|connect|disconnect|callback)`. The key a browser seals a secret to is generated in the memory of one process, and a sealed body that reaches another instance is refused with 409.
 
@@ -39,7 +39,7 @@ Everything else, including the polled reads (`/api/bots`, `/api/conversations`, 
 
 ## Connections
 
-Per instance: `ZETTA_DB_POOL_MAX` (default 20) + 1 listener. A worker adds up to 50 bot-database pools of 2. Example from the compose file: 2 api × (10 + 1) + worker (20 + 1 + up to 20) + admin = about 65 connections, so `postgres` runs with `max_connections=200`.
+Per instance: `ZETTA_DB_POOL_MAX` (default 20) + 1 listener. Example from the compose file: 2 api × (10 + 1) + worker (20 + 1) + admin = about 45 connections, so `postgres` runs with `max_connections=200`.
 
 ## Instances and recovery
 

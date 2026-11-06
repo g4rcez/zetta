@@ -62,19 +62,6 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
   const teamStore = createTeamStore(db, discussions);
   const outputStyles = createOutputStyles(db);
   const tasks = createTaskStore(db);
-  // The bot database needs CREATEROLE on the server's database user: a recording fake stands in for it.
-  const dbCalls: string[] = [];
-  const dbFake = {
-    ensure: async () => "",
-    setAccess: async (_botId: string, on: boolean) => {
-      dbCalls.push(`access ${on}`);
-      return { access: on };
-    },
-    applyTemplate: async (_botId: string, t: string) => {
-      dbCalls.push(`template ${t}`);
-      return {} as never;
-    },
-  } as never;
   let artifacts: ReturnType<typeof createArtifactStore>;
   let chatSvc: ReturnType<typeof createChatService>;
   let app: ReturnType<typeof createApp>;
@@ -121,7 +108,6 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
         preferences: createPreferenceStore(db),
         botClaude: createBotClaude(db),
         skills: { skills: createSkills(db), market: {} as never },
-        botDatabase: dbFake,
         memory: createMemory(db),
       },
     );
@@ -650,34 +636,11 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
     expect(prompts.join("\n")).toContain("does not run on Claude Code");
   });
 
-  test("a bot's database is switched with a card, and erased only through a form the user fills in", async () => {
-    const { say } = await chiefOf(A);
-    dbCalls.length = 0;
-    await say(
-      ['```zetta:bot_database\n{"action":"access","bot":"Scout","on":true}\n```'],
-      "turn on Scout's database",
-    );
-    expect(dbCalls).toEqual([]);
-    const [p] = await pending(A);
-    await approve(A, p!.id);
-    expect(dbCalls).toEqual(["access true"]);
-
-    const reply = await say(
-      ['```zetta:bot_database\n{"action":"reset","bot":"Scout"}\n```'],
-      "erase Scout's database",
-    );
-    expect(reply).toContain("```zetta:form-card");
-    expect(reply).toContain('"form":"bot_database_reset"');
-    expect(reply).toContain('"botName":"Scout"');
-    expect(await pending(A)).toEqual([]);
-    expect(dbCalls).toEqual(["access true"]);
-  });
-
   test("a form card the model writes itself is never shown", async () => {
     const { say } = await chiefOf(A);
     const reply = await say(
       [
-        'Here you go.\n```zetta:form-card\n{"form":"bot_database_reset","botId":"x","botName":"Scout","prefill":{}}\n```',
+        'Here you go.\n```zetta:form-card\n{"form":"source_login","botId":"x","botName":"Scout","prefill":{}}\n```',
       ],
       "show a form",
     );

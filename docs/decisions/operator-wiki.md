@@ -32,6 +32,15 @@ A memory of Markdown pages, one topic per page, in Postgres. The ideas come from
 - URLs are kept as evidence but never fetched again.
 - The review job sees at most 30 pages; contradictions in older pages are found only through the checks list.
 
+## Memory as the bots' database (2026-11-06)
+
+The per-bot Postgres database was removed (only one bot ever used it, and no rows were saved). Bots keep lists and records in memory items: sources to read, items already handled, ratings, preferences.
+
+- **Shape.** One item per list, tagged `list` plus a topic tag, one entry per line starting with a stable key (a URL or handle). The prompt tells bots this (`TOOL_PREAMBLE`, `chat/tools.ts`).
+- **Actions.** `list` shows items by tag, type or recency with no search text (`memory.browse`). `append` adds lines at the end of an item with no exact text to match; a line that is already there is not added twice (`memory.append`). `patch` changes or removes one entry.
+- **Limits.** 20,000 characters per item and 2,000 items per user. Every content change keeps a full copy in `memory_revision` and the ticker re-cuts and re-embeds the item, so memory fits hundreds of entries per list, not tens of thousands. Bots are told to drop finished entries or continue in `<slug>-2`.
+- **Indexes (measured on 8,000 items, 37 MB of text).** `memory_item.search_tsv` is a generated column with a GIN index; search ranks on it instead of lexing every matching item again (message search p95 51 ms to 11 ms). `edgesAround` was rewritten into two index-driven halves, so reading an item and listing neighbours cost by hits and not by the size of the memory (`read` p50 4.0 ms to 1.9 ms). Upkeep scans such as `checks` got slightly slower because rows are wider. `memoryItemColumns` (`schema/memory.ts`) selects every column except `search_tsv`; use it for full-row reads. No other index was worth adding: tag and recency listing already run in about 1 ms.
+
 ## Unified memory (2026-11-02)
 
 Memory, instructions, Drive documents and memory items are one concept: a **memory item**. The old `memory`, `instruction` and `knowledge_chunk` tables, `/api/memories`, `/api/instructions`, `zetta:remember`, `zetta:instruction` and the Knowledge and Instructions tabs are gone. Rows kept their ids, so old answers and citations still resolve.

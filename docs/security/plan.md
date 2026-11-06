@@ -3,6 +3,8 @@
 Date: 2026-10-29. Scope: `apps/server`, `apps/web`, `apps/desktop`, `packages/*`, Docker, CI.
 Method: four read-only code audits (auth/HTTP boundary, integrations/secrets/SSRF, exec/LLM tools/bot database, web/desktop/supply chain). Each finding below was read in code. Items marked _plausible_ depend on runtime behavior that was not run.
 
+Update 2026-11-06: the bot database plugin was removed (bots keep what they need in memory). Mentions of it below, including C10, are history.
+
 Status values: **Fixed** (this change), **Decision** (needs an owner decision: it changes auth, a public contract, or product behavior), **Planned** (safe to do, larger than this change), **Accepted** (known, documented, low risk).
 
 ## Threat model summary

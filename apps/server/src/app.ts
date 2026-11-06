@@ -31,7 +31,6 @@ import { createTeamRoutes, type TeamServices } from "./modules/teams/routes";
 import { createInboundRoutes, type InboundServices } from "./modules/inbound/routes";
 import { createIdentityRoutes, type IdentityServices } from "./modules/identity/routes";
 import { createBotClaudeRoutes, type BotClaudeServices } from "./modules/bot-claude/routes";
-import { createBotDatabaseRoutes, type BotDatabaseServices } from "./modules/bot-database/routes";
 import { createZettaMcpRoutes, type ZettaMcpRouteServices } from "./modules/zetta-mcp/routes";
 
 export interface AppAuth extends BetterAuthInstance {
@@ -62,7 +61,6 @@ export type CreateAppOptions = {
   discussions?: DiscussionServices;
   teams?: TeamServices;
   inbound?: InboundServices;
-  botDatabase?: BotDatabaseServices;
   botClaude?: BotClaudeServices;
   zettaMcp?: ZettaMcpRouteServices;
   webOrigin: string;
@@ -99,7 +97,6 @@ export function createApp({
   discussions,
   teams,
   inbound,
-  botDatabase,
   botClaude,
   zettaMcp,
   webOrigin,
@@ -219,11 +216,6 @@ export function createApp({
       )
       .use(teams ? createTeamRoutes(teams, [webOrigin, ...desktopOrigins]) : new Elysia())
       .use(inbound ? createInboundRoutes(inbound, [webOrigin, ...desktopOrigins]) : new Elysia())
-      .use(
-        botDatabase
-          ? createBotDatabaseRoutes(botDatabase, [webOrigin, ...desktopOrigins])
-          : new Elysia(),
-      )
       .use(
         botClaude ? createBotClaudeRoutes(botClaude, [webOrigin, ...desktopOrigins]) : new Elysia(),
       )

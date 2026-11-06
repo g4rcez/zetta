@@ -5,7 +5,7 @@ import { cn } from "@zetta/ui/lib/utils";
 import type { Message, PlanStep } from "./chat-client";
 import type { Row } from "./chat-rows";
 
-/** "plugin postgres.db_overview" -> "Running postgres · db_overview"; other labels pass through. */
+/** "plugin notion.search" -> "Running notion · search"; other labels pass through. */
 export const friendly = (activity?: string) => {
   const m = activity?.match(/^(?:plugin|mcp) ([^.\s]+)\.(\S*)$/);
   return m ? `Running ${m[1]}${m[2] ? ` · ${m[2]}` : ""}` : activity;

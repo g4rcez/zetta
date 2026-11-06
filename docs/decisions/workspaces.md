@@ -47,7 +47,7 @@ Changes to existing tables:
 **Table classes:**
 
 - **Tenant-direct (57):** every table with `owner_user_id`. They get `workspace_id NOT NULL`.
-- **Tenant-child (11):** `bot_revision, bot_claude_config, bot_claude_asset, bot_database, discussion_member, team_member, team_person, memory_link, memory_item_team, bot_skill, workflow_version`. They also get `workspace_id`, plus a composite FK `(parent_id, workspace_id)` to a `unique(id, workspace_id)` on the parent. FK checks ignore RLS, so without the composite FK a row in workspace A could point at a row in B. This also lets every policy be the same one-line rule.
+- **Tenant-child (10):** `bot_revision, bot_claude_config, bot_claude_asset, discussion_member, team_member, team_person, memory_link, memory_item_team, bot_skill, workflow_version`. They also get `workspace_id`, plus a composite FK `(parent_id, workspace_id)` to a `unique(id, workspace_id)` on the parent. FK checks ignore RLS, so without the composite FK a row in workspace A could point at a row in B. This also lets every policy be the same one-line rule.
 - **Global, no RLS (20):** auth (`user, session, account, verification, jwks, oauth_*`), `installation_*`, `server_instance, rate_limit, transport_key, dispatch_capacity, connection_nonce, connection_key_check`.
 
 **Unique constraints that gain `workspace_id`:**
@@ -64,7 +64,7 @@ Changes to existing tables:
 | Role              | Attributes                                                                  | Used by                                                    |
 | ----------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | `zetta_migrator`  | Owner, BYPASSRLS                                                            | drizzle-kit migrate, backfills                             |
-| `zetta_app`       | NOSUPERUSER NOBYPASSRLS, DML grants, CREATEROLE (bot-database needs it)     | All request and turn queries                               |
+| `zetta_app`       | NOSUPERUSER NOBYPASSRLS, DML grants                                         | All request and turn queries                               |
 | `zetta_scheduler` | NOBYPASSRLS, SELECT only, with `USING (true)` policies on queue tables only | Finds due rows across workspaces                           |
 | `zetta_operator`  | BYPASSRLS                                                                   | Provisioning, export and delete from the operator CLI only |
 
@@ -134,7 +134,6 @@ create policy workspace_wall on zetta.<t> to zetta_app
 - **New:** a dedicated Docker network with no route to Postgres. Today it is `bridge` and Postgres is published on `127.0.0.1:5432`.
 - **New:** workspace file roots `<root>/w/<workspaceId>/...` for files, artifacts (`artifacts/storage.ts:24`), attachments (`chat/images.ts:21`), code dirs, harness homes and browser profiles.
 - Bots act through zetta blocks parsed by the server (`tools.ts:92`), so the container never needs DB access.
-- Bot databases stay on the server side. New role and schema names get a workspace prefix; existing names are kept, because their password is derived from the name.
 
 **Keys:**
 
@@ -170,7 +169,6 @@ create policy workspace_wall on zetta.<t> to zetta_app
 - Turns are checked when a turn is admitted to the chat queue.
 - Container time is metered per run, and the container is stopped when over quota.
 - Storage is measured on a schedule, and uploads are blocked when over.
-- The existing bot-database quota stays.
 
 ## 7. Phases (each ships working software; checkpoint after each)
 

@@ -95,35 +95,6 @@ const BY_CODE: Record<string, Entry> = {
     why: "It failed in a way the plugin could not describe.",
     fix: `Try again. If it keeps failing, use Test connection in ${STUDIO}.`,
   },
-  // bot database (modules/bot-database errors carry their own text; these are the fallbacks)
-  QUOTA: {
-    why: "The bot's database is full.",
-    fix: "Ask the bot to delete entries it no longer needs, or use Start over in the bot's settings > Database.",
-  },
-  DB_NOT_FOUND: {
-    why: "The bot looked for a table or column it has not created yet.",
-    fix: "Ask the bot to check what it has saved and try again.",
-  },
-  DB_FORBIDDEN: {
-    why: "A bot can only use its own database.",
-    fix: "Nothing to fix: ask the bot to keep to its own tables.",
-  },
-  DB_INVALID: {
-    why: "The database refused a value.",
-    fix: "Tell the bot exactly what you want saved.",
-  },
-  DB_DUPLICATE: {
-    why: "That entry already exists.",
-    fix: "Ask the bot to update the existing entry instead.",
-  },
-  DB_SYNTAX: {
-    why: "The bot wrote a database command with a mistake in it.",
-    fix: "Ask the bot to try again.",
-  },
-  DB_READ_ONLY: {
-    why: "The bot tried to change data with a reading tool.",
-    fix: "Ask the bot to save it again.",
-  },
   // MCP servers
   STDIO_NOT_ALLOWED: {
     why: "That local command is not on the administrator's allowlist.",

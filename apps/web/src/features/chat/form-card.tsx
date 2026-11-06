@@ -5,7 +5,6 @@ import { useState, type FormEvent, type ReactNode } from "react";
 
 import { BotIdentity, useBotIdentity } from "@/components/bot-identity";
 import { Button, Input, Select } from "@/components/ui";
-import { databaseApi } from "../bot-database/database-api";
 import {
   installationApi,
   installationQueries,
@@ -92,61 +91,7 @@ const FORM: Record<
     done: () => "Saved. The key is stored encrypted and will not be shown again.",
     body: (p) => <ConnectionForm {...p} />,
   },
-  bot_database_reset: {
-    title: (d) => `Erase ${d.botName ?? "the bot"}'s database?`,
-    done: (d) => `Erased. ${d.botName ?? "The bot"} starts again from an empty database.`,
-    body: (p) => <ResetDatabaseForm {...p} />,
-  },
 };
-
-function ResetDatabaseForm({ data, busy, setBusy, onDone, onCancel }: Props) {
-  const slug = data.prefill.slug ?? "";
-  const [typed, setTyped] = useState("");
-  const [error, setError] = useState<string>();
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!data.botId) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      await databaseApi.reset(data.botId, typed);
-      onDone();
-    } catch (x) {
-      setError(errorMessage(x));
-      setBusy(false);
-    }
-  }
-  return (
-    <form onSubmit={(e) => void submit(e)} className="space-y-3" aria-label="Start over">
-      <p>
-        Everything {data.botName} saved (tables, lists, preferences, notes) is deleted for good.{" "}
-        {data.botName} keeps working and starts again from an empty database.
-      </p>
-      <Input
-        title={`Type ${slug} to confirm`}
-        value={typed}
-        onChange={(e) => setTyped(e.target.value)}
-        autoComplete="off"
-        placeholder={slug}
-      />
-      {error && <Alert theme="danger">{error}</Alert>}
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={busy}>
-          Not now
-        </Button>
-        <Button
-          type="submit"
-          variant="destructive"
-          size="sm"
-          loading={busy}
-          disabled={busy || !slug || typed.trim() !== slug}
-        >
-          Erase everything
-        </Button>
-      </div>
-    </form>
-  );
-}
 
 const PROVIDERS = ["anthropic", "openai", "google", "openrouter", "github"] as const;
 function ConnectionForm({ data, busy, setBusy, onDone, onCancel }: Props) {

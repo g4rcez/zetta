@@ -3,7 +3,6 @@ import type { bot } from "@zetta/db/schema/chat";
 
 import type { ArtifactStore } from "../../artifacts/store";
 import type { BotClaude } from "../../bot-claude/store";
-import type { BotDatabase } from "../../bot-database/service";
 import type { DiscussionStore } from "../../discussions/store";
 import type { FeaturesService } from "../../features/service";
 import type { Mcp } from "../../integrations/mcp";
@@ -121,7 +120,6 @@ export type ChiefDeps = {
         "setStatus" | "silence" | "stopGoals" | "setRequireApproval" | "setPeers"
       >
     | undefined;
-  botDatabase?: Pick<BotDatabase, "setAccess" | "applyTemplate"> | undefined;
   preferences?: Pick<PreferenceStore, "get" | "update"> | undefined;
   /** A getter, because the inbound service is built after the chat service it needs. */
   inbound?:

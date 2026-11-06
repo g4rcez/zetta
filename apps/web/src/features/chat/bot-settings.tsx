@@ -18,7 +18,6 @@ import { BotDecision } from "./bot-decision";
 import { BotHooks } from "./bot-hooks";
 import { harnessOptions, isAllowedModel, modelOptions } from "./bot-presets";
 import { registeredBotSections } from "./bot-sections";
-import "../bot-database/register"; // every bot has a database, so its section is always part of the settings
 import "../claude/register"; // per-bot Claude Code permissions, skills and sub-agents
 import "../code/register";
 import "../computer/register";

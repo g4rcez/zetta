@@ -10,7 +10,6 @@ export * from "./agenda";
 export * from "./teams";
 export * from "./discussions";
 export * from "./inbound";
-export * from "./bot-database";
 export * from "./bot-claude";
 export * from "./skills";
 export * from "./tasks";

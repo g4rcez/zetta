@@ -112,7 +112,7 @@ services:
       POSTGRES_DB: zetta
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-    # Two api (10 each + 1 listener each) + worker (20 + 1 + up to 20 for bot databases) + admin: raise the default of 100 with room.
+    # Two api (10 each + 1 listener each) + worker (20 + 1) + admin: raise the default of 100 with room.
     command: ["postgres", "-c", "max_connections=200"]
     ports:
       - "127.0.0.1:5432:5432"

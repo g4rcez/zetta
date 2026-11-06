@@ -5,10 +5,10 @@ import { parseFormCard } from "./form-card-data";
 test("a card from the server is read as written", () => {
   expect(
     parseFormCard(
-      '{"form":"bot_database_reset","botId":"b1","botName":"Scout","prefill":{"slug":"scout"}}',
+      '{"form":"source_login","botId":"b1","botName":"Scout","prefill":{"slug":"scout"}}',
     ),
   ).toEqual({
-    form: "bot_database_reset",
+    form: "source_login",
     botId: "b1",
     botName: "Scout",
     prefill: { slug: "scout" },
@@ -25,7 +25,7 @@ test("a form the app does not know, or text that is not JSON, is not drawn", () 
 test("prefill keeps only short text under plain keys", () => {
   const card = parseFormCard(
     JSON.stringify({
-      form: "bot_database_reset",
+      form: "source_login",
       botId: null,
       botName: null,
       prefill: { name: "Docs", "bad key": "x", url: 5, long: "y".repeat(500) },

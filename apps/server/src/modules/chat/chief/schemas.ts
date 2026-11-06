@@ -314,16 +314,6 @@ export const chiefSchemas = {
     /** The bots this bot may open rooms with without asking the user. The list replaces the old one. */
     z.strictObject({ action: z.literal("peers"), bot: ref, peers: z.array(ref).max(20) }),
   ]),
-  bot_database: z.discriminatedUnion("action", [
-    z.strictObject({ action: z.literal("access"), bot: ref, on: z.boolean() }),
-    z.strictObject({
-      action: z.literal("apply_template"),
-      bot: ref,
-      template: z.enum(["tasks", "preferences", "notes"]),
-    }),
-    /** Opens a form where the user types the bot's slug to confirm: nothing is erased from here. */
-    z.strictObject({ action: z.literal("reset"), bot: ref }),
-  ]),
   preferences: z.discriminatedUnion("action", [
     z.strictObject({ action: z.literal("get") }),
     z

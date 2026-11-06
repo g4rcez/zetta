@@ -120,7 +120,7 @@ import {
   discussion as discussionTable,
   type TurnStep,
 } from "@zetta/db/schema/discussions";
-import { insertWithSlug, isUniqueViolation } from "../bot-database/allocate";
+import { insertWithSlug, isUniqueViolation } from "../bots/slug";
 import { user } from "@zetta/db/schema/auth";
 import type { TeamStore } from "../teams/store";
 import type { OutputStyles } from "../output-styles/service";
@@ -130,7 +130,6 @@ import type { InboundService } from "../inbound/service";
 import type { Knowledge } from "../knowledge/service";
 import type { PreferenceStore } from "../preferences/store";
 import type { Sources } from "../integrations/sources";
-import type { BotDatabase } from "../bot-database/service";
 import type { FeaturesService } from "../features/service";
 import type { Routines } from "../features/routines";
 import {
@@ -450,10 +449,6 @@ export type ChatDeps = {
   /** Output styles (modules/output-styles): the chief manages them with zetta:output_style. */ outputStyles?: OutputStyles;
   /** Goal loops (modules/chat/loops.ts): started on approval, fed by goal_progress / goal_done. */ loops?: LoopStore;
   /** Runs the done check of a loop's goal_done (see checkDone); the real CLI unless a test passes a fake. */ checkCli?: RunCli;
-  /** Provisions each new bot's private database (modules/bot-database). */ botDatabase?: Pick<
-    BotDatabase,
-    "ensure" | "setAccess" | "applyTemplate"
-  >;
   /** Hooks (modules/features): the chief manages them with zetta:hook. */ features?: Pick<
     FeaturesService,
     | "listHooks"
@@ -3831,19 +3826,9 @@ export function createChatService(
     if (picked.some((n) => !have.has(n))) throw new AccessError("NOT_FOUND");
     return picked;
   }
-  /** Best effort: a failure here is retried by the first database tool call. */
   /** Every bot owns its settings row from the start (modules/bot-claude); existing bots were given one by a migration. */
   const provisionAgentConfig = (botId: string) =>
     db.insert(botClaudeConfig).values({ botId }).onConflictDoNothing();
-  const provisionDatabase = (botId: string) => {
-    void deps.botDatabase
-      ?.ensure(botId)
-      .catch((e) =>
-        console.warn(
-          `bot database not provisioned yet code=${(e as { code?: string })?.code ?? "unknown"}`,
-        ),
-      );
-  };
   async function loadConversation(actor: ActiveActor, id: string) {
     const [row] = await db
       .select()
@@ -4428,7 +4413,6 @@ export function createChatService(
             )[0]!,
         );
         await provisionAgentConfig(row.id);
-        provisionDatabase(row.id);
         return row;
       } catch (e) {
         if (isUniqueViolation(e, "bot_one_chief_per_owner")) return chief();
@@ -4522,7 +4506,6 @@ export function createChatService(
           )[0],
       );
       await provisionAgentConfig(row!.id);
-      provisionDatabase(row!.id);
       await db.insert(botRevision).values({
         botId: row!.id,
         version: row!.version,
@@ -6605,7 +6588,6 @@ export function createChatService(
     features: deps.features,
     botClaude: deps.botClaude,
     discussions: deps.discussions,
-    botDatabase: deps.botDatabase,
     preferences: deps.preferences,
     sources: deps.sources,
     knowledge: deps.knowledge,

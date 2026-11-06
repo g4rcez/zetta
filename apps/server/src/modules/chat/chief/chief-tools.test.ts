@@ -123,7 +123,7 @@ describe("parseTools: chief setup blocks", () => {
   });
 });
 
-describe("parseTools: integration, hook, room and database blocks", () => {
+describe("parseTools: integration, hook and room blocks", () => {
   test("valid blocks of each Phase 2 kind become calls", () => {
     const r = parseTools(
       [
@@ -136,25 +136,19 @@ describe("parseTools: integration, hook, room and database blocks", () => {
         fence("hook", `{"action":"update","bot":"Scout","hook":"${ID}","enabled":false}`),
         fence("claude", '{"action":"limits","bot":"Dev","maxBudgetCents":500}'),
         fence("room", '{"action":"set_team","room":"Plan","team":null}'),
-        fence("bot_database", '{"action":"apply_template","bot":"Scout","template":"notes"}'),
       ].join("\n"),
     );
     expect(r.rejected).toEqual([]);
-    expect(r.calls).toHaveLength(7);
+    expect(r.calls).toHaveLength(6);
   });
 
-  test("an address that is not a URL, a server name with spaces and an unknown template are rejected", () => {
+  test("an address that is not a URL, and a server name with spaces are rejected", () => {
     expect(
       parseTools(fence("mcp_server", '{"action":"add","name":"docs","url":"not a url"}')).calls,
     ).toEqual([]);
     expect(
       parseTools(
         fence("mcp_server", '{"action":"add","name":"My docs","url":"https://a.example.invalid"}'),
-      ).calls,
-    ).toEqual([]);
-    expect(
-      parseTools(
-        fence("bot_database", '{"action":"apply_template","bot":"S","template":"payments"}'),
       ).calls,
     ).toEqual([]);
   });
@@ -177,7 +171,7 @@ describe("parseTools: integration, hook, room and database blocks", () => {
   });
 
   test("a form card written by the model is removed from the text", () => {
-    const r = parseTools("Hi\n" + fence("form-card", '{"form":"bot_database_reset"}'));
+    const r = parseTools("Hi\n" + fence("form-card", '{"form":"source_login"}'));
     expect(r.calls).toEqual([]);
     expect(r.text).toBe("Hi");
   });
@@ -251,7 +245,6 @@ describe("which calls change something", () => {
     // Testing a plugin and trying a hook change nothing.
     expect(isChiefWrite(call("plugins", { action: "test" }))).toBe(false);
     expect(isChiefWrite(call("hook", { action: "dry_run" }))).toBe(false);
-    expect(isChiefWrite(call("bot_database", { action: "reset" }))).toBe(true);
   });
   test("removing a task belongs to the chief, adding one does not", () => {
     expect(isChiefCall(call("task", { action: "remove" }))).toBe(true);

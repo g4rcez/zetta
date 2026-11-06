@@ -15,7 +15,7 @@
  *     persist refreshed state (OAuth tokens, session ids); it re-seals and revokes the previous secret.
  *   - A bot may call a plugin only when the calling user bound it to that bot (`bot_integration`); ownership is re-checked per call.
  *   - Exception: `always` plugins (native, no fields) are built in. Nothing is installed or bound; `always.available(botId)` decides per call
- *     and tool handlers get `ctx.botId` with an empty config (the bot database: modules/bot-database).
+ *     and tool handlers get `ctx.botId` with an empty config (no built-in plugin uses this today).
  *
  * Handlers must throw `PluginError(code, safe, fix)`: `safe` says what went wrong and `fix` what the USER can do about it. Both are shown to the
  * user (as a callout in the chat) and to the bot, so write them for a person and never include secrets. Common codes (AUTH, NEEDS_AUTH, TIMEOUT,

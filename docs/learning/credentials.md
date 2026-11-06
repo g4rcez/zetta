@@ -181,7 +181,6 @@ Be clear about these limits.
 
 - VM bearer tokens and VNC passwords are written as plaintext files with mode 0644 under `ZETTA_VM_TOKEN_ROOT` (the directory is 0700).
 - Better-auth tables (`session.token`, `account.password` hash, `jwks.private_key`) follow better-auth defaults.
-- Bot database passwords derive from `ZETTA_BOT_DATABASE_KEY`, or from the connection key when that is not set.
 - There are no global security headers (CSP, HSTS) and TLS is optional.
 
 ## Operations

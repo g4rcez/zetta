@@ -137,7 +137,7 @@ describe("tool labels", () => {
     );
   });
   test("an MCP tool uses the form the web already formats", () => {
-    expect(toolLabel("mcp__postgres__db_overview", {})).toBe("mcp postgres.db_overview");
+    expect(toolLabel("mcp__notion__search", {})).toBe("mcp notion.search");
   });
   test("a todo update shows the step in progress", () => {
     expect(

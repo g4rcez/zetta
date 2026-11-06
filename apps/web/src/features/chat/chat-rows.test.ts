@@ -135,12 +135,12 @@ describe("liveRows", () => {
           { type: "text", text: "Checking" },
           {
             type: "data-activity",
-            data: { messageId: "m1", label: "plugin postgres.db_overview", at: 1000 },
+            data: { messageId: "m1", label: "plugin notion.search", at: 1000 },
           },
         ],
       },
     ];
-    expect(liveRows(turn)[0]!.activity).toBe("plugin postgres.db_overview");
+    expect(liveRows(turn)[0]!.activity).toBe("plugin notion.search");
   });
   test("activity parts pile up as a timeline without repeats or generic thinking", () => {
     const activity = (label: string, at: number) =>
@@ -327,9 +327,9 @@ describe("transcriptRows", () => {
   test("a saved reply that is still running yields to its live row", () => {
     const rows = transcriptRows(
       [saved({ id: "a", status: "running" })],
-      [live({ id: "a", content: "Working", activity: "Running postgres.db_overview" })],
+      [live({ id: "a", content: "Working", activity: "Running notion.search" })],
     );
-    expect(rows.map((r) => [r.id, r.activity])).toEqual([["a", "Running postgres.db_overview"]]);
+    expect(rows.map((r) => [r.id, r.activity])).toEqual([["a", "Running notion.search"]]);
   });
   test("a finished saved reply wins over its live row", () => {
     const rows = transcriptRows(

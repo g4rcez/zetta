@@ -1,6 +1,5 @@
 import { applyArtifacts, runArtifacts } from "./artifacts";
 import { applyBot, runBot } from "./bot";
-import { applyBotDatabase, runBotDatabase } from "./bot-database";
 import { applyClaude, runClaude } from "./claude";
 import { runAdmin } from "./admin";
 import { applyBrowserProfile, applyDecision, runBrowserProfile, runDecision } from "./decision";
@@ -84,8 +83,6 @@ export function createChief(deps: ChiefDeps) {
           return runClaude(ctx, args as never);
         case "room":
           return runRoom(ctx, args as never);
-        case "bot_database":
-          return runBotDatabase(ctx, args as never);
         case "preferences":
           return runPreferences(ctx, args as never);
         case "conversation":
@@ -148,8 +145,6 @@ export function createChief(deps: ChiefDeps) {
           return applyClaude(ctx, patch);
         case "room":
           return applyRoom(ctx, patch);
-        case "bot_database":
-          return applyBotDatabase(ctx, patch);
         case "preferences":
           return applyPreferences(ctx, patch);
         case "conversation":

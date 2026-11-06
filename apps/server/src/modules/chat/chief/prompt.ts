@@ -43,9 +43,6 @@ You can also change the user's setup for them, so they do not need to open the s
 \`\`\`zetta:room
 {"action":"pause","room":"Launch plan"}
 \`\`\`   (rooms the user has open. action list | pause | resume | cancel | silence | stop_goals {room} | require_approval{room, bot, on} | set_team{room, team: name|null} | peers{bot, peers: [bots]}: the bots a bot may open rooms with without asking; the list replaces the old one. To open or post in a room use zetta:discussion.)
-\`\`\`zetta:bot_database
-{"action":"access","bot":"Researcher","on":true}
-\`\`\`   (a bot's own database. action access{bot, on} | apply_template{bot, template: tasks|preferences|notes} | reset{bot}: reset only opens a form where the user types the bot's name to confirm; say so and wait.)
 \`\`\`zetta:preferences
 {"action":"update","timeFormat":"12h"}
 \`\`\`   (the user's own display settings. action get | update{timeFormat: 24h|12h, railMode: expanded|collapsed, botOrder: [bots in the order to show]}.)

@@ -50,8 +50,6 @@ import { createLoopDriver, createLoopStore } from "./modules/chat/loops";
 import { createDiscussionWorker } from "./modules/discussions/worker";
 import { createInbound } from "./modules/inbound/service";
 import { createBotClaude } from "./modules/bot-claude/store";
-import { createBotDatabase } from "./modules/bot-database/service";
-import { configureBotDatabase } from "./modules/bot-database/plugin";
 import { createEnrollmentService } from "./modules/identity/enrollment";
 import {
   createIdentityAccess,
@@ -220,23 +218,6 @@ const tasks = createTaskStore(db);
 const artifacts = createArtifactStore(db);
 const loops = createLoopStore(db);
 const discussions = createDiscussionStore(db, files, loops);
-// Each bot's private Postgres schema (modules/bot-database). Bot passwords are derived from this key; the app's database user needs CREATEROLE.
-const botDbKey = process.env.ZETTA_BOT_DATABASE_KEY || ENV.ZETTA_CONNECTION_KEY;
-const botDatabase = botDbKey
-  ? createBotDatabase(db, {
-      databaseUrl: ENV.DATABASE_URL,
-      key: botDbKey,
-      quotaMb: num(process.env.ZETTA_BOT_DATABASE_QUOTA_MB),
-    })
-  : undefined;
-configureBotDatabase(botDatabase);
-if (botDatabase)
-  void botDatabase.available().then((ok) => {
-    if (!ok)
-      console.warn(
-        "Bot databases disabled: the app's database user needs the CREATEROLE permission.",
-      );
-  });
 const teamStore = createTeamStore(db, discussions);
 // Company knowledge: the user's Drive documents, indexed in Postgres (see modules/knowledge).
 const embedder = createLocalEmbedder();
@@ -285,7 +266,6 @@ export const chatServices = {
     agenda,
     {
       discussions,
-      botDatabase,
       loops,
       routines: features.routines,
       tasks,
@@ -468,7 +448,6 @@ export const discussionServices = {
   worker: discussionWorker,
   chat: chatServices.chat,
 };
-export const botDatabaseServices = { access: identity.access, db, database: botDatabase };
 export const botClaudeServices = { access: identity.access, db, claude: botClaude };
 export const inboundServices = {
   access: identity.access,

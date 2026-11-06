@@ -1,5 +1,5 @@
 import { CheckIcon, CircleIcon, CircleNotchIcon, WarningCircleIcon } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@zetta/ui/lib/utils";
 
 import type { Message, PlanStep } from "./chat-client";
@@ -138,6 +138,24 @@ export function WorkTimeline({ row, working }: { row: Row; working: boolean }) {
   useEffect(() => {
     seenAt.current = Date.now();
   }, [steps.length]);
+  // The list scrolls inside a fixed height. It follows the newest step only while the reader is at the bottom (within 8px).
+  const list = useRef<HTMLOListElement>(null);
+  const atBottom = useRef(true);
+  const [overflows, setOverflows] = useState(false);
+  const measure = () => {
+    const el = list.current;
+    if (el) setOverflows(el.scrollHeight > el.clientHeight);
+  };
+  const itemCount = plan ? plan.length : steps.length;
+  useLayoutEffect(() => {
+    const el = list.current;
+    if (!el) return;
+    if (!working) {
+      el.scrollTop = 0;
+      atBottom.current = true;
+    } else if (atBottom.current) el.scrollTop = el.scrollHeight;
+    measure();
+  }, [itemCount, working]);
   if (!plan && steps.length < 2 && !(working && steps.length)) return null;
   const first = steps[0]?.at ?? 0;
   const span = steps.length ? steps.at(-1)!.at - first : undefined;
@@ -171,6 +189,7 @@ export function WorkTimeline({ row, working }: { row: Row; working: boolean }) {
   return (
     <details
       open={working}
+      onToggle={measure}
       className="group/timeline w-full max-w-prose rounded-md border border-dashed bg-muted/30 text-xs text-muted-foreground"
     >
       <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-1.5">
@@ -189,7 +208,17 @@ export function WorkTimeline({ row, working }: { row: Row; working: boolean }) {
           </>
         )}
       </summary>
-      <ol aria-label={plan ? "Plan" : "Work timeline"} className="border-t border-dashed px-3 py-2">
+      <ol
+        ref={list}
+        aria-label={plan ? "Plan" : "Work timeline"}
+        // A scrollable region needs a Tab stop, but only when it really scrolls (WCAG 2.1.1).
+        tabIndex={overflows ? 0 : undefined}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
+        }}
+        className="max-h-60 overflow-y-auto overscroll-contain border-t border-dashed px-3 py-2 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+      >
         {items.map((it, i) => (
           <li key={it.key} className="flex gap-2">
             <span className="flex flex-col items-center">

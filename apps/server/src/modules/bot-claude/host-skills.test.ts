@@ -113,12 +113,14 @@ describe("hostSkills", () => {
     await writeFile(join(dir, "node_modules/x/index.js"), "skipped");
     await symlink(join(home, "elsewhere", "linked", "SKILL.md"), join(dir, "linked.md"));
     const skill = (await hostSkill("with-files", { home, env: on }))!;
+    // Windows has no executable bit: chmod does nothing there, so the script reads as a plain file.
+    const scriptMode = process.platform === "win32" ? "file" : "executable";
     expect(await hostSkillFiles(skill)).toEqual({
       "skills/with-files/SKILL.md": "---\ndescription: Has files\n---\nRun scripts/go.sh",
       "skills/with-files/logo.png": { bytes: Buffer.from([0xff, 0x00, 0x89]), mode: "file" },
       "skills/with-files/scripts/go.sh": {
         bytes: Buffer.from("#!/bin/sh\necho go\n"),
-        mode: "executable",
+        mode: scriptMode,
       },
     });
   });

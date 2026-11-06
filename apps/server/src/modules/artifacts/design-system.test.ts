@@ -6,7 +6,16 @@ const globals = readFileSync(
   new URL("../../../../../packages/ui/src/styles/globals.css", import.meta.url),
   "utf8",
 );
-const block = (selector: string) => globals.split(`${selector} {`)[1]!.split("}")[0]!;
+// A rule can list several selectors (`:root, [data-theme-preview="light"]`), so find it by any selector in its list.
+const css = globals.replace(/\/\*[\s\S]*?\*\//g, "");
+const block = (selector: string) =>
+  [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find(([, list]) =>
+    list!
+      .split(";")
+      .at(-1)!
+      .split(",")
+      .some((s) => s.trim() === selector),
+  )![2]!;
 const tokens = (css: string) =>
   [...css.matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)].map(([, k, v]) => `${k}:${v!.trim()}`);
 

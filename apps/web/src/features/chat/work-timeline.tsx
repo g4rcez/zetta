@@ -217,7 +217,7 @@ export function WorkTimeline({ row, working }: { row: Row; working: boolean }) {
           const el = e.currentTarget;
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
         }}
-        className="max-h-60 overflow-y-auto overscroll-contain border-t border-dashed px-3 py-2 focus-visible:outline-2 focus-visible:outline-ring"
+        className="max-h-60 overflow-y-auto overscroll-contain border-t border-dashed px-3 py-2 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
       >
         {items.map((it, i) => (
           <li key={it.key} className="flex gap-2">

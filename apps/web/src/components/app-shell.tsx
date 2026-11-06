@@ -9,6 +9,7 @@ import { useSidebarSide } from "@/features/preferences/preferences";
 import { AppCommandPalette } from "@/features/command-palette/app-command-palette";
 
 import { AppSidebar } from "./app-sidebar";
+import { DRAWER_FLUSH } from "./ui";
 import { Logo } from "./logo";
 import { railRow } from "./rail-row";
 
@@ -75,8 +76,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             closable={false}
             resizer={false}
             overlayClickClose
-            className="max-w-[85vw] bg-sidebar p-0 text-sm text-sidebar-foreground"
-            bodyClassName="w-72 max-w-[85vw] p-0"
+            className={`${DRAWER_FLUSH} [--var-modal-drawer-max-inline-size:85vw] bg-sidebar text-sm text-sidebar-foreground`}
+            bodyClassName="w-72 max-w-[85vw]"
           >
             <AppSidebar mobile onSearch={search} />
           </Modal>

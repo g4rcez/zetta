@@ -10,7 +10,7 @@ import { motion, useReducedMotion } from "motion/react";
 import type { KeyboardEvent } from "react";
 import { toast } from "sonner";
 import { Modal } from "@g4rcez/components/modal";
-import { Button } from "@/components/ui";
+import { Button, DRAWER_FLUSH } from "@/components/ui";
 import { useMedia } from "@/lib/use-media";
 import { StatusIcon } from "./task-badges";
 import { TaskDetail } from "./task-page";
@@ -144,8 +144,8 @@ export function TaskPeek(props: PeekProps) {
         closable={false}
         resizer={false}
         overlayClickClose
-        className="max-w-full p-0"
-        bodyClassName="flex w-screen max-w-full flex-col p-0 sm:w-xl"
+        className={`${DRAWER_FLUSH} [--var-modal-drawer-max-inline-size:100vw]`}
+        bodyClassName="flex w-screen max-w-full flex-col sm:w-xl"
       >
         <PeekPanel {...props} />
       </Modal>

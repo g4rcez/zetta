@@ -28,7 +28,7 @@ import { ArtifactPanel } from "./artifact-panel";
 import { ThreadTabs } from "./thread-tabs";
 import { Skeleton } from "@g4rcez/components";
 
-import { Button } from "@/components/ui";
+import { Button, DRAWER_FLUSH } from "@/components/ui";
 import { Modal } from "@g4rcez/components/modal";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
@@ -920,8 +920,11 @@ export function ChatPage() {
               closable={false}
               resizer={false}
               overlayClickClose
-              className="max-w-full p-0"
-              bodyClassName={cn("flex w-screen max-w-full flex-col p-0", artifactPane ? "sm:w-2xl" : "sm:w-sm")}
+              className={`${DRAWER_FLUSH} [--var-modal-drawer-max-inline-size:100vw]`}
+              bodyClassName={cn(
+                "flex w-screen max-w-full flex-col",
+                artifactPane ? "sm:w-2xl" : "sm:w-sm",
+              )}
             >
               {sidePane}
             </Modal>

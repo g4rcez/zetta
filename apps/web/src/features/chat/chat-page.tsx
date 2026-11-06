@@ -921,10 +921,7 @@ export function ChatPage() {
               resizer={false}
               overlayClickClose
               className={`${DRAWER_FLUSH} [--var-modal-drawer-max-inline-size:100vw]`}
-              bodyClassName={cn(
-                "flex w-screen max-w-full flex-col",
-                artifactPane ? "sm:w-2xl" : "sm:w-sm",
-              )}
+              bodyClassName="flex w-[75vw] flex-col sm:w-sm"
             >
               {sidePane}
             </Modal>

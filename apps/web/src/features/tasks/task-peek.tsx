@@ -145,7 +145,7 @@ export function TaskPeek(props: PeekProps) {
         resizer={false}
         overlayClickClose
         className={`${DRAWER_FLUSH} [--var-modal-drawer-max-inline-size:100vw]`}
-        bodyClassName="flex w-screen max-w-full flex-col sm:w-xl"
+        bodyClassName="flex w-[75vw] flex-col sm:w-sm"
       >
         <PeekPanel {...props} />
       </Modal>

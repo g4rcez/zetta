@@ -27,6 +27,7 @@ const ALERT_THEME = {
   warning: "warn",
   danger: "danger",
 } as const satisfies Record<Tone, string>;
+const TAG_THEME = { ...ALERT_THEME, muted: "muted" } as const satisfies Record<Tone, string>;
 const GAP = { sm: "gap-1.5", md: "gap-3", lg: "gap-5" } as const;
 const HEADING = {
   "1": "text-lg font-semibold",
@@ -57,7 +58,7 @@ const { registry } = defineRegistry(catalog, {
       <Card
         title={props.title ?? undefined}
         container="w-full max-w-2xl"
-        className="min-w-0 flex-col gap-3 px-3"
+        className="flex min-w-0 flex-col gap-3"
       >
         {props.description && <p className="text-sm text-muted-foreground">{props.description}</p>}
         {children}
@@ -78,7 +79,7 @@ const { registry } = defineRegistry(catalog, {
       </p>
     ),
     Badge: ({ props }) => (
-      <Tag theme={ALERT_THEME[props.tone ?? "default"]} appearance="soft">
+      <Tag theme={TAG_THEME[props.tone ?? "default"]} size="tiny">
         {props.label}
       </Tag>
     ),

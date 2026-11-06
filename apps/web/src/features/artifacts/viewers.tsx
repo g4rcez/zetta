@@ -63,7 +63,7 @@ function useObjectUrl(a: Artifact) {
   return url;
 }
 
-const Loading = () => <Skeleton as="div" className="h-64 w-full" />;
+const Loading = () => <Skeleton as="div" className="h-64! w-full!" />;
 const Gone = () => <Empty>This file is not available any more.</Empty>;
 
 /** A page the bot wrote. Scripts run, but in an iframe with no same-origin access: no cookies, no way to call the API. */

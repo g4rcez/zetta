@@ -62,7 +62,7 @@ export default function UserMenu({
   }
 
   if (isPending) {
-    return <Skeleton as="div" decorative className={inline ? "h-8 w-20" : "size-8 sm:w-24"} />;
+    return <Skeleton as="div" decorative className={inline ? "h-8! w-20!" : "size-8! sm:w-24!"} />;
   }
 
   if (!session) {

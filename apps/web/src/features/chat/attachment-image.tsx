@@ -73,7 +73,7 @@ export function AttachmentImage({
   if (src === undefined)
     return (
       <div ref={tile} className={className}>
-        <Skeleton as="div" decorative className="size-40 rounded-lg" />
+        <Skeleton as="div" decorative className="size-40! rounded-lg!" />
       </div>
     );
   if (src === null)
@@ -207,7 +207,7 @@ export function ImageViewer({
         ) : src === null ? (
           <span className="text-sm text-white/70">Image unavailable</span>
         ) : (
-          <Skeleton as="div" decorative className="size-64" />
+          <Skeleton as="div" decorative className="size-64!" />
         )}
         {pics.length > 1 && (
           <>

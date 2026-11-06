@@ -2,7 +2,7 @@ import { createAuthOptions } from "@zetta/auth";
 import { createDb } from "@zetta/db";
 import { inArray, sql } from "@zetta/db/query";
 import { account, session, user } from "@zetta/db/schema/auth";
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { betterAuth } from "better-auth";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
@@ -18,10 +18,15 @@ const token = Buffer.alloc(32, 7).toString("base64url");
 
 suite("sign-up with an email that already has an account", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
-  const auth = betterAuth({
-    ...createAuthOptions(config, db, [], { invitationSignupVerifier: async () => true }),
-    logger: { disabled: true },
-    telemetry: { enabled: false, debug: false },
+  // describe.skip still runs this body, and betterAuth() queries the database in the background when it is created.
+  // Without a database that query fails after the suite is skipped and breaks whichever test is running then.
+  let auth: ReturnType<typeof betterAuth>;
+  beforeAll(() => {
+    auth = betterAuth({
+      ...createAuthOptions(config, db, [], { invitationSignupVerifier: async () => true }),
+      logger: { disabled: true },
+      telemetry: { enabled: false, debug: false },
+    });
   });
   const signUp = (email: string) =>
     auth.handler(
@@ -84,15 +89,13 @@ suite("sign-up with an email that already has an account", () => {
   test("the database refuses an email that is not in lower case", async () => {
     const now = new Date();
     const insert = async () => {
-      await db
-        .insert(user)
-        .values({
-          id: `raw-${run}`,
-          name: "Raw",
-          email: `Raw-${run}@example.invalid`,
-          createdAt: now,
-          updatedAt: now,
-        });
+      await db.insert(user).values({
+        id: `raw-${run}`,
+        name: "Raw",
+        email: `Raw-${run}@example.invalid`,
+        createdAt: now,
+        updatedAt: now,
+      });
     };
     await expect(insert()).rejects.toThrow();
     expect(await rows(`raw-${run}@example.invalid`)).toHaveLength(0);

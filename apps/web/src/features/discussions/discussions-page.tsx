@@ -34,7 +34,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 
-import { Badge } from "@zetta/ui/components/badge";
+import { Tag } from "@g4rcez/components/tag";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1210,14 +1210,14 @@ function RoomView({
                     <BotAvatar bot={botOf(bots, m.botId)} size={20} />
                     <span className="min-w-0 truncate font-medium">{m.name}</span>
                     {m.botId === d.createdByBotId && (
-                      <Badge variant="secondary" className="h-4 px-1 text-xs">
+                      <Tag theme="secondary" size="tiny">
                         Facilitator
-                      </Badge>
+                      </Tag>
                     )}
                     {m.code && (
-                      <Badge variant="outline" className="h-4 px-1 text-xs">
+                      <Tag theme="neutral" size="tiny">
                         Code
-                      </Badge>
+                      </Tag>
                     )}
                   </div>
                   {m.role && <p className="pl-7 text-xs text-muted-foreground">{m.role}</p>}

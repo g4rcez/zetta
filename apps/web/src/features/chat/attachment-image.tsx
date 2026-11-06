@@ -8,7 +8,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 
-import { Skeleton } from "@zetta/ui/components/skeleton";
+import { Skeleton } from "@g4rcez/components";
 import { cn } from "@zetta/ui/lib/utils";
 import { ENV } from "../../env";
 
@@ -71,7 +71,11 @@ export function AttachmentImage({
   }, [near]);
   const src = useAttachmentSrc(pic.id, near);
   if (src === undefined)
-    return <Skeleton ref={tile} className={cn("size-40 rounded-lg", className)} />;
+    return (
+      <div ref={tile} className={className}>
+        <Skeleton as="div" decorative className="size-40 rounded-lg" />
+      </div>
+    );
   if (src === null)
     return (
       <span
@@ -203,7 +207,7 @@ export function ImageViewer({
         ) : src === null ? (
           <span className="text-sm text-white/70">Image unavailable</span>
         ) : (
-          <Skeleton className="size-64" />
+          <Skeleton as="div" decorative className="size-64" />
         )}
         {pics.length > 1 && (
           <>

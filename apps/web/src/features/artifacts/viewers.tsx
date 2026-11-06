@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ARTIFACT_HTML_CSP, ARTIFACT_HTML_SANDBOX } from "@zetta/core/artifact-csp";
-import { Skeleton } from "@zetta/ui/components/skeleton";
+import { Skeleton } from "@g4rcez/components";
 import { CodeBlock } from "../chat/chat-copy";
 import { languageOf } from "../chat/code-fence";
 import { HighlightedCode } from "../chat/highlighted-code";
@@ -63,7 +63,7 @@ function useObjectUrl(a: Artifact) {
   return url;
 }
 
-const Loading = () => <Skeleton className="h-64 w-full" />;
+const Loading = () => <Skeleton as="div" className="h-64 w-full" />;
 const Gone = () => <Empty>This file is not available any more.</Empty>;
 
 /** A page the bot wrote. Scripts run, but in an iframe with no same-origin access: no cookies, no way to call the API. */

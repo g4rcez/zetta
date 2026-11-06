@@ -25,6 +25,7 @@ import composio from "./logos/composio.png";
 import context7 from "./logos/context7.png";
 import github from "./logos/github.svg";
 import { GoogleLogo } from "./google-connect";
+import homeassistant from "./logos/homeassistant.svg";
 import linear from "./logos/linear.svg";
 import notion from "./logos/notion.png";
 import onepassword from "./logos/1password.svg";
@@ -59,13 +60,14 @@ const ICONS: Record<string, ComponentType<IconProps>> = {
   home: HouseIcon,
 };
 
-/** Brand marks downloaded from each vendor's own site (favicon / brand asset), keyed by plugin id. `plate` sits a light tile behind marks that are dark-on-transparent. */
-const LOGOS: Record<string, { src: string; plate?: boolean }> = {
+/** Brand marks downloaded from each vendor's own site (favicon / brand asset), keyed by plugin id. `plate` sits a light tile behind marks that are dark-on-transparent; `corners: "none"` keeps a mark whose own outline is not a square. */
+const LOGOS: Record<string, { src: string; plate?: boolean; corners?: "round" | "none" }> = {
   sentry: { src: sentry },
   posthog: { src: posthog },
   cloudflare: { src: cloudflare },
   "cloudflare-docs": { src: cloudflare },
   github: { src: github, plate: true },
+  homeassistant: { src: homeassistant, corners: "none" },
   linear: { src: linear },
   notion: { src: notion },
   context7: { src: context7 },
@@ -98,7 +100,7 @@ export function PluginIcon({
         aria-hidden
         draggable={false}
         loading="lazy"
-        className={`${className} shrink-0 rounded-[22%] object-contain ${logo.plate ? "bg-white p-px" : ""}`}
+        className={`${className} shrink-0 object-contain ${logo.corners === "none" ? "" : "rounded-[22%]"} ${logo.plate ? "bg-white p-px" : ""}`}
       />
     );
   const Icon = ICONS[name] ?? PlugIcon;

@@ -76,10 +76,17 @@ describe("decision service plugin switch", () => {
     svc.setMode("on", { variant: "english" });
     await svc.choose("s", "?", ["a", "b"]);
     svc.setMode("on", { variant: "multilingual" });
-    expect(svc.status()).toEqual({ state: "idle", model: "laya", variant: "multilingual" });
+    expect(svc.status()).toEqual({
+      state: "idle",
+      model: "laya",
+      variant: "multilingual",
+      languages: ["en"],
+    });
     await Bun.sleep(5);
     await svc.choose("s", "?", ["a", "b"]);
     expect(events).toEqual(["load english", "close english", "load multilingual"]);
+    svc.setMode("on", { languages: ["en", "pt-BR"] });
+    expect(svc.status().languages).toEqual(["en", "pt-BR"]);
     expect(svc.status().state).toBe("ready");
   });
   test("the same mode and variant again loads nothing new", async () => {
@@ -106,6 +113,11 @@ describe("decision service plugin switch", () => {
     await svc.choose("s", "?", ["a", "b"]);
     await Bun.sleep(60);
     expect(events).toEqual(["load multilingual", "load english", "close english"]);
-    expect(svc.status()).toEqual({ state: "ready", model: "laya", variant: "multilingual" });
+    expect(svc.status()).toEqual({
+      state: "ready",
+      model: "laya",
+      variant: "multilingual",
+      languages: ["en"],
+    });
   });
 });

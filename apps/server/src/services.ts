@@ -76,7 +76,11 @@ const reloaded = globalThis as { zettaDb?: ReturnType<typeof createDb> };
 export const db = (reloaded.zettaDb ??= createDb(ENV));
 // `decisions` is created further down; the callback only runs on a later settings update, after it exists.
 const installation = createInstallationService(db, (s) =>
-  decisions.setMode(s.laya, { preload: true, variant: layaModelFor(s.layaLanguages) }),
+  decisions.setMode(s.laya, {
+    preload: true,
+    variant: layaModelFor(s.layaLanguages),
+    languages: s.layaLanguages,
+  }),
 );
 // Network mode is read once at boot: it adds the public origin to every trusted-origin list and (in index.ts) opens the listener to the network.
 const installed = await installation.load();
@@ -139,6 +143,7 @@ const decisions = createDecisionService();
 decisions.setMode(installed.laya, {
   preload: runsWork && process.env.ZETTA_LAYA_PRELOAD !== "0",
   variant: layaModelFor(installed.layaLanguages),
+  languages: installed.layaLanguages,
 });
 // Persistent per-user VMs (docker/desktop image): enable with ZETTA_DESKTOP_RUNTIME=docker.
 const vmDocker = dockerVmConfig();

@@ -6000,12 +6000,12 @@ export function createChatService(
         route = { action: "respond", reason: "disabled" };
       let canned: string | undefined;
       let homeConfidence: number | undefined;
-      // Home Assistant fast path: Laya spots a simple home command and Home Assistant's own Assist engine answers it, with no AI call.
+      // Home Assistant fast path: a rule-based parser (en, pt-BR) reads a simple home command against the cached catalog of the home and does it; else Laya + Home Assistant's Assist engine. No AI call.
       // Only the owner's plain, direct turns qualify: never outside people, loop steps, attachments or @mentions.
       // A decision-only bot never calls an AI and this path does not either, so it may use it, unless routing already chose a fixed reply.
       if (
         route.action === "respond" &&
-        !decisionOnly &&
+        !("reply" in route && route.reply) &&
         !untrustedConv &&
         !step &&
         !mentioned.length &&
@@ -6028,7 +6028,7 @@ export function createChatService(
       if (route.action === "ask_user" || route.action === "stop") canned = route.reply;
       // A decision-only bot never calls an AI: the chosen option's text (or the fallback) is the whole answer.
       else if (decisionOnly && route.action !== "delegate")
-        canned = ("reply" in route && route.reply) || DECISION_FALLBACK;
+        canned = ("reply" in route && route.reply) || canned || DECISION_FALLBACK;
       // A chief without a real harness cannot work: guide setup instead of echoing a fixture reply.
       if (b.kind === "chief" && b.harness === "fixture" && canned === undefined)
         canned =

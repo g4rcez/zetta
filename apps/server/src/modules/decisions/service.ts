@@ -38,6 +38,8 @@ export function createDecisionService(
   let mode: "on" | "off" = caps.mode ?? "off";
   // English: the English checkpoint. Any other language: the multilingual checkpoint, which replaces it. Changing it discards the loaded model.
   let variant: LayaModel = caps.variant ?? "english";
+  // The installation's languages (BCP-47, English first). Features read them to answer in the user's language.
+  let languages: string[] = ["en"];
   // Bumped on every change of mode or variant, so a load that finishes after a change is released instead of used.
   let generation = 0;
   let state: DecisionState = mode === "off" ? "off" : "idle";
@@ -77,7 +79,7 @@ export function createDecisionService(
     return Promise.race([p, t]).finally(() => clearTimeout(timer));
   }
   const svc = {
-    status: () => ({ state, model: "laya" as const, variant }),
+    status: () => ({ state, model: "laya" as const, variant, languages }),
     warm: () =>
       warm().then(
         () => undefined,
@@ -86,8 +88,13 @@ export function createDecisionService(
     /** On: loads in the background when `preload` is set, else on first use. Off: releases the model (about 2 GB of memory) and refuses calls. A new `variant` replaces the loaded checkpoint. */
     setMode(
       next: "on" | "off",
-      { preload = false, variant: wanted }: { preload?: boolean; variant?: LayaModel } = {},
+      {
+        preload = false,
+        variant: wanted,
+        languages: tags,
+      }: { preload?: boolean; variant?: LayaModel; languages?: string[] } = {},
     ) {
+      if (tags?.length) languages = [...tags];
       const nextVariant = wanted ?? variant;
       if (next === mode && nextVariant === variant) {
         if (next === "on" && preload) void svc.warm();

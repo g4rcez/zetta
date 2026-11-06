@@ -21,6 +21,8 @@ Object.assign(win, {
 });
 
 let sidebarSide: "left" | "right" = "left";
+let railMode: "expanded" | "collapsed" = "expanded";
+let agentsState: "running" | "paused" = "running";
 // The auth client keeps the first `fetch` it sees for the whole test process, and this file loads it before the others. So once this
 // file is done the fake hands every request to whatever `fetch` the next file installed (or the real one), and cannot hijack it.
 const realFetch = globalThis.fetch;
@@ -32,7 +34,8 @@ const fake = (async (input: URL | Request | string, init?: RequestInit) => {
   if (url.pathname === "/api/preferences")
     return Response.json({
       preferences: {
-        railMode: "expanded",
+        railMode,
+        agentsState,
         sidebarSide,
         railWidth: 224,
         listWidth: 320,
@@ -47,8 +50,13 @@ const fake = (async (input: URL | Request | string, init?: RequestInit) => {
 }) as typeof fetch;
 globalThis.fetch = fake;
 
-async function mountShell(side: "left" | "right") {
+async function mountShell(
+  side: "left" | "right",
+  state: { railMode?: typeof railMode; agentsState?: typeof agentsState } = {},
+) {
   sidebarSide = side;
+  railMode = state.railMode ?? "expanded";
+  agentsState = state.agentsState ?? "running";
   const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } =
     await import("@tanstack/react-router");
   const { ThemeProvider } = await import("../components/theme-provider");
@@ -108,5 +116,42 @@ test("on the right the frame is reversed, the panel keeps its gap, and the resiz
   const handle = host.querySelector('[role="separator"]')!;
   expect(handle.className).toContain("left-0");
   expect(handle.className).not.toContain("right-0");
+  await unmount();
+});
+
+const popup = () => win.document.querySelector('[data-slot="tooltip-content"]');
+const openHint = async (button: Element) => {
+  await act(async () => (button as unknown as HTMLElement).focus());
+  const text = popup()?.textContent;
+  await act(async () => {
+    win.document.activeElement?.dispatchEvent(
+      new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+  });
+  return text;
+};
+
+for (const railMode of ["collapsed", "expanded"] as const) {
+  test(`while the agents are paused, the ${railMode} sidebar names the pause button "Resume agents" in its hint`, async () => {
+    const { host, unmount } = await mountShell("left", { railMode, agentsState: "paused" });
+    const button = host.querySelector('aside button[aria-pressed="true"]')!;
+    expect(button.getAttribute("aria-label")).toBe("Resume agents");
+    expect(button.hasAttribute("title")).toBe(false);
+    expect(button.hasAttribute("aria-haspopup")).toBe(false);
+    expect(await openHint(button)).toBe("Resume agents");
+    await unmount();
+  });
+}
+
+test('while the agents run, the expanded sidebar hints "Pause agents" and "Collapse sidebar", with no native title', async () => {
+  const { host, unmount } = await mountShell("left");
+  for (const [name, hint] of [
+    ["Pause agents", "Pause agents"],
+    ["Collapse sidebar", "Collapse sidebar"],
+  ]) {
+    const button = host.querySelector(`aside button[aria-label="${name}"]`)!;
+    expect(button.hasAttribute("title")).toBe(false);
+    expect(await openHint(button)).toBe(hint);
+  }
   await unmount();
 });

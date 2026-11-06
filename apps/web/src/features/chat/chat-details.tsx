@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { GearSixIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
+import { ActionHint } from "@zetta/ui/components/action-hint";
 import { Button } from "@/components/ui";
 
 import { BotAvatar } from "@/components/bot-avatar";
@@ -30,9 +31,11 @@ export function ChatDetails({
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
         <h2 className="flex-1 text-base font-medium">Details</h2>
-        <Button size="icon-sm" variant="ghost" aria-label="Close details" onClick={onClose}>
-          <XIcon />
-        </Button>
+        <ActionHint label="Close details">
+          <Button size="icon-sm" variant="ghost" aria-label="Close details" onClick={onClose}>
+            <XIcon />
+          </Button>
+        </ActionHint>
       </header>
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
         {bot && (

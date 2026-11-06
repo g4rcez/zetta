@@ -28,6 +28,7 @@ import { ArtifactPanel } from "./artifact-panel";
 import { ThreadTabs } from "./thread-tabs";
 import { Skeleton } from "@g4rcez/components";
 
+import { ActionHint } from "@zetta/ui/components/action-hint";
 import { Button } from "@/components/ui";
 import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
 import { cn } from "@zetta/ui/lib/utils";
@@ -660,42 +661,45 @@ export function ChatPage() {
                   <DesktopButton botName={current.name} onError={fail} />
                 )}
                 {current && (
-                  <Link
-                    to="/memory"
-                    search={{ createdBy: current.id }}
-                    title="Memories this bot created"
-                    aria-label="Memories this bot created"
-                    className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-                  >
-                    <BrainIcon aria-hidden="true" className="size-4" />
-                  </Link>
+                  <ActionHint label="Memories this bot created">
+                    <Link
+                      to="/memory"
+                      search={{ createdBy: current.id }}
+                      aria-label="Memories this bot created"
+                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                    >
+                      <BrainIcon aria-hidden="true" className="size-4" />
+                    </Link>
+                  </ActionHint>
                 )}
                 {chatId && saved.length > 0 && (
+                  <ActionHint label="Publish snapshot to team">
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      onClick={() => setPublishing(true)}
+                      aria-label="Publish snapshot to team"
+                    >
+                      <ShareNetworkIcon />
+                    </Button>
+                  </ActionHint>
+                )}
+                <ActionHint label="Details">
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    title="Publish snapshot to team"
-                    onClick={() => setPublishing(true)}
-                    aria-label="Publish snapshot to team"
+                    aria-label="Details"
+                    aria-pressed={details && !thread && !search.artifact}
+                    onClick={() => {
+                      const other = thread || search.artifact;
+                      if (search.artifact) setArtifact(undefined);
+                      else if (thread) setThread(undefined);
+                      setDetails((d) => !(d && !other));
+                    }}
                   >
-                    <ShareNetworkIcon />
+                    <SidebarSimpleIcon className="-scale-x-100" />
                   </Button>
-                )}
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  title="Details"
-                  aria-label="Details"
-                  aria-pressed={details && !thread && !search.artifact}
-                  onClick={() => {
-                    const other = thread || search.artifact;
-                    if (search.artifact) setArtifact(undefined);
-                    else if (thread) setThread(undefined);
-                    setDetails((d) => !(d && !other));
-                  }}
-                >
-                  <SidebarSimpleIcon className="-scale-x-100" />
-                </Button>
+                </ActionHint>
               </div>
             </header>
             {undoDelete && (

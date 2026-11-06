@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 
-import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
+import { ActionHint } from "@zetta/ui/components/action-hint";
 import { Button } from "@/components/ui";
 
 /** Copies `text` to the clipboard; reports success for a moment. Never throws when the clipboard is unavailable. */
@@ -28,23 +28,18 @@ export function CopyButton({
     }
   }
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            className={className}
-            aria-label={done ? "Copied" : label}
-            onClick={() => void copy()}
-          />
-        }
+    <ActionHint label={done ? "Copied!" : label}>
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        className={className}
+        aria-label={done ? "Copied" : label}
+        onClick={() => void copy()}
       >
         {done ? <CheckIcon /> : <CopyIcon />}
-      </TooltipTrigger>
-      <TooltipContent>{done ? "Copied!" : label}</TooltipContent>
-    </Tooltip>
+      </Button>
+    </ActionHint>
   );
 }
 

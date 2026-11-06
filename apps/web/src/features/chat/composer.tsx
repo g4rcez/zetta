@@ -44,7 +44,7 @@ import { Button } from "@/components/ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
 import { useQueryClient } from "@tanstack/react-query";
 import { Separator } from "@zetta/ui/components/separator";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
+import { ActionHint } from "@zetta/ui/components/action-hint";
 import { cn } from "@zetta/ui/lib/utils";
 
 import { ImageViewer } from "./attachment-image";
@@ -109,22 +109,17 @@ function Tool({
   children: React.ReactNode;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <InputGroupButton
-            size="icon-xs"
-            aria-label={label}
-            aria-pressed={pressed}
-            className={cn(pressed && "bg-muted text-foreground")}
-            onClick={onClick}
-          />
-        }
+    <ActionHint label={label}>
+      <InputGroupButton
+        size="icon-xs"
+        aria-label={label}
+        aria-pressed={pressed}
+        className={cn(pressed && "bg-muted text-foreground")}
+        onClick={onClick}
       >
         {children}
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+      </InputGroupButton>
+    </ActionHint>
   );
 }
 
@@ -224,6 +219,7 @@ export function Composer({
     (!!value.trim() || attached.length > 0 || pictures.length > 0) &&
     !staged.some((x) => x.uploading) &&
     !disabled;
+  const sendLabel = busy ? "Send; it waits until the bot finishes" : "Send";
 
   function dropStaged(key: string) {
     setStaged((l) =>
@@ -571,15 +567,17 @@ export function Composer({
                 Replying to <b className="font-semibold">{replyTo.name}</b>
                 <span className="text-muted-foreground"> · {replyTo.excerpt}</span>
               </span>
-              <Button
-                type="button"
-                size="icon-xs"
-                variant="ghost"
-                aria-label="Cancel reply"
-                onClick={replyTo.onCancel}
-              >
-                <XIcon />
-              </Button>
+              <ActionHint label="Cancel reply">
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label="Cancel reply"
+                  onClick={replyTo.onCancel}
+                >
+                  <XIcon />
+                </Button>
+              </ActionHint>
             </div>
           </InputGroupAddon>
         )}
@@ -780,24 +778,19 @@ export function Composer({
                   if (!open) setPicker(undefined);
                 }}
               >
-                <Tooltip>
-                  <TooltipTrigger
+                <ActionHint label="Server files">
+                  <PopoverTrigger
                     render={
-                      <PopoverTrigger
-                        render={
-                          <InputGroupButton
-                            size="icon-xs"
-                            aria-label="Server files"
-                            onClick={() => openFiles("shared")}
-                          />
-                        }
+                      <InputGroupButton
+                        size="icon-xs"
+                        aria-label="Server files"
+                        onClick={() => openFiles("shared")}
                       />
                     }
                   >
                     <FolderOpenIcon />
-                  </TooltipTrigger>
-                  <TooltipContent>Server files</TooltipContent>
-                </Tooltip>
+                  </PopoverTrigger>
+                </ActionHint>
                 <PopoverContent align="start" className="w-72 p-2 text-sm">
                   <p className="truncate px-1 pb-1 text-xs font-medium text-muted-foreground">
                     {picker?.path}
@@ -853,22 +846,26 @@ export function Composer({
             <kbd className="font-sans font-medium">Shift + Return</kbd> for a new line
           </span>
           {busy && onStop && (
-            <InputGroupButton size="icon-sm" variant="outline" aria-label="Stop" onClick={onStop}>
-              <SquareIcon weight="fill" />
-            </InputGroupButton>
+            <ActionHint label="Stop">
+              <InputGroupButton size="icon-sm" variant="outline" aria-label="Stop" onClick={onStop}>
+                <SquareIcon weight="fill" />
+              </InputGroupButton>
+            </ActionHint>
           )}
           {/* While the bot works, a message is queued and answered in its own thread. */}
           {(!busy || !onStop || canSend) && (
-            <InputGroupButton
-              type="submit"
-              size="icon-sm"
-              variant="default"
-              aria-label={busy ? "Send; it waits until the bot finishes" : "Send"}
-              disabled={!canSend}
-              className="size-7 rounded-full data-disabled:bg-muted data-disabled:text-muted-foreground"
-            >
-              <ArrowUpIcon />
-            </InputGroupButton>
+            <ActionHint label={sendLabel}>
+              <InputGroupButton
+                type="submit"
+                size="icon-sm"
+                variant="default"
+                aria-label={sendLabel}
+                disabled={!canSend}
+                className="size-7 rounded-full data-disabled:bg-muted data-disabled:text-muted-foreground"
+              >
+                <ArrowUpIcon />
+              </InputGroupButton>
+            </ActionHint>
           )}
         </InputGroupAddon>
       </InputGroup>

@@ -32,7 +32,7 @@ import {
   MessageContent,
   MessageHeader,
 } from "@zetta/ui/components/message";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
+import { ActionHint } from "@zetta/ui/components/action-hint";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
 import { UserAvatar } from "@/components/user-avatar";
@@ -182,15 +182,6 @@ function Sources({ row }: { row: Row }) {
   );
 }
 
-function Tip({ label, children }: { label: string; children: React.ReactElement }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger delay={250} render={children} />
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 const QUICK_REACTIONS: { emoji: string; name: string }[] = [
   { emoji: "👍", name: "Like" },
   { emoji: "👎", name: "Dislike" },
@@ -203,13 +194,13 @@ function ReactionPicker({ onReact }: { onReact: (emoji: string) => void }) {
   const search = useRef<HTMLInputElement>(null);
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tip label="Add reaction">
+      <ActionHint label="Add reaction">
         <PopoverTrigger
           render={<Button size="icon-xs" variant="ghost" aria-label="Add reaction" />}
         >
           <SmileyIcon />
         </PopoverTrigger>
-      </Tip>
+      </ActionHint>
       <PopoverContent align="end" initialFocus={search} className="w-auto rounded-lg p-2">
         <EmojiPicker
           searchRef={search}
@@ -254,7 +245,7 @@ function HoverBar({
       className="absolute -top-4 right-4 z-10 flex items-center rounded-lg border bg-popover p-0.5 opacity-0 shadow-sm transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 has-aria-expanded:opacity-100 [@media(hover:none)]:hidden"
     >
       {QUICK_REACTIONS.map(({ emoji, name }) => (
-        <Tip key={emoji} label={name}>
+        <ActionHint key={emoji} label={name}>
           <Button
             size="icon-xs"
             variant="ghost"
@@ -263,33 +254,33 @@ function HoverBar({
           >
             <span className="text-sm leading-none">{emoji}</span>
           </Button>
-        </Tip>
+        </ActionHint>
       ))}
       <ReactionPicker onReact={onReact} />
       {onQuote && (
-        <Tip label="Reply">
+        <ActionHint label="Reply">
           <Button size="icon-xs" variant="ghost" aria-label="Reply" onClick={onQuote}>
             <ArrowBendUpLeftIcon />
           </Button>
-        </Tip>
+        </ActionHint>
       )}
       {!inThread && (
-        <Tip label="Reply in thread">
+        <ActionHint label="Reply in thread">
           <Button size="icon-xs" variant="ghost" aria-label="Reply in thread" onClick={onReply}>
             <ChatTextIcon />
           </Button>
-        </Tip>
+        </ActionHint>
       )}
       <CopyButton text={row.content} label="Copy message" className="!size-7 [&_svg]:!size-3.5" />
       {row.role === "assistant" && (
         <DropdownMenu>
-          <Tip label="More actions">
+          <ActionHint label="More actions">
             <DropdownMenuTrigger
               render={<Button size="icon-xs" variant="ghost" aria-label="More actions" />}
             >
               <DotsThreeIcon />
             </DropdownMenuTrigger>
-          </Tip>
+          </ActionHint>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={onSaveToMemory}>
               <BookmarkSimpleIcon />

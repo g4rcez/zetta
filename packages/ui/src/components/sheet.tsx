@@ -4,6 +4,7 @@ import * as React from "react";
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
 import { cn } from "@zetta/ui/lib/utils";
 
+import { ActionHint } from "@zetta/ui/components/action-hint";
 import { Button } from "@zetta/ui/components/button";
 import { XIcon } from "@phosphor-icons/react";
 
@@ -60,13 +61,15 @@ function SheetContent({
       >
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close
-            data-slot="sheet-close"
-            render={<Button variant="ghost" className="absolute top-3 right-3" size="icon-sm" />}
-          >
-            <XIcon />
-            <span className="sr-only">Close</span>
-          </SheetPrimitive.Close>
+          <ActionHint label="Close">
+            <SheetPrimitive.Close
+              data-slot="sheet-close"
+              render={<Button variant="ghost" className="absolute top-3 right-3" size="icon-sm" />}
+            >
+              <XIcon />
+              <span className="sr-only">Close</span>
+            </SheetPrimitive.Close>
+          </ActionHint>
         )}
       </SheetPrimitive.Popup>
     </SheetPortal>

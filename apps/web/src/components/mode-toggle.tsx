@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui";
+import { ActionHint } from "@zetta/ui/components/action-hint";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,55 +64,64 @@ export function ModeToggle({
   const { preferences, set } = usePreferences();
   const current = preferences.theme ?? "system";
 
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          rail ? (
-            <button
-              type="button"
-              className={`${railRow} ${rail === "expanded" ? railRowExpanded : ""}`}
-            />
-          ) : inline ? (
-            <button
-              type="button"
-              className="relative grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            />
-          ) : (
-            <Button
-              variant={compact ? "ghost" : "outline"}
-              size="icon"
-              className={compact ? "size-10 rounded-md text-muted-foreground" : ""}
-            />
-          )
-        }
-      >
-        {rail ? (
-          <>
-            <span className="relative grid size-4 shrink-0 place-items-center">
-              <SunIcon className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-              <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-            </span>
-            {rail === "expanded" ? (
-              <>
-                <span className={railLabel}>Theme</span>
-                <span className="max-w-24 truncate text-xs font-normal text-muted-foreground">
-                  {THEME_LABEL[current]}
-                </span>
-              </>
-            ) : null}
-            <span className="sr-only">
-              {rail === "expanded" ? ", change theme" : "Change theme"}
-            </span>
-          </>
+  // A rail row has its own hint (`RailHint`) or a visible label; the other forms are icon-only.
+  const trigger = (
+    <DropdownMenuTrigger
+      render={
+        rail ? (
+          <button
+            type="button"
+            className={`${railRow} ${rail === "expanded" ? railRowExpanded : ""}`}
+          />
+        ) : inline ? (
+          <button
+            type="button"
+            className="relative grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          />
         ) : (
-          <>
+          <Button
+            variant={compact ? "ghost" : "outline"}
+            size="icon"
+            className={compact ? "size-10 rounded-md text-muted-foreground" : ""}
+          />
+        )
+      }
+    >
+      {rail ? (
+        <>
+          <span className="relative grid size-4 shrink-0 place-items-center">
             <SunIcon className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
             <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-            <span className="sr-only">Toggle theme</span>
-          </>
-        )}
-      </DropdownMenuTrigger>
+          </span>
+          {rail === "expanded" ? (
+            <>
+              <span className={railLabel}>Theme</span>
+              <span className="max-w-24 truncate text-xs font-normal text-muted-foreground">
+                {THEME_LABEL[current]}
+              </span>
+            </>
+          ) : null}
+          <span className="sr-only">{rail === "expanded" ? ", change theme" : "Change theme"}</span>
+        </>
+      ) : (
+        <>
+          <SunIcon className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
+          <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+          <span className="sr-only">Toggle theme</span>
+        </>
+      )}
+    </DropdownMenuTrigger>
+  );
+
+  return (
+    <DropdownMenu>
+      {rail ? (
+        trigger
+      ) : (
+        <ActionHint label="Toggle theme" side="bottom">
+          {trigger}
+        </ActionHint>
+      )}
       <DropdownMenuContent
         // The rail sits at the bottom of the screen: align the menu's bottom edge to the row so it opens upward.
         align={rail ? "end" : compact ? "start" : "end"}

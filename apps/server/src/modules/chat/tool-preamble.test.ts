@@ -233,12 +233,48 @@ describe("chief creation tools", () => {
       expect(chief).toContain(needed);
     expect(chief).not.toContain("asks for a new bot or a team, create it yourself");
     // A playbook that grows creeps into every Chief turn: raise this limit on purpose, not by accident.
-    expect(chief.length).toBeLessThan(30_000);
+    // Raised from 30_000 to 30_500 on purpose: the memory-as-database guidance (list, append, ~600 characters) is read by every bot.
+    expect(chief.length).toBeLessThan(30_500);
     expect(toolPreamble("off", false, false)).not.toContain("next_wave");
   });
   test("create_team defaults to no goal, no context and no members", () => {
     expect(parseTools('```zetta:create_team\n{"name":"Launch"}\n```').calls).toEqual([
       { kind: "create_team", args: { name: "Launch", goal: "", context: "", members: [] } },
     ]);
+  });
+});
+
+describe("zetta:memory as the bots' database", () => {
+  const fence = (body: string) => "```zetta:memory\n" + body + "\n```";
+  const parse = (body: string) => parseTools(fence(body));
+
+  test("every bot is told to keep lists and records in memory, with list and append", () => {
+    const text = toolPreamble("off");
+    expect(text).toContain("as your database");
+    expect(text).toContain('{"action":"list","tags":["list"]}');
+    expect(text).toContain('{"action":"append","slug","content"');
+    expect(text).toContain("under 15000 characters");
+  });
+
+  test("list and append are valid calls; unknown fields and out-of-range values are not", () => {
+    expect(
+      parse('{"action":"list","tags":["list"],"tagMode":"all","type":"solo","days":7,"limit":10}')
+        .calls,
+    ).toHaveLength(1);
+    expect(parse('{"action":"list"}').calls).toHaveLength(1);
+    expect(
+      parse('{"action":"append","slug":"choquei-sources","content":"https://example.invalid/feed"}')
+        .calls,
+    ).toHaveLength(1);
+    for (const bad of [
+      '{"action":"list","type":"all"}',
+      '{"action":"list","limit":51}',
+      '{"action":"list","days":0}',
+      '{"action":"list","query":"words"}',
+      '{"action":"append","slug":"x"}',
+      '{"action":"append","slug":"x","content":""}',
+      `{"action":"append","slug":"x","content":"${"y".repeat(8001)}"}`,
+    ])
+      expect(parse(bad).calls).toEqual([]);
   });
 });

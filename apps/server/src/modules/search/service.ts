@@ -35,9 +35,9 @@ const BRANCH: Record<SearchKind, string> = {
     order by 7 desc, m.created_at desc limit $3`,
   // The id of a memory hit is its slug, which is how the memory item opens.
   memory: `select 'memory', w.slug, w.title, ts_headline('simple', w.content, q.q || q.h, ${HEADLINE}), null::uuid, null::uuid,
-      ts_rank(to_tsvector('simple', f_unaccent(w.title || ' ' || w.howto || ' ' || w.content)), q.q), w.updated_at
+      ts_rank(w.search_tsv, q.q), w.updated_at
     from memory_item w, q where w.owner_user_id = $2 and w.status <> 'archived'
-      and to_tsvector('simple', f_unaccent(w.title || ' ' || w.howto || ' ' || w.content)) @@ q.q
+      and w.search_tsv @@ q.q
     order by 7 desc, w.updated_at desc limit $3`,
   artifact: `select 'artifact', a.id::text, a.title, ts_headline('simple', a.description, q.q || q.h, ${HEADLINE}), null::uuid, null::uuid,
       ts_rank(to_tsvector('simple', f_unaccent(a.title || ' ' || a.description || ' ' || a.file_name)), q.q), a.created_at

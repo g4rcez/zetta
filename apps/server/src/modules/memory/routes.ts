@@ -45,6 +45,10 @@ const STATUS: Record<MemoryError["code"], [number, string]> = {
     409,
     "Another item already uses this name (published by a member, or private to another bot or team). Rename yours.",
   ],
+  TOO_LONG: [
+    400,
+    `The item would pass ${MEMORY_LIMITS.content} characters. Remove old entries first.`,
+  ],
 };
 const uuid = z.string().uuid();
 const text = {

@@ -1336,6 +1336,175 @@ suite("operator memory against compose postgres", () => {
     expect((await call(A, "GET", "/api/memory?q=made&createdBy=nope")).status).toBe(400);
   });
 
+  test("append adds a line without a match, never twice, and keeps the rules of a save", async () => {
+    await memory.write(
+      A,
+      {
+        slug: "ap-sources",
+        title: "Sources",
+        tags: ["list"],
+        content: "https://a.example.invalid",
+      },
+      asBot(),
+    );
+    const one = await memory.append(A, "ap-sources", "https://b.example.invalid", asBot());
+    expect(one).toMatchObject({
+      changed: true,
+      page: { version: 2, content: "https://a.example.invalid\nhttps://b.example.invalid" },
+    });
+    // A line that is already there changes nothing (a retried call is safe); a new one in the same block still lands.
+    expect(
+      await memory.append(A, "ap-sources", "https://b.example.invalid", asBot()),
+    ).toMatchObject({
+      changed: false,
+      page: { version: 2 },
+    });
+    expect(
+      await memory.append(
+        A,
+        "ap-sources",
+        "https://b.example.invalid\nhttps://c.example.invalid",
+        asBot(),
+      ),
+    ).toMatchObject({ page: { version: 3 } });
+    expect((await memory.history(A, "ap-sources")).map((r) => r.version)).toEqual([3, 2, 1]);
+
+    // Two appends at the same time both land (writes are serialised per item).
+    await Promise.all(
+      ["d", "e", "f"].map((x) =>
+        memory.append(A, "ap-sources", `https://${x}.example.invalid`, asBot()),
+      ),
+    );
+    const lines = (await memory.read(A, "ap-sources"))!.page.content.split("\n");
+    expect(lines).toHaveLength(6);
+
+    expect(await code(memory.append(A, "no-such-item", "x", asBot()))).toBe("NOT_FOUND");
+    expect(await code(memory.append(B, "ap-sources", "x", asBot()))).toBe("NOT_FOUND"); // not B's item
+    expect(await code(memory.append(A, "ap-sources", "   ", asBot()))).toBe("INVALID");
+    expect(await code(memory.append(A, "ap-sources", "token sk-" + "a".repeat(40), asBot()))).toBe(
+      "SECRET_REJECTED",
+    );
+
+    // The size limit is a clear code, and nothing is half written.
+    const before = (await memory.read(A, "ap-sources"))!.page;
+    expect(await code(memory.append(A, "ap-sources", "y".repeat(19_990), asBot()))).toBe(
+      "TOO_LONG",
+    );
+    expect((await memory.read(A, "ap-sources"))!.page.version).toBe(before.version);
+
+    // An item marked stale stays stale, like patch; an archived one cannot be appended to.
+    await memory.setStatus(A, "ap-sources", "stale", person);
+    await memory.append(A, "ap-sources", "https://g.example.invalid", asBot());
+    expect((await memory.read(A, "ap-sources"))!.page.status).toBe("stale");
+    await memory.setStatus(A, "ap-sources", "archived", person);
+    expect(await code(memory.append(A, "ap-sources", "z", asBot()))).toBe("NOT_FOUND");
+  });
+
+  test("the memory tool lists items with no query and appends a line; a shared item is only suggested to", async () => {
+    const tool = (as: string, botId: string, a: Parameters<typeof runMemoryTool>[4]) =>
+      runMemoryTool(memory, as, botId, undefined, a);
+    await memory.write(
+      A,
+      {
+        slug: "ls-sources",
+        title: "Sources",
+        tags: ["list", "reddit"],
+        howto: "subreddits to read",
+        content: "r/css",
+      },
+      asBot(),
+    );
+    await memory.write(
+      A,
+      { slug: "ls-rated", title: "Ratings", tags: ["list"], content: "M1 8" },
+      asBot(),
+    );
+    await memory.write(
+      A,
+      { slug: "ls-rule", title: "A rule", tags: ["instruction"], content: "do it" },
+      person,
+    );
+    await memory.write(A, { slug: "ls-gone", title: "Gone", tags: ["list"], content: "x" }, person);
+    await memory.setStatus(A, "ls-gone", "archived", person);
+
+    const slugs = (r: { result?: string }) =>
+      [...(r.result ?? "").matchAll(/^- (ls-[a-z-]+) /gm)].map((m) => m[1]);
+    const lists = await tool(A, botA, { action: "list", tags: ["list"] });
+    expect(slugs(lists).sort()).toEqual(["ls-rated", "ls-sources"]); // by tag; archived and untagged are out
+    expect(lists.result).toContain("[version 1, changed ");
+    expect(
+      slugs(await tool(A, botA, { action: "list", tags: ["list", "reddit"], tagMode: "all" })),
+    ).toEqual(["ls-sources"]);
+    expect(slugs(await tool(A, botA, { action: "list", tags: ["Reddit"] }))).toEqual([
+      "ls-sources",
+    ]); // tags are normalised like on save
+    expect(slugs(await tool(A, botA, { action: "list", tags: ["list"], limit: 1 }))).toHaveLength(
+      1,
+    );
+    expect(slugs(await tool(A, botA, { action: "list", tags: ["list"], days: 1 })).length).toBe(2);
+    expect((await tool(A, botA, { action: "list", tags: ["nothing-has-this"] })).result).toBe(
+      "no memory item matches that list",
+    );
+    expect(slugs(await tool(B, botA, { action: "list", tags: ["list"] }))).toEqual([]); // another user sees nothing
+
+    // A solo item is listed only to the bot that wrote it.
+    const otherBot = (
+      await db
+        .insert(bot)
+        .values({
+          ownerUserId: A,
+          name: "Other",
+          slug: `other-${uuidv7().slice(-8)}`,
+          kind: "specialist",
+          visibility: "private",
+          harness: "fixture",
+        } as never)
+        .returning()
+    )[0]!.id;
+    await memory.write(
+      A,
+      {
+        slug: "ls-solo",
+        title: "Mine alone",
+        tags: ["list"],
+        type: "solo",
+        content: "private to the bot",
+      },
+      asBot(),
+    );
+    expect(slugs(await tool(A, botA, { action: "list", tags: ["list"], type: "solo" }))).toEqual([
+      "ls-solo",
+    ]);
+    expect(slugs(await tool(A, otherBot, { action: "list", tags: ["list"] }))).not.toContain(
+      "ls-solo",
+    );
+
+    const added = await tool(A, botA, {
+      action: "append",
+      slug: "ls-sources",
+      content: "r/Frontend",
+    });
+    expect(added.saved).toEqual({ slug: "ls-sources", title: "Sources", created: false });
+    expect(added.result).toBe("memory ls-sources saved (version 2).");
+    expect((await memory.read(A, "ls-sources"))!.page.content).toBe("r/css\nr/Frontend");
+    expect(
+      (await tool(A, botA, { action: "append", slug: "ls-sources", content: "r/Frontend" })).result,
+    ).toContain("that line is already there");
+    expect(
+      (await tool(A, botA, { action: "append", slug: "ls-sources", content: "y".repeat(20_000) }))
+        .result,
+    ).toContain("memory.append failed: the item would pass 20000 characters");
+    expect(
+      (await tool(A, botA, { action: "append", slug: "missing", content: "x" })).result,
+    ).toContain("failed");
+
+    // Another member's bot cannot append to a shared item; it is told to suggest.
+    await memory.setMeta(A, "ls-rated", { type: "all" }, person);
+    const refused = await tool(B, botA, { action: "append", slug: "ls-rated", content: "M2 9" });
+    expect(refused.result).toContain('{"action":"suggest"');
+    expect((await memory.read(A, "ls-rated"))!.page.content).toBe("M1 8");
+  });
+
   test("editor help suggests tags, how-to, score, links and a tidy version, and never trusts what comes back", async () => {
     const assist = createMemoryAssist(db, { memory, cli: fakeCli });
     const draft = {

@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { getTableColumns, sql } from "drizzle-orm";
 import {
   check,
   index,
@@ -15,7 +15,7 @@ import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
-import { EMBEDDING_DIMENSIONS, searchVector } from "./search";
+import { EMBEDDING_DIMENSIONS, searchVector, tsvector } from "./search";
 import { team } from "./teams";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
@@ -78,6 +78,13 @@ export const memoryItem = zetta.table(
     authorBotId: uuid("author_bot_id").references(() => bot.id, setNull),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    /**
+     * The words of title, howto and content, kept by the database so search never lexes the text again to rank it (that cost a few
+     * milliseconds per matching item, on every chat turn). Never selected with the rest of the row: use `memoryItemColumns`.
+     */
+    searchTsv: tsvector("search_tsv").generatedAlwaysAs(
+      searchVector(sql`title || ' ' || howto || ' ' || content`),
+    ),
   },
   (t) => [
     unique("memory_item_owner_slug").on(t.ownerUserId, t.slug),
@@ -89,12 +96,13 @@ export const memoryItem = zetta.table(
     index("memory_item_owner_idx").on(t.ownerUserId, t.status),
     index("memory_item_author_bot_idx").on(t.authorBotId),
     index("memory_item_tags_idx").using("gin", t.tags),
-    index("memory_item_search_idx").using(
-      "gin",
-      searchVector(sql`${t.title} || ' ' || ${t.howto} || ' ' || ${t.content}`),
-    ),
+    index("memory_item_search_tsv_idx").using("gin", t.searchTsv),
   ],
 );
+
+/** Every column of `memory_item` except the generated search vector (large, and of no use outside the database). */
+const { searchTsv: _searchTsv, ...memoryItemColumns } = getTableColumns(memoryItem);
+export { memoryItemColumns };
 
 /** The teams of an item with type `teams`: only bots that are members of one of them read it. */
 export const memoryItemTeam = zetta.table(

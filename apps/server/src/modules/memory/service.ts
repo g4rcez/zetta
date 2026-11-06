@@ -16,6 +16,7 @@ import {
   memoryChunk,
   memoryLink,
   memoryItem,
+  memoryItemColumns,
   memoryItemTeam,
   memoryRevision,
   memorySource,
@@ -40,7 +41,8 @@ export type MemoryCode =
   | "FULL"
   | "INVALID"
   | "SLUG_TAKEN"
-  | "MANAGED";
+  | "MANAGED"
+  | "TOO_LONG";
 export class MemoryError extends Error {
   constructor(readonly code: MemoryCode) {
     super(code);
@@ -56,7 +58,7 @@ export type MemoryAuthor =
  * for their author bot, `teams` items only for bots in one of the item's teams.
  */
 export type MemoryReader = string | { userId: string; botId?: string | undefined };
-export type MemoryItem = typeof memoryItem.$inferSelect;
+export type MemoryItem = Omit<typeof memoryItem.$inferSelect, "searchTsv">;
 /** own: the asker's page. shared: another active member published it; the asker reads it and can only suggest changes. */
 export type MemoryAccess = "own" | "shared";
 export type MemoryNeighbor = {
@@ -302,7 +304,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
       return await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`memory:${owner}:${key}`}))`);
         const [cur] = await tx
-          .select()
+          .select(memoryItemColumns)
           .from(memoryItem)
           .where(and(eq(memoryItem.ownerUserId, owner), eq(memoryItem.slug, key)));
         if (cur && author.by === "bot") {
@@ -437,7 +439,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
             .update(memoryItem)
             .set({ ...by, type, score, authorBotId })
             .where(eq(memoryItem.id, cur.id))
-            .returning()) as [MemoryItem];
+            .returning(memoryItemColumns)) as [MemoryItem];
         } else {
           const [{ n } = { n: 0 }] = await tx
             .select({ n: sql<number>`count(*)::int` })
@@ -456,7 +458,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
               updatedBy: author.by,
               updatedByBotId: botId,
             })
-            .returning()) as [MemoryItem];
+            .returning(memoryItemColumns)) as [MemoryItem];
         }
         if (!cur || !sameSet(curTeams, teams)) {
           await tx.delete(memoryItemTeam).where(eq(memoryItemTeam.pageId, page.id));
@@ -664,7 +666,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
     const slug = `memory-${hash}`;
     // The same fact in other letters or spacing is the fact already saved.
     const [have] = await db
-      .select()
+      .select(memoryItemColumns)
       .from(memoryItem)
       .where(
         and(
@@ -706,6 +708,24 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
     });
   }
 
+  /**
+   * Adds text as new line(s) at the end of the content; the rest stays as it is. A line that is already there, word for word, is not
+   * added again, so a retried call changes nothing. A page marked stale stays stale, like `patch`.
+   */
+  function append(owner: string, slug: string, text: string, author: MemoryAuthor) {
+    return save(owner, slug, author, (cur) => {
+      if (!cur || cur.status === "archived") throw new MemoryError("NOT_FOUND");
+      const add = text.trim();
+      if (!add) throw new MemoryError("INVALID");
+      const have = new Set(cur.content.split("\n").map((l) => l.trim()));
+      const fresh = add.split("\n").filter((l) => l.trim() && !have.has(l.trim()));
+      if (!fresh.length) return contentOf(cur);
+      const next = `${cur.content.trimEnd()}\n${fresh.join("\n")}`;
+      if (next.length > MEMORY_LIMITS.content) throw new MemoryError("TOO_LONG");
+      return { ...contentOf(cur), content: next };
+    });
+  }
+
   async function setStatus(
     owner: string,
     slug: string,
@@ -727,7 +747,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
    */
   async function confirm(owner: string, slug: string, author: MemoryAuthor) {
     const [cur] = await db
-      .select()
+      .select(memoryItemColumns)
       .from(memoryItem)
       .where(and(eq(memoryItem.ownerUserId, owner), eq(memoryItem.slug, slug)));
     if (!cur || cur.status === "archived") throw new MemoryError("NOT_FOUND");
@@ -736,7 +756,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
       .update(memoryItem)
       .set({ updatedAt: new Date() })
       .where(eq(memoryItem.id, cur.id))
-      .returning();
+      .returning(memoryItemColumns);
     await rebaseline(owner, cur.id);
     return { page: page!, created: false, changed: true };
   }
@@ -789,7 +809,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
   /** Writes the text of an old version as the newest one. */
   async function restore(owner: string, slug: string, version: number, author: MemoryAuthor) {
     const [r] = await db
-      .select()
+      .select({ memory_revision: memoryRevision })
       .from(memoryRevision)
       .innerJoin(memoryItem, eq(memoryItem.id, memoryRevision.pageId))
       .where(
@@ -815,7 +835,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
     const key = memorySlug(slug);
     if (!key) return undefined;
     const rows = await db
-      .select({ page: memoryItem, ownerName: user.name })
+      .select({ page: memoryItemColumns, ownerName: user.name })
       .from(memoryItem)
       .innerJoin(user, eq(user.id, memoryItem.ownerUserId))
       .where(and(eq(memoryItem.slug, key), visibleTo(reader)));
@@ -881,14 +901,24 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
       slugs.map((x) => sql`${x}`),
       sql`, `,
     );
+    // Two halves, each starting from the given slugs, so the cost follows the hits and not the size of the memory: edges that leave an
+    // item in `slugs` (its slug index, then the link's primary key) and edges that arrive at one (`memory_link_to_idx`). One query with
+    // `pf.slug in (...) or pt.slug in (...)` cannot use any index and read every link of every owner.
+    const both = sql`pf.status <> 'archived' and pt.status <> 'archived' and ${visibleTo(reader, "pf")} and ${visibleTo(reader, "pt")}`;
     const { rows } = await db.execute(sql`
-      select pf.slug as "from", pf.title as "fromTitle", l.relation, pt.slug as "to", pt.title as "toTitle"
-      from memory_link l
-      join memory_item pf on pf.id = l.from_page_id
-      join memory_item pt on pt.slug = l.to_slug
-      where (pf.slug in (${list}) or pt.slug in (${list}))
-        and pf.status <> 'archived' and pt.status <> 'archived'
-        and ${visibleTo(reader, "pf")} and ${visibleTo(reader, "pt")}
+      select * from (
+        select pf.slug as "from", pf.title as "fromTitle", l.relation, pt.slug as "to", pt.title as "toTitle"
+        from memory_item pf
+        join memory_link l on l.from_page_id = pf.id
+        join memory_item pt on pt.slug = l.to_slug
+        where pf.slug in (${list}) and ${both}
+        union
+        select pf.slug, pf.title, l.relation, pt.slug, pt.title
+        from memory_link l
+        join memory_item pt on pt.slug = l.to_slug
+        join memory_item pf on pf.id = l.from_page_id
+        where l.to_slug in (${list}) and ${both}
+      ) edges
       limit 300`);
     const seen = new Set<string>();
     return (rows as Edge[]).filter((e) => {
@@ -1077,7 +1107,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
           sql`, `,
         )}]::text[]`
       : sql`array[]::text[]`;
-    const doc = sql`to_tsvector('simple', f_unaccent(memory_item.title || ' ' || memory_item.howto || ' ' || memory_item.content))`;
+    const doc = sql`memory_item.search_tsv`;
     const extra = o.explain
       ? sql`, f.kw, f.tg, f.vc, memory_item.id, memory_item.updated_at as "updatedAt",
           array(select t from unnest(memory_item.tags) t where t = any(${wordArray})) as "matchedTags",
@@ -1148,6 +1178,30 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
       };
     });
     return { hits, meaning: Boolean(qv) };
+  }
+
+  /**
+   * The items the reader may see that match `filter`, newest change first, with no search text: how a bot lists what it keeps (every item
+   * tagged `list`, what changed this week). Archived items are left out. Reads only the item row, never the content or the graph.
+   */
+  async function browse(
+    reader: MemoryReader,
+    filter: MemoryFilter = {},
+    k = 20,
+  ): Promise<(MemoryHit & { version: number; updatedAt: string })[]> {
+    const { userId } = who(reader);
+    const { rows } = await db.execute(sql`
+      select memory_item.slug, memory_item.title, memory_item.type, memory_item.howto, memory_item.tags, memory_item.score,
+        memory_item.status, memory_item.version, memory_item.updated_at as "updatedAt",
+        case when memory_item.owner_user_id = ${userId} then 'own' else 'shared' end as access,
+        case when memory_item.owner_user_id = ${userId} then null else u.name end as "ownerName"
+      from memory_item join "user" u on u.id = memory_item.owner_user_id
+      where ${visibleTo(reader)} and ${filterSql(filter, userId)} and memory_item.status <> 'archived'
+      order by memory_item.updated_at desc, memory_item.slug
+      limit ${Math.min(Math.max(Math.trunc(k) || 1, 1), 50)}`);
+    return (
+      rows as unknown as (Omit<MemoryHit, "neighbors"> & { version: number; updatedAt: Date })[]
+    ).map((r) => ({ ...r, neighbors: [], updatedAt: new Date(r.updatedAt).toISOString() }));
   }
 
   async function search(reader: MemoryReader, text: string, k = 8): Promise<MemoryHit[]> {
@@ -1524,6 +1578,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
     write,
     remember,
     patch,
+    append,
     addLink,
     confirm,
     setStatus,
@@ -1537,6 +1592,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
     linkSources,
     list,
     listShared,
+    browse,
     search,
     explore,
     suggest,

@@ -1723,6 +1723,7 @@ export function createChatService(
           c.args.action !== "search" &&
           c.args.action !== "read" &&
           c.args.action !== "links" &&
+          c.args.action !== "list" &&
           c.args.action !== "checks" &&
           c.args.action !== "suggest"
         ) {
@@ -3010,6 +3011,7 @@ export function createChatService(
           (c.args.action === "search" ||
             c.args.action === "read" ||
             c.args.action === "links" ||
+            c.args.action === "list" ||
             c.args.action === "checks")) ||
         (c.kind === "artifact" && c.args.path === undefined)
       ));

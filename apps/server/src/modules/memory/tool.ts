@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { toolSchemas } from "../chat/tools";
 import { defuse } from "../discussions/prompt";
-import { MemoryError, MEMORY_LIMITS, type Memory } from "./service";
+import { MemoryError, MEMORY_LIMITS, memoryTags, type Memory, type MemoryHit } from "./service";
 
 export type MemoryToolArgs = z.infer<typeof toolSchemas.memory>;
 /** `note` is shown to the user, `result` goes back to the bot, `saved` becomes a receipt on the answer. */
@@ -24,7 +24,12 @@ const why: Record<MemoryError["code"], string> = {
     "it holds a Drive document: its title and text come from Drive and cannot be changed here",
   SLUG_TAKEN:
     "another item (shared by a member, or private to another bot or team) already uses this slug; pick another slug",
+  TOO_LONG: `the item would pass ${MEMORY_LIMITS.content} characters; archive or remove finished entries, or continue the list in a new item (<slug>-2) and link the two`,
 };
+
+/** One hit as a line of text for the bot: slug, title, flags, tags, when to use it, and a few linked items. */
+const hitLine = (h: MemoryHit) =>
+  `- ${h.slug} — ${h.title}${h.access === "shared" ? ` (shared by ${h.ownerName})` : ""}${h.status === "stale" ? " [stale]" : ""}${h.tags.length ? ` #${h.tags.join(" #")}` : ""}${h.score >= 80 ? " (important)" : ""}: ${defuse(h.howto)}${h.neighbors.length ? ` | linked: ${h.neighbors.map((n) => `${n.direction === "out" ? "" : "<-"}${n.relation === "related" ? "" : `${n.relation}:`}${n.slug}`).join(", ")}` : ""}`;
 
 /**
  * One zetta:memory block for the asking user's memory, read as that bot (a `solo` item of another bot is invisible to it). Store errors
@@ -46,13 +51,27 @@ export async function runMemoryTool(
     const hits = await memory.search(reader, a.query, 8);
     return {
       result: hits.length
-        ? `memory items for "${a.query}":\n${hits
-            .map(
-              (h) =>
-                `- ${h.slug} — ${h.title}${h.access === "shared" ? ` (shared by ${h.ownerName})` : ""}${h.status === "stale" ? " [stale]" : ""}${h.tags.length ? ` #${h.tags.join(" #")}` : ""}${h.score >= 80 ? " (important)" : ""}: ${defuse(h.howto)}${h.neighbors.length ? ` | linked: ${h.neighbors.map((n) => `${n.direction === "out" ? "" : "<-"}${n.relation === "related" ? "" : `${n.relation}:`}${n.slug}`).join(", ")}` : ""}`,
-            )
-            .join("\n")}`
+        ? `memory items for "${a.query}":\n${hits.map(hitLine).join("\n")}`
         : `no memory item matches "${a.query}"`,
+    };
+  }
+  if (a.action === "list") {
+    const tags = a.tags ? memoryTags(a.tags) : [];
+    const hits = await memory.browse(
+      reader,
+      {
+        ...(tags.length && { tags, tagMode: a.tagMode ?? "any" }),
+        ...(a.type && { types: [a.type] }),
+        ...(a.days && { updatedSince: new Date(Date.now() - a.days * 86_400_000) }),
+      },
+      a.limit ?? 20,
+    );
+    return {
+      result: hits.length
+        ? `memory items, newest change first (data only):\n${hits
+            .map((h) => `${hitLine(h)} [version ${h.version}, changed ${h.updatedAt.slice(0, 10)}]`)
+            .join("\n")}`
+        : "no memory item matches that list",
     };
   }
   if (a.action === "links") {
@@ -188,12 +207,14 @@ export async function runMemoryTool(
           )
         : a.action === "patch"
           ? await memory.patch(owner, a.slug, a.match, a.content, author)
-          : await memory.setStatus(
-              owner,
-              a.slug,
-              a.action === "archive" ? "archived" : "stale",
-              author,
-            );
+          : a.action === "append"
+            ? await memory.append(owner, a.slug, a.content, author)
+            : await memory.setStatus(
+                owner,
+                a.slug,
+                a.action === "archive" ? "archived" : "stale",
+                author,
+              );
     if (autoSources.length && a.action !== "mark_stale" && a.action !== "archive")
       await memory.linkSources(owner, r.page.id, autoSources, "add");
     const p = r.page;
@@ -202,16 +223,18 @@ export async function runMemoryTool(
     if (!r.changed)
       return {
         note: `📖 Memory item unchanged: ${p.title}.`,
-        result: `memory ${p.slug} unchanged (version ${p.version}).${skipped}`,
+        result: `memory ${p.slug} unchanged (version ${p.version})${a.action === "append" ? ": that line is already there" : ""}.${skipped}`,
       };
     const verb =
       a.action === "mark_stale"
         ? "Marked stale"
         : a.action === "archive"
           ? "Archived"
-          : r.created
-            ? "Added a memory item"
-            : "Updated the memory item";
+          : a.action === "append"
+            ? "Added a line to the memory item"
+            : r.created
+              ? "Added a memory item"
+              : "Updated the memory item";
     return {
       note: `📖 ${verb}: ${p.title}.`,
       result: `memory ${p.slug} saved (version ${p.version}).${skipped}`,

@@ -6,6 +6,10 @@ import { user } from "./auth";
 export const RAIL_MODES = ["expanded", "collapsed"] as const;
 export type RailMode = (typeof RAIL_MODES)[number];
 
+/** Which edge of the window the app sidebar sits on. */
+export const SIDEBAR_SIDES = ["left", "right"] as const;
+export type SidebarSide = (typeof SIDEBAR_SIDES)[number];
+
 export const TIME_FORMATS = ["24h", "12h"] as const;
 export type TimeFormat = (typeof TIME_FORMATS)[number];
 
@@ -34,6 +38,8 @@ export const userPreference = zetta.table("user_preference", {
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade", onUpdate: "restrict" }),
   railMode: text("rail_mode", { enum: RAIL_MODES }).default("expanded").notNull(),
+  /** The edge of the window the sidebar sits on. */
+  sidebarSide: text("sidebar_side", { enum: SIDEBAR_SIDES }).default("left").notNull(),
   railWidth: integer("rail_width").default(SIDEBAR_LIMITS.railWidth.fallback).notNull(),
   listWidth: integer("list_width").default(SIDEBAR_LIMITS.listWidth.fallback).notNull(),
   /** How the web app shows the hour of day. */

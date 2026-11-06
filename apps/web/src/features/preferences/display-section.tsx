@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import { Button, Radiobox } from "@/components/ui";
 import { useTheme } from "@/components/theme-provider";
-import { usePreferences } from "./preferences";
+import { SIDEBAR_SIDE_LABEL, SIDEBAR_SIDES, usePreferences } from "./preferences";
 import { Section } from "./section";
 import { isHexColor, lowestContrast, MIN_PRIMARY_CONTRAST, readGrounds, type Theme } from "./theme";
 import { ThemePicker } from "./theme-picker";
@@ -72,6 +72,21 @@ export function DisplaySection() {
               or more.
             </Alert>
           ) : null}
+        </fieldset>
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Sidebar</legend>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            {SIDEBAR_SIDES.map((side) => (
+              <Radiobox
+                key={side}
+                name="sidebar-side"
+                checked={preferences.sidebarSide === side}
+                onChange={() => set({ sidebarSide: side })}
+              >
+                {SIDEBAR_SIDE_LABEL[side]}
+              </Radiobox>
+            ))}
+          </div>
         </fieldset>
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium">Time format</legend>

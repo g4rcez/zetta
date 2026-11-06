@@ -115,7 +115,7 @@ export function ModeToggle({
       <DropdownMenuContent
         // The rail sits at the bottom of the screen: align the menu's bottom edge to the row so it opens upward.
         align={rail ? "end" : compact ? "start" : "end"}
-        side={compact || rail ? "right" : "bottom"}
+        side={compact || rail ? (preferences.sidebarSide === "right" ? "left" : "right") : "bottom"}
         className="max-h-[min(32rem,var(--available-height))] w-56 bg-card"
       >
         <DropdownMenuRadioGroup

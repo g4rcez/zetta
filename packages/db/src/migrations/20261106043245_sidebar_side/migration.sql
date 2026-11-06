@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."user_preference" ADD COLUMN "sidebar_side" text DEFAULT 'left' NOT NULL;

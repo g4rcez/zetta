@@ -4,6 +4,7 @@ import {
   SIDEBAR_LIMITS,
   userPreference,
   type RailMode,
+  type SidebarSide,
   type Theme,
   type TimeFormat,
 } from "@zetta/db/schema/preferences";
@@ -11,6 +12,7 @@ import type { ActiveActor } from "../identity/access";
 
 export type Preferences = {
   railMode: RailMode;
+  sidebarSide: SidebarSide;
   railWidth: number;
   listWidth: number;
   timeFormat: TimeFormat;
@@ -23,6 +25,7 @@ export type PreferencesPatch = Partial<Preferences>;
 export function createPreferenceStore(db: Database) {
   const pick = (r: typeof userPreference.$inferSelect): Preferences => ({
     railMode: r.railMode,
+    sidebarSide: r.sidebarSide,
     railWidth: r.railWidth,
     listWidth: r.listWidth,
     timeFormat: r.timeFormat,
@@ -41,6 +44,7 @@ export function createPreferenceStore(db: Database) {
         ? pick(row)
         : {
             railMode: "expanded",
+            sidebarSide: "left",
             railWidth: SIDEBAR_LIMITS.railWidth.fallback,
             listWidth: SIDEBAR_LIMITS.listWidth.fallback,
             timeFormat: "24h",

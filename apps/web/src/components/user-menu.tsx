@@ -143,7 +143,7 @@ export default function UserMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align={compact || rail ? "start" : "end"}
-        side={compact || rail ? "right" : "bottom"}
+        side={compact || rail ? (preferences.sidebarSide === "right" ? "left" : "right") : "bottom"}
         className="w-64 max-w-[calc(100vw-1rem)] bg-card"
       >
         <DropdownMenuGroup>

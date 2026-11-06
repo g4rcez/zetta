@@ -59,6 +59,7 @@ const api = (path: string, method: string, body: unknown): Answer => {
       body: {
         preferences: {
           railMode: "expanded",
+          sidebarSide: "left",
           railWidth: 224,
           listWidth: 320,
           timeFormat: "24h",
@@ -243,6 +244,49 @@ test("choosing the 12-hour format saves it", async () => {
   await settle(500);
   expect(writes()).toEqual([
     { method: "PATCH", path: "/api/preferences", body: { timeFormat: "12h" } },
+  ]);
+});
+
+test("the sidebar is on the left by default, and choosing the right saves it", async () => {
+  await mount();
+  const radio = (label: string) =>
+    [...win.document.querySelectorAll('input[name="sidebar-side"]')].find((r) =>
+      r.closest("label")?.textContent?.includes(label),
+    ) as unknown as HTMLInputElement;
+  expect(radio("Left").checked).toBe(true);
+  expect(radio("Right").checked).toBe(false);
+  expect(text()).toContain("Left (default)");
+
+  await act(
+    async () =>
+      void radio("Right").dispatchEvent(new win.MouseEvent("click", { bubbles: true }) as never),
+  );
+  await settle(500);
+  expect(writes()).toEqual([
+    { method: "PATCH", path: "/api/preferences", body: { sidebarSide: "right" } },
+  ]);
+  expect(radio("Right").checked).toBe(true);
+});
+
+test("approving by press and hold is the default, and choosing a plain click saves it", async () => {
+  await mount();
+  const radio = (label: string) =>
+    [...win.document.querySelectorAll('input[name="approval-mode"]')].find((r) =>
+      r.closest("label")?.textContent?.includes(label),
+    ) as unknown as HTMLInputElement;
+  expect(radio("Press and hold").checked).toBe(true);
+  expect(radio("Just click").checked).toBe(false);
+  expect(text()).toContain("Press and hold (default)");
+
+  await act(
+    async () =>
+      void radio("Just click").dispatchEvent(
+        new win.MouseEvent("click", { bubbles: true }) as never,
+      ),
+  );
+  await settle(500);
+  expect(writes()).toEqual([
+    { method: "PATCH", path: "/api/preferences", body: { approvalMode: "click" } },
   ]);
 });
 

@@ -45,7 +45,7 @@ You can also change the user's setup for them, so they do not need to open the s
 \`\`\`   (rooms the user has open. action list | pause | resume | cancel | silence | stop_goals {room} | require_approval{room, bot, on} | set_team{room, team: name|null} | peers{bot, peers: [bots]}: the bots a bot may open rooms with without asking; the list replaces the old one. To open or post in a room use zetta:discussion.)
 \`\`\`zetta:preferences
 {"action":"update","timeFormat":"12h"}
-\`\`\`   (the user's own display settings. action get | update{timeFormat: 24h|12h, railMode: expanded|collapsed, botOrder: [bots in the order to show]}.)
+\`\`\`   (the user's own display settings. action get | update{timeFormat: 24h|12h, railMode: expanded|collapsed, sidebarSide: left|right, botOrder: [bots in the order to show]}.)
 \`\`\`zetta:conversation
 {"action":"archive","conversation":"Old plan"}
 \`\`\`   (the user's chats. action list{bot?, archived?} | start{bot} | rename{conversation, title} | pin | unpin | favorite | unfavorite | archive | unarchive | remove {conversation: title or id from list}. remove deletes the chat and its messages.)

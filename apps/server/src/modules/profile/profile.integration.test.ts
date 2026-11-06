@@ -174,8 +174,9 @@ suite("profile against compose postgres", () => {
   test("the picture is not part of the layout preferences", async () => {
     await call(A, "PATCH", "/api/profile", { avatar: PRESET });
     const res = await call(A, "GET", "/api/preferences");
-    expect(Object.keys(((await res.json()) as { preferences: object }).preferences).sort()).toEqual(
-      ["botOrder", "listWidth", "primaryColor", "railMode", "railWidth", "theme", "timeFormat"],
+    // Not a list of every key: it went stale each time a preference was added. The point is only that the picture stays out.
+    expect(((await res.json()) as { preferences: object }).preferences).not.toHaveProperty(
+      "avatar",
     );
     await call(A, "PATCH", "/api/profile", { avatar: null });
   });

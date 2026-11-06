@@ -24,6 +24,7 @@ const isDesktop = () => window.matchMedia(DESKTOP).matches;
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const side = useSidebarSide();
   const desktop = useSyncExternalStore(subscribe, isDesktop, () => true);
   const [navOpen, setNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -35,7 +36,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     setPaletteOpen(true);
   }, []);
   return (
-    <div className="flex h-svh flex-col overflow-clip bg-sidebar text-sidebar-foreground md:flex-row">
+    // The sidebar stays first in the DOM (tab order, screen readers); on the right it is only laid out last.
+    <div
+      className={`flex h-svh flex-col overflow-clip bg-sidebar text-sidebar-foreground ${side === "right" ? "md:flex-row-reverse" : "md:flex-row"}`}
+    >
       {desktop ? (
         <AppSidebar onSearch={search} />
       ) : (
@@ -61,7 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </header>
           <Sheet open={navOpen} onOpenChange={setNavOpen}>
             <SheetContent
-              side="left"
+              side={side}
               showCloseButton={false}
               className="w-72 max-w-[85vw] bg-sidebar p-0 text-sm text-sidebar-foreground"
             >

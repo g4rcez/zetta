@@ -18,13 +18,29 @@ import { applyTheme, type Theme } from "./theme";
 import { DEFAULT_TIME_FORMAT, type TimeFormat } from "./time-format";
 
 export type RailMode = "expanded" | "collapsed";
+/** The edge of the window the app sidebar sits on. */
+export type SidebarSide = "left" | "right";
+export const DEFAULT_SIDEBAR_SIDE: SidebarSide = "left";
+/** Same values as the server (packages/db/src/schema/preferences.ts), which rejects anything else. */
+export const SIDEBAR_SIDES: readonly SidebarSide[] = ["left", "right"];
+export const SIDEBAR_SIDE_LABEL: Record<SidebarSide, string> = {
+  left: "Left (default)",
+  right: "Right",
+};
+/** `hold`: an approval that widens what a bot may do needs a press and hold. `click`: one click is enough. */
+export type ApprovalMode = "hold" | "click";
+export const DEFAULT_APPROVAL_MODE: ApprovalMode = "hold";
+/** "Pause everything": while `paused`, none of this person's agents starts work. Same values as the server. */
+export type AgentsState = "running" | "paused";
 /** `botOrder`: the person's sidebar order of bots (ids, first on top); the chief is always first and never listed. */
 export type Preferences = {
   railMode: RailMode;
+  sidebarSide: SidebarSide;
   railWidth: number;
   listWidth: number;
   /** How hours show everywhere in the app. */
   timeFormat: TimeFormat;
+  approvalMode: ApprovalMode;
   /** Null = never chosen on the account: the device keeps its own light/dark choice. */
   theme: Theme | null;
   /** `#rrggbb`. Null = the theme's own main color. */
@@ -40,9 +56,11 @@ export const SIDEBAR_LIMITS = {
 
 const DEFAULTS: Preferences = {
   railMode: "expanded",
+  sidebarSide: DEFAULT_SIDEBAR_SIDE,
   railWidth: SIDEBAR_LIMITS.railWidth.fallback,
   listWidth: SIDEBAR_LIMITS.listWidth.fallback,
   timeFormat: DEFAULT_TIME_FORMAT,
+  approvalMode: DEFAULT_APPROVAL_MODE,
   theme: null,
   primaryColor: null,
   botOrder: [],

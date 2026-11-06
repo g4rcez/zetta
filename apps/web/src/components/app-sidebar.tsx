@@ -27,7 +27,7 @@ import {
 } from "@/features/chat/sidebar";
 import { useRooms, useSidebarData } from "@/features/chat/sidebar-data";
 import { groupRooms, roomSignal } from "@/features/discussions/rooms";
-import { SIDEBAR_LIMITS, usePreferences } from "@/features/preferences/preferences";
+import { SIDEBAR_LIMITS, usePreferences, useSidebarSide } from "@/features/preferences/preferences";
 import { isRailTab } from "@/features/studio/studio-tabs";
 
 import { Logo } from "./logo";
@@ -80,9 +80,16 @@ function RailHint({
   icon: ReactNode;
   children: ReactElement;
 }) {
+  const side = useSidebarSide();
   if (!collapsed) return children;
   return (
-    <Tooltip as="div" className="block" title={children} placement="right" popover={false}>
+    <Tooltip
+      as="div"
+      className="block"
+      title={children}
+      placement={side === "right" ? "left" : "right"}
+      popover={false}
+    >
       <span className="flex items-center gap-2 text-sm font-medium">
         {icon}
         {label}
@@ -336,6 +343,7 @@ export function AppSidebar({
   const { botId } = useSidebarLocation();
   const { toDraft } = useSidebarNavigation();
   const collapsed = !mobile && preferences.railMode === "collapsed";
+  const onRight = preferences.sidebarSide === "right";
   const newChatBot = botId ?? bots.find((b) => b.kind === "chief")?.id;
   const newChatName = (newChatBot && bots.find((b) => b.id === newChatBot)?.name) || "your chief";
   const rail = collapsed ? "collapsed" : "expanded";
@@ -467,7 +475,10 @@ export function AppSidebar({
                 aria-expanded={!collapsed}
                 className={cn(railRow, !collapsed && "h-7 w-7 min-w-7")}
               >
-                <SidebarSimpleIcon className="size-4 shrink-0" aria-hidden="true" />
+                <SidebarSimpleIcon
+                  className={cn("size-4 shrink-0", onRight && "-scale-x-100")}
+                  aria-hidden="true"
+                />
               </button>
             </RailHint>
           )}
@@ -476,6 +487,7 @@ export function AppSidebar({
       </div>
       {!mobile && !collapsed && (
         <ResizeHandle
+          edge={onRight ? "left" : "right"}
           label="Resize sidebar"
           value={preferences.railWidth}
           {...SIDEBAR_LIMITS.railWidth}

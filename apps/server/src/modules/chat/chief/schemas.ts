@@ -321,6 +321,7 @@ export const chiefSchemas = {
         action: z.literal("update"),
         timeFormat: z.enum(["24h", "12h"]).optional(),
         railMode: z.enum(["expanded", "collapsed"]).optional(),
+        sidebarSide: z.enum(["left", "right"]).optional(),
         /** Bots in the order the sidebar shows them (names or ids). */
         botOrder: z.array(ref).max(200).optional(),
       })

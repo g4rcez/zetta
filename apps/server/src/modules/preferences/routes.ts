@@ -1,6 +1,13 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
-import { RAIL_MODES, SIDEBAR_LIMITS, THEMES, TIME_FORMATS } from "@zetta/db/schema/preferences";
+import {
+  APPROVAL_MODES,
+  RAIL_MODES,
+  SIDEBAR_LIMITS,
+  SIDEBAR_SIDES,
+  THEMES,
+  TIME_FORMATS,
+} from "@zetta/db/schema/preferences";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import type { PreferenceStore } from "./store";
 import { fail, out, rejectUntrustedOrigin } from "../http-response";
@@ -12,9 +19,11 @@ export type PreferenceServices = {
 const width = (l: { min: number; max: number }) => z.number().int().min(l.min).max(l.max);
 const patch = z.strictObject({
   railMode: z.enum(RAIL_MODES).optional(),
+  sidebarSide: z.enum(SIDEBAR_SIDES).optional(),
   railWidth: width(SIDEBAR_LIMITS.railWidth).optional(),
   listWidth: width(SIDEBAR_LIMITS.listWidth).optional(),
   timeFormat: z.enum(TIME_FORMATS).optional(),
+  approvalMode: z.enum(APPROVAL_MODES).optional(),
   theme: z.enum(THEMES).nullable().optional(),
   primaryColor: z
     .string()

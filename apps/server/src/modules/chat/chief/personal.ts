@@ -10,7 +10,7 @@ export async function runPreferences(ctx: ChiefCtx, a: ChiefArgs<"preferences">)
   if (a.action === "get") return { read: `preferences.get:\n${JSON.stringify(cur)}` };
   const patch: Record<string, unknown> = {};
   const diff: DiffLine[] = [];
-  for (const k of ["timeFormat", "railMode"] as const)
+  for (const k of ["timeFormat", "railMode", "sidebarSide"] as const)
     if (a[k] !== undefined && a[k] !== cur[k]) {
       patch[k] = a[k];
       diff.push({ field: k, from: cur[k], to: a[k] });

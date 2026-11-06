@@ -7,6 +7,7 @@ import { errorMessage } from "../chat/chat-client";
 import { relativeTime } from "../shared/relative-time";
 import { ConfirmButton } from "../shared/ui";
 import { describeDevice } from "./device";
+import { PairPhoneCard } from "./pair-phone-card";
 import { profileQueries } from "./profile-api";
 import { Section } from "./section";
 
@@ -56,6 +57,7 @@ export function SessionsSection() {
           onConfirm={signOutOthers}
         />
       )}
+      <PairPhoneCard />
     </Section>
   );
 }

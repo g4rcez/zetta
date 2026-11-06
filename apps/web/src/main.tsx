@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 
 import Loader from "./components/loader";
 import { queryClient } from "./lib/query-client";
+import { registerServiceWorker } from "./lib/register-sw";
 import { routeTree } from "./routeTree.gen";
 
 const router = createRouter({
@@ -30,6 +31,8 @@ if (!rootElement) {
 if (import.meta.env.DEV && new URLSearchParams(location.search).has("axe")) {
   void import("./dev/axe-report").then((m) => m.runAxeReport());
 }
+
+registerServiceWorker();
 
 if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement);

@@ -52,12 +52,27 @@ export async function enableNativeNotifications() {
 /** One native notification; clicking it focuses the window and opens `link` (an in-app path). */
 export function showNative(title: string, body: string, tag: string, link = "/studio/attention") {
   if (nativeNotificationState() !== "granted") return;
-  const n = new Notification(title, { body: body.slice(0, 200), tag });
-  n.onclick = () => {
-    window.focus();
-    window.location.assign(/^\/(?!\/)/.test(link) ? link : "/studio/attention");
-    n.close();
+  const path = /^\/(?!\/)/.test(link) ? link : "/studio/attention";
+  const options = { body: body.slice(0, 200), tag, data: { url: path } };
+  const direct = () => {
+    try {
+      const n = new Notification(title, options);
+      n.onclick = () => {
+        window.focus();
+        window.location.assign(path);
+        n.close();
+      };
+    } catch {
+      /* the browser refuses `new Notification()` and no service worker is there to show it */
+    }
   };
+  // Phones refuse `new Notification()`. A service worker can show one anywhere, and its click handler (public/sw.js) opens `data.url`.
+  const worker = typeof navigator === "undefined" ? undefined : navigator.serviceWorker;
+  if (!worker) return direct();
+  void worker
+    .getRegistration()
+    .then((reg) => (reg ? reg.showNotification(title, options) : direct()))
+    .catch(direct);
 }
 
 /** Shows one native notification per new unread open item. The first run only records the backlog. */

@@ -11,6 +11,7 @@ import { APIError, isAPIError } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
 import { createProfileWriteGate } from "./account-write-gate";
 import { CLIENT_IP_HEADER } from "./client-ip-header";
+import { pairPhone } from "./pair-phone";
 import {
   createFirstAccountClaim,
   createInvitationSignupGate,
@@ -112,6 +113,8 @@ export function createAuthOptions(
       // MCP clients identify themselves by a metadata URL instead of registering. The bundled transport resolves the host once, refuses
       // private and special-use addresses, pins the address and never follows redirects (checked on Bun in oauth-transport.test.ts).
       cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
+      // Pairing a phone by QR code: the phone gets a session of its own (see ./pair-phone).
+      pairPhone(),
     ],
     ...(options === undefined
       ? {}

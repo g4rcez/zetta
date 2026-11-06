@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { ListIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
+import { Modal } from "@g4rcez/components/modal";
 
 import { useBackgroundNotifications } from "@/features/attention/background-notifications";
 import { PausedBanner } from "@/features/agents/pause-agents";
@@ -65,16 +65,21 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="text-sm font-semibold">Zetta</span>
             </Link>
           </header>
-          <Sheet open={navOpen} onOpenChange={setNavOpen}>
-            <SheetContent
-              side={side}
-              showCloseButton={false}
-              className="w-72 max-w-[85vw] bg-sidebar p-0 text-sm text-sidebar-foreground"
-            >
-              <SheetTitle className="sr-only">Navigation</SheetTitle>
-              <AppSidebar mobile onSearch={search} />
-            </SheetContent>
-          </Sheet>
+          <Modal
+            type="drawer"
+            forceType
+            open={navOpen}
+            onChange={setNavOpen}
+            position={side}
+            ariaTitle="Navigation"
+            closable={false}
+            resizer={false}
+            overlayClickClose
+            className="max-w-[85vw] bg-sidebar p-0 text-sm text-sidebar-foreground"
+            bodyClassName="w-72 max-w-[85vw] p-0"
+          >
+            <AppSidebar mobile onSearch={search} />
+          </Modal>
         </>
       )}
       <main

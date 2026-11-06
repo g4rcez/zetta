@@ -9,7 +9,7 @@ import {
 import { motion, useReducedMotion } from "motion/react";
 import type { KeyboardEvent } from "react";
 import { toast } from "sonner";
-import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
+import { Modal } from "@g4rcez/components/modal";
 import { Button } from "@/components/ui";
 import { useMedia } from "@/lib/use-media";
 import { StatusIcon } from "./task-badges";
@@ -135,12 +135,20 @@ export function TaskPeek(props: PeekProps) {
   const reduceMotion = useReducedMotion();
   if (!desktop) {
     return (
-      <Sheet open onOpenChange={(open) => !open && props.onClose()}>
-        <SheetContent side="right" showCloseButton={false} className="w-full p-0 sm:max-w-xl">
-          <SheetTitle className="sr-only">Task details</SheetTitle>
-          <PeekPanel {...props} />
-        </SheetContent>
-      </Sheet>
+      <Modal
+        type="drawer"
+        forceType
+        open
+        onChange={(open) => !open && props.onClose()}
+        ariaTitle="Task details"
+        closable={false}
+        resizer={false}
+        overlayClickClose
+        className="max-w-full p-0"
+        bodyClassName="flex w-screen max-w-full flex-col p-0 sm:w-xl"
+      >
+        <PeekPanel {...props} />
+      </Modal>
     );
   }
   return (

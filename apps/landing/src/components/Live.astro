@@ -1,0 +1,65 @@
+---
+// The big recording: the chief turns a brief into a small team of bots and asks for approval at each step. Light mode, demo data.
+import Window from "./Window.astro";
+import Video from "./Video.astro";
+import { getCopy, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const t = getCopy(Astro.props.locale).live;
+---
+
+<section class="section live" id="live" aria-labelledby="live-title">
+  <div class="wrap">
+    <div class="head rv">
+      <div class="sec-head">
+        <p class="eyebrow">{t.eyebrow}</p>
+        <h2 id="live-title">{t.title.before}<em>{t.title.mark}</em>{t.title.after}</h2>
+      </div>
+      <p class="lead">{t.lead}</p>
+    </div>
+    <div class="shot rv" id="live-clip">
+      <Window title="Zetta" label={t.videoLabel}>
+        <Video name="team" width={1600} height={1000} label={t.videoLabel} play={t.play} pause={t.pause} />
+      </Window>
+      <div class="foot">
+        <p>{t.note}</p>
+        <button class="btn btn-sm" type="button" data-replay="live-clip">{t.replay}</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .live {
+    padding-top: 32px;
+  }
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px 64px;
+  }
+  .head .lead {
+    max-width: 380px;
+  }
+  .shot {
+    margin-top: 56px;
+  }
+  .foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    margin-top: 16px;
+  }
+  .foot p {
+    color: var(--muted-foreground);
+    font-size: 14px;
+    line-height: 20px;
+  }
+</style>

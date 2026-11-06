@@ -1,0 +1,135 @@
+---
+// The closing band: dark, with rounded top corners. The footer continues on the same ground.
+import Logo from "./Logo.astro";
+import GithubMark from "./GithubMark.astro";
+import { getCopy, type Locale } from "../i18n";
+import { INSTALL, REPO } from "../links";
+
+interface Props {
+  locale: Locale;
+}
+
+const t = getCopy(Astro.props.locale).cta;
+const copy = getCopy(Astro.props.locale).hero;
+---
+
+<section class="cta" aria-labelledby="cta-title">
+  <div class="wrap grid">
+    <div class="text rv">
+      <h2 id="cta-title">{t.title.before}<em>{t.title.mark}</em>{t.title.after}</h2>
+      <p class="lead">{t.lead}</p>
+      <div class="code">
+        <pre><code>curl -fsSL {INSTALL} | bash</code></pre>
+        <button class="btn btn-sm" type="button" data-copy data-copied={copy.copied} data-label={copy.copy}>{copy.copy}</button>
+      </div>
+      <div class="row">
+        <a class="btn btn-primary" href="#install">{t.primary}</a>
+        <a class="btn ghost" href={REPO} target="_blank" rel="noopener noreferrer"><GithubMark />{t.secondary}</a>
+      </div>
+    </div>
+    <div class="bot rv" aria-hidden="true">
+      <Logo size={220} tile id="cta" />
+    </div>
+  </div>
+</section>
+
+<style>
+  .cta {
+    margin-top: 40px;
+    padding-block: 112px 72px;
+    border-radius: 48px 48px 0 0;
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+  .grid {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 48px;
+  }
+  .text {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    gap: 24px;
+    max-width: 640px;
+  }
+  .cta h2 {
+    color: var(--on-ink);
+  }
+  .cta h2 em {
+    color: var(--brand);
+  }
+  .lead {
+    color: var(--on-ink-muted);
+  }
+  .code {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 520px;
+    padding: 8px 8px 8px 18px;
+    border-radius: 14px;
+    background: rgb(255 255 255 / 0.07);
+  }
+  .code pre {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    font-size: 14px;
+  }
+  .code .btn {
+    border-color: transparent;
+    background: #2a313a;
+    color: #fff;
+  }
+  .code .btn:hover {
+    background: #3a434e;
+  }
+  .cta .btn-primary {
+    border-color: var(--brand);
+    background: var(--brand);
+    color: #04241b;
+  }
+  .ghost {
+    border-color: rgb(255 255 255 / 0.28);
+    background: transparent;
+    color: var(--on-ink);
+  }
+  .ghost:hover {
+    background: rgb(255 255 255 / 0.08);
+  }
+  .bot {
+    margin-right: 24px;
+    animation: tilt 9s ease-in-out infinite;
+  }
+  .bot :global(.tile) {
+    border-radius: 40px;
+    background: #222a33;
+  }
+  @keyframes tilt {
+    0%,
+    100% {
+      transform: rotate(-4deg);
+    }
+    50% {
+      transform: rotate(3deg);
+    }
+  }
+  @media (max-width: 720px) {
+    .cta {
+      padding-block: 72px 48px;
+      border-radius: 30px 30px 0 0;
+    }
+    .bot {
+      display: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .bot {
+      animation: none;
+    }
+  }
+</style>

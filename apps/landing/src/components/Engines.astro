@@ -1,0 +1,158 @@
+---
+// The agents a bot can run on, and the accounts and channels around them. Everything named here exists in the repository
+// (see apps/server and apps/web/src/features/plugins). Vendor and agent marks come from src/cast.ts.
+import Brand from "./Brand.astro";
+import { getCopy, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const t = getCopy(Astro.props.locale).engines;
+---
+
+<section class="band engines" id="agents" aria-labelledby="agents-title">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <p class="eyebrow">{t.eyebrow}</p>
+      <h2 id="agents-title">{t.title.before}<em>{t.title.mark}</em>{t.title.after}</h2>
+      <p class="lead">{t.lead}</p>
+    </div>
+
+    <ul class="cards">
+      {
+        t.agents.map((name) => (
+          <li class="card rv">
+            <span class="mark" aria-hidden="true">
+              <Brand name={name} size={30} />
+            </span>
+            <b>{name}</b>
+            <small>{t.badge}</small>
+          </li>
+        ))
+      }
+    </ul>
+
+    <div class="more">
+      {
+        t.groups.map((g) => (
+          <div class="group rv">
+            <h3>{g.title}</h3>
+            <p>{g.body}</p>
+            {
+              g.tags.length > 0 ? (
+                <ul class="chips">
+                  {g.tags.map((tag) => (
+                    <li>
+                      <Brand name={tag} size={18} />
+                      {tag}
+                    </li>
+                  ))}
+                </ul>
+              ) : null
+            }
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 56px;
+  }
+  .card {
+    display: grid;
+    justify-items: start;
+    gap: 4px;
+    padding: 20px;
+    border-radius: var(--radius-2xl);
+    background: var(--card);
+    box-shadow: 0 0 0 1px rgb(24 24 27 / 0.08);
+    transition:
+      transform 200ms var(--spring),
+      box-shadow 150ms;
+  }
+  .card:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--primary) 40%, transparent),
+      0 20px 32px -24px rgb(20 24 29 / 0.5);
+  }
+  /* The agent's own mark on a white tile. */
+  .mark {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    margin-bottom: 14px;
+    border-radius: 28%;
+    background: var(--card);
+    box-shadow:
+      0 0 0 1px rgb(24 24 27 / 0.1),
+      0 8px 16px -10px rgb(20 24 29 / 0.4);
+  }
+  .card b {
+    font-size: 17px;
+    line-height: 22px;
+    letter-spacing: -0.02em;
+  }
+  .card small {
+    color: var(--muted-foreground);
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .more {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px 48px;
+    margin-top: 72px;
+    padding-top: 40px;
+    border-top: 1px solid var(--border);
+  }
+  .group {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+  }
+  .group p {
+    color: var(--muted-foreground);
+    font-size: 15px;
+    line-height: 22px;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .chips li {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding-inline: 10px;
+    border-radius: 999px;
+    background: var(--card);
+    box-shadow: 0 0 0 1px rgb(24 24 27 / 0.1);
+    font-size: 13px;
+    font-weight: 560;
+  }
+  @media (max-width: 1080px) {
+    .cards {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .more {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 520px) {
+    .cards {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+</style>

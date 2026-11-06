@@ -1,6 +1,6 @@
 ---
 import HeroShader from "./HeroShader.astro";
-import Window from "./Window.astro";
+import RobotHero from "./RobotHero.astro";
 import { getCopy, type Locale } from "../i18n";
 import { INSTALL, REPO } from "../links";
 
@@ -8,31 +8,34 @@ interface Props {
   locale: Locale;
 }
 
-const t = getCopy(Astro.props.locale).hero;
+const { locale } = Astro.props;
+const t = getCopy(locale).hero;
 ---
 
 <section class="hero" id="top" aria-labelledby="hero-title">
   <HeroShader />
-  <div class="wrap">
-    <h1 id="hero-title">{t.title}</h1>
-    <p class="lead">{t.lead}</p>
-    <div class="install">
-      <p class="install-label">{t.installLabel}</p>
-      <div class="code">
-        <pre><code>curl -fsSL {INSTALL} | bash</code></pre>
-        <button class="btn btn-sm" type="button" data-copy data-copied={t.copied} data-label={t.copy}>{t.copy}</button>
+  <div class="wrap grid">
+    <div class="text">
+      <p class="eyebrow rv">{t.eyebrow}</p>
+      <h1 id="hero-title" class="rv">
+        {t.title.before}<span class="mark">{t.title.mark}</span>{t.title.after}
+      </h1>
+      <p class="lead rv">{t.lead}</p>
+      <div class="install rv">
+        <p class="install-label">{t.installLabel}</p>
+        <div class="code">
+          <pre><code>curl -fsSL {INSTALL} | bash</code></pre>
+          <button class="btn btn-sm" type="button" data-copy data-copied={t.copied} data-label={t.copy}>{t.copy}</button>
+        </div>
       </div>
+      <div class="row rv">
+        <a class="btn btn-primary" href="#install">{t.primary}</a>
+        <a class="btn" href="#live">{t.secondary}<span aria-hidden="true">↓</span></a>
+        <a class="btn btn-ghost" href={REPO} target="_blank" rel="noopener noreferrer">{t.github}</a>
+      </div>
+      <p class="note rv">{t.note}</p>
     </div>
-    <div class="row">
-      <a class="btn btn-primary" href="#self-host">{t.primary}</a>
-      <a class="btn" href={REPO} target="_blank" rel="noopener noreferrer">{t.secondary}</a>
-    </div>
-    <p class="note">{t.note}</p>
-    <div class="shot">
-      <Window title="Zetta" label={t.screenAlt}>
-        <img src="/screens/hero.webp" width="1800" height="715" alt={t.screenAlt} fetchpriority="high" decoding="async" />
-      </Window>
-    </div>
+    <RobotHero locale={locale} />
   </div>
 </section>
 
@@ -41,23 +44,40 @@ const t = getCopy(Astro.props.locale).hero;
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    padding-block: 80px 96px;
+    padding-block: 48px 112px;
   }
-  .wrap {
+  .grid {
     position: relative;
     z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 48px;
+    align-items: center;
+  }
+  .text {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
   }
   h1 {
     max-width: 12em;
-    font-size: clamp(40px, 6vw, 80px);
+    margin-top: 20px;
+    font-size: clamp(40px, 5.3vw, 78px);
+    line-height: 1.04;
+  }
+  /* The key word: bolder, in the main color (the same as the emphasis of every other heading). */
+  .mark {
+    color: var(--primary);
+    font-weight: 800;
   }
   .lead {
-    max-width: 52ch;
-    margin-block: 24px 32px;
-    font-size: 20px;
-    line-height: 30px;
+    max-width: 48ch;
+    margin-block: 24px 28px;
+    font-size: 19px;
+    line-height: 29px;
   }
   .install {
+    width: 100%;
     max-width: 560px;
     margin-bottom: 24px;
   }
@@ -71,10 +91,11 @@ const t = getCopy(Astro.props.locale).hero;
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 8px 8px 8px 16px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--card);
+    padding: 8px 8px 8px 18px;
+    border-radius: 14px;
+    background: var(--ink);
+    color: var(--on-ink);
+    box-shadow: 0 24px 48px -28px rgb(20 24 29 / 0.6);
   }
   .code pre {
     flex: 1;
@@ -86,25 +107,34 @@ const t = getCopy(Astro.props.locale).hero;
     line-height: 20px;
     white-space: pre;
   }
+  .code .btn {
+    border-color: transparent;
+    background: #2a313a;
+    color: #fff;
+  }
+  .code .btn:hover {
+    background: #3a434e;
+  }
   .note {
-    margin-top: 16px;
+    margin-top: 20px;
+    max-width: 52ch;
     color: var(--muted-foreground);
     font-size: 14px;
     line-height: 20px;
   }
-  .shot {
-    margin-top: 64px;
+  @media (max-width: 1080px) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 72px;
+    }
   }
   @media (max-width: 720px) {
     .hero {
-      padding-block: 48px 64px;
+      padding-block: 40px 72px;
     }
     .lead {
       font-size: 18px;
       line-height: 28px;
-    }
-    .shot {
-      margin-top: 40px;
     }
   }
 </style>

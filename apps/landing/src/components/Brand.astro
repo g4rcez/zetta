@@ -11,7 +11,7 @@ const { name, size = 20 } = Astro.props;
 const logo = logoOf(name);
 ---
 
-{logo ? <img class:list={["brand", { plate: logo.plate }]} src={logo.src} width={size} height={size} alt="" decoding="async" /> : null}
+{logo ? <img class:list={["brand", { plate: logo.plate, dark: logo.dark }]} src={logo.src} width={size} height={size} alt="" decoding="async" /> : null}
 
 <style>
   .brand {
@@ -24,5 +24,10 @@ const logo = logoOf(name);
   .plate {
     padding: 1px;
     background: #ffffff;
+  }
+  /* Light marks (OMP) sit on the logo ink. */
+  .dark {
+    padding: 1px;
+    background: var(--logo-ink);
   }
 </style>

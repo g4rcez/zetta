@@ -2,15 +2,17 @@
 // A desktop window around a screenshot, so the product reads as running on a computer: title bar with the three dots, a centered title,
 // rounded corners and the soft shadow of a floating window. The dots and the title are decoration (aria-hidden); the group is named
 // by `label`, which is the screenshot's description. The group is focusable because on a phone the body scrolls sideways.
+// `bleed` is for a window that runs to the edge of the page: that side has no border and no rounded corners, so it reads as cut off by the screen.
 interface Props {
   title: string;
   label: string;
+  bleed?: "left" | "right";
 }
 
-const { title, label } = Astro.props;
+const { title, label, bleed } = Astro.props;
 ---
 
-<div class="window" role="group" aria-label={label} tabindex="0">
+<div class:list={["window", bleed && `bleed-${bleed}`]} role="group" aria-label={label} tabindex="0">
   <div class="bar" aria-hidden="true">
     <span class="dots"><i class="close"></i><i class="minimize"></i><i class="zoom"></i></span>
     <span class="title">{title}</span>
@@ -28,6 +30,14 @@ const { title, label } = Astro.props;
     box-shadow:
       0 1px 2px rgb(0 0 0 / 0.08),
       0 24px 48px -16px rgb(0 0 0 / 0.22);
+  }
+  .bleed-right {
+    border-right: 0;
+    border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+  }
+  .bleed-left {
+    border-left: 0;
+    border-radius: 0 var(--radius-xl) var(--radius-xl) 0;
   }
   .bar {
     position: relative;
@@ -74,7 +84,8 @@ const { title, label } = Astro.props;
   .body {
     overflow-x: auto;
   }
-  .body :global(img) {
+  .body :global(img),
+  .body :global(video) {
     display: block;
     width: 100%;
     height: auto;

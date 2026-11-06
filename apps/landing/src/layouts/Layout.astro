@@ -30,6 +30,10 @@ const { lang, title, description } = Astro.props;
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="generator" content={Astro.generator} />
+    <!-- Turns on the scroll-reveal start state before first paint; without JavaScript this never runs and everything is visible. -->
+    <script is:inline>
+      document.documentElement.classList.add("js");
+    </script>
   </head>
   <body>
     <slot />

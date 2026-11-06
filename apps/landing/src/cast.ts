@@ -1,7 +1,5 @@
-// The page's illustrations are the product's own bot art: these characters are ported from
-// apps/web/src/components/bot-avatar.tsx (AVATAR_CHARACTERS, same shapes and default colors).
-// DESIGN.md exempts avatar art from the token and gradient rules, so the colors here are the art's own.
-// Change the art in the app first, then here.
+// The page's illustrations are the product's own bot art (see the avatars below). DESIGN.md exempts avatar art from the
+// token and gradient rules, so the colors here are the art's own.
 import github from "./assets/logos/github.svg";
 import linear from "./assets/logos/linear.svg";
 import notion from "./assets/logos/notion.png";
@@ -17,93 +15,103 @@ import context7 from "./assets/logos/context7.png";
 import chromeDevtools from "./assets/logos/chrome-devtools.png";
 import google from "./assets/logos/google.svg";
 import telegram from "./assets/logos/telegram.svg";
+// The coding agents a bot can run on. Each mark is the project's own: Claude Code and Codex and Cursor and OpenCode from the lobe-icons set,
+// OMP from assets/icon.svg of https://github.com/can1357/oh-my-pi, Pi from the apps/p2 favicon of https://github.com/earendil-works/pi.
+import claudeCode from "./assets/logos/agents/claude-code.svg";
+import codex from "./assets/logos/agents/codex.svg";
+import cursor from "./assets/logos/agents/cursor.svg";
+import opencode from "./assets/logos/agents/opencode.svg";
+import omp from "./assets/logos/agents/omp.svg";
+import pi from "./assets/logos/agents/pi.svg";
 
-const DARK = "#1b1b1f";
+// The bots are drawn as the app's geometric avatars: a shape filled with a gradient of one color, with a small white face.
+// Ported from AVATAR_SHAPES in apps/web/src/components/bot-avatar.tsx (same paths, same face positions, same gradient: the color
+// mixed 35% toward white at the top left and 25% toward black at the bottom right). Change the art in the app first, then here.
+export type ArtId = "blob" | "hexagon" | "drop" | "bell" | "pill" | "square" | "circle" | "diamond";
 
-export type ArtId =
-  | "owl"
-  | "cat"
-  | "rocket"
-  | "frog"
-  | "ghost"
-  | "spark"
-  | "robot"
-  | "mouse"
-  | "orbit";
-
-const ART: Record<
-  ArtId,
-  { colors: [string, string, string]; draw: (c: [string, string, string]) => string }
-> = {
-  orbit: {
-    colors: ["#0b0b0f", "#f4f4f5", "#7c7cff"],
-    draw: ([bg, body, accent]) =>
-      `<rect width="64" height="64" fill="${bg}"/><circle cx="32" cy="32" r="13" fill="${body}"/><ellipse cx="32" cy="32" rx="25" ry="9" fill="none" stroke="${accent}" stroke-width="3.5" transform="rotate(-28 32 32)"/><path d="M14 52 50 12" stroke="${accent}" stroke-width="3.5" stroke-linecap="round"/>`,
+const ROUNDED = 'stroke-width="5" stroke-linejoin="round"';
+const SHAPES: Record<ArtId, { face: [number, number]; draw: (fill: string) => string }> = {
+  blob: {
+    face: [32, 32],
+    draw: (f) =>
+      `<path d="M32 6C48 4 58 18 56 34C54 50 42 58 28 56C14 54 6 42 8 28C10 14 20 7 32 6Z" fill="${f}"/>`,
   },
-  mouse: {
-    colors: ["#fde68a", "#9ca3af", "#f9a8d4"],
-    draw: ([bg, body, accent]) =>
-      `<rect width="64" height="64" fill="${bg}"/><circle cx="15" cy="17" r="11" fill="${body}"/><circle cx="49" cy="17" r="11" fill="${body}"/><circle cx="15" cy="17" r="6" fill="${accent}"/><circle cx="49" cy="17" r="6" fill="${accent}"/><ellipse cx="32" cy="38" rx="20" ry="18" fill="${body}"/><circle cx="24" cy="34" r="3" fill="${DARK}"/><circle cx="40" cy="34" r="3" fill="${DARK}"/><ellipse cx="32" cy="43" rx="3.5" ry="2.8" fill="${accent}"/><path d="M10 40h9M10 46l9-3M54 40h-9M54 46l-9-3" stroke="${DARK}" stroke-width="1.5" stroke-linecap="round"/>`,
+  circle: { face: [32, 32], draw: (f) => `<circle cx="32" cy="32" r="26" fill="${f}"/>` },
+  square: {
+    face: [32, 32],
+    draw: (f) => `<rect x="7" y="7" width="50" height="50" rx="14" fill="${f}"/>`,
   },
-  robot: {
-    colors: ["#0f172a", "#94a3b8", "#22d3ee"],
-    draw: ([bg, body, accent]) =>
-      `<rect width="64" height="64" fill="${bg}"/><path d="M32 8v8" stroke="${accent}" stroke-width="3" stroke-linecap="round"/><circle cx="32" cy="8" r="3.5" fill="${accent}"/><rect x="10" y="16" width="44" height="36" rx="9" fill="${body}"/><rect x="17" y="26" width="10" height="9" rx="3" fill="${accent}"/><rect x="37" y="26" width="10" height="9" rx="3" fill="${accent}"/><path d="M22 43h20" stroke="${bg}" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 3"/>`,
+  pill: {
+    face: [32, 30],
+    draw: (f) => `<rect x="14" y="5" width="36" height="54" rx="18" fill="${f}"/>`,
   },
-  cat: {
-    colors: ["#c7d2fe", "#f59e0b", "#fef3c7"],
-    draw: ([bg, body, accent]) =>
-      `<rect width="64" height="64" fill="${bg}"/><path d="M10 28 12 6l16 12zM54 28 52 6 36 18z" fill="${body}"/><circle cx="32" cy="36" r="22" fill="${body}"/><ellipse cx="32" cy="44" rx="10" ry="7" fill="${accent}"/><ellipse cx="23" cy="33" rx="2.5" ry="3.5" fill="${DARK}"/><ellipse cx="41" cy="33" rx="2.5" ry="3.5" fill="${DARK}"/><path d="M29 41h6l-3 3z" fill="${DARK}"/><path d="M6 36h10M6 42l10-2M58 36H48M58 42l-10-2" stroke="${DARK}" stroke-width="1.5" stroke-linecap="round"/>`,
+  drop: {
+    face: [32, 41],
+    draw: (f) =>
+      `<path d="M32 5C40 17 54 26 54 40C54 52 44 59 32 59C20 59 10 52 10 40C10 26 24 17 32 5Z" fill="${f}"/>`,
   },
-  owl: {
-    colors: ["#134e4a", "#a16207", "#fde047"],
-    draw: ([bg, body, accent]) =>
-      `<rect width="64" height="64" fill="${bg}"/><path d="M12 10 22 18H42L52 10V40C52 50 43 58 32 58S12 50 12 40z" fill="${body}"/><circle cx="23" cy="30" r="9" fill="#fff"/><circle cx="41" cy="30" r="9" fill="#fff"/><circle cx="23" cy="30" r="4.5" fill="${accent}"/><circle cx="41" cy="30" r="4.5" fill="${accent}"/><circle cx="23" cy="30" r="2" fill="${DARK}"/><circle cx="41" cy="30" r="2" fill="${DARK}"/><path d="M28 38h8l-4 8z" fill="${accent}"/>`,
+  bell: {
+    face: [32, 37],
+    draw: (f) => `<path d="M22 8Q32 4 42 8L56 52Q57 58 50 58H14Q7 58 8 52Z" fill="${f}"/>`,
   },
-  spark: {
-    colors: ["#312e81", "#fbbf24", "#f472b6"],
-    draw: ([bg, body, accent]) =>
-      `<rect width="64" height="64" fill="${bg}"/><path d="M30 8c2 14 8 20 22 22-14 2-20 8-22 22-2-14-8-20-22-22 14-2 20-8 22-22z" fill="${body}"/><path d="M50 36c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z" fill="${accent}"/>`,
+  hexagon: {
+    face: [32, 32],
+    draw: (f) =>
+      `<polygon points="32,7 54,19 54,45 32,57 10,45 10,19" fill="${f}" stroke="${f}" ${ROUNDED}/>`,
   },
-  ghost: {
-    colors: ["#1e1b4b", "#e0e7ff", "#f9a8d4"],
-    draw: ([bg, body, accent]) =>
-      `<rect width="64" height="64" fill="${bg}"/><path d="M15 56V30C15 18 22 9 32 9S49 18 49 30V56L43 50L37.5 56L32 50L26.5 56L21 50Z" fill="${body}"/><ellipse cx="26" cy="29" rx="3" ry="4" fill="${DARK}"/><ellipse cx="38" cy="29" rx="3" ry="4" fill="${DARK}"/><circle cx="20.5" cy="37" r="3" fill="${accent}"/><circle cx="43.5" cy="37" r="3" fill="${accent}"/><ellipse cx="32" cy="38" rx="3" ry="4" fill="${DARK}"/>`,
-  },
-  rocket: {
-    colors: ["#0c1a3a", "#e5e7eb", "#f97316"],
-    draw: ([bg, body, accent]) =>
-      `<rect width="64" height="64" fill="${bg}"/><circle cx="11" cy="13" r="1.5" fill="${body}"/><circle cx="53" cy="18" r="1.5" fill="${body}"/><circle cx="50" cy="55" r="1.5" fill="${body}"/><path d="M26 46Q32 66 38 46Z" fill="${accent}"/><path d="M25 34 14 50l12-4zM39 34l11 16-12-4z" fill="${accent}"/><path d="M32 5C43 14 45 30 42 47H22C19 30 21 14 32 5z" fill="${body}"/><circle cx="32" cy="26" r="6" fill="${bg}" stroke="${accent}" stroke-width="2.5"/>`,
-  },
-  frog: {
-    colors: ["#fef9c3", "#4ade80", "#fb7185"],
-    draw: ([bg, body, accent]) =>
-      `<rect width="64" height="64" fill="${bg}"/><ellipse cx="32" cy="41" rx="23" ry="17" fill="${body}"/><circle cx="19" cy="23" r="10" fill="${body}"/><circle cx="45" cy="23" r="10" fill="${body}"/><circle cx="19" cy="23" r="6.5" fill="#fff"/><circle cx="45" cy="23" r="6.5" fill="#fff"/><circle cx="20" cy="24" r="3.2" fill="${DARK}"/><circle cx="44" cy="24" r="3.2" fill="${DARK}"/><circle cx="14" cy="43" r="3.5" fill="${accent}"/><circle cx="50" cy="43" r="3.5" fill="${accent}"/><path d="M20 45Q32 54 44 45" fill="none" stroke="${DARK}" stroke-width="2.2" stroke-linecap="round"/><path d="M29 36h.1M35 36h.1" stroke="${DARK}" stroke-width="2.4" stroke-linecap="round"/>`,
+  diamond: {
+    face: [32, 32],
+    draw: (f) =>
+      `<rect x="15" y="15" width="34" height="34" rx="5" fill="${f}" stroke="${f}" ${ROUNDED} transform="rotate(45 32 32)"/>`,
   },
 };
 
-/** The SVG body (64x64 viewBox) of a character in its default colors. */
-export const artOf = (id: ArtId) => ART[id].draw(ART[id].colors);
+/** Mixes a hex color toward white (amount > 0) or black (amount < 0), as `shade` does in the app. */
+const shade = (hex: string, amount: number) => {
+  const n = parseInt(hex.slice(1), 16);
+  const target = amount < 0 ? 0 : 255;
+  const t = Math.abs(amount);
+  const ch = (shift: number) =>
+    Math.round(((n >> shift) & 255) * (1 - t) + target * t)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${ch(16)}${ch(8)}${ch(0)}`;
+};
 
-/** Every bot the page names, with its character. Writer, Reviewer and Researcher run the examples; the rest are the app's personality presets. */
+let counter = 0;
+/** The SVG body (64x64 viewBox) of a bot's avatar. Every call gets its own gradient id, so two copies on a page never share one. */
+export const artOf = (id: ArtId, color: string) => {
+  const shape = SHAPES[id];
+  const gradient = `bot-art-${++counter}`;
+  const [fx, fy] = shape.face;
+  return (
+    `<defs><linearGradient id="${gradient}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${shade(color, 0.35)}"/><stop offset="1" stop-color="${shade(color, -0.25)}"/></linearGradient></defs>` +
+    shape.draw(`url(#${gradient})`) +
+    `<g stroke="#fff" stroke-opacity="0.92" stroke-linecap="round" stroke-width="2.6"><path d="M${fx - 7} ${fy - 3}v3M${fx + 5} ${fy - 3}v3"/><path d="M${fx - 3} ${fy + 5}h5" stroke-width="2"/></g>`
+  );
+};
+
+/** Every bot the page names, with its shape and color (the app's swatches, see AVATAR_SWATCHES). Writer, Reviewer, Researcher and Editor run the examples; the rest are the app's personality presets. */
 export const CAST = {
-  writer: { name: "Writer", art: "cat" },
-  reviewer: { name: "Reviewer", art: "owl" },
-  researcher: { name: "Researcher", art: "rocket" },
-  coach: { name: "Coach", art: "frog" },
-  editor: { name: "Editor", art: "ghost" },
-  analyst: { name: "Analyst", art: "spark" },
-  coder: { name: "Coder", art: "robot" },
-  concierge: { name: "Concierge", art: "mouse" },
-} as const satisfies Record<string, { name: string; art: ArtId }>;
+  writer: { name: "Writer", art: "blob", color: "#dc8a42" },
+  reviewer: { name: "Reviewer", art: "hexagon", color: "#4a80e6" },
+  researcher: { name: "Researcher", art: "drop", color: "#47a5c4" },
+  coach: { name: "Coach", art: "circle", color: "#c8588a" },
+  editor: { name: "Editor", art: "bell", color: "#7e5cc4" },
+  analyst: { name: "Analyst", art: "diamond", color: "#cfa843" },
+  coder: { name: "Coder", art: "square", color: "#46a05f" },
+  concierge: { name: "Concierge", art: "pill", color: "#4aa396" },
+} as const satisfies Record<string, { name: string; art: ArtId; color: string }>;
 
 export type BotKey = keyof typeof CAST;
 
-/** The character of a bot named on the page ("Writer" -> cat). Unknown names fall back to the robot. */
-export const artFor = (name: string): ArtId =>
-  (Object.values(CAST).find((b) => b.name === name)?.art as ArtId | undefined) ?? "robot";
+/** The shape and color of a bot named on the page ("Writer" -> orange blob). Unknown names fall back to a green circle. */
+export const artFor = (name: string): { art: ArtId; color: string } => {
+  const bot = Object.values(CAST).find((b) => b.name === name);
+  return bot ? { art: bot.art, color: bot.color } : { art: "circle", color: "#46a05f" };
+};
 
-/** Vendor marks copied from apps/web/src/features/plugins (the app's plugin catalog). `plate` puts a white tile behind a dark mark. */
+/** Vendor marks copied from apps/web/src/features/plugins (the app's plugin catalog). `plate` puts a white tile behind a dark mark, `dark` a dark tile behind a light one. */
 export const LOGOS = {
   GitHub: { src: github.src, plate: true },
   Linear: { src: linear.src },
@@ -124,7 +132,15 @@ export const LOGOS = {
   Bitwarden: { src: bitwarden.src },
   Context7: { src: context7.src },
   "Chrome DevTools": { src: chromeDevtools.src },
-} as const satisfies Record<string, { src: string; plate?: boolean }>;
+  Pi: { src: pi.src },
+  Codex: { src: codex.src },
+  OMP: { src: omp.src, dark: true },
+  "Claude Code": { src: claudeCode.src },
+  OpenCode: { src: opencode.src, plate: true },
+  Cursor: { src: cursor.src, plate: true },
+} as const satisfies Record<string, { src: string; plate?: boolean; dark?: boolean }>;
 
-export const logoOf = (name: string): { src: string; plate?: boolean } | undefined =>
-  (LOGOS as Record<string, { src: string; plate?: boolean }>)[name];
+export const logoOf = (
+  name: string,
+): { src: string; plate?: boolean; dark?: boolean } | undefined =>
+  (LOGOS as Record<string, { src: string; plate?: boolean; dark?: boolean }>)[name];

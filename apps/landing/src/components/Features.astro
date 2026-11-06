@@ -1,0 +1,171 @@
+---
+// What the bots do, one row for each thing. The rows alternate: the words sit on one side, and a macOS-style window with a looping clip
+// of the real app (light mode, demo data) runs from the other side of the text all the way to the edge of the screen.
+// Row order and the media are set here, the words in src/locales.
+import Video from "./Video.astro";
+import Window from "./Window.astro";
+import { getCopy, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const t = getCopy(Astro.props.locale).features;
+const byId = Object.fromEntries(t.tiles.map((tile) => [tile.id, tile]));
+
+type Stage =
+  | { kind: "image"; src: string; width: number; height: number }
+  | { kind: "video"; name: string; width: number; height: number };
+
+const layout: { id: string; stage: Stage }[] = [
+  { id: "routines", stage: { kind: "video", name: "routines", width: 1008, height: 630 } },
+  { id: "memory", stage: { kind: "video", name: "memory", width: 1008, height: 630 } },
+  { id: "computer", stage: { kind: "video", name: "computer", width: 1008, height: 630 } },
+  { id: "browser", stage: { kind: "video", name: "browser", width: 1008, height: 630 } },
+  { id: "inbox", stage: { kind: "video", name: "inbox", width: 1008, height: 630 } },
+  { id: "tasks", stage: { kind: "video", name: "tasks", width: 1008, height: 630 } },
+  { id: "chats", stage: { kind: "video", name: "chats", width: 1008, height: 630 } },
+];
+// The first row has its window on the right, the next on the left, and so on.
+const rows = layout.map((l, i) => ({
+  ...l,
+  copy: byId[l.id]!,
+  side: (i % 2 === 0 ? "right" : "left") as "right" | "left",
+}));
+---
+
+<section class="section features" id="features" aria-labelledby="features-title">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <p class="eyebrow">{t.eyebrow}</p>
+      <h2 id="features-title">{t.title.before}<em>{t.title.mark}</em>{t.title.after}</h2>
+      <p class="lead">{t.lead}</p>
+    </div>
+  </div>
+
+  <div class="rows">
+    {
+      rows.map((row) => (
+        <article class:list={["row", `media-${row.side}`]}>
+          <div class="copy rv">
+            <span class="tag">{row.copy.tag}</span>
+            <h3>{row.copy.title}</h3>
+            <p>{row.copy.body}</p>
+          </div>
+          <div class="media rv">
+            <Window bleed={row.side} title={`Zetta · ${row.copy.tag}`} label={row.copy.alt}>
+              {row.stage.kind === "image" ? (
+                <img src={row.stage.src} width={row.stage.width} height={row.stage.height} alt="" loading="lazy" decoding="async" />
+              ) : row.stage.kind === "video" ? (
+                <Video name={row.stage.name} width={row.stage.width} height={row.stage.height} label={row.copy.alt} play={t.play} pause={t.pause} />
+              ) : null}
+            </Window>
+          </div>
+        </article>
+      ))
+    }
+  </div>
+</section>
+
+<style>
+  /* The windows run to the edge of the screen: nothing here may add a sideways scrollbar. */
+  .features {
+    overflow-x: clip;
+  }
+  .rows {
+    display: grid;
+    gap: clamp(72px, 9vw, 144px);
+    margin-top: 80px;
+  }
+  .row {
+    /* Where the page's text column starts, measured from the screen edge. */
+    --edge: max(var(--gutter), calc((100% - var(--page)) / 2));
+    --copy: calc(var(--edge) + 420px);
+    display: grid;
+    align-items: center;
+    column-gap: 56px;
+  }
+  .media-right {
+    grid-template-columns: var(--copy) minmax(0, 1fr);
+    grid-template-areas: "copy media";
+  }
+  .media-left {
+    grid-template-columns: minmax(0, 1fr) var(--copy);
+    grid-template-areas: "media copy";
+  }
+  .copy {
+    grid-area: copy;
+    display: grid;
+    justify-items: start;
+    gap: 14px;
+  }
+  .media-right .copy {
+    padding-left: var(--edge);
+  }
+  .media-left .copy {
+    padding-right: var(--edge);
+  }
+  .media {
+    grid-area: media;
+    min-width: 0;
+  }
+  /* The window slides in from the screen edge it hangs on. */
+  :global(.js) .media.rv:not(.in) {
+    transform: translateX(var(--from));
+  }
+  .media-right .media {
+    --from: 6%;
+  }
+  .media-left .media {
+    --from: -6%;
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding-inline: 12px;
+    border-radius: 999px;
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  h3 {
+    margin-top: 4px;
+    font-size: clamp(30px, 3.2vw, 44px);
+    line-height: 1.06;
+    letter-spacing: -0.04em;
+  }
+  .copy p {
+    max-width: 40ch;
+    color: var(--muted-foreground);
+    font-size: 18px;
+    line-height: 28px;
+  }
+
+  @media (max-width: 1080px) {
+    .media-right,
+    .media-left {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "copy" "media";
+      row-gap: 36px;
+    }
+    .media-right .copy,
+    .media-left .copy {
+      padding-inline: var(--gutter);
+    }
+    /* Still cut off by one screen edge, with the page margin on the other side. */
+    .media-right .media {
+      margin-left: var(--gutter);
+    }
+    .media-left .media {
+      margin-right: var(--gutter);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.js) .media.rv:not(.in) {
+      transform: none;
+    }
+  }
+</style>

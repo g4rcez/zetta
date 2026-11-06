@@ -2,23 +2,51 @@
 // The Zetta robot, inlined from src/assets/logo.svg (a copy of apps/web/src/assets/logo.svg).
 // Tile rule from DESIGN.md: on the light theme the pale face would vanish, so the robot sits at 80% on a tile of the logo ink.
 // The landing page is light only, so the tile always shows.
+//
+// `animated` is for the hero: the goggles start on the forehead, the robot blinks, then the goggles drop over the eyes (the CSS below).
+// After that intro the page script (RobotHero.astro) adds `.live` and takes over with the `--g` variable: 0 is goggles up, 1 is goggles on.
+// The shared SVG file has no groups, so they are added here, at render time, by the markers its comments give. If the SVG is
+// edited and a marker is lost, `mark` throws and the build fails, instead of the animation silently doing nothing.
 import raw from "../assets/logo.svg?raw";
 
 interface Props {
   size?: number;
   tile?: boolean;
+  animated?: boolean;
   /** Gradient ids must be unique per page, so every instance passes its own. */
   id: string;
 }
 
-const { size = 28, tile = false, id } = Astro.props;
-const svg = raw
+const { size = 28, tile = false, animated = false, id } = Astro.props;
+
+const mark = (svg: string, from: string, to: string) => {
+  if (!svg.includes(from)) throw new Error(`Logo.astro: the marker ${JSON.stringify(from)} is missing from src/assets/logo.svg`);
+  return svg.replace(from, to);
+};
+
+let svg = raw
   .replaceAll("zetta-glass", `zetta-glass-${id}`)
   .replace("<title>Zetta</title>", "")
   .replace("<svg ", '<svg aria-hidden="true" focusable="false" ');
+
+if (animated) {
+  svg = mark(svg, "<!-- eyes -->", '<g class="eyes">');
+  svg = mark(svg, "<!-- brows -->", '</g><g class="brows">');
+  svg = mark(svg, "<!-- mouth -->", "</g>");
+  // The strap clips ride with the goggles: left on the forehead they float beside the head once the goggles drop.
+  svg = mark(svg, "<!-- strap clips -->", '<g class="goggles">');
+  svg = mark(svg, "<!-- head -->", "</g><!-- head -->");
+  svg = mark(svg, "<!-- goggles -->", '<g class="goggles">');
+  svg = mark(svg, 'fill="var(--logo-lens, #0a9b50)"', 'class="lens" fill="var(--logo-lens, #0a9b50)"');
+  // The first </g> after the goggles closes the logo's main group: close the goggles group right before it.
+  svg = mark(svg, '</g>\n  <g stroke="#fff"', '</g></g>\n  <g class="goggles" stroke="#fff"');
+  svg = mark(svg, '<path d="M182 145', '<path class="goggles" d="M182 145');
+  // The shade on the forehead has a flat bottom edge that only the goggles hide. With the goggles down it would look like the head is cut.
+  svg = mark(svg, '<path d="M215 150', '<path class="cap" d="M215 150');
+}
 ---
 
-<span class:list={["logo", { tile }]} style={`--s:${size}px`} set:html={svg} />
+<span class:list={["logo", { tile, animated }]} style={`--s:${size}px`} set:html={svg} />
 
 <style>
   .logo {
@@ -30,6 +58,7 @@ const svg = raw
   .logo :global(svg) {
     width: 100%;
     height: 100%;
+    overflow: visible;
   }
   .tile {
     padding: calc(var(--s) * 0.12);
@@ -38,5 +67,94 @@ const svg = raw
   }
   .tile :global(svg) {
     opacity: 0.8;
+  }
+
+  /* ---- the hero robot ---- */
+  /* The lens is a little see-through once it is over the eyes, so they show faintly through the glass. */
+  .animated :global(.lens) {
+    fill-opacity: 0.84;
+  }
+  .animated :global(.eyes) {
+    transform-box: view-box;
+    transform-origin: 441px 545px;
+    animation: blink 6.4s 0.2s infinite;
+  }
+  /* The lenses are 217 units above the eyes' center line (the eyes sit at y=545, the lens centers at y=218), plus the nose bridge
+     under them: 320 seats the goggles on the eyes without touching the mouth. */
+  .animated :global(.goggles) {
+    animation: drop 0.75s var(--spring) 1.1s both;
+  }
+  .animated :global(.brows) {
+    animation: brows 0.75s var(--spring) 1.1s both;
+  }
+  .animated :global(.cap) {
+    animation: cap 0.75s var(--ease) 1.1s both;
+  }
+  /* After the intro the page script sets --g (0 to 1) from the pointer, and the variable moves the goggles and the brows. */
+  .animated.live :global(.goggles) {
+    animation: none;
+    transform: translateY(calc(var(--g, 1) * 320px));
+  }
+  .animated.live :global(.brows) {
+    animation: none;
+    transform: translateY(calc(var(--g, 1) * -16px));
+  }
+  .animated.live :global(.cap) {
+    animation: none;
+    opacity: calc(1 - var(--g, 1));
+  }
+
+  @keyframes blink {
+    0%,
+    5%,
+    89%,
+    94%,
+    100% {
+      transform: scaleY(1);
+    }
+    2.5%,
+    91.5% {
+      transform: scaleY(0.08);
+    }
+  }
+  @keyframes drop {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(320px);
+    }
+  }
+  @keyframes cap {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes brows {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(-16px);
+    }
+  }
+
+  /* Reduced motion: no blinking, and the robot is shown with the goggles already on. */
+  @media (prefers-reduced-motion: reduce) {
+    .animated :global(.eyes) {
+      animation: none;
+    }
+    .animated :global(.goggles) {
+      animation: none;
+      transform: translateY(320px);
+    }
+    .animated :global(.brows) {
+      animation: none;
+      transform: translateY(-16px);
+    }
+    .animated :global(.cap) {
+      animation: none;
+      opacity: 0;
+    }
   }
 </style>

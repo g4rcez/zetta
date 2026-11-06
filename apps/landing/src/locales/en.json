@@ -1,0 +1,357 @@
+{
+  "meta": {
+    "title": "Zetta: bots that work on your server while you do something else",
+    "description": "Zetta is an open source, self-hosted workspace for bots. Ask your chief for an outcome. Come back to results, or to the one thing that needs you."
+  },
+  "header": {
+    "home": "Zetta home",
+    "nav": {
+      "live": "Live",
+      "features": "What it does",
+      "chief": "The chief",
+      "faq": "FAQ"
+    },
+    "github": "Star on GitHub",
+    "install": "Install",
+    "switchLabel": "PT",
+    "switchName": "Português (Brasil)",
+    "switchHref": "/pt-br/"
+  },
+  "hero": {
+    "eyebrow": "Free, open source, runs on your server",
+    "title": {
+      "before": "Ask for the ",
+      "mark": "outcome",
+      "after": ". Your chief does the rest."
+    },
+    "lead": "Zetta is an open source web app that you host yourself. Give your personal chief a job, such as a weekly brief or a pull request review. It hands the work to specialist bots on your server, and you come back to the result, or to the one question it cannot answer alone.",
+    "primary": "Self-host Zetta",
+    "secondary": "Watch it live",
+    "github": "Star on GitHub",
+    "installLabel": "One line on macOS, Linux or WSL",
+    "copy": "Copy",
+    "copied": "Copied",
+    "note": "Bots run the coding agents installed on your server: Pi, Codex, OMP, Claude Code, OpenCode and Cursor.",
+    "robotAlt": "The Zetta robot at the center of a graph. Four bots are connected to it and to each other, and a line runs from the robot to a cloud connected to GitHub, Notion, Cloudflare, Sentry and Linear. One bot waits for you. Illustration.",
+    "mates": [
+      {
+        "name": "Writer",
+        "doing": "Drafting the newsletter",
+        "tone": "default"
+      },
+      {
+        "name": "Reviewer",
+        "doing": "Reviewing a pull request",
+        "tone": "default"
+      },
+      {
+        "name": "Researcher",
+        "doing": "Reading the sources",
+        "tone": "default"
+      },
+      {
+        "name": "Editor",
+        "doing": "Waiting for your OK",
+        "tone": "needs"
+      }
+    ]
+  },
+  "live": {
+    "eyebrow": "Live",
+    "title": {
+      "before": "Watch a brief become ",
+      "mark": "a working team",
+      "after": ""
+    },
+    "lead": "A real recording of the app, with demo data. The chief takes a brief, designs a small team of bots and asks you to approve each step.",
+    "note": "Zetta in light mode, with demo data. Waiting time is sped up.",
+    "videoLabel": "A recording of the Zetta app in light mode: the chief designs a team of bots from a brief, and each step waits for approval. Demo data.",
+    "replay": "Replay",
+    "play": "Play the recording",
+    "pause": "Pause the recording"
+  },
+  "features": {
+    "eyebrow": "What it does",
+    "title": {
+      "before": "What your bots do ",
+      "mark": "while you are away",
+      "after": ""
+    },
+    "lead": "Routines, memory, tasks, a browser and a desktop. Every clip below is the real app, with demo data.",
+    "play": "Play the clip",
+    "pause": "Pause the clip",
+    "tiles": [
+      {
+        "id": "routines",
+        "tag": "Routines",
+        "title": "Work that starts without you",
+        "body": "Schedule a briefing, a newsletter or a review queue to run on its own. The agenda syncs both ways with the main calendar of each Google account you connect.",
+        "alt": "The routines page: a morning briefing, a Friday newsletter and a pull request queue, each with its next run. Demo data."
+      },
+      {
+        "id": "memory",
+        "tag": "Memory",
+        "title": "What matters stays",
+        "body": "Bots keep what matters between chats. Company knowledge is searchable, even with a local embedding model.",
+        "alt": "Three notes a bot keeps in memory. Illustration."
+      },
+      {
+        "id": "computer",
+        "tag": "Computer",
+        "title": "A desktop on your server",
+        "body": "Bots can use a Linux desktop on your server. You set limits on memory, CPU and how many run at once.",
+        "alt": "A recording of a bot using a computer and a terminal in the Zetta dashboard. Demo data."
+      },
+      {
+        "id": "browser",
+        "tag": "Browser",
+        "title": "A person takes over at the sign-in",
+        "body": "Bots can use a browser. At a sign-in, a person takes over and the bot carries on after.",
+        "alt": "A recording of a bot reading pages in a browser and asking a person to sign in. Demo data."
+      },
+      {
+        "id": "inbox",
+        "tag": "Inbox",
+        "title": "They ask only when they need you",
+        "body": "The Inbox lists what is working, what is blocked and what has a new result.",
+        "alt": "The Inbox lists two items that need you: send the newsletter to the whole team list, and a blocked GitHub login. Demo data."
+      },
+      {
+        "id": "tasks",
+        "tag": "Tasks",
+        "title": "Who has what, and what is stuck",
+        "body": "Tasks move from backlog to in progress, blocked, review and done. Each card shows the bot that owns it.",
+        "alt": "The task board with columns backlog, in progress, blocked and review, each card showing its bot. Demo data."
+      },
+      {
+        "id": "chats",
+        "tag": "Chats",
+        "title": "One chat for each intention",
+        "body": "Each bot keeps many chats, so the context stays clean and you can find the work later. Rooms put several bots and people in one conversation.",
+        "alt": "A chat with the Writer bot. The newsletter draft ends with a question that waits for approval. Demo data."
+      }
+    ]
+  },
+  "engines": {
+    "eyebrow": "Agents and accounts",
+    "title": {
+      "before": "Bring the agents ",
+      "mark": "you already use",
+      "after": ""
+    },
+    "lead": "Everything below exists in the repository today. Each bot can run on a different agent.",
+    "badge": "Runs on your server",
+    "agents": ["Pi", "Codex", "OMP", "Claude Code", "OpenCode", "Cursor"],
+    "groups": [
+      {
+        "title": "Connected apps",
+        "body": "Connect the accounts your bots need from Studio. Sharing a bot never shares your credentials.",
+        "tags": ["GitHub", "Linear", "Notion", "Sentry", "PostHog", "Cloudflare", "Gmail", "Drive"]
+      },
+      {
+        "title": "Your coding tools",
+        "body": "Claude Code or Cursor can work as a member of your team through a built-in connection, with the same permission checks as the web app.",
+        "tags": []
+      },
+      {
+        "title": "Messaging",
+        "body": "Telegram with your own bot token, and WhatsApp through your own WAHA server.",
+        "tags": ["Telegram", "WhatsApp"]
+      }
+    ]
+  },
+  "chief": {
+    "eyebrow": "The chief",
+    "title": {
+      "before": "Describe the job. ",
+      "mark": "The chief staffs it.",
+      "after": ""
+    },
+    "lead": "Zetta is the chief of your bots. It hires them, hands out the work, keeps the routines running and brings you only what needs you. It proposes, and you decide.",
+    "points": [
+      {
+        "title": "Ask for an outcome",
+        "body": "No configuration screens to learn first. Say what you want done."
+      },
+      {
+        "title": "Every write is an Approve card",
+        "body": "The chief proposes a bot, a routine or a task. Nothing is created until you approve it."
+      },
+      {
+        "title": "Secrets stay out of the chat",
+        "body": "When a bot needs a password or a key, the chief opens a form. The secret never goes through the conversation."
+      }
+    ],
+    "alt": "A chat with the chief. The person asks for a weekly summary of their repositories, and the chief proposes a Researcher bot with an Approve button. Illustration.",
+    "ask": "Every Monday, summarize what changed in our repositories and send me a brief.",
+    "reply": "I can set that up. I would add one bot for it:",
+    "proposal": {
+      "name": "Researcher",
+      "kind": "New bot",
+      "fields": [
+        {
+          "label": "Runs on",
+          "value": "Claude Code"
+        },
+        {
+          "label": "Access",
+          "value": "GitHub, read only"
+        },
+        {
+          "label": "First task",
+          "value": "Summarize last week's merged pull requests"
+        },
+        {
+          "label": "Routine",
+          "value": "Mondays at 08:00"
+        }
+      ],
+      "approve": "Approve",
+      "edit": "Edit first",
+      "decline": "Decline"
+    },
+    "badge": "Chief",
+    "role": "Your personal chief",
+    "orgAlt": "The Zetta robot at the top, as the chief, with four bots below it: Writer and Researcher are working, Reviewer is done, and Editor needs you. Illustration.",
+    "crew": [
+      {
+        "name": "Writer",
+        "state": "Working",
+        "tone": "working"
+      },
+      {
+        "name": "Reviewer",
+        "state": "Done",
+        "tone": "done"
+      },
+      {
+        "name": "Researcher",
+        "state": "Working",
+        "tone": "working"
+      },
+      {
+        "name": "Editor",
+        "state": "Needs you",
+        "tone": "needs"
+      }
+    ],
+    "capsTitle": "What the chief manages for you",
+    "caps": [
+      {
+        "id": "bot",
+        "title": "Hire a bot",
+        "body": "Describe the role. The chief proposes the agent, the access and the first task."
+      },
+      {
+        "id": "team",
+        "title": "Build a team from one brief",
+        "body": "A brief becomes several bots, each with its own job."
+      },
+      {
+        "id": "routine",
+        "title": "Schedule routines",
+        "body": "Briefings and reviews that run on their own, when you say."
+      },
+      {
+        "id": "tools",
+        "title": "Add skills, plugins and MCP servers",
+        "body": "Give a bot the tools it needs, from the skills library to your connected apps."
+      },
+      {
+        "id": "room",
+        "title": "Open a room",
+        "body": "Put several bots and people in one conversation."
+      },
+      {
+        "id": "secrets",
+        "title": "Take secrets through a form",
+        "body": "Passwords and keys go into a private form, never into the chat."
+      }
+    ]
+  },
+  "install": {
+    "eyebrow": "Install",
+    "title": {
+      "before": "Run it on ",
+      "mark": "your server",
+      "after": ""
+    },
+    "lead": "You need Git, OpenSSL and a running Docker or Podman. Zetta starts a web app, an API and a Postgres database.",
+    "note": "Free under the MIT license. It is early: read the repository and its issues before you depend on it.",
+    "badges": ["Free", "MIT license", "Your server, your data"],
+    "copy": "Copy",
+    "copied": "Copied",
+    "steps": [
+      {
+        "title": "Run the installer",
+        "body": "On macOS, Linux or WSL. It clones the repository, writes the two .env files with fresh secrets and starts the containers. Run it again to update."
+      },
+      {
+        "title": "Finish setup in the browser",
+        "body": "Open http://localhost:3001 and paste the setup key from apps/server/.env. You become the admin of this install."
+      },
+      {
+        "title": "Ask your chief for something",
+        "body": "Describe a job in the chat. The chief proposes the bots, and you approve them."
+      }
+    ],
+    "manual": {
+      "summary": "Prefer to do it by hand?",
+      "body": "These are the same steps the installer runs. The full list of settings is in apps/server/.env.schema.",
+      "docs": "Read the docs on GitHub"
+    }
+  },
+  "faq": {
+    "eyebrow": "FAQ",
+    "title": {
+      "before": "What should I know ",
+      "mark": "about it?",
+      "after": ""
+    },
+    "items": [
+      {
+        "q": "Is Zetta free?",
+        "a": "Yes. It is open source under the MIT license. You pay for your own server and for the agents you run on it, and nothing to Zetta."
+      },
+      {
+        "q": "Where does my data live?",
+        "a": "On your server. Zetta starts a web app, an API and a Postgres database there, and your chats, tasks and memory stay in that database."
+      },
+      {
+        "q": "Do I need API keys?",
+        "a": "Zetta has no model bill of its own. Each bot runs one of the agents installed on your server (Pi, Codex, OMP, Claude Code, OpenCode or Cursor), signed in the way that agent normally signs in."
+      },
+      {
+        "q": "What needs my approval?",
+        "a": "Deleting files, administrator commands and sending mail. The chief's changes are Approve cards too. Ordinary actions run on their own, and a blocked or uncertain result always comes back to you."
+      },
+      {
+        "q": "Can I use it from my phone?",
+        "a": "You can message your bots from Telegram with your own bot token, or from WhatsApp through your own WAHA server. Sending from WhatsApp stays off until you turn it on."
+      },
+      {
+        "q": "Which systems does it run on?",
+        "a": "The installer supports macOS, Linux and WSL, and needs Git, OpenSSL and a running Docker or Podman. On Windows, run it inside WSL."
+      }
+    ]
+  },
+  "cta": {
+    "title": {
+      "before": "Give your chief ",
+      "mark": "its first job",
+      "after": ""
+    },
+    "lead": "One command on a server you control. Open source, MIT.",
+    "primary": "Self-host Zetta",
+    "secondary": "Star on GitHub"
+  },
+  "footer": {
+    "tagline": "Zetta: bots that work on your server.",
+    "license": "MIT license",
+    "links": {
+      "repo": "Repository",
+      "docs": "Docs",
+      "issues": "Issues"
+    }
+  }
+}

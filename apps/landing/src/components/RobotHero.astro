@@ -1,0 +1,360 @@
+---
+// The hero picture: a graph. The Zetta robot is the chief in the middle; the bots it manages are connected to it and to each other, and a
+// line runs from the chief out to a cloud with the marks of the apps a bot can connect to (see Engines). Small packets travel the lines.
+// The robot's goggles drop over its eyes on load, then follow the pointer up and down (the script at the bottom; the SVG groups are in Logo.astro).
+// The bots and what they are doing are illustrations: the same demo cast as the screenshots (see src/cast.ts).
+import Logo from "./Logo.astro";
+import BotArt from "./BotArt.astro";
+import Brand from "./Brand.astro";
+import { getCopy, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const t = getCopy(Astro.props.locale).hero;
+
+// One coordinate box, 600 x 500, for the lines (SVG) and for the nodes (HTML, placed by the same numbers as percentages).
+// The picture is symmetric around the horizontal line through the chief: bots mirrored above and below it, the cloud on that line,
+// and the apps in one evenly spaced column to the right of the cloud.
+const W = 600;
+const H = 500;
+const chief = { x: 205, y: 250 };
+const cloud = { x: 445, y: 250 };
+// The bots sit on a ring of radius 180 around the chief, in the order of `hero.mates`: Writer (top left), Reviewer (top),
+// Researcher (bottom left), Editor (bottom, the one that waits for you).
+const ring = (deg: number) => ({
+  x: Math.round(chief.x + 180 * Math.cos((deg * Math.PI) / 180)),
+  y: Math.round(chief.y + 180 * Math.sin((deg * Math.PI) / 180)),
+});
+const bots = [ring(-150), ring(-90), ring(150), ring(90)];
+// Connected apps from the Engines section. `opt` ones are dropped on a phone, which leaves three evenly spaced.
+const APP_X = 568;
+const apps = ["GitHub", "Notion", "Cloudflare", "Sentry", "Linear"].map((name, i) => ({ name, x: APP_X, y: 100 + i * 75, opt: i === 1 || i === 3 }));
+const at = (p: { x: number; y: number }) => `left:${((p.x / W) * 100).toFixed(2)}%;top:${((p.y / H) * 100).toFixed(2)}%`;
+const line = (a: { x: number; y: number }, b: { x: number; y: number }) => `M${a.x} ${a.y} L${b.x} ${b.y}`;
+// bots toward the chief, the chief toward the cloud (it stops at the cloud's edge), the cloud toward its apps
+const feeds = bots.map((b) => line(b, chief));
+const ship = line(chief, { x: cloud.x - 62, y: cloud.y });
+const spokes = apps.map((a) => `M${cloud.x} ${cloud.y} C${cloud.x + 70} ${cloud.y}, ${a.x - 70} ${a.y}, ${a.x} ${a.y}`);
+// Bots are connected to each other as well: Writer to Reviewer, Researcher to Editor.
+const links = [`M${bots[0]!.x} ${bots[0]!.y} Q${bots[0]!.x + 10} ${bots[1]!.y - 10} ${bots[1]!.x} ${bots[1]!.y}`, `M${bots[2]!.x} ${bots[2]!.y} Q${bots[2]!.x + 10} ${bots[3]!.y + 10} ${bots[3]!.x} ${bots[3]!.y}`];
+---
+
+<div class="art" data-robot role="img" aria-label={t.robotAlt}>
+  <svg class="lines" viewBox={`0 0 ${W} ${H}`} aria-hidden="true" focusable="false">
+    <defs>
+      <marker id="hero-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M1 1 L8 5 L1 9 Z" class="arrow"></path>
+      </marker>
+    </defs>
+    {links.map((d, i) => <path class="edge link" d={d} pathLength="1" style={`--d:${0.5 + i * 0.15}s`} />)}
+    {feeds.map((d, i) => <path class="edge feed" d={d} pathLength="1" style={`--d:${0.2 + i * 0.12}s`} />)}
+    {spokes.map((d, i) => <path class:list={["edge", "spoke", { opt: apps[i]!.opt }]} d={d} pathLength="1" style={`--d:${1.1 + i * 0.12}s`} />)}
+    <path class="edge ship" d={ship} pathLength="1" marker-end="url(#hero-arrow)" style="--d:0.9s"></path>
+    {
+      feeds.map((d, i) => (
+        <circle class="packet" r="4.5" opacity="0">
+          <animateMotion dur="2.6s" begin={`${1.8 + i * 0.7}s`} repeatCount="indefinite" path={d} />
+          <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2.6s" begin={`${1.8 + i * 0.7}s`} repeatCount="indefinite" />
+        </circle>
+      ))
+    }
+    {
+      [0, 1, 2].map((i) => (
+        <circle class="packet ship-packet" r="5.5" opacity="0">
+          <animateMotion dur="3s" begin={`${2.2 + i}s`} repeatCount="indefinite" path={ship} />
+          <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="3s" begin={`${2.2 + i}s`} repeatCount="indefinite" />
+        </circle>
+      ))
+    }
+    {
+      spokes.map((d, i) => (
+        <circle class:list={["packet", { opt: apps[i]!.opt }]} r="3.5" opacity="0">
+          <animateMotion dur="2.4s" begin={`${4 + i * 0.6}s`} repeatCount="indefinite" path={d} />
+          <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2.4s" begin={`${4 + i * 0.6}s`} repeatCount="indefinite" />
+        </circle>
+      ))
+    }
+  </svg>
+
+  <div class="stage node" style={at(chief)}>
+    <div class="float">
+      <Logo size={420} animated id="hero" />
+    </div>
+  </div>
+
+  {
+    t.mates.map((m, i) => (
+      <div class:list={["bot", "node", m.tone]} style={at(bots[i]!)}>
+        <BotArt name={m.name} size={56} />
+        {m.tone === "needs" ? <i class="dot" /> : null}
+      </div>
+    ))
+  }
+
+  <div class="cloud node" style={at(cloud)}>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path class="body" d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+      <path class="up" d="M12 17v-5M9.7 14.3 12 12l2.3 2.3"></path>
+    </svg>
+  </div>
+
+  {
+    apps.map((a) => (
+      <div class:list={["app", "node", { opt: a.opt }]} style={at(a)}>
+        <Brand name={a.name} size={28} />
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .art {
+    position: relative;
+    width: 100%;
+    max-width: 560px;
+    aspect-ratio: 6 / 5;
+    justify-self: end;
+    container-type: inline-size;
+  }
+  /* Every node is centered on its point of the 600 x 500 box. */
+  .node {
+    position: absolute;
+    translate: -50% -50%;
+  }
+  .lines {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  /* ---- the lines ---- */
+  .edge {
+    fill: none;
+    stroke: color-mix(in srgb, var(--primary) 34%, transparent);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: draw 1.1s var(--ease) var(--d, 0s) forwards;
+  }
+  .link {
+    stroke-dasharray: 0.04 0.03;
+    stroke-dashoffset: 0;
+    animation: fade 1s var(--ease) var(--d, 0s) both;
+  }
+  .spoke {
+    stroke-width: 1.5;
+  }
+  .ship {
+    stroke: var(--primary);
+    stroke-width: 3;
+  }
+  .arrow {
+    fill: var(--primary);
+  }
+  .packet {
+    fill: var(--brand);
+  }
+  .ship-packet {
+    fill: var(--primary);
+  }
+
+  /* ---- the nodes ---- */
+  /* The chief: the robot on a disc of the logo ink (DESIGN.md: the pale face would vanish on a light page). */
+  .stage {
+    width: 42%;
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--brand) 30%, var(--logo-ink)) 0%, var(--logo-ink) 64%);
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.1),
+      0 40px 56px -28px rgb(20 24 29 / 0.55);
+    overflow: hidden;
+  }
+  /* 64% of the disc is 76% of its height: the chin and the gears stay inside the circle. */
+  .float {
+    width: 64%;
+    transform: translateY(1%);
+    animation: float 7s ease-in-out infinite;
+  }
+  .float :global(.logo) {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 883 / 1046;
+  }
+  .float :global(svg) {
+    opacity: 0.96;
+  }
+
+  .bot {
+    width: 13%;
+    aspect-ratio: 1;
+  }
+  .bot :global(svg) {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 12px 14px rgb(20 24 29 / 0.28));
+  }
+  .dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 26%;
+    aspect-ratio: 1;
+    border: 2px solid var(--background);
+    border-radius: 50%;
+    background: var(--destructive);
+  }
+
+  /* The cloud is an icon, with no label. */
+  .cloud {
+    width: 21%;
+    aspect-ratio: 1;
+  }
+  .cloud svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    filter: drop-shadow(0 16px 18px rgb(20 24 29 / 0.16));
+  }
+  .cloud .body {
+    fill: var(--card);
+    stroke: var(--primary);
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .cloud .up {
+    fill: none;
+    stroke: var(--primary);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+  /* The apps are one column of identical tiles. */
+  .app {
+    display: grid;
+    place-items: center;
+    width: 9%;
+    aspect-ratio: 1;
+    border-radius: 28%;
+    background: var(--card);
+    box-shadow:
+      0 0 0 1px rgb(24 24 27 / 0.1),
+      0 10px 18px -10px rgb(20 24 29 / 0.5);
+  }
+  .app :global(img) {
+    width: 58%;
+    height: 58%;
+    border-radius: 0;
+  }
+
+  @keyframes draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(1%) rotate(-1.5deg);
+    }
+    50% {
+      transform: translateY(-2%) rotate(1deg);
+    }
+  }
+
+  @media (max-width: 1080px) {
+    .art {
+      justify-self: center;
+    }
+  }
+  @media (max-width: 640px) {
+    .opt {
+      display: none;
+    }
+    .art {
+      max-width: 420px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .packet {
+      display: none;
+    }
+    .edge {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+    .link {
+      stroke-dasharray: 0.04 0.03;
+    }
+    .float {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  // The goggles follow the pointer: far above the robot they sit on its forehead, level with its eyes (or lower) they are on.
+  // `--g` runs from 0 (up) to 1 (on). One frame loop eases toward the target and stops when it arrives, and it only writes the variable.
+  // Hover-less screens (phones) get a tap on the robot instead. Reduced motion: the goggles stay on and nothing listens.
+  const art = document.querySelector<HTMLElement>("[data-robot]");
+  const logo = art?.querySelector<HTMLElement>(".logo");
+  const stage = art?.querySelector<HTMLElement>(".stage");
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+
+  if (art && logo && stage && !reduced.matches) {
+    let current = 1;
+    let target = 1;
+    let live = false;
+    let frame = 0;
+
+    const step = () => {
+      current += (target - current) * 0.12;
+      if (Math.abs(target - current) < 0.002) current = target;
+      logo.style.setProperty("--g", current.toFixed(3));
+      frame = current === target ? 0 : requestAnimationFrame(step);
+    };
+    const aim = (value: number) => {
+      target = Math.min(1, Math.max(0, value));
+      if (live && !frame) frame = requestAnimationFrame(step);
+    };
+
+    // The CSS intro drops the goggles once. When it ends, the variable (already at 1: goggles on) takes over.
+    logo.addEventListener("animationend", (event) => {
+      if (live || !event.animationName.includes("drop")) return;
+      live = true;
+      logo.style.setProperty("--g", "1");
+      logo.classList.add("live");
+    });
+
+    const follow = (y: number) => {
+      const box = stage.getBoundingClientRect();
+      const eyes = box.top + box.height * 0.52;
+      const reach = Math.max(box.height * 1.1, innerHeight * 0.4);
+      aim(1 - (eyes - y) / reach);
+    };
+    addEventListener(
+      "pointermove",
+      (event) => {
+        if (event.pointerType !== "touch") follow(event.clientY);
+      },
+      { passive: true },
+    );
+    document.documentElement.addEventListener("pointerleave", () => aim(1));
+
+    if (matchMedia("(hover: none)").matches) stage.addEventListener("click", () => aim(target > 0.5 ? 0 : 1));
+  }
+</script>

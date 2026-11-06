@@ -1,4 +1,6 @@
 ---
+// One small line on the same dark ground as the closing band: who it is, where the code and docs are, the language switch.
+import Logo from "./Logo.astro";
 import { getCopy, type Locale } from "../i18n";
 import { DOCS, ISSUES, LICENSE, REPO } from "../links";
 
@@ -10,63 +12,73 @@ const { locale } = Astro.props;
 const { footer: t } = getCopy(locale);
 const external = { target: "_blank", rel: "noopener noreferrer" };
 const languages = [
-  { href: "/", label: "English", lang: "en", current: locale === "en" },
-  { href: "/pt-br/", label: "Português (Brasil)", lang: "pt-BR", current: locale === "pt-br" },
+  { href: "/", label: "EN", lang: "en", current: locale === "en" },
+  { href: "/pt-br/", label: "PT", lang: "pt-BR", current: locale === "pt-br" },
 ];
 ---
 
 <footer class="footer">
-  <div class="wrap bar">
-    <p class="tagline">{t.tagline}</p>
-    <nav aria-label="Zetta">
-      <ul>
-        <li><a href={REPO} {...external}>{t.links.repo}</a></li>
-        <li><a href={DOCS} {...external}>{t.links.docs}</a></li>
-        <li><a href={ISSUES} {...external}>{t.links.issues}</a></li>
-        <li><a href={LICENSE} {...external}>{t.license}</a></li>
-        {languages.map((l) => (
-          <li><a href={l.href} lang={l.lang} hreflang={l.lang} aria-current={l.current ? "page" : undefined}>{l.label}</a></li>
-        ))}
-      </ul>
-    </nav>
+  <div class="wrap">
+    <div class="bar">
+      <p class="id">
+        <Logo size={20} tile id="footer" />
+        <span>{t.tagline}</span>
+      </p>
+      <nav aria-label="Zetta">
+        <ul>
+          <li><a href={REPO} {...external}>{t.links.repo}</a></li>
+          <li><a href={DOCS} {...external}>{t.links.docs}</a></li>
+          <li><a href={ISSUES} {...external}>{t.links.issues}</a></li>
+          <li><a href={LICENSE} {...external}>{t.license}</a></li>
+          {languages.map((l) => (
+            <li><a href={l.href} lang={l.lang} hreflang={l.lang} aria-current={l.current ? "page" : undefined}>{l.label}</a></li>
+          ))}
+        </ul>
+      </nav>
+    </div>
   </div>
 </footer>
 
 <style>
   .footer {
-    border-top: 1px solid var(--border);
-    background: var(--background);
+    background: var(--ink);
+    color: var(--on-ink-muted);
   }
   .bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 16px 32px;
-    padding-block: 24px;
+    gap: 12px 32px;
+    padding-block: 24px 32px;
+    border-top: 1px solid rgb(255 255 255 / 0.1);
   }
-  .tagline {
-    color: var(--muted-foreground);
-    font-size: 14px;
+  .id {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
     line-height: 20px;
   }
   ul {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 24px;
+    gap: 4px 20px;
   }
   a {
     display: inline-flex;
     align-items: center;
     min-height: 32px;
-    color: var(--foreground);
-    font-size: 14px;
+    color: var(--on-ink-muted);
+    font-size: 13px;
     text-decoration: none;
   }
   a:hover {
+    color: var(--on-ink);
     text-decoration: underline;
   }
   a[aria-current="page"] {
+    color: var(--on-ink);
     font-weight: 600;
   }
 </style>

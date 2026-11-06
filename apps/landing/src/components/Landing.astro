@@ -2,9 +2,13 @@
 import Layout from "../layouts/Layout.astro";
 import Header from "./Header.astro";
 import Hero from "./Hero.astro";
-import Product from "./Product.astro";
-import Network from "./Network.astro";
+import Live from "./Live.astro";
+import Features from "./Features.astro";
+import Engines from "./Engines.astro";
+import Chief from "./Chief.astro";
 import SelfHost from "./SelfHost.astro";
+import Faq from "./Faq.astro";
+import Cta from "./Cta.astro";
 import Footer from "./Footer.astro";
 import { getCopy, type Locale } from "../i18n";
 
@@ -20,9 +24,33 @@ const { meta } = getCopy(locale);
   <Header locale={locale} />
   <main>
     <Hero locale={locale} />
-    <Product locale={locale} />
-    <Network locale={locale} />
+    <Live locale={locale} />
+    <Features locale={locale} />
+    <Engines locale={locale} />
+    <Chief locale={locale} />
     <SelfHost locale={locale} />
+    <Faq locale={locale} />
   </main>
+  <Cta locale={locale} />
   <Footer locale={locale} />
 </Layout>
+
+<script>
+  // Scroll reveal. `.js` on <html> (set in Layout.astro) turns the hidden start state on (see global.css), so without JavaScript everything shows.
+  const items = document.querySelectorAll<HTMLElement>(".rv");
+  if (!("IntersectionObserver" in window)) {
+    items.forEach((el) => el.classList.add("in"));
+  } else {
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add("in");
+          io.unobserve(entry.target);
+        }
+      },
+      { rootMargin: "0px 0px -8% 0px", threshold: 0.08 },
+    );
+    items.forEach((el) => io.observe(el));
+  }
+</script>

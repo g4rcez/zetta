@@ -1,0 +1,71 @@
+---
+// Six questions, each answered from what the repository does today. Every answer is always shown: nothing to open or close.
+import { getCopy, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const t = getCopy(Astro.props.locale).faq;
+---
+
+<section class="section faq" id="faq" aria-labelledby="faq-title">
+  <div class="wrap grid">
+    <div class="sec-head rv">
+      <p class="eyebrow">{t.eyebrow}</p>
+      <h2 id="faq-title">{t.title.before}<em>{t.title.mark}</em>{t.title.after}</h2>
+    </div>
+    <div class="list rv">
+      {
+        t.items.map((item) => (
+          <div class="item">
+            <h3>{item.q}</h3>
+            <p>{item.a}</p>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    gap: 48px 88px;
+    align-items: start;
+  }
+  .sec-head {
+    position: sticky;
+    top: 96px;
+  }
+  .item {
+    display: grid;
+    gap: 12px;
+    padding-block: 28px;
+    border-top: 1px solid var(--border);
+  }
+  .item:last-child {
+    border-bottom: 1px solid var(--border);
+  }
+  .item h3 {
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 580;
+    letter-spacing: -0.02em;
+  }
+  .item p {
+    max-width: 62ch;
+    color: var(--muted-foreground);
+    font-size: 17px;
+    line-height: 26px;
+  }
+  @media (max-width: 960px) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .sec-head {
+      position: static;
+    }
+  }
+</style>

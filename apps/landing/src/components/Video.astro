@@ -1,0 +1,138 @@
+---
+// A recording of the app (light mode, demo data; made by docs/demo/build-landing-clips.ts into public/videos).
+// It plays only while it is on screen, muted and looping, and never autoplays for people who ask for reduced motion:
+// they get the poster and a Play button instead. The clips are WebM first, MP4 as the fallback.
+interface Props {
+  /** File name without extension in /videos: team, computer, browser. */
+  name: string;
+  width: number;
+  height: number;
+  /** What the recording shows, for screen readers. */
+  label: string;
+  play: string;
+  pause: string;
+  class?: string;
+}
+
+const { name, width, height, label, play, pause, class: className } = Astro.props;
+---
+
+<div class:list={["video", className]} data-video>
+  <video
+    muted
+    loop
+    playsinline
+    preload="none"
+    poster={`/videos/${name}-poster.webp`}
+    width={width}
+    height={height}
+    style={`aspect-ratio:${width}/${height}`}
+    aria-label={label}
+    disablepictureinpicture
+  >
+    <source src={`/videos/${name}.webm`} type="video/webm" />
+    <source src={`/videos/${name}.mp4`} type="video/mp4" />
+  </video>
+  <button class="toggle" type="button" data-toggle data-play={play} data-pause={pause} aria-label={play}>
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+      <path class="i-play" d="M8 5.5v13l11-6.5z" fill="currentColor"></path>
+      <path class="i-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"></path>
+    </svg>
+  </button>
+</div>
+
+<style>
+  .video {
+    position: relative;
+    display: block;
+    background: var(--card);
+  }
+  video {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .toggle {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 50%;
+    background: rgb(20 24 29 / 0.78);
+    color: #fff;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 150ms;
+  }
+  .video:hover .toggle,
+  .toggle:focus-visible,
+  .video[data-state="paused"] .toggle {
+    opacity: 1;
+  }
+  .i-pause {
+    display: none;
+  }
+  .video[data-state="playing"] .i-play {
+    display: none;
+  }
+  .video[data-state="playing"] .i-pause {
+    display: block;
+  }
+  @media (hover: none) {
+    .toggle {
+      opacity: 1;
+    }
+  }
+</style>
+
+<script>
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  const boxes = document.querySelectorAll<HTMLElement>("[data-video]");
+
+  const sync = (box: HTMLElement, video: HTMLVideoElement) => {
+    const button = box.querySelector<HTMLButtonElement>("[data-toggle]");
+    box.dataset.state = video.paused ? "paused" : "playing";
+    if (button) button.setAttribute("aria-label", (video.paused ? button.dataset.play : button.dataset.pause) ?? "");
+  };
+
+  boxes.forEach((box) => {
+    const video = box.querySelector("video");
+    if (!video) return;
+    // `userPaused` stops the scroll observer from restarting a clip that the visitor paused on purpose.
+    let userPaused = reduced.matches;
+    video.addEventListener("play", () => sync(box, video));
+    video.addEventListener("pause", () => sync(box, video));
+    sync(box, video);
+    box.querySelector("[data-toggle]")?.addEventListener("click", () => {
+      if (video.paused) {
+        userPaused = false;
+        void video.play();
+      } else {
+        userPaused = true;
+        video.pause();
+      }
+    });
+    new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return;
+        if (entry.isIntersecting && !userPaused) void video.play().catch(() => undefined);
+        else video.pause();
+      },
+      { threshold: 0.35 },
+    ).observe(box);
+  });
+
+  // "Replay" buttons: restart the clip they point at.
+  document.querySelectorAll<HTMLButtonElement>("[data-replay]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const video = document.querySelector<HTMLVideoElement>(`#${button.dataset.replay} video`);
+      if (!video) return;
+      video.currentTime = 0;
+      void video.play();
+    });
+  });
+</script>

@@ -1,17 +1,17 @@
 ---
-import GithubMark from "./GithubMark.astro";
 import { getCopy, type Locale } from "../i18n";
-import { DOCS, ISSUES, REPO } from "../links";
+import { DOCS, INSTALL, REPO } from "../links";
 
 interface Props {
   locale: Locale;
 }
 
-const t = getCopy(Astro.props.locale).selfHost;
+const t = getCopy(Astro.props.locale).install;
 
-// Commands come from docker-compose.yml, apps/server/.env.schema, apps/web/.env.schema and the docker:up script in package.json.
+// The by-hand commands come from docker-compose.yml, apps/server/.env.schema, apps/web/.env.schema and the docker:up script in package.json.
 // The secrets are made with `openssl rand -base64 32`, as the schema comments say. DATABASE_URL and CORS_ORIGIN are set by docker-compose.yml.
-const commands = [
+// The one-line installer (install.sh) does the same steps; it needs git, openssl and a running docker or podman, on macOS, Linux or WSL.
+const manual = [
   `git clone ${REPO}.git\ncd zetta`,
   [
     "cat > apps/server/.env <<EOF",
@@ -23,48 +23,55 @@ const commands = [
     'echo "VITE_SERVER_URL=http://localhost:3000" > apps/web/.env',
   ].join("\n"),
   "docker compose up -d --build",
-  null,
 ];
 ---
 
-<section class="section band" id="self-host" aria-labelledby="self-host-title">
-  <div class="wrap">
-    <div class="layout">
-      <div class="side">
-        <div class="sec-head">
-          <h2 id="self-host-title">{t.title}</h2>
-          <p class="lead">{t.lead}</p>
-        </div>
-        <p class="note">{t.note}</p>
-        <a class="docs" href={DOCS} target="_blank" rel="noopener noreferrer">{t.docs}</a>
+<section class="section install" id="install" aria-labelledby="install-title">
+  <div class="wrap layout">
+    <div class="side rv">
+      <div class="sec-head">
+        <p class="eyebrow">{t.eyebrow}</p>
+        <h2 id="install-title">{t.title.before}<em>{t.title.mark}</em>{t.title.after}</h2>
+        <p class="lead">{t.lead}</p>
       </div>
-
-      <ol class="steps">
-        {t.steps.map((step, i) => (
-          <li>
-            <span class="n tabular" aria-hidden="true">{i + 1}</span>
-            <h3>{step.title}</h3>
-            <p>{step.body}</p>
-            {commands[i] ? (
-              <div class="code">
-                <button class="btn btn-sm" type="button" data-copy data-copied={t.copied} data-label={t.copy}>{t.copy}</button>
-                <pre><code>{commands[i]}</code></pre>
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ol>
+      <ul class="badges">
+        {t.badges.map((b) => <li>{b}</li>)}
+      </ul>
+      <p class="note">{t.note}</p>
     </div>
 
-    <div class="close">
-      <div>
-        <h3>{t.last.title}</h3>
-        <p>{t.last.body}</p>
-      </div>
-      <div class="row">
-        <a class="btn btn-primary" href={REPO} target="_blank" rel="noopener noreferrer"><GithubMark />{t.last.primary}</a>
-        <a class="btn" href={ISSUES} target="_blank" rel="noopener noreferrer">{t.last.secondary}</a>
-      </div>
+    <div class="main">
+      <ol class="steps">
+        {
+          t.steps.map((step, i) => (
+            <li class="rv">
+              <span class="n tabular" aria-hidden="true">{i + 1}</span>
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+              {i === 0 ? (
+                <div class="code">
+                  <pre><code>curl -fsSL {INSTALL} | bash</code></pre>
+                  <button class="btn btn-sm" type="button" data-copy data-copied={t.copied} data-label={t.copy}>{t.copy}</button>
+                </div>
+              ) : null}
+            </li>
+          ))
+        }
+      </ol>
+
+      <details class="manual rv">
+        <summary>{t.manual.summary}</summary>
+        <p>{t.manual.body}</p>
+        {
+          manual.map((cmd) => (
+            <div class="code">
+              <pre><code>{cmd}</code></pre>
+              <button class="btn btn-sm" type="button" data-copy data-copied={t.copied} data-label={t.copy}>{t.copy}</button>
+            </div>
+          ))
+        }
+        <a href={DOCS} target="_blank" rel="noopener noreferrer">{t.manual.docs}</a>
+      </details>
     </div>
   </div>
   <p class="sr-only" role="status" aria-live="polite" data-copy-status></p>
@@ -73,15 +80,31 @@ const commands = [
 <style>
   .layout {
     display: grid;
-    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
-    gap: 48px 80px;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 48px 88px;
     align-items: start;
   }
   .side {
     position: sticky;
-    top: 88px;
+    top: 96px;
     display: grid;
-    gap: 24px;
+    gap: 28px;
+  }
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .badges li {
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    padding-inline: 14px;
+    border-radius: 999px;
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-size: 14px;
+    font-weight: 600;
   }
   .note {
     max-width: 44ch;
@@ -89,23 +112,16 @@ const commands = [
     font-size: 15px;
     line-height: 22px;
   }
-  .docs {
-    display: inline-flex;
-    align-items: center;
-    min-height: 32px;
-    justify-self: start;
-    font-size: 15px;
-  }
   .steps {
     display: grid;
   }
   .steps > li {
     display: grid;
-    grid-template-columns: 32px minmax(0, 1fr);
-    column-gap: 16px;
+    grid-template-columns: 40px minmax(0, 1fr);
+    column-gap: 20px;
     row-gap: 4px;
-    padding-block: 28px;
-    border-top: 1px solid var(--input);
+    padding-block: 32px;
+    border-top: 1px solid var(--border);
   }
   .steps > li:first-child {
     padding-top: 0;
@@ -115,16 +131,19 @@ const commands = [
     grid-row: 1 / 3;
     display: grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--input);
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
+    background: var(--primary);
+    color: var(--primary-foreground);
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 14px;
+    font-weight: 600;
   }
   .steps h3 {
-    font-size: 18px;
-    line-height: 28px;
+    font-size: 22px;
+    line-height: 32px;
+    letter-spacing: -0.025em;
   }
   .steps p {
     color: var(--muted-foreground);
@@ -134,43 +153,52 @@ const commands = [
   .code {
     position: relative;
     grid-column: 2;
-    margin-top: 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    background: var(--card);
+    margin-top: 14px;
+    border-radius: 14px;
+    background: var(--ink);
+    color: var(--on-ink);
   }
   .code pre {
     overflow-x: auto;
-    padding: 16px 88px 16px 16px;
+    padding: 16px 88px 16px 18px;
   }
   .code button {
     position: absolute;
     top: 8px;
     right: 8px;
+    border-color: transparent;
+    background: #2a313a;
+    color: #fff;
   }
-  .close {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px 48px;
-    margin-top: 80px;
-    padding-top: 40px;
-    border-top: 1px solid var(--input);
+  .code button:hover {
+    background: #3a434e;
   }
-  .close h3 {
-    font-size: 28px;
-    line-height: 36px;
-    letter-spacing: -0.03em;
+  .manual {
+    margin-top: 16px;
+    padding: 20px 24px;
+    border-radius: var(--radius-2xl);
+    background: var(--sidebar);
   }
-  .close p {
-    max-width: 52ch;
-    margin-top: 8px;
+  .manual summary {
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .manual p {
+    margin-block: 12px 4px;
     color: var(--muted-foreground);
-    font-size: 17px;
-    line-height: 26px;
+    font-size: 15px;
+    line-height: 22px;
   }
-  @media (max-width: 900px) {
+  .manual .code {
+    margin-top: 12px;
+  }
+  .manual a {
+    display: inline-block;
+    margin-top: 16px;
+    font-size: 15px;
+  }
+  @media (max-width: 960px) {
     .layout {
       grid-template-columns: minmax(0, 1fr);
     }
@@ -191,6 +219,14 @@ const commands = [
     .code pre {
       padding: 8px 16px 16px;
     }
+    .steps > li {
+      grid-template-columns: 32px minmax(0, 1fr);
+      column-gap: 14px;
+    }
+    .n {
+      width: 32px;
+      height: 32px;
+    }
   }
 </style>
 
@@ -204,10 +240,11 @@ const commands = [
       } catch {
         return; // Clipboard blocked (for example on plain http): the text stays selectable.
       }
+      const label = button.dataset.label ?? "";
       button.textContent = button.dataset.copied ?? "";
       if (status) status.textContent = button.dataset.copied ?? "";
       setTimeout(() => {
-        button.textContent = button.dataset.label ?? "";
+        button.textContent = label;
         if (status) status.textContent = "";
       }, 2000);
     });

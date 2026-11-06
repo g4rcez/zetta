@@ -1,5 +1,5 @@
 import { mkdir, realpath } from "node:fs/promises";
-import { dirname, resolve, sep } from "node:path";
+import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { DENIED } from "../chat/files";
 import { ComputerError } from "./service";
 
@@ -25,8 +25,14 @@ export async function workspacePath(
   path: string,
   mode: "read" | "write",
 ): Promise<string> {
-  // oxlint-disable-next-line no-control-regex
-  if (!path || path.length > 500 || /[\\\u0000-\u001f]/.test(path))
+  // A backslash is refused in a relative path on every system. In a Windows absolute path it is the separator.
+  if (
+    !path ||
+    path.length > 500 ||
+    // oxlint-disable-next-line no-control-regex
+    /[\u0000-\u001f]/.test(path) ||
+    (path.includes("\\") && !(sep === "\\" && isAbsolute(path)))
+  )
     throw new ComputerError("INVALID");
   await mkdir(base, { recursive: true, mode: 0o700 });
   const root = await realpath(base);

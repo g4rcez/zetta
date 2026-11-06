@@ -9,9 +9,9 @@ export class FileAccessError extends Error {
   }
 }
 const MAX_BYTES = 256 * 1024;
-/** Names that commonly hold credentials are never readable or listed, even inside an allowed area. */
+/** Names that commonly hold credentials are never readable or listed, even inside an allowed area. Both `/` and `\` split a path, so a Windows path is checked too. */
 export const DENIED =
-  /(^|\/)(\.env(\..*)?|\.git|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.config|\.npmrc|\.netrc|\.pgpass|\.git-credentials|\.htpasswd|credentials(\..*)?|secrets?(\..*)?|id_[a-z0-9]+|.*\.(pem|key|p12|pfx|kdbx|keystore|jks|gpg|asc))($|\/)/i;
+  /(^|[\\/])(\.env(\..*)?|\.git|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.config|\.npmrc|\.netrc|\.pgpass|\.git-credentials|\.htpasswd|credentials(\..*)?|secrets?(\..*)?|id_[a-z0-9]+|.*\.(pem|key|p12|pfx|kdbx|keystore|jks|gpg|asc))($|[\\/])/i;
 
 /**
  * Authorized server files. Layout under `root`: `me/<userId>/…` (private to that user) and `shared/…` (team readable).

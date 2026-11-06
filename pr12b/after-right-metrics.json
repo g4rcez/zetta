@@ -1,0 +1,26 @@
+{
+ "nav-390-light": {
+  "x": 100,
+  "width": 290,
+  "right": 390,
+  "focusIn": true
+ },
+ "nav-390-dark": {
+  "x": 100,
+  "width": 290,
+  "right": 390,
+  "focusIn": true
+ },
+ "nav-700-light": {
+  "x": 410,
+  "width": 290,
+  "right": 700,
+  "focusIn": true
+ },
+ "nav-700-dark": {
+  "x": 410,
+  "width": 290,
+  "right": 700,
+  "focusIn": true
+ }
+}

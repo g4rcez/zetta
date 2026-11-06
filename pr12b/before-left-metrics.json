@@ -1,0 +1,86 @@
+{
+ "nav-390-light": {
+  "x": 0,
+  "width": 293,
+  "right": 293,
+  "focusIn": true
+ },
+ "nav-390-dark": {
+  "x": 0,
+  "width": 293,
+  "right": 293,
+  "focusIn": true
+ },
+ "task-peek-390-light": {
+  "x": 98,
+  "width": 293,
+  "right": 390,
+  "focusIn": true
+ },
+ "task-peek-390-dark": {
+  "x": 98,
+  "width": 293,
+  "right": 390,
+  "focusIn": true
+ },
+ "task-peek-820-light": {
+  "x": 436,
+  "width": 384,
+  "right": 820,
+  "focusIn": true
+ },
+ "task-peek-820-dark": {
+  "x": 436,
+  "width": 384,
+  "right": 820,
+  "focusIn": true
+ },
+ "chat-details-390-light": {
+  "x": 98,
+  "width": 293,
+  "right": 390,
+  "focusIn": true
+ },
+ "chat-details-390-dark": {
+  "x": 98,
+  "width": 293,
+  "right": 390,
+  "focusIn": true
+ },
+ "chat-details-820-light": {
+  "x": 436,
+  "width": 384,
+  "right": 820,
+  "focusIn": true
+ },
+ "chat-details-820-dark": {
+  "x": 436,
+  "width": 384,
+  "right": 820,
+  "focusIn": true
+ },
+ "chat-artifact-390-light": {
+  "x": 98,
+  "width": 293,
+  "right": 390,
+  "focusIn": true
+ },
+ "chat-artifact-390-dark": {
+  "x": 98,
+  "width": 293,
+  "right": 390,
+  "focusIn": true
+ },
+ "chat-artifact-820-light": {
+  "x": 436,
+  "width": 384,
+  "right": 820,
+  "focusIn": true
+ },
+ "chat-artifact-820-dark": {
+  "x": 436,
+  "width": 384,
+  "right": 820,
+  "focusIn": true
+ }
+}

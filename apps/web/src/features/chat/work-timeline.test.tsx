@@ -17,8 +17,19 @@ const render = async (count: number, working: boolean) => {
   const host = win.document.createElement("div");
   win.document.body.append(host);
   const root = createRoot(host as unknown as Element);
-  await act(async () => root.render(<WorkTimeline row={row(count) as never} working={working} />));
-  return { list: host.querySelector("ol")!, unmount: () => act(async () => root.unmount()) };
+  const show = (n: number, w: boolean) =>
+    act(async () => root.render(<WorkTimeline row={row(n) as never} working={w} />));
+  await show(count, working);
+  return {
+    list: host.querySelector("ol")!,
+    rerender: show,
+    scroll: (top: number) =>
+      act(async () => {
+        host.querySelector("ol")!.scrollTop = top;
+        host.querySelector("ol")!.dispatchEvent(new win.Event("scroll"));
+      }),
+    unmount: () => act(async () => root.unmount()),
+  };
 };
 
 // happy-dom has no layout engine: give the list the sizes a browser would measure.
@@ -61,9 +72,29 @@ test("while the bot works the list opens at the newest step", async () => {
   await unmount();
 });
 
-test("a finished turn starts at the top", async () => {
+test("a finished turn goes back to the top", async () => {
   layout(1000, 240);
-  const { list, unmount } = await render(30, false);
+  const { list, rerender, unmount } = await render(30, true);
+  expect(list.scrollTop).toBe(1000);
+  await rerender(30, false);
   expect(list.scrollTop).toBe(0);
+  await unmount();
+});
+
+test("a new step does not pull the list down after the reader scrolled up", async () => {
+  layout(1000, 240);
+  const { list, rerender, scroll, unmount } = await render(30, true);
+  await scroll(100);
+  await rerender(31, true);
+  expect(list.scrollTop).toBe(100);
+  await unmount();
+});
+
+test("a new step still follows when the reader is within 8px of the bottom", async () => {
+  layout(1000, 240);
+  const { list, rerender, scroll, unmount } = await render(30, true);
+  await scroll(755);
+  await rerender(31, true);
+  expect(list.scrollTop).toBe(1000);
   await unmount();
 });

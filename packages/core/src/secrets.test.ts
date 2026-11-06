@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { looksSecret } from "./secrets";
+import { hasKeyFormat, looksSecret } from "./secrets";
 
 describe("looksSecret", () => {
   test("flags tokens, keys and passwords people paste", () => {
@@ -13,5 +13,18 @@ describe("looksSecret", () => {
   test("leaves ordinary messages alone", () => {
     expect(looksSecret("Please read my unread email")).toBe(false);
     expect(looksSecret("The token field is empty")).toBe(false);
+  });
+});
+
+describe("hasKeyFormat", () => {
+  test("flags credential formats in code", () => {
+    expect(hasKeyFormat("KEY = 'sk-test-abcdefghijklmnop1234'")).toBe(true);
+    expect(hasKeyFormat("-----BEGIN PRIVATE KEY-----")).toBe(true);
+  });
+
+  test("leaves hashes and token assignments in scripts alone", () => {
+    expect(hasKeyFormat("token = os.environ.get('GITHUB_TOKEN')")).toBe(false);
+    expect(hasKeyFormat("commit 0123456789abcdef0123456789abcdef01234567")).toBe(false);
+    expect(looksSecret("token = os.environ.get('GITHUB_TOKEN')")).toBe(true);
   });
 });

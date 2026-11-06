@@ -1,7 +1,8 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { LIMITS, noInjection, skillName } from "./profile";
+import type { PluginFile } from "../chat/harness";
+import { FILE_LIMITS, LIMITS, noInjection, skillName } from "./profile";
 
 /**
  * Skills that sit in the home of the user running the server. `claude` (~/.claude/skills) is read by Claude Code on its own;
@@ -94,7 +95,43 @@ export async function hostSkill(name: string, options?: Options) {
   return (await hostSkills(options)).find((k) => k.name === name);
 }
 
-/** The skill as files for a run's plugin dir (see `writePluginDir`), so Claude Code installs it and loads it with the Skill tool. */
-export async function hostSkillFiles(skill: HostSkill): Promise<Record<string, string>> {
-  return { [`skills/${skill.name}/SKILL.md`]: await readFile(join(skill.dir, "SKILL.md"), "utf8") };
+/**
+ * The skill as files for a run's plugin dir (see `writePluginDir`), so Claude Code installs it and loads it with the Skill tool.
+ * The whole folder goes along (scripts, references, assets). Symlinks are not followed, and a folder over FILE_LIMITS
+ * sends its SKILL.md only, because some of its files would be missing anyway.
+ */
+export async function hostSkillFiles(skill: HostSkill): Promise<Record<string, PluginFile>> {
+  const base = `skills/${skill.name}`;
+  const other: Record<string, PluginFile> = {};
+  let count = 0;
+  let total = 0;
+  let tooMuch = false;
+  const walk = async (rel: string): Promise<void> => {
+    const entries = await readdir(join(skill.dir, rel), { withFileTypes: true });
+    for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (tooMuch || e.name === "node_modules" || e.name === ".git") continue;
+      const path = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) await walk(path);
+      else if (e.isFile() && path.toLowerCase() !== "skill.md") {
+        const full = join(skill.dir, path);
+        const info = await stat(full);
+        count++;
+        total += info.size;
+        if (info.size > FILE_LIMITS.file || count > FILE_LIMITS.count || total > FILE_LIMITS.total)
+          tooMuch = true;
+        else
+          other[`${base}/${path}`] = {
+            bytes: await readFile(full),
+            mode: info.mode & 0o111 ? "executable" : "file",
+          };
+      }
+    }
+  };
+  await walk("").catch(() => {
+    tooMuch = true;
+  });
+  return {
+    [`${base}/SKILL.md`]: await readFile(join(skill.dir, "SKILL.md"), "utf8"),
+    ...(tooMuch ? {} : other),
+  };
 }

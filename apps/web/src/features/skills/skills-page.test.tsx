@@ -9,6 +9,7 @@ const win = setupDom();
 
 const BOT = "00000000-0000-7000-8000-000000000001";
 const SKILL = "00000000-0000-7000-8000-0000000000a1";
+const PENDING = "00000000-0000-7000-8000-0000000000a2";
 const SHA = "1234567890abcdef1234567890abcdef12345678";
 const posts: { path: string; body: unknown }[] = [];
 const api = (path: string, method: string, body: unknown) => {
@@ -31,11 +32,43 @@ const api = (path: string, method: string, body: unknown) => {
           sourcePath: null,
           sourceRef: null,
           version: 1,
+          filesStatus: "complete",
+          fileCount: 2,
           createdAt: "2026-11-02T00:00:00Z",
           updatedAt: "2026-11-02T00:00:00Z",
           botIds: [BOT],
         },
+        {
+          id: PENDING,
+          ownerUserId: "me",
+          ownerName: "Me",
+          name: "from-hub",
+          description: "Installed before folders were kept",
+          source: "github",
+          sourceRepo: "acme/skills",
+          sourcePath: "skills/from-hub/SKILL.md",
+          sourceRef: SHA,
+          version: 1,
+          filesStatus: "pending",
+          createdAt: "2026-11-02T00:00:00Z",
+          updatedAt: "2026-11-02T00:00:00Z",
+          botIds: [],
+        },
       ],
+    };
+  if (path === `/api/skills/${SKILL}`)
+    return {
+      skill: {
+        id: SKILL,
+        name: "release-notes",
+        description: "Write release notes",
+        body: "Steps",
+        version: 1,
+        files: [
+          { path: "scripts/build.py", size: 37, mode: "executable" },
+          { path: "assets/logo.png", size: 2048, mode: "file" },
+        ],
+      },
     };
   if (path === "/api/skills?scope=all")
     return {
@@ -51,6 +84,7 @@ const api = (path: string, method: string, body: unknown) => {
           sourcePath: null,
           sourceRef: null,
           version: 1,
+          filesStatus: "complete",
           createdAt: "2026-11-02T00:00:00Z",
           updatedAt: "2026-11-02T00:00:00Z",
           botIds: [],
@@ -71,6 +105,7 @@ const api = (path: string, method: string, body: unknown) => {
           path: "skills/pdf/SKILL.md",
           description: "Make PDFs",
           warnings: [],
+          files: { count: 3, bytes: 61440 },
           installedId: null,
         },
         {
@@ -78,6 +113,7 @@ const api = (path: string, method: string, body: unknown) => {
           path: "skills/interview-me/SKILL.md",
           description: "Interview the user",
           warnings: [],
+          files: { count: 0, bytes: 0 },
           installedId: null,
         },
         {
@@ -85,6 +121,7 @@ const api = (path: string, method: string, body: unknown) => {
           path: "skills/old/SKILL.md",
           description: "Already here",
           warnings: [],
+          files: { count: 1, bytes: 100 },
           installedId: SKILL,
         },
         {
@@ -92,6 +129,15 @@ const api = (path: string, method: string, body: unknown) => {
           path: "skills/unsafe/SKILL.md",
           description: "Bad",
           warnings: ["shell_injection"],
+          files: { count: 0, bytes: 0 },
+          installedId: null,
+        },
+        {
+          name: "huge",
+          path: "skills/huge/SKILL.md",
+          description: "Ships a big video",
+          warnings: ["files_too_large"],
+          files: { count: 0, bytes: 0 },
           installedId: null,
         },
       ],
@@ -195,13 +241,20 @@ test("the page lists my skills with the bots that use them, and the marketplace 
   expect(text()).toContain("Trusted");
   await press("acme/skillsTrustedAcme's skills.");
   expect(changes.at(-1)).toEqual({ search: { tab: "market", q: "acme/skills" }, replace: false });
-  expect(text()).toContain("4 skills");
+  expect(text()).toContain("5 skills");
 
   // Only the unsafe skill cannot be chosen: an installed one can, to bring it to more bots. The rest are chosen one by one or all at once.
   const box = (name: string) =>
     win.document.querySelector(`input[aria-label="${name}"]`) as unknown as HTMLInputElement;
   expect(box("unsafe").disabled).toBe(true);
   expect(text()).toContain("It runs shell commands when it loads");
+  // A skill with files says how many and how big; one over the limit says why it cannot be chosen.
+  expect(text()).toContain("3 files · 60 KB");
+  expect(text()).toContain("1 file · 100 B");
+  expect(box("huge").disabled).toBe(true);
+  expect(text()).toContain(
+    "Its other files are too large: over 1 MB for one file, 200 files or 4 MB in all.",
+  );
   expect(box("old").disabled).toBe(false);
   expect(buttons().find((b) => b.textContent?.trim() === "Install")?.disabled).toBe(true);
 
@@ -240,7 +293,7 @@ test("the page lists my skills with the bots that use them, and the marketplace 
 test("a page opened from its address shows the same view: the tab, the results and the filter come from the URL", async () => {
   const { unmount } = await mount({ tab: "market", q: "acme/skills", filter: "pdf" });
   // No click: the results are read from `q`, and only the skills matching `filter` are listed.
-  expect(text()).toContain("4 skills");
+  expect(text()).toContain("5 skills");
   expect(text()).toContain("Make PDFs");
   expect(text()).toContain("pdf");
   expect(text()).not.toContain("interview-me");
@@ -252,5 +305,18 @@ test("an admin opened with scope=all sees everyone's skills", async () => {
   expect(text()).toContain("Everyone's skills");
   expect(text()).toContain("their-skill");
   expect(text()).toContain("Ana");
+  await unmount();
+});
+
+test("a skill with files lists them on request, with sizes and the executable mode; one still waiting for its files says so", async () => {
+  const { unmount } = await mount({});
+  expect(text()).toContain("Its other files are not downloaded from GitHub yet.");
+  expect(text()).not.toContain("scripts/build.py");
+  await press("2 files next to SKILL.md");
+  expect(text()).toContain("scripts/build.py");
+  expect(text()).toContain("37 B");
+  expect(text()).toContain("executable");
+  expect(text()).toContain("assets/logo.png");
+  expect(text()).toContain("2.0 KB");
   await unmount();
 });

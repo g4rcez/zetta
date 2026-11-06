@@ -1,18 +1,20 @@
 import type { Database } from "@zetta/db";
-import { and, asc, eq } from "@zetta/db/query";
+import { and, asc, eq, inArray } from "@zetta/db/query";
 import { botClaudeAsset, botClaudeConfig } from "@zetta/db/schema/bot-claude";
-import { botSkill, skill } from "@zetta/db/schema/skills";
+import { botSkill, skill, skillFile } from "@zetta/db/schema/skills";
 import { dockerConfig, type AgentProfile } from "../chat/harness";
 import { hostSkills } from "./host-skills";
 import {
   assetInput,
   buildProfile,
+  libraryAssetInput,
   DEFAULT_CONFIG,
   LIMITS,
   type Asset,
   type AssetInput,
   type Config,
   type ConfigInput,
+  type SkillExtra,
   withBuiltinSkills,
 } from "./profile";
 
@@ -62,6 +64,20 @@ export function createBotClaude(db: Database) {
       .innerJoin(skill, eq(skill.id, botSkill.skillId))
       .where(and(eq(botSkill.botId, botId), eq(skill.status, "active")))
       .orderBy(asc(skill.name));
+  /** The other files (scripts, references, assets) of library skills, by skill id. This reads file contents: ask only for a run. */
+  const libraryFiles = async (skillIds: string[]) =>
+    skillIds.length
+      ? db
+          .select({
+            skillId: skillFile.skillId,
+            path: skillFile.path,
+            content: skillFile.content,
+            mode: skillFile.mode,
+          })
+          .from(skillFile)
+          .where(inArray(skillFile.skillId, skillIds))
+          .orderBy(asc(skillFile.path))
+      : [];
   return {
     async get(botId: string) {
       const [c, a] = await Promise.all([configRow(botId), assetRows(botId)]);
@@ -127,22 +143,46 @@ export function createBotClaude(db: Database) {
       if (!gone.length)
         throw new ClaudeConfigError("NOT_FOUND", "This skill or agent no longer exists.");
     },
-    /** What a run of this bot uses. Rows are re-validated so a row written by an older version can never reach the command line unchecked. */
-    async profile(botId: string): Promise<AgentProfile | undefined> {
+    /**
+     * What a run of this bot uses. Rows are re-validated so a row written by an older version can never reach the command line unchecked.
+     * `withFiles` also loads the other files of the library skills; a run needs them, a settings page or a skill list does not.
+     */
+    async profile(
+      botId: string,
+      { withFiles = false }: { withFiles?: boolean } = {},
+    ): Promise<AgentProfile | undefined> {
       const [c, a, shared] = await Promise.all([
         configRow(botId),
         assetRows(botId),
         libraryRows(botId),
       ]);
       const own = new Set(a.filter((r) => r.kind === "skill").map((r) => r.name));
+      const valid = (schema: typeof assetInput) => (x: Asset) => {
+        const { id: _id, ...fields } = x;
+        return schema.safeParse(fields).success;
+      };
       // Skills from the owner's library (modules/skills) go through the same checks. A skill written for this bot with the same name wins.
       const assets = [
-        ...a.map(toAsset),
+        ...a.map(toAsset).filter(valid(assetInput)),
         ...shared
           .filter((r) => !own.has(r.name))
-          .map((r): Asset => ({ ...r, kind: "skill", tools: [], model: null, enabled: true })),
-      ].filter(({ id: _id, ...fields }) => assetInput.safeParse(fields).success);
-      return buildProfile(c ? toConfig(c) : undefined, assets);
+          .map((r): Asset => ({ ...r, kind: "skill", tools: [], model: null, enabled: true }))
+          .filter(valid(libraryAssetInput)),
+      ];
+      const extras = new Map<string, SkillExtra[]>();
+      if (withFiles) {
+        const fromLibrary = new Map(
+          assets.filter((x) => shared.some((r) => r.id === x.id)).map((x) => [x.id, x.name]),
+        );
+        for (const f of await libraryFiles([...fromLibrary.keys()])) {
+          const name = fromLibrary.get(f.skillId)!;
+          extras.set(name, [
+            ...(extras.get(name) ?? []),
+            { path: f.path, content: f.content, mode: f.mode },
+          ]);
+        }
+      }
+      return buildProfile(c ? toConfig(c) : undefined, assets, extras);
     },
   };
 }

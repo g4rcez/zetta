@@ -11,6 +11,8 @@ export type PickerItem = {
   description: string;
   /** Where it comes from, shown under the name when skills of several repositories are listed together. */
   repo?: string | undefined;
+  /** A short fact shown after the name, such as how many files the skill has. */
+  meta?: string | undefined;
   href?: string | undefined;
   blocked?: string | undefined;
   /** Already in the library: it can still be chosen, to bring it to more bots. */
@@ -97,6 +99,9 @@ export function SkillPicker({
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{i.name}</span>
                   {i.repo && <span className="text-xs text-muted-foreground">{i.repo}</span>}
+                  {i.meta && (
+                    <span className="text-xs tabular-nums text-muted-foreground">{i.meta}</span>
+                  )}
                   {i.installed && <Badge tone="success">Installed</Badge>}
                 </div>
                 <p

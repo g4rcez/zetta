@@ -4,6 +4,8 @@ import { call } from "../chat/chat-client";
 import { looksLikeSource } from "./source";
 
 export type SkillSource = "manual" | "github";
+/** A file next to a skill's SKILL.md. `path` is relative to the skill folder. */
+export type SkillFile = { path: string; size: number; mode: "file" | "executable" };
 export type Skill = {
   id: string;
   ownerUserId: string;
@@ -15,23 +17,32 @@ export type Skill = {
   sourcePath: string | null;
   sourceRef: string | null;
   version: number;
+  /** `pending`: installed before folders were kept; the server is still to download the other files from GitHub. */
+  filesStatus: "complete" | "pending";
   createdAt: string;
   updatedAt: string;
   /** Bots that bring this skill to their harness. */
   botIds: string[];
+  /** How many files sit next to the SKILL.md. Only the list has it; `get` returns the files themselves. */
+  fileCount?: number;
 };
-export type SkillWithText = Skill & { body: string };
+export type SkillWithText = Skill & { body: string; files: SkillFile[] };
 export type SkillDraft = { name: string; description: string; body: string };
 
 export type SkillWarning =
   | "empty"
   | "too_large"
+  | "files_too_large"
+  | "file_looks_secret"
   | "shell_injection"
   | "looks_secret"
   | "invalid_name";
 export const WARNING_TEXT: Record<SkillWarning, string> = {
   empty: "The file has no instructions.",
-  too_large: "It is larger than 24 KB, the limit for a skill.",
+  too_large: "It is larger than 64 KB, the limit for a skill.",
+  files_too_large:
+    "Its other files are too large: over 1 MB for one file, 200 files or 4 MB in all.",
+  file_looks_secret: "One of its files looks like it holds a key or a password.",
   shell_injection: "It runs shell commands when it loads (!`...`), which is not allowed.",
   looks_secret: "It looks like it holds a key or a password.",
   invalid_name: "Its folder name is not a valid skill name.",
@@ -44,6 +55,8 @@ export type MarketSkill = {
   path: string;
   description: string;
   warnings: SkillWarning[];
+  /** The files next to the SKILL.md. */
+  files: { count: number; bytes: number };
   installedId: string | null;
 };
 export type MarketRepo = {

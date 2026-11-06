@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -97,6 +97,36 @@ describe("hostSkills", () => {
     expect(await hostSkillFiles(skill)).toEqual({
       "skills/from-agents/SKILL.md": "---\ndescription: In the shared folder\n---\nShared steps",
     });
+  });
+  test("gives the whole folder: scripts keep their executable bit, binary files stay binary; links and node_modules are not followed", async () => {
+    await add(
+      ".claude/skills",
+      "with-files",
+      "---\ndescription: Has files\n---\nRun scripts/go.sh",
+    );
+    const dir = join(home, ".claude/skills", "with-files");
+    await mkdir(join(dir, "scripts"), { recursive: true });
+    await mkdir(join(dir, "node_modules/x"), { recursive: true });
+    await writeFile(join(dir, "scripts/go.sh"), "#!/bin/sh\necho go\n");
+    await chmod(join(dir, "scripts/go.sh"), 0o755);
+    await writeFile(join(dir, "logo.png"), new Uint8Array([0xff, 0x00, 0x89]));
+    await writeFile(join(dir, "node_modules/x/index.js"), "skipped");
+    await symlink(join(home, "elsewhere", "linked", "SKILL.md"), join(dir, "linked.md"));
+    const skill = (await hostSkill("with-files", { home, env: on }))!;
+    expect(await hostSkillFiles(skill)).toEqual({
+      "skills/with-files/SKILL.md": "---\ndescription: Has files\n---\nRun scripts/go.sh",
+      "skills/with-files/logo.png": { bytes: Buffer.from([0xff, 0x00, 0x89]), mode: "file" },
+      "skills/with-files/scripts/go.sh": {
+        bytes: Buffer.from("#!/bin/sh\necho go\n"),
+        mode: "executable",
+      },
+    });
+  });
+  test("a folder over the limits sends its SKILL.md only", async () => {
+    await add(".claude/skills", "too-big", "---\ndescription: Big\n---\nSteps");
+    await writeFile(join(home, ".claude/skills", "too-big", "huge.bin"), new Uint8Array(1_000_001));
+    const skill = (await hostSkill("too-big", { home, env: on }))!;
+    expect(Object.keys(await hostSkillFiles(skill))).toEqual(["skills/too-big/SKILL.md"]);
   });
   test("a missing home folder gives an empty list", async () => {
     expect(await hostSkills({ home: join(home, "none"), env: on })).toEqual([]);

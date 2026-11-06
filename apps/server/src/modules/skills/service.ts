@@ -1,12 +1,20 @@
+import { hasKeyFormat } from "@zetta/core/secrets";
 import type { Database } from "@zetta/db";
-import { and, desc, eq, inArray, isNotNull, sql } from "@zetta/db/query";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { bot } from "@zetta/db/schema/chat";
-import { botSkill, skill } from "@zetta/db/schema/skills";
+import { botSkill, skill, skillFile } from "@zetta/db/schema/skills";
 import { z } from "zod";
-import { LIMITS, noInjection, skillName } from "../bot-claude/profile";
+import { instructions, LIMITS, skillName } from "../bot-claude/profile";
 import { looksSecret } from "../features/safety";
 import type { ActiveActor } from "../identity/access";
+import {
+  FILE_WARNINGS,
+  MarketError,
+  parseSource,
+  type Market,
+  type SkillFileUpload,
+} from "./market";
 
 export const SKILL_LIMITS = { perOwner: 200, perBot: 25 } as const;
 
@@ -24,20 +32,24 @@ export class SkillError extends Error {
   }
 }
 
-/** The text of a skill: the same limits as a skill written for one bot (see bot-claude/profile.ts). */
+/** The text of a skill: the checks of a skill written for one bot (see bot-claude/profile.ts), with the larger body limit of the library. */
 export const skillFields = z.strictObject({
   name: skillName,
   description: z.string().trim().min(1, "Say when this should be used.").max(LIMITS.description),
-  body: z
-    .string()
-    .trim()
-    .min(1, "The instructions are empty.")
-    .max(LIMITS.body)
-    .refine(noInjection, "Shell commands inside the instructions (!`...`) are not allowed."),
+  body: instructions(LIMITS.librarySkillBody),
 });
 export type SkillFields = z.infer<typeof skillFields>;
 /** Where a skill came from: a commit of a GitHub repository. */
 export type SkillOrigin = { repo: string; path: string; ref: string };
+
+const fileRows = (skillId: string, files: readonly SkillFileUpload[]) =>
+  files.map((f) => ({
+    skillId,
+    path: f.path,
+    content: Buffer.from(f.content),
+    mode: f.mode,
+    size: f.content.length,
+  }));
 
 const uniqueViolation = (e: unknown) =>
   [e, (e as { cause?: unknown } | null)?.cause].some(
@@ -55,6 +67,7 @@ const columns = {
   sourcePath: skill.sourcePath,
   sourceRef: skill.sourceRef,
   version: skill.version,
+  filesStatus: skill.filesStatus,
   createdAt: skill.createdAt,
   updatedAt: skill.updatedAt,
 };
@@ -64,8 +77,16 @@ const columns = {
  * Archive, never delete: the row stays and the name is free again. Bots keep a live reference (`bot_skill`), so an edit reaches them all.
  */
 export function createSkills(db: Database) {
-  const screen = (v: { name?: string; description?: string; body?: string }) => {
-    if (looksSecret(`${v.name ?? ""}\n${v.description ?? ""}\n${v.body ?? ""}`))
+  /**
+   * A skill written here is refused when it looks like it holds any secret (a pasted password). A skill from GitHub is someone else's
+   * public text, full of hashes and `token = ...` in examples: only credential formats refuse it, on install and on later edits.
+   */
+  const screen = (
+    v: { name?: string; description?: string; body?: string },
+    source: "manual" | "github" = "manual",
+  ) => {
+    const text = `${v.name ?? ""}\n${v.description ?? ""}\n${v.body ?? ""}`;
+    if (source === "github" ? hasKeyFormat(text) : looksSecret(text))
       throw new SkillError("SECRET_REJECTED");
   };
   const botIdsOf = async (ids: string[]) => {
@@ -76,6 +97,17 @@ export function createSkills(db: Database) {
           .where(inArray(botSkill.skillId, ids))
       : [];
     return (id: string) => links.filter((l) => l.skillId === id).map((l) => l.botId);
+  };
+  /** How many files each skill keeps next to its SKILL.md. */
+  const fileCountsOf = async (ids: string[]) => {
+    const rows = ids.length
+      ? await db
+          .select({ skillId: skillFile.skillId, n: sql<number>`count(*)::int` })
+          .from(skillFile)
+          .where(inArray(skillFile.skillId, ids))
+          .groupBy(skillFile.skillId)
+      : [];
+    return (id: string) => rows.find((r) => r.skillId === id)?.n ?? 0;
   };
   const active = (id: string) => and(eq(skill.id, id), eq(skill.status, "active"));
   const readable = (actor: ActiveActor) =>
@@ -88,7 +120,13 @@ export function createSkills(db: Database) {
       .innerJoin(user, eq(user.id, skill.ownerUserId))
       .where(and(active(id), readable(actor)));
     if (!row) throw new SkillError("NOT_FOUND");
-    return { ...row, botIds: (await botIdsOf([id]))(id) };
+    // Names, sizes and modes only: the content of a file is read when a bot runs.
+    const files = await db
+      .select({ path: skillFile.path, size: skillFile.size, mode: skillFile.mode })
+      .from(skillFile)
+      .where(eq(skillFile.skillId, id))
+      .orderBy(asc(skillFile.path));
+    return { ...row, files, botIds: (await botIdsOf([id]))(id) };
   }
 
   const service = {
@@ -107,8 +145,9 @@ export function createSkills(db: Database) {
         )
         .orderBy(desc(skill.updatedAt))
         .limit(500);
-      const botsOf = await botIdsOf(rows.map((r) => r.id));
-      return rows.map((r) => ({ ...r, botIds: botsOf(r.id) }));
+      const ids = rows.map((r) => r.id);
+      const [botsOf, countOf] = await Promise.all([botIdsOf(ids), fileCountsOf(ids)]);
+      return rows.map((r) => ({ ...r, fileCount: countOf(r.id), botIds: botsOf(r.id) }));
     },
 
     get,
@@ -133,30 +172,40 @@ export function createSkills(db: Database) {
         );
     },
 
-    async create(actor: ActiveActor, fields: SkillFields, origin?: SkillOrigin) {
-      screen(fields);
+    /** `files` are the other files of the skill folder; they are saved with the skill or not at all. */
+    async create(
+      actor: ActiveActor,
+      fields: SkillFields,
+      origin?: SkillOrigin,
+      files: readonly SkillFileUpload[] = [],
+    ) {
+      screen(fields, origin ? "github" : "manual");
       const [{ n } = { n: 0 }] = await db
         .select({ n: sql<number>`count(*)::int` })
         .from(skill)
         .where(and(eq(skill.ownerUserId, actor.userId), eq(skill.status, "active")));
       if (n >= SKILL_LIMITS.perOwner) throw new SkillError("FULL");
       try {
-        const [row] = await db
-          .insert(skill)
-          .values({
-            ownerUserId: actor.userId,
-            ...fields,
-            ...(origin
-              ? {
-                  source: "github" as const,
-                  sourceRepo: origin.repo,
-                  sourcePath: origin.path,
-                  sourceRef: origin.ref,
-                }
-              : {}),
-          })
-          .returning({ id: skill.id });
-        return get(actor, row!.id);
+        const row = await db.transaction(async (tx) => {
+          const [created] = await tx
+            .insert(skill)
+            .values({
+              ownerUserId: actor.userId,
+              ...fields,
+              ...(origin
+                ? {
+                    source: "github" as const,
+                    sourceRepo: origin.repo,
+                    sourcePath: origin.path,
+                    sourceRef: origin.ref,
+                  }
+                : {}),
+            })
+            .returning({ id: skill.id });
+          if (files.length) await tx.insert(skillFile).values(fileRows(created!.id, files));
+          return created!;
+        });
+        return get(actor, row.id);
       } catch (e) {
         if (uniqueViolation(e)) throw new SkillError("DUPLICATE");
         throw e;
@@ -170,7 +219,12 @@ export function createSkills(db: Database) {
       expectedVersion: number,
       patch: Partial<SkillFields>,
     ) {
-      screen(patch);
+      const [current] = await db
+        .select({ source: skill.source })
+        .from(skill)
+        .where(and(active(id), eq(skill.ownerUserId, actor.userId)));
+      if (!current) throw new SkillError("NOT_FOUND");
+      screen(patch, current.source);
       try {
         const [row] = await db
           .update(skill)
@@ -263,6 +317,67 @@ export function createSkills(db: Database) {
           await tx.insert(botSkill).values(wanted.map((botId) => ({ botId, skillId: id })));
       });
       return { botIds: wanted };
+    },
+
+    /**
+     * Skills installed from GitHub before their folder was kept (`files_status = pending`) get their files from the commit they were
+     * installed at, one skill at a time. The SKILL.md text is not touched (the owner may have edited it). A skill whose files cannot be
+     * kept (gone from GitHub, over the limits, a credential in a file) is closed without files and the reason is logged. A GitHub
+     * outage or rate limit stops the run; the skills stay pending for the next start.
+     */
+    async backfillFiles(market: Pick<Market, "preview">) {
+      const pending = await db
+        .select({
+          id: skill.id,
+          repo: skill.sourceRepo,
+          path: skill.sourcePath,
+          ref: skill.sourceRef,
+        })
+        .from(skill)
+        .where(and(eq(skill.filesStatus, "pending"), eq(skill.status, "active")))
+        .orderBy(asc(skill.createdAt));
+      const result = { kept: 0, closed: 0, stopped: false };
+      const close = async (id: string, files: readonly SkillFileUpload[] = []) => {
+        await db.transaction(async (tx) => {
+          if (files.length)
+            await tx.insert(skillFile).values(fileRows(id, files)).onConflictDoNothing();
+          await tx.update(skill).set({ filesStatus: "complete" }).where(eq(skill.id, id));
+        });
+      };
+      for (const row of pending) {
+        const src = row.repo && parseSource(row.repo);
+        if (!src || !row.path || !row.ref) {
+          console.error(`skills: backfill closed id=${row.id} reason=NO_ORIGIN`);
+          await close(row.id);
+          result.closed++;
+          continue;
+        }
+        try {
+          const p = await market.preview(src, row.path, row.ref);
+          const blocked = p.warnings.find((w) => FILE_WARNINGS.includes(w));
+          if (blocked) {
+            console.error(`skills: backfill closed id=${row.id} reason=${blocked}`);
+            await close(row.id);
+            result.closed++;
+          } else {
+            await close(row.id, p.files);
+            result.kept++;
+          }
+        } catch (e) {
+          if (e instanceof MarketError && (e.code === "NOT_FOUND" || e.code === "INVALID_SOURCE")) {
+            console.error(`skills: backfill closed id=${row.id} reason=${e.code}`);
+            await close(row.id);
+            result.closed++;
+            continue;
+          }
+          console.error(
+            `skills: backfill stopped reason=${e instanceof MarketError ? e.code : "ERROR"}`,
+          );
+          result.stopped = true;
+          break;
+        }
+      }
+      return result;
     },
 
     /** Gives the skill to more of the caller's bots and keeps the bots that already have it (setBots would replace them). */

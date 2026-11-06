@@ -1,6 +1,7 @@
+import { hasKeyFormat } from "@zetta/core/secrets";
+import type { SkillFileMode } from "@zetta/db/schema/skills";
 import { field } from "../bot-claude/host-skills";
-import { LIMITS, noInjection, skillName } from "../bot-claude/profile";
-import { looksSecret } from "../features/safety";
+import { FILE_LIMITS, LIMITS, noInjection, skillName } from "../bot-claude/profile";
 import { SUGGESTIONS, type Suggestion, type Trust } from "./suggestions";
 
 export class MarketError extends Error {
@@ -58,9 +59,19 @@ export function parseSource(text: string): Source | undefined {
 export type SkillWarning =
   | "empty"
   | "too_large"
+  | "files_too_large"
+  | "file_looks_secret"
   | "shell_injection"
   | "looks_secret"
   | "invalid_name";
+/** The warnings about the files next to a SKILL.md (the others are about the SKILL.md text). */
+export const FILE_WARNINGS: readonly SkillWarning[] = ["files_too_large", "file_looks_secret"];
+
+/** A file next to a SKILL.md. `path` is relative to the skill folder. */
+export type FolderFile = { path: string; size: number; mode: SkillFileMode };
+export type SkillFileUpload = FolderFile & { content: Uint8Array };
+export type Folder = { files: FolderFile[]; bytes: number; tooLarge: boolean };
+
 /** What a SKILL.md would install as. Any warning stops the install. */
 export type Preview = {
   repo: string;
@@ -69,8 +80,75 @@ export type Preview = {
   name: string;
   description: string;
   body: string;
+  files: SkillFileUpload[];
   warnings: SkillWarning[];
 };
+
+export type TreeEntry = { path: string; type: string; mode?: string; size?: number };
+const SKIPPED_DIRS = new Set(["node_modules", ".git"]);
+// Any character a file system takes, except controls and separators. The path ends up in the DB and in a plugin directory.
+// oxlint-disable-next-line no-control-regex -- the control characters are what this pattern refuses
+const FILE_SEGMENT = /^(?!\.{1,2}$)[^\u0000-\u001f\u007f\\/]{1,255}$/u;
+const MAX_FILE_PATH = 300;
+
+/** The folder (SKILL.md directory) a repository path belongs to: the deepest one, so a nested skill keeps its own files. */
+const ownerDir = (path: string, owners: ReadonlySet<string>) => {
+  const parts = path.split("/");
+  for (let n = parts.length - 1; n >= 0; n--) {
+    const dir = parts.slice(0, n).join("/");
+    if (owners.has(dir)) return dir;
+  }
+  return undefined;
+};
+
+/** The folders that hold a SKILL.md (`""` is the repository root). */
+export const skillDirs = (tree: readonly TreeEntry[]) =>
+  tree
+    .filter(
+      (t) =>
+        t.type === "blob" && SKILL_FILE.test(t.path) && !t.path.split("/").includes("node_modules"),
+    )
+    .map((t) => t.path.split("/").slice(0, -1).join("/"));
+
+/**
+ * The files of every skill folder, from one GitHub tree, in a single pass. A file belongs to the deepest folder that has a SKILL.md.
+ * Only regular files (mode 100644/100755) are kept: a symlink or submodule is never followed. `node_modules` and `.git` are left out.
+ * A folder over FILE_LIMITS is marked `tooLarge` and has no files.
+ */
+export function skillFolders(tree: readonly TreeEntry[], dirs: readonly string[]) {
+  const owners = new Set(dirs);
+  const out = new Map<string, Folder>(
+    dirs.map((d) => [d, { files: [], bytes: 0, tooLarge: false }]),
+  );
+  for (const t of tree) {
+    if (t.type !== "blob" || (t.mode !== "100644" && t.mode !== "100755")) continue;
+    const dir = ownerDir(t.path, owners);
+    if (dir === undefined) continue;
+    const rel = dir ? t.path.slice(dir.length + 1) : t.path;
+    const parts = rel.split("/");
+    if (
+      rel === "SKILL.md" ||
+      rel.length > MAX_FILE_PATH ||
+      parts.some((p) => SKIPPED_DIRS.has(p) || !FILE_SEGMENT.test(p))
+    )
+      continue;
+    const folder = out.get(dir)!;
+    const size = t.size ?? 0;
+    folder.bytes += size;
+    folder.files.push({ path: rel, size, mode: t.mode === "100755" ? "executable" : "file" });
+    if (
+      size > FILE_LIMITS.file ||
+      folder.files.length > FILE_LIMITS.count ||
+      folder.bytes > FILE_LIMITS.total
+    )
+      folder.tooLarge = true;
+  }
+  for (const f of out.values()) {
+    if (f.tooLarge) f.files = [];
+    else f.files.sort((a, b) => a.path.localeCompare(b.path));
+  }
+  return out;
+}
 
 const slug = (s: string) =>
   s
@@ -92,9 +170,10 @@ export function readSkill(text: string, folder: string, truncated = false) {
     [folder, slug(field(head, "name"))].find((n) => skillName.safeParse(n).success) ?? "";
   const warnings: SkillWarning[] = [
     ...(body ? [] : (["empty"] as const)),
-    ...(truncated || body.length > LIMITS.body ? (["too_large"] as const) : []),
+    ...(truncated || body.length > LIMITS.librarySkillBody ? (["too_large"] as const) : []),
     ...(noInjection(body) ? [] : (["shell_injection"] as const)),
-    ...(looksSecret(`${name}\n${description}\n${body}`) ? (["looks_secret"] as const) : []),
+    // Only credential formats: a script or a reference doc has hashes and `token = ...` in it, which `looksSecret` would refuse.
+    ...(hasKeyFormat(`${name}\n${description}\n${body}`) ? (["looks_secret"] as const) : []),
     ...(name ? [] : (["invalid_name"] as const)),
   ];
   return { name, description, body, warnings };
@@ -108,6 +187,7 @@ const MAX_FILE_BYTES = 200_000;
 const MAX_SKILLS = 300;
 const MAX_DESCRIBE = 200;
 const DESCRIBE_PARALLEL = 8;
+const FILES_PARALLEL = 4;
 const INDEX_PARALLEL = 3;
 const INDEX_TTL_MS = 60 * 60_000;
 const RETRY_MS = 60_000;
@@ -132,7 +212,7 @@ export function createMarket({
     return value;
   }
 
-  async function get(url: string, max: number, accept?: string) {
+  async function getRaw(url: string, max: number, accept?: string) {
     const u = new URL(url);
     if (u.protocol !== "https:" || !HOSTS.has(u.hostname)) throw new MarketError("UNAVAILABLE");
     let res: Response;
@@ -167,7 +247,11 @@ export function createMarket({
       }
       chunks.push(value);
     }
-    return { text: Buffer.concat(chunks).toString("utf8"), truncated };
+    return { bytes: Buffer.concat(chunks), truncated };
+  }
+  async function get(url: string, max: number, accept?: string) {
+    const { bytes, truncated } = await getRaw(url, max, accept);
+    return { text: bytes.toString("utf8"), truncated };
   }
 
   /** The commit a skill is read at. Everything after this uses the commit, so what is previewed is what is installed. */
@@ -179,12 +263,11 @@ export function createMarket({
     return sha;
   }
 
-  /** The SKILL.md files of a repository, newest commit of the ref (default branch when none). */
-  async function list(src: Source) {
-    const ref = await commit(src);
-    const url = `https://api.github.com/repos/${src.owner}/${src.repo}/git/trees/${ref}?recursive=1`;
+  /** Every file of the repository at commit `sha`. Kept for a few minutes, so listing and installing from one commit read it once. */
+  async function readTree(src: Pick<Source, "owner" | "repo">, sha: string) {
+    const url = `https://api.github.com/repos/${src.owner}/${src.repo}/git/trees/${sha}?recursive=1`;
     const { text, truncated } = await cached(url, () => get(url, MAX_TREE_BYTES));
-    type Tree = { tree?: { path: string; type: string }[]; truncated?: boolean };
+    type Tree = { tree?: TreeEntry[]; truncated?: boolean };
     let parsed: Tree;
     try {
       parsed = JSON.parse(text) as Tree;
@@ -192,9 +275,25 @@ export function createMarket({
       throw new MarketError("UNAVAILABLE");
     }
     if (!Array.isArray(parsed.tree)) throw new MarketError("UNAVAILABLE");
+    return { tree: parsed.tree, truncated: truncated || Boolean(parsed.truncated) };
+  }
+
+  /** The folder of a skill. A truncated tree may miss files, and a skill with missing files fails at run time, so it counts as too large. */
+  const folderOf = (
+    folders: ReadonlyMap<string, Folder>,
+    dir: string,
+    truncated: boolean,
+  ): Folder =>
+    truncated || !folders.has(dir) ? { files: [], bytes: 0, tooLarge: true } : folders.get(dir)!;
+
+  /** The SKILL.md files of a repository (each with its folder), newest commit of the ref (default branch when none). */
+  async function list(src: Source) {
+    const ref = await commit(src);
+    const { tree, truncated: treeTruncated } = await readTree(src, ref);
+    const folders = skillFolders(tree, skillDirs(tree));
     const inFolder = (dir: string) =>
       !src.path || dir === src.path || dir.startsWith(`${src.path}/`);
-    const skills = parsed.tree
+    const skills = tree
       .filter((t) => t.type === "blob" && SKILL_FILE.test(t.path))
       .map((t) => {
         const dir = t.path.split("/").slice(0, -1);
@@ -207,19 +306,63 @@ export function createMarket({
           (!src.skill || k.name === src.skill),
       )
       .slice(0, MAX_SKILLS)
-      .map(({ name, path }) => ({ name, path }));
-    return {
-      repo: `${src.owner}/${src.repo}`,
-      ref,
-      skills,
-      truncated: truncated || Boolean(parsed.truncated),
-    };
+      .map(({ name, path, dir }) => ({
+        name,
+        path,
+        folder: folderOf(folders, dir, treeTruncated),
+      }));
+    return { repo: `${src.owner}/${src.repo}`, ref, skills, truncated: treeTruncated };
   }
 
   const rawUrl = (src: Pick<Source, "owner" | "repo">, sha: string, path: string) =>
     `https://raw.githubusercontent.com/${src.owner}/${src.repo}/${sha}/${path.split("/").map(encodeURIComponent).join("/")}`;
 
-  /** What `path` (a SKILL.md) of the repository would install as, read at commit `sha`. */
+  /** Downloads the files of a skill folder one by one in small groups. The first failure stops the rest. */
+  async function downloadFiles(
+    src: Pick<Source, "owner" | "repo">,
+    sha: string,
+    dir: string,
+    files: readonly FolderFile[],
+  ): Promise<{ uploads: SkillFileUpload[]; oversized: boolean }> {
+    const uploads = Array.from({ length: files.length }) as SkillFileUpload[];
+    let oversized = false;
+    let next = 0;
+    let failed = false;
+    const worker = async () => {
+      while (!failed && !oversized) {
+        const i = next++;
+        const file = files[i];
+        if (!file) return;
+        try {
+          const { bytes, truncated } = await getRaw(
+            rawUrl(src, sha, dir ? `${dir}/${file.path}` : file.path),
+            FILE_LIMITS.file,
+          );
+          if (truncated) oversized = true;
+          uploads[i] = { ...file, size: bytes.length, content: bytes };
+        } catch (e) {
+          failed = true;
+          throw e;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(FILES_PARALLEL, files.length) }, worker));
+    return { uploads: oversized ? [] : uploads, oversized };
+  }
+
+  /** True when the file is text (valid UTF-8) with a credential format in it. Binary files are not screened. */
+  const holdsKey = (bytes: Uint8Array) => {
+    try {
+      return hasKeyFormat(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * What `path` (a SKILL.md) of the repository would install as, read at commit `sha`: the text and every other file of its folder.
+   * The files are read again here, from the same commit, so what is checked is what is stored.
+   */
   async function preview(
     src: Pick<Source, "owner" | "repo">,
     path: string,
@@ -231,48 +374,64 @@ export function createMarket({
     const { text, truncated } = await cached(url, () => get(url, MAX_FILE_BYTES));
     const folder = path.split("/").slice(0, -1).at(-1) ?? src.repo;
     const skill = readSkill(text, folder, truncated);
-    return { repo: `${src.owner}/${src.repo}`, path, ref: sha, ...skill };
+    const dir = path.split("/").slice(0, -1).join("/");
+    const { tree, truncated: treeTruncated } = await readTree(src, sha);
+    const found = folderOf(skillFolders(tree, skillDirs(tree)), dir, treeTruncated);
+    const { uploads, oversized } = found.tooLarge
+      ? { uploads: [], oversized: true }
+      : await downloadFiles(src, sha, dir, found.files);
+    const warnings: SkillWarning[] = [
+      ...skill.warnings,
+      ...(oversized ? (["files_too_large"] as const) : []),
+      ...(uploads.some((f) => holdsKey(f.content)) ? (["file_looks_secret"] as const) : []),
+    ];
+    return { repo: `${src.owner}/${src.repo}`, path, ref: sha, ...skill, files: uploads, warnings };
   }
 
-  type Described = { name: string; path: string; description: string; warnings: SkillWarning[] };
+  type Described = {
+    name: string;
+    path: string;
+    description: string;
+    warnings: SkillWarning[];
+    /** The files next to the SKILL.md: how many and how many bytes. The list itself is read when the skill is installed. */
+    files: { count: number; bytes: number };
+  };
   /** What each SKILL.md says, a few files at a time. A file that cannot be read is left out: it could not be installed either. */
   async function describe(
     src: Pick<Source, "owner" | "repo">,
     ref: string,
-    paths: string[],
+    skills: { path: string; folder: Folder }[],
   ): Promise<Described[]> {
-    const queue = paths.slice(0, MAX_DESCRIBE);
+    const queue = skills.slice(0, MAX_DESCRIBE);
     const out = new Map<string, Described>();
     const worker = async () => {
-      for (let path = queue.shift(); path; path = queue.shift()) {
+      for (let k = queue.shift(); k; k = queue.shift()) {
+        const { path, folder: found } = k;
         try {
           const { text, truncated } = await get(rawUrl(src, ref, path), MAX_FILE_BYTES);
           const folder = path.split("/").slice(0, -1).at(-1) ?? src.repo;
           const { name, description, warnings } = readSkill(text, folder, truncated);
-          out.set(path, { name: name || folder, path, description, warnings });
+          out.set(path, {
+            name: name || folder,
+            path,
+            description,
+            warnings: found.tooLarge ? [...warnings, "files_too_large"] : warnings,
+            files: { count: found.files.length, bytes: found.bytes },
+          });
         } catch {
           // Left out of the list.
         }
       }
     };
     await Promise.all(Array.from({ length: Math.min(DESCRIBE_PARALLEL, queue.length) }, worker));
-    return paths.flatMap((p) => out.get(p) ?? []);
+    return skills.flatMap((k) => out.get(k.path) ?? []);
   }
 
   /** A repository's skills with what each one says it does, so a person can choose. Kept for an hour: a commit never changes. */
   async function described(src: Source) {
     const found = await list(src);
     const key = `described:${found.repo}@${found.ref}:${src.path ?? ""}:${src.skill ?? ""}`;
-    const skills = await cached(
-      key,
-      () =>
-        describe(
-          src,
-          found.ref,
-          found.skills.map((k) => k.path),
-        ),
-      INDEX_TTL_MS,
-    );
+    const skills = await cached(key, () => describe(src, found.ref, found.skills), INDEX_TTL_MS);
     return { ...found, skills };
   }
 

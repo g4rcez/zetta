@@ -379,6 +379,104 @@ describe("hermes", () => {
   });
 });
 
+describe("a skill's other files", () => {
+  const run = {
+    path: "scripts/run.sh",
+    content: new Uint8Array([0x23, 0xff]),
+    mode: "executable" as const,
+  };
+  const logo = {
+    path: "assets/logo.png",
+    content: new Uint8Array([0xff, 0x00]),
+    mode: "file" as const,
+  };
+  test("go into the plugin dir beside the SKILL.md, and the skill lists their paths", () => {
+    const p = buildProfile(undefined, [skill()], new Map([["release-notes", [run, logo]]]))!;
+    expect(Object.keys(p.files).sort()).toEqual([
+      ".claude-plugin/plugin.json",
+      "skills/release-notes/SKILL.md",
+      "skills/release-notes/assets/logo.png",
+      "skills/release-notes/scripts/run.sh",
+    ]);
+    expect(p.files["skills/release-notes/scripts/run.sh"]).toEqual({
+      bytes: new Uint8Array([0x23, 0xff]),
+      mode: "executable",
+    });
+    expect(p.skills[0]!.files).toEqual(["scripts/run.sh", "assets/logo.png"]);
+  });
+  test("are ignored for a skill that is off or has another name, and never replace the SKILL.md", () => {
+    const sneaky = { path: "skill.md", content: new Uint8Array([1]), mode: "file" as const };
+    const p = buildProfile(
+      undefined,
+      [skill(), skill({ id: "2", name: "off", enabled: false })],
+      new Map([
+        ["release-notes", [sneaky]],
+        ["off", [run]],
+        ["unknown", [run]],
+      ]),
+    )!;
+    expect(Object.keys(p.files).sort()).toEqual([
+      ".claude-plugin/plugin.json",
+      "skills/release-notes/SKILL.md",
+    ]);
+    expect(p.skills[0]).toEqual({
+      name: "release-notes",
+      description: "Write release notes",
+      body: "Summarise merged PRs.",
+    });
+  });
+  test("writePluginDir writes bytes as they are and keeps the executable bit", async () => {
+    const root = join(tmpdir(), `zetta-plugin-test-${uuidv7()}`);
+    const dir = await writePluginDir(
+      {
+        "skills/a/SKILL.md": "hi",
+        "skills/a/scripts/run.sh": { bytes: new Uint8Array([0x23, 0xff]), mode: "executable" },
+        "skills/a/assets/x.bin": { bytes: new Uint8Array([0xff, 0x00]), mode: "file" },
+      },
+      root,
+    );
+    expect(Array.from(await readFile(join(dir, "skills/a/assets/x.bin")))).toEqual([255, 0]);
+    expect(Array.from(await readFile(join(dir, "skills/a/scripts/run.sh")))).toEqual([35, 255]);
+    if (process.platform !== "win32") {
+      expect((await stat(join(dir, "skills/a/scripts/run.sh"))).mode & 0o777).toBe(0o700);
+      expect((await stat(join(dir, "skills/a/assets/x.bin"))).mode & 0o777).toBe(0o600);
+    }
+    await expect(
+      writePluginDir(
+        { "skills/a/../../../out.bin": { bytes: new Uint8Array([1]), mode: "file" } },
+        root,
+      ),
+    ).rejects.toThrow();
+    await rm(root, { recursive: true, force: true });
+  });
+  test("Hermes is told where they are only when it has file tools", () => {
+    const profile = {
+      ...base,
+      skills: [
+        {
+          name: "deck",
+          description: "Build a deck",
+          body: "Run it.",
+          files: ["scripts/build.py", "references/api.md"],
+        },
+        { name: "plain", description: "No files", body: "Just text." },
+      ],
+    };
+    const withFiles = harnessCommands
+      .hermes("go", null, "git", { profile, pluginDir: "/plug" })
+      .at(-1)!;
+    expect(withFiles).toContain(
+      "Run it.\nOther files of this skill are in /plug/skills/deck/ (read them with your file tools): scripts/build.py, references/api.md\n\n## Skill: plain",
+    );
+    expect(withFiles).not.toContain("skills/plain/");
+    // Web only (no code access, so no file toolset): the paths would lead nowhere.
+    expect(
+      harnessCommands.hermes("go", null, undefined, { profile, pluginDir: "/plug" }).at(-1),
+    ).not.toContain("Other files");
+    expect(hermesPrompt("go", profile)).not.toContain("Other files");
+  });
+});
+
 describe("pickedFirst", () => {
   const skills = ["a", "b", "c"].map((name) => ({ name, description: "d", body: "x" }));
   test("moves the picked skills to the front and keeps the rest in order", () => {

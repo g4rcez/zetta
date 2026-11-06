@@ -60,6 +60,7 @@ export async function installSelection(
           actor,
           skillFields.parse({ name: p.name, description: p.description, body: p.body }),
           { repo: p.repo, path: p.path, ref: p.ref },
+          p.files,
         ),
       );
     } catch (e) {

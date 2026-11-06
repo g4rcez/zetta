@@ -6,6 +6,7 @@ import { BotIdentity } from "@/components/bot-identity";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { Badge, ConfirmButton, Empty, list, listItem, Panel } from "../shared/ui";
 import { BotPicker } from "./bot-picker";
+import { SkillFiles } from "./skill-files";
 import { SkillForm } from "./skill-form";
 import { skillsApi, skillsQueries, type SkillWithText } from "./skills-api";
 
@@ -127,6 +128,12 @@ export function MySkills({
                       </div>
                     </div>
                     <p className="text-muted-foreground">{s.description}</p>
+                    {s.fileCount ? <SkillFiles id={s.id} count={s.fileCount} /> : null}
+                    {s.filesStatus === "pending" && (
+                      <p className="text-xs text-muted-foreground">
+                        Its other files are not downloaded from GitHub yet.
+                      </p>
+                    )}
                     <div className="flex flex-wrap items-center gap-3">
                       {s.botIds.length === 0 ? (
                         <p className="text-xs text-muted-foreground">No bot uses it yet.</p>

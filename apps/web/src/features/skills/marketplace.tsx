@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { Button, Input } from "@/components/ui";
+import { formatSize } from "../artifacts/artifacts-api";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { Badge, Panel } from "../shared/ui";
 import { BotPicker } from "./bot-picker";
@@ -33,6 +34,7 @@ type Shown = {
     path: string;
     description: string;
     warnings: string[];
+    files: { count: number; bytes: number };
     installed: boolean;
     showRepo: boolean;
   }[];
@@ -200,6 +202,9 @@ export function Marketplace({
     name: r.name,
     description: r.description,
     repo: r.showRepo ? r.repo : undefined,
+    meta: r.files.count
+      ? `${r.files.count} ${r.files.count === 1 ? "file" : "files"} · ${formatSize(r.files.bytes)}`
+      : undefined,
     href: `https://github.com/${r.repo}/blob/${r.ref}/${r.path}`,
     installed: r.installed,
     blocked: r.warnings[0] ? WARNING_TEXT[r.warnings[0] as keyof typeof WARNING_TEXT] : undefined,

@@ -35,8 +35,8 @@ suite("skill library", () => {
   const prompts: string[] = [];
   /** What the bot says next, one entry per model call; once it is empty the bot says OK. */
   const script: string[] = [];
-  let installed: Record<string, string> = {};
-  type Run = { prompt: string; harness: string; profile?: { files: Record<string, string> } };
+  let installed: Record<string, any> = {};
+  type Run = { prompt: string; harness: string; profile?: { files: Record<string, any> } };
   const cli = async (t: Run) => {
     prompts.push(t.prompt);
     installed = t.profile?.files ?? {};
@@ -51,7 +51,15 @@ suite("skill library", () => {
   const SHA = "1234567890abcdef1234567890abcdef12345678";
   const SHA2 = "abcdefabcdefabcdefabcdefabcdefabcdefabcd";
   const SHA3 = "0123456789012345678901234567890123456789";
-  const repos: Record<string, { sha: string; files: Record<string, string> }> = {
+  const SHA4 = "4444444444444444444444444444444444444444";
+  const SHA5 = "5555555555555555555555555555555555555555";
+  const SHA6 = "6666666666666666666666666666666666666666";
+  // Not valid UTF-8, so it can only be binary.
+  const LOGO = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0xff, 0xfe, 0x00]);
+  const repos: Record<
+    string,
+    { sha: string; files: Record<string, string | Uint8Array>; modes?: Record<string, string> }
+  > = {
     "acme/skills": {
       sha: SHA,
       files: {
@@ -72,6 +80,41 @@ suite("skill library", () => {
       sha: SHA3,
       files: { "stuff/notes/SKILL.md": "---\ndescription: Take notes\n---\nnote steps" },
     },
+    // A skill with a whole folder, next to a skill nested inside it.
+    "files/deck": {
+      sha: SHA4,
+      modes: { "deck/scripts/build.py": "100755", "deck/link": "120000" },
+      files: {
+        "deck/SKILL.md": "---\ndescription: Build a deck\n---\nrun scripts/build.py",
+        "deck/scripts/build.py": "#!/usr/bin/env python3\nprint('deck')\n",
+        "deck/references/api.md": "# API\nsee here",
+        "deck/assets/logo.png": LOGO,
+        "deck/link": "../outside",
+        "deck/node_modules/x/index.js": "skipped",
+        "deck/nested/SKILL.md": "---\ndescription: Nested\n---\nnested skill",
+        "deck/nested/data.txt": "belongs to the nested skill",
+      },
+    },
+    // A real-looking skill: a long body with a token read from the environment and a commit hash in its examples.
+    "files/long": {
+      sha: SHA6,
+      files: {
+        "long/SKILL.md": `---\ndescription: Long\n---\ntoken = os.environ['TOKEN']\ncommit 0123456789abcdef0123456789abcdef01234567\n${"x".repeat(40_000)}`,
+      },
+    },
+    // Skills a person must not install: a file over the size limit, a credential in a script. A token read from the
+    // environment is ordinary code and is fine.
+    "files/risky": {
+      sha: SHA5,
+      files: {
+        "big/SKILL.md": "---\ndescription: Big\n---\nbig steps",
+        "big/data.bin": new Uint8Array(1_000_001),
+        "leaky/SKILL.md": "---\ndescription: Leaky\n---\nleaky steps",
+        "leaky/scripts/deploy.sh": "KEY=sk-test-abcdefghijklmnop1234\n",
+        "plain/SKILL.md": "---\ndescription: Plain\n---\nplain steps",
+        "plain/scripts/run.sh": "token = os.environ['TOKEN']\n",
+      },
+    },
   };
   const requested: string[] = [];
   const github = (async (input: string | URL | Request) => {
@@ -87,7 +130,12 @@ suite("skill library", () => {
       return Response.json({
         tree: [
           { path: "README.md", type: "blob" },
-          ...Object.keys(repo.files).map((path) => ({ path, type: "blob" })),
+          ...Object.entries(repo.files).map(([path, content]) => ({
+            path,
+            type: "blob",
+            mode: repo.modes?.[path] ?? "100644",
+            size: typeof content === "string" ? Buffer.byteLength(content) : content.length,
+          })),
           { path: "node_modules/x/SKILL.md", type: "blob" },
         ],
       });
@@ -95,9 +143,9 @@ suite("skill library", () => {
     const raw = /^\/([^/]+\/[^/]+)\/([0-9a-f]{40})\/(.+)$/.exec(url.pathname);
     if (url.hostname === "raw.githubusercontent.com" && raw) {
       const repo = repos[raw[1]!];
-      const text =
+      const content =
         repo && repo.sha === raw[2] ? repo.files[decodeURIComponent(raw[3]!)] : undefined;
-      if (text !== undefined) return new Response(text);
+      if (content !== undefined) return new Response(content);
     }
     return new Response("not found", { status: 404 });
   }) as typeof fetch;
@@ -326,6 +374,7 @@ suite("skill library", () => {
       path: "skills/interview-me/SKILL.md",
       description: "Interview the user about what they want",
       warnings: [],
+      files: { count: 0, bytes: 0 },
       installedId: null,
     };
     expect((await hit("interview-me")).json).toEqual({
@@ -647,5 +696,173 @@ suite("skill library", () => {
     await talk(C, dana.id, "Give Fay the note skill");
     expect(prompts.join("\n")).toContain("only the chief can pick other bots");
     expect((await pending(C)).length).toBe(beforePlain);
+  });
+  test("a skill keeps its whole folder: stored on install, listed on its page, and handed to the bot's run with bytes and the executable bit", async () => {
+    const bot = await makeBot(A, "Deck builder");
+    const browsed = (await call(A, "GET", "/api/skills/market/repo?source=files/deck")).json;
+    expect(browsed.skills.map((k: any) => [k.name, k.files])).toEqual([
+      ["deck", { count: 3, bytes: 60 }],
+      ["nested", { count: 1, bytes: 27 }],
+    ]);
+
+    const done = await call(A, "POST", "/api/skills/market/install", {
+      source: "files/deck",
+      paths: ["deck/SKILL.md"],
+      sha: SHA4,
+      botIds: [bot.id],
+    });
+    expect(done.status).toBe(201);
+    expect(done.json.failed).toEqual([]);
+    const id = done.json.installed[0].id as string;
+
+    // The page lists names, sizes and modes. Not the symlink, node_modules or the nested skill.
+    const page = (await call(A, "GET", `/api/skills/${id}`)).json.skill;
+    expect(page.files).toEqual([
+      { path: "assets/logo.png", size: 9, mode: "file" },
+      { path: "references/api.md", size: 14, mode: "file" },
+      { path: "scripts/build.py", size: 37, mode: "executable" },
+    ]);
+    expect(
+      (await call(A, "GET", "/api/skills")).json.skills.find((k: any) => k.id === id).fileCount,
+    ).toBe(3);
+    expect((await call(B, "GET", `/api/skills/${id}`)).status).toBe(404);
+
+    const conv = (await call(A, "POST", "/api/conversations", { botId: bot.id })).json.conversation
+      .id;
+    await call(A, "POST", `/api/conversations/${conv}/messages`, {
+      content: "Go",
+      skills: ["deck"],
+    });
+    expect(installed["skills/deck/SKILL.md"]).toContain("run scripts/build.py");
+    expect(installed["skills/deck/scripts/build.py"].mode).toBe("executable");
+    expect(Buffer.from(installed["skills/deck/scripts/build.py"].bytes).toString()).toBe(
+      "#!/usr/bin/env python3\nprint('deck')\n",
+    );
+    expect(installed["skills/deck/references/api.md"].mode).toBe("file");
+    expect(Array.from(installed["skills/deck/assets/logo.png"].bytes)).toEqual(Array.from(LOGO));
+    expect(
+      Object.keys(installed)
+        .filter((k) => k.startsWith("skills/deck/"))
+        .sort(),
+    ).toEqual([
+      "skills/deck/SKILL.md",
+      "skills/deck/assets/logo.png",
+      "skills/deck/references/api.md",
+      "skills/deck/scripts/build.py",
+    ]);
+
+    // Listing the bot's skills for the picker does not need the files.
+    expect(
+      (await call(A, "GET", `/api/bots/${bot.id}/skills`)).json.skills.find(
+        (k: any) => k.name === "deck",
+      ),
+    ).toEqual({ name: "deck", description: "Build a deck", source: "bot" });
+  });
+
+  test("a folder over the size limit or with a credential in a file is refused; a token read from the environment is ordinary code", async () => {
+    const browsed = (await call(A, "GET", "/api/skills/market/repo?source=files/risky")).json;
+    expect(browsed.skills.map((k: any) => [k.name, k.warnings])).toEqual([
+      ["big", ["files_too_large"]],
+      ["leaky", []],
+      ["plain", []],
+    ]);
+    const done = await call(A, "POST", "/api/skills/market/install", {
+      source: "files/risky",
+      paths: ["big/SKILL.md", "leaky/SKILL.md", "plain/SKILL.md"],
+      sha: SHA5,
+    });
+    expect(done.json.failed).toEqual([
+      { path: "big/SKILL.md", code: "UNINSTALLABLE" },
+      { path: "leaky/SKILL.md", code: "UNINSTALLABLE" },
+    ]);
+    expect(done.json.installed.map((k: any) => [k.name, k.files.map((f: any) => f.path)])).toEqual([
+      ["plain", ["scripts/run.sh"]],
+    ]);
+  });
+
+  test("skills installed before folders were kept get their files from their commit; GitHub gone closes them, an outage leaves them for the next start", async () => {
+    const done = await call(C, "POST", "/api/skills/market/install", {
+      source: "files/deck",
+      paths: ["deck/SKILL.md"],
+      sha: SHA4,
+    });
+    const id = done.json.installed[0].id as string;
+    // What an installed skill looked like before this feature: no files, waiting for the backfill.
+    const reset = async () => {
+      await db.$client.query("delete from skill_file where skill_id = $1", [id]);
+      await db.$client.query("update skill set files_status = 'pending' where id = $1", [id]);
+    };
+    const state = async (id: string) => {
+      const skill = (await call(C, "GET", `/api/skills/${id}`)).json.skill;
+      return [skill.filesStatus, skill.files.length];
+    };
+    const respond = (status: number) =>
+      createMarket({ fetch: (async () => new Response("x", { status })) as never });
+
+    // An outage (GitHub answers 502) stops the run and changes nothing.
+    await reset();
+    expect(await state(id)).toEqual(["pending", 0]);
+    expect((await library.backfillFiles(respond(502))).stopped).toBe(true);
+    expect(await state(id)).toEqual(["pending", 0]);
+
+    // The repository is gone: closed without files, so it is not tried again at every start.
+    await library.backfillFiles(respond(404));
+    expect(await state(id)).toEqual(["complete", 0]);
+
+    // GitHub answers: the files come back and the skill text is untouched.
+    await reset();
+    const before = (await call(C, "GET", `/api/skills/${id}`)).json.skill;
+    expect((await library.backfillFiles(market)).stopped).toBe(false);
+    expect(await state(id)).toEqual(["complete", 3]);
+    const after = (await call(C, "GET", `/api/skills/${id}`)).json.skill;
+    expect([after.version, after.updatedAt]).toEqual([before.version, before.updatedAt]);
+  });
+  test("a skill from GitHub is screened for credential formats only and may be up to 64 KB; one written here is screened for any secret", async () => {
+    const bot = await makeBot(B, "Long reader");
+    const done = await call(B, "POST", "/api/skills/market/install", {
+      source: "files/long",
+      paths: ["long/SKILL.md"],
+      sha: SHA6,
+      botIds: [bot.id],
+    });
+    expect(done.json.failed).toEqual([]);
+    const id = done.json.installed[0].id as string;
+
+    // The owner can still edit it, with the same text in it.
+    const body = (await call(B, "GET", `/api/skills/${id}`)).json.skill.body as string;
+    const edited = await call(B, "PATCH", `/api/skills/${id}`, {
+      expectedVersion: 1,
+      body: `${body}\nmore`,
+    });
+    expect(edited.status).toBe(200);
+    // A credential format is refused even there.
+    expect(
+      (
+        await call(B, "PATCH", `/api/skills/${id}`, {
+          expectedVersion: 2,
+          body: "key sk-test-0123456789abcdefghij",
+        })
+      ).json.error.code,
+    ).toBe("SECRET_REJECTED");
+
+    // A skill written here keeps the strict check, and the 64 KB limit.
+    const mine = { name: "hand-written", description: "d", body: "token = os.environ['TOKEN']" };
+    expect((await call(B, "POST", "/api/skills", mine)).json.error.code).toBe("SECRET_REJECTED");
+    expect(
+      (await call(B, "POST", "/api/skills", { ...mine, body: "x".repeat(64_001) })).status,
+    ).toBe(400);
+    const big = await call(B, "POST", "/api/skills", { ...mine, body: "x".repeat(64_000) });
+    expect(big.status).toBe(201);
+
+    // A skill over the old 24 KB limit still reaches the run of a Claude Code bot.
+    await call(B, "PUT", `/api/skills/${big.json.skill.id}/bots`, { botIds: [bot.id] });
+    const conv = (await call(B, "POST", "/api/conversations", { botId: bot.id })).json.conversation
+      .id;
+    await call(B, "POST", `/api/conversations/${conv}/messages`, {
+      content: "Go",
+      skills: ["hand-written"],
+    });
+    expect(installed["skills/hand-written/SKILL.md"].length).toBeGreaterThan(64_000);
+    expect(installed["skills/long/SKILL.md"]).toContain("more");
   });
 });

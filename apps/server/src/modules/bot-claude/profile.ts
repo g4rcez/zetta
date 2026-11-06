@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { PLUGIN_NAME, type ClaudePreset, type AgentProfile } from "../chat/harness";
+import {
+  PLUGIN_NAME,
+  type ClaudePreset,
+  type AgentProfile,
+  type PluginFile,
+} from "../chat/harness";
 import { BUILTIN_SKILLS } from "./builtin-skills";
 
 /** What people can pick for "what may this bot do with code". `auto` keeps the original behaviour, so a bot without settings is unchanged. */
@@ -45,12 +50,16 @@ export const presetsFor = (harness: string) =>
 export const LIMITS = {
   assetsPerKind: 25,
   body: 24_000,
+  /** SKILL.md of a library skill (modules/skills). Claude Code reads it from the plugin dir; Hermes leaves out what does not fit its prompt budget. */
+  librarySkillBody: 64_000,
   description: 600,
   prompt: 8_000,
   rules: 40,
   rule: 200,
   budgetCents: 10_000,
 } as const;
+/** What a skill folder may hold besides its SKILL.md. Over any limit the skill cannot be used with its files (a partial folder would fail at run time). */
+export const FILE_LIMITS = { file: 1_000_000, count: 200, total: 4_000_000 } as const;
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export const MODELS = ["inherit", "sonnet", "opus", "haiku"] as const;
 
@@ -91,16 +100,18 @@ export const skillName = z
     /^[a-z][a-z0-9-]{0,62}$/,
     "Use lowercase letters, numbers and dashes, starting with a letter.",
   );
+export const instructions = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1, "The instructions are empty.")
+    .max(max)
+    .refine(noInjection, "Shell commands inside the instructions (!`...`) are not allowed.");
 export const assetInput = z.strictObject({
   kind: z.enum(["skill", "agent"]),
   name: skillName,
   description: z.string().trim().min(1, "Say when this should be used.").max(LIMITS.description),
-  body: z
-    .string()
-    .trim()
-    .min(1, "The instructions are empty.")
-    .max(LIMITS.body)
-    .refine(noInjection, "Shell commands inside the instructions (!`...`) are not allowed."),
+  body: instructions(LIMITS.body),
   tools: z
     .array(toolName)
     .max(30)
@@ -110,6 +121,8 @@ export const assetInput = z.strictObject({
   enabled: z.boolean().default(true),
 });
 export type AssetInput = z.infer<typeof assetInput>;
+/** A skill from the library goes through the same checks as one written for a bot, with the larger body limit. */
+export const libraryAssetInput = assetInput.extend({ body: instructions(LIMITS.librarySkillBody) });
 export type Asset = AssetInput & { id: string };
 export type Config = ConfigInput;
 
@@ -172,7 +185,8 @@ export function withBuiltinSkills(profile: AgentProfile | undefined): AgentProfi
 
 /**
  * Puts the skills the person picked first, so the Hermes size budget (`hermesPrompt`) never drops one of them.
- * Bodies are capped at LIMITS.body, so two picks always fit; five maximum-size picks can still pass the budget.
+ * A bot's own skill is capped at LIMITS.body, so two picks always fit. A library skill may be larger than the whole budget
+ * (LIMITS.librarySkillBody): then Hermes leaves it out even when picked, and Claude Code, which reads it from the plugin dir, is unaffected.
  */
 export function pickedFirst(
   profile: AgentProfile,
@@ -183,12 +197,26 @@ export function pickedFirst(
   return { ...profile, skills: [...profile.skills].sort((a, b) => rank(a.name) - rank(b.name)) };
 }
 
-/** The profile a run uses, or undefined when the bot has no settings at all (the harness then behaves exactly as before). */
+/** A file next to a library skill's SKILL.md (a script, a reference, an image). `path` is relative to the skill folder. */
+export type SkillExtra = { path: string; content: Uint8Array; mode: "file" | "executable" };
+
+/**
+ * The profile a run uses, or undefined when the bot has no settings at all (the harness then behaves exactly as before).
+ * `extras` are the other files of the skills in `assets`, by skill name; they go into the plugin dir beside each SKILL.md.
+ */
 export function buildProfile(
   config: Config | undefined,
   assets: readonly Asset[],
+  extras: ReadonlyMap<string, readonly SkillExtra[]> = new Map(),
 ): AgentProfile | undefined {
-  const files = pluginFiles(assets);
+  const files: Record<string, PluginFile> = pluginFiles(assets);
+  // A file system that ignores case (macOS) would let `skill.md` replace the SKILL.md written above.
+  const extrasOf = (name: string) =>
+    (extras.get(name) ?? []).filter((f) => f.path.toLowerCase() !== "skill.md");
+  for (const a of assets)
+    if (a.enabled && a.kind === "skill")
+      for (const f of extrasOf(a.name))
+        files[`skills/${a.name}/${f.path}`] = { bytes: f.content, mode: f.mode };
   if (!config && !Object.keys(files).length) return undefined;
   const c = config ?? DEFAULT_CONFIG;
   return {
@@ -201,6 +229,11 @@ export function buildProfile(
     files,
     skills: assets
       .filter((a) => a.enabled && a.kind === "skill")
-      .map((a) => ({ name: a.name, description: a.description, body: a.body })),
+      .map((a) => ({
+        name: a.name,
+        description: a.description,
+        body: a.body,
+        ...(extrasOf(a.name).length ? { files: extrasOf(a.name).map((f) => f.path) } : {}),
+      })),
   };
 }

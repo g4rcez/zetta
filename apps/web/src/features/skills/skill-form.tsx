@@ -75,7 +75,7 @@ export function SkillForm({
         title="Instructions"
         required
         rows={8}
-        maxLength={24000}
+        maxLength={64000}
         value={draft.body}
         onChange={(body) => set({ body })}
         placeholder="1) List the merged pull requests. 2) Group them by area. 3) Write one line each."

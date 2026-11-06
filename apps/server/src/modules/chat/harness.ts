@@ -56,8 +56,10 @@ const CLAUDE_GUARDED = [
 /**
  * How one bot runs Claude Code or Hermes (see modules/bot-claude). `auto` is the original behaviour: git on the host, any command in the container.
  * `files` carries the bot's own skills and sub-agents as a plugin directory (relative path -> content), written fresh for each run.
+ * A file is text, or bytes with a mode (a skill's scripts keep their executable bit and its images stay binary).
  */
 export type ClaudePreset = "auto" | "read_only" | "edit" | "git" | "full";
+export type PluginFile = string | { bytes: Uint8Array; mode: "file" | "executable" };
 export type AgentProfile = {
   preset: ClaudePreset;
   allow: string[];
@@ -65,8 +67,9 @@ export type AgentProfile = {
   appendPrompt: string;
   effort: string | null;
   maxBudgetCents: number | null;
-  files: Record<string, string>;
-  skills: { name: string; description: string; body: string }[];
+  files: Record<string, PluginFile>;
+  /** `files`: paths of the skill's other files, relative to its folder in the plugin dir (Hermes is told where to read them). */
+  skills: { name: string; description: string; body: string; files?: string[] }[];
 };
 export const PLUGIN_NAME = "zetta-bot";
 
@@ -229,21 +232,32 @@ export const hermesToolsets = (code?: CodeMode, profile?: AgentProfile) => {
   const denied = new Set(profile?.deny ?? []);
   return [...new Set(sets)].filter((t) => !denied.has(t));
 };
-/** Extra instructions and installed skills, as text in front of the prompt. Skills past the size budget are left out rather than cut mid-way. */
-export function hermesPrompt(prompt: string, profile?: AgentProfile) {
+/**
+ * Extra instructions and installed skills, as text in front of the prompt. Skills past the size budget are left out rather than cut mid-way.
+ * `pluginDir` is where the run sees the plugin directory; give it only when Hermes has file tools, then each skill that has other files
+ * (scripts, references) says where they are.
+ */
+export function hermesPrompt(prompt: string, profile?: AgentProfile, pluginDir?: string) {
   if (!profile) return prompt;
   const parts: string[] = [];
   if (profile.appendPrompt) parts.push(`Extra instructions:\n${profile.appendPrompt}`);
+  const text = (k: AgentProfile["skills"][number]) => {
+    const where =
+      pluginDir && k.files?.length
+        ? `\nOther files of this skill are in ${pluginDir}/skills/${k.name}/ (read them with your file tools): ${k.files.join(", ")}`
+        : "";
+    return `## Skill: ${k.name}\nUse when: ${k.description}\n${k.body}${where}`;
+  };
   let used = 0;
   const skills = profile.skills.filter((k) => {
-    const n = k.body.length + k.description.length + k.name.length + 32;
+    const n = text(k).length + 32;
     if (used + n > HERMES_SKILLS_BUDGET) return false;
     used += n;
     return true;
   });
   if (skills.length)
     parts.push(
-      `Skills you have. When a request matches a skill's "Use when", follow it:\n${skills.map((k) => `## Skill: ${k.name}\nUse when: ${k.description}\n${k.body}`).join("\n\n")}`,
+      `Skills you have. When a request matches a skill's "Use when", follow it:\n${skills.map(text).join("\n\n")}`,
     );
   return parts.length ? `${parts.join("\n\n")}\n\n${prompt}` : prompt;
 }
@@ -252,6 +266,7 @@ const hermesArgs = (
   model: string | null,
   code?: CodeMode,
   profile?: AgentProfile,
+  pluginDir?: string,
 ) => {
   // Without `-t` Hermes turns on every toolset, so a profile that denies everything still names one harmless toolset.
   const sets = hermesToolsets(code, profile);
@@ -263,7 +278,7 @@ const hermesArgs = (
     ...(model ? ["-m", model] : []),
     ...(profile?.effort ? ["--reasoning", profile.effort] : []),
     "-z",
-    hermesPrompt(prompt, profile),
+    hermesPrompt(prompt, profile, sets.includes("file") ? pluginDir : undefined),
   ];
 };
 
@@ -286,7 +301,7 @@ export const harnessCommands: Record<
   ) => string[]
 > = {
   "claude-code": (p, m, c, x) =>
-    claudeArgs(p, m, c, x?.profile, x?.pluginDir, x?.session, x?.github, x?.mcp),
+    claudeArgs(p, m, c, x?.profile, x?.pluginDir, x?.session, x?.github, x?.mcp, x?.system),
   codex: (p, m, c) => [
     "codex",
     "exec",
@@ -315,7 +330,7 @@ export const harnessCommands: Record<
     ...(m ? ["--model", m] : []),
     p,
   ],
-  hermes: (p, m, c, x) => hermesArgs(p, m, c, x?.profile),
+  hermes: (p, m, c, x) => hermesArgs(p, m, c, x?.profile, x?.pluginDir),
   // dsh headless answers one task in plain text and exits. It has no documented model flag.
   deepseek: (p) => ["dsh", "headless", p],
 };
@@ -331,7 +346,7 @@ export function codeDir(
 export const claudePluginRoot = () =>
   process.env.ZETTA_CLAUDE_PLUGIN_ROOT || join(homedir(), ".zetta", "claude-plugins");
 /** Writes the profile's files into a fresh private directory and returns it. Paths that would leave the directory are refused. */
-export async function writePluginDir(files: Record<string, string>, root = claudePluginRoot()) {
+export async function writePluginDir(files: Record<string, PluginFile>, root = claudePluginRoot()) {
   await mkdir(root, { recursive: true, mode: 0o700 });
   const dir = await mkdtemp(join(root, "run-"));
   await chmod(dir, 0o700).catch(() => {});
@@ -342,7 +357,10 @@ export async function writePluginDir(files: Record<string, string>, root = claud
       throw new HarnessError("failed");
     }
     await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-    await writeFile(target, content, { mode: 0o600 });
+    const text = typeof content === "string";
+    await writeFile(target, text ? content : content.bytes, {
+      mode: !text && content.mode === "executable" ? 0o700 : 0o600,
+    });
   }
   return dir;
 }
@@ -866,7 +884,13 @@ export const streamCli: StreamCli = async function* ({
       await chmod(codePath, 0o700).catch(() => {});
       cwd = codePath;
     } else cwd = await mkdtemp(join(tmpdir(), "zetta-run-"));
-    if (harness === "claude-code" && profile && Object.keys(profile.files).length)
+    // Hermes reads the skill text from its prompt; it needs the directory only for the other files of a skill.
+    if (
+      profile &&
+      Object.keys(profile.files).length &&
+      (harness === "claude-code" ||
+        (harness === "hermes" && profile.skills.some((k) => k.files?.length)))
+    )
       pluginDir = await writePluginDir(profile.files);
     const imagePaths: string[] = [];
     if (images?.length) {

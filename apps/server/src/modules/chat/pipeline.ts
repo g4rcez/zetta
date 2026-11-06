@@ -231,7 +231,10 @@ export function createTurnRunner(
     if (b.harness !== "claude-code" && b.harness !== "hermes") return {};
     // Every run also gets Zetta's own skills (recover from failure, long work, verify), next to the owner's. The chief gets the same
     // permissions as any other bot.
-    const profile = pickedFirst(withBuiltinSkills(await botClaude.profile(b.id)), picked);
+    const profile = pickedFirst(
+      withBuiltinSkills(await botClaude.profile(b.id, { withFiles: true })),
+      picked,
+    );
     if (b.harness !== "claude-code" || !picked?.length) return { profile };
     // A host skill the person picked is given to Claude Code as an installed skill, never as prompt text.
     const mine = new Set(profile.skills.map((k) => k.name));

@@ -33,6 +33,14 @@ Every filter of a page lives in the address, because the URL is the real state: 
 - Test it by mounting the page with a search value and no clicks (see `features/skills/skills-page.test.tsx`).
 - Not moved yet, so do it when you touch them: the filters in `features/studio/plugins.tsx`, `features/discussions/discussions-page.tsx` and the sidebar search.
 
+## Icons without a visible title (`apps/web`)
+
+An icon that carries meaning and has no visible title next to it must show its name in a Popover. Use `<IconHint label="Chief"><CrownIcon /></IconHint>` from `@zetta/ui/components/icon-hint`; it opens on hover, on keyboard focus and on tap. Put the name in `label` and remove `aria-label` from the icon: `IconHint` sets the accessible name once and hides the icon.
+
+- Exception: a decorative icon next to visible text (`aria-hidden="true"`) needs no Popover.
+- Never place `IconHint` inside a link or a button (nested interaction). There, keep the `aria-label`.
+- Open point: an icon-only button that acts on click keeps `Tooltip` + `aria-label` until the owner decides.
+
 ## Public-repo hygiene
 
 This repository is public. Never commit personal data, secrets, or machine-specific data.

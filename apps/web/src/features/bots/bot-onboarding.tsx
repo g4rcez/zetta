@@ -44,6 +44,7 @@ import { FRESH_INTERVIEW, type InterviewState } from "./interview-flow";
 import { InstructionsInterview } from "./instructions-interview";
 import { Response } from "../chat/response";
 import { Alert } from "@g4rcez/components/alert";
+import { IconHint } from "@zetta/ui/components/icon-hint";
 
 export type Draft = {
   name: string;
@@ -1003,12 +1004,13 @@ function ReviewCard({ checks }: { checks: ReturnType<typeof reviewInstructions> 
         {checks.map((c) => (
           <li key={c.id} className="flex gap-2">
             {c.ok ? (
-              <CheckIcon className="mt-0.5 size-4 shrink-0 text-success" aria-label="Good" />
+              <IconHint label="Good">
+                <CheckIcon className="mt-0.5 size-4 shrink-0 text-success" />
+              </IconHint>
             ) : (
-              <WarningCircleIcon
-                className="mt-0.5 size-4 shrink-0 text-warn"
-                aria-label="Needs work"
-              />
+              <IconHint label="Needs work">
+                <WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-warn" />
+              </IconHint>
             )}
             <div className="min-w-0">
               <p className={c.ok ? "text-muted-foreground" : "font-medium"}>{c.label}</p>

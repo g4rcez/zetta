@@ -131,27 +131,44 @@ const openHint = async (button: Element) => {
   return text;
 };
 
-for (const railMode of ["collapsed", "expanded"] as const) {
-  test(`while the agents are paused, the ${railMode} sidebar names the pause button "Resume agents" in its hint`, async () => {
-    const { host, unmount } = await mountShell("left", { railMode, agentsState: "paused" });
-    const button = host.querySelector('aside button[aria-pressed="true"]')!;
-    expect(button.getAttribute("aria-label")).toBe("Resume agents");
-    expect(button.hasAttribute("title")).toBe(false);
-    expect(button.hasAttribute("aria-haspopup")).toBe(false);
-    expect(await openHint(button)).toBe("Resume agents");
-    await unmount();
+test('while the agents are paused, the collapsed sidebar names the pause button "Resume agents" in its hint', async () => {
+  const { host, unmount } = await mountShell("left", {
+    railMode: "collapsed",
+    agentsState: "paused",
   });
-}
+  const button = host.querySelector('aside button[aria-pressed="true"]')!;
+  expect(button.getAttribute("aria-label")).toBe("Resume agents");
+  expect(button.hasAttribute("title")).toBe(false);
+  expect(button.hasAttribute("aria-haspopup")).toBe(false);
+  expect(await openHint(button)).toBe("Resume agents");
+  await unmount();
+});
 
-test('while the agents run, the expanded sidebar hints "Pause agents" and "Collapse sidebar", with no native title', async () => {
+test('while the agents are paused, the expanded sidebar names the pause button "Resume agents" in its hint', async () => {
+  const { host, unmount } = await mountShell("left", {
+    railMode: "expanded",
+    agentsState: "paused",
+  });
+  const button = host.querySelector('aside button[aria-pressed="true"]')!;
+  expect(button.getAttribute("aria-label")).toBe("Resume agents");
+  expect(button.hasAttribute("title")).toBe(false);
+  expect(button.hasAttribute("aria-haspopup")).toBe(false);
+  expect(await openHint(button)).toBe("Resume agents");
+  await unmount();
+});
+
+test('while the agents run, the expanded sidebar hints "Pause agents" on the pause button, with no native title', async () => {
   const { host, unmount } = await mountShell("left");
-  for (const [name, hint] of [
-    ["Pause agents", "Pause agents"],
-    ["Collapse sidebar", "Collapse sidebar"],
-  ]) {
-    const button = host.querySelector(`aside button[aria-label="${name}"]`)!;
-    expect(button.hasAttribute("title")).toBe(false);
-    expect(await openHint(button)).toBe(hint);
-  }
+  const button = host.querySelector('aside button[aria-label="Pause agents"]')!;
+  expect(button.hasAttribute("title")).toBe(false);
+  expect(await openHint(button)).toBe("Pause agents");
+  await unmount();
+});
+
+test('while the agents run, the expanded sidebar hints "Collapse sidebar" on the collapse button, with no native title', async () => {
+  const { host, unmount } = await mountShell("left");
+  const button = host.querySelector('aside button[aria-label="Collapse sidebar"]')!;
+  expect(button.hasAttribute("title")).toBe(false);
+  expect(await openHint(button)).toBe("Collapse sidebar");
   await unmount();
 });

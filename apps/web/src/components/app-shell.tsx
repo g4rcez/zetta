@@ -77,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             resizer={false}
             overlayClickClose
             className={`${DRAWER_FLUSH} [--var-modal-drawer-max-inline-size:85vw] bg-sidebar text-sm text-sidebar-foreground`}
-            bodyClassName="w-72 max-w-[85vw]"
+            bodyClassName="w-[75vw] sm:w-sm"
           >
             <AppSidebar mobile onSearch={search} />
           </Modal>

@@ -13,6 +13,17 @@ export type SidebarSide = (typeof SIDEBAR_SIDES)[number];
 export const TIME_FORMATS = ["24h", "12h"] as const;
 export type TimeFormat = (typeof TIME_FORMATS)[number];
 
+/** How a person confirms an approval that widens what a bot may do: press and hold the button, or just click it. */
+export const APPROVAL_MODES = ["hold", "click"] as const;
+export type ApprovalMode = (typeof APPROVAL_MODES)[number];
+
+/**
+ * Whether this person's agents may start work. `paused` is the "pause everything" switch: no turn, routine, goal loop, room wake-up or
+ * outside message starts, and running turns are stopped. Nothing is lost: routines wait, and everything goes on after `running` returns.
+ */
+export const AGENTS_STATES = ["running", "paused"] as const;
+export type AgentsState = (typeof AGENTS_STATES)[number];
+
 export const THEMES = [
   "system",
   "light",
@@ -44,6 +55,11 @@ export const userPreference = zetta.table("user_preference", {
   listWidth: integer("list_width").default(SIDEBAR_LIMITS.listWidth.fallback).notNull(),
   /** How the web app shows the hour of day. */
   timeFormat: text("time_format", { enum: TIME_FORMATS }).default("24h").notNull(),
+  /** `hold`: an approval that widens a bot's powers needs a press and hold. `click`: one click is enough. The server only labels a card
+   * `hold` or `click` by its kind; this choice is the person's, and the web app applies it. */
+  approvalMode: text("approval_mode", { enum: APPROVAL_MODES }).default("hold").notNull(),
+  /** `paused` stops every agent of this person from starting work (see AGENTS_STATES). */
+  agentsState: text("agents_state", { enum: AGENTS_STATES }).default("running").notNull(),
   /** The color theme. Null = the person never chose one on their account: the device keeps its own choice. */
   theme: text("theme", { enum: THEMES }),
   /** The main color, `#rrggbb` in lower case. Null = the theme's own main color. */

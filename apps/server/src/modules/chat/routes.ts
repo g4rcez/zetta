@@ -12,6 +12,7 @@ import {
   ModelError,
   NotReadyError,
   OnboardingError,
+  ProposalExpiredError,
   ProposalSelectionError,
   TurnBusyError,
   type ChatEvent,
@@ -361,6 +362,8 @@ export function createChatRoutes(
   }
   function mapError(error: unknown) {
     if (error instanceof AccessError) return accessFail(error);
+    if (error instanceof ProposalExpiredError)
+      return fail(410, "PROPOSAL_EXPIRED", "This request expired. Ask the bot to send it again.");
     if (error instanceof ProposalSelectionError)
       return fail(400, "CHOOSE_SKILLS", "Choose at least one of the skills the bot offered.");
     if (error instanceof NotReadyError)

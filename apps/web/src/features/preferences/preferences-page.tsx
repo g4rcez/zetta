@@ -1,5 +1,6 @@
 import { SlidersHorizontalIcon } from "@phosphor-icons/react";
 
+import { ApprovalsSection } from "./approvals-section";
 import { DisplaySection } from "./display-section";
 import { ProfileSection } from "./profile-section";
 import { SecuritySection } from "./security-section";
@@ -27,6 +28,7 @@ export function PreferencesPage() {
         <ProfileSection />
         <SecuritySection />
         <DisplaySection />
+        <ApprovalsSection />
         <SessionsSection />
       </div>
     </div>

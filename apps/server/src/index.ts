@@ -164,6 +164,8 @@ if (runsWork) {
     void loopServices.driver.tick().catch(() => {});
     void chatServices.chat.drainQueues().catch(() => {});
     void chatServices.chat.flagSlowTurns().catch(() => {});
+    void chatServices.chat.expireProposals().catch(() => {});
+    void featureServices.features.routineTriggers.tick().catch(() => {});
   }, 30_000);
 
   // Generations that were running when the previous process died are marked interrupted (never silently "complete").

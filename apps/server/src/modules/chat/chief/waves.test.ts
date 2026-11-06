@@ -42,3 +42,13 @@ test("a title or plan cannot close the data fence or open a tool block", () => {
 test("nothing decided shows none", () => {
   expect(wavePrompt({ n: 1, next: "go", cards: [] })).toContain("Approved: none.");
 });
+
+test("an expired card is told apart from a rejected one", () => {
+  const prompt = wavePrompt({
+    n: 1,
+    next: "open the room",
+    cards: [{ title: "New team role Analyst", status: "expired" }],
+  });
+  expect(prompt).toContain("Rejected: none.");
+  expect(prompt).toContain("send it again only if it is still needed): New team role Analyst.");
+});

@@ -76,6 +76,7 @@ suite("layout preferences against compose postgres", () => {
       railWidth: 224,
       listWidth: 320,
       timeFormat: "24h",
+      approvalMode: "hold",
       theme: null,
       primaryColor: null,
       botOrder: [],
@@ -91,6 +92,7 @@ suite("layout preferences against compose postgres", () => {
       railWidth: 260,
       listWidth: 400,
       timeFormat: "24h",
+      approvalMode: "hold",
       theme: null,
       primaryColor: null,
       botOrder: [],
@@ -101,6 +103,7 @@ suite("layout preferences against compose postgres", () => {
       railWidth: 224,
       listWidth: 320,
       timeFormat: "24h",
+      approvalMode: "hold",
       theme: null,
       primaryColor: null,
       botOrder: [],
@@ -118,6 +121,24 @@ suite("layout preferences against compose postgres", () => {
     expect(await read(ids[0]!)).toMatchObject({ timeFormat: "12h", railWidth: 260 });
     expect(await read(ids[1]!)).toMatchObject({ timeFormat: "24h" });
     expect((await call(ids[1]!, "PATCH", { timeFormat: "am/pm" })).status).toBe(400);
+  });
+  test("approving by press and hold is the default; a person can choose a plain click, for themselves only", async () => {
+    expect(await read(ids[1]!)).toMatchObject({ approvalMode: "hold" });
+    expect((await call(ids[0]!, "PATCH", { approvalMode: "click" })).status).toBe(200);
+    expect(await read(ids[0]!)).toMatchObject({ approvalMode: "click", railWidth: 260 });
+    expect(await read(ids[1]!)).toMatchObject({ approvalMode: "hold" });
+    expect((await call(ids[0]!, "PATCH", { approvalMode: "hold" })).status).toBe(200);
+    expect(await read(ids[0]!)).toMatchObject({ approvalMode: "hold" });
+    expect((await call(ids[1]!, "PATCH", { approvalMode: "tap" })).status).toBe(400);
+  });
+  test("the sidebar is on the left by default; a person can move it to the right, for themselves only", async () => {
+    expect(await read(ids[1]!)).toMatchObject({ sidebarSide: "left" });
+    expect((await call(ids[0]!, "PATCH", { sidebarSide: "right" })).status).toBe(200);
+    expect(await read(ids[0]!)).toMatchObject({ sidebarSide: "right", railWidth: 260 });
+    expect(await read(ids[1]!)).toMatchObject({ sidebarSide: "left" });
+    expect((await call(ids[0]!, "PATCH", { sidebarSide: "left" })).status).toBe(200);
+    expect(await read(ids[0]!)).toMatchObject({ sidebarSide: "left" });
+    expect((await call(ids[1]!, "PATCH", { sidebarSide: "top" })).status).toBe(400);
   });
   test("a theme and a main color are kept for that person only, and null resets them", async () => {
     expect((await call(ids[0]!, "PATCH", { theme: "nord", primaryColor: "#AA3300" })).status).toBe(

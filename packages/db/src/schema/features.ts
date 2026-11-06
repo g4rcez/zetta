@@ -337,6 +337,7 @@ export const configProposal = zetta.table(
         "create_memory_item",
         "install_skills",
         "chief_action",
+        "bot_action",
       ],
     })
       .default("config")
@@ -347,13 +348,21 @@ export const configProposal = zetta.table(
     baseHash: text("base_hash").notNull().default(""),
     patch: jsonb("patch").notNull(),
     diff: jsonb("diff").notNull(),
-    status: text("status", { enum: ["pending", "approved", "rejected", "stale"] })
+    // "expired": nobody decided before `expiresAt`; the sweeper closes it like a rejection, and it can no longer be approved.
+    status: text("status", { enum: ["pending", "approved", "rejected", "stale", "expired"] })
       .default("pending")
       .notNull(),
     createdAt: created(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    /** A card nobody decides stops waiting after this. Set by the database, so every place that creates a card gets the same deadline. */
+    expiresAt: timestamp("expires_at", { withTimezone: true })
+      .default(sql`now() + interval '24 hours'`)
+      .notNull(),
   },
   (t) => [
+    index("config_proposal_pending_expiry_idx")
+      .on(t.expiresAt)
+      .where(sql`${t.status} = 'pending'`),
     index("config_proposal_proposed_by_bot_id_idx").on(t.proposedByBotId),
     index("config_proposal_bot_id_idx").on(t.botId),
     index("config_proposal_owner_idx").on(t.ownerUserId, t.status),

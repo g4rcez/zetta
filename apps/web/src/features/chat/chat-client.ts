@@ -99,7 +99,9 @@ export type ProposalKind =
   | "create_memory_item"
   | "install_skills"
   /** A change to the user's setup that the chief asked for (routines, teams, bots, styles...). `patch.title` says what. */
-  | "chief_action";
+  | "chief_action"
+  /** Changes a bot asked for after it read outside content (task moves, Agenda, team setup); `diff` lists them. */
+  | "bot_action";
 export type Proposal = {
   id: string;
   /** The bot the change is about. */
@@ -109,6 +111,10 @@ export type Proposal = {
   kind?: ProposalKind;
   diff: { field: string; from: unknown; to: unknown }[];
   patch?: Record<string, unknown>;
+  /** When nobody has decided by then, the server closes the card. */
+  expiresAt?: string;
+  /** `hold`: the card widens what a bot may do, so Approve is a press-and-hold. Absent on old servers: a click. */
+  confirm?: "hold" | "click";
 };
 export type DecisionResult = {
   status: "approved" | "rejected" | "stale";

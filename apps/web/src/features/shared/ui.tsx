@@ -1,6 +1,13 @@
 import { CheckIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { Button, Modal as LibModal } from "@/components/ui";
 import { Skeleton } from "@g4rcez/components";
 
@@ -170,6 +177,90 @@ export function ConfirmButton({
         Cancel
       </Button>
     </span>
+  );
+}
+
+/**
+ * Press and hold to confirm, for actions that widen what a bot may do. A click or a tap alone does nothing; the fill shows the hold and
+ * letting go early starts over. The keyboard works the same way (hold Space or Enter). Reduced motion keeps the hold but hides the fill.
+ */
+export function HoldButton({
+  children,
+  onHold,
+  holdMs = 1200,
+  disabled,
+  variant = "default",
+  size = "sm",
+}: {
+  children: ReactNode;
+  onHold: () => void;
+  holdMs?: number;
+  disabled?: boolean;
+  variant?: ComponentProps<typeof Button>["variant"];
+  size?: ComponentProps<typeof Button>["size"];
+}) {
+  const [holding, setHolding] = useState(false);
+  const [early, setEarly] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const start = () => {
+    if (disabled || timer.current) return;
+    setEarly(false);
+    setHolding(true);
+    timer.current = setTimeout(() => {
+      timer.current = undefined;
+      setHolding(false);
+      onHold();
+    }, holdMs);
+  };
+  const stop = () => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = undefined;
+      setEarly(true);
+    }
+    setHolding(false);
+  };
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const isKey = (key: string) => key === " " || key === "Enter";
+  return (
+    <>
+      <Button
+        type="button"
+        size={size}
+        variant={variant}
+        disabled={disabled}
+        className="relative select-none overflow-hidden [-webkit-touch-callout:none]"
+        onPointerDown={start}
+        onPointerUp={stop}
+        onPointerLeave={stop}
+        onPointerCancel={stop}
+        onContextMenu={(e) => e.preventDefault()}
+        onKeyDown={(e) => {
+          if (!isKey(e.key)) return;
+          e.preventDefault();
+          if (!e.repeat) start();
+        }}
+        onKeyUp={(e) => {
+          if (!isKey(e.key)) return;
+          e.preventDefault();
+          stop();
+        }}
+        onBlur={stop}
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 origin-left bg-black/25 motion-reduce:hidden"
+          style={{
+            transform: holding ? "scaleX(1)" : "scaleX(0)",
+            transition: holding ? `transform ${holdMs}ms linear` : "transform 150ms ease-out",
+          }}
+        />
+        <span className="relative">{children}</span>
+      </Button>
+      <span role="status" className="sr-only">
+        {early ? "Keep holding to confirm." : ""}
+      </span>
+    </>
   );
 }
 

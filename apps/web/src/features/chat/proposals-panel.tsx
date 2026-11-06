@@ -5,6 +5,9 @@ import { ShieldWarningIcon } from "@phosphor-icons/react";
 
 import { BotIdentity } from "@/components/bot-identity";
 import { Button } from "@/components/ui";
+import { useApprovalMode } from "../preferences/preferences";
+import { HoldButton } from "../shared/ui";
+import { relativeTime } from "../shared/relative-time";
 import { FAILURE_TEXT } from "../skills/skills-api";
 import {
   SkillsInstallCard,
@@ -15,6 +18,7 @@ import { draftFromProposal } from "../memory/draft";
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@zetta/ui/components/item";
 
 import {
+  ApiError,
   chatClient,
   errorMessage,
   type Bot,
@@ -37,6 +41,7 @@ const KIND_LABEL: Record<ProposalKind, string> = {
   create_memory_item: "Save to memory",
   install_skills: "Install skills",
   chief_action: "Change your setup",
+  bot_action: "Let the bot make these changes",
 };
 const FIELD_LABEL: Record<string, string> = {
   outputStyle: "Output style",
@@ -152,6 +157,7 @@ export function ProposalsPanel({
   notify: (m: ReactNode) => void;
 }) {
   const qc = useQueryClient();
+  const approvalMode = useApprovalMode();
   const [busy, setBusy] = useState<string>();
   const [errors, setErrors] = useState<Record<string, string>>({});
   async function decide(p: Proposal, approve: boolean, choice?: SkillsChoice) {
@@ -195,7 +201,11 @@ export function ProposalsPanel({
         onBotsChanged();
       }
     } catch (e) {
-      setErrors((m) => ({ ...m, [p.id]: errorMessage(e) }));
+      // Past its deadline the server closed the card: it leaves the list, with the reason.
+      if (e instanceof ApiError && e.code === "PROPOSAL_EXPIRED") {
+        onResolved(p.id);
+        notify(e.message);
+      } else setErrors((m) => ({ ...m, [p.id]: errorMessage(e) }));
     } finally {
       setBusy(undefined);
     }
@@ -223,6 +233,25 @@ export function ProposalsPanel({
           );
         const creating = p.kind && p.kind !== "config";
         const draft = p.kind === "create_memory_item" ? draftFromProposal(p.patch) : undefined;
+        const approveLabel =
+          p.kind === "team_goals"
+            ? "Start goals"
+            : p.kind === "start_loop"
+              ? "Start loop"
+              : p.kind === "discussion_brief"
+                ? "Approve this brief"
+                : p.kind === "chief_action"
+                  ? "Approve"
+                  : p.kind === "create_memory_item"
+                    ? "Save it"
+                    : p.kind === "open_discussion"
+                      ? "Approve and open"
+                      : p.kind === "bot_permission" || p.kind === "bot_action"
+                        ? "Approve"
+                        : creating
+                          ? "Approve and create"
+                          : "Approve";
+        const left = p.expiresAt ? relativeTime(p.expiresAt) : "";
         return (
           <Item
             key={p.id}
@@ -270,6 +299,11 @@ export function ProposalsPanel({
                   </li>
                 ))}
               </ul>
+              {left && (
+                <p className="text-xs text-muted-foreground">
+                  Expires {left === "now" ? "any moment" : left}
+                </p>
+              )}
               {draft && (
                 <Link
                   to="/memory-draft"
@@ -298,28 +332,25 @@ export function ProposalsPanel({
                     ? "Deny"
                     : "Reject"}
               </Button>
-              <Button
-                size="sm"
-                variant="success"
-                disabled={busy === p.id}
-                onClick={() => void decide(p, true)}
-              >
-                {p.kind === "team_goals"
-                  ? "Start goals"
-                  : p.kind === "start_loop"
-                    ? "Start loop"
-                    : p.kind === "discussion_brief"
-                      ? "Approve this brief"
-                      : p.kind === "chief_action"
-                        ? "Approve"
-                        : p.kind === "create_memory_item"
-                          ? "Save it"
-                          : p.kind === "open_discussion"
-                            ? "Approve and open"
-                            : creating
-                              ? "Approve and create"
-                              : "Approve"}
-              </Button>
+              {p.confirm === "hold" && approvalMode === "hold" ? (
+                <HoldButton
+                  size="sm"
+                  variant="success"
+                  disabled={busy === p.id}
+                  onHold={() => void decide(p, true)}
+                >
+                  Hold to approve
+                </HoldButton>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="success"
+                  disabled={busy === p.id}
+                  onClick={() => void decide(p, true)}
+                >
+                  {approveLabel}
+                </Button>
+              )}
             </ItemActions>
           </Item>
         );

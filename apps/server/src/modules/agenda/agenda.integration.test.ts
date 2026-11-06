@@ -648,7 +648,7 @@ suite("Agenda against compose postgres", () => {
     });
     expect(added!.startAt.toISOString()).toBe("2026-12-02T12:00:00.000Z");
 
-    // After a tool result (outside content), a write is ignored but the list read went through.
+    // After a tool result (outside content), a write waits for an Approve card but the list read went through.
     script = [
       '```zetta:agenda\n{"action":"list","from":"2026-12-01T00:00:00Z","to":"2026-12-03T00:00:00Z"}\n```',
       '```zetta:agenda\n{"action":"add","title":"Injected","start":"2026-12-02T10:00:00Z"}\n```',
@@ -663,6 +663,39 @@ suite("Agenda against compose postgres", () => {
         .from(agendaItem)
         .where(and(eq(agendaItem.ownerUserId, A), eq(agendaItem.title, "Injected"))),
     ).toHaveLength(0);
+    const injected = async () =>
+      db
+        .select()
+        .from(agendaItem)
+        .where(and(eq(agendaItem.ownerUserId, A), eq(agendaItem.title, "Injected")));
+    const cards = (
+      (await call(A, "GET", "/api/proposals")).json.proposals as {
+        id: string;
+        kind: string;
+        diff: { field: string; from: null; to: string }[];
+      }[]
+    ).filter((p) => p.kind === "bot_action");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.diff).toEqual([{ field: "agenda", from: null, to: "agenda add" }]);
+    // Reject: nothing happens. A second ask and Approve: the item exists.
+    await call(A, "POST", `/api/proposals/${cards[0]!.id}/decision`, { approve: false });
+    expect(await injected()).toHaveLength(0);
+    script = [
+      '```zetta:agenda\n{"action":"list","from":"2026-12-01T00:00:00Z","to":"2026-12-03T00:00:00Z"}\n```',
+      '```zetta:agenda\n{"action":"add","title":"Injected","start":"2026-12-02T10:00:00Z"}\n```',
+    ];
+    await call(A, "POST", `/api/conversations/${conv}/messages`, { content: "and again" });
+    const [again] = (
+      (await call(A, "GET", "/api/proposals")).json.proposals as {
+        id: string;
+        kind: string;
+      }[]
+    ).filter((p) => p.kind === "bot_action");
+    expect(
+      (await call(A, "POST", `/api/proposals/${again!.id}/decision`, { approve: true })).json
+        .status,
+    ).toBe("approved");
+    expect(await injected()).toHaveLength(1);
     expect(
       (await db.select().from(agendaSync).where(eq(agendaSync.ownerUserId, A)))[0]?.enabled,
     ).toBe(true);

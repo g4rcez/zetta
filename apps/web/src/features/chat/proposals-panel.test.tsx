@@ -113,3 +113,81 @@ test("a change the chief asks for says what it is, shows each old and new value,
   ]);
   await unmount();
 });
+
+test("a card that widens what a bot may do asks for a hold, and says when it expires", async () => {
+  const { host, unmount } = await render({
+    id: "p4",
+    kind: "bot_permission",
+    botId: TARGET,
+    proposedByBotId: ASKER,
+    diff: [{ field: "allow", from: null, to: "Bash(rm:*)" }],
+    confirm: "hold",
+    expiresAt: new Date(Date.now() + 3.5 * 3_600_000).toISOString(),
+  });
+  expect([...host.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
+    "Deny",
+    "Hold to approve",
+  ]);
+  expect(host.textContent).toContain("Expires in 3h");
+  await unmount();
+});
+
+test("a card that asks for a click keeps its Approve button", async () => {
+  const { host, unmount } = await render({
+    id: "p5",
+    kind: "chief_action",
+    botId: null,
+    proposedByBotId: TARGET,
+    diff: [{ field: "bot", from: null, to: "Treinador" }],
+    patch: { title: "Change Treinador" },
+    confirm: "click",
+  });
+  expect([...host.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
+    "Reject",
+    "Approve",
+  ]);
+  await unmount();
+});
+
+test("a person who chose to just click gets an Approve button on a card that asks for a hold", async () => {
+  const { PreferencesProvider } = await import("../preferences/preferences");
+  const realFetch = globalThis.fetch;
+  // The preference comes from the account, as the provider reads it.
+  globalThis.fetch = (async () =>
+    Response.json({ preferences: { approvalMode: "click" } })) as unknown as typeof fetch;
+  const { ProposalsPanel } = await import("./proposals-panel");
+  const host = win.document.createElement("div");
+  win.document.body.append(host);
+  const root = createRoot(host as unknown as Element);
+  await act(async () =>
+    root.render(
+      withQuery(
+        <PreferencesProvider>
+          <ProposalsPanel
+            proposals={[
+              {
+                id: "p6",
+                kind: "bot_permission",
+                botId: TARGET,
+                proposedByBotId: ASKER,
+                diff: [{ field: "allow", from: null, to: "Bash(rm:*)" }],
+                confirm: "hold",
+              } as never,
+            ]}
+            bots={bots as never}
+            notify={() => {}}
+            onResolved={() => {}}
+            onBotsChanged={() => {}}
+          />
+        </PreferencesProvider>,
+      ),
+    ),
+  );
+  await act(async () => void (await new Promise((r) => setTimeout(r, 40))));
+  expect([...host.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
+    "Deny",
+    "Approve",
+  ]);
+  globalThis.fetch = realFetch;
+  await act(async () => root.unmount());
+});

@@ -16,6 +16,7 @@ export type Preferences = {
   railWidth: number;
   listWidth: number;
   timeFormat: TimeFormat;
+  approvalMode: ApprovalMode;
   theme: Theme | null;
   primaryColor: string | null;
   botOrder: string[];
@@ -29,6 +30,7 @@ export function createPreferenceStore(db: Database) {
     railWidth: r.railWidth,
     listWidth: r.listWidth,
     timeFormat: r.timeFormat,
+    approvalMode: r.approvalMode,
     theme: r.theme,
     primaryColor: r.primaryColor,
     botOrder: r.botOrder,
@@ -48,6 +50,7 @@ export function createPreferenceStore(db: Database) {
             railWidth: SIDEBAR_LIMITS.railWidth.fallback,
             listWidth: SIDEBAR_LIMITS.listWidth.fallback,
             timeFormat: "24h",
+            approvalMode: "hold",
             theme: null,
             primaryColor: null,
             botOrder: [],

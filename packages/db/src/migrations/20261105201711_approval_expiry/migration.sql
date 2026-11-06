@@ -1,0 +1,2 @@
+ALTER TABLE "zetta"."config_proposal" ADD COLUMN "expires_at" timestamp with time zone DEFAULT now() + interval '24 hours' NOT NULL;--> statement-breakpoint
+CREATE INDEX "config_proposal_pending_expiry_idx" ON "zetta"."config_proposal" ("expires_at") WHERE "status" = 'pending';

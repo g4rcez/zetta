@@ -209,6 +209,19 @@ export class ProposalSelectionError extends Error {
     super("PROPOSAL_SELECTION");
   }
 }
+/** The person decided a card after its deadline. The card is closed as expired, and nothing was applied. */
+export class ProposalExpiredError extends Error {
+  constructor() {
+    super("PROPOSAL_EXPIRED");
+  }
+}
+/**
+ * Cards that widen what a bot may do, or act outside the chat, ask for a press-and-hold instead of a click. The rest are one click.
+ * `bot_permission` always holds: its rule list is free text from the chief, not only the guarded rm/sudo/mail rules.
+ */
+const HOLD_KINDS = new Set(["bot_permission", "bot_action", "create_vm"]);
+export const confirmFor = (kind: string): "hold" | "click" =>
+  HOLD_KINDS.has(kind) ? "hold" : "click";
 export class NotReadyError extends Error {
   constructor() {
     super("BOT_NOT_READY");
@@ -715,6 +728,53 @@ export function createChatService(
         `${field}: not saved yet, the user has to approve it. Do not send it again.`,
       );
     };
+    /** Writes the bot asked for after reading outside content: one card holds them all; Approve runs them in order (see `bot_action` in approve). */
+    const deferred: ToolCall[] = [];
+    const askToRun = async (calls: ToolCall[]) => {
+      const [row] = await db
+        .insert(configProposal)
+        .values({
+          ownerUserId: actor.userId,
+          kind: "bot_action",
+          botId: who.id,
+          proposedByBotId: who.id,
+          baseVersion: 0,
+          patch: {
+            botId: who.id,
+            conversationId: conversationId ?? null,
+            scope: {
+              policy: scope?.policy ?? "default",
+              discussionId: scope?.discussionId,
+              origin: scope?.origin,
+              loopId: scope?.loopId,
+            },
+            calls,
+          },
+          diff: calls.map((c) => ({ field: c.kind, from: null, to: describeCall(c) })),
+        })
+        .returning();
+      await raiseAttention(db, actor.userId, {
+        botId: who.id,
+        title: `${who.name} asks to make ${calls.length} change${calls.length === 1 ? "" : "s"}`,
+        detail: calls.map(describeCall).join("; ").slice(0, 300),
+        nextAction: "Open Chat and approve or reject the changes.",
+        resultLink: approvalLink(who, scope),
+        source: "bot",
+        sourceKey: `proposal:${row!.id}`,
+      });
+      receipts.push({
+        kind: "proposal",
+        id: row!.id,
+        text: `${calls.length} change${calls.length === 1 ? "" : "s"}`,
+      });
+      proposals.push(row!.id);
+      notes.push(
+        `🔐 ${who.name} wants to make ${calls.length} change${calls.length === 1 ? "" : "s"}. They wait for your approval because it read outside content first.`,
+      );
+      browserResults.push(
+        `${calls.map(describeCall).join("; ")}: waiting for the user's approval on a card; nothing has changed yet. Do not send them again and do not say they are done.`,
+      );
+    };
     /** Someone else holds the computer: the turn pauses (existing hand-off note explains it), the bot is told why. */
     const held = (what: string, e: unknown, note: string) => {
       handoff = true;
@@ -742,6 +802,11 @@ export function createChatService(
         notes.push(
           `🛡 ${who.name} tried ${c.kind === "plugin" ? `${c.args.plugin}.${c.args.tool}` : c.kind}, which is not allowed while answering outside people.`,
         );
+        continue;
+      }
+      // After outside content these writes would apply at once: they wait for one card instead (see askToRun).
+      if (writes === "ask" && scope?.tainted && defersWrite(c, who)) {
+        deferred.push(c);
         continue;
       }
       if (c.kind === "discussion") {
@@ -2454,6 +2519,7 @@ export function createChatService(
         }
       }
     }
+    if (deferred.length && !signal?.aborted) await askToRun(deferred);
     // Nothing here deletes data, so a proposal from a turn that read no outside text applies at once; with outside text in play it stays a card.
     if (writes === "apply" && !scope?.tainted && scope?.policy !== "inbound") {
       const stale = (l: string[], re: RegExp) => {
@@ -3015,6 +3081,18 @@ export function createChatService(
             c.args.action === "checks")) ||
         (c.kind === "artifact" && c.args.path === undefined)
       ));
+  /** The writes that apply at once on a normal turn. After outside content they wait for the user's card; every other write already makes
+   * its own card there (memory, config, routine, workflow, computer, permission and the chief's setup changes). */
+  const defersWrite = (c: ToolCall, who: { kind: string }) =>
+    writes(c) &&
+    (c.kind === "task" ||
+      c.kind === "agenda" ||
+      c.kind === "create_team" ||
+      c.kind === "add_to_team" ||
+      (c.kind === "create_bot" && who.kind === "chief") ||
+      (c.kind === "discussion" && c.args.action === "delete") ||
+      c.kind === "playground" ||
+      (c.kind === "artifact" && c.args.path !== undefined));
   /** A message as the turn context reads it (see `buildHistory`), with the names of its pictures. */
   type HistRow = Pick<
     typeof message.$inferSelect,
@@ -3073,7 +3151,8 @@ export function createChatService(
   /**
    * Tool loop: execute tool calls, feed results back to the same bot (until it answers, gets stuck, or reaches a checkpoint) with the original request and its own draft,
    * the user's per-run env and the cancel signal. Once untrusted content (attachments, files, pages, tool output) is in play, tools that
-   * write persistent state are ignored: injected text cannot teach, reconfigure or create anything.
+   * write persistent state wait for the user's Approve card (see `defersWrite`): injected text cannot teach, reconfigure or create anything
+   * without a click. Outside people (inbound) cannot even ask: those writes are dropped.
    */
   async function finishReply(
     actor: ActiveActor,
@@ -3147,16 +3226,21 @@ export function createChatService(
         if (parsed.plan) ctx.onPlan?.(parsed.plan);
         // After outside content a memory write is not dropped: it becomes an Approve card (see runTools). A `suggest` is still dropped.
         const asksFirst = (c: ToolCall) => c.kind === "memory" && c.args.action !== "suggest";
-        let calls = untrusted
-          ? parsed.calls.filter((c) => !writes(c) || asksFirst(c))
-          : parsed.calls;
+        // Outside people (inbound) cannot make the bot change anything: those writes are dropped. On the user's own turn they wait for a
+        // card (see runTools), except a memory `suggest`, which is still dropped.
+        const dropsNow = (c: ToolCall) =>
+          untrusted &&
+          (ctx.scope?.policy === "inbound"
+            ? writes(c) && !asksFirst(c)
+            : c.kind === "memory" && c.args.action === "suggest");
+        let calls = parsed.calls.filter((c) => !dropsNow(c));
         // A block that does not run is never silent: the user gets a note and the bot is told, so it cannot claim the work was done.
         const dropped: RejectedTool[] = [...parsed.rejected];
         const titleOf = (c: ToolCall): Pick<RejectedTool, "title"> => {
           const title = (c.args as { title?: unknown }).title;
           return typeof title === "string" ? { title: title.slice(0, 80) } : {};
         };
-        for (const c of parsed.calls.filter((c) => untrusted && writes(c) && !asksFirst(c)))
+        for (const c of parsed.calls.filter(dropsNow))
           dropped.push({
             kind: c.kind,
             ...titleOf(c),
@@ -4312,7 +4396,7 @@ export function createChatService(
       next: w.next,
       cards: cards.map((c) => ({
         title: cardTitle(c),
-        status: c.status as "approved" | "rejected" | "stale",
+        status: c.status as "approved" | "rejected" | "stale" | "expired",
       })),
     });
     // A turn that is just ending still holds the chat: try again soon, then back off to 5 s.
@@ -4337,6 +4421,43 @@ export function createChatService(
       .from(configProposal)
       .where(and(eq(configProposal.id, proposalId), eq(configProposal.ownerUserId, actor.userId)));
     if (row?.wave) await continueWaveKey(actor, row.wave);
+  }
+
+  /**
+   * Closes pending cards past their deadline the way a rejection does: audit row, attention card, a declined discussion brief, pages told,
+   * and a team-build step that waited on the card goes on. Runs on the worker tick; `id` closes the one card a person just tried to decide.
+   * Nothing waits on a card (a harness never blocks on it), so closing it only changes the card.
+   */
+  async function expireProposals(id?: string) {
+    const rows = await db
+      .update(configProposal)
+      .set({ status: "expired", decidedAt: new Date() })
+      .where(
+        and(
+          eq(configProposal.status, "pending"),
+          lt(configProposal.expiresAt, new Date()),
+          id ? eq(configProposal.id, id) : undefined,
+        ),
+      )
+      .returning();
+    for (const p of rows) {
+      await audit(db, p.ownerUserId, {
+        kind: "approval",
+        subjectId: p.id,
+        outcome: "denied",
+        detail: "expired",
+      }).catch(() => {});
+      await closeAttentionKey(db, p.ownerUserId, `proposal:${p.id}`, "cancelled").catch(() => {});
+      events.publish([p.ownerUserId], topics.proposals, topics.attention, topics.botStatus);
+      const actor = await deps.backgroundActor?.(p.ownerUserId).catch(() => undefined);
+      if (!actor) continue;
+      if (p.kind === "discussion_brief")
+        await deps.discussions
+          ?.declineBrief(actor, p.patch as Record<string, unknown>)
+          .catch(() => undefined);
+      void continueWave(actor, p.id).catch(() => {});
+    }
+    return rows.length;
   }
 
   /** Runs again, in the bot's own chat, the request it stopped on while it waited for the Chief (a permission or an answer to a blocker). */
@@ -4378,6 +4499,7 @@ export function createChatService(
     routing,
     notifyTask,
     continueWave,
+    expireProposals,
     harnessReadiness: (userId: string) => harnessReadiness(db, userId),
     async ensureChief(actor: ActiveActor) {
       const chief = async () =>
@@ -4789,20 +4911,24 @@ export function createChatService(
       return row;
     },
     /** Pending proposals. With `botId`, only what that bot asked (a proposal with no asking bot belongs to the bot it targets). */
-    listProposals: (actor: ActiveActor, botId?: string) =>
-      db
-        .select()
-        .from(configProposal)
-        .where(
-          and(
-            eq(configProposal.ownerUserId, actor.userId),
-            eq(configProposal.status, "pending"),
-            botId
-              ? sql`coalesce(${configProposal.proposedByBotId}, ${configProposal.botId}) = ${botId}`
-              : undefined,
-          ),
-        )
-        .orderBy(asc(configProposal.createdAt)),
+    listProposals: async (actor: ActiveActor, botId?: string) =>
+      (
+        await db
+          .select()
+          .from(configProposal)
+          .where(
+            and(
+              eq(configProposal.ownerUserId, actor.userId),
+              eq(configProposal.status, "pending"),
+              // Past its deadline a card is gone from the list at once, before the sweeper closes it.
+              gt(configProposal.expiresAt, new Date()),
+              botId
+                ? sql`coalesce(${configProposal.proposedByBotId}, ${configProposal.botId}) = ${botId}`
+                : undefined,
+            ),
+          )
+          .orderBy(asc(configProposal.createdAt))
+      ).map((p) => ({ ...p, confirm: confirmFor(p.kind) })),
     /** Applying is one transaction: the pending proposal is claimed, the bot must still match the version AND content hash the diff was
      * computed against (else stale), the revision is recorded, and a concurrent second approval finds nothing pending. */
     async decideProposal(
@@ -4811,6 +4937,22 @@ export function createChatService(
       approve: boolean,
       selection?: { paths: string[]; target: "bot" | "all" | "picked" },
     ) {
+      // Past its deadline a card is closed as expired, also when the sweeper has not reached it yet, and nothing is applied.
+      const [overdue] = await db
+        .select({ id: configProposal.id })
+        .from(configProposal)
+        .where(
+          and(
+            eq(configProposal.id, id),
+            eq(configProposal.ownerUserId, actor.userId),
+            eq(configProposal.status, "pending"),
+            lt(configProposal.expiresAt, new Date()),
+          ),
+        );
+      if (overdue) {
+        await expireProposals(id);
+        throw new ProposalExpiredError();
+      }
       // Skills: the user's choice must be among the skills the bot offered, and is checked before the proposal is claimed.
       if (approve) {
         const [peek] = await db
@@ -4861,6 +5003,7 @@ export function createChatService(
               eq(configProposal.id, id),
               eq(configProposal.ownerUserId, actor.userId),
               eq(configProposal.status, "pending"),
+              gt(configProposal.expiresAt, new Date()),
             ),
           )
           .returning();
@@ -5041,6 +5184,36 @@ export function createChatService(
             bots: botIds.length,
             skippedBots: wanted.length - botIds.length,
           };
+        } else if (res.create.kind === "bot_action") {
+          // The user's click is the consent: the held writes run now, in order, with the same checks as on any turn.
+          const w = a as {
+            botId: string;
+            conversationId: string | null;
+            scope: Pick<ToolScope, "policy" | "discussionId" | "origin" | "loopId">;
+            calls: ToolCall[];
+          };
+          const [who] = await db
+            .select()
+            .from(bot)
+            .where(
+              and(eq(bot.id, w.botId), eq(bot.ownerUserId, actor.userId), eq(bot.archived, false)),
+            );
+          if (!who) throw new Error("bot unavailable");
+          const ran = await runTools(
+            actor,
+            who,
+            w.calls.filter((c) => defersWrite(c, who)),
+            [],
+            [],
+            {},
+            undefined,
+            undefined,
+            undefined,
+            w.conversationId ?? undefined,
+            { ...w.scope, policy: "default", tainted: true },
+            "apply",
+          );
+          chiefNote = ran.notes.join("\n") || undefined;
         } else if (res.create.kind === CHIEF_PROPOSAL) {
           chiefNote = (await chief.apply(actor, a as ChiefPatch)) ?? undefined;
         } else if (res.create.kind === "create_vm") {
@@ -5685,6 +5858,7 @@ export function createChatService(
       let homeConfidence: number | undefined;
       // Home Assistant fast path: Laya spots a simple home command and Home Assistant's own Assist engine answers it, with no AI call.
       // Only the owner's plain, direct turns qualify: never outside people, loop steps, attachments or @mentions.
+      // A decision-only bot never calls an AI and this path does not either, so it may use it, unless routing already chose a fixed reply.
       if (
         route.action === "respond" &&
         !decisionOnly &&

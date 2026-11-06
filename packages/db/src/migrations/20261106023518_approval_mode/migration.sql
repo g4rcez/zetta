@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."user_preference" ADD COLUMN "approval_mode" text DEFAULT 'hold' NOT NULL;

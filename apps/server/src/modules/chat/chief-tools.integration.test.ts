@@ -575,6 +575,9 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
     expect(prompts.join("\n")).not.toContain("are ignored");
     const cards = await pending(A);
     expect(cards.map((p) => p.kind)).toEqual(["chief_action"]);
+    // User A is shared by the whole suite: decline the card so later tests start without pending cards.
+    await call(A, "POST", `/api/proposals/${cards[0]!.id}/decision`, { approve: false });
+    expect(await pending(A)).toEqual([]);
   });
 
   test("one user's chief cannot see or change another user's setup", async () => {

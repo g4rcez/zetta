@@ -35,6 +35,8 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
+import { UserAvatar } from "@/components/user-avatar";
+import { parseAvatar } from "@zetta/core/avatar";
 
 import { errorMessage, isImage, type Bot } from "./chat-client";
 import { chatQueries } from "./chat-queries";
@@ -50,7 +52,13 @@ import { stripToolFences } from "./tool-fences";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime, formatTime, type TimeFormat } from "@/features/preferences/time-format";
 
-export type Author = { name: string; bot?: Bot | undefined; image?: string | null | undefined };
+export type Author = {
+  name: string;
+  bot?: Bot | undefined;
+  image?: string | null | undefined;
+  /** The person's chosen avatar (preset or photo), as stored in their preferences. */
+  avatar?: unknown;
+};
 
 const time = (iso: string, f: TimeFormat) =>
   formatTime(iso, f, { hour: "numeric", minute: "2-digit" });
@@ -462,6 +470,8 @@ export const MessageRow = memo(function MessageRow({
         <MessageAvatar className="mt-0.5 size-8 min-w-8 self-start rounded-lg bg-transparent group-has-data-[slot=message-footer]/message:translate-y-0">
           {author.bot ? (
             <BotAvatar bot={author.bot} size={32} square />
+          ) : parseAvatar(author.avatar) ? (
+            <UserAvatar name={author.name} avatar={author.avatar} size={32} />
           ) : (
             <Avatar className="size-8 rounded-full after:rounded-full">
               {author.image && <AvatarImage src={author.image} alt="" className="rounded-full" />}

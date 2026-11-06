@@ -39,7 +39,7 @@ export function useZettaChat({
 }: {
   conversationId?: string;
   parentMessageId?: string;
-  /** Changes when another turn starts in the same conversation (group discussions), so the stream reattaches to it. */ attachKey?: string;
+  /** The room turn this chat follows (group discussions). A room mounts one chat per running turn and the key stays fixed for its life: a key that changes drops the live rows of the turn followed before. */ attachKey?: string;
   onSettled: (conversationId: string) => Promise<void> | void;
   onProposal?: () => void;
   /** The bot published a file during this turn. */

@@ -19,6 +19,7 @@ import {
   SidebarSimpleIcon,
   UsersIcon,
 } from "@phosphor-icons/react";
+import { useProfile } from "@/features/preferences/profile-api";
 import { BotsContext } from "@/components/bot-identity";
 import { LatestChatsContext } from "@/components/bot-tag";
 import { motion, useReducedMotion } from "motion/react";
@@ -283,7 +284,8 @@ export function ChatPage() {
   );
   const current = bots.find((b) => b.id === botId);
   const meName = session?.user.name ?? "You",
-    meImage = session?.user.image;
+    meImage = session?.user.image,
+    meAvatar = useProfile(Boolean(session)).data?.avatar;
   // Author objects are cached so memoized rows see the same one on every render; the cache resets when its inputs change.
   const authorOf = useMemo(() => {
     const cache = new Map<string, Author>();
@@ -298,14 +300,15 @@ export function ChatPage() {
         const { label, chatName } = row.meta.inbound;
         return once(`in:${label}:${chatName}`, () => ({ name: `${label} · ${chatName}` }));
       }
-      if (row.role === "user") return once("me", () => ({ name: meName, image: meImage }));
+      if (row.role === "user")
+        return once("me", () => ({ name: meName, image: meImage, avatar: meAvatar }));
       const id = row.botId ?? botId;
       return once(`bot:${id}:${row.botName ?? ""}`, () => {
         const bot = bots.find((b) => b.id === id);
         return { name: bot?.name ?? row.botName ?? "Bot", bot };
       });
     };
-  }, [bots, botId, meName, meImage]);
+  }, [bots, botId, meName, meImage, meAvatar]);
 
   const rows = useMemo(() => transcriptRows(saved, main.rows), [saved, main.rows]);
   const thread = threadId

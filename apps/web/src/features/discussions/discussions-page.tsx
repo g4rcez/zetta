@@ -44,6 +44,7 @@ import {
 } from "@zetta/ui/components/dropdown-menu";
 import { cn } from "@zetta/ui/lib/utils";
 import { Button, Checkbox, Input, Modal, Select } from "@/components/ui";
+import { useProfile } from "@/features/preferences/profile-api";
 import { authClient } from "@/lib/auth-client";
 
 import { chatClient, errorMessage, type Bot, type Message } from "../chat/chat-client";
@@ -77,6 +78,7 @@ import {
 } from "./discussions-api";
 import { teamsApi } from "../teams/teams-api";
 import { roomLabel, roomStatus } from "./rooms";
+import { busyIds, coveredRoom, nextFollowed, type StreamState } from "./room-streams";
 // The flow canvas (@xyflow/react) is about 40 kB gzip plus its CSS and only a team room's canvas view draws it.
 const RoomCanvas = lazy(() => import("./room-canvas").then((m) => ({ default: m.RoomCanvas })));
 import { StepsDrawer } from "./steps-drawer";
@@ -96,6 +98,43 @@ const botOf = (bots: Bot[], id: string) => bots.find((b) => b.id === id) ?? { id
 /** Turns of a room that are running or waiting to run. */
 const turnsOpen = (d: DiscussionDetail | undefined) =>
   d?.turns.filter((t) => t.status === "running" || t.status === "queued").length ?? 0;
+/**
+ * Follows one turn of the room live. It renders nothing: it hands its rows to the page. The turn never changes for the life of
+ * this component, so the stream of another turn that starts or ends cannot wipe these rows.
+ */
+function TurnStream({
+  conversationId,
+  turnId,
+  tick,
+  onState,
+  onSettled,
+  onProposal,
+}: {
+  conversationId: string;
+  turnId: string;
+  /** Changes on every poll of the room. */
+  tick: number;
+  onState: (turnId: string, state: StreamState) => void;
+  onSettled: () => Promise<void>;
+  onProposal: () => Promise<void>;
+}) {
+  const chat = useZettaChat({
+    conversationId,
+    attachKey: turnId,
+    onSettled,
+    onProposal: () => void onProposal(),
+  });
+  const { busy, rows, error, clearError } = chat;
+  useEffect(
+    () => onState(turnId, { busy, rows, error, clearError }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [turnId, busy, rows, error],
+  );
+  // The turn is marked running a moment before its stream exists, so the first attach can find nothing: try again on each poll.
+  const attach = chat.reattach;
+  useEffect(() => attach(), [tick]);
+  return null;
+}
 const NO_MESSAGES: Message[] = [];
 const NO_STEPS: { turns: RoomTurn[]; tasks: RoomTask[] } = { turns: [], tasks: [] };
 
@@ -398,7 +437,7 @@ function RoomView({
   const [details, setDetails] = useDetailsPanel();
   const fail = useCallback((e: unknown) => toast.error(errorMessage(e)), []);
   // Detail, messages and proposals are three cache entries that load side by side. They poll together: fast while a turn runs,
-  // slow when the live stream already shows the only running turn (`covered`), which also reloads the room when it settles.
+  // slow when live streams already show every open turn (`covered`); each stream reloads the room when its turn settles.
   const covered = useRef(false);
   const detailQuery = useQuery({
     ...discussionsQueries.detail(id),
@@ -458,22 +497,53 @@ function RoomView({
     () => void load(),
   );
 
-  const runningTurn = detail?.turns.find((t) => t.status === "running");
   // A team member who does not own the room reads it. The live stream is the owner's, so a member sees new messages by polling.
   const readOnly = !!detail && !!session && detail.owner.userId !== session.user.id;
-  // The turn that is running streams here live, exactly like a chat reply, and the page reloads when it settles.
-  const liveChat = useZettaChat({
-    conversationId: detail?.discussion.conversationId,
-    attachKey: readOnly ? undefined : runningTurn?.id,
-    onSettled: async () => {
-      await load();
-      onChanged();
-    },
-    onProposal: () => void load(),
-  });
-  // The stream follows one turn. With two bots answering at once, the other one reaches the page only through the poll.
-  covered.current = !readOnly && liveChat.busy && turnsOpen(detail) <= 1;
-  const me: Author = { name: session?.user.name ?? "You", image: session?.user.image };
+  // Every running turn streams here live, exactly like a chat reply, each in its own stream: a turn that starts or ends never
+  // touches the live row of another one. The page reloads when a turn settles.
+  const [followed, setFollowed] = useState<string[]>([]);
+  const [streams, setStreams] = useState<ReadonlyMap<string, StreamState>>(() => new Map());
+  useEffect(() => {
+    if (readOnly) return;
+    setFollowed((prev) => nextFollowed(prev, detail?.turns ?? [], streams));
+  }, [readOnly, detail?.turns, streams]);
+  const onStreamState = useCallback((turnId: string, next: StreamState) => {
+    setStreams((prev) => {
+      const old = prev.get(turnId);
+      if (old && old.busy === next.busy && old.rows === next.rows && old.error === next.error)
+        return prev;
+      return new Map(prev).set(turnId, next);
+    });
+  }, []);
+  // A stream that is no longer followed has nothing more to show.
+  useEffect(() => {
+    setStreams((prev) => {
+      const gone = [...prev.keys()].filter((k) => !followed.includes(k));
+      if (!gone.length) return prev;
+      const next = new Map(prev);
+      for (const k of gone) next.delete(k);
+      return next;
+    });
+  }, [followed]);
+  const onTurnSettled = useCallback(async () => {
+    await load();
+    onChanged();
+  }, [load, onChanged]);
+  const liveRows = useMemo(
+    () => followed.flatMap((turnId) => streams.get(turnId)?.rows ?? []),
+    [followed, streams],
+  );
+  const streamBusy = busyIds(streams).length > 0;
+  const streamError = [...streams.values()].find((s) => s.error);
+  // When every open turn has its own live stream, the poll only has to catch the end; otherwise it carries what the streams miss.
+  covered.current = !readOnly && coveredRoom(detail?.turns ?? [], streams);
+  const runningTurns = detail?.turns.filter((t) => t.status === "running") ?? [];
+  const meAvatar = useProfile(Boolean(session)).data?.avatar;
+  const me: Author = {
+    name: session?.user.name ?? "You",
+    image: session?.user.image,
+    avatar: meAvatar,
+  };
   const authorOf = useCallback(
     (row: Row): Author => {
       if (row.role === "user") return readOnly && detail ? { name: detail.owner.name } : me;
@@ -482,9 +552,9 @@ function RoomView({
       return { name: bot?.name ?? row.botName ?? "Bot", bot };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [bots, session?.user.name, session?.user.image, readOnly, detail?.owner.name],
+    [bots, session?.user.name, session?.user.image, meAvatar, readOnly, detail?.owner.name],
   );
-  const rows = useMemo(() => transcriptRows(messages, liveChat.rows), [messages, liveChat.rows]);
+  const rows = useMemo(() => transcriptRows(messages, liveRows), [messages, liveRows]);
 
   // The message the next post replies to. It belongs to one room, so it goes when the room changes.
   const [quoting, setQuoting] = useState<Row>();
@@ -531,11 +601,25 @@ function RoomView({
     // Gates every control that writes: a closed room, or a team member who only reads it.
     isClosed = closed(d.status) || readOnly,
     roomTeam = d.teamId ? teams.find((t) => t.id === d.teamId) : undefined;
-  const running = detail.turns.find((t) => t.status === "running");
   const names = new Map(detail.members.map((m) => [m.botId, m.name]));
+  // Running turns whose stream is not open (past the cap, or not attached yet) reach the page only through the poll.
+  const unstreamed = runningTurns.filter((t) => !streams.get(t.id)?.busy);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
+      {!readOnly &&
+        conversationId &&
+        followed.map((turnId) => (
+          <TurnStream
+            key={turnId}
+            conversationId={conversationId}
+            turnId={turnId}
+            tick={detailQuery.dataUpdatedAt}
+            onState={onStreamState}
+            onSettled={onTurnSettled}
+            onProposal={load}
+          />
+        ))}
       <section aria-label="Transcript" className="flex min-h-0 min-w-0 flex-1 flex-col">
         <PageHeader
           title={roomLabel(d)}
@@ -869,7 +953,7 @@ function RoomView({
               rows={rows}
               bots={bots}
               authorOf={authorOf}
-              busy={Boolean(turnsOpen(detail) > 0) || liveChat.busy}
+              busy={turnsOpen(detail) > 0 || streamBusy}
               label="Room transcript"
               threads={false}
               actions={{
@@ -899,9 +983,10 @@ function RoomView({
                 ) : null
               }
               footer={
-                running && !liveChat.busy ? (
+                unstreamed.length ? (
                   <p role="status" className="px-4 py-2 text-xs text-muted-foreground">
-                    {names.get(running.botId) ?? "A bot"} is working…
+                    {unstreamed.map((t) => names.get(t.botId) ?? "A bot").join(", ")}{" "}
+                    {unstreamed.length === 1 ? "is" : "are"} working…
                   </p>
                 ) : null
               }
@@ -916,14 +1001,14 @@ function RoomView({
                   onBotsChanged={() => void load()}
                 />
               )}
-              {liveChat.error && (
-                <Alert theme="danger" onClose={() => liveChat.clearError()}>
-                  <p className="break-words">{errorMessage(liveChat.error)}</p>
+              {streamError?.error && (
+                <Alert theme="danger" onClose={() => streamError.clearError?.()}>
+                  <p className="break-words">{errorMessage(streamError.error)}</p>
                 </Alert>
               )}
-              {running && (
-                <ComputerActivity botId={running.botId} botName={names.get(running.botId)} />
-              )}
+              {runningTurns.map((t) => (
+                <ComputerActivity key={t.id} botId={t.botId} botName={names.get(t.botId)} />
+              ))}
               {readOnly && (
                 <p role="note" className="text-sm text-muted-foreground">
                   You are reading this room as a member of its team. Only {detail.owner.name} can
@@ -1228,7 +1313,7 @@ function NewRoom({
         icon={<HashIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
       />
       <form
-        className="mx-auto min-h-0 w-full max-w-5xl flex-1 space-y-4 overflow-y-auto p-4 md:p-8"
+        className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-6 overflow-y-auto p-4 md:p-8"
         onSubmit={(e) => {
           e.preventDefault();
           void submit(e.currentTarget);
@@ -1269,8 +1354,8 @@ function NewRoom({
           placeholder="Type @ to bring a bot in, e.g. @Dev fix the login crash, then @DaVinci check the screen"
         />
         {!teamId && (
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Bots</legend>
+          <fieldset className="flex flex-col gap-3">
+            <legend className="mb-3 text-sm font-medium">Bots</legend>
             {ready.length === 0 ? (
               <p className="text-xs text-muted-foreground">No ready bots yet.</p>
             ) : (
@@ -1311,7 +1396,7 @@ function NewRoom({
             )}
           </fieldset>
         )}
-        <div className="flex gap-2">
+        <div className="flex gap-3 pt-2">
           <Button type="submit" disabled={busy || (!teamId && picked.length === 0)}>
             Start room
           </Button>

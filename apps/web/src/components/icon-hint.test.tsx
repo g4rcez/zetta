@@ -18,7 +18,7 @@ const render = async () => {
       </IconHint>,
     ),
   );
-  const trigger = host.querySelector('[role="img"]') as unknown as HTMLElement;
+  const trigger = host.querySelector('[aria-label="Chief"]') as unknown as HTMLElement;
   return { trigger, unmount: () => act(async () => root.unmount()) };
 };
 const popup = () => win.document.querySelector('[data-slot="popover-content"]');
@@ -27,6 +27,8 @@ test("the icon has one accessible name and the svg is hidden", async () => {
   const { trigger, unmount } = await render();
   expect(trigger.getAttribute("aria-label")).toBe("Chief");
   expect(trigger.getAttribute("tabindex")).toBe("0");
+  expect(trigger.getAttribute("role")).toBe("button");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
   expect(trigger.querySelector("svg")!.getAttribute("aria-hidden")).toBe("true");
   expect(popup()).toBeNull();
   await unmount();
@@ -36,6 +38,7 @@ test("keyboard focus shows the label and Escape closes it", async () => {
   const { trigger, unmount } = await render();
   await act(async () => trigger.focus());
   expect(popup()?.textContent).toBe("Chief");
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
   await act(async () => {
     win.document.activeElement?.dispatchEvent(
       new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),

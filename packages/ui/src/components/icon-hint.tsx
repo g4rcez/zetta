@@ -13,7 +13,8 @@ type IconHintProps = {
 
 /**
  * Shows the name of an icon that has no visible title. It opens on hover, on keyboard focus and on tap; Escape closes it.
- * The trigger is a focusable `<span role="img">`, not a button, because it does no action: never put it inside a link or a button.
+ * The trigger is a focusable `<span>`. Base UI gives it `role="button"` with `aria-expanded` and `aria-haspopup`, so those attributes are valid;
+ * it opens a hint and does no action, so never put it inside a link or a button.
  */
 export function IconHint({ label, children, side = "top" }: IconHintProps) {
   const [open, setOpen] = React.useState(false);
@@ -24,7 +25,6 @@ export function IconHint({ label, children, side = "top" }: IconHintProps) {
         nativeButton={false}
         render={
           <span
-            role="img"
             tabIndex={0}
             aria-label={label}
             // Focus opens it only for the keyboard: a click also focuses the span and would open it and then close it.

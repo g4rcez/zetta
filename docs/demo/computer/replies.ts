@@ -4,6 +4,7 @@
 // runs the blocks in a reply and then asks again, so one message is several rounds. Placeholders: `{{n:words}}` is the number of the first
 // element on the last screen read that has those words, and `{{vm:Name}}` is the id of the computer with that name.
 
+import { landingRules } from "./landing-replies.ts";
 import { teamRules } from "./team-replies.ts";
 
 export type Rule = { req: string; steps: number; reply: string };
@@ -120,5 +121,5 @@ const computerRules: Rule[] = [
   },
 ];
 
-/** The computer demos and the team demo share one stand-in; their requests do not overlap. */
-export const rules: Rule[] = [...teamRules, ...computerRules];
+/** The computer demos, the team demo and the landing demos share one stand-in; their requests do not overlap. */
+export const rules: Rule[] = [...landingRules, ...teamRules, ...computerRules];

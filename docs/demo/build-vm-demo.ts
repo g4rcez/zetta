@@ -19,6 +19,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { $ } from "bun";
+import { cutFilters, readRecording, segmentLabels, timeline } from "./recording-timeline.ts";
 
 const root = process.argv[2];
 const kind = process.argv[3];
@@ -48,12 +49,6 @@ const ACCENT = "#7dd3fc";
 const GREY = "#a1a1aa";
 const DIM = "#71717a";
 type Line = { text: string; size: number; color?: string };
-type Recording = {
-  ready: number;
-  end: number;
-  events: { t: number; text: string; chip?: string }[];
-  idles: { from: number; to: number }[];
-};
 
 /** Text lines on the dark background, centered. */
 async function card(file: string, lines: Line[]) {
@@ -102,40 +97,11 @@ async function bar(file: string, text: string, chip: string) {
   await $`magick ${args} ${file}`.quiet();
 }
 
-const FAST_MIN = 0.8,
-  FAST_MAX = 2.2;
 /** One recording as an mp4: idle waits sped up, captions in the bar under the page. */
 async function clip(name: string, defaultChip: string) {
   const dir = join(root, name);
-  const rec = (await Bun.file(join(dir, "events.json")).json()) as Recording;
-  const [start, end] = [rec.ready / 1000, rec.end / 1000];
-
-  // Segments of the source time line: normal speed, or sped up where record.ts marked an idle wait.
-  const spans = rec.idles
-    .map((i) => ({ from: Math.max(start, i.from / 1000), to: Math.min(end, i.to / 1000) }))
-    .filter((i) => i.to - i.from > 1.5)
-    .sort((a, b) => a.from - b.from);
-  const segs: { from: number; to: number; speed: number }[] = [];
-  let at = start;
-  for (const s of spans) {
-    if (s.from > at) segs.push({ from: at, to: s.from, speed: 1 });
-    const target = Math.min(FAST_MAX, Math.max(FAST_MIN, (s.to - s.from) / 12));
-    segs.push({ from: s.from, to: s.to, speed: (s.to - s.from) / target });
-    at = s.to;
-  }
-  if (at < end) segs.push({ from: at, to: end, speed: 1 });
-  // Source time -> time in the clip.
-  const starts: number[] = [];
-  let total = 0;
-  for (const s of segs) {
-    starts.push(total);
-    total += (s.to - s.from) / s.speed;
-  }
-  const mapped = (t: number) => {
-    const i = segs.findIndex((s) => t < s.to);
-    if (i < 0) return total;
-    return starts[i]! + (Math.max(t, segs[i]!.from) - segs[i]!.from) / segs[i]!.speed;
-  };
+  const rec = await readRecording(dir);
+  const { start, end, segs, total, mapped } = timeline(rec);
 
   const caps = rec.events.map((e, i) => ({
     file: join(work, `${name}-cap-${i}.png`),
@@ -146,10 +112,8 @@ async function clip(name: string, defaultChip: string) {
   }));
   for (const c of caps) await bar(c.file, c.text, c.chip);
 
-  const cut = segs.map(
-    (s, i) => `[0:v]trim=start=${s.from}:end=${s.to},setpts=(PTS-STARTPTS)/${s.speed}[v${i}]`,
-  );
-  const joined = `${segs.map((_, i) => `[v${i}]`).join("")}concat=n=${segs.length}:v=1:a=0,fps=25,pad=${W}:${H}:0:0:color=${INK}[base]`;
+  const cut = cutFilters(segs);
+  const joined = `${segmentLabels(segs)}concat=n=${segs.length}:v=1:a=0,fps=25,pad=${W}:${H}:0:0:color=${INK}[base]`;
   const over = caps.map(
     (c, i) =>
       `[${i === 0 ? "base" : `o${i - 1}`}][${i + 1}:v]overlay=0:${PAGE_H}:enable='between(t,${c.from.toFixed(3)},${c.to.toFixed(3)})'[o${i}]`,

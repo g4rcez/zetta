@@ -4,6 +4,13 @@
 //   bun docs/demo/computer/record.ts machines   # a second computer (Ubuntu) and a terminal on each
 //   bun docs/demo/computer/record.ts team       # the Chief builds a team: brief, design, three steps of cards, a waiting room
 //
+// The landing page's clips (seed them first: bun docs/demo/computer/seed-landing.ts, on a fresh `stack.sh up`; each one consumes its state):
+//   bun docs/demo/computer/record.ts routines   # activate a routine, run it now, read the bot's reply in its chat
+//   bun docs/demo/computer/record.ts memory     # search the memory, open a note, add a new one
+//   bun docs/demo/computer/record.ts inbox      # "I've seen this" on one item, resolve the other
+//   bun docs/demo/computer/record.ts tasks      # move two cards across the board, open one
+//   bun docs/demo/computer/record.ts chats      # ask the Writer for the newsletter; the reply ends with a question that waits for approval
+//
 // Run `stack.sh up` before each recording (the scripts expect a fresh installation). Output: $DEMO/rec/<name>/raw.webm and events.json
 // (caption times and the waits that build-vm-demo.ts speeds up). The bot's replies come from the stand-in `claude` (no model call).
 import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -11,8 +18,9 @@ import { join } from "node:path";
 import { DEMO, ORIGIN, STATE, loadChromium } from "./lib.ts";
 
 const scenario = process.argv[2];
-if (scenario !== "browse" && scenario !== "machines" && scenario !== "team") {
-  console.error("usage: bun docs/demo/computer/record.ts browse|machines|team");
+const SCENARIOS = ["browse", "machines", "team", "routines", "memory", "inbox", "tasks", "chats"];
+if (!scenario || !SCENARIOS.includes(scenario)) {
+  console.error(`usage: bun docs/demo/computer/record.ts ${SCENARIOS.join("|")}`);
   process.exit(2);
 }
 const SIZE = { width: 1600, height: 1000 };
@@ -23,6 +31,7 @@ mkdirSync(out, { recursive: true });
 const browser = await (await loadChromium()).launch();
 const context = await browser.newContext({
   ignoreHTTPSErrors: true,
+  colorScheme: "light", // every recording is light; seed.ts also sets the account theme
   viewport: SIZE,
   storageState: STATE,
   recordVideo: { dir: out, size: SIZE },
@@ -361,6 +370,141 @@ async function team() {
   await finish(ready);
 }
 
+// ---- the landing page's clips: pages of the real app with the data of seed-landing.ts ----
+
+/** The nearest box around a piece of text that holds the given button (a card of the Inbox, a routine's row). */
+const boxOf = (text: string, button: string) =>
+  page
+    .getByText(text)
+    .first()
+    .locator(`xpath=ancestor::*[.//button[normalize-space()="${button}"]][1]`);
+
+async function routines() {
+  await page.goto(`${ORIGIN}/routines`);
+  await page.getByText("All routines").waitFor();
+  const ready = now();
+  await wait(2200);
+  // The first routine of the list is the Morning briefing, still paused: Activate shows what will happen first.
+  await go(page.getByRole("button", { name: /^Activate/ }).first());
+  await page.getByText("Before you activate").waitFor();
+  await wait(3000);
+  await go(page.getByRole("button", { name: "Activate", exact: true }));
+  await page.getByText("Scheduled").first().waitFor();
+  await wait(1800);
+  await go(page.getByRole("button", { name: "Run now" }).first());
+  log("run now");
+  await wait(2500);
+  await go(page.getByText("Open chat", { exact: true }).first());
+  await idle(() => textMatches("Three things from the sources"));
+  await wait(3500);
+  await finish(ready);
+}
+
+async function memory() {
+  await page.goto(`${ORIGIN}/memory`);
+  const search = page.getByPlaceholder(/Find by title/);
+  await search.waitFor();
+  const note = page.locator('a[href="/memory/newsletter-style"]').locator("visible=true").first();
+  await note.waitFor();
+  const ready = now();
+  await wait(2200);
+  await go(search);
+  await type("newsletter", 110);
+  await wait(2200);
+  await go(note);
+  await page
+    .getByText("The newsletter goes out on Fridays")
+    .locator("visible=true")
+    .first()
+    .waitFor();
+  await wait(3200);
+  await page.goBack();
+  await search.waitFor();
+  await wait(1500);
+  await go(page.getByRole("button", { name: "New item" }));
+  await go(page.getByLabel("Title").first());
+  await type("Sources to trust", 55);
+  await go(page.getByLabel(/How to use it/).first());
+  await type("Use when the Researcher picks sources.", 28);
+  await go(page.locator(".cm-content").last());
+  await type("Official release notes first. Blog posts only when they link to them.", 24);
+  await wait(1200);
+  await go(page.getByRole("button", { name: "Save item" }));
+  await wait(2200);
+  // The search for "newsletter" is still on and the new note does not match it: clear it to see the note in the list.
+  await go(search);
+  await search.fill("");
+  await page.getByText("Sources to trust").locator("visible=true").first().waitFor();
+  await wait(3500);
+  await finish(ready);
+}
+
+async function inbox() {
+  await page.goto(`${ORIGIN}/studio/attention`);
+  await page.getByText("Blocked: GitHub login expired").first().waitFor();
+  const ready = now();
+  await wait(3200);
+  await go(
+    boxOf("Blocked: GitHub login expired", "I've seen this").getByRole("button", {
+      name: "I've seen this",
+    }),
+  );
+  await wait(4000);
+  await go(
+    boxOf("Send the newsletter to the whole team list?", "Resolve").getByRole("button", {
+      name: "Resolve",
+    }),
+  );
+  await wait(4500);
+  await finish(ready);
+}
+
+/** Drags a card of the board by its title into the column with the given heading, in small steps so that the drag handler sees it. */
+async function drag(title: string, column: string) {
+  const card = page.getByText(title, { exact: true }).first();
+  await card.scrollIntoViewIfNeeded();
+  const from = (await card.boundingBox())!;
+  const heading = (await page.getByText(column, { exact: true }).first().boundingBox())!;
+  const x = from.x + from.width / 2;
+  const y = from.y + from.height / 2;
+  await raise();
+  await page.mouse.move(x, y, { steps: 14 });
+  await wait(250);
+  await page.mouse.down();
+  await page.mouse.move(x + 12, y + 12, { steps: 6 });
+  await page.mouse.move(heading.x + 40, heading.y + 160, { steps: 34 });
+  await wait(350);
+  await page.mouse.up();
+  await wait(1600);
+}
+
+async function tasks() {
+  await page.goto(`${ORIGIN}/tasks`);
+  await page.getByText("Review the weekly pull request queue", { exact: true }).waitFor();
+  const ready = now();
+  await wait(2600);
+  await drag("Review the weekly pull request queue", "In progress");
+  await wait(1200);
+  await drag("Send the Friday newsletter", "Done");
+  await wait(1400);
+  await go(page.getByText("Summarize merged pull requests for Monday", { exact: true }).first());
+  await wait(4200);
+  await finish(ready);
+}
+
+async function chats() {
+  await page.goto(`${ORIGIN}/chat`);
+  await page.getByRole("button", { name: "New chat with Writer" }).first().waitFor();
+  await newChat("Writer");
+  const ready = now();
+  await wait(1600);
+  await say("Write the Friday newsletter from this week's updates.");
+  log("sent");
+  await idle(() => textMatches("send it to the whole team list"));
+  await wait(5500);
+  await finish(ready);
+}
+
 async function finish(ready: number) {
   const end = now();
   await context.close();
@@ -375,6 +519,7 @@ async function finish(ready: number) {
   log(`done: ${join(out, "raw.webm")}`);
 }
 
-await (scenario === "browse" ? browse() : scenario === "machines" ? machines() : team()).catch(
-  fail,
-);
+const run = { browse, machines, team, routines, memory, inbox, tasks, chats }[
+  scenario as "browse" | "machines" | "team" | "routines" | "memory" | "inbox" | "tasks" | "chats"
+];
+await run().catch(fail);

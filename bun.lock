@@ -94,7 +94,7 @@
         "@fontsource-variable/fraunces": "^5.3.0",
         "@fontsource-variable/geist": "^5.3.0",
         "@fontsource-variable/geist-mono": "^5.3.0",
-        "@g4rcez/components": "^7.0.5",
+        "@g4rcez/components": "^7.0.6",
         "@json-render/core": "0.21.3",
         "@json-render/react": "0.21.3",
         "@lezer/highlight": "^1.2.5",
@@ -673,7 +673,7 @@
 
     "@fontsource-variable/geist-mono": ["@fontsource-variable/geist-mono@5.3.0", "", {}, "sha512-vBbuwDEo9AkrqADMXOrlAR3DFcJi4/JxeuU43FoiQERnNwsfXNnvxvReZG02cQKmyk4DZkZdBZX3oTDvy2zBAw=="],
 
-    "@g4rcez/components": ["@g4rcez/components@7.0.5", "", { "dependencies": { "@base-ui/react": "1.6.0", "@floating-ui/react": "0.27.20", "@phosphor-icons/react": "2.1.10", "@tiptap/core": "3.32.0", "@tiptap/extension-image": "3.32.0", "@tiptap/extension-list": "3.32.0", "@tiptap/extension-table": "3.32.0", "@tiptap/markdown": "3.32.0", "@tiptap/pm": "3.32.0", "@tiptap/react": "3.32.0", "@tiptap/starter-kit": "3.32.0", "class-variance-authority": "0.7.1", "clsx": "2.1.1", "cn": "0.2.6", "date-fns": "4.4.0", "dompurify": "3.4.17", "linq-arrays": "3.2.5", "marked": "18.1.1", "motion": "12.43.0", "oxc-parser": "0.148.0", "pretty-bytes": "7.1.1", "qs": "6.15.3", "react-dropzone": "19.1.1", "react-use-measure": "2.1.7", "react-virtuoso": "4.18.11", "sidekicker": "1.0.0", "storage-manager-js": "4.2.6-5", "the-mask-input": "3.5.0", "use-sync-external-store": "1.6.0", "use-typed-reducer": "4.3.0", "zod": "3.25.67" }, "peerDependencies": { "react": ">=18", "react-dom": ">=18" }, "bin": { "csscomponents": "bin/csscomponents.mjs" } }, "sha512-3qk7F2AuQEq7+l/UBAJScZpmUiQNaZdPkGWZjSLJjmPZTC+pA0pxVHbWTkbZdAB3Ji1QRdQUzZ3zOJlEmVy/UA=="],
+    "@g4rcez/components": ["@g4rcez/components@7.0.6", "", { "dependencies": { "@base-ui/react": "1.6.0", "@floating-ui/react": "0.27.20", "@phosphor-icons/react": "2.1.10", "@tiptap/core": "3.32.0", "@tiptap/extension-image": "3.32.0", "@tiptap/extension-list": "3.32.0", "@tiptap/extension-table": "3.32.0", "@tiptap/markdown": "3.32.0", "@tiptap/pm": "3.32.0", "@tiptap/react": "3.32.0", "@tiptap/starter-kit": "3.32.0", "class-variance-authority": "0.7.1", "clsx": "2.1.1", "cn": "0.2.6", "date-fns": "4.4.0", "dompurify": "3.4.17", "linq-arrays": "3.2.5", "marked": "18.1.1", "motion": "12.43.0", "oxc-parser": "0.148.0", "pretty-bytes": "7.1.1", "qs": "6.15.3", "react-dropzone": "19.1.1", "react-use-measure": "2.1.7", "react-virtuoso": "4.18.11", "sidekicker": "1.0.0", "storage-manager-js": "4.2.6-5", "the-mask-input": "3.5.0", "use-sync-external-store": "1.6.0", "use-typed-reducer": "4.3.0", "zod": "3.25.67" }, "peerDependencies": { "react": ">=18", "react-dom": ">=18" }, "bin": { "csscomponents": "bin/csscomponents.mjs" } }, "sha512-J+W0n6ZFcYwcPVNpAvjcCe7jsc9OHIkQrsz89DR5HzHxnJWHtU504bteZCJsgk0ftqJ1/u/zp0IAIexbPrVQbQ=="],
 
     "@hono/node-server": ["@hono/node-server@2.1.5", "", { "peerDependencies": { "hono": "^4 || ^5.0.0-0" } }, "sha512-MgP/I06GdvsilDspMk/qmRzpk8LOUStP6jFAbSRi40W09DhoyUn+Mj7eyKICPqeYKybOjVFLVIAQzvu1bfIa7Q=="],
 

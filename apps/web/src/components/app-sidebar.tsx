@@ -6,11 +6,12 @@ import {
   MoonIcon,
   NotePencilIcon,
   PauseIcon,
+  PlayIcon,
   SidebarSimpleIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
-import { Tooltip } from "@g4rcez/components/tooltip";
+import { ActionHint } from "@zetta/ui/components/action-hint";
 import { cn } from "@zetta/ui/lib/utils";
 
 import { appLinks } from "@/components/app-links";
@@ -28,7 +29,12 @@ import {
 } from "@/features/chat/sidebar";
 import { useRooms, useSidebarData } from "@/features/chat/sidebar-data";
 import { groupRooms, roomSignal } from "@/features/discussions/rooms";
-import { SIDEBAR_LIMITS, usePreferences, useSidebarSide } from "@/features/preferences/preferences";
+import {
+  SIDEBAR_LIMITS,
+  useAgentsState,
+  usePreferences,
+  useSidebarSide,
+} from "@/features/preferences/preferences";
 import { isRailTab } from "@/features/studio/studio-tabs";
 
 import { Logo } from "./logo";
@@ -71,33 +77,47 @@ function isActive(link: AppLink, pathname: string) {
   return pathname === base || pathname.startsWith(`${base}/`);
 }
 
-/** When the sidebar is collapsed, hovering or focusing an item shows its name beside it. */
+/**
+ * Shows the name of a rail item. Collapsed: icon and label beside the rail, for every item. Expanded: only an icon-only button
+ * (`iconOnly`) gets a hint, with `hint` (default: `label`) on `expandedSide`; a row with a visible label needs none.
+ */
 function RailHint({
   collapsed,
   label,
   icon,
+  iconOnly,
+  hint = label,
+  expandedSide = "top",
   children,
 }: {
   collapsed: boolean;
   label: string;
   icon: ReactNode;
+  iconOnly?: boolean;
+  hint?: string;
+  expandedSide?: "top" | "bottom";
   children: ReactElement;
 }) {
   const side = useSidebarSide();
-  if (!collapsed) return children;
+  if (collapsed)
+    return (
+      <ActionHint
+        side={side === "right" ? "left" : "right"}
+        label={
+          <span className="flex items-center gap-2 text-sm font-medium">
+            {icon}
+            {label}
+          </span>
+        }
+      >
+        {children}
+      </ActionHint>
+    );
+  if (!iconOnly) return children;
   return (
-    <Tooltip
-      as="div"
-      className="block"
-      title={children}
-      placement={side === "right" ? "left" : "right"}
-      popover={false}
-    >
-      <span className="flex items-center gap-2 text-sm font-medium">
-        {icon}
-        {label}
-      </span>
-    </Tooltip>
+    <ActionHint side={expandedSide} label={hint}>
+      {children}
+    </ActionHint>
   );
 }
 
@@ -201,26 +221,33 @@ function RailBots() {
         const blocked = !b.canEdit && !b.onboarded;
         return (
           <li key={b.id}>
+            {/* A disabled button gets no mouse events, so the hint hangs on a wrapper and the button lets the pointer through. */}
             <RailHint collapsed label={b.name} icon={<BotAvatar bot={b} size={16} />}>
-              <button
-                type="button"
-                disabled={blocked}
-                aria-current={b.id === botId ? "page" : undefined}
-                onClick={() => toBot(b.id)}
-                className={cn(railRow, b.id === botId && railRowActive, "disabled:opacity-50")}
-              >
-                <BotAvatar bot={b} size={20} />
-                <span className="sr-only">
-                  {b.name}
-                  {needs ? ", needs you" : ""}
-                </span>
-                {needs && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute top-0.5 right-0.5 size-2 rounded-full border border-sidebar bg-attention"
-                  />
-                )}
-              </button>
+              <span className="block">
+                <button
+                  type="button"
+                  disabled={blocked}
+                  aria-current={b.id === botId ? "page" : undefined}
+                  onClick={() => toBot(b.id)}
+                  className={cn(
+                    railRow,
+                    b.id === botId && railRowActive,
+                    "disabled:pointer-events-none disabled:opacity-50",
+                  )}
+                >
+                  <BotAvatar bot={b} size={20} />
+                  <span className="sr-only">
+                    {b.name}
+                    {needs ? ", needs you" : ""}
+                  </span>
+                  {needs && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-0.5 right-0.5 size-2 rounded-full border border-sidebar bg-attention"
+                    />
+                  )}
+                </button>
+              </span>
             </RailHint>
           </li>
         );
@@ -350,6 +377,7 @@ export function AppSidebar({
   const newChatBot = botId ?? bots.find((b) => b.kind === "chief")?.id;
   const newChatName = (newChatBot && bots.find((b) => b.id === newChatBot)?.name) || "your chief";
   const rail = collapsed ? "collapsed" : "expanded";
+  const paused = useAgentsState() === "paused";
   const iconButton = cn(railRow, "w-8");
   return (
     <aside
@@ -377,6 +405,9 @@ export function AppSidebar({
         <RailHint
           collapsed={collapsed}
           label="Search"
+          hint="Search (⌘K)"
+          iconOnly
+          expandedSide="bottom"
           icon={<MagnifyingGlassIcon className="size-4" aria-hidden="true" />}
         >
           <button
@@ -384,7 +415,6 @@ export function AppSidebar({
             onClick={onSearch}
             aria-label="Search"
             aria-keyshortcuts="Meta+K Control+K"
-            title={collapsed ? undefined : "Search (⌘K)"}
             className={iconButton}
           >
             <MagnifyingGlassIcon className="size-4" aria-hidden="true" />
@@ -394,13 +424,15 @@ export function AppSidebar({
           <RailHint
             collapsed={collapsed}
             label="New chat"
+            hint={`New chat with ${newChatName}`}
+            iconOnly
+            expandedSide="bottom"
             icon={<NotePencilIcon className="size-4" aria-hidden="true" />}
           >
             <button
               type="button"
               onClick={() => toDraft(newChatBot)}
               aria-label={`New chat with ${newChatName}`}
-              title={collapsed ? undefined : `New chat with ${newChatName}`}
               className={iconButton}
             >
               <NotePencilIcon className="size-4" aria-hidden="true" />
@@ -466,22 +498,29 @@ export function AppSidebar({
           </RailHint>
           <RailHint
             collapsed={collapsed}
-            label="Pause agents"
-            icon={<PauseIcon className="size-4" aria-hidden="true" />}
+            label={paused ? "Resume agents" : "Pause agents"}
+            iconOnly
+            icon={
+              paused ? (
+                <PlayIcon className="size-4" aria-hidden="true" />
+              ) : (
+                <PauseIcon className="size-4" aria-hidden="true" />
+              )
+            }
           >
             <PauseAgentsButton collapsed={collapsed} />
           </RailHint>
           {!mobile && (
             <RailHint
               collapsed={collapsed}
-              label="Expand sidebar"
+              label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              iconOnly
               icon={<SidebarSimpleIcon className="size-4" aria-hidden="true" />}
             >
               <button
                 type="button"
                 onClick={() => set({ railMode: collapsed ? "expanded" : "collapsed" })}
                 aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-                title={collapsed ? undefined : "Collapse sidebar"}
                 aria-expanded={!collapsed}
                 className={cn(railRow, !collapsed && "h-7 w-7 min-w-7")}
               >

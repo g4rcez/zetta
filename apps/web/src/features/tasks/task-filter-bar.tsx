@@ -13,7 +13,7 @@ import {
 import type { ReactNode } from "react";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Checkbox, Input } from "@/components/ui";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
+import { ActionHint } from "@/components/action-hint";
 import type { Bot } from "../chat/chat-client";
 import { LabelChip, PriorityIcon, StatusIcon } from "./task-badges";
 import {
@@ -172,26 +172,27 @@ function AssigneeRow({
   const avatar = (id: string, name: string, detail: string, face: ReactNode) => {
     const on = selected.includes(id);
     return (
-      <Tooltip key={id}>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label={name}
-              aria-pressed={on}
-              onClick={() => onChange(toggle(selected, id, !on))}
-              className={`!h-8 !w-8 !min-w-0 !p-0 ${on ? "ring-2 ring-foreground" : selected.length > 0 ? "opacity-50 hover:opacity-100" : ""}`}
-            />
-          }
+      <ActionHint
+        key={id}
+        delay={0}
+        label={
+          <span className="flex flex-col items-start gap-0.5">
+            <span className="font-medium">{name}</span>
+            <span className="opacity-70">{detail}</span>
+          </span>
+        }
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          aria-label={name}
+          aria-pressed={on}
+          onClick={() => onChange(toggle(selected, id, !on))}
+          className={`!h-8 !w-8 !min-w-0 !p-0 ${on ? "ring-2 ring-foreground" : selected.length > 0 ? "opacity-50 hover:opacity-100" : ""}`}
         >
           {face}
-        </TooltipTrigger>
-        <TooltipContent className="flex-col items-start gap-0.5">
-          <span className="font-medium">{name}</span>
-          <span className="opacity-70">{detail}</span>
-        </TooltipContent>
-      </Tooltip>
+        </Button>
+      </ActionHint>
     );
   };
   return (

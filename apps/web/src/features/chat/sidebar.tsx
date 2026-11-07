@@ -40,7 +40,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
+import { ActionHint } from "@/components/action-hint";
 import { cn } from "@zetta/ui/lib/utils";
 import { Button, Input, Select } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
@@ -130,13 +130,17 @@ function Hint({
   children: ReactElement;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger render={children} />
-      <TooltipContent className="flex-col items-start gap-0.5">
-        <span className="font-medium">{title}</span>
-        <span className="opacity-70">{description}</span>
-      </TooltipContent>
-    </Tooltip>
+    <ActionHint
+      delay={0}
+      label={
+        <span className="flex flex-col items-start gap-0.5">
+          <span className="font-medium">{title}</span>
+          <span className="opacity-70">{description}</span>
+        </span>
+      }
+    >
+      {children}
+    </ActionHint>
   );
 }
 

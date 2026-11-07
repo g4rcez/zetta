@@ -1,3 +1,5 @@
+import { ActionHint } from "@/components/action-hint";
+import { Dropdown } from "@g4rcez/components/dropdown";
 import { Alert } from "@g4rcez/components/alert";
 import { looksSecret } from "@zetta/core/secrets";
 import type { EditorView } from "@codemirror/view";
@@ -41,10 +43,8 @@ import {
 } from "@zetta/ui/components/attachment";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@zetta/ui/components/input-group";
 import { Button } from "@/components/ui";
-import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
 import { useQueryClient } from "@tanstack/react-query";
 import { Separator } from "@zetta/ui/components/separator";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
 
 import { ImageViewer } from "./attachment-image";
@@ -109,22 +109,17 @@ function Tool({
   children: React.ReactNode;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <InputGroupButton
-            size="icon-xs"
-            aria-label={label}
-            aria-pressed={pressed}
-            className={cn(pressed && "bg-muted text-foreground")}
-            onClick={onClick}
-          />
-        }
+    <ActionHint label={label}>
+      <InputGroupButton
+        size="icon-xs"
+        aria-label={label}
+        aria-pressed={pressed}
+        className={cn(pressed && "bg-muted text-foreground")}
+        onClick={onClick}
       >
         {children}
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+      </InputGroupButton>
+    </ActionHint>
   );
 }
 
@@ -774,61 +769,57 @@ export function Composer({
                   <BrainIcon />
                 </Tool>
               )}
-              <Popover
+              <Dropdown
+                asChild
+                arrow={false}
+                align="start"
                 open={!!picker}
-                onOpenChange={(open) => {
+                onChange={(open) => {
                   if (!open) setPicker(undefined);
                 }}
+                className="w-72"
+                aria-label="Server files"
+                trigger={
+                  <ActionHint label="Server files">
+                    <InputGroupButton
+                      size="icon-xs"
+                      aria-label="Server files"
+                      onClick={() => openFiles("shared")}
+                    >
+                      <FolderOpenIcon />
+                    </InputGroupButton>
+                  </ActionHint>
+                }
               >
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <PopoverTrigger
-                        render={
-                          <InputGroupButton
-                            size="icon-xs"
-                            aria-label="Server files"
-                            onClick={() => openFiles("shared")}
-                          />
-                        }
-                      />
-                    }
-                  >
-                    <FolderOpenIcon />
-                  </TooltipTrigger>
-                  <TooltipContent>Server files</TooltipContent>
-                </Tooltip>
-                <PopoverContent align="start" className="w-72 p-2 text-sm">
-                  <p className="truncate px-1 pb-1 text-xs font-medium text-muted-foreground">
-                    {picker?.path}
-                  </p>
-                  <ul className="max-h-60 overflow-y-auto">
-                    {picker?.entries.map((en) => (
-                      <li key={en.name}>
-                        <button
-                          type="button"
-                          className="w-full truncate rounded px-1.5 py-1 text-left hover:bg-muted"
-                          onClick={() => {
-                            const p = `${picker.path}/${en.name}`;
-                            if (en.kind === "dir") openFiles(p);
-                            else {
-                              setFileRefs((r) => [...r, p]);
-                              setPicker(undefined);
-                            }
-                          }}
-                        >
-                          {en.kind === "dir" ? "📂" : "📄"} {en.name}
-                        </button>
-                      </li>
-                    ))}
-                    {picker?.entries.length === 0 && (
-                      <li className="px-1.5 py-1 text-muted-foreground">
-                        Empty. Put files under the server's files folder.
-                      </li>
-                    )}
-                  </ul>
-                </PopoverContent>
-              </Popover>
+                <p className="truncate px-1 pb-1 text-xs font-medium text-muted-foreground">
+                  {picker?.path}
+                </p>
+                <ul className="max-h-60 overflow-y-auto">
+                  {picker?.entries.map((en) => (
+                    <li key={en.name}>
+                      <button
+                        type="button"
+                        className="w-full truncate rounded px-1.5 py-1 text-left hover:bg-muted"
+                        onClick={() => {
+                          const p = `${picker.path}/${en.name}`;
+                          if (en.kind === "dir") openFiles(p);
+                          else {
+                            setFileRefs((r) => [...r, p]);
+                            setPicker(undefined);
+                          }
+                        }}
+                      >
+                        {en.kind === "dir" ? "📂" : "📄"} {en.name}
+                      </button>
+                    </li>
+                  ))}
+                  {picker?.entries.length === 0 && (
+                    <li className="px-1.5 py-1 text-muted-foreground">
+                      Empty. Put files under the server's files folder.
+                    </li>
+                  )}
+                </ul>
+              </Dropdown>
               <Tool
                 label="Mention a bot"
                 onClick={() => {

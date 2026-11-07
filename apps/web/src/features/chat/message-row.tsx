@@ -1,3 +1,4 @@
+import { Dropdown } from "@g4rcez/components/dropdown";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { memo, useLayoutEffect, useRef, useState } from "react";
@@ -25,14 +26,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
 import {
   Message,
   MessageAvatar,
   MessageContent,
   MessageHeader,
 } from "@zetta/ui/components/message";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
+import { ActionHint } from "@/components/action-hint";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
 import { UserAvatar } from "@/components/user-avatar";
@@ -184,10 +184,9 @@ function Sources({ row }: { row: Row }) {
 
 function Tip({ label, children }: { label: string; children: React.ReactElement }) {
   return (
-    <Tooltip>
-      <TooltipTrigger delay={250} render={children} />
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <ActionHint label={label} delay={250}>
+      {children}
+    </ActionHint>
   );
 }
 
@@ -202,24 +201,31 @@ function ReactionPicker({ onReact }: { onReact: (emoji: string) => void }) {
   const [open, setOpen] = useState(false);
   const search = useRef<HTMLInputElement>(null);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <Tip label="Add reaction">
-        <PopoverTrigger
-          render={<Button size="icon-xs" variant="ghost" aria-label="Add reaction" />}
-        >
-          <SmileyIcon />
-        </PopoverTrigger>
-      </Tip>
-      <PopoverContent align="end" initialFocus={search} className="w-auto rounded-lg p-2">
-        <EmojiPicker
-          searchRef={search}
-          onPick={(emoji) => {
-            setOpen(false);
-            onReact(emoji);
-          }}
-        />
-      </PopoverContent>
-    </Popover>
+    <Dropdown
+      asChild
+      arrow={false}
+      align="end"
+      open={open}
+      onChange={setOpen}
+      initialFocus={search}
+      className="w-auto"
+      aria-label="Emoji picker"
+      trigger={
+        <Tip label="Add reaction">
+          <Button size="icon-xs" variant="ghost" aria-label="Add reaction">
+            <SmileyIcon />
+          </Button>
+        </Tip>
+      }
+    >
+      <EmojiPicker
+        searchRef={search}
+        onPick={(emoji) => {
+          setOpen(false);
+          onReact(emoji);
+        }}
+      />
+    </Dropdown>
   );
 }
 

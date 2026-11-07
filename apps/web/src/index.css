@@ -52,6 +52,13 @@ summary,
   }
 }
 
+/* The DS "small" Input is 13px; below 768px iOS zooms the page on focus, so raise it to 16px. */
+@media (max-width: 767px) {
+  :root {
+    --var-free-text-small-font-size: var(--text-base);
+  }
+}
+
 .link {
   @apply ease-in duration-300 transition-all;
 }

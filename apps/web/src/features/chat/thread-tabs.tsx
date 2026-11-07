@@ -110,7 +110,7 @@ export function ThreadTabs({
         align="start"
         open={open}
         onChange={setOpen}
-        className="w-80 max-w-[calc(100vw-1rem)] [--var-dropdown-surface-padding:0.375rem] [--var-dropdown-surface-radius:0.5rem]"
+        className="w-80 max-w-[calc(100vw-1rem)] [--var-dropdown-surface-padding:0.375rem] [--var-dropdown-surface-radius:var(--radius-lg)]"
         aria-label="Switch chat"
         buttonProps={{
           className:

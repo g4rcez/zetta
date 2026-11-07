@@ -777,7 +777,7 @@ export function Composer({
                 onChange={(open) => {
                   if (!open) setPicker(undefined);
                 }}
-                className="w-72 [--var-dropdown-surface-padding:0.5rem] [--var-dropdown-surface-radius:0.5rem]"
+                className="w-72 [--var-dropdown-surface-padding:0.5rem] [--var-dropdown-surface-radius:var(--radius-lg)]"
                 aria-label="Server files"
                 trigger={
                   <ActionHint label="Server files">

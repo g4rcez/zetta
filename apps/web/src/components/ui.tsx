@@ -61,6 +61,24 @@ export function Button({
   );
 }
 export const Input = LibInput;
+/** Decorative rule: `<hr>`. Between controls it is a vertical `role="separator"`. */
+export function Separator({
+  orientation = "horizontal",
+  className = "",
+}: {
+  orientation?: "horizontal" | "vertical";
+  className?: string;
+}) {
+  return orientation === "vertical" ? (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      className={`w-px shrink-0 self-stretch bg-border ${className}`.trim()}
+    />
+  ) : (
+    <hr className={`m-0 h-px w-full shrink-0 border-0 bg-border ${className}`.trim()} />
+  );
+}
 export const Modal = LibModal;
 /** Mounted once in the root layout: it renders the dialog behind `Modal.confirm(...)`, which replaces `window.confirm`. */
 export const ModalConfirmProvider = LibModalConfirmProvider;

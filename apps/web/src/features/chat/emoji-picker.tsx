@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
-import { Input } from "@zetta/ui/components/input";
+import { Input } from "@/components/ui";
 import { cn } from "@zetta/ui/lib/utils";
 import { saveLocal } from "@/lib/local-storage";
 
@@ -134,8 +134,9 @@ export function EmojiPicker({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search emoji"
-        aria-label="Search emoji"
-        className="h-8"
+        title="Search emoji"
+        hiddenLabel
+        size="small"
       />
       {!deferred && data && (
         <nav aria-label="Emoji categories" className="flex justify-between border-b pb-1">

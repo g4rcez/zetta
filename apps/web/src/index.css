@@ -52,6 +52,13 @@ summary,
   }
 }
 
+/* The DS "small" Input is 13px; below 768px iOS zooms the page on focus, so raise it to 16px. */
+@media (max-width: 767px) {
+  :root {
+    --var-free-text-small-font-size: var(--text-base);
+  }
+}
+
 .link {
   @apply ease-in duration-300 transition-all;
 }
@@ -87,6 +94,8 @@ html.dark {
   --var-color-background: var(--background);
   --var-color-foreground: var(--foreground);
   --var-color-border: var(--border);
+  /* Field borders (Input, MultiSelect) need 3:1 non-text contrast; --input is the app token for it. */
+  --var-color-input: var(--input);
   --var-color-ring: var(--ring);
   --var-color-muted: var(--muted);
   --var-color-muted-foreground: var(--muted-foreground);
@@ -98,6 +107,9 @@ html.dark {
   --var-card-background: var(--card);
   --var-card-border: var(--border);
   --var-card-muted: var(--muted);
+  --var-card-surface-radius: var(--var-radius-base);
+  --var-card-content-padding-inline: calc(var(--var-spacing-base) * 0.75);
+  --var-tag-tiny-font-size: var(--text-xs);
   --var-alert-surface-radius: var(--radius);
   --var-dropdown-surface-background: var(--popover);
   --var-menu-surface-background: var(--popover);

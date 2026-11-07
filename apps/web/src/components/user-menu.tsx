@@ -165,18 +165,16 @@ export default function UserMenu({
       title={accountLabel}
       label={label}
     >
-      <MenuGroup>
-        <div className="px-2 py-1.5">
-          <div className="break-words text-sm font-medium">{session.user.name}</div>
-          <div className="break-all text-xs text-muted-foreground">{session.user.email}</div>
-        </div>
-        <MenuSeparator />
-        <MenuItem title="Preferences" onClick={() => void navigate({ to: "/preferences" })}>
-          <SlidersHorizontalIcon />
-          Preferences
-        </MenuItem>
-        <MenuSeparator />
-      </MenuGroup>
+      <div className="px-2 py-1.5">
+        <div className="break-words text-sm font-medium">{session.user.name}</div>
+        <div className="break-all text-xs text-muted-foreground">{session.user.email}</div>
+      </div>
+      <MenuSeparator />
+      <MenuItem title="Preferences" onClick={() => void navigate({ to: "/preferences" })}>
+        <SlidersHorizontalIcon />
+        Preferences
+      </MenuItem>
+      <MenuSeparator />
       <MenuGroup label="Time format">
         {TIME_FORMATS.map((f) => (
           <MenuItem

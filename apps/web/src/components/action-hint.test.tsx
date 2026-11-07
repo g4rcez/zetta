@@ -40,7 +40,9 @@ test("keyboard focus shows the hint on the control and Escape closes it", async 
   await act(async () => button.focus());
   expect(hint()?.textContent).toBe("Server files");
   await act(async () => {
-    button.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    button.dispatchEvent(
+      new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event,
+    );
   });
   expect(hint()).toBeNull();
   await unmount();
@@ -51,7 +53,7 @@ test("a click opens the panel of the Dropdown and closes the hint", async () => 
   await act(async () => button.focus());
   expect(hint()).not.toBeNull();
   await act(async () => {
-    button.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    button.dispatchEvent(new win.MouseEvent("click", { bubbles: true }) as unknown as Event);
   });
   expect(panel()?.textContent).toBe("File list");
   expect(hint()).toBeNull();

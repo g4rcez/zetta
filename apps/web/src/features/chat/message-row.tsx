@@ -1,7 +1,7 @@
 import { Dropdown } from "@g4rcez/components/dropdown";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { forwardRef, memo, useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import {
   ArrowBendUpLeftIcon,
   BookmarkSimpleIcon,
@@ -182,13 +182,10 @@ function Sources({ row }: { row: Row }) {
   );
 }
 
-function Tip({ label, children }: { label: string; children: React.ReactElement }) {
-  return (
-    <ActionHint label={label} delay={250}>
-      {children}
-    </ActionHint>
-  );
-}
+/** `ActionHint` with a shorter delay. It forwards ref and props, so a `Dropdown` with `asChild` can use it as the trigger. */
+const Tip = forwardRef<HTMLElement, ComponentProps<typeof ActionHint>>(function Tip(props, ref) {
+  return <ActionHint delay={250} {...props} ref={ref} />;
+});
 
 const QUICK_REACTIONS: { emoji: string; name: string }[] = [
   { emoji: "👍", name: "Like" },

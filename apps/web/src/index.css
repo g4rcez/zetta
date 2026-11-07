@@ -100,6 +100,9 @@ html.dark {
   --var-card-background: var(--card);
   --var-card-border: var(--border);
   --var-card-muted: var(--muted);
+  --var-card-surface-radius: var(--var-radius-base);
+  --var-card-content-padding-inline: calc(var(--var-spacing-base) * 0.75);
+  --var-tag-tiny-font-size: var(--text-xs);
   --var-alert-surface-radius: var(--radius);
   --var-dropdown-surface-background: var(--popover);
   --var-menu-surface-background: var(--popover);

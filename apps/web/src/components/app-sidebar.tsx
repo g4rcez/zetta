@@ -493,7 +493,7 @@ export function AppSidebar({
             icon={<MoonIcon className="size-4" aria-hidden="true" />}
           >
             <div className={cn(!collapsed && "min-w-0 flex-1")}>
-              <ModeToggle rail={rail} />
+              <ModeToggle rail={rail} drawer={mobile} />
             </div>
           </RailHint>
           <RailHint
@@ -532,7 +532,7 @@ export function AppSidebar({
             </RailHint>
           )}
         </div>
-        <UserMenu rail={rail} />
+        <UserMenu rail={rail} drawer={mobile} />
       </div>
       {!mobile && !collapsed && (
         <ResizeHandle

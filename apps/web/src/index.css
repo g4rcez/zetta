@@ -104,6 +104,8 @@ html.dark {
   --var-tooltip-surface-background: var(--popover);
   --var-tooltip-surface-foreground: var(--popover-foreground);
   --var-tooltip-surface-border: var(--border);
+  --var-tooltip-surface-padding: 0.25rem 0.5rem;
+  --var-tooltip-surface-radius: var(--radius-lg);
   --var-modal-overlay-background: oklch(0 0 0 / 60%);
 }
 

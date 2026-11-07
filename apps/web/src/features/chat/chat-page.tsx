@@ -28,8 +28,8 @@ import { ArtifactPanel } from "./artifact-panel";
 import { ThreadTabs } from "./thread-tabs";
 import { Skeleton } from "@g4rcez/components";
 
-import { Button } from "@/components/ui";
-import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
+import { Button, DRAWER_FLUSH } from "@/components/ui";
+import { Modal } from "@g4rcez/components/modal";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotStatusDot, BotStatusLabel } from "@/components/bot-status";
@@ -906,26 +906,25 @@ export function ChatPage() {
             </aside>
           )}
           {!desktop && (
-            <Sheet
+            <Modal
+              type="drawer"
+              forceType
               open={!!sidePane}
-              onOpenChange={(open) => {
+              onChange={(open) => {
                 if (open) return;
                 if (search.artifact) setArtifact(undefined);
                 else setThread(undefined);
                 setDetails(false);
               }}
+              ariaTitle={artifactPane ? "Artifact" : threadPane ? "Thread" : "Details"}
+              closable={false}
+              resizer={false}
+              overlayClickClose
+              className={`${DRAWER_FLUSH} [--var-modal-drawer-max-inline-size:100vw]`}
+              bodyClassName="flex w-[75vw] flex-col sm:w-sm"
             >
-              <SheetContent
-                side="right"
-                showCloseButton={false}
-                className={cn("w-full p-0", artifactPane ? "sm:max-w-2xl" : "sm:max-w-sm")}
-              >
-                <SheetTitle className="sr-only">
-                  {artifactPane ? "Artifact" : threadPane ? "Thread" : "Details"}
-                </SheetTitle>
-                {sidePane}
-              </SheetContent>
-            </Sheet>
+              {sidePane}
+            </Modal>
           )}
           {publishing && chatId && (
             <PublishDialog

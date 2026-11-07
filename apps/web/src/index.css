@@ -87,6 +87,8 @@ html.dark {
   --var-color-background: var(--background);
   --var-color-foreground: var(--foreground);
   --var-color-border: var(--border);
+  /* Field borders (Input, MultiSelect) need 3:1 non-text contrast; --input is the app token for it. */
+  --var-color-input: var(--input);
   --var-color-ring: var(--ring);
   --var-color-muted: var(--muted);
   --var-color-muted-foreground: var(--muted-foreground);

@@ -1,3 +1,4 @@
+import { Dropdown } from "@g4rcez/components/dropdown";
 import {
   ArchiveIcon,
   CaretDownIcon,
@@ -17,7 +18,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
 import { cn } from "@zetta/ui/lib/utils";
 import { Button } from "@/components/ui";
 import type { Conversation } from "./chat-client";
@@ -105,114 +105,125 @@ export function ThreadTabs({
   }
   return (
     <div className="flex min-w-0 items-center gap-0.5">
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger className="flex h-8 min-w-0 items-center gap-1 rounded-md px-1.5 text-base font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
-          <span className="truncate">{current?.title ?? "New chat"}</span>
-          <span className="sr-only">, switch chat</span>
-          <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-80 max-w-[calc(100vw-1rem)] gap-1 p-1.5 text-sm">
-          <input
-            autoFocus
-            role="combobox"
-            aria-label={view === "archived" ? "Search archived chats" : "Search chats"}
-            aria-expanded="true"
-            aria-controls={listId}
-            aria-autocomplete="list"
-            aria-activedescendant={list[active] ? optionId(list[active].id) : undefined}
-            placeholder={view === "archived" ? "Search archived chats…" : "Search chats…"}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                e.preventDefault();
-                if (!list.length) return;
-                const step = e.key === "ArrowDown" ? 1 : -1;
-                setActive((i) => (i + step + list.length) % list.length);
-              } else if (e.key === "Enter" && list[active]) {
-                e.preventDefault();
-                choose(list[active]);
-              }
-            }}
-            className="h-8 w-full rounded-md border border-input bg-card px-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          />
-          <div role="group" aria-label="Which chats" className="flex gap-1 px-0.5 pt-1">
-            {(
-              [
-                ["open", "Chats"],
-                ["archived", "Archived"],
-              ] as const
-            ).map(([v, label]) => (
-              <button
-                key={v}
-                type="button"
-                aria-pressed={view === v}
-                onClick={() => setView(v)}
-                className={cn(
-                  "h-6 rounded-md px-2 text-xs font-medium focus-visible:outline-2 focus-visible:outline-ring",
-                  view === v
-                    ? "bg-accent text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <ul
-            id={listId}
-            role="listbox"
-            aria-label={view === "archived" ? "Archived chats" : "Chats"}
-            className="max-h-72 overflow-y-auto"
-          >
-            {list.map((t, i) => (
-              <li
-                key={t.id}
-                id={optionId(t.id)}
-                role="option"
-                aria-selected={i === active}
-                onMouseEnter={() => setActive(i)}
-                onClick={() => choose(t)}
-                className={cn(
-                  "flex h-8 cursor-default items-center gap-2 rounded-md px-2",
-                  i === active && "bg-accent",
-                )}
-              >
-                {t.id === chatId ? (
-                  <CheckIcon aria-hidden="true" className="size-4 shrink-0 text-primary" />
-                ) : (
-                  <span aria-hidden="true" className="size-4 shrink-0" />
-                )}
-                <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                {t.id === chatId && <span className="sr-only"> (open)</span>}
-              </li>
-            ))}
-            {list.length === 0 && (
-              <li role="presentation" className="px-2 py-1.5 text-xs text-muted-foreground">
-                {view === "archived" && archived === undefined
-                  ? "Loading…"
-                  : q
-                    ? "No chats match."
-                    : view === "archived"
-                      ? "No archived chats."
-                      : "No chats yet."}
-              </li>
-            )}
-          </ul>
-          <div className="border-t pt-1">
+      <Dropdown
+        arrow={false}
+        align="start"
+        open={open}
+        onChange={setOpen}
+        className="w-80 max-w-[calc(100vw-1rem)] [--var-dropdown-surface-padding:0.375rem] [--var-dropdown-surface-radius:var(--radius-lg)]"
+        aria-label="Switch chat"
+        buttonProps={{
+          className:
+            "flex h-8 min-w-0 items-center gap-1 rounded-md px-1.5 text-base font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
+        }}
+        trigger={
+          <>
+            <span className="truncate">{current?.title ?? "New chat"}</span>
+            <span className="sr-only">, switch chat</span>
+            <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+          </>
+        }
+      >
+        <input
+          autoFocus
+          role="combobox"
+          aria-label={view === "archived" ? "Search archived chats" : "Search chats"}
+          aria-expanded="true"
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={list[active] ? optionId(list[active].id) : undefined}
+          placeholder={view === "archived" ? "Search archived chats…" : "Search chats…"}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              if (!list.length) return;
+              const step = e.key === "ArrowDown" ? 1 : -1;
+              setActive((i) => (i + step + list.length) % list.length);
+            } else if (e.key === "Enter" && list[active]) {
+              e.preventDefault();
+              choose(list[active]);
+            }
+          }}
+          className="h-8 w-full rounded-md border border-input bg-card px-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
+        />
+        <div role="group" aria-label="Which chats" className="flex gap-1 px-0.5 pt-1">
+          {(
+            [
+              ["open", "Chats"],
+              ["archived", "Archived"],
+            ] as const
+          ).map(([v, label]) => (
             <button
+              key={v}
               type="button"
-              onClick={() => {
-                onNew();
-                setOpen(false);
-              }}
-              className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+              aria-pressed={view === v}
+              onClick={() => setView(v)}
+              className={cn(
+                "h-6 rounded-md px-2 text-xs font-medium focus-visible:outline-2 focus-visible:outline-ring",
+                view === v
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
-              <PlusIcon aria-hidden="true" className="size-4" /> New chat
+              {label}
             </button>
-          </div>
-        </PopoverContent>
-      </Popover>
+          ))}
+        </div>
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label={view === "archived" ? "Archived chats" : "Chats"}
+          className="max-h-72 overflow-y-auto"
+        >
+          {list.map((t, i) => (
+            <li
+              key={t.id}
+              id={optionId(t.id)}
+              role="option"
+              aria-selected={i === active}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => choose(t)}
+              className={cn(
+                "flex h-8 cursor-default items-center gap-2 rounded-md px-2",
+                i === active && "bg-accent",
+              )}
+            >
+              {t.id === chatId ? (
+                <CheckIcon aria-hidden="true" className="size-4 shrink-0 text-primary" />
+              ) : (
+                <span aria-hidden="true" className="size-4 shrink-0" />
+              )}
+              <span className="min-w-0 flex-1 truncate">{t.title}</span>
+              {t.id === chatId && <span className="sr-only"> (open)</span>}
+            </li>
+          ))}
+          {list.length === 0 && (
+            <li role="presentation" className="px-2 py-1.5 text-xs text-muted-foreground">
+              {view === "archived" && archived === undefined
+                ? "Loading…"
+                : q
+                  ? "No chats match."
+                  : view === "archived"
+                    ? "No archived chats."
+                    : "No chats yet."}
+            </li>
+          )}
+        </ul>
+        <div className="border-t pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              onNew();
+              setOpen(false);
+            }}
+            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <PlusIcon aria-hidden="true" className="size-4" /> New chat
+          </button>
+        </div>
+      </Dropdown>
       {current && (
         <Button
           variant={current.favorite ? "link" : "ghost"}

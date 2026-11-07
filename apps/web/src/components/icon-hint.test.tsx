@@ -7,7 +7,7 @@ import { setupDom } from "../features/skills/dom-env";
 const win = setupDom();
 
 const render = async () => {
-  const { IconHint } = await import("@zetta/ui/components/icon-hint");
+  const { IconHint } = await import("./icon-hint");
   const host = win.document.createElement("div");
   win.document.body.append(host);
   const root = createRoot(host as unknown as Element);
@@ -21,7 +21,7 @@ const render = async () => {
   const trigger = host.querySelector('[aria-label="Chief"]') as unknown as HTMLElement;
   return { trigger, unmount: () => act(async () => root.unmount()) };
 };
-const popup = () => win.document.querySelector('[data-slot="popover-content"]');
+const popup = () => win.document.querySelector('[role="dialog"]');
 
 test("the icon has one accessible name and the svg is hidden", async () => {
   const { trigger, unmount } = await render();

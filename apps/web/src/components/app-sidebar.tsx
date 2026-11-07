@@ -11,7 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
-import { ActionHint } from "@zetta/ui/components/action-hint";
+import { ActionHint } from "@/components/action-hint";
 import { cn } from "@zetta/ui/lib/utils";
 
 import { appLinks } from "@/components/app-links";
@@ -102,7 +102,7 @@ function RailHint({
   if (collapsed)
     return (
       <ActionHint
-        side={side === "right" ? "left" : "right"}
+        placement={side === "right" ? "left" : "right"}
         label={
           <span className="flex items-center gap-2 text-sm font-medium">
             {icon}
@@ -115,7 +115,7 @@ function RailHint({
     );
   if (!iconOnly) return children;
   return (
-    <ActionHint side={expandedSide} label={hint}>
+    <ActionHint placement={expandedSide} label={hint}>
       {children}
     </ActionHint>
   );

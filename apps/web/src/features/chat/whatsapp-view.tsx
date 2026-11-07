@@ -1,7 +1,7 @@
 import { ChecksIcon, ImageIcon, ChatCircleIcon } from "@phosphor-icons/react";
 
 import { cn } from "@zetta/ui/lib/utils";
-import { IconHint } from "@zetta/ui/components/icon-hint";
+import { IconHint } from "@/components/icon-hint";
 
 type ChatsView = {
   kind: "chats";

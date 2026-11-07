@@ -107,3 +107,15 @@ test("a row inside a thread or room still offers Reply when the page gives it", 
   expect(host.querySelector('button[aria-label="Reply"]')).not.toBeNull();
   expect(host.querySelector('button[aria-label="Reply in thread"]')).toBeNull();
 });
+
+test("the emoji button in the toolbar opens the full emoji picker with the search focused", async () => {
+  const host = mount({});
+  openToolbar(host);
+  await act(async () =>
+    (host.querySelector('button[aria-label="Add reaction"]') as unknown as HTMLElement).click(),
+  );
+  const panel = win.document.querySelector('[role="dialog"][aria-label="Emoji picker"]');
+  expect(panel).not.toBeNull();
+  expect(win.document.activeElement?.tagName).toBe("INPUT");
+  expect(panel!.contains(win.document.activeElement)).toBe(true);
+});

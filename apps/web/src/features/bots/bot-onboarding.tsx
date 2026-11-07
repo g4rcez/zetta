@@ -44,7 +44,7 @@ import { FRESH_INTERVIEW, type InterviewState } from "./interview-flow";
 import { InstructionsInterview } from "./instructions-interview";
 import { Response } from "../chat/response";
 import { Alert } from "@g4rcez/components/alert";
-import { IconHint } from "@zetta/ui/components/icon-hint";
+import { IconHint } from "@/components/icon-hint";
 
 export type Draft = {
   name: string;

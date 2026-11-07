@@ -58,7 +58,7 @@ import {
   teamsQueries,
   type TeamSave,
 } from "./teams-api";
-import { IconHint } from "@zetta/ui/components/icon-hint";
+import { IconHint } from "@/components/icon-hint";
 
 /** What the server holds for a team, apart from its version. */
 const saveKey = (v: TeamSave) => JSON.stringify({ ...v, expectedVersion: 0 });
@@ -259,7 +259,11 @@ function Editor() {
     const team = node?.type === "team" ? node : current.find((n) => n.id === node?.parentId);
     if (team?.type !== "team") return;
     await sync(current);
-    await navigate({ to: "/teams/$teamId/settings", params: { teamId: team.data.teamId }, search: {} });
+    await navigate({
+      to: "/teams/$teamId/settings",
+      params: { teamId: team.data.teamId },
+      search: {},
+    });
   };
   const openSettingsRef = useRef(openSettings);
   openSettingsRef.current = openSettings;

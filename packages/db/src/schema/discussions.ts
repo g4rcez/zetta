@@ -52,7 +52,8 @@ export const botPeer = zetta.table(
 
 /**
  * A group of bots working on one task. The transcript lives in its own conversation (kind "discussion"); `context` is the shared task
- * brief every member sees. `tainted` = outside content (customers, pages) is in play: code-capable members then need an approved brief.
+ * brief every member sees. `tainted` = outside content (customers, pages) is in play. Only a room that came from an outside channel (`originInbound`) holds
+ * its code-capable members (not the bot that opened it) for one approved brief; other rooms never ask.
  */
 export const discussion = zetta.table(
   "discussion",
@@ -128,7 +129,7 @@ export const discussion = zetta.table(
   ],
 );
 
-/** A bot in a discussion. `requireApproval`: while tainted, this member only runs after the owner approved the current brief. */
+/** A bot in a discussion. `requireApproval`: while tainted, this member waits for one approved brief; approving it turns this off for the room. */
 export const discussionMember = zetta.table(
   "discussion_member",
   {

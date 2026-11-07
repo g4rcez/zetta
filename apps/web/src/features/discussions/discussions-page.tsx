@@ -57,6 +57,7 @@ import { pollEvery } from "@/lib/query-policy";
 import { chatQueries } from "../chat/chat-queries";
 import { useRooms, useSidebarData, useTeams } from "../chat/sidebar-data";
 import { BotAvatar } from "@/components/bot-avatar";
+import { BotsContext } from "@/components/bot-identity";
 import { Drawer } from "@/components/drawer";
 import { ComputerActivity } from "../computer/computer-activity";
 import { refreshAttention } from "../attention/summary";
@@ -455,6 +456,8 @@ function RoomView({
   const messages = (conversationId && messagesQuery.data) || NO_MESSAGES;
   const proposalsQuery = useQuery({ ...chatQueries.proposals(), refetchInterval: every });
   // Same panel as a chat: the briefs that gate this discussion and whatever its bots proposed (config changes, and so on).
+  // Rows of the transcript (a handed-over task shows its member) look bots up by id.
+  const botsById = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
   const briefs = useMemo(() => {
     const memberIds = new Set(detail?.members.map((m) => m.botId));
     return (proposalsQuery.data ?? []).filter((p) =>
@@ -947,50 +950,56 @@ function RoomView({
           </>
         ) : (
           <>
-            <MessageList
-              key={d.conversationId}
-              followToken={sent}
-              rows={rows}
-              bots={bots}
-              authorOf={authorOf}
-              busy={turnsOpen(detail) > 0 || streamBusy}
-              label="Room transcript"
-              threads={false}
-              actions={{
-                onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
-                onReply: () => {},
-                onQuote: setQuoting,
-                onSaveToMemory: (row) =>
-                  void chatClient.saveToMemory(d.title, row.content).then(
-                    (r) =>
-                      toast.success(
-                        <span>
-                          Saved to your{" "}
-                          <Link to="/memory/$slug" params={{ slug: r.slug }} className="underline">
-                            memory
-                          </Link>
-                          .
-                        </span>,
-                      ),
-                    fail,
-                  ),
-              }}
-              intro={
-                rows.length === 0 ? (
-                  <p role="status" className="px-4 py-6 text-sm text-muted-foreground">
-                    No messages yet.
-                  </p>
-                ) : null
-              }
-              footer={
-                unstreamed.length ? (
-                  <p role="status" className="px-4 py-2 text-xs text-muted-foreground">
-                    {unstreamed.map((t) => names.get(t.botId) ?? "A bot").join(", ")}{" "}
-                    {unstreamed.length === 1 ? "is" : "are"} working…
-                  </p>
-                ) : null
-              }
-            />
+            <BotsContext.Provider value={botsById}>
+              <MessageList
+                key={d.conversationId}
+                followToken={sent}
+                rows={rows}
+                bots={bots}
+                authorOf={authorOf}
+                busy={turnsOpen(detail) > 0 || streamBusy}
+                label="Room transcript"
+                threads={false}
+                actions={{
+                  onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
+                  onReply: () => {},
+                  onQuote: setQuoting,
+                  onSaveToMemory: (row) =>
+                    void chatClient.saveToMemory(d.title, row.content).then(
+                      (r) =>
+                        toast.success(
+                          <span>
+                            Saved to your{" "}
+                            <Link
+                              to="/memory/$slug"
+                              params={{ slug: r.slug }}
+                              className="underline"
+                            >
+                              memory
+                            </Link>
+                            .
+                          </span>,
+                        ),
+                      fail,
+                    ),
+                }}
+                intro={
+                  rows.length === 0 ? (
+                    <p role="status" className="px-4 py-6 text-sm text-muted-foreground">
+                      No messages yet.
+                    </p>
+                  ) : null
+                }
+                footer={
+                  unstreamed.length ? (
+                    <p role="status" className="px-4 py-2 text-xs text-muted-foreground">
+                      {unstreamed.map((t) => names.get(t.botId) ?? "A bot").join(", ")}{" "}
+                      {unstreamed.length === 1 ? "is" : "are"} working…
+                    </p>
+                  ) : null
+                }
+              />
+            </BotsContext.Provider>
             <div className="shrink-0 space-y-2 px-4 pb-4">
               {briefs.length > 0 && (
                 <ProposalsPanel

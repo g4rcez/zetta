@@ -5,12 +5,14 @@ import { and, eq } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { attentionItem } from "@zetta/db/schema/features";
 import { membership } from "@zetta/db/schema/identity";
+import { task as taskTable } from "@zetta/db/schema/tasks";
 import { team } from "@zetta/db/schema/teams";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess } from "../identity/access";
 import { createTeamPeople } from "../teams/people";
-import { createTaskStore, type PersonTaskEvent } from "./store";
+import { QUIET_MS, TaskRuleError } from "./follow-up";
+import { createTaskStore, nestTasks, type PersonTaskEvent } from "./store";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -319,5 +321,107 @@ suite("tasks kanban against compose postgres", () => {
     await people.remove(teamId, ids[3]!);
     expect((await list(ids[3]!)).map((t) => t.id)).not.toContain(asked.id);
     expect((await call(ids[3]!, "GET", `/api/tasks/${asked.id}`)).status).toBe(404);
+  });
+
+  test("subtasks hang under one parent, one level deep, and go with it", async () => {
+    const owner = await actorOf(ids[0]!);
+    const { task: parent, subtasks } = await store.createWithSubtasks(
+      owner,
+      { title: "Plan the launch" },
+      ["Draft", "Review", "Publish"],
+    );
+    expect(subtasks.map((t) => t.title)).toEqual(["Draft", "Review", "Publish"]);
+    expect(subtasks.every((t) => t.parentTaskId === parent.id && t.followUp === "off")).toBe(true);
+    const nested = nestTasks(await store.list(owner)).find((t) => t.id === parent.id);
+    expect(nested?.subtasks.map((t) => t.title)).toEqual(["Draft", "Review", "Publish"]);
+    // a subtask of a subtask is refused, and the 30th is the last
+    await expect(
+      store.create(owner, { title: "Deeper", parentTaskId: subtasks[0]!.id }),
+    ).rejects.toMatchObject({ code: "SUBTASK_OF_SUBTASK" });
+    for (let i = 0; i < 27; i++)
+      await store.create(owner, { title: `More ${i}`, parentTaskId: parent.id });
+    await expect(
+      store.create(owner, { title: "One too many", parentTaskId: parent.id }),
+    ).rejects.toBeInstanceOf(TaskRuleError);
+    await store.remove(owner, parent.id);
+    expect((await store.list(owner)).filter((t) => t.parentTaskId === parent.id)).toEqual([]);
+  });
+  test("a parent cannot be done while a subtask is open, and only the owner adds subtasks", async () => {
+    const owner = await actorOf(ids[0]!);
+    const { task: parent, subtasks } = await store.createWithSubtasks(
+      owner,
+      { title: "Close me", followUp: "auto" },
+      ["First", "Second"],
+    );
+    await store.update(owner, subtasks[0]!.id, { status: "done" }, { by: "bot" });
+    await expect(store.update(owner, parent.id, { status: "done" }, { by: "bot" })).rejects.toThrow(
+      /“Second”/,
+    );
+    await store.update(owner, subtasks[1]!.id, { status: "done" }, { by: "bot" });
+    const closed = await store.update(owner, parent.id, { status: "done" }, { by: "bot" });
+    expect(closed).toMatchObject({ status: "done", followUp: "off", nextCheckAt: null });
+    await expect(
+      store.create(await actorOf(ids[1]!), { title: "Mine now", parentTaskId: parent.id }),
+    ).rejects.toThrow();
+  });
+  test("a followed task waits for a quiet chat, a subtask is never followed, a check time is capped", async () => {
+    const owner = await actorOf(ids[0]!);
+    const before = Date.now();
+    const row = await store.create(owner, { title: "Follow me", followUp: "auto" });
+    expect(row.followUp).toBe("auto");
+    const [sub] = (await store.createWithSubtasks(owner, { title: "Has a plan" }, ["Step"]))
+      .subtasks;
+    await expect(store.update(owner, sub!.id, { followUp: "auto" })).rejects.toMatchObject({
+      code: "SUBTASK_FOLLOW_UP",
+    });
+    const soon = await store.update(owner, row.id, { followUp: "auto" });
+    expect(+soon.nextCheckAt! - before).toBeGreaterThanOrEqual(QUIET_MS - 1000);
+    await expect(
+      store.update(owner, row.id, { nextCheckAt: new Date(Date.now() + 8 * 86_400_000) }),
+    ).rejects.toMatchObject({ code: "BAD_CHECK_TIME" });
+    const hour = new Date(Date.now() + 3_600_000);
+    expect(+(await store.update(owner, row.id, { nextCheckAt: hour })).nextCheckAt!).toBe(+hour);
+  });
+  test("resuming a paused task starts its counters over; stopping clears the next check", async () => {
+    const owner = await actorOf(ids[0]!);
+    const row = await store.create(owner, { title: "Stuck once", followUp: "auto" });
+    await db
+      .update(taskTable)
+      .set({
+        followUp: "paused",
+        followUpReason: "no progress",
+        checks: 40,
+        stalls: 3,
+        failures: 2,
+      })
+      .where(eq(taskTable.id, row.id));
+    const back = await store.update(owner, row.id, { followUp: "auto" });
+    expect(back).toMatchObject({
+      followUp: "auto",
+      followUpReason: null,
+      checks: 0,
+      stalls: 0,
+      failures: 0,
+    });
+    expect(back.nextCheckAt).not.toBeNull();
+    const off = await store.update(owner, row.id, { followUp: "off" });
+    expect(off).toMatchObject({ followUp: "off", nextCheckAt: null });
+  });
+  test("the routes add a subtask, refuse to close a parent early and resume a follow-up", async () => {
+    const parent = (await (
+      await call(ids[0]!, "POST", "/api/tasks", { title: "Route parent" })
+    ).json()) as { task: Task };
+    const sub = await call(ids[0]!, "POST", "/api/tasks", {
+      title: "Route child",
+      parentTaskId: parent.task.id,
+    });
+    expect(sub.status).toBe(201);
+    const early = await call(ids[0]!, "PATCH", `/api/tasks/${parent.task.id}`, { status: "done" });
+    expect(early.status).toBe(409);
+    expect(((await early.json()) as { error: { code: string } }).error.code).toBe("OPEN_SUBTASKS");
+    const resumed = await call(ids[0]!, "PATCH", `/api/tasks/${parent.task.id}`, {
+      followUp: "auto",
+    });
+    expect(resumed.status).toBe(200);
   });
 });

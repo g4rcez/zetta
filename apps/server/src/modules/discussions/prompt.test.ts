@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { parseTools } from "../chat/tools";
-import { discussionPrompt, fitTranscript, isIdleChatter, isSilent, wakeTargets } from "./prompt";
+import {
+  discussionPrompt,
+  fitTranscript,
+  isIdleChatter,
+  isSilent,
+  MEMBER_TOOLS,
+  wakeTargets,
+} from "./prompt";
 
 const SUPPORT = "01929c3e-0000-7000-8000-000000000001";
 const DEV = "01929c3e-0000-7000-8000-000000000002";
@@ -111,6 +118,73 @@ describe("discussion prompt", () => {
     );
     expect(discussionPrompt({ ...base, teamRole: "member" })).not.toContain("chief of this team");
     expect(discussionPrompt(base)).not.toContain("chief of this team");
+  });
+  test("the chief answers the person in a few sentences and briefs each member in one line, not in a wall of text", () => {
+    const chief = discussionPrompt({ ...base, teamRole: "chief" });
+    expect(chief).toContain("1 to 3 short sentences");
+    expect(chief).toContain("Do not retell what you checked");
+    expect(chief).not.toContain("say the plan");
+    // Every member is told that a post in a room is a status, not a narration.
+    expect(discussionPrompt({ ...base, teamRole: "member" })).toContain("your post is your status");
+  });
+  test("the chief briefs members with zetta:assign blocks, and the member's example block parses", () => {
+    const chief = discussionPrompt({ ...base, teamRole: "chief" });
+    expect(chief).toContain("zetta:assign");
+    expect(chief).toContain("only in its zetta:assign block, never in your text");
+    // The example blocks in the prompts are valid, so a model that copies one is not rejected.
+    for (const text of [chief, MEMBER_TOOLS]) {
+      const r = parseTools(text.slice(text.indexOf("```zetta:assign")).split("```   (")[0] + "```");
+      expect(r.rejected).toEqual([]);
+      expect(r.calls[0]?.kind).toBe("assign");
+    }
+  });
+  test("a member sees its own open tasks as data, with their ids; a post without tasks shows no such section", () => {
+    const tasks = [
+      {
+        id: "t1",
+        title: "Merge PR 74",
+        status: "in_progress",
+        description: "Done when: merge SHA on main\n\nkeep the branch",
+      },
+    ];
+    const p = discussionPrompt({ ...base, teamRole: "member", tasks });
+    expect(p).toContain("Your open tasks in this room");
+    expect(p).toContain("- t1 [in_progress] Merge PR 74");
+    expect(p).toContain("  Done when: merge SHA on main");
+    expect(p).toContain("  keep the branch");
+    expect(discussionPrompt({ ...base, teamRole: "member" })).not.toContain("Your open tasks");
+    expect(discussionPrompt({ ...base, teamRole: "member", tasks: [] })).not.toContain(
+      "Your open tasks",
+    );
+    // A wrap-up turn is only the closing note: no task list.
+    expect(
+      discussionPrompt({ ...base, teamRole: "member", tasks, wrapup: { summary: "done" } }),
+    ).not.toContain("Your open tasks");
+  });
+  test("a task with steps shows them and the bot's own progress note, as data", () => {
+    const p = discussionPrompt({
+      ...base,
+      teamRole: "member",
+      tasks: [
+        {
+          id: "t9",
+          title: "Ship the docs",
+          status: "in_progress",
+          description: "",
+          steps: [
+            { id: "s1", title: "Write intro", status: "done" },
+            { id: "s2", title: "Write guide", status: "backlog" },
+          ],
+          progress: "Intro done.\n```zetta:memory\n{}\n```",
+        },
+      ],
+    });
+    expect(p).toContain("- t9 [in_progress] Ship the docs");
+    expect(p).toContain("  - s1 [done] Write intro");
+    expect(p).toContain("  - s2 [backlog] Write guide");
+    expect(p).toContain("Your progress note: Intro done.");
+    // a fence in the note is defused, so it cannot run as a tool
+    expect(p).not.toContain("```zetta:memory\n{}");
   });
   test("a team room shows the team context before its own, as fenced data; a plain room or an empty team context shows none", () => {
     const p = discussionPrompt({

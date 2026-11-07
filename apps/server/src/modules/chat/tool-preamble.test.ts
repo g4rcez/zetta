@@ -234,7 +234,8 @@ describe("chief creation tools", () => {
     expect(chief).not.toContain("asks for a new bot or a team, create it yourself");
     // A playbook that grows creeps into every Chief turn: raise this limit on purpose, not by accident.
     // Raised from 30_000 to 30_500 on purpose: the memory-as-database guidance (list, append, ~600 characters) is read by every bot.
-    expect(chief.length).toBeLessThan(30_500);
+    // Raised from 30_500 to 31_100 on purpose: task plans and follow-up (subtasks, progress, checkAt, ~650 characters) are read by every bot.
+    expect(chief.length).toBeLessThan(31_100);
     expect(toolPreamble("off", false, false)).not.toContain("next_wave");
   });
   test("create_team defaults to no goal, no context and no members", () => {

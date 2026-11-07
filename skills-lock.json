@@ -20,6 +20,18 @@
       "computedHash": "00ad2639d2da50af9922c0f61c2315564bbe6b29cb02d421f042db105fd11a03",
       "wellKnownDigest": "sha256:b23d47912c43ca0ef77c001186fcefe57133d5872124c368881e1424ae4b9836"
     },
+    "chat": {
+      "source": "vercel-labs/json-render",
+      "sourceType": "github",
+      "skillPath": "skills/chat/SKILL.md",
+      "computedHash": "abdf075456b0d844e15c8fe896e30c86ec6a2da31eab77895a60d59330634f4c"
+    },
+    "core": {
+      "source": "vercel-labs/json-render",
+      "sourceType": "github",
+      "skillPath": "skills/core/SKILL.md",
+      "computedHash": "91f99f5a19b925435f438a1b8f662bb86b49b79be280b6f9e770abeefcdc0339"
+    },
     "csscomponents": {
       "source": "g4rcez/components",
       "sourceType": "github",
@@ -43,6 +55,12 @@
       "sourceType": "github",
       "skillPath": "skills/linear/SKILL.md",
       "computedHash": "90c9a6ba781cd83c22943718259ef0bd8704c9de0e0a3e42ed2914322bc88c05"
+    },
+    "react": {
+      "source": "vercel-labs/json-render",
+      "sourceType": "github",
+      "skillPath": "skills/react/SKILL.md",
+      "computedHash": "7d6d1fc6eb68610aae450ff37281f0898db5fdac6fbbcf301d46ac17b6c3acfc"
     },
     "review-logging-patterns": {
       "source": "evlog.dev",

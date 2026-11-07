@@ -23,6 +23,13 @@ Object.assign(win, {
 let sidebarSide: "left" | "right" = "left";
 let railMode: "expanded" | "collapsed" = "expanded";
 let agentsState: "running" | "paused" = "running";
+const blockedBot = {
+  id: "bot-blocked",
+  kind: "specialist",
+  name: "Blocked Bot",
+  canEdit: false,
+  onboarded: false,
+};
 // The auth client keeps the first `fetch` it sees for the whole test process, and this file loads it before the others. So once this
 // file is done the fake hands every request to whatever `fetch` the next file installed (or the real one), and cannot hijack it.
 const realFetch = globalThis.fetch;
@@ -46,6 +53,7 @@ const fake = (async (input: URL | Request | string, init?: RequestInit) => {
         botOrder: [],
       },
     });
+  if (url.pathname === "/api/bots") return Response.json({ bots: [blockedBot] });
   return Response.json({ error: { code: "TEST", message: "offline" } }, { status: 500 });
 }) as typeof fetch;
 globalThis.fetch = fake;
@@ -170,5 +178,24 @@ test('while the agents run, the expanded sidebar hints "Collapse sidebar" on the
   const button = host.querySelector('aside button[aria-label="Collapse sidebar"]')!;
   expect(button.hasAttribute("title")).toBe(false);
   expect(await openHint(button)).toBe("Collapse sidebar");
+  await unmount();
+});
+
+test("in the collapsed sidebar, a bot you cannot open still shows its name when you point at it", async () => {
+  const { host, unmount } = await mountShell("left", { railMode: "collapsed" });
+  const button = host.querySelector('aside [aria-label="Bots"] button')!;
+  expect(button.hasAttribute("disabled")).toBe(true);
+  // A browser sends no mouse event to a disabled button, so the pointer reaches the element that wraps it.
+  await act(async () => {
+    const wrapper = button.parentElement!;
+    for (const type of ["pointerover", "pointerenter", "pointermove"])
+      wrapper.dispatchEvent(
+        new win.PointerEvent(type, { pointerType: "mouse", bubbles: type !== "pointerenter" }),
+      );
+    for (const type of ["mouseover", "mouseenter", "mousemove"])
+      wrapper.dispatchEvent(new win.MouseEvent(type, { bubbles: type !== "mouseenter" }));
+  });
+  await act(async () => void (await new Promise((r) => setTimeout(r, 400))));
+  expect(popup()?.textContent).toBe("Blocked Bot");
   await unmount();
 });

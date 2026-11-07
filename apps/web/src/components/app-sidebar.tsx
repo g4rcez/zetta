@@ -221,26 +221,33 @@ function RailBots() {
         const blocked = !b.canEdit && !b.onboarded;
         return (
           <li key={b.id}>
+            {/* A disabled button gets no mouse events, so the hint hangs on a wrapper and the button lets the pointer through. */}
             <RailHint collapsed label={b.name} icon={<BotAvatar bot={b} size={16} />}>
-              <button
-                type="button"
-                disabled={blocked}
-                aria-current={b.id === botId ? "page" : undefined}
-                onClick={() => toBot(b.id)}
-                className={cn(railRow, b.id === botId && railRowActive, "disabled:opacity-50")}
-              >
-                <BotAvatar bot={b} size={20} />
-                <span className="sr-only">
-                  {b.name}
-                  {needs ? ", needs you" : ""}
-                </span>
-                {needs && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute top-0.5 right-0.5 size-2 rounded-full border border-sidebar bg-attention"
-                  />
-                )}
-              </button>
+              <span className="block">
+                <button
+                  type="button"
+                  disabled={blocked}
+                  aria-current={b.id === botId ? "page" : undefined}
+                  onClick={() => toBot(b.id)}
+                  className={cn(
+                    railRow,
+                    b.id === botId && railRowActive,
+                    "disabled:pointer-events-none disabled:opacity-50",
+                  )}
+                >
+                  <BotAvatar bot={b} size={20} />
+                  <span className="sr-only">
+                    {b.name}
+                    {needs ? ", needs you" : ""}
+                  </span>
+                  {needs && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-0.5 right-0.5 size-2 rounded-full border border-sidebar bg-attention"
+                    />
+                  )}
+                </button>
+              </span>
             </RailHint>
           </li>
         );

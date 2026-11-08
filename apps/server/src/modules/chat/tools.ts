@@ -4,6 +4,7 @@ import { z } from "zod";
 import { designSystemPrompt } from "../artifacts/design-system";
 import { playgroundFields, playgroundPatch } from "../playground/fields";
 import { TASK_PRIORITIES } from "@zetta/db/schema/tasks";
+import { MAX_SUBTASKS_PER_ADD, PROGRESS_MAX } from "../tasks/follow-up";
 import { BUILTIN_KEYS } from "../output-styles/builtins";
 import { CHIEF_MANAGE_TOOLS } from "./chief/prompt";
 import { chiefSchemas } from "./chief/schemas";
@@ -17,6 +18,7 @@ import { chiefSchemas } from "./chief/schemas";
  *   ```zetta:handoff     {"reason": "I need you to sign in"}                 -> attention item; the human takes over
  *   ```zetta:goal        {"goal": "...", "done_when": "..."}                 -> proposal to start a loop; once approved, the bot keeps working turn after turn
  *   ```zetta:team_goals  {"goals": [{"bot": "Dev", "goal": "...", "done_when": "..."}]} -> team room chief only: proposal to give each member its own goal loop; nothing runs until the user approves
+ *   ```zetta:assign      {"bot": "Dev", "task": "...", "done_when": "...", "details": "..."} -> team room only: puts a task on the board for that member and wakes it with its own brief
  *   ```zetta:goal_progress / goal_done {"summary": "...", "lesson": "..."}   -> inside an approved loop only: report progress (with an optional lesson for the next steps), or finish it
  *   ```zetta:goal_stop   {"action": "pause"|"stop", "reason": "..."}          -> inside an approved loop only: the user asked to pause (resumable) or stop (ends) the loop
  *   ```zetta:credential  {"ref": "1password:<item>", "field": "password"}    -> Zetta types a shared login into the focused input (value never shown to the bot)
@@ -55,8 +57,8 @@ export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks i
 {"action":"add","kind":"task","title":"Call Ana about the contract","start":"2026-10-27T09:00:00-03:00"}
 \`\`\`   (the user's Agenda, a calendar they see in Zetta. Add what the conversation commits them to: kind task (something to do), reminder (a nudge at a time), event (a meeting or appointment, give "end"), note (context for a day). Fields: title, start, end, allDay, remindAt (defaults to start for tasks and reminders; null for none), description, location, timezone (IANA), syncToGoogle. Dates are ISO 8601 with the user's UTC offset. Other actions: list{from?,to?} (default next 7 days; returns ids), update{id,...fields}, complete{id}, remove{id}. Add only what the user asked for or clearly agreed to; tell them what you added.)
 \`\`\`zetta:task
-{"action":"add","title":"Draft the Q4 report","description":"optional detail","status":"backlog"}
-\`\`\`   (the shared task board all the user's bots and the user see, with fixed columns backlog, in_progress, blocked, review, done. Add a task when a message commits you or another bot to a piece of work that takes more than this reply; do not add one for quick answers. Move it as you work: update{id,status}. list returns the board with ids. Say in your reply what you added or moved. To ask a person for something only they can give, add the task with "assignee":"user" (the person you work for) or, in a team room, a person's id from the People list: they see it in their tasks and move it to done when it is met. When the person changes the status of that task, or deletes it, a system message tells you and you can go on. Moving your own task does not tell you. A task for a person needs a title that says what you need.)
+{"action":"add","title":"Draft the Q4 report","description":"optional detail","subtasks":["Collect the numbers","Write the draft","Check it against last quarter"]}
+\`\`\`   (the shared task board all the user's bots and the user see, with fixed columns backlog, in_progress, blocked, review, done. Add a task when a message commits you or another bot to a piece of work that takes more than this reply; do not add one for quick answers. For work of several steps add ONE task with "subtasks" (its steps, up to 20) and keep going: the server returns the step ids and calls you back while the task is open, so you need not finish in one reply. Keep it true: update{id,status} on a step when you start or finish it, and update{id,progress:"done so far, where you stopped, what is next"} on the task after each piece of work (it replaces the old note; you read it first when called back). Set the task to done only when every step is done and the request is met: a separate check reads both. To wait (a deploy, a person) say so in progress and set "checkAt" (ISO 8601, within 7 days); if the work cannot go on, update{followUp:"off",reason}. Never end a reply with "next I will..." while the task is open: do that step. list returns the board with steps and ids; get{id} returns one task. Say in your reply what you added or moved. To ask a person for something only they can give, add the task with "assignee":"user" (the person you work for) or, in a team room, a person's id from the People list: they see it in their tasks and move it to done when it is met. When the person changes the status of that task, or deletes it, a system message tells you and you can go on. Moving your own task does not tell you. A task for a person needs a title that says what you need.)
 \`\`\`zetta:artifact
 {"title":"Weekly sales report","description":"optional one line","path":"reports/sales.html"}
 \`\`\`   (publishes a file as an Artifact: the user finds it in the Artifacts page and can preview or download it any time. Use it when a task or routine asks for a deliverable (a report, numbers, a presentation, a chart, an image, a video, a zip), instead of pasting a long result in the chat. "path" is a file inside your code workspace (any type, up to 500 MB; needs code access). Without code access, or for a short text file, send "content" instead (up to 256 KB: HTML, Markdown, CSV, JSON or plain text) with an optional "fileName" such as "report.html". Give exactly one of path or content. After you read email, pages or tool output, a "path" artifact waits for the user's approval on a card; a short text digest of what you read can go inline as "content" and publishes at once. One block per file; for many files, zip them first. HTML: ${designSystemPrompt()} Send at most 8 tool blocks per reply. The server tells you which artifacts were published: say a file is published only after you see that, never in the same reply as the block. Tell the user in your reply what you published.)
@@ -340,6 +342,13 @@ export const toolSchemas = {
       .min(1)
       .max(12),
   }),
+  /** Team room only: one member's piece of work. It becomes a board task of that member, and the member is woken with this brief alone. */
+  assign: z.strictObject({
+    bot: bounded(80),
+    task: bounded(200),
+    done_when: bounded(600),
+    details: z.string().max(2000).optional(),
+  }),
   goal_progress: z.strictObject({ summary: bounded(1500), lesson: bounded(300).optional() }),
   goal_done: z.strictObject({ summary: bounded(1500) }),
   /** Chief only, in a chat. Marks this reply as one step of a team build: once the user decides every card of it, the chief is called again. */
@@ -528,8 +537,14 @@ export const toolSchemas = {
       labels: z.array(bounded(40)).max(12).optional(),
       // "user" is the person you work for; a person's id comes from the People list of a team room. Without it the task is yours.
       assignee: bounded(200).optional(),
+      // The steps of your own plan, created with the task (up to 20). Your own tasks are followed: the server calls you back until they are done.
+      subtasks: z.array(bounded(200)).max(MAX_SUBTASKS_PER_ADD).optional(),
+      // Adds this one task as a subtask of an existing task (use instead of subtasks).
+      parentId: z.string().uuid().optional(),
+      progress: z.string().max(PROGRESS_MAX).optional(),
     }),
     z.strictObject({ action: z.literal("list") }),
+    z.strictObject({ action: z.literal("get"), id: z.string().uuid() }),
     z.strictObject({
       action: z.literal("update"),
       id: z.string().uuid(),
@@ -538,6 +553,13 @@ export const toolSchemas = {
       status: taskStatus.optional(),
       priority: z.enum(TASK_PRIORITIES).optional(),
       labels: z.array(bounded(40)).max(12).optional(),
+      // What is done, where you stopped and what comes next. Replaces the old note; the next follow-up starts from it.
+      progress: z.string().max(PROGRESS_MAX).optional(),
+      // "off" stops the server from calling you back for this task (say why in "reason"); "auto" starts it again.
+      followUp: z.enum(["auto", "off"]).optional(),
+      reason: bounded(300).optional(),
+      // ISO 8601 time (at most 7 days ahead) for the next follow-up, for work that must wait ("check the deploy again at 15:00").
+      checkAt: z.string().datetime({ offset: true }).optional(),
     }),
     // Chief only (checked in the chat service): deleting a task is a card the user approves.
     z.strictObject({ action: z.literal("remove"), id: z.string().uuid() }),
@@ -627,7 +649,7 @@ export function parseTools(reply: string): {
   let plan: PlanStep[] | undefined;
   const text = reply
     .replace(
-      /```zetta:(memory|wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|machine|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal_stop|next_wave|goal|team_goals|artifact|playground|setup|inbound|skills|bot|folder|routine|team|output_style|artifacts|plugins|mcp_server|skill_library|hook|claude|room|preferences|conversation|attention|workflow|computer|snapshot|source|company_docs|connection|agenda_sync|memory_admin|wiki_admin|browser_profile|decision|inbound_route|admin)\s*\n([\s\S]*?)```/g,
+      /```zetta:(memory|wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|machine|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal_stop|next_wave|goal|team_goals|assign|artifact|playground|setup|inbound|skills|bot|folder|routine|team|output_style|artifacts|plugins|mcp_server|skill_library|hook|claude|room|preferences|conversation|attention|workflow|computer|snapshot|source|company_docs|connection|agenda_sync|memory_admin|wiki_admin|browser_profile|decision|inbound_route|admin)\s*\n([\s\S]*?)```/g,
       (_, fence: string, body: string) => {
         const kind = (FENCE_ALIAS[fence] ?? fence) as keyof typeof toolSchemas;
         let json: unknown;

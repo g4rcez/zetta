@@ -51,6 +51,8 @@ import { createAgendaScheduler } from "./modules/agenda/scheduler";
 import { createDiscussionStore } from "./modules/discussions/store";
 import { createTeamStore } from "./modules/teams/store";
 import { createLoopDriver, createLoopStore } from "./modules/chat/loops";
+import { createTaskHeartbeat } from "./modules/chat/task-heartbeat";
+import { agentsPaused } from "./modules/preferences/agents-state";
 import { createDiscussionWorker } from "./modules/discussions/worker";
 import { createInbound } from "./modules/inbound/service";
 import { createBotClaude } from "./modules/bot-claude/store";
@@ -431,6 +433,72 @@ const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKe
     }
   }
 });
+// Task follow-up (chat/task-heartbeat.ts): a bot that took on a task is called back while the task is open. The check is a quiet turn in
+// the task's chat (a `notice`: a short label in the chat, the hidden prompt for the bot), or in a room a wake-up of that one member.
+const taskHeartbeat = createTaskHeartbeat({
+  db,
+  tasks,
+  requestOf: (t) => tasks.requestOf(t),
+  ownerPaused: (userId) => agentsPaused(db, userId),
+  covered: async (t) => {
+    const room = await discussions.byConversation(t.conversationId!);
+    if (room?.status === "resolved" || room?.status === "cancelled") {
+      await tasks.pauseFollowUp(t.id, "the room is closed");
+      return true;
+    }
+    // A goal loop of this bot drives the work: the loop's steps are the follow-up.
+    if (await loops.activeFor(t.conversationId!, t.botId!)) return true;
+    if (room) return room.status === "paused";
+    const actor = await issueBackgroundActor(membershipLookup, t.ownerUserId);
+    return actor ? chatServices.chat.isBusy(actor, t.conversationId!) : false;
+  },
+  runTurn: async (task, label, prompt, requestKey) => {
+    const actor = await issueBackgroundActor(membershipLookup, task.ownerUserId);
+    if (!actor) throw new Error("owner_inactive");
+    const room = await discussions.byConversation(task.conversationId!);
+    if (room) {
+      // Only the bot that owns the task is woken. Its prompt already lists its open tasks with their steps and progress.
+      const started = await discussions.startLoopStep(
+        room.id,
+        `${label}\nDo the next open step, then update its steps and progress with zetta:task.`,
+        task.botId!,
+      );
+      if (started.state !== "started")
+        return { status: started.state === "cancelled" ? "cancelled" : "complete" };
+      const { state } = await discussions.settle(
+        room.id,
+        started.since,
+        async () => (await tasks.plan(task.id))?.task.followUp !== "auto",
+        task.botId!,
+      );
+      return {
+        status: state === "failed" ? "failed" : state === "cancelled" ? "cancelled" : "complete",
+      };
+    }
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const { follow } = await chatServices.chat.startTurn(actor, task.conversationId!, {
+          content: label,
+          clientRequestId: requestKey,
+          notice: { prompt },
+        });
+        let status = "failed";
+        let error: string | undefined;
+        let detail: string | undefined;
+        for await (const { event } of follow())
+          if (event.type === "message") {
+            status = event.message.status;
+            error = (event.message.meta as { error?: string } | null)?.error;
+            detail = status === "failed" ? event.message.content.slice(0, 500) : undefined;
+          }
+        return { status, error, detail };
+      } catch (e) {
+        if (!(e instanceof TurnBusyError) || attempt >= 60) throw e;
+        await Bun.sleep(5_000);
+      }
+    }
+  },
+});
 // A kick reaches the worker even when the request ran on an `api` process (over Postgres NOTIFY, see modules/events).
 loops.onStart = (id) => work.kick("loop", id);
 if (runsWork) work.on("loop", (id) => id && loopDriver.kick(id));
@@ -465,6 +533,7 @@ export async function resumeInterruptedRuns() {
   }
 }
 export const loopServices = { driver: loopDriver };
+export const taskFollowUp = { heartbeat: taskHeartbeat };
 const discussionWorker = createDiscussionWorker(
   db,
   discussions,

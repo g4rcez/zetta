@@ -170,6 +170,9 @@ export type Receipt = {
   text: string;
   created?: boolean;
   avatar?: BotAvatarValue | null;
+  /** A task the chief handed to a member of a team room: who has it and how it is done. */
+  assignee?: { botId: string; name: string };
+  doneWhen?: string;
 };
 /** The checklist a bot announced with zetta:plan; each update carries the whole list. */
 export type PlanStep = { id: string; title: string; status: "pending" | "active" | "done" };

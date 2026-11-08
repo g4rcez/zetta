@@ -32,6 +32,8 @@ import { Badge, ConfirmButton, Empty, field } from "../shared/ui";
 import { PriorityIcon, priorityLabel } from "./task-badges";
 import { LabelsEditor } from "./task-labels";
 import { extractLinks } from "./task-links";
+import { StepOf, TaskFollowUp, TaskSteps } from "./task-plan";
+import { stepsOf } from "./task-steps";
 import {
   TASK_COLUMNS,
   TASK_PRIORITIES,
@@ -43,6 +45,8 @@ import {
 } from "./tasks-api";
 
 const POLL_MS = 5000;
+const FOLLOW_POLL_MS = 10_000;
+const NO_STEPS: Task[] = [];
 const label = (status: TaskStatus) => TASK_COLUMNS.find((c) => c.status === status)!.label;
 
 /** What the thread shows: the main line of the chat, without tool-only turns. */
@@ -93,6 +97,7 @@ function splitSummary(thread: Message[]) {
 }
 
 type Change = {
+  followUp?: "auto" | "off";
   title?: string;
   description?: string;
   status?: TaskStatus;
@@ -146,12 +151,24 @@ export function TaskDetail({
   const qc = useQueryClient();
   const taskKey = tasksQueries.detail(id).queryKey;
   // `initial` only paints the first frame; the fresh copy replaces it.
-  const taskQuery = useQuery({ ...tasksQueries.detail(id), placeholderData: initial });
+  const taskQuery = useQuery({
+    ...tasksQueries.detail(id),
+    placeholderData: initial,
+    // While the server calls the bot back about this task, its progress and steps change without a click here.
+    refetchInterval: (q) => (q.state.data?.followUp === "auto" ? FOLLOW_POLL_MS : false),
+  });
   const task: Task | null | undefined =
     taskQuery.isError && !taskQuery.data ? null : taskQuery.data;
   const setTask = (next: Task | null | undefined) => {
     if (next) qc.setQueryData<Task>(taskKey, next);
   };
+  // The steps live in the board's cache, with the tasks; a followed task refreshes it while the bot works.
+  const steps =
+    useQuery({
+      ...tasksQueries.list(),
+      select: (all) => stepsOf(all, id),
+      refetchInterval: task?.followUp === "auto" ? FOLLOW_POLL_MS : false,
+    }).data ?? NO_STEPS;
   const [asking, setAsking] = useState(false);
   const [showAllLinks, setShowAllLinks] = useState(false);
   const fail = (e: unknown) => toast.error(errorMessage(e));
@@ -297,6 +314,11 @@ export function TaskDetail({
                     </Button>
                   </section>
                 )}
+              {!guest && task.parentTaskId && <StepOf parentId={task.parentTaskId} />}
+              {!guest && !task.parentTaskId && <TaskSteps task={task} steps={steps} />}
+              {!guest && !task.parentTaskId && (
+                <TaskFollowUp task={task} onFollowUp={(followUp) => patch({ followUp })} />
+              )}
               {!guest && (
                 <section aria-label="AI Summary" className="flex flex-col gap-2">
                   <div className="flex items-center gap-2">

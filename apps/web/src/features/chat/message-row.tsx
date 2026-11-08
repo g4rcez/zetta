@@ -35,10 +35,11 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
+import { BotIdentity, useBotIdentity } from "@/components/bot-identity";
 import { UserAvatar } from "@/components/user-avatar";
 import { parseAvatar } from "@zetta/core/avatar";
 
-import { errorMessage, isImage, type Bot } from "./chat-client";
+import { errorMessage, isImage, type Bot, type Receipt } from "./chat-client";
 import { chatQueries } from "./chat-queries";
 import { PictureStrip } from "./attachment-image";
 import { CopyButton } from "./chat-copy";
@@ -315,6 +316,26 @@ function showMessage(id: string) {
     });
 }
 
+/** One task the chief handed to a member of a team room: the member's identity, the task and what done looks like. */
+function HandoffReceipt({ r }: { r: Receipt }) {
+  const member = useBotIdentity(r.assignee!.botId, r.assignee!.name);
+  return (
+    <li>
+      <Link
+        to="/tasks"
+        className="block max-w-xl rounded-md px-1 py-0.5 hover:bg-accent"
+        title={r.doneWhen ? `Done when: ${r.doneWhen}` : r.text}
+      >
+        <BotIdentity
+          bot={member}
+          size={24}
+          sub={`${r.text}${r.doneWhen ? ` · Done when: ${r.doneWhen}` : ""}`}
+        />
+      </Link>
+    </li>
+  );
+}
+
 /** The message a channel reply answers: author and the first lines of it. Click goes to the original. */
 function QuoteBlock({
   quote,
@@ -416,8 +437,15 @@ export const MessageRow = memo(function MessageRow({
       ? splitActionNotes(row.content)
       : { body: row.content, notes: [] };
   const all = row.meta?.receipts ?? [];
+  // A task the chief handed to a member is a handoff card of its own, stacked under the answer; the other receipts stay small chips.
+  const handoffs = all.filter((r) => r.kind === "task" && r.assignee);
   const receipts = all.filter(
-    (r) => r.kind !== "proposal" && r.kind !== "computer" && r.kind !== "bot" && r.kind !== "team",
+    (r) =>
+      r.kind !== "proposal" &&
+      r.kind !== "computer" &&
+      r.kind !== "bot" &&
+      r.kind !== "team" &&
+      !(r.kind === "task" && r.assignee),
   );
   const made = all.filter((r) => r.kind === "bot" || r.kind === "team");
   const computers = computersOf(row);
@@ -658,6 +686,13 @@ export const MessageRow = memo(function MessageRow({
                   </Link>
                 )}
               </li>
+            ))}
+          </ul>
+        )}
+        {handoffs.length > 0 && (
+          <ul className="flex flex-col gap-0.5" aria-label="Work handed to members">
+            {handoffs.map((r) => (
+              <HandoffReceipt key={`${r.kind}-${r.id}`} r={r} />
             ))}
           </ul>
         )}

@@ -33,7 +33,8 @@ const WHY: Record<string, string> = {
   timeout: "the bot took too long",
   busy: "the server is busy",
 };
-const why = (code?: string) => WHY[code ?? ""] ?? "the bot could not answer";
+/** Why a step failed, in words for the person (shared with the task follow-up). */
+export const why = (code?: string) => WHY[code ?? ""] ?? "the bot could not answer";
 
 /**
  * Goal loops: a bot works on one approved goal turn after turn until it reports goal_done. Nothing here limits how many turns that takes;

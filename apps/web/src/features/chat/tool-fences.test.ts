@@ -20,6 +20,14 @@ describe("stripToolFences", () => {
     );
     expect(stripToolFences('Starting.\n```zetta:plan\n{"st')).toBe("Starting.");
   });
+  it("removes an assign block, finished or still being written", () => {
+    expect(
+      stripToolFences(
+        'Merging now.\n```zetta:assign\n{"bot":"Dev","task":"t","done_when":"d"}\n```',
+      ),
+    ).toBe("Merging now.");
+    expect(stripToolFences('Merging now.\n```zetta:assign\n{"bot":"De')).toBe("Merging now.");
+  });
   it("removes memory, task, escalate and setup blocks", () => {
     expect(stripToolFences('Done.\n```zetta:memory\n{"action":"search"}\n```')).toBe("Done.");
     // `zetta:wiki` is the old name of the same block.

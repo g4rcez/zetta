@@ -1,13 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { createElement, memo, useContext, useMemo, type ReactNode } from "react";
 import { defaultRehypePlugins, Streamdown } from "streamdown";
-
 import { splitReply, UI_FENCE } from "@zetta/render/reply";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotsContext } from "@/components/bot-identity";
 import { BotTag } from "@/components/bot-tag";
 import { MentionTag } from "@/components/mention-tag";
-
 import { RELATION } from "@/features/memory/memory-api";
 import type { Relation } from "@/features/memory/memory-api";
 import { rehypeMemoryLinks } from "@/features/memory/memory-markdown";
@@ -31,21 +29,21 @@ import { parseWhatsapp, WhatsappView } from "./whatsapp-view";
  * too), so those protocols are allowed here and `rehypeMentionLinks` turns them into tags.
  */
 const [sanitizer, sanitizeSchema] = defaultRehypePlugins.sanitize as unknown as [
-  unknown,
-  { protocols?: { href?: string[] } } & Record<string, unknown>,
+    unknown,
+    { protocols?: { href?: string[] } } & Record<string, unknown>,
 ];
 const withMentionProtocols = {
-  ...defaultRehypePlugins,
-  sanitize: [
-    sanitizer,
-    {
-      ...sanitizeSchema,
-      protocols: {
-        ...sanitizeSchema.protocols,
-        href: [...(sanitizeSchema.protocols?.href ?? []), "bot", "team", "room"],
-      },
-    },
-  ] as unknown as typeof defaultRehypePlugins.sanitize,
+    ...defaultRehypePlugins,
+    sanitize: [
+        sanitizer,
+        {
+            ...sanitizeSchema,
+            protocols: {
+                ...sanitizeSchema.protocols,
+                href: [...(sanitizeSchema.protocols?.href ?? []), "bot", "team", "room"],
+            },
+        },
+    ] as unknown as typeof defaultRehypePlugins.sanitize,
 };
 
 const BODY = "chat-response min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
@@ -55,115 +53,115 @@ const BODY = "chat-response min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0
  * image would send that request as soon as the reply renders. Show the alt text instead.
  */
 const NO_REMOTE_IMAGES = {
-  img: ({ alt }: { alt?: string | undefined }) =>
-    alt ? <span className="text-muted-foreground">[{alt}]</span> : null,
+    img: ({ alt }: { alt?: string | undefined }) =>
+        alt ? <span className="text-muted-foreground">[{alt}]</span> : null,
 };
 
 /** A GitHub issue, pull request or commit named in a reply (see github-refs). It leaves the app, so it is a plain link. */
 function GithubRef({ children, ...props }: { children?: ReactNode }) {
-  const href = String((props as Record<string, unknown>)["data-href"] ?? "");
-  if (!href.startsWith("https://github.com/")) return <span>{children}</span>;
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="link rounded-md bg-muted px-1 font-mono text-[0.9em] whitespace-nowrap text-primary [box-decoration-break:clone] hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-ring"
-    >
-      {children}
-    </a>
-  );
+    const href = String((props as Record<string, unknown>)["data-href"] ?? "");
+    if (!href.startsWith("https://github.com/")) return <span>{children}</span>;
+    return (
+        <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="link rounded-md bg-muted px-1 font-mono text-[0.9em] whitespace-nowrap text-primary [box-decoration-break:clone] hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-ring"
+        >
+            {children}
+        </a>
+    );
 }
 
 /** What a `[[slug]]` of a text points to: the item's title when it exists. `undefined` for a slug nothing has. */
 export type MemoryLinkInfo = (slug: string) => { title: string } | undefined;
 
 const MEMORY_LINK =
-  "link rounded-md bg-muted px-1 text-[0.95em] text-primary hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-ring";
+    "link rounded-md bg-muted px-1 text-[0.95em] text-primary hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-ring";
 
 /** A memory item named in a text, drawn as a router link; one that does not exist links to the page that creates it. */
 function MemoryRef({ info, ...props }: { info: MemoryLinkInfo; children?: ReactNode }) {
-  const p = props as Record<string, unknown>;
-  const slug = String(p["data-slug"] ?? ""),
-    relation = String(p["data-relation"] ?? "related") as Relation;
-  const hit = info(slug);
-  const prefix = relation === "related" ? "" : `${RELATION[relation]} `;
-  return hit ? (
-    <Link to="/memory/$slug" params={{ slug }} className={MEMORY_LINK}>
-      {prefix}
-      {hit.title}
-    </Link>
-  ) : (
-    <Link
-      to="/memory"
-      search={{ create: slug } as never}
-      className="rounded-md px-1 text-muted-foreground underline decoration-dotted"
-    >
-      {slug} (missing)
-    </Link>
-  );
+    const p = props as Record<string, unknown>;
+    const slug = String(p["data-slug"] ?? ""),
+        relation = String(p["data-relation"] ?? "related") as Relation;
+    const hit = info(slug);
+    const prefix = relation === "related" ? "" : `${RELATION[relation]} `;
+    return hit ? (
+        <Link to="/memory/$slug" params={{ slug }} className={MEMORY_LINK}>
+            {prefix}
+            {hit.title}
+        </Link>
+    ) : (
+        <Link
+            to="/memory"
+            search={{ create: slug } as never}
+            className="rounded-md px-1 text-muted-foreground underline decoration-dotted"
+        >
+            {slug} (missing)
+        </Link>
+    );
 }
 
 const Markdown = memo(function Markdown({
-  text,
-  streaming,
-  className,
-  repo,
-  memoryLinks,
+    text,
+    streaming,
+    className,
+    repo,
+    memoryLinks,
 }: {
-  text: string;
-  streaming: boolean;
-  className?: string | undefined;
-  repo?: string | undefined;
-  memoryLinks?: MemoryLinkInfo | undefined;
+    text: string;
+    streaming: boolean;
+    className?: string | undefined;
+    repo?: string | undefined;
+    memoryLinks?: MemoryLinkInfo | undefined;
 }) {
-  const bots = useContext(BotsContext);
-  // Bot names and GitHub references become tags and links. Our plugins run after the default ones (sanitize included), so their elements are not stripped.
-  const { rehypePlugins, components } = useMemo(() => {
-    const list = [...bots.values()];
-    return {
-      rehypePlugins: [
-        ...Object.values(withMentionProtocols),
-        rehypeMentionLinks,
-        rehypeGithubRefs(repo),
-        ...(memoryLinks ? [rehypeMemoryLinks] : []),
-        ...(list.length ? [rehypeBotTags(list)] : []),
-      ],
-      components: {
-        ...NO_REMOTE_IMAGES,
-        "gh-ref": GithubRef,
-        "mention-tag": (props: { children?: ReactNode }) => <MentionTag bots={bots} {...props} />,
-        ...(memoryLinks && {
-          "memory-link": (props: { children?: ReactNode }) => (
-            <MemoryRef info={memoryLinks} {...props} />
-          ),
-        }),
-        ...(list.length && {
-          "bot-tag": ({ children, ...props }: { children?: ReactNode }) => {
-            const bot = bots.get(String((props as Record<string, unknown>)["data-bot-id"]));
-            return bot ? (
-              <BotTag bot={bot}>{children}</BotTag>
-            ) : (
-              createElement("span", null, children)
-            );
-          },
-        }),
-      },
-    };
-  }, [bots, repo, memoryLinks]);
-  return (
-    <Streamdown
-      mode={streaming ? "streaming" : "static"}
-      rehypePlugins={rehypePlugins}
-      isAnimating={streaming}
-      parseIncompleteMarkdown={streaming}
-      className={cn(BODY, className)}
-      components={components}
-      plugins={codePlugins}
-    >
-      {tagPatches(text)}
-    </Streamdown>
-  );
+    const bots = useContext(BotsContext);
+    // Bot names and GitHub references become tags and links. Our plugins run after the default ones (sanitize included), so their elements are not stripped.
+    const { rehypePlugins, components } = useMemo(() => {
+        const list = [...bots.values()];
+        return {
+            rehypePlugins: [
+                ...Object.values(withMentionProtocols),
+                rehypeMentionLinks,
+                rehypeGithubRefs(repo),
+                ...(memoryLinks ? [rehypeMemoryLinks] : []),
+                ...(list.length ? [rehypeBotTags(list)] : []),
+            ],
+            components: {
+                ...NO_REMOTE_IMAGES,
+                "gh-ref": GithubRef,
+                "mention-tag": (props: { children?: ReactNode }) => <MentionTag bots={bots} {...props} />,
+                ...(memoryLinks && {
+                    "memory-link": (props: { children?: ReactNode }) => (
+                        <MemoryRef info={memoryLinks} {...props} />
+                    ),
+                }),
+                ...(list.length && {
+                    "bot-tag": ({ children, ...props }: { children?: ReactNode }) => {
+                        const bot = bots.get(String((props as Record<string, unknown>)["data-bot-id"]));
+                        return bot ? (
+                            <BotTag bot={bot}>{children}</BotTag>
+                        ) : (
+                            createElement("span", null, children)
+                        );
+                    },
+                }),
+            },
+        };
+    }, [bots, repo, memoryLinks]);
+    return (
+        <Streamdown
+            mode={streaming ? "streaming" : "static"}
+            rehypePlugins={rehypePlugins}
+            isAnimating={streaming}
+            parseIncompleteMarkdown={streaming}
+            className={cn(BODY, className)}
+            components={components}
+            plugins={codePlugins}
+        >
+            {tagPatches(text)}
+        </Streamdown>
+    );
 });
 
 /**
@@ -173,102 +171,102 @@ const Markdown = memo(function Markdown({
 const CARD = /```zetta:(whatsapp|setup-card|inbound-card|form-card)\s*\n([\s\S]*?)```/g;
 
 export const Response = memo(function Response({
-  text: raw,
-  streaming = false,
-  className,
-  repo,
-  memoryLinks,
+    text: raw,
+    streaming = false,
+    className,
+    repo,
+    memoryLinks,
 }: {
-  text: string;
-  streaming?: boolean;
-  className?: string;
-  /** `owner/repo` the `#12` and commit ids of this text belong to. */
-  repo?: string | undefined;
-  /** Turns `[[slug]]` into links to the memory item. Chat leaves it out and shows the text as written. */
-  memoryLinks?: MemoryLinkInfo | undefined;
+    text: string;
+    streaming?: boolean;
+    className?: string;
+    /** `owner/repo` the `#12` and commit ids of this text belong to. */
+    repo?: string | undefined;
+    /** Turns `[[slug]]` into links to the memory item. Chat leaves it out and shows the text as written. */
+    memoryLinks?: MemoryLinkInfo | undefined;
 }) {
-  const text = streaming ? stripToolFences(raw) : raw;
-  const whatsapp = !streaming && /```zetta:(whatsapp|setup-card|inbound-card|form-card)/.test(text);
-  // Hooks stay above the early return (a reply can flip to the WhatsApp view when it settles). A reply with no ui fence skips the parse on every chunk.
-  const segments = useMemo(
-    () => (whatsapp || !text.includes("```" + UI_FENCE) ? [] : splitReply(text, streaming)),
-    [text, streaming, whatsapp],
-  );
-  if (whatsapp) {
-    const parts: {
-      md?: string;
-      wa?: ReturnType<typeof parseWhatsapp>;
-      setup?: ReturnType<typeof parseSetupCard>;
-      inbound?: ReturnType<typeof parseInboundCard>;
-      form?: ReturnType<typeof parseFormCard>;
-      raw?: string;
-    }[] = [];
-    let last = 0;
-    for (const m of text.matchAll(CARD)) {
-      if (m.index! > last) parts.push({ md: text.slice(last, m.index) });
-      parts.push(
-        m[1] === "setup-card"
-          ? { setup: parseSetupCard(m[2]!), raw: m[2]! }
-          : m[1] === "inbound-card"
-            ? { inbound: parseInboundCard(m[2]!), raw: m[2]! }
-            : m[1] === "form-card"
-              ? { form: parseFormCard(m[2]!), raw: m[2]! }
-              : { wa: parseWhatsapp(m[2]!), raw: m[2]! },
-      );
-      last = m.index! + m[0].length;
+    const text = streaming ? stripToolFences(raw) : raw;
+    const whatsapp = !streaming && /```zetta:(whatsapp|setup-card|inbound-card|form-card)/.test(text);
+    // Hooks stay above the early return (a reply can flip to the WhatsApp view when it settles). A reply with no ui fence skips the parse on every chunk.
+    const segments = useMemo(
+        () => (whatsapp || !text.includes("```" + UI_FENCE) ? [] : splitReply(text, streaming)),
+        [text, streaming, whatsapp],
+    );
+    if (whatsapp) {
+        const parts: {
+            md?: string;
+            wa?: ReturnType<typeof parseWhatsapp>;
+            setup?: ReturnType<typeof parseSetupCard>;
+            inbound?: ReturnType<typeof parseInboundCard>;
+            form?: ReturnType<typeof parseFormCard>;
+            raw?: string;
+        }[] = [];
+        let last = 0;
+        for (const m of text.matchAll(CARD)) {
+            if (m.index! > last) parts.push({ md: text.slice(last, m.index) });
+            parts.push(
+                m[1] === "setup-card"
+                    ? { setup: parseSetupCard(m[2]!), raw: m[2]! }
+                    : m[1] === "inbound-card"
+                        ? { inbound: parseInboundCard(m[2]!), raw: m[2]! }
+                        : m[1] === "form-card"
+                            ? { form: parseFormCard(m[2]!), raw: m[2]! }
+                            : { wa: parseWhatsapp(m[2]!), raw: m[2]! },
+            );
+            last = m.index! + m[0].length;
+        }
+        if (last < text.length) parts.push({ md: text.slice(last) });
+        return (
+            <div className={cn("flex min-w-0 flex-col gap-2", className)}>
+                {parts.map((p, i) =>
+                    p.md !== undefined ? (
+                        p.md.trim() ? (
+                            <Response key={i} text={p.md} repo={repo} />
+                        ) : null
+                    ) : p.setup ? (
+                        <SetupCard key={i} data={p.setup} />
+                    ) : p.inbound ? (
+                        <InboundCard key={i} data={p.inbound} />
+                    ) : p.form ? (
+                        <FormCard key={i} data={p.form} />
+                    ) : p.wa ? (
+                        <WhatsappView key={i} data={p.wa} />
+                    ) : (
+                        <Markdown key={i} text={`\`\`\`json\n${p.raw}\n\`\`\``} streaming={false} />
+                    ),
+                )}
+            </div>
+        );
     }
-    if (last < text.length) parts.push({ md: text.slice(last) });
+    if (segments.every((s) => s.kind === "markdown"))
+        return (
+            <Markdown
+                text={text}
+                streaming={streaming}
+                className={className}
+                repo={repo}
+                memoryLinks={memoryLinks}
+            />
+        );
     return (
-      <div className={cn("flex min-w-0 flex-col gap-2", className)}>
-        {parts.map((p, i) =>
-          p.md !== undefined ? (
-            p.md.trim() ? (
-              <Response key={i} text={p.md} repo={repo} />
-            ) : null
-          ) : p.setup ? (
-            <SetupCard key={i} data={p.setup} />
-          ) : p.inbound ? (
-            <InboundCard key={i} data={p.inbound} />
-          ) : p.form ? (
-            <FormCard key={i} data={p.form} />
-          ) : p.wa ? (
-            <WhatsappView key={i} data={p.wa} />
-          ) : (
-            <Markdown key={i} text={`\`\`\`json\n${p.raw}\n\`\`\``} streaming={false} />
-          ),
-        )}
-      </div>
+        <div className={cn("flex min-w-0 flex-col gap-2", className)}>
+            {segments.map((s, i) =>
+                s.kind === "markdown" ? (
+                    <Markdown
+                        key={i}
+                        text={s.text}
+                        streaming={streaming && i === segments.length - 1}
+                        repo={repo}
+                        memoryLinks={memoryLinks}
+                    />
+                ) : s.spec ? (
+                    <UiView key={i} spec={s.spec} streaming={!s.complete} />
+                ) : s.complete ? (
+                    <Markdown key={i} text={`\`\`\`json\n${s.raw}\n\`\`\``} streaming={false} />
+                ) : (
+                    <UiSkeleton key={i} />
+                ),
+            )}
+        </div>
     );
-  }
-  if (segments.every((s) => s.kind === "markdown"))
-    return (
-      <Markdown
-        text={text}
-        streaming={streaming}
-        className={className}
-        repo={repo}
-        memoryLinks={memoryLinks}
-      />
-    );
-  return (
-    <div className={cn("flex min-w-0 flex-col gap-2", className)}>
-      {segments.map((s, i) =>
-        s.kind === "markdown" ? (
-          <Markdown
-            key={i}
-            text={s.text}
-            streaming={streaming && i === segments.length - 1}
-            repo={repo}
-            memoryLinks={memoryLinks}
-          />
-        ) : s.spec ? (
-          <UiView key={i} spec={s.spec} streaming={!s.complete} />
-        ) : s.complete ? (
-          <Markdown key={i} text={`\`\`\`json\n${s.raw}\n\`\`\``} streaming={false} />
-        ) : (
-          <UiSkeleton key={i} />
-        ),
-      )}
-    </div>
-  );
 });

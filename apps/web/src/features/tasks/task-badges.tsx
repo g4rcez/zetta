@@ -12,7 +12,9 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { Tag } from "@g4rcez/components/tag";
-import { TASK_PRIORITIES, type TaskPriority, type TaskStatus } from "./tasks-api";
+import { Badge } from "../shared/ui";
+import { followUpView, type StepCount } from "./task-steps";
+import { TASK_PRIORITIES, type Task, type TaskPriority, type TaskStatus } from "./tasks-api";
 
 const STATUS_ICON = {
   backlog: { Icon: CircleDashedIcon, className: "text-muted-foreground" },
@@ -108,5 +110,32 @@ export function LabelChips({ labels, max = 2 }: { labels: string[]; max?: number
         </Tag>
       )}
     </>
+  );
+}
+
+/** "3/5 steps": how far a task with a plan has come. The words are visible, so the chip needs no hint. */
+export function StepChip({ count }: { count: StepCount }) {
+  return (
+    <span
+      title={`${count.done} of ${count.total} steps done`}
+      className="inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs tabular-nums text-muted-foreground"
+    >
+      {count.done}/{count.total} steps
+    </span>
+  );
+}
+
+/** "Following" while the server calls the bot back about this task, "Paused" when it stopped. Nothing when nobody follows it. */
+export function FollowUpChip({
+  task,
+}: {
+  task: Pick<Task, "followUp" | "followUpReason" | "status">;
+}) {
+  const view = followUpView(task);
+  if (!view) return null;
+  return (
+    <span title={view.detail || undefined} className="shrink-0">
+      <Badge tone={view.tone}>{view.label}</Badge>
+    </span>
   );
 }

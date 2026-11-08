@@ -36,6 +36,7 @@ import {
   installationServices,
   eventServices,
   loopServices,
+  taskFollowUp,
   networkMode,
   trustedExtraOrigins,
   resumeInterruptedRuns,
@@ -164,6 +165,7 @@ if (runsWork) {
     void discussionServices.worker.tick().catch(() => {});
     void inboundServices.inbound.tick().catch(() => {});
     void loopServices.driver.tick().catch(() => {});
+    void taskFollowUp.heartbeat.tick().catch(() => {});
     void chatServices.chat.drainQueues().catch(() => {});
     void chatServices.chat.flagSlowTurns().catch(() => {});
     void chatServices.chat.expireProposals().catch(() => {});

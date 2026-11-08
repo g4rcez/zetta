@@ -82,6 +82,13 @@ export function Separator({
 export const Modal = LibModal;
 /** Mounted once in the root layout: it renders the dialog behind `Modal.confirm(...)`, which replaces `window.confirm`. */
 export const ModalConfirmProvider = LibModalConfirmProvider;
+/**
+ * Class for a `Modal type="drawer"` that holds a full panel (sidebar, task, thread): the DS drawer adds its own padding, radius and a
+ * 320px minimum width, and a Tailwind `p-0` loses to that CSS. These are the DS tokens for them. Set the width cap per drawer with
+ * `[--var-modal-drawer-max-inline-size:…]`.
+ */
+export const DRAWER_FLUSH =
+  "[--var-modal-surface-padding-block:0px] [--var-modal-content-padding-inline:0px] [--var-modal-body-padding-block:0px] [--var-modal-surface-radius:0px] [--var-modal-surface-min-inline-size:0px]";
 export const Select = LibSelect;
 export const Autocomplete = LibAutocomplete;
 export const Checkbox = LibCheckbox;

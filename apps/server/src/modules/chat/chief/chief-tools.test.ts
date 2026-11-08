@@ -123,6 +123,44 @@ describe("parseTools: chief setup blocks", () => {
   });
 });
 
+describe("parseTools: task plans and follow-up", () => {
+  const soon = "2026-11-08T15:00:00-03:00";
+  test("a task takes subtasks, a parent, progress, follow-up, a reason and a check time", () => {
+    const r = parseTools(
+      [
+        fence(
+          "task",
+          '{"action":"add","title":"Plan","subtasks":["One","Two"],"progress":"started"}',
+        ),
+        fence("task", `{"action":"add","title":"Extra","parentId":"${ID}"}`),
+        fence("task", `{"action":"get","id":"${ID}"}`),
+        fence(
+          "task",
+          `{"action":"update","id":"${ID}","progress":"half","followUp":"off","reason":"waits for a person","checkAt":"${soon}"}`,
+        ),
+      ].join("\n"),
+    );
+    expect(r.calls.map((c) => (c.args as { action: string }).action)).toEqual([
+      "add",
+      "add",
+      "get",
+      "update",
+    ]);
+  });
+  test("bad plans are rejected: too many steps, a paused follow-up, a check time that is not a date", () => {
+    const many = JSON.stringify(Array.from({ length: 21 }, (_, i) => `s${i}`));
+    const r = parseTools(
+      [
+        fence("task", `{"action":"add","title":"Big","subtasks":${many}}`),
+        fence("task", `{"action":"update","id":"${ID}","followUp":"paused"}`),
+        fence("task", `{"action":"update","id":"${ID}","checkAt":"tomorrow"}`),
+        fence("task", `{"action":"update","id":"${ID}","progress":"${"x".repeat(2001)}"}`),
+      ].join("\n"),
+    );
+    expect(r.calls).toEqual([]);
+  });
+});
+
 describe("parseTools: integration, hook and room blocks", () => {
   test("valid blocks of each Phase 2 kind become calls", () => {
     const r = parseTools(

@@ -24,7 +24,7 @@ import { authClient } from "@/lib/auth-client";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { relativeTime } from "../shared/relative-time";
-import { LabelChips, PriorityIcon } from "./task-badges";
+import { FollowUpChip, LabelChips, PriorityIcon, StepChip } from "./task-badges";
 import { GROUP_OPTIONS, Segmented, TaskFilterBar } from "./task-filter-bar";
 import {
   activeCount,
@@ -39,9 +39,11 @@ import {
 } from "./task-filters";
 import { GroupIcon, openOnClick, TaskList, TaskTitleLink } from "./task-list";
 import { TaskPeek } from "./task-peek";
+import { stepCounts, type StepCount } from "./task-steps";
 import { TASK_COLUMNS, tasksApi, tasksQueries, type Task, type TaskStatus } from "./tasks-api";
 
 const NO_TASKS: Task[] = [];
+const NO_COUNTS = new Map<string, StepCount>();
 const NO_BOTS: Bot[] = [];
 
 const LAYOUTS: { value: TaskLayout; label: string; icon: React.ReactNode }[] = [
@@ -61,6 +63,10 @@ export function TasksPage({
   const tasksQuery = useQuery(tasksQueries.list());
   const botsQuery = useQuery(chatQueries.bots());
   const tasks = tasksQuery.data ?? NO_TASKS;
+  // The same cache holds the steps: the board shows tasks only, with how far each plan has come.
+  const counts = useQuery({ ...tasksQueries.list(), select: stepCounts }).data ?? NO_COUNTS;
+  /** The cache with the steps, to put back when a write fails. */
+  const cached = () => qc.getQueryData<Task[]>(tasksQueries.list().queryKey) ?? tasks;
   const bots = botsQuery.data ?? NO_BOTS;
   const loaded = !tasksQuery.isPending;
   const setTasks = (next: (all: Task[]) => Task[]) =>
@@ -86,7 +92,7 @@ export function TasksPage({
   const settled = () => void qc.invalidateQueries({ queryKey: ["tasks"] });
 
   const move = (id: string, status: TaskStatus) => {
-    const before = tasks;
+    const before = cached();
     if (before.find((t) => t.id === id)?.status === status) return;
     setTasks((all) => all.map((t) => (t.id === id ? { ...t, status } : t)));
     tasksApi
@@ -98,7 +104,7 @@ export function TasksPage({
       .finally(settled);
   };
   const remove = (id: string) => {
-    const before = tasks;
+    const before = cached();
     setTasks((all) => all.filter((t) => t.id !== id));
     tasksApi
       .remove(id)
@@ -196,6 +202,7 @@ export function TasksPage({
             groupBy={state.groupBy}
             bots={bots}
             now={now}
+            steps={counts}
             openId={state.task}
             onOpen={open}
           />
@@ -268,6 +275,7 @@ export function TasksPage({
                         key={t.id}
                         task={t}
                         now={now}
+                        steps={counts.get(t.id)}
                         bot={bots.find((b) => b.id === t.botId)}
                         viewerId={viewerId}
                         draggable={byStatus}
@@ -305,6 +313,7 @@ export function TasksPage({
 function TaskCard({
   task,
   now,
+  steps,
   bot,
   viewerId,
   draggable,
@@ -315,6 +324,7 @@ function TaskCard({
 }: {
   task: Task;
   now: number;
+  steps: StepCount | undefined;
   bot: Bot | undefined;
   /** Who looks at the board. Only the owner deletes a task; a person it is assigned to moves it. */
   viewerId: string | undefined;
@@ -376,9 +386,11 @@ function TaskCard({
           {mentionsAsText(task.description)}
         </p>
       )}
-      {(task.priority !== "none" || task.labels.length > 0) && (
+      {(task.priority !== "none" || task.labels.length > 0 || steps || task.followUp !== "off") && (
         <div className="flex flex-wrap items-center gap-1.5">
           {task.priority !== "none" && <PriorityIcon priority={task.priority} />}
+          {steps && <StepChip count={steps} />}
+          <FollowUpChip task={task} />
           <LabelChips labels={task.labels} />
         </div>
       )}

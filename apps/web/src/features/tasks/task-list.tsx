@@ -4,7 +4,8 @@ import type { MouseEvent } from "react";
 import { BotAvatar } from "@/components/bot-avatar";
 import type { Bot } from "../chat/chat-client";
 import { relativeTime } from "../shared/relative-time";
-import { LabelChips, PriorityIcon, StatusIcon } from "./task-badges";
+import { FollowUpChip, LabelChips, PriorityIcon, StatusIcon, StepChip } from "./task-badges";
+import type { StepCount } from "./task-steps";
 import { NO_BOT, type GroupBy, type TaskGroup } from "./task-filters";
 import type { Task, TaskStatus } from "./tasks-api";
 
@@ -48,6 +49,7 @@ export function TaskList({
   groupBy,
   bots,
   now,
+  steps,
   openId,
   onOpen,
 }: {
@@ -55,6 +57,8 @@ export function TaskList({
   groupBy: GroupBy;
   bots: Bot[];
   now: number;
+  /** How far each plan has come, by task id. */
+  steps: ReadonlyMap<string, StepCount>;
   openId: string | undefined;
   onOpen: (id: string) => void;
 }) {
@@ -82,6 +86,8 @@ export function TaskList({
                     task={task}
                     className="min-w-0 flex-1 truncate font-medium hover:underline"
                   />
+                  {steps.get(task.id) && <StepChip count={steps.get(task.id)!} />}
+                  <FollowUpChip task={task} />
                   <span className="hidden items-center gap-1 sm:flex">
                     <LabelChips labels={task.labels} />
                   </span>

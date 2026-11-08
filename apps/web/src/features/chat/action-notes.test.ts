@@ -26,6 +26,16 @@ describe("splitActionNotes", () => {
       notes: ["Used google.gmail_search", "Published “Weekly · node” (html) in Artifacts."],
     });
   });
+  test("room and read notes fold in too", () => {
+    expect(
+      splitActionNotes(
+        'Merge goes out now.\n\n🔎 Read task board (3).\n\n👥 Updated the shared context of "components".',
+      ),
+    ).toEqual({
+      body: "Merge goes out now.",
+      notes: ["Read task board (3).", 'Updated the shared context of "components".'],
+    });
+  });
   test("keeps a reply that is only a note", () => {
     expect(splitActionNotes("🔌 Used github.search")).toEqual({
       body: "🔌 Used github.search",

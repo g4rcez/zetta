@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@zetta/ui/components/dropdown-menu";
-import { Skeleton } from "@zetta/ui/components/skeleton";
+import { Skeleton } from "@g4rcez/components";
 import { CaretUpDownIcon, SlidersHorizontalIcon, UserIcon } from "@phosphor-icons/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
@@ -62,7 +62,7 @@ export default function UserMenu({
   }
 
   if (isPending) {
-    return <Skeleton className={inline ? "h-8 w-20" : "size-8 sm:w-24"} />;
+    return <Skeleton as="div" decorative className={inline ? "h-8! w-20!" : "size-8! sm:w-24!"} />;
   }
 
   if (!session) {

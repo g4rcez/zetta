@@ -40,10 +40,9 @@ import {
   AttachmentTitle,
 } from "@zetta/ui/components/attachment";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@zetta/ui/components/input-group";
-import { Button } from "@/components/ui";
+import { Button, Separator } from "@/components/ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
 import { useQueryClient } from "@tanstack/react-query";
-import { Separator } from "@zetta/ui/components/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
 

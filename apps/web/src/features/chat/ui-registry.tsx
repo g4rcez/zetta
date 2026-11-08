@@ -5,15 +5,9 @@ import type { ReactNode } from "react";
 
 import { catalog } from "@zetta/render/catalog";
 import type { UiSpec } from "@zetta/render/reply";
-import { Badge } from "@zetta/ui/components/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@zetta/ui/components/card";
-import { Separator } from "@zetta/ui/components/separator";
+import { Card } from "@g4rcez/components/card";
+import { Tag } from "@g4rcez/components/tag";
+import { Separator } from "@/components/ui";
 import { cn } from "@zetta/ui/lib/utils";
 
 type Tone = "default" | "muted" | "info" | "success" | "warning" | "danger";
@@ -25,14 +19,6 @@ const TEXT: Record<Tone, string> = {
   warning: "text-warn",
   danger: "text-destructive",
 };
-const BOX: Record<Tone, string> = {
-  default: "border-border bg-muted/40",
-  muted: "border-border bg-muted/40",
-  info: "border-info/40 bg-info/10",
-  success: "border-success/40 bg-success/10",
-  warning: "border-warn/40 bg-warn/10",
-  danger: "border-destructive/40 bg-destructive/10",
-};
 const ALERT_THEME = {
   default: "neutral",
   muted: "neutral",
@@ -41,6 +27,7 @@ const ALERT_THEME = {
   warning: "warn",
   danger: "danger",
 } as const satisfies Record<Tone, string>;
+const TAG_THEME = { ...ALERT_THEME, muted: "muted" } as const satisfies Record<Tone, string>;
 const GAP = { sm: "gap-1.5", md: "gap-3", lg: "gap-5" } as const;
 const HEADING = {
   "1": "text-lg font-semibold",
@@ -68,14 +55,13 @@ const { registry } = defineRegistry(catalog, {
       </div>
     ),
     Card: ({ props, children }) => (
-      <Card size="sm" className="w-full max-w-2xl">
-        {(props.title || props.description) && (
-          <CardHeader>
-            {props.title && <CardTitle>{props.title}</CardTitle>}
-            {props.description && <CardDescription>{props.description}</CardDescription>}
-          </CardHeader>
-        )}
-        <CardContent className="flex min-w-0 flex-col gap-3">{children}</CardContent>
+      <Card
+        title={props.title ?? undefined}
+        container="w-full max-w-2xl"
+        className="flex min-w-0 flex-col gap-3"
+      >
+        {props.description && <p className="text-sm text-muted-foreground">{props.description}</p>}
+        {children}
       </Card>
     ),
     Heading: ({ props }) => (
@@ -93,12 +79,9 @@ const { registry } = defineRegistry(catalog, {
       </p>
     ),
     Badge: ({ props }) => (
-      <Badge
-        variant="outline"
-        className={cn(TEXT[props.tone ?? "default"], BOX[props.tone ?? "default"])}
-      >
+      <Tag theme={TAG_THEME[props.tone ?? "default"]} size="tiny">
         {props.label}
-      </Badge>
+      </Tag>
     ),
     Metric: ({ props }) => {
       const trend = props.trend ?? undefined,

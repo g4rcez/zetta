@@ -3,6 +3,7 @@ import {
   check,
   index,
   integer,
+  jsonb,
   primaryKey,
   text,
   timestamp,
@@ -29,6 +30,13 @@ const cascade = { onDelete: "cascade", onUpdate: "restrict" } as const;
  */
 export const MEMORY_TYPES = ["solo", "owner", "teams", "all"] as const;
 export type MemoryType = (typeof MEMORY_TYPES)[number];
+/**
+ * What bots may do with an item, whoever created it. edit: they write it. suggest: a bot's change to its text is sent to the owner as a
+ * suggestion (they accept it); upkeep (mark stale, link, sources, confirm) still applies. read: no bot changes it. A person's own items
+ * start at suggest and a bot's at edit; only a person changes the level.
+ */
+export const MEMORY_BOT_ACCESS = ["edit", "suggest", "read"] as const;
+export type MemoryBotAccess = (typeof MEMORY_BOT_ACCESS)[number];
 /** stale: a person or bot marked it as possibly out of date; it is still found, with that warning. archived: hidden from bots and search. */
 export const MEMORY_ITEM_STATUSES = ["current", "stale", "archived"] as const;
 export type MemoryItemStatus = (typeof MEMORY_ITEM_STATUSES)[number];
@@ -71,6 +79,8 @@ export const memoryItem = zetta.table(
     /** How important it is, 0-100. Ranks search results and orders what is always put in the prompt. */
     score: integer("score").default(MEMORY_SCORE_DEFAULT).notNull(),
     status: text("status", { enum: MEMORY_ITEM_STATUSES }).default("current").notNull(),
+    /** What bots may do with it. The database default is the safe one; the app sets the level from who creates the item. */
+    botAccess: text("bot_access", { enum: MEMORY_BOT_ACCESS }).default("suggest").notNull(),
     version: integer("version").default(1).notNull(),
     updatedBy: text("updated_by", { enum: MEMORY_AUTHORS }).default("user").notNull(),
     updatedByBotId: uuid("updated_by_bot_id").references(() => bot.id, setNull),
@@ -206,7 +216,7 @@ export const memoryRevision = zetta.table(
   ],
 );
 
-export const MEMORY_JOB_KINDS = ["learn", "review"] as const;
+export const MEMORY_JOB_KINDS = ["learn", "review", "ingest"] as const;
 export const MEMORY_JOB_SOURCES = ["task", "loop", "user"] as const;
 /** What a review job works on: every check, or one group of them. */
 export const MEMORY_JOB_PROBLEMS = [
@@ -217,11 +227,28 @@ export const MEMORY_JOB_PROBLEMS = [
   "stale",
   "unsourced",
 ] as const;
-export const MEMORY_JOB_STATUSES = ["pending", "running", "done", "failed", "skipped"] as const;
+/** blocked: an ingest whose source the screen held back; it runs only if the person chooses to ingest it anyway. */
+export const MEMORY_JOB_STATUSES = [
+  "pending",
+  "running",
+  "done",
+  "failed",
+  "skipped",
+  "blocked",
+] as const;
+/** What the screen found in a source (modules/memory/screen.ts): shown to the person, never the text itself. */
+export type MemoryScreenInfo = {
+  verdict: "clean" | "suspicious" | "hostile";
+  /** False when the engine could not check the source. */
+  checked: boolean;
+  note: string;
+  spans: { quote: string; why: string; by: "model" | "pattern"; located: boolean }[];
+};
 
 /**
  * Background memory work. learn: after a task or goal loop of a chat finished, its bot reads the chat once and saves what other bots will
- * need. review: the chief reads the memory checks and fixes contradictions and duplicates. One learn job per task or loop.
+ * need. review: the chief reads the memory checks and fixes contradictions and duplicates. ingest: a bot reads a source the person added
+ * (`memory_raw`) and writes the items it informs, in a chat the person can watch. One learn job per task or loop, one ingest per source.
  */
 export const memoryJob = zetta.table(
   "memory_job",
@@ -246,6 +273,8 @@ export const memoryJob = zetta.table(
     attempts: integer("attempts").default(0).notNull(),
     /** What changed (page slugs) or a closed failure code. */
     result: text("result").default("").notNull(),
+    /** An ingest: what the screen found in the source. Null for the other kinds. */
+    screen: jsonb("screen").$type<MemoryScreenInfo>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
@@ -306,7 +335,7 @@ export const memorySuggestion = zetta.table(
   ],
 );
 
-export const MEMORY_SOURCE_KINDS = ["task", "doc", "artifact", "url"] as const;
+export const MEMORY_SOURCE_KINDS = ["task", "doc", "artifact", "url", "item"] as const;
 export type MemorySourceKind = (typeof MEMORY_SOURCE_KINDS)[number];
 export const MEMORY_SOURCE_STATUSES = ["current", "changed", "gone"] as const;
 
@@ -340,5 +369,39 @@ export const memorySource = zetta.table(
     unique("memory_source_page_ref").on(t.pageId, t.kind, t.ref),
     index("memory_source_check_idx").on(t.status, t.checkedAt),
     index("memory_source_owner_idx").on(t.ownerUserId),
+  ],
+);
+
+export const MEMORY_RAW_KINDS = ["url", "text", "file"] as const;
+export type MemoryRawKind = (typeof MEMORY_RAW_KINDS)[number];
+
+/**
+ * The unchanged text of a source the person added to the memory (a web page, pasted text, a file): the raw layer of an LLM-maintained
+ * wiki. It is written once and never updated. The item `page_id` (tag `source`, read only for bots) is the way to find and cite it; the
+ * bot that ingests the source reads a screened copy, never this row's text as a prompt. Search covers all of this text through the
+ * chunks of that item. The same text added twice is the same source (`owner_user_id`, `sha256`).
+ */
+export const memoryRaw = zetta.table(
+  "memory_raw",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    pageId: uuid("page_id")
+      .notNull()
+      .references(() => memoryItem.id, cascade),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => user.id, restrict),
+    kind: text("kind", { enum: MEMORY_RAW_KINDS }).notNull(),
+    /** The https address, or the file name. Empty for pasted text. */
+    origin: text("origin").default("").notNull(),
+    text: text("text").notNull(),
+    sha256: text("sha256").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("memory_raw_page").on(t.pageId),
+    unique("memory_raw_owner_sha").on(t.ownerUserId, t.sha256),
   ],
 );

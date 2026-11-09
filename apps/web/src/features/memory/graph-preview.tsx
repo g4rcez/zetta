@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link } from "@tanstack/react-router";
 import { XIcon } from "@phosphor-icons/react";
 
@@ -25,9 +26,11 @@ export function GraphPreview({
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="min-w-0 font-medium break-words">{node.title}</h3>
-        <Button size="xs" variant="ghost" aria-label="Close the preview" onClick={onClose}>
-          <XIcon aria-hidden="true" />
-        </Button>
+        <ActionHint label="Close the preview">
+          <Button size="xs" variant="ghost" aria-label="Close the preview" onClick={onClose}>
+            <XIcon aria-hidden="true" />
+          </Button>
+        </ActionHint>
       </div>
       {node.missing || !data ? (
         <>

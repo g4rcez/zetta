@@ -117,6 +117,7 @@ export function Results({
               <ul className="relative z-10 flex flex-wrap gap-1" aria-label="Tags">
                 {i.tags.map((t) => (
                   <li key={t}>
+                    {/* No hint: it shows the tag. */}
                     <button
                       type="button"
                       onClick={() => onTag(t)}

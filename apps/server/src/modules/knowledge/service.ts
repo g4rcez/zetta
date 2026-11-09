@@ -504,6 +504,8 @@ export function createKnowledge(
                 content,
                 tags: ["drive"],
                 score: 40,
+                // The text is the document's: only the sync writes it, and no bot changes it.
+                botAccess: "read",
                 updatedBy: "system",
               })
               .returning({ id: memoryItem.id })) as [{ id: string }];

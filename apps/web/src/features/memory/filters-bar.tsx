@@ -5,7 +5,16 @@ import { Drawer } from "@/components/drawer";
 import { Button } from "@/components/ui";
 import { cn } from "@zetta/ui/lib/utils";
 import { field } from "../shared/ui";
-import { STATUS, TYPE, type Bot, type Status, type TeamName, type MemoryType } from "./memory-api";
+import {
+  BOT_ACCESS,
+  STATUS,
+  TYPE,
+  type Bot,
+  type BotAccess,
+  type Status,
+  type TeamName,
+  type MemoryType,
+} from "./memory-api";
 import { SORTS, SINCE, type MemoryFilter, type MemorySearch } from "./memory-filters";
 
 const SORT_LABEL = {
@@ -75,6 +84,11 @@ function appliedFilters(f: MemoryFilter, bots: Bot[] | undefined, teams: TeamNam
       key: `status:${s}`,
       label: `Status: ${STATUS[s]}`,
       patch: { status: toggle(f.statuses, s) },
+    })),
+    ...f.botAccess.map((a) => ({
+      key: `botAccess:${a}`,
+      label: `Bots can: ${BOT_ACCESS[a].toLowerCase()}`,
+      patch: { botAccess: toggle(f.botAccess, a) },
     })),
     ...f.tags.map((t) => ({
       key: `tag:${t}`,
@@ -217,6 +231,7 @@ export function FiltersBar({
         <ul aria-label="Active filters" className="flex flex-wrap items-center gap-1.5">
           {applied.map((a) => (
             <li key={a.key}>
+              {/* No hint: it shows the filter label. */}
               <button
                 type="button"
                 aria-label={`Remove ${a.label}`}
@@ -279,6 +294,20 @@ export function FiltersBar({
                   onClick={() => set({ type: toggle(filter.types, t) })}
                 >
                   {TYPE[t]}
+                </Chip>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="space-y-1.5">
+            <legend className="text-xs font-medium text-muted-foreground">Bots can</legend>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(BOT_ACCESS) as BotAccess[]).map((a) => (
+                <Chip
+                  key={a}
+                  pressed={filter.botAccess.includes(a)}
+                  onClick={() => set({ botAccess: toggle(filter.botAccess, a) })}
+                >
+                  {BOT_ACCESS[a]}
                 </Chip>
               ))}
             </div>

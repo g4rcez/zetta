@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { GraphIcon, ListIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  BookOpenTextIcon,
+  FilePlusIcon,
+  GraphIcon,
+  ListIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
 import { lazy, Suspense, useCallback, useMemo, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui";
@@ -25,6 +31,7 @@ import { SuggestionsPanel } from "./suggestions-panel";
 import { useAction } from "./use-action";
 import { useMemoryIndex } from "./use-memory-index";
 import { useMemorySearch } from "./use-memory-search";
+import { call } from "../chat/chat-client";
 import { createItem } from "./memory-api";
 import {
   activeCount,
@@ -98,6 +105,12 @@ export function MemoryExplorer({ search }: { search: MemorySearch }) {
   };
 
   const { run, feedback } = useAction();
+  /** Creates the conventions item from the default text when there is none, then opens it: it tells bots how the memory is organized. */
+  const openConventions = () =>
+    void run(async () => {
+      const r = await call<{ slug: string }>("/api/memory-conventions", "POST", {});
+      await navigate({ to: "/memory/$slug", params: { slug: r.slug } });
+    }, "");
   const add = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -121,6 +134,14 @@ export function MemoryExplorer({ search }: { search: MemorySearch }) {
               options={[...VIEWS]}
               onChange={(v) => set({ view: v === "graph" ? "graph" : undefined, dim: undefined })}
             />
+            <Button variant="outline" onClick={() => void navigate({ to: "/memory-add" })}>
+              <FilePlusIcon aria-hidden="true" />
+              Add source
+            </Button>
+            <Button variant="outline" onClick={openConventions}>
+              <BookOpenTextIcon aria-hidden="true" />
+              Conventions
+            </Button>
             <Button onClick={() => setCreating(true)}>
               <PlusIcon aria-hidden="true" />
               New item

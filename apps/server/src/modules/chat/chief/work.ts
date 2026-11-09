@@ -288,7 +288,6 @@ export async function applyMemoryAdmin(
   };
   const uid = ctx.actor.userId;
   if (v.op === "decide") await memory.decide(uid, v.id, v.decision);
-  else if (v.op === "restore")
-    await memory.restore(uid, v.slug, v.version, { kind: "user", userId: uid } as never);
-  else await memory.setStatus(uid, v.slug, "current", { kind: "user", userId: uid } as never);
+  else if (v.op === "restore") await memory.restore(uid, v.slug, v.version, { by: "user" });
+  else await memory.setStatus(uid, v.slug, "current", { by: "user" });
 }

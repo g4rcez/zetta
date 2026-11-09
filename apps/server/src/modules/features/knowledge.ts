@@ -1,6 +1,11 @@
 import type { Database } from "@zetta/db";
 import { and, asc, desc, eq, ne, sql } from "@zetta/db/query";
 import { memoryItem } from "@zetta/db/schema/memory";
+import {
+  CONVENTIONS_SLUG,
+  CONVENTIONS_SNAPSHOT_CHARS,
+  fitConventions,
+} from "../memory/conventions";
 
 /** Hermes-style bounded blocks (Unicode code points, entries joined by "\n§\n"): the person's profile and the bot's own notes. */
 export const NOTES_LIMITS = { user: 1375, notes: 2200 } as const;
@@ -9,7 +14,11 @@ export const NOTES_MAX_ENTRIES = 64;
 const DELIM = "\n§\n";
 export type NotesTarget = keyof typeof NOTES_LIMITS;
 export type NotesEntry = { id: string; content: string };
-export type NotesSnapshot = { user: NotesEntry[]; notes: NotesEntry[] };
+/**
+ * `conventions` is the person's conventions item (how their memory is organized), present only when they wrote one. A snapshot frozen
+ * before it existed has no such field and renders as it always did, so the prompt prefix of an old chat does not change.
+ */
+export type NotesSnapshot = { user: NotesEntry[]; notes: NotesEntry[]; conventions?: NotesEntry };
 const sizeOf = (entries: readonly { content: string }[]) =>
   entries.reduce((n, e, i) => n + [...e.content].length + (i ? 3 : 0), 0);
 // Stored notes are replayed into prompts: refuse injection/exfiltration phrasing and invisible characters, like Hermes' entry scan.
@@ -39,6 +48,11 @@ export function renderNotes(snap: NotesSnapshot) {
       "notes",
       snap.notes,
     ),
+    ...(snap.conventions
+      ? [
+          `MEMORY CONVENTIONS (how the user wants their memory items organized; follow them when you write memory items)\n${snap.conventions.content}`,
+        ]
+      : []),
   ].join("\n\n");
 }
 
@@ -84,7 +98,27 @@ export function createKnowledge(db: Database) {
           ),
         ),
       ]);
-      return { user: fit(profile, NOTES_LIMITS.user), notes: fit(notes, NOTES_LIMITS.notes) };
+      // Only a person's own item, never a default text: a user who never opened the conventions pays no tokens for them.
+      const [conv] = await db
+        .select({ id: memoryItem.id, content: memoryItem.content })
+        .from(memoryItem)
+        .where(
+          and(
+            eq(memoryItem.ownerUserId, ownerUserId),
+            eq(memoryItem.slug, CONVENTIONS_SLUG),
+            ne(memoryItem.status, "archived"),
+          ),
+        );
+      return {
+        user: fit(profile, NOTES_LIMITS.user),
+        notes: fit(notes, NOTES_LIMITS.notes),
+        ...(conv && {
+          conventions: {
+            id: conv.id,
+            content: fitConventions(conv.content, CONVENTIONS_SNAPSHOT_CHARS),
+          },
+        }),
+      };
     },
   };
 }

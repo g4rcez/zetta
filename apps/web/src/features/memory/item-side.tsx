@@ -6,6 +6,25 @@ import { RELATION, SOURCE, type Detail, type Link as MemoryLink, type Version } 
 
 const heading = "text-sm font-medium";
 
+function LinkGroup({ title, rows }: { title: string; rows: MemoryLink[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+      <ul className="space-y-1 text-sm">
+        {rows.map((l) => (
+          <li key={`${l.relation}:${l.slug}`} className="flex flex-wrap items-center gap-2">
+            <Badge>{RELATION[l.relation]}</Badge>
+            <Link to="/memory/$slug" params={{ slug: l.slug }} className="hover:underline">
+              {l.title}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** The edges of the graph around an item, grouped by relation: what it points to and what points to it. */
 export function LinkLists({
   links,
@@ -14,22 +33,6 @@ export function LinkLists({
   links: MemoryLink[];
   linkedFrom: MemoryLink[];
 }) {
-  const group = (title: string, rows: MemoryLink[]) =>
-    rows.length > 0 && (
-      <div className="space-y-1">
-        <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
-        <ul className="space-y-1 text-sm">
-          {rows.map((l) => (
-            <li key={`${l.relation}:${l.slug}`} className="flex flex-wrap items-center gap-2">
-              <Badge>{RELATION[l.relation]}</Badge>
-              <Link to="/memory/$slug" params={{ slug: l.slug }} className="hover:underline">
-                {l.title}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </div>
-    );
   return (
     <section aria-labelledby="memory-links" className="space-y-3">
       <h2 id="memory-links" className={heading}>
@@ -41,8 +44,8 @@ export function LinkLists({
         </p>
       ) : (
         <>
-          {group("Links to", links)}
-          {group("Linked from", linkedFrom)}
+          <LinkGroup title="Links to" rows={links} />
+          <LinkGroup title="Linked from" rows={linkedFrom} />
         </>
       )}
     </section>
@@ -81,6 +84,14 @@ export function SourceList({
                 >
                   {s.label}
                 </a>
+              ) : s.kind === "item" ? (
+                <Link
+                  to="/memory/$slug"
+                  params={{ slug: s.ref }}
+                  className="break-words hover:underline"
+                >
+                  {s.label}
+                </Link>
               ) : (
                 <span className="break-words">{s.label}</span>
               )}

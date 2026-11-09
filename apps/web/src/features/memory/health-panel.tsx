@@ -61,15 +61,17 @@ function Group({
 const Row = ({ children }: { children: ReactNode }) => (
   <li className="space-y-1 text-sm">{children}</li>
 );
-const itemLink = (b: Brief) => (
-  <Link
-    to="/memory/$slug"
-    params={{ slug: b.slug }}
-    className="line-clamp-2 break-words hover:underline"
-  >
-    {b.title}
-  </Link>
-);
+function ItemLink({ brief }: { brief: Brief }) {
+  return (
+    <Link
+      to="/memory/$slug"
+      params={{ slug: brief.slug }}
+      className="line-clamp-2 break-words hover:underline"
+    >
+      {brief.title}
+    </Link>
+  );
+}
 
 const JOB_STATUS = {
   pending: { label: "Working", tone: "neutral" },
@@ -77,6 +79,7 @@ const JOB_STATUS = {
   done: { label: "Done", tone: "success" },
   failed: { label: "Could not finish", tone: "danger" },
   skipped: { label: "Skipped", tone: "neutral" },
+  blocked: { label: "Held: needs your OK", tone: "warning" },
 } as const;
 
 /** One background job: what it does, which bot did it, and where to read the chat of a review. */
@@ -94,9 +97,11 @@ function JobRow({ job: j, bots }: { job: Checks["jobs"][number]; bots: Bot[] | u
         <Badge tone={status.tone}>{status.label}</Badge>
         {j.kind === "review"
           ? JOB_LABEL[j.problem]
-          : j.source === "loop"
-            ? "Learned from a finished goal"
-            : "Learned from a finished task"}
+          : j.kind === "ingest"
+            ? `Added the source “${j.sourceTitle ?? "a source"}”`
+            : j.source === "loop"
+              ? "Learned from a finished goal"
+              : "Learned from a finished task"}
       </p>
       {who ? (
         <BotIdentity
@@ -138,6 +143,26 @@ function JobRow({ job: j, bots }: { job: Checks["jobs"][number]; bots: Bot[] | u
         </Link>
       )}
     </li>
+  );
+}
+
+/** The button of a group: the chief's avatar and name, so it is clear who does the work. */
+function FixButton({
+  chief,
+  working,
+  label,
+  onAsk,
+}: {
+  chief: Bot | undefined;
+  working: boolean;
+  label: string;
+  onAsk: () => void;
+}) {
+  return (
+    <Button size="xs" variant="outline" disabled={working} onClick={onAsk} className="shrink-0">
+      {chief && <BotAvatar bot={chief} size={16} />}
+      {working ? "Working…" : label}
+    </Button>
   );
 }
 
@@ -189,19 +214,6 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
       },
       `${chief?.name ?? "Your chief"} is working on it. Follow it in Background work.`,
     );
-  /** The button of a group: the chief's avatar and name, so it is clear who does the work. */
-  const fix = (problem: Problem, label: string) => (
-    <Button
-      size="xs"
-      variant="outline"
-      disabled={workingOn(problem)}
-      onClick={() => void ask(problem)}
-      className="shrink-0"
-    >
-      {chief && <BotAvatar bot={chief} size={16} />}
-      {workingOn(problem) ? "Working…" : label}
-    </Button>
-  );
   const fixLabel = `Ask ${chief?.name ?? "the chief"} to fix`;
   const setStatus = (slug: string, status: string, done: string) =>
     run(() => call(path(slug), "PATCH", { status }), done);
@@ -213,12 +225,26 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
           Items your bots or the checks flagged. Fix one here, or ask your chief to fix a whole
           group.
         </p>
-        {total > 0 && fix("all", `${fixLabel} all`)}
+        {total > 0 && (
+          <FixButton
+            chief={chief}
+            working={workingOn("all")}
+            label={`${fixLabel} all`}
+            onAsk={() => void ask("all")}
+          />
+        )}
       </div>
       {total === 0 && <Empty>Nothing to fix.</Empty>}
       <Group
         title="Links to missing items"
-        action={fix("brokenLinks", fixLabel)}
+        action={
+          <FixButton
+            chief={chief}
+            working={workingOn("brokenLinks")}
+            label={fixLabel}
+            onAsk={() => void ask("brokenLinks")}
+          />
+        }
         hint="A [[link]] points to an item that does not exist."
         count={c.brokenLinks.length}
       >
@@ -252,13 +278,20 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
       </Group>
       <Group
         title="Marked stale"
-        action={fix("stale", fixLabel)}
+        action={
+          <FixButton
+            chief={chief}
+            working={workingOn("stale")}
+            label={fixLabel}
+            onAsk={() => void ask("stale")}
+          />
+        }
         hint="Its source changed, or someone doubted it."
         count={c.stale.length}
       >
         {c.stale.slice(0, SHOWN).map((b) => (
           <Row key={b.slug}>
-            {itemLink(b)}
+            <ItemLink brief={b} />
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <Button
                 size="xs"
@@ -281,13 +314,20 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
       </Group>
       <Group
         title="Not saved for 90 days"
-        action={fix("old", fixLabel)}
+        action={
+          <FixButton
+            chief={chief}
+            working={workingOn("old")}
+            label={fixLabel}
+            onAsk={() => void ask("old")}
+          />
+        }
         hint="Still marked current. Check it is true, or mark it stale."
         count={c.old.length}
       >
         {c.old.slice(0, SHOWN).map((b) => (
           <Row key={b.slug}>
-            {itemLink(b)}
+            <ItemLink brief={b} />
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <Button
                 size="xs"
@@ -310,13 +350,20 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
       </Group>
       <Group
         title="Not linked to anything"
-        action={fix("unlinked", fixLabel)}
+        action={
+          <FixButton
+            chief={chief}
+            working={workingOn("unlinked")}
+            label={fixLabel}
+            onAsk={() => void ask("unlinked")}
+          />
+        }
         hint="Nothing links to it and it links to nothing, so a graph search cannot reach it."
         count={c.unlinked.length}
       >
         {c.unlinked.slice(0, SHOWN).map((b) => (
           <Row key={b.slug}>
-            {itemLink(b)}
+            <ItemLink brief={b} />
             <Link
               to="/memory/$slug"
               params={{ slug: b.slug }}
@@ -330,12 +377,21 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
       </Group>
       <Group
         title="Without sources"
-        action={fix("unsourced", fixLabel)}
+        action={
+          <FixButton
+            chief={chief}
+            working={workingOn("unsourced")}
+            label={fixLabel}
+            onAsk={() => void ask("unsourced")}
+          />
+        }
         hint="No task, document or artifact backs it, so it is never marked stale by itself."
         count={c.unsourced.length}
       >
         {c.unsourced.slice(0, SHOWN).map((b) => (
-          <Row key={b.slug}>{itemLink(b)}</Row>
+          <Row key={b.slug}>
+            <ItemLink brief={b} />
+          </Row>
         ))}
       </Group>
       {data.jobs.length > 0 && (

@@ -22,6 +22,7 @@ const item = (o: Partial<Item>): Item => ({
   tags: [],
   score: 50,
   status: "current",
+  botAccess: "edit",
   access: "own",
   by: "user",
   ownerName: null,
@@ -167,6 +168,21 @@ describe("tagCounts, activeCount, mergeRows", () => {
       { tag: "x", count: 1 },
     ]);
   });
+  test("the bot access filter parses, drops unknown levels, narrows the list and goes to the server", () => {
+    expect(parseMemorySearch({ botAccess: "read,nope,suggest,read" })).toEqual({
+      botAccess: "read,suggest",
+    });
+    expect(parseMemorySearch({ botAccess: "nope" })).toEqual({});
+    const mine = item({ slug: "a", botAccess: "suggest" });
+    const editable = item({ slug: "b", botAccess: "edit" });
+    const shared = item({ slug: "c", botAccess: null, access: "shared" });
+    const only = filterOf({ botAccess: "suggest,read" });
+    expect(
+      [mine, editable, shared].filter((i) => matches(i, only, NOW)).map((i) => i.slug),
+    ).toEqual(["a"]);
+    expect(activeCount(only)).toBe(1);
+    expect(searchQuery({ q: "x", botAccess: "read" })).toBe("q=x&botAccess=read");
+  });
   test("only narrowing facets count", () => {
     expect(activeCount(f({ q: "x", sort: "score", view: "graph" }))).toBe(0);
     expect(activeCount(f({ type: "solo", tag: "a", min: 10, max: 20, since: "7d" }))).toBe(4);
@@ -181,6 +197,7 @@ describe("tagCounts, activeCount, mergeRows", () => {
       tags: [],
       score: 50,
       status: "current",
+      botAccess: "suggest",
       version: 1,
       authorBotId: null,
       updatedByBotId: "b1",

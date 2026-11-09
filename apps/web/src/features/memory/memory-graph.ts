@@ -87,6 +87,8 @@ const asItem = (n: GraphNodeData): Item => ({
   tags: n.tags,
   score: n.score,
   status: n.status,
+  // The graph does not know what bots may do with an item, so a filter on it is left out (see `graphFilter`).
+  botAccess: null,
   access: n.access,
   by: null,
   ownerName: null,
@@ -98,7 +100,7 @@ const asItem = (n: GraphNodeData): Item => ({
 });
 const graphFilter = (f: MemoryFilter): MemoryFilter => {
   const { by: _by, bot: _bot, createdBy: _createdBy, team: _team, ...rest } = f;
-  return { ...rest, q: "" };
+  return { ...rest, botAccess: [], q: "" };
 };
 
 export function buildGraph(

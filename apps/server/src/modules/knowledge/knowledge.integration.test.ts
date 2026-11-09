@@ -227,6 +227,8 @@ suite("company knowledge against compose postgres with pgvector", () => {
     );
     // The item says where its text comes from, so a bot reads it as data.
     expect(byWords[0]).toMatchObject({ type: "owner", tags: ["drive"] });
+    // Only the sync writes it: bots may read it and nothing more.
+    expect(byWords[0]).toMatchObject({ botAccess: "read" });
     // Not every word is in the text, so keywords find nothing: the vector match alone brings it back.
     expect(
       (await find(A, "we will hire three engineers and one designer before autumn soon")).map(

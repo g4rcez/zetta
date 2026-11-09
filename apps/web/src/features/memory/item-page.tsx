@@ -21,7 +21,15 @@ import { useAction } from "./use-action";
 import { appendLink } from "./memory-links";
 import { useMemoryIndex } from "./use-memory-index";
 import { teamsQueries } from "../teams/teams-api";
-import { STATUS, TYPE, path, memoryError, memoryQueries, type Author } from "./memory-api";
+import {
+  BOT_ACCESS,
+  STATUS,
+  TYPE,
+  path,
+  memoryError,
+  memoryQueries,
+  type Author,
+} from "./memory-api";
 
 /** The page of one item: what it says, when to use it, what it links to, where it came from, and its versions. */
 export function MemoryItemPage({
@@ -115,6 +123,7 @@ export function MemoryItemPage({
     );
 
   const p = detail.page;
+  const raw = detail.raw;
   const botName = (id: string | null) => bots?.find((b) => b.id === id)?.name ?? "a bot";
   const who = (by: Author, botId: string | null) =>
     by === "bot" ? botName(botId) : by === "system" ? "the source check" : "you";
@@ -125,6 +134,8 @@ export function MemoryItemPage({
     void run(async () => {
       await call(path(p.slug), "PUT", {
         ...contentFields(f),
+        // The text of a source is kept unchanged: the form has no content field, and the text goes back as it is.
+        ...(raw && { content: p.content }),
         ...metaFields(f),
         expectedVersion: p.version,
       });
@@ -158,6 +169,11 @@ export function MemoryItemPage({
           </h1>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
             <Badge tone={p.type === "all" ? "info" : "neutral"}>{TYPE[p.type]}</Badge>
+            {p.botAccess !== "edit" && (
+              <Badge tone={p.botAccess === "read" ? "warning" : "neutral"}>
+                Bots: {BOT_ACCESS[p.botAccess].toLowerCase()}
+              </Badge>
+            )}
             {p.status !== "current" && (
               <Badge tone={p.status === "stale" ? "warning" : "neutral"}>{STATUS[p.status]}</Badge>
             )}
@@ -172,6 +188,29 @@ export function MemoryItemPage({
             {reach} Version {p.version}, last saved by {who(p.updatedBy, p.updatedByBotId)} on{" "}
             {when(p.updatedAt)}.
           </p>
+          {raw && (
+            <p className="text-sm text-muted-foreground">
+              A source you added ({raw.chars.toLocaleString()} characters
+              {raw.kind === "url" ? (
+                <>
+                  , from{" "}
+                  <a
+                    href={raw.origin}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="break-all hover:underline"
+                  >
+                    {raw.origin}
+                  </a>
+                </>
+              ) : raw.origin ? (
+                `, from the file ${raw.origin}`
+              ) : (
+                ", pasted"
+              )}
+              ). Its text is kept unchanged and bots never edit it; this page shows the first part.
+            </p>
+          )}
           {p.status !== "current" && (
             <p className="text-sm">
               {p.status === "stale"
@@ -295,6 +334,7 @@ export function MemoryItemPage({
                 <AssistPanel form={form} slug={p.slug} autoAsk={assist} />
                 <Fields
                   page={p}
+                  contentLocked={raw !== null}
                   meta={p.type !== "all"}
                   bots={bots}
                   teams={teams}

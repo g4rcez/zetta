@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { ListIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -6,6 +7,7 @@ import { Modal } from "@g4rcez/components/modal";
 import { useBackgroundNotifications } from "@/features/attention/background-notifications";
 import { PausedBanner } from "@/features/agents/pause-agents";
 import { useSidebarSide } from "@/features/preferences/preferences";
+import { useDeviceWakeLock } from "@/lib/keep-awake";
 import { AppCommandPalette } from "@/features/command-palette/app-command-palette";
 
 import { AppSidebar } from "./app-sidebar";
@@ -32,6 +34,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   useBackgroundNotifications();
+  useDeviceWakeLock();
   // A route change closes the phone sheet, so a tap on a row lands on its page.
   useEffect(() => setNavOpen(false), [pathname]);
   const search = useCallback(() => {
@@ -48,15 +51,18 @@ export function AppShell({ children }: { children: ReactNode }) {
       ) : (
         <>
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-sidebar-border px-2">
-            <button
-              type="button"
-              aria-label="Open navigation"
-              aria-expanded={navOpen}
-              onClick={() => setNavOpen(true)}
-              className={`${railRow} w-8`}
-            >
-              <ListIcon className="size-4" aria-hidden="true" />
-            </button>
+            <ActionHint label="Open navigation">
+              <button
+                type="button"
+                aria-label="Open navigation"
+                aria-expanded={navOpen}
+                onClick={() => setNavOpen(true)}
+                className={`${railRow} w-8`}
+              >
+                <ListIcon className="size-4" aria-hidden="true" />
+              </button>
+            </ActionHint>
+            {/* No hint: it shows the Zetta wordmark. */}
             <Link
               to="/"
               aria-label="Zetta home"

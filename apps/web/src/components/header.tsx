@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link } from "@tanstack/react-router";
 
 import { Logo } from "./logo";
@@ -9,6 +10,7 @@ export const APP_PREFIXES = [
   "/bots",
   "/rooms",
   "/agenda",
+  "/apps",
   "/tasks",
   "/studio",
   "/routines",
@@ -27,9 +29,11 @@ export const inApp = (pathname: string) =>
   APP_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
 const Brand = ({ small = false }: { small?: boolean }) => (
-  <Link to="/" aria-label="Zetta home" className="grid shrink-0 place-items-center">
-    <Logo size={small ? 28 : 36} tile />
-  </Link>
+  <ActionHint label="Zetta home">
+    <Link to="/" aria-label="Zetta home" className="grid shrink-0 place-items-center">
+      <Logo size={small ? 28 : 36} tile />
+    </Link>
+  </ActionHint>
 );
 
 export default function Header() {

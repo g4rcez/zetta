@@ -5,10 +5,13 @@ import {
   Input as LibInput,
   Modal as LibModal,
   ModalConfirmProvider as LibModalConfirmProvider,
+  Progress as LibProgress,
   Radiobox as LibRadiobox,
   Select as LibSelect,
 } from "@g4rcez/components";
-import type { ComponentProps } from "react";
+import { Dropdown as LibDropdown } from "@g4rcez/components/dropdown";
+import { Menu as LibMenu, MenuItem as LibMenuItem } from "@g4rcez/components/menu";
+import type { ComponentProps, ReactNode } from "react";
 
 /**
  * The application's primitives are @g4rcez/components. This module keeps the shadcn-style call sites (variant/size) stable
@@ -93,3 +96,86 @@ export const Select = LibSelect;
 export const Autocomplete = LibAutocomplete;
 export const Checkbox = LibCheckbox;
 export const Radiobox = LibRadiobox;
+
+/**
+ * Action menus and panels. `Menu` opens at the bottom-start of its trigger (flipping when there is no room) and has no `align`/`side`.
+ * Pass `hover={false}` (a menu opens on click, not on hover) and `restoreFocus` (focus goes back to the trigger). Width goes in
+ * `floatingClassName`; the max height is the token `[--var-menu-surface-max-block-size:…]`, because a Tailwind class loses to the library CSS.
+ * A trigger with its own `aria-label` passes `title=""`: `title` is required for an element label and would show a native tooltip.
+ */
+export const Menu = LibMenu;
+export const MenuItem = LibMenuItem;
+export const Dropdown = LibDropdown;
+
+/** A destructive menu item (Delete, Cancel): the danger color on a `MenuItem`. */
+export const MENU_DANGER = "text-[var(--var-color-danger)]";
+
+/** A heading for a group of menu items. The items live in a `role="group"` element that this names. */
+export function MenuGroup({ label, children }: { label?: string; children: ReactNode }) {
+  return (
+    <div role="group" aria-label={label} className="flex w-full flex-col">
+      {label && (
+        <p aria-hidden="true" className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
+          {label}
+        </p>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/** A line between groups of menu items. */
+export function MenuSeparator() {
+  return <hr role="separator" className="my-1 w-full border-0 border-t border-border" />;
+}
+
+const PROGRESS_TONE = {
+  primary: "",
+  success: "[--var-color-primary:var(--var-color-success)]",
+  warn: "[--var-color-primary:var(--var-color-warn)]",
+  danger: "[--var-color-primary:var(--destructive)]",
+} as const;
+const PROGRESS_SIZE = {
+  thin: "[--var-progress-track-block-size:0.25rem]",
+  small: "[--var-progress-track-block-size:0.375rem]",
+  medium: "[--var-progress-track-block-size:0.5rem]",
+} as const;
+
+/**
+ * The library `Progress` as a thin bar. The library draws a percentage over the track; here the track is a few pixels high, so
+ * `label` is the accessible name only (hidden for the eye), and the text next to the bar is the caller's. The color and the size are
+ * the library's tokens set on the track, because a Tailwind class loses to the library CSS.
+ */
+export function Progress({
+  value,
+  min = 0,
+  max = 100,
+  label,
+  tone = "primary",
+  size = "thin",
+  className = "",
+}: {
+  value: number;
+  min?: number;
+  max?: number;
+  /** The accessible name of the bar. */
+  label: string;
+  tone?: keyof typeof PROGRESS_TONE;
+  size?: keyof typeof PROGRESS_SIZE;
+  className?: string;
+}) {
+  return (
+    // The library track is `inline-size: 100%`, which a width class cannot beat: the caller sizes this wrapper.
+    <div className={className}>
+      <LibProgress
+        value={value}
+        min={min}
+        max={max}
+        label={label}
+        // Important: the library sets the label's width, margin and display in unlayered CSS, which a plain `sr-only` would lose to.
+        textClassName="sr-only!"
+        container={`[--var-color-background:var(--muted)] ${PROGRESS_SIZE[size]} ${PROGRESS_TONE[tone]}`}
+      />
+    </div>
+  );
+}

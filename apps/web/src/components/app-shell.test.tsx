@@ -127,7 +127,7 @@ test("on the right the frame is reversed, the panel keeps its gap, and the resiz
   await unmount();
 });
 
-const popup = () => win.document.querySelector('[data-slot="tooltip-content"]');
+const popup = () => win.document.querySelector('[role="tooltip"]');
 const openHint = async (button: Element) => {
   await act(async () => (button as unknown as HTMLElement).focus());
   const text = popup()?.textContent;
@@ -197,5 +197,39 @@ test("in the collapsed sidebar, a bot you cannot open still shows its name when 
   });
   await act(async () => void (await new Promise((r) => setTimeout(r, 400))));
   expect(popup()?.textContent).toBe("Blocked Bot");
+  await unmount();
+});
+
+const press = (el: unknown) =>
+  act(async () => {
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"])
+      (el as Element).dispatchEvent(
+        new win.MouseEvent(type, { bubbles: true, button: 0 }) as unknown as Event,
+      );
+  });
+
+test("the theme button opens a menu of radio items; the current theme is the only checked one and a pick moves the check", async () => {
+  const { THEME_LABEL } = await import("../features/preferences/theme");
+  const { host, unmount } = await mountShell("left");
+  const trigger = [...host.querySelectorAll("aside button")].find((b) =>
+    b.textContent?.includes("change theme"),
+  )!;
+  expect(win.document.querySelector('[role="menu"]')).toBeNull();
+  await press(trigger);
+  const radios = () => [...win.document.querySelectorAll('[role="menu"] [role="menuitemradio"]')];
+  const checked = () =>
+    radios()
+      .filter((r) => r.getAttribute("aria-checked") === "true")
+      .map((r) => r.textContent?.trim());
+  expect(radios().length).toBeGreaterThan(3);
+  // No theme is saved, so the device theme is the current one.
+  expect(checked()).toEqual([THEME_LABEL.system]);
+  const other = radios().find((r) => r.getAttribute("aria-checked") === "false")!;
+  const name = other.textContent?.trim();
+  await press(other);
+  // The menu closes on a pick; open it again to read the new state.
+  expect(win.document.querySelector('[role="menu"]')).toBeNull();
+  await press(trigger);
+  expect(checked()).toEqual([name]);
   await unmount();
 });

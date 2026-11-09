@@ -19,13 +19,17 @@ import { useLiveEvents } from "@/lib/live-events";
 import { SidebarDataProvider } from "@/features/chat/sidebar-data";
 import { IdentityRequestError, getIdentityError, identityClient } from "@/lib/identity-client";
 
-export const Route = createFileRoute("/_auth")({
-  component: AuthLayout,
-  pendingComponent: () => (
+function CheckingMembership() {
+  return (
     <p className="p-6" role="status">
       Checking your membership…
     </p>
-  ),
+  );
+}
+
+export const Route = createFileRoute("/_auth")({
+  component: AuthLayout,
+  pendingComponent: CheckingMembership,
   errorComponent: AccessError,
   beforeLoad: () =>
     cachedAuthGuard(async () => {

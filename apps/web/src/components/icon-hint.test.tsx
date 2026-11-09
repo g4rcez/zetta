@@ -7,7 +7,7 @@ import { setupDom } from "../features/skills/dom-env";
 const win = setupDom();
 
 const render = async () => {
-  const { IconHint } = await import("@zetta/ui/components/icon-hint");
+  const { IconHint } = await import("@/components/icon-hint");
   const host = win.document.createElement("div");
   win.document.body.append(host);
   const root = createRoot(host as unknown as Element);
@@ -21,14 +21,13 @@ const render = async () => {
   const trigger = host.querySelector('[aria-label="Chief"]') as unknown as HTMLElement;
   return { trigger, unmount: () => act(async () => root.unmount()) };
 };
-const popup = () => win.document.querySelector('[data-slot="popover-content"]');
+const popup = () => win.document.querySelector('[role="tooltip"]');
 
 test("the icon has one accessible name and the svg is hidden", async () => {
   const { trigger, unmount } = await render();
   expect(trigger.getAttribute("aria-label")).toBe("Chief");
   expect(trigger.getAttribute("tabindex")).toBe("0");
-  expect(trigger.getAttribute("role")).toBe("button");
-  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(trigger.getAttribute("role")).toBe("img");
   expect(trigger.querySelector("svg")!.getAttribute("aria-hidden")).toBe("true");
   expect(popup()).toBeNull();
   await unmount();
@@ -38,12 +37,24 @@ test("keyboard focus shows the label and Escape closes it", async () => {
   const { trigger, unmount } = await render();
   await act(async () => trigger.focus());
   expect(popup()?.textContent).toBe("Chief");
-  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(trigger.getAttribute("aria-describedby")).toBe(popup()!.id);
   await act(async () => {
     win.document.activeElement?.dispatchEvent(
       new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
     );
   });
   expect(popup()).toBeNull();
+  await unmount();
+});
+
+test("a tap opens the label", async () => {
+  const { trigger, unmount } = await render();
+  await act(
+    async () =>
+      void trigger.dispatchEvent(
+        new win.MouseEvent("click", { bubbles: true }) as unknown as Event,
+      ),
+  );
+  expect(popup()?.textContent).toBe("Chief");
   await unmount();
 });

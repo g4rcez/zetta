@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui";
 import {
@@ -74,65 +75,71 @@ export function AvatarPicker({
     <fieldset className="space-y-3">
       <legend className="sr-only">Picture</legend>
       <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Avatar">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={!value}
-          aria-label={none?.label ?? "Generated"}
-          title={none?.title}
-          onClick={() => onChange(null)}
-          className={`rounded-xl p-1 focus-visible:outline-2 focus-visible:outline-ring ${!value ? "ring-2 ring-primary" : "hover:bg-muted"}`}
-        >
-          {none?.preview ?? <BotAvatar bot={bot(null)} size={44} />}
-        </button>
+        <ActionHint label={none?.label ?? "Generated"}>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!value}
+            aria-label={none?.label ?? "Generated"}
+
+            onClick={() => onChange(null)}
+            className={`rounded-xl p-1 focus-visible:outline-2 focus-visible:outline-ring ${!value ? "ring-2 ring-primary" : "hover:bg-muted"}`}
+          >
+            {none?.preview ?? <BotAvatar bot={bot(null)} size={44} />}
+          </button>
+        </ActionHint>
         {AVATAR_SHAPES.map((p, i) => {
           const on = value?.kind === "preset" && value.preset === p.id;
           // Unselected previews each use their own swatch so shapes are easy to tell apart.
           const shown = on ? color : AVATAR_SWATCHES[i % AVATAR_SWATCHES.length]!;
           return (
-            <button
-              key={p.id}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              aria-label={p.label}
-              title={p.label}
-              onClick={() => onChange({ kind: "preset", preset: p.id, colors: [shown] })}
-              className={`rounded-xl p-1 focus-visible:outline-2 focus-visible:outline-ring ${on ? "ring-2 ring-primary" : "hover:bg-muted"}`}
-            >
-              <BotAvatar bot={bot({ kind: "preset", preset: p.id, colors: [shown] })} size={44} />
-            </button>
+            <ActionHint label={p.label}>
+              <button
+                key={p.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                aria-label={p.label}
+
+                onClick={() => onChange({ kind: "preset", preset: p.id, colors: [shown] })}
+                className={`rounded-xl p-1 focus-visible:outline-2 focus-visible:outline-ring ${on ? "ring-2 ring-primary" : "hover:bg-muted"}`}
+              >
+                <BotAvatar bot={bot({ kind: "preset", preset: p.id, colors: [shown] })} size={44} />
+              </button>
+            </ActionHint>
           );
         })}
         <span aria-hidden="true" className="mx-1 w-px self-stretch bg-border" />
         {AVATAR_CHARACTERS.map((p) => {
           const on = value?.kind === "preset" && value.preset === p.id;
           return (
-            <button
-              key={p.id}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              aria-label={p.label}
-              title={p.label}
-              onClick={() =>
-                onChange({
-                  kind: "preset",
-                  preset: p.id,
-                  colors: on ? value.colors : [...p.colors],
-                })
-              }
-              className={`rounded-xl p-1 focus-visible:outline-2 focus-visible:outline-ring ${on ? "ring-2 ring-primary" : "hover:bg-muted"}`}
-            >
-              <BotAvatar
-                bot={bot({
-                  kind: "preset",
-                  preset: p.id,
-                  colors: on ? value.colors : [...p.colors],
-                })}
-                size={44}
-              />
-            </button>
+            <ActionHint label={p.label}>
+              <button
+                key={p.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                aria-label={p.label}
+
+                onClick={() =>
+                  onChange({
+                    kind: "preset",
+                    preset: p.id,
+                    colors: on ? value.colors : [...p.colors],
+                  })
+                }
+                className={`rounded-xl p-1 focus-visible:outline-2 focus-visible:outline-ring ${on ? "ring-2 ring-primary" : "hover:bg-muted"}`}
+              >
+                <BotAvatar
+                  bot={bot({
+                    kind: "preset",
+                    preset: p.id,
+                    colors: on ? value.colors : [...p.colors],
+                  })}
+                  size={44}
+                />
+              </button>
+            </ActionHint>
           );
         })}
         {value?.kind === "image" && (
@@ -175,16 +182,18 @@ export function AvatarPicker({
       {value?.kind === "preset" && !character && (
         <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Color">
           {AVATAR_SWATCHES.map((c) => (
-            <button
-              key={c}
-              type="button"
-              role="radio"
-              aria-checked={color === c}
-              aria-label={`Color ${c}`}
-              onClick={() => onChange({ ...value, colors: [c] })}
-              className={`size-7 rounded-full focus-visible:outline-2 focus-visible:outline-ring ${color === c ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : ""}`}
-              style={{ backgroundColor: c }}
-            />
+            <ActionHint label={`Color ${c}`}>
+              <button
+                key={c}
+                type="button"
+                role="radio"
+                aria-checked={color === c}
+                aria-label={`Color ${c}`}
+                onClick={() => onChange({ ...value, colors: [c] })}
+                className={`size-7 rounded-full focus-visible:outline-2 focus-visible:outline-ring ${color === c ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : ""}`}
+                style={{ backgroundColor: c }}
+              />
+            </ActionHint>
           ))}
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <span

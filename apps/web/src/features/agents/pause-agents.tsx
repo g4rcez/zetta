@@ -1,6 +1,7 @@
+import { ActionHint } from "@/components/action-hint";
 import { PauseIcon, PlayIcon } from "@phosphor-icons/react";
 import { useCallback, useState, type ComponentProps } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { Button } from "@/components/ui";
 import { railRow } from "@/components/rail-row";
@@ -55,25 +56,27 @@ export function PauseAgentsButton({
   const label = paused ? "Resume agents" : "Pause agents";
   const Icon = paused ? PlayIcon : PauseIcon;
   return (
-    <button
-      {...props}
-      type="button"
-      onClick={(e) => {
-        onClick?.(e);
-        void toggle();
-      }}
-      disabled={busy}
-      aria-label={label}
-      aria-pressed={paused}
-      className={cn(
-        railRow,
-        !collapsed && "h-7 w-7 min-w-7",
-        paused && "bg-attention/15 [&_svg]:text-attention",
-        className,
-      )}
-    >
-      <Icon className="size-4 shrink-0" weight={paused ? "fill" : "regular"} aria-hidden="true" />
-    </button>
+    <ActionHint label={label}>
+      <button
+        {...props}
+        type="button"
+        onClick={(e) => {
+          onClick?.(e);
+          void toggle();
+        }}
+        disabled={busy}
+        aria-label={label}
+        aria-pressed={paused}
+        className={cn(
+          railRow,
+          !collapsed && "h-7 w-7 min-w-7",
+          paused && "bg-attention/15 [&_svg]:text-attention",
+          className,
+        )}
+      >
+        <Icon className="size-4 shrink-0" weight={paused ? "fill" : "regular"} aria-hidden="true" />
+      </button>
+    </ActionHint>
   );
 }
 

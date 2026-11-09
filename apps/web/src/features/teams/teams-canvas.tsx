@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { mentionsAsText } from "@zetta/core/mentions";
 import "@xyflow/react/dist/style.css";
 import {
@@ -26,7 +27,7 @@ import {
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { Tooltip } from "@g4rcez/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
@@ -58,7 +59,7 @@ import {
   teamsQueries,
   type TeamSave,
 } from "./teams-api";
-import { IconHint } from "@zetta/ui/components/icon-hint";
+import { IconHint } from "@/components/icon-hint";
 
 /** What the server holds for a team, apart from its version. */
 const saveKey = (v: TeamSave) => JSON.stringify({ ...v, expectedVersion: 0 });
@@ -133,15 +134,17 @@ function TeamGroup({ id, data, selected }: NodeProps<TeamNode>) {
             </label>
           )}
           <Tip tip="Configure this team: name, goal and rooms" className="nodrag">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="nodrag shrink-0"
-              aria-label={`Configure ${data.name}`}
-              onClick={() => actions.configure(id)}
-            >
-              <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
-            </Button>
+            <ActionHint label={`Configure ${data.name}`}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="nodrag shrink-0"
+                aria-label={`Configure ${data.name}`}
+                onClick={() => actions.configure(id)}
+              >
+                <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
+              </Button>
+            </ActionHint>
           </Tip>
         </div>
         {/* Padding sits on the wrapper: on the clamped text it would show a sliver of the third line. */}
@@ -259,7 +262,11 @@ function Editor() {
     const team = node?.type === "team" ? node : current.find((n) => n.id === node?.parentId);
     if (team?.type !== "team") return;
     await sync(current);
-    await navigate({ to: "/teams/$teamId/settings", params: { teamId: team.data.teamId }, search: {} });
+    await navigate({
+      to: "/teams/$teamId/settings",
+      params: { teamId: team.data.teamId },
+      search: {},
+    });
   };
   const openSettingsRef = useRef(openSettings);
   openSettingsRef.current = openSettings;

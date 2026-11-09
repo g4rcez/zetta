@@ -2,7 +2,7 @@ import { ArrowLeftIcon, CrownIcon, UsersThreeIcon } from "@phosphor-icons/react"
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { Button, Input } from "@/components/ui";
 
@@ -245,6 +245,7 @@ export function TeamSettingsPage({
                   />
                   <div className="md:pt-6">
                     {m.kind === "chief" ? null : (
+                      // No hint: it shows the text Make chief.
                       <Button
                         type="button"
                         size="sm"

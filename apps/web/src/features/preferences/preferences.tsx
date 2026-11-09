@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { ApiError, call } from "../chat/chat-client";
 import { useTheme } from "@/components/theme-provider";

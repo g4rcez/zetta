@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -32,18 +33,21 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { Tag } from "@g4rcez/components/tag";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@zetta/ui/components/dropdown-menu";
 import { cn } from "@zetta/ui/lib/utils";
-import { Button, Checkbox, Input, Modal, Select } from "@/components/ui";
+import {
+  Button,
+  Checkbox,
+  Input,
+  MENU_DANGER,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  Modal,
+  Select,
+} from "@/components/ui";
 import { useProfile } from "@/features/preferences/profile-api";
 import { authClient } from "@/lib/auth-client";
 
@@ -163,6 +167,7 @@ function PageHeader({
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
       {team ? (
+        // No hint: it shows the room title.
         <Link
           to="/teams/$teamId/settings"
           params={{ teamId: team.teamId }}
@@ -647,21 +652,23 @@ function RoomView({
               {STATUS_LABEL[d.status]}
             </span>
           )}
-          <button
-            type="button"
-            onClick={() => setDetails(true)}
-            aria-label={`Members: ${detail.members.map((m) => m.name).join(", ")}`}
-            className="hidden items-center gap-1 rounded-md px-1.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:flex"
-          >
-            {detail.members.slice(0, 4).map((m) => (
-              <BotAvatar key={m.botId} bot={botOf(bots, m.botId)} size={20} />
-            ))}
-            {detail.members.length > 4 && (
-              <span className="text-xs text-muted-foreground tabular-nums">
-                +{detail.members.length - 4}
-              </span>
-            )}
-          </button>
+          <ActionHint label={`Members: ${detail.members.map((m) => m.name).join(", ")}`}>
+            <button
+              type="button"
+              onClick={() => setDetails(true)}
+              aria-label={`Members: ${detail.members.map((m) => m.name).join(", ")}`}
+              className="hidden items-center gap-1 rounded-md px-1.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:flex"
+            >
+              {detail.members.slice(0, 4).map((m) => (
+                <BotAvatar key={m.botId} bot={botOf(bots, m.botId)} size={20} />
+              ))}
+              {detail.members.length > 4 && (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  +{detail.members.length - 4}
+                </span>
+              )}
+            </button>
+          </ActionHint>
           {d.teamId && (
             <div role="group" aria-label="Room view" className="flex gap-0.5">
               {(
@@ -687,149 +694,156 @@ function RoomView({
               ))}
             </div>
           )}
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            title="Room details"
-            aria-label="Room details"
-            aria-pressed={details}
-            onClick={() => setDetails(!details)}
-          >
-            <InfoIcon />
-          </Button>
-          {!isClosed && (
+          <ActionHint label="Room details">
             <Button
               size="icon-sm"
               variant="ghost"
-              title="Silence the bots: stop their messages and goal loops until you post"
-              aria-label="Silence bots"
-              disabled={busy || d.status === "paused"}
-              onClick={() =>
-                void act(
-                  () => discussionsApi.silence(id).then(goalLoop.refresh),
-                  "Bots silenced. They wait until you post.",
-                )
-              }
+
+              aria-label="Room details"
+              aria-pressed={details}
+              onClick={() => setDetails(!details)}
             >
-              <SpeakerSlashIcon />
+              <InfoIcon />
             </Button>
-          )}
-          {!readOnly && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    title="Room actions"
-                    aria-label="Room actions"
-                    disabled={busy}
-                  />
+          </ActionHint>
+          {!isClosed && (
+            <ActionHint label="Silence bots">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+
+                aria-label="Silence bots"
+                disabled={busy || d.status === "paused"}
+                onClick={() =>
+                  void act(
+                    () => discussionsApi.silence(id).then(goalLoop.refresh),
+                    "Bots silenced. They wait until you post.",
+                  )
                 }
               >
-                <DotsThreeIcon />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                {!isClosed && (
-                  <>
-                    {d.createdByBotId &&
-                      detail.members.length > 1 &&
-                      goalLoop.loops.length === 0 && (
-                        <DropdownMenuItem
-                          onClick={() => setLoopForm({ goal: d.goal, doneWhen: "" })}
-                        >
-                          <RepeatIcon />
-                          Pursue goal
-                        </DropdownMenuItem>
-                      )}
-                    {d.teamId && (
-                      <DropdownMenuItem onClick={() => setTeamGoal(d.goal)}>
-                        <TargetIcon />
-                        Set team goal
-                      </DropdownMenuItem>
-                    )}
-                    {d.status === "open" ? (
-                      <DropdownMenuItem
-                        onClick={() => void act(() => discussionsApi.act(id, "pause"))}
-                      >
-                        <PauseIcon />
-                        Pause
-                      </DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem
-                        onClick={() => void act(() => discussionsApi.act(id, "resume"))}
-                      >
-                        <PlayIcon />
-                        Resume
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem
-                      onClick={async () => {
-                        const ok = await Modal.confirm<boolean>({
-                          title: "Stop all goals?",
-                          description: "The room and its history stay.",
-                          confirm: { text: "Stop goals", theme: "danger" },
-                        });
-                        if (ok)
-                          void act(
-                            () => discussionsApi.stopGoals(id).then(goalLoop.refresh),
-                            "Goals stopped.",
-                          );
-                      }}
+                <SpeakerSlashIcon />
+              </Button>
+            </ActionHint>
+          )}
+          {!readOnly && (
+            <Menu
+              asChild
+              hover={false}
+              restoreFocus
+              title="Room actions"
+              floatingClassName="w-52"
+              label={
+                <ActionHint label="Room actions">
+                  <Button size="icon-sm" variant="ghost" aria-label="Room actions" disabled={busy}>
+                    <DotsThreeIcon />
+                  </Button>
+                </ActionHint>
+              }
+            >
+              {!isClosed && (
+                <>
+                  {d.createdByBotId && detail.members.length > 1 && goalLoop.loops.length === 0 && (
+                    <MenuItem
+                      title="Pursue goal"
+                      onClick={() => setLoopForm({ goal: d.goal, doneWhen: "" })}
                     >
-                      <StopCircleIcon />
-                      Stop goals
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        const summary = window.prompt("What was the outcome?");
-                        if (summary?.trim())
-                          void act(() => discussionsApi.resolve(id, summary.trim()), "Resolved.");
-                      }}
+                      <RepeatIcon />
+                      Pursue goal
+                    </MenuItem>
+                  )}
+                  {d.teamId && (
+                    <MenuItem title="Set team goal" onClick={() => setTeamGoal(d.goal)}>
+                      <TargetIcon />
+                      Set team goal
+                    </MenuItem>
+                  )}
+                  {d.status === "open" ? (
+                    <MenuItem
+                      title="Pause"
+                      onClick={() => void act(() => discussionsApi.act(id, "pause"))}
                     >
-                      <CheckCircleIcon />
-                      Resolve
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onClick={async () => {
-                        const ok = await Modal.confirm<boolean>({
-                          title: "Cancel this room?",
-                          description: "Queued bot turns are dropped.",
-                          confirm: { text: "Cancel room", theme: "danger" },
-                        });
-                        if (ok) void act(() => discussionsApi.act(id, "cancel"));
-                      }}
+                      <PauseIcon />
+                      Pause
+                    </MenuItem>
+                  ) : (
+                    <MenuItem
+                      title="Resume"
+                      onClick={() => void act(() => discussionsApi.act(id, "resume"))}
                     >
-                      <XCircleIcon />
-                      Cancel room
-                    </DropdownMenuItem>
-                  </>
-                )}
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={async () => {
-                    const ok = await Modal.confirm<boolean>({
-                      title: "Delete this room?",
-                      description: "It stops and leaves your lists. Its history is kept.",
-                      confirm: { text: "Delete room", theme: "danger" },
-                    });
-                    if (ok)
-                      void act(
-                        () =>
-                          discussionsApi
-                            .remove(id)
-                            .then(() => navigate({ to: "/rooms", search: {} })),
-                        "Room deleted.",
-                      );
-                  }}
-                >
-                  <TrashIcon />
-                  Delete room
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                      <PlayIcon />
+                      Resume
+                    </MenuItem>
+                  )}
+                  <MenuItem
+                    title="Stop goals"
+                    onClick={async () => {
+                      const ok = await Modal.confirm<boolean>({
+                        title: "Stop all goals?",
+                        description: "The room and its history stay.",
+                        confirm: { text: "Stop goals", theme: "danger" },
+                      });
+                      if (ok)
+                        void act(
+                          () => discussionsApi.stopGoals(id).then(goalLoop.refresh),
+                          "Goals stopped.",
+                        );
+                    }}
+                  >
+                    <StopCircleIcon />
+                    Stop goals
+                  </MenuItem>
+                  <MenuItem
+                    title="Resolve"
+                    onClick={() => {
+                      const summary = window.prompt("What was the outcome?");
+                      if (summary?.trim())
+                        void act(() => discussionsApi.resolve(id, summary.trim()), "Resolved.");
+                    }}
+                  >
+                    <CheckCircleIcon />
+                    Resolve
+                  </MenuItem>
+                  <MenuSeparator />
+                  <MenuItem
+                    title="Cancel room"
+                    className={MENU_DANGER}
+                    onClick={async () => {
+                      const ok = await Modal.confirm<boolean>({
+                        title: "Cancel this room?",
+                        description: "Queued bot turns are dropped.",
+                        confirm: { text: "Cancel room", theme: "danger" },
+                      });
+                      if (ok) void act(() => discussionsApi.act(id, "cancel"));
+                    }}
+                  >
+                    <XCircleIcon />
+                    Cancel room
+                  </MenuItem>
+                </>
+              )}
+              <MenuItem
+                title="Delete room"
+                className={MENU_DANGER}
+                onClick={async () => {
+                  const ok = await Modal.confirm<boolean>({
+                    title: "Delete this room?",
+                    description: "It stops and leaves your lists. Its history is kept.",
+                    confirm: { text: "Delete room", theme: "danger" },
+                  });
+                  if (ok)
+                    void act(
+                      () =>
+                        discussionsApi
+                          .remove(id)
+                          .then(() => navigate({ to: "/rooms", search: {} })),
+                      "Room deleted.",
+                    );
+                }}
+              >
+                <TrashIcon />
+                Delete room
+              </MenuItem>
+            </Menu>
           )}
         </PageHeader>
         {(goalLoop.loops.length ? goalLoop.loops : goalLoop.loop ? [goalLoop.loop] : []).map(
@@ -1067,14 +1081,16 @@ function RoomView({
                   Edit
                 </Button>
               )}
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Close details"
-                onClick={() => setDetails(false)}
-              >
-                <XIcon />
-              </Button>
+              <ActionHint label="Close details">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Close details"
+                  onClick={() => setDetails(false)}
+                >
+                  <XIcon />
+                </Button>
+              </ActionHint>
             </div>
           </div>
           {d.tainted && (

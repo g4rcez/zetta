@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "@g4rcez/components/alert";
 import type { AvatarValue } from "@zetta/core/avatar";
 import { useState, type FormEvent } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { AvatarPicker } from "@/components/avatar-picker";
 import { UserAvatar } from "@/components/user-avatar";

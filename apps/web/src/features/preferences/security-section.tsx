@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "@g4rcez/components/alert";
 import { useState, type FormEvent } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { Button, Checkbox, Input } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";

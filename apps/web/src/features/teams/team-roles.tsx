@@ -16,7 +16,7 @@ import {
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useState, type FormEvent } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { cn } from "@zetta/ui/lib/utils";
 import { Autocomplete, Button, Input, Select } from "@/components/ui";
@@ -68,24 +68,30 @@ const RoleIconGlyph = ({ icon }: { icon: TeamRoleIcon }) => {
   const IconOf = ICONS[icon];
   return <IconOf aria-hidden className="size-4 shrink-0" />;
 };
+function ColorOption({ color }: { color: TeamRoleColor }) {
+  return (
+    <span className="flex items-center gap-2">
+      <ColorSwatch color={color} /> {label(color)}
+    </span>
+  );
+}
+function IconOption({ icon }: { icon: TeamRoleIcon }) {
+  return (
+    <span className="flex items-center gap-2">
+      <RoleIconGlyph icon={icon} /> {label(icon)}
+    </span>
+  );
+}
 // The options and their renderers live at module level, so the Autocomplete gets stable references.
 const COLOR_OPTIONS = TEAM_ROLE_COLORS.map((c) => ({
   value: c,
   label: label(c),
-  Render: () => (
-    <span className="flex items-center gap-2">
-      <ColorSwatch color={c} /> {label(c)}
-    </span>
-  ),
+  Render: () => <ColorOption color={c} />,
 }));
 const ICON_OPTIONS = TEAM_ROLE_ICONS.map((i) => ({
   value: i,
   label: label(i),
-  Render: () => (
-    <span className="flex items-center gap-2">
-      <RoleIconGlyph icon={i} /> {label(i)}
-    </span>
-  ),
+  Render: () => <IconOption icon={i} />,
 }));
 
 const NO_ROLES: TeamRole[] = [];
@@ -328,6 +334,7 @@ export function TeamRolesPage() {
           )}
           <div className="flex justify-end gap-2">
             {current && (
+              // No hint: it shows the text Delete.
               <Button
                 type="button"
                 variant="outline"

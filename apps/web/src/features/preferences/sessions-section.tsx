@@ -1,6 +1,6 @@
 import { Alert } from "@g4rcez/components/alert";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { authClient } from "@/lib/auth-client";
 import { errorMessage } from "../chat/chat-client";

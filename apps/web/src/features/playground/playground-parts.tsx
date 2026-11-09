@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { PlusIcon, XIcon } from "@phosphor-icons/react";
 import { cn } from "@zetta/ui/lib/utils";
 import { useState, type ComponentProps, type FormEvent } from "react";
@@ -102,14 +103,16 @@ export function FileTabs({
               {f.path === entry && <span className="text-[10px] uppercase opacity-60">entry</span>}
             </button>
             {canEdit && f.path !== entry && files.length > 1 && (
-              <button
-                type="button"
-                aria-label={`Remove ${f.path}`}
-                onClick={() => onRemove(f.path)}
-                className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                <XIcon className="size-3" />
-              </button>
+              <ActionHint label={`Remove ${f.path}`}>
+                <button
+                  type="button"
+                  aria-label={`Remove ${f.path}`}
+                  onClick={() => onRemove(f.path)}
+                  className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <XIcon className="size-3" />
+                </button>
+              </ActionHint>
             )}
           </span>
         ))}
@@ -236,14 +239,16 @@ export function InputsPanel({
                 )}
               </label>
               {canEdit && (
-                <button
-                  type="button"
-                  aria-label={`Remove input ${spec.name}`}
-                  onClick={() => onSpecs(specs.filter((s) => s.name !== spec.name))}
-                  className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                >
-                  <XIcon className="size-3.5" />
-                </button>
+                <ActionHint label={`Remove input ${spec.name}`}>
+                  <button
+                    type="button"
+                    aria-label={`Remove input ${spec.name}`}
+                    onClick={() => onSpecs(specs.filter((s) => s.name !== spec.name))}
+                    className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <XIcon className="size-3.5" />
+                  </button>
+                </ActionHint>
               )}
             </li>
           );

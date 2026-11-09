@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
@@ -226,23 +227,27 @@ export function VmConsole({
           </Button>
         )}
         {popout && (
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            title="Open in a new window"
-            aria-label="Open in a new window"
-            onClick={() => {
-              openVmWindow(vmId);
-              onClose?.();
-            }}
-          >
-            <ArrowSquareOutIcon className="size-4" />
-          </Button>
+          <ActionHint label="Open in a new window">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+
+              aria-label="Open in a new window"
+              onClick={() => {
+                openVmWindow(vmId);
+                onClose?.();
+              }}
+            >
+              <ArrowSquareOutIcon className="size-4" />
+            </Button>
+          </ActionHint>
         )}
         {onClose && (
-          <Button size="icon-sm" variant="ghost" title="Close" aria-label="Close" onClick={onClose}>
-            <XIcon className="size-4" />
-          </Button>
+          <ActionHint label="Close">
+            <Button size="icon-sm" variant="ghost" aria-label="Close" onClick={onClose}>
+              <XIcon className="size-4" />
+            </Button>
+          </ActionHint>
         )}
       </header>
       <div
@@ -281,16 +286,18 @@ export function VmConsole({
           disabled={state !== "connected"}
           className="border-0 shadow-none"
         />
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          type="submit"
-          title="Paste"
-          aria-label="Paste"
-          disabled={state !== "connected"}
-        >
-          <ArrowUpIcon className="size-4" />
-        </Button>
+        <ActionHint label="Paste">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            type="submit"
+
+            aria-label="Paste"
+            disabled={state !== "connected"}
+          >
+            <ArrowUpIcon className="size-4" />
+          </Button>
+        </ActionHint>
       </form>
       <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
         <div className="w-56">

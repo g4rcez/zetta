@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { identityClient, getIdentityError } from "@/lib/identity-client";
 import { useTimeFormat } from "@/features/preferences/preferences";

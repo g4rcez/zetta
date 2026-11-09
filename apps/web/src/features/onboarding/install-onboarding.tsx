@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -12,7 +13,7 @@ import {
 import { Alert } from "@g4rcez/components/alert";
 import z from "zod";
 
-import { Button, Input } from "@/components/ui";
+import { Button, Input, Progress } from "@/components/ui";
 import { Logo } from "@/components/logo";
 import { getIdentityError, identityClient } from "@/lib/identity-client";
 import { EngineStep, IdentityStep, InstructionsStep, type Draft } from "../bots/bot-onboarding";
@@ -328,19 +329,7 @@ export function InstallOnboarding() {
             {index + 1} of {STEPS.length}
           </span>
         </div>
-        <div
-          className="h-1 overflow-hidden rounded-full bg-muted"
-          role="progressbar"
-          aria-valuemin={1}
-          aria-valuemax={STEPS.length}
-          aria-valuenow={index + 1}
-          aria-label="Onboarding progress"
-        >
-          <div
-            className="h-full rounded-full bg-primary transition-[width] duration-200 ease-out"
-            style={{ width: `${((index + 1) / STEPS.length) * 100}%` }}
-          />
-        </div>
+        <Progress label="Onboarding progress" min={1} max={STEPS.length} value={index + 1} />
         <h1
           key={step}
           autoFocus
@@ -381,15 +370,17 @@ export function InstallOnboarding() {
                   onChange={(e) => setSetupKey(e.target.value)}
                 />
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                aria-label={showKey ? "Hide key" : "Show key"}
-                aria-pressed={showKey}
-                onClick={() => setShowKey((v) => !v)}
-              >
-                {showKey ? <EyeSlashIcon /> : <EyeIcon />}
-              </Button>
+              <ActionHint label={showKey ? "Hide key" : "Show key"}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  aria-label={showKey ? "Hide key" : "Show key"}
+                  aria-pressed={showKey}
+                  onClick={() => setShowKey((v) => !v)}
+                >
+                  {showKey ? <EyeSlashIcon /> : <EyeIcon />}
+                </Button>
+              </ActionHint>
             </div>
             <p className="text-sm text-muted-foreground">
               It is the value of <code className="font-mono">ZETTA_SETUP_KEY</code> in the server's

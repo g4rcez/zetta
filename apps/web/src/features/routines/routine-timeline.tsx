@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link } from "@tanstack/react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -148,15 +149,17 @@ export function RoutineTimeline() {
                     width: `${Math.min(width, 100 - left)}%`,
                   };
                   return run.conversationId ? (
-                    <Link
-                      key={run.id}
-                      to="/chat/{-$chatId}"
-                      params={{ chatId: run.conversationId }}
-                      className={cls}
-                      style={style}
-                      title={label}
-                      aria-label={`${label}. Open the chat`}
-                    />
+                    <ActionHint label={`${label}. Open the chat`}>
+                      <Link
+                        key={run.id}
+                        to="/chat/{-$chatId}"
+                        params={{ chatId: run.conversationId }}
+                        className={cls}
+                        style={style}
+
+                        aria-label={`${label}. Open the chat`}
+                      />
+                    </ActionHint>
                   ) : (
                     <span
                       key={run.id}

@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import type { PlaygroundFileSnapshot, PlaygroundLanguage } from "@zetta/db/schema/playground";
 import { writeFolder } from "./run-folder";
 import { PlaygroundError } from "./types";
@@ -46,7 +46,7 @@ async function bundle(dir: string, abs: string, format: "esm" | "iife") {
           build.onResolve({ filter: /.*/ }, (args) => {
             // The page may load a library from a public CDN; the page's CSP lists which ones.
             if (/^https?:\/\//.test(args.path)) return { path: args.path, external: true };
-            if (args.path.startsWith(".") || args.path.startsWith("/")) {
+            if (args.path.startsWith(".") || isAbsolute(args.path)) {
               const target = args.importer
                 ? resolve(dirname(args.importer), args.path)
                 : resolve(args.path);

@@ -1,3 +1,4 @@
+import { uiToText } from "@zetta/render/chat-text";
 import { assertPublicUrl } from "../../computer/service";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
@@ -701,7 +702,8 @@ const def: PluginDef = {
             "Sending messages is disabled. The user must set 'Allow sending' to yes in the plugin settings.",
           );
         const chat = toChatId(args.chat);
-        const text = clean(args.text, MAX_SEND + 1).trim();
+        // A `zetta:ui` view that reaches this tool (a routine, MCP or API call) goes out as words, never as JSON patches.
+        const text = clean(uiToText(String(args.text ?? ""), { marks: true }), MAX_SEND + 1).trim();
         if (!text) throw new PluginError("INVALID_ARGS", "text is empty.");
         if (text.length > MAX_SEND)
           throw new PluginError("INVALID_ARGS", `text is longer than ${MAX_SEND} characters.`);

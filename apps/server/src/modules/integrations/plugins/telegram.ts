@@ -1,3 +1,4 @@
+import { uiToText } from "@zetta/render/chat-text";
 import {
   PluginError,
   registerPlugin,
@@ -815,7 +816,8 @@ const def: PluginDef = {
         required: ["chat", "text"],
       },
       async handler(ctx, args) {
-        const body = requiredText(args.text, MAX_SEND);
+        // Plain text channel: a `zetta:ui` view that reaches this tool (a routine, MCP or API call) goes out as words, without marks.
+        const body = requiredText(uiToText(String(args.text ?? "")), MAX_SEND);
         const reply =
           args.reply_to === undefined ? undefined : messageId(args.reply_to, "reply_to");
         const chat = await guard(ctx, "send", args.chat);

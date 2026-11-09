@@ -6,14 +6,18 @@
   "exports": {
     "./catalog": "./src/catalog.ts",
     "./reply": "./src/reply.ts",
-    "./prompt": "./src/prompt.ts"
+    "./prompt": "./src/prompt.ts",
+    "./chat-text": "./src/chat-text.ts",
+    "./build": "./src/build.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@json-render/core": "0.21.3",
-    "@json-render/react": "0.21.3",
+    "@json-render/chat": "0.22.0",
+    "@json-render/core": "0.22.0",
+    "@json-render/react": "0.22.0",
+    "chat": "4.44.0",
     "zod": "catalog:"
   },
   "devDependencies": {

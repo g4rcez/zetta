@@ -202,6 +202,22 @@ describe("whatsapp plugin", () => {
       text: "other user is separate",
     });
   });
+  test("a zetta:ui view in the text is sent as words, never as JSON patches", async () => {
+    const view = JSON.stringify({
+      root: "c",
+      elements: {
+        c: { type: "Card", props: { title: "Status" }, children: ["t"] },
+        t: { type: "Text", props: { text: "All good" } },
+      },
+    });
+    await tool("send_message").handler(ctx({ allowSend: "yes" }), {
+      chat: "551100000000",
+      text: `Update:\n\`\`\`zetta:ui\n${view}\n\`\`\``,
+    });
+    expect((calls.find((c) => c.path === "/api/sendText")!.body as { text: string }).text).toBe(
+      "Update:\n\n*Status*\n\nAll good",
+    );
+  });
   test("SSRF policy: private addresses blocked unless the platform allows them", async () => {
     configureWhatsapp({ allowPrivate: false });
     await expect(tool("status").handler(ctx(), {})).rejects.toMatchObject({ code: "BLOCKED_URL" });

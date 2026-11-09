@@ -28,6 +28,7 @@ function RouteComponent() {
       }
       onOpen={(next) => void navigate({ to: "/playground/$id", params: { id: next } })}
       onLeave={() => void navigate({ to: "/playground" })}
+      onOpenApp={(slug) => void navigate({ to: "/apps/$ref", params: { ref: slug } })}
     />
   );
 }

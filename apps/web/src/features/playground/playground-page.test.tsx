@@ -88,6 +88,21 @@ const api = (path: string, method: string, body: unknown) => {
   if (path === `/api/playgrounds/${PG}` && method === "PATCH")
     return { playground: { ...playground(), version: 4 } };
   if (path === `/api/playgrounds/${PG}/build`) return { html: "<p>built page</p>" };
+  if (path === "/api/apps/publish" && method === "POST")
+    return {
+      published: {
+        app: { id: "app-1", slug: "greeter", name: "Greeter" },
+        version: { id: "v1", n: 1 },
+        created: true,
+        changes: {
+          added: ["greet"],
+          removed: [],
+          changed: [],
+          accountsAdded: [],
+          accountsRemoved: [],
+        },
+      },
+    };
   throw new Error(`unexpected ${method} ${path}`);
 };
 globalThis.fetch = (async (input: URL | string, init?: RequestInit) => {
@@ -121,7 +136,7 @@ const text = () => win.document.body.textContent ?? "";
 
 type Search = import("./playground-search").PlaygroundSearch;
 /** The page in a stand-in for the router: the address is the state, and every change to it is recorded. */
-const mount = async (initial: Search) => {
+const mount = async (initial: Search, onOpenApp?: (slug: string) => void) => {
   const { PlaygroundPage } = await import("./playground-page");
   const { withPlaygroundSearch } = await import("./playground-search");
   const { useState } = await import("react");
@@ -139,6 +154,7 @@ const mount = async (initial: Search) => {
         }}
         onOpen={() => {}}
         onLeave={() => {}}
+        {...(onOpenApp && { onOpenApp })}
       />
     );
   }
@@ -373,4 +389,41 @@ test("a new file with a path the server would refuse says why and is not added",
     win.document.querySelectorAll('[role="group"][aria-label="Files"] button[aria-pressed]'),
   ).toHaveLength(2);
   await unmount();
+});
+
+test("Publish makes an app from the saved files, says what it added, and can open it", async () => {
+  // A test above that failed before it unmounted leaves its page in the document: start clean.
+  win.document.body.innerHTML = "";
+  state.mine = true;
+  state.runner = "host";
+  const opened: string[] = [];
+  const { unmount } = await mount({}, (slug) => opened.push(slug));
+  expect(named("Publish")?.hasAttribute("disabled")).toBe(false);
+  await press("Publish");
+  expect(calls.at(-1)).toEqual({
+    path: "/api/apps/publish",
+    method: "POST",
+    body: { playgroundId: PG },
+  });
+  expect(text()).toContain("Published Greeter as apps.greeter, version 1");
+  expect(text()).toContain("New tools: greet");
+  await press("Open the app");
+  expect(opened).toEqual(["greeter"]);
+  await unmount();
+});
+
+test("a person who cannot edit, and a page that runs in the browser, have no Publish", async () => {
+  win.document.body.innerHTML = "";
+  state.mine = false;
+  state.runner = "host";
+  const viewer = await mount({});
+  expect(named("Publish")).toBeUndefined();
+  await viewer.unmount();
+  win.document.body.innerHTML = "";
+  state.mine = true;
+  state.runner = "browser";
+  const page = await mount({});
+  expect(named("Publish")).toBeUndefined();
+  await page.unmount();
+  state.runner = "host";
 });

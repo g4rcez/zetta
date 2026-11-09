@@ -101,7 +101,11 @@ export type ProposalKind =
   /** A change to the user's setup that the chief asked for (routines, teams, bots, styles...). `patch.title` says what. */
   | "chief_action"
   /** Changes a bot asked for after it read outside content (task moves, Agenda, team setup); `diff` lists them. */
-  | "bot_action";
+  | "bot_action"
+  /** A tool call that stopped for the person (an approval or a form); `patch.pause` says what. See tool-card.tsx. */
+  | "tool_resume"
+  /** A bot-made app whose backend would run on the server host: nothing has run until the person approves. See app-author.ts. */
+  | "publish_app";
 export type Proposal = {
   id: string;
   /** The bot the change is about. */
@@ -163,6 +167,7 @@ export type Receipt = {
     | "discussion"
     | "artifact"
     | "playground"
+    | "app"
     | "memory"
     | "bot"
     | "team";
@@ -400,6 +405,8 @@ export const chatClient = {
     instructions?: string;
     outputStyle?: OutputStyleKey;
     outputStyleId?: string | null;
+    computerMode?: "off" | "browser" | "desktop";
+    codeAccess?: boolean;
   }) => call<{ bot: Bot }>("/api/bots", "POST", input).then((r) => r.bot),
   interviewBot: (input: InterviewInput) =>
     call<InterviewResult>("/api/bots/interview", "POST", input),
@@ -463,10 +470,12 @@ export const chatClient = {
     id: string,
     approve: boolean,
     selection?: { paths: string[]; target: "bot" | "all" | "picked" },
+    answer?: Record<string, string | number | boolean>,
   ) =>
     call<DecisionResult>(`/api/proposals/${id}/decision`, "POST", {
       approve,
       ...(selection ? { selection } : {}),
+      ...(answer ? { answer } : {}),
     }),
   moveBot: (id: string, folderId: string | null) =>
     call<{ bot: Bot }>(`/api/bots/${id}/folder`, "POST", { folderId }).then((r) => r.bot),

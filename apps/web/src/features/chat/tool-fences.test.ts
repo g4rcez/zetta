@@ -54,4 +54,15 @@ describe("stripToolFences", () => {
     const t = "```zetta:ui\n{}\n```\n```zetta:whatsapp\n{}\n```";
     expect(stripToolFences(t)).toBe(t);
   });
+  it("removes a zetta:app block, finished or still being written, but not a longer name", () => {
+    expect(stripToolFences('Done.\n```zetta:app\n{"action":"list"}\n```')).toBe("Done.");
+    expect(stripToolFences('Done.\n```zetta:app\n{"action":"create","ti')).toBe("Done.");
+    const t2 = "Hi\n```zetta:apps\n{}";
+    expect(stripToolFences(t2)).toBe(t2);
+  });
+  it("keeps a finished app link block for its card and hides one still being written", () => {
+    const done = 'Made it.\n```zetta:app.linkto\n{"app":"todo"}\n```\nOpen it.';
+    expect(stripToolFences(done)).toBe(done);
+    expect(stripToolFences('Made it.\n```zetta:app.linkto\n{"app":"to')).toBe("Made it.");
+  });
 });

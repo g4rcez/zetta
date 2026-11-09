@@ -387,6 +387,7 @@ export const MessageRow = memo(function MessageRow({
   onSaveToMemory,
   onQueue,
   onOpenArtifact,
+  stepOutputUrl,
 }: {
   row: Row;
   author: Author;
@@ -406,6 +407,8 @@ export const MessageRow = memo(function MessageRow({
   onQueue?: (row: Row, action: "remove" | "retry") => void;
   /** Open a published file beside the chat instead of leaving it. */
   onOpenArtifact?: (id: string) => void;
+  /** Where the live output of a command of this running turn streams from. */
+  stepOutputUrl?: (stepId: string) => string | undefined;
 }) {
   const tf = useTimeFormat();
   const saved = !row.streaming && !readOnly;
@@ -517,7 +520,7 @@ export const MessageRow = memo(function MessageRow({
               ))}
           </ul>
         ) : null}
-        <WorkTimeline row={row} working={working} />
+        <WorkTimeline row={row} working={working} stepOutputUrl={stepOutputUrl} />
         {working && !visible ? (
           <WorkingStatus
             label={friendly(row.activity) ?? "Thinking"}

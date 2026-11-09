@@ -301,6 +301,38 @@ export function createChatRoutes(
       return mapError(error);
     }
   }
+  /**
+   * The live output of one command of a running turn, as server-sent events: `{type:"chunk",text}` as it prints, then `{type:"end"}`.
+   * Not stored and not resumable: a client that reconnects starts from the last 64 KB. The client closes the stream on `end`.
+   */
+  async function stepOutput({
+    request,
+    params,
+    query,
+  }: {
+    request: Request;
+    params: Record<string, string>;
+    query: Record<string, string | undefined>;
+  }) {
+    try {
+      const actor = await access.requireActive(request.headers);
+      const output = await chat.stepOutput(
+        actor,
+        parse(uuid, params.id),
+        parse(z.string().min(1).max(200), params.stepId),
+        query.turn ? parse(uuid, query.turn) : undefined,
+      );
+      if (!output) return fail(404, "NOT_FOUND", "That output is not available.");
+      const frames = async function* () {
+        let n = 0;
+        for await (const text of output) yield { n: ++n, event: { type: "chunk", text } };
+        yield { n: ++n, event: { type: "end" } };
+      };
+      return sse(frames(), () => {});
+    } catch (error) {
+      return mapError(error);
+    }
+  }
   /** AI SDK UI message stream of a turn, always from its first event; a failed turn ends with an `error` chunk. */
   function uiStream(turn: {
     rec: { error?: unknown };
@@ -453,6 +485,7 @@ export function createChatRoutes(
   return new Elysia({ prefix: "/api", normalize: false })
     .post("/conversations/:id/stream", streamReply)
     .get("/conversations/:id/stream", resumeReply)
+    .get("/conversations/:id/steps/:stepId/output", stepOutput)
     .post("/conversations/:id/chat", chatReply)
     .get("/conversations/:id/chat/stream", resumeChat)
     .post(

@@ -93,6 +93,7 @@ import { createKnowledge, type NotesSnapshot } from "../features/knowledge";
 import { configHash, looksSecret } from "../features/safety";
 import { createLiveBots, loadBotStatus, phaseAfterRound, type RunPhase } from "./bot-status";
 import { listProcesses, redactCommand, runsOf } from "./processes";
+import { denyLiveOutput, findStep, followStep } from "./step-output";
 import { answersOf, slowDetail, type SlowAnswer } from "./turn-snapshot";
 import { createTurnRegistry, TurnBusyError } from "./turns";
 import {
@@ -462,6 +463,8 @@ export type ChatEvent =
       botId: string;
       label: string;
       at: number;
+      /** A Bash step: the id the chat uses to open its live output (see step-output.ts). Never saved with the reply. */
+      stepId?: string;
     }
   /** A file the bot just published, announced while the turn still runs so the chat can show it (and open it) at once. */
   | {
@@ -4038,6 +4041,8 @@ export function createChatService(
     a: AnswerArgs,
   ): AsyncGenerator<ChatEvent, { saved: Msg; status: "complete" | "failed" | "cancelled" }> {
     const { who, signal } = a;
+    // Another person's bot: what its commands print can hold that person's keys, so none of it is served to this chat.
+    if (signal && who.ownerUserId !== actor.userId) denyLiveOutput(signal);
     const row = await insertMessage(db, a.convId, {
       ownerUserId: actor.userId,
       role: "assistant",
@@ -4091,21 +4096,30 @@ export function createChatService(
         : undefined,
     ]);
     const retrieval: TurnRetrieval = {};
-    const timeline: { at: number; label: string }[] = [];
+    const timeline: { at: number; label: string; stepId?: string }[] = [];
     /** One step of the bot (from the first CLI run, a later round, or a silence heartbeat) as the event the chat shows, and in the saved timeline. */
-    const activityEvent = (label: string, phase?: RunPhase): ChatEvent => {
+    const activityEvent = (label: string, phase?: RunPhase, givenStepId?: string): ChatEvent => {
       const at = Date.now();
+      // Output can hold the owner's keys: only the owner is offered it (see `stepOutput`).
+      const stepId = who.ownerUserId === actor.userId ? givenStepId : undefined;
       liveBots.update(row.id, { label, phase });
-      // "Thinking" and the heartbeat repeat; they are status, not steps.
+      // "Thinking" and the heartbeat repeat; they are status, not steps. A step with an id is always its own entry (two `cd` in a row are two commands).
       if (
         label !== "Thinking" &&
         !label.startsWith("Still working") &&
-        timeline.at(-1)?.label !== label
+        (stepId || timeline.at(-1)?.label !== label)
       ) {
-        timeline.push({ at, label });
+        timeline.push({ at, label, ...(stepId ? { stepId } : {}) });
         if (timeline.length > TIMELINE_MAX) timeline.shift();
       }
-      return { type: "activity", messageId: row.id, botId: who.id, label, at };
+      return {
+        type: "activity",
+        messageId: row.id,
+        botId: who.id,
+        label,
+        at,
+        ...(stepId ? { stepId } : {}),
+      };
     };
     try {
       if (foreignKeyHost) throw new ForeignKeyHostError();
@@ -4188,6 +4202,7 @@ export function createChatService(
                 yield activityEvent(
                   chunk.activity,
                   chunk.activity === "Thinking" ? undefined : "working",
+                  chunk.stepId,
                 );
                 continue;
               }
@@ -4349,7 +4364,10 @@ export function createChatService(
             used: used ?? { notes: [], instructions: [] },
             receipts,
             // What the bot did, step by step: shown live while it works and kept after the answer.
-            ...(timeline.length ? { timeline } : {}),
+            // The step ids only open live output while the run lasts; they are not saved.
+            ...(timeline.length
+              ? { timeline: timeline.map(({ at, label }) => ({ at, label })) }
+              : {}),
             // The checklist as the bot last announced it, kept after the answer.
             ...(plan ? { plan } : {}),
             ...(a.decision ? { decision: a.decision } : {}),
@@ -7153,6 +7171,23 @@ export function createChatService(
       }
       await closeAttentionKey(db, actor.userId, slowKey(conversationId), "resolved");
       return { waiting: Boolean(rec && !rec.done) };
+    },
+    /**
+     * What a command of a running turn prints, as it prints it (Claude Code bots; see step-output.ts). Only the person whose turn it is
+     * can read it, and only while the run lasts: it is never stored. Undefined when the step is unknown or its run is over.
+     */
+    async stepOutput(
+      actor: ActiveActor,
+      conversationId: string,
+      stepId: string,
+      roomTurnId?: string,
+    ) {
+      await loadConversation(actor, conversationId);
+      const rec = turns.get(
+        `${actor.userId}:${conversationId}${roomTurnId ? `:${roomTurnId}` : ""}`,
+      );
+      const hit = rec && findStep(rec.abort.signal, stepId);
+      return hit ? followStep(hit.run, hit.step) : undefined;
     },
     /** Reattach to the active (or just-finished) turn by cursor. Undefined when nothing is resumable. */
     async resumeTurn(actor: ActiveActor, conversationId: string, after = 0, roomTurnId?: string) {

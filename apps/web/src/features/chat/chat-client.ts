@@ -385,6 +385,13 @@ export type InterviewResult =
     }
   | { kind: "unavailable"; reason: string };
 
+/** Server-sent events with what a command of the running turn prints (see apps/server/src/modules/chat/step-output.ts). */
+export const stepOutputUrl = (conversationId: string, stepId: string) =>
+  new URL(
+    `/api/conversations/${conversationId}/steps/${encodeURIComponent(stepId)}/output`,
+    ENV.VITE_SERVER_URL,
+  ).toString();
+
 export const chatClient = {
   bots: () => call<{ bots: Bot[] }>("/api/bots").then((r) => r.bots),
   /** What the person can pick for this bot with `/`: names and descriptions, no instructions. */

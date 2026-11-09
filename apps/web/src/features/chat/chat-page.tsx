@@ -49,6 +49,7 @@ import { refreshAttention } from "../attention/summary";
 import {
   chatClient,
   errorMessage,
+  stepOutputUrl,
   type Conversation,
   type Message,
   type Proposal,
@@ -429,6 +430,7 @@ export function ChatPage() {
     onReply: (row) => setThread(row.id),
     onQuote: (row) => setQuoting(row),
     onOpenArtifact: (id) => setArtifact(id),
+    stepOutputUrl: (stepId) => (chatId ? stepOutputUrl(chatId, stepId) : undefined),
     onSaveToMemory: (row) =>
       void chatClient.saveToMemory(`From chat: ${row.content.slice(0, 40)}`, row.content).then(
         (r) =>
@@ -460,6 +462,7 @@ export function ChatPage() {
       onSaveToMemory: (row) => latestActions.current.onSaveToMemory(row),
       onQueue: (row, action) => latestActions.current.onQueue?.(row, action),
       onOpenArtifact: (id) => latestActions.current.onOpenArtifact?.(id),
+      stepOutputUrl: (stepId) => latestActions.current.stepOutputUrl?.(stepId),
     }),
     [],
   );

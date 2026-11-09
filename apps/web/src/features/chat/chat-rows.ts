@@ -12,7 +12,7 @@ export type ZettaData = {
   summary: { text: string };
   computer: { messageId: string; botId?: string; vm: { id: string; name: string } };
   "computer-step": { messageId: string; vmId: string; step: string; at: number };
-  activity: { messageId: string; label: string; at: number };
+  activity: { messageId: string; label: string; at: number; stepId?: string };
   artifact: { messageId: string; id: string; title: string; at: number };
   plan: { messageId: string; steps: PlanStep[] };
   steer: { messageId: string; noteIds: string[] };
@@ -28,7 +28,7 @@ export type Row = Message & {
   /** What the bot is doing right now between text chunks (a tool call, waiting on the model). */
   activity?: string;
   /** Every step the bot reported this turn, oldest first. Saved replies keep it in `meta.timeline`. */
-  timeline?: { at: number; label: string }[];
+  timeline?: { at: number; label: string; stepId?: string }[];
   /** The checklist the bot announced this turn. Saved replies keep it in `meta.plan`. */
   plan?: PlanStep[];
   computers?: { id: string; name: string }[];
@@ -121,8 +121,19 @@ export function liveRows(
         const target = rows.find((r) => r.id === p.data.messageId) ?? current;
         if (target) {
           target.activity = p.data.label;
-          if (p.data.label !== "Thinking" && target.timeline?.at(-1)?.label !== p.data.label)
-            target.timeline = [...(target.timeline ?? []), { at: p.data.at, label: p.data.label }];
+          // A step with an id is its own entry even when the label repeats (two `cd` in a row are two commands).
+          if (
+            p.data.label !== "Thinking" &&
+            (p.data.stepId || target.timeline?.at(-1)?.label !== p.data.label)
+          )
+            target.timeline = [
+              ...(target.timeline ?? []),
+              {
+                at: p.data.at,
+                label: p.data.label,
+                ...(p.data.stepId ? { stepId: p.data.stepId } : {}),
+              },
+            ];
         }
       } else if (p.type === "data-plan") {
         const target = rows.find((r) => r.id === p.data.messageId) ?? current;

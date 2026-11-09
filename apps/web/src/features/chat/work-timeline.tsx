@@ -4,6 +4,7 @@ import { cn } from "@zetta/ui/lib/utils";
 
 import type { Message, PlanStep } from "./chat-client";
 import type { Row } from "./chat-rows";
+import { StepOutput } from "./step-output";
 
 /** "plugin notion.search" -> "Running notion · search"; other labels pass through. */
 export const friendly = (activity?: string) => {
@@ -118,10 +119,34 @@ function StepIcon({ state }: { state: StepState }) {
 type Item = {
   key: string;
   label: string;
+  /** A command of the running turn: click it to watch what it prints. */
+  stepId?: string | undefined;
   state: StepState;
   detail?: string | undefined;
   time?: string | undefined;
 };
+
+/** The label of a command step as a button: it opens the live output under it. Text, so it needs no hint. */
+function StepToggle({
+  label,
+  open,
+  onToggle,
+}: {
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={onToggle}
+      className="cursor-pointer text-left underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      {label}
+    </button>
+  );
+}
 
 /**
  * Status layout, not a message: what the bot did while it worked, as a rail of steps with a status icon. Open while the bot still works,
@@ -129,8 +154,19 @@ type Item = {
  * (zetta:plan) the rail is that checklist, with the live activity under the running step; otherwise it is the steps it reported, with
  * the time since the first one.
  */
-export function WorkTimeline({ row, working }: { row: Row; working: boolean }) {
-  const steps = row.timeline ?? row.meta?.timeline ?? [];
+export function WorkTimeline({
+  row,
+  working,
+  stepOutputUrl,
+}: {
+  row: Row;
+  working: boolean;
+  stepOutputUrl?: ((stepId: string) => string | undefined) | undefined;
+}) {
+  const steps: { at: number; label: string; stepId?: string | undefined }[] =
+    row.timeline ?? row.meta?.timeline ?? [];
+  // One command's output is open at a time. Only a live row has step ids: a saved reply never shows output.
+  const [opened, setOpened] = useState<string>();
   const plan = row.plan ?? row.meta?.plan;
   const now = useNow(working);
   // Step times come from the server clock, so the live clock adds only the client time since the last step arrived.
@@ -178,6 +214,7 @@ export function WorkTimeline({ row, working }: { row: Row; working: boolean }) {
     : stepStates(steps.length, working, row.status).map((state, i) => ({
         key: `${steps[i]!.at}:${i}`,
         label: friendly(steps[i]!.label) ?? "",
+        stepId: steps[i]!.stepId,
         state,
         time: `+${elapsed(steps[i]!.at - first)}`,
       }));
@@ -232,8 +269,19 @@ export function WorkTimeline({ row, working }: { row: Row; working: boolean }) {
                 it.state === "failed" && "text-destructive",
               )}
             >
-              {it.label}
+              {it.stepId && working && stepOutputUrl ? (
+                <StepToggle
+                  label={it.label}
+                  open={opened === it.stepId}
+                  onToggle={() => setOpened((o) => (o === it.stepId ? undefined : it.stepId))}
+                />
+              ) : (
+                it.label
+              )}
               {it.detail && <span className="block text-muted-foreground">{it.detail}</span>}
+              {it.stepId && working && stepOutputUrl && opened === it.stepId && (
+                <StepOutput url={stepOutputUrl(it.stepId) ?? ""} label={it.label} />
+              )}
             </span>
             {it.time && (
               <span className="shrink-0 tabular-nums text-muted-foreground/60">{it.time}</span>

@@ -35,6 +35,34 @@ describe("claude stream-json", () => {
     expect(s.state.failed).toBe(false);
   });
 
+  test("a Bash call carries its id and raw command for matching, and its result reports it done", () => {
+    const s = createClaudeStream();
+    const items = [
+      ...s.push(
+        assistant(
+          { type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "sed -i s/a/b/ x" } },
+          { type: "tool_use", id: "toolu_2", name: "Read", input: { file_path: "/a/b.ts" } },
+        ),
+      ),
+      ...s.push(
+        line({
+          type: "user",
+          message: {
+            content: [
+              { type: "tool_result", tool_use_id: "toolu_1" },
+              { type: "tool_result", tool_use_id: "toolu_2" },
+            ],
+          },
+        }),
+      ),
+    ];
+    expect(items).toEqual([
+      { activity: "Running sed", stepId: "toolu_1", command: "sed -i s/a/b/ x" },
+      { activity: "Reading b.ts" },
+      { stepDone: "toolu_1" },
+    ]);
+  });
+
   test("a line split across chunks is read once it is complete", () => {
     const s = createClaudeStream();
     const text = assistant({ type: "tool_use", name: "Grep", input: { pattern: "TODO" } });

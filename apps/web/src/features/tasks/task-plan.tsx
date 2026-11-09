@@ -1,8 +1,9 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link } from "@tanstack/react-router";
 import { TrashIcon } from "@phosphor-icons/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 import { Button, Checkbox, Input } from "@/components/ui";
 import { errorMessage } from "../chat/chat-client";
 import { Markdown } from "../chat/markdown";
@@ -84,15 +85,17 @@ export function TaskSteps({ task, steps }: { task: Task; steps: Task[] }) {
                 {s.title}
               </span>
             </Checkbox>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label={`Remove step ${s.title}`}
-              title="Remove step"
-              onClick={() => remove(s.id)}
-            >
-              <TrashIcon aria-hidden className="size-4" />
-            </Button>
+            <ActionHint label={`Remove step ${s.title}`}>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={`Remove step ${s.title}`}
+
+                onClick={() => remove(s.id)}
+              >
+                <TrashIcon aria-hidden className="size-4" />
+              </Button>
+            </ActionHint>
           </li>
         ))}
       </ul>

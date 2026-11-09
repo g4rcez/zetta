@@ -10,14 +10,8 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@zetta/ui/components/dropdown-menu";
+import { toast } from "@/lib/notify";
+import { Button, Menu, MenuItem } from "@/components/ui";
 import { BotIdentity } from "@/components/bot-identity";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
@@ -400,46 +394,68 @@ export function TaskDetail({
             <aside className={`flex flex-col gap-6 text-sm ${peek ? "" : "lg:pt-2"}`}>
               <section aria-label="Properties" className="flex flex-col gap-2">
                 <h2 className="text-xs font-medium text-muted-foreground">Properties</h2>
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
-                    {label(task.status)}
-                    <CaretDownIcon aria-hidden="true" className="size-3" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-44">
-                    {TASK_COLUMNS.filter((c) => c.status !== task.status).map((c) => (
-                      <DropdownMenuItem key={c.status} onClick={() => patch({ status: c.status })}>
-                        {c.label}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Menu
+                  asChild
+                  hover={false}
+                  restoreFocus
+                  title=""
+                  floatingClassName="w-44"
+                  label={
+                    <button
+                      type="button"
+                      className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring data-open:bg-muted"
+                    >
+                      {label(task.status)}
+                      <CaretDownIcon aria-hidden="true" className="size-3" />
+                    </button>
+                  }
+                >
+                  {TASK_COLUMNS.filter((c) => c.status !== task.status).map((c) => (
+                    <MenuItem
+                      key={c.status}
+                      title={c.label}
+                      onClick={() => patch({ status: c.status })}
+                    >
+                      {c.label}
+                    </MenuItem>
+                  ))}
+                </Menu>
                 {guest ? (
                   <p className="inline-flex items-center gap-1.5">
                     <PriorityIcon priority={task.priority} />
                     {priorityLabel(task.priority)}
                   </p>
                 ) : (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      aria-label={`Priority: ${priorityLabel(task.priority)}`}
-                      className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-                    >
-                      <PriorityIcon priority={task.priority} />
-                      {priorityLabel(task.priority)}
-                      <CaretDownIcon aria-hidden="true" className="size-3" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-44">
-                      {TASK_PRIORITIES.filter((p) => p.priority !== task.priority).map((p) => (
-                        <DropdownMenuItem
-                          key={p.priority}
-                          onClick={() => patch({ priority: p.priority })}
-                        >
-                          <PriorityIcon priority={p.priority} />
-                          {p.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <Menu
+                    asChild
+                    hover={false}
+                    restoreFocus
+                    title=""
+                    floatingClassName="w-44"
+                    label={
+                      // No hint: it shows the priority name.
+                      <button
+                        type="button"
+                        aria-label={`Priority: ${priorityLabel(task.priority)}`}
+                        className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring data-open:bg-muted"
+                      >
+                        <PriorityIcon priority={task.priority} />
+                        {priorityLabel(task.priority)}
+                        <CaretDownIcon aria-hidden="true" className="size-3" />
+                      </button>
+                    }
+                  >
+                    {TASK_PRIORITIES.filter((p) => p.priority !== task.priority).map((p) => (
+                      <MenuItem
+                        key={p.priority}
+                        title={p.label}
+                        onClick={() => patch({ priority: p.priority })}
+                      >
+                        <PriorityIcon priority={p.priority} />
+                        {p.label}
+                      </MenuItem>
+                    ))}
+                  </Menu>
                 )}
                 {!guest && (
                   <LabelsEditor

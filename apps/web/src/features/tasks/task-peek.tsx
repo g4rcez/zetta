@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowsOutSimpleIcon,
@@ -8,7 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "motion/react";
 import type { KeyboardEvent } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 import { Modal } from "@g4rcez/components/modal";
 import { Button, DRAWER_FLUSH } from "@/components/ui";
 import { useMedia } from "@/lib/use-media";
@@ -71,47 +72,57 @@ function PeekPanel({
             {index + 1} of {tasks.length}
           </span>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Previous task"
-          disabled={!previous}
-          onClick={() => previous && onOpen(previous.id)}
-          className="ml-1"
-        >
-          <CaretUpIcon aria-hidden className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Next task"
-          disabled={!next}
-          onClick={() => next && onOpen(next.id)}
-        >
-          <CaretDownIcon aria-hidden className="size-4" />
-        </Button>
+        <ActionHint label="Previous task">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Previous task"
+            disabled={!previous}
+            onClick={() => previous && onOpen(previous.id)}
+            className="ml-1"
+          >
+            <CaretUpIcon aria-hidden className="size-4" />
+          </Button>
+        </ActionHint>
+        <ActionHint label="Next task">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Next task"
+            disabled={!next}
+            onClick={() => next && onOpen(next.id)}
+          >
+            <CaretDownIcon aria-hidden className="size-4" />
+          </Button>
+        </ActionHint>
         <span className="ml-auto" />
-        <Link
-          to="/tasks/$taskId"
-          params={{ taskId }}
-          aria-label="Open as a page"
-          title="Open as a page"
-          className={iconButton}
-        >
-          <ArrowsOutSimpleIcon aria-hidden className="size-4" />
-        </Link>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Copy link"
-          title="Copy link"
-          onClick={() => void copyLink()}
-        >
-          <LinkSimpleIcon aria-hidden className="size-4" />
-        </Button>
-        <Button variant="ghost" size="icon" aria-label="Close" title="Close" onClick={onClose}>
-          <XIcon aria-hidden className="size-4" />
-        </Button>
+        <ActionHint label="Open as a page">
+          <Link
+            to="/tasks/$taskId"
+            params={{ taskId }}
+            aria-label="Open as a page"
+
+            className={iconButton}
+          >
+            <ArrowsOutSimpleIcon aria-hidden className="size-4" />
+          </Link>
+        </ActionHint>
+        <ActionHint label="Copy link">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Copy link"
+
+            onClick={() => void copyLink()}
+          >
+            <LinkSimpleIcon aria-hidden className="size-4" />
+          </Button>
+        </ActionHint>
+        <ActionHint label="Close">
+          <Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}>
+            <XIcon aria-hidden className="size-4" />
+          </Button>
+        </ActionHint>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {/* `key` gives each task its own state, so the thread of the last task never shows on the next. */}

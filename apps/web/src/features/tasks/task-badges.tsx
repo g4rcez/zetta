@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import {
   CellSignalHighIcon,
   CellSignalLowIcon,
@@ -84,14 +85,16 @@ export function LabelChip({ label, onRemove }: { label: string; onRemove?: () =>
     <Tag theme="neutral" size="tiny" indicator={labelIndicator(label)} className="max-w-32">
       <span className="truncate">{label}</span>
       {onRemove && (
-        <button
-          type="button"
-          aria-label={`Remove label ${label}`}
-          onClick={onRemove}
-          className="-mr-1 rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-        >
-          <XIcon aria-hidden className="size-3" />
-        </button>
+        <ActionHint label={`Remove label ${label}`}>
+          <button
+            type="button"
+            aria-label={`Remove label ${label}`}
+            onClick={onRemove}
+            className="-mr-1 rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <XIcon aria-hidden className="size-3" />
+          </button>
+        </ActionHint>
       )}
     </Tag>
   );

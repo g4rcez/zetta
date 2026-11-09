@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { mentionsAsText } from "@zetta/core/mentions";
 import { Link } from "@tanstack/react-router";
 import {
@@ -11,14 +12,8 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type DragEvent } from "react";
-import { toast } from "sonner";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@zetta/ui/components/dropdown-menu";
-import { Button, Input } from "@/components/ui";
+import { toast } from "@/lib/notify";
+import { Button, Input, MENU_DANGER, Menu, MenuItem } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
 import { authClient } from "@/lib/auth-client";
 import { errorMessage, type Bot } from "../chat/chat-client";
@@ -51,7 +46,6 @@ const LAYOUTS: { value: TaskLayout; label: string; icon: React.ReactNode }[] = [
   { value: "list", label: "List", icon: <ListIcon aria-hidden className="size-4" /> },
 ];
 
-/** The shared board: one fixed set of columns for every bot of the user. Bots move their own cards; the user can drag or use the card menu. */
 export function TasksPage({
   search,
   onSearch,
@@ -63,9 +57,7 @@ export function TasksPage({
   const tasksQuery = useQuery(tasksQueries.list());
   const botsQuery = useQuery(chatQueries.bots());
   const tasks = tasksQuery.data ?? NO_TASKS;
-  // The same cache holds the steps: the board shows tasks only, with how far each plan has come.
   const counts = useQuery({ ...tasksQueries.list(), select: stepCounts }).data ?? NO_COUNTS;
-  /** The cache with the steps, to put back when a write fails. */
   const cached = () => qc.getQueryData<Task[]>(tasksQueries.list().queryKey) ?? tasks;
   const bots = botsQuery.data ?? NO_BOTS;
   const loaded = !tasksQuery.isPending;
@@ -75,7 +67,6 @@ export function TasksPage({
   const [over, setOver] = useState<TaskStatus>();
   const [adding, setAdding] = useState<TaskStatus>();
   const viewerId = authClient.useSession().data?.user.id;
-  // The router keeps raw URL keys that `validateSearch` leaves out, so read the search through the parser again.
   const state: TaskState = { ...DEFAULT_STATE, ...parseTaskSearch(search) };
   const setState = (next: TaskState) => onSearch(toTaskSearch(next));
   const now = Date.now();
@@ -172,6 +163,7 @@ export function TasksPage({
                 container="w-56"
                 onChange={(e) => setTitle(e.target.value)}
               />
+              {/* No hint: it shows the text Add. */}
               <Button type="submit" aria-label="Add task">
                 <PlusIcon /> Add
               </Button>
@@ -240,15 +232,17 @@ export function TasksPage({
                       {group.tasks.length}
                     </span>
                     {byStatus && (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        aria-label={`Add task to ${group.label}`}
-                        onClick={() => setAdding(status)}
-                        className="ml-auto"
-                      >
-                        <PlusIcon className="size-4" />
-                      </Button>
+                      <ActionHint label={`Add task to ${group.label}`}>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label={`Add task to ${group.label}`}
+                          onClick={() => setAdding(status)}
+                          className="ml-auto"
+                        >
+                          <PlusIcon className="size-4" />
+                        </Button>
+                      </ActionHint>
                     )}
                   </header>
                   {byStatus && adding === status && (
@@ -360,26 +354,35 @@ function TaskCard({
             <BotAvatar bot={bot} size={20} square />
           </span>
         )}
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label={`${task.title} menu`}
-            className="-mr-1 rounded p-0.5 text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <DotsThreeIcon className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            {TASK_COLUMNS.filter((c) => c.status !== task.status).map((c) => (
-              <DropdownMenuItem key={c.status} onClick={() => onMove(c.status)}>
-                Move to {c.label}
-              </DropdownMenuItem>
-            ))}
-            {(!viewerId || task.ownerUserId === viewerId) && (
-              <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                <TrashIcon /> Delete
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Menu
+          asChild
+          hover={false}
+          restoreFocus
+          title=""
+          floatingClassName="w-44"
+          label={
+            <ActionHint label={`${task.title} menu`}>
+              <button
+                type="button"
+                aria-label={`${task.title} menu`}
+                className="-mr-1 rounded p-0.5 text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring data-open:bg-muted"
+              >
+                <DotsThreeIcon aria-hidden="true" className="size-4" />
+              </button>
+            </ActionHint>
+          }
+        >
+          {TASK_COLUMNS.filter((c) => c.status !== task.status).map((c) => (
+            <MenuItem key={c.status} title={`Move to ${c.label}`} onClick={() => onMove(c.status)}>
+              Move to {c.label}
+            </MenuItem>
+          ))}
+          {(!viewerId || task.ownerUserId === viewerId) && (
+            <MenuItem title="Delete" className={MENU_DANGER} onClick={onDelete}>
+              <TrashIcon /> Delete
+            </MenuItem>
+          )}
+        </Menu>
       </div>
       {task.description && (
         <p className="line-clamp-2 break-words text-xs text-muted-foreground">

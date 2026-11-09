@@ -13,7 +13,7 @@ import {
 import type { ReactNode } from "react";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Checkbox, Input } from "@/components/ui";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
+import { ActionHint } from "@/components/action-hint";
 import type { Bot } from "../chat/chat-client";
 import { LabelChip, PriorityIcon, StatusIcon } from "./task-badges";
 import {
@@ -158,6 +158,46 @@ export const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
   { value: "assignee", label: "Assignee" },
 ];
 
+/** One avatar of the assignee row. The popover (hover or keyboard focus) names it and says who it is; the avatar alone does not. */
+function AssigneeAvatar({
+  id,
+  name,
+  detail,
+  face,
+  selected,
+  onChange,
+}: {
+  id: string;
+  name: string;
+  detail: string;
+  face: ReactNode;
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const on = selected.includes(id);
+  return (
+    <ActionHint
+      label={
+        <span className="flex flex-col items-start gap-0.5">
+          <span className="font-medium">{name}</span>
+          <span className="opacity-70">{detail}</span>
+        </span>
+      }
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        aria-label={name}
+        aria-pressed={on}
+        onClick={() => onChange(toggle(selected, id, !on))}
+        className={`!h-8 !w-8 !min-w-0 !p-0 ${on ? "ring-2 ring-foreground" : selected.length > 0 ? "opacity-50 hover:opacity-100" : ""}`}
+      >
+        {face}
+      </Button>
+    </ActionHint>
+  );
+}
+
 /** The avatar row filters by bot, by the tasks nobody owns, and by the tasks a bot asked of the viewer. */
 function AssigneeRow({
   bots,
@@ -168,54 +208,35 @@ function AssigneeRow({
   selected: string[];
   onChange: (ids: string[]) => void;
 }) {
-  /** The popover (hover or keyboard focus) names the avatar and says who it is; the avatar alone does not. */
-  const avatar = (id: string, name: string, detail: string, face: ReactNode) => {
-    const on = selected.includes(id);
-    return (
-      <Tooltip key={id}>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label={name}
-              aria-pressed={on}
-              onClick={() => onChange(toggle(selected, id, !on))}
-              className={`!h-8 !w-8 !min-w-0 !p-0 ${on ? "ring-2 ring-foreground" : selected.length > 0 ? "opacity-50 hover:opacity-100" : ""}`}
-            />
-          }
-        >
-          {face}
-        </TooltipTrigger>
-        <TooltipContent className="flex-col items-start gap-0.5">
-          <span className="font-medium">{name}</span>
-          <span className="opacity-70">{detail}</span>
-        </TooltipContent>
-      </Tooltip>
-    );
-  };
   return (
     <div role="group" aria-label="Filter by assignee" className="flex flex-wrap items-center gap-1">
-      {avatar(
-        FOR_ME,
-        "For me",
-        "Tasks a bot asked of you",
-        <UserCircleIcon aria-hidden className="size-6 text-foreground" />,
-      )}
-      {bots.map((b) =>
-        avatar(
-          b.id,
-          b.name,
-          b.description.trim() || (b.kind === "chief" ? "Chief" : "Specialist"),
-          <BotAvatar bot={b} size={24} square />,
-        ),
-      )}
-      {avatar(
-        NO_BOT,
-        "Unassigned",
-        "Tasks nobody owns",
-        <UserCircleDashedIcon aria-hidden className="size-6 text-muted-foreground" />,
-      )}
+      <AssigneeAvatar
+        id={FOR_ME}
+        name="For me"
+        detail="Tasks a bot asked of you"
+        face={<UserCircleIcon aria-hidden className="size-6 text-foreground" />}
+        selected={selected}
+        onChange={onChange}
+      />
+      {bots.map((b) => (
+        <AssigneeAvatar
+          key={b.id}
+          id={b.id}
+          name={b.name}
+          detail={b.description.trim() || (b.kind === "chief" ? "Chief" : "Specialist")}
+          face={<BotAvatar bot={b} size={24} square />}
+          selected={selected}
+          onChange={onChange}
+        />
+      ))}
+      <AssigneeAvatar
+        id={NO_BOT}
+        name="Unassigned"
+        detail="Tasks nobody owns"
+        face={<UserCircleDashedIcon aria-hidden className="size-6 text-muted-foreground" />}
+        selected={selected}
+        onChange={onChange}
+      />
     </div>
   );
 }
@@ -341,6 +362,7 @@ export function TaskFilterBar({
         onChange={(e) => set({ query: e.target.value })}
       />
       {(active > 0 || state.sort !== DEFAULT_STATE.sort) && (
+        // No hint: it shows the text Clear.
         <Button type="button" size="sm" variant="ghost" aria-label="Clear filters" onClick={clear}>
           <XIcon /> Clear{active > 0 ? ` (${active})` : ""}
         </Button>

@@ -157,72 +157,81 @@ export function useMention({
     }
     return false;
   }
-  /** "caret" opens the list under the caret, or above it when the window has no room below. */
-  const popup = (placement: "above" | "below" | "caret") => {
-    const point = placement === "caret" ? state?.point : undefined;
-    const flip = point ? window.innerHeight - point.y - point.lineHeight < POPUP_HEIGHT : false;
-    const at: CSSProperties | undefined = point
-      ? {
-          position: "fixed",
-          left: Math.max(8, Math.min(point.x, window.innerWidth - 296)),
-          ...(flip
-            ? { bottom: window.innerHeight - point.y + 4 }
-            : { top: point.y + point.lineHeight + 4 }),
-        }
-      : undefined;
-    return state && candidates.length > 0 ? (
-      <ul
-        role="listbox"
-        aria-label={state.char === "@" ? "Mention a bot" : "Mention a team or room"}
-        style={at}
-        className={cn(
-          "z-50 w-72 overflow-hidden rounded-lg border bg-popover p-1 shadow-md",
-          !point && "absolute left-0",
-          !point && (placement === "above" ? "bottom-full mb-1" : "top-full mt-1"),
-        )}
-      >
-        <li className="px-2 py-1 text-xs font-medium text-muted-foreground" role="presentation">
-          {state.char === "@" ? "Bots" : "Teams and rooms"}
-        </li>
-        {candidates.map((b, i) => (
-          <li
-            key={`${isTag(b) ? b.kind : "bot"}-${b.id}`}
-            role="option"
-            aria-selected={i === state.index}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              pick(b);
-            }}
-            className={cn(
-              "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-              i === state.index ? "bg-accent text-accent-foreground" : "hover:bg-muted",
-            )}
-          >
-            {isTag(b) ? (
-              b.kind === "team" ? (
-                <UsersIcon className="size-5 shrink-0 text-muted-foreground" />
-              ) : (
-                <ChatsIcon className="size-5 shrink-0 text-muted-foreground" />
-              )
+  return { track, close, onKeyDown, extensions, state, candidates, pick };
+}
+
+type Mention = ReturnType<typeof useMention>;
+
+/** The open picker of `useMention`. "caret" opens the list under the caret, or above it when the window has no room below. */
+export function MentionPopup({
+  mention: { state, candidates, pick },
+  placement,
+}: {
+  mention: Pick<Mention, "state" | "candidates" | "pick">;
+  placement: "above" | "below" | "caret";
+}) {
+  const point = placement === "caret" ? state?.point : undefined;
+  const flip = point ? window.innerHeight - point.y - point.lineHeight < POPUP_HEIGHT : false;
+  const at: CSSProperties | undefined = point
+    ? {
+        position: "fixed",
+        left: Math.max(8, Math.min(point.x, window.innerWidth - 296)),
+        ...(flip
+          ? { bottom: window.innerHeight - point.y + 4 }
+          : { top: point.y + point.lineHeight + 4 }),
+      }
+    : undefined;
+  return state && candidates.length > 0 ? (
+    <ul
+      role="listbox"
+      aria-label={state.char === "@" ? "Mention a bot" : "Mention a team or room"}
+      style={at}
+      className={cn(
+        "z-50 w-72 overflow-hidden rounded-lg border bg-popover p-1 shadow-md",
+        !point && "absolute left-0",
+        !point && (placement === "above" ? "bottom-full mb-1" : "top-full mt-1"),
+      )}
+    >
+      <li className="px-2 py-1 text-xs font-medium text-muted-foreground" role="presentation">
+        {state.char === "@" ? "Bots" : "Teams and rooms"}
+      </li>
+      {candidates.map((b, i) => (
+        <li
+          key={`${isTag(b) ? b.kind : "bot"}-${b.id}`}
+          role="option"
+          aria-selected={i === state.index}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            pick(b);
+          }}
+          className={cn(
+            "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+            i === state.index ? "bg-accent text-accent-foreground" : "hover:bg-muted",
+          )}
+        >
+          {isTag(b) ? (
+            b.kind === "team" ? (
+              <UsersIcon className="size-5 shrink-0 text-muted-foreground" />
             ) : (
-              <BotAvatar
-                bot={b}
-                size={20}
-                square
-                badge={<BotStatusDot botId={b.id} className="size-2 border-popover" />}
-              />
-            )}
-            <span className="font-medium">{b.name}</span>
-            <span className="truncate text-xs text-muted-foreground">
-              {state.char}
-              {mentionKey(b.name)}
-            </span>
-          </li>
-        ))}
-      </ul>
-    ) : null;
-  };
-  return { track, close, onKeyDown, popup, extensions };
+              <ChatsIcon className="size-5 shrink-0 text-muted-foreground" />
+            )
+          ) : (
+            <BotAvatar
+              bot={b}
+              size={20}
+              square
+              badge={<BotStatusDot botId={b.id} className="size-2 border-popover" />}
+            />
+          )}
+          <span className="font-medium">{b.name}</span>
+          <span className="truncate text-xs text-muted-foreground">
+            {state.char}
+            {mentionKey(b.name)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  ) : null;
 }
 
 type MentionProps = {
@@ -260,7 +269,7 @@ export function MentionTextarea({
           onBlur?.();
         }}
       />
-      {mention.popup("caret")}
+      <MentionPopup mention={mention} placement="caret" />
     </div>
   );
 }
@@ -295,7 +304,7 @@ export function MentionField({
           onBlur?.();
         }}
       />
-      {mention.popup("caret")}
+      <MentionPopup mention={mention} placement="caret" />
     </div>
   );
 }

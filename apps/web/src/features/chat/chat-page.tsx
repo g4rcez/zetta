@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
@@ -14,6 +15,7 @@ import { DesktopButton } from "../computer/desktop-button";
 import {
   BrainIcon,
   CaretRightIcon,
+  CoffeeIcon,
   LockIcon,
   ShareNetworkIcon,
   SidebarSimpleIcon,
@@ -35,6 +37,12 @@ import { BotAvatar } from "@/components/bot-avatar";
 import { BotStatusDot, BotStatusLabel } from "@/components/bot-status";
 import { ResizeHandle, toWidth } from "@/components/resize-handle";
 import { authClient } from "@/lib/auth-client";
+import {
+  setChatKeepAwake,
+  useChatKeepAwake,
+  useWakeLock,
+  wakeLockSupported,
+} from "@/lib/keep-awake";
 import { useMedia } from "@/lib/use-media";
 
 import { refreshAttention } from "../attention/summary";
@@ -124,6 +132,10 @@ export function ChatPage() {
   const threadId = search.thread;
   const urlChat = params.chatId;
   const chatId = urlChat && urlChat !== NEW_CHAT ? urlChat : undefined;
+  const keepAwake = useChatKeepAwake(chatId);
+  useWakeLock(keepAwake === "on");
+  const awakeLabel =
+    keepAwake === "on" ? "Screen kept awake in this chat" : "Keep the screen awake in this chat";
   // A routine's chat is not in the sidebar list (`chats`): it is opened from Routines, so it is looked up by id.
   const listedRow = chatId ? chats.find((c) => c.id === chatId) : undefined;
   const lookup = useQuery({
@@ -660,42 +672,62 @@ export function ChatPage() {
                   <DesktopButton botName={current.name} onError={fail} />
                 )}
                 {current && (
-                  <Link
-                    to="/memory"
-                    search={{ createdBy: current.id }}
-                    title="Memories this bot created"
-                    aria-label="Memories this bot created"
-                    className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-                  >
-                    <BrainIcon aria-hidden="true" className="size-4" />
-                  </Link>
+                  <ActionHint label="Memories this bot created" side="bottom">
+                    <Link
+                      to="/memory"
+                      search={{ createdBy: current.id }}
+
+                      aria-label="Memories this bot created"
+                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                    >
+                      <BrainIcon aria-hidden="true" className="size-4" />
+                    </Link>
+                  </ActionHint>
+                )}
+                {chatId && wakeLockSupported() && (
+                  <ActionHint label={awakeLabel} side="bottom">
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+
+                      aria-label={awakeLabel}
+                      aria-pressed={keepAwake === "on"}
+                      onClick={() => setChatKeepAwake(chatId, keepAwake === "on" ? "off" : "on")}
+                    >
+                      <CoffeeIcon weight={keepAwake === "on" ? "fill" : "regular"} />
+                    </Button>
+                  </ActionHint>
                 )}
                 {chatId && saved.length > 0 && (
+                  <ActionHint label="Publish snapshot to team" side="bottom">
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+
+                      onClick={() => setPublishing(true)}
+                      aria-label="Publish snapshot to team"
+                    >
+                      <ShareNetworkIcon />
+                    </Button>
+                  </ActionHint>
+                )}
+                <ActionHint label="Details" side="bottom">
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    title="Publish snapshot to team"
-                    onClick={() => setPublishing(true)}
-                    aria-label="Publish snapshot to team"
+
+                    aria-label="Details"
+                    aria-pressed={details && !thread && !search.artifact}
+                    onClick={() => {
+                      const other = thread || search.artifact;
+                      if (search.artifact) setArtifact(undefined);
+                      else if (thread) setThread(undefined);
+                      setDetails((d) => !(d && !other));
+                    }}
                   >
-                    <ShareNetworkIcon />
+                    <SidebarSimpleIcon className="-scale-x-100" />
                   </Button>
-                )}
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  title="Details"
-                  aria-label="Details"
-                  aria-pressed={details && !thread && !search.artifact}
-                  onClick={() => {
-                    const other = thread || search.artifact;
-                    if (search.artifact) setArtifact(undefined);
-                    else if (thread) setThread(undefined);
-                    setDetails((d) => !(d && !other));
-                  }}
-                >
-                  <SidebarSimpleIcon className="-scale-x-100" />
-                </Button>
+                </ActionHint>
               </div>
             </header>
             {undoDelete && (

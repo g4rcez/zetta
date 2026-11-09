@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { CircleNotchIcon, MonitorIcon } from "@phosphor-icons/react";
@@ -34,40 +35,42 @@ function LivePreview({
     gcTime: 0,
   }).data;
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label="Open the computer to watch live"
-      className="relative block aspect-[16/10] w-full overflow-hidden rounded-md border bg-muted sm:w-72"
-    >
-      {png ? (
-        <img
-          alt="Live view of the computer"
-          src={`data:image/png;base64,${png}`}
-          width={640}
-          height={400}
-          decoding="async"
-          className="size-full object-cover object-top"
-        />
-      ) : (
-        <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
-          <CircleNotchIcon
-            aria-hidden="true"
-            className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none"
+    <ActionHint label="Open the computer to watch live">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="Open the computer to watch live"
+        className="relative block aspect-[16/10] w-full overflow-hidden rounded-md border bg-muted sm:w-72"
+      >
+        {png ? (
+          <img
+            alt="Live view of the computer"
+            src={`data:image/png;base64,${png}`}
+            width={640}
+            height={400}
+            decoding="async"
+            className="size-full object-cover object-top"
           />
-          Starting the computer…
-        </span>
-      )}
-      {active && (
-        <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-white">
-          <span
-            aria-hidden="true"
-            className="size-1.5 animate-pulse rounded-full bg-destructive motion-reduce:animate-none"
-          />
-          Live
-        </span>
-      )}
-    </button>
+        ) : (
+          <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
+            <CircleNotchIcon
+              aria-hidden="true"
+              className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none"
+            />
+            Starting the computer…
+          </span>
+        )}
+        {active && (
+          <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-white">
+            <span
+              aria-hidden="true"
+              className="size-1.5 animate-pulse rounded-full bg-destructive motion-reduce:animate-none"
+            />
+            Live
+          </span>
+        )}
+      </button>
+    </ActionHint>
   );
 }
 

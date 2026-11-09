@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useMemo, useState } from "react";
 import { XIcon } from "@phosphor-icons/react";
 
@@ -57,9 +58,11 @@ export function ThreadPanel({
           <h2 className="text-base font-bold leading-tight">Thread</h2>
           {bot && <p className="truncate text-xs text-muted-foreground"># {bot.name}</p>}
         </div>
-        <Button size="icon-sm" variant="ghost" aria-label="Close thread" onClick={onClose}>
-          <XIcon />
-        </Button>
+        <ActionHint label="Close thread">
+          <Button size="icon-sm" variant="ghost" aria-label="Close thread" onClick={onClose}>
+            <XIcon />
+          </Button>
+        </ActionHint>
       </header>
       <MessageList
         followToken={sent}

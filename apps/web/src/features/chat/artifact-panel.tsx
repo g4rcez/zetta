@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link } from "@tanstack/react-router";
 import { ArrowSquareOutIcon, DownloadSimpleIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -30,27 +31,33 @@ export function ArtifactPanel({ id, onClose }: { id: string; onClose: () => void
           {artifact && <Badge>{kindLabel(artifact.kind)}</Badge>}
         </div>
         {artifact && (
-          <a
-            href={contentUrl(artifact.id, true)}
-            aria-label="Download"
-            title="Download"
+          <ActionHint label="Download">
+            <a
+              href={contentUrl(artifact.id, true)}
+              aria-label="Download"
+
+              className={iconButton}
+            >
+              <DownloadSimpleIcon aria-hidden="true" className="size-4" />
+            </a>
+          </ActionHint>
+        )}
+        <ActionHint label="Open full page">
+          <Link
+            to="/artifacts/$artifactId"
+            params={{ artifactId: id }}
+            aria-label="Open full page"
+
             className={iconButton}
           >
-            <DownloadSimpleIcon aria-hidden="true" className="size-4" />
-          </a>
-        )}
-        <Link
-          to="/artifacts/$artifactId"
-          params={{ artifactId: id }}
-          aria-label="Open full page"
-          title="Open full page"
-          className={iconButton}
-        >
-          <ArrowSquareOutIcon aria-hidden="true" className="size-4" />
-        </Link>
-        <Button size="icon-sm" variant="ghost" aria-label="Close artifact" onClick={onClose}>
-          <XIcon />
-        </Button>
+            <ArrowSquareOutIcon aria-hidden="true" className="size-4" />
+          </Link>
+        </ActionHint>
+        <ActionHint label="Close artifact">
+          <Button size="icon-sm" variant="ghost" aria-label="Close artifact" onClick={onClose}>
+            <XIcon />
+          </Button>
+        </ActionHint>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {artifact === undefined ? (

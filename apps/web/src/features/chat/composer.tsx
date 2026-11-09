@@ -40,10 +40,9 @@ import {
   AttachmentTitle,
 } from "@zetta/ui/components/attachment";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@zetta/ui/components/input-group";
-import { Button, Separator } from "@/components/ui";
-import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
+import { ActionHint } from "@/components/action-hint";
+import { Button, Dropdown, Separator } from "@/components/ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
 
 import { ImageViewer } from "./attachment-image";
@@ -56,7 +55,7 @@ import {
   type Bot,
 } from "./chat-client";
 import { matchTrigger } from "./triggers";
-import { useMention } from "./mention";
+import { MentionPopup, useMention } from "./mention";
 import { chatQueries } from "./chat-queries";
 import { memoryQueries } from "../memory/memory-api";
 import { BotAvatar } from "@/components/bot-avatar";
@@ -108,22 +107,17 @@ function Tool({
   children: React.ReactNode;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <InputGroupButton
-            size="icon-xs"
-            aria-label={label}
-            aria-pressed={pressed}
-            className={cn(pressed && "bg-muted text-foreground")}
-            onClick={onClick}
-          />
-        }
+    <ActionHint label={label}>
+      <InputGroupButton
+        size="icon-xs"
+        aria-label={label}
+        aria-pressed={pressed}
+        className={cn(pressed && "bg-muted text-foreground")}
+        onClick={onClick}
       >
         {children}
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+      </InputGroupButton>
+    </ActionHint>
   );
 }
 
@@ -560,7 +554,7 @@ export function Composer({
           ))}
         </ul>
       )}
-      {mention.popup("above")}
+      <MentionPopup mention={mention} placement="above" />
       <InputGroup className="h-auto rounded-xl border-border bg-card focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
         {replyTo && (
           <InputGroupAddon align="block-start" className="border-b px-2 py-1.5">
@@ -570,15 +564,17 @@ export function Composer({
                 Replying to <b className="font-semibold">{replyTo.name}</b>
                 <span className="text-muted-foreground"> · {replyTo.excerpt}</span>
               </span>
-              <Button
-                type="button"
-                size="icon-xs"
-                variant="ghost"
-                aria-label="Cancel reply"
-                onClick={replyTo.onCancel}
-              >
-                <XIcon />
-              </Button>
+              <ActionHint label="Cancel reply">
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label="Cancel reply"
+                  onClick={replyTo.onCancel}
+                >
+                  <XIcon />
+                </Button>
+              </ActionHint>
             </div>
           </InputGroupAddon>
         )}
@@ -609,33 +605,37 @@ export function Composer({
             <ul aria-label="Images to send" className="flex flex-wrap gap-2">
               {staged.map((x) => (
                 <li key={x.key} className="group/thumb relative">
-                  <button
-                    type="button"
-                    disabled={x.uploading}
-                    aria-label={`Preview ${x.name}`}
-                    onClick={() => setViewing(pictures.findIndex((p) => p.key === x.key))}
-                    className="block size-16 cursor-zoom-in overflow-hidden rounded-lg border bg-muted outline-offset-2 focus-visible:outline-2 disabled:cursor-progress"
-                  >
-                    <img
-                      src={x.preview}
-                      alt={x.name}
-                      className={cn("size-full object-cover", x.uploading && "opacity-50")}
-                    />
-                  </button>
+                  <ActionHint label={`Preview ${x.name}`}>
+                    <button
+                      type="button"
+                      disabled={x.uploading}
+                      aria-label={`Preview ${x.name}`}
+                      onClick={() => setViewing(pictures.findIndex((p) => p.key === x.key))}
+                      className="block size-16 cursor-zoom-in overflow-hidden rounded-lg border bg-muted outline-offset-2 focus-visible:outline-2 disabled:cursor-progress"
+                    >
+                      <img
+                        src={x.preview}
+                        alt={x.name}
+                        className={cn("size-full object-cover", x.uploading && "opacity-50")}
+                      />
+                    </button>
+                  </ActionHint>
                   {x.uploading && (
                     <CircleNotchIcon
                       aria-label="Uploading"
                       className="pointer-events-none absolute inset-0 m-auto size-5 animate-spin text-foreground"
                     />
                   )}
-                  <button
-                    type="button"
-                    aria-label={`Remove ${x.name}`}
-                    onClick={() => dropStaged(x.key)}
-                    className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-xs hover:text-foreground"
-                  >
-                    <XIcon className="size-3" />
-                  </button>
+                  <ActionHint label={`Remove ${x.name}`}>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${x.name}`}
+                      onClick={() => dropStaged(x.key)}
+                      className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-xs hover:text-foreground"
+                    >
+                      <XIcon className="size-3" />
+                    </button>
+                  </ActionHint>
                 </li>
               ))}
             </ul>
@@ -773,31 +773,26 @@ export function Composer({
                   <BrainIcon />
                 </Tool>
               )}
-              <Popover
+              <Dropdown
+                asChild
                 open={!!picker}
-                onOpenChange={(open) => {
+                onChange={(open) => {
                   if (!open) setPicker(undefined);
                 }}
+                aria-label="Server files"
+                trigger={
+                  <ActionHint label="Server files">
+                    <InputGroupButton
+                      size="icon-xs"
+                      aria-label="Server files"
+                      onClick={() => (picker ? setPicker(undefined) : openFiles("shared"))}
+                    >
+                      <FolderOpenIcon />
+                    </InputGroupButton>
+                  </ActionHint>
+                }
               >
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <PopoverTrigger
-                        render={
-                          <InputGroupButton
-                            size="icon-xs"
-                            aria-label="Server files"
-                            onClick={() => openFiles("shared")}
-                          />
-                        }
-                      />
-                    }
-                  >
-                    <FolderOpenIcon />
-                  </TooltipTrigger>
-                  <TooltipContent>Server files</TooltipContent>
-                </Tooltip>
-                <PopoverContent align="start" className="w-72 p-2 text-sm">
+                <div className="w-64 max-w-[calc(100vw-4rem)] text-sm">
                   <p className="truncate px-1 pb-1 text-xs font-medium text-muted-foreground">
                     {picker?.path}
                   </p>
@@ -826,8 +821,8 @@ export function Composer({
                       </li>
                     )}
                   </ul>
-                </PopoverContent>
-              </Popover>
+                </div>
+              </Dropdown>
               <Tool
                 label="Mention a bot"
                 onClick={() => {
@@ -852,22 +847,26 @@ export function Composer({
             <kbd className="font-sans font-medium">Shift + Return</kbd> for a new line
           </span>
           {busy && onStop && (
-            <InputGroupButton size="icon-sm" variant="outline" aria-label="Stop" onClick={onStop}>
-              <SquareIcon weight="fill" />
-            </InputGroupButton>
+            <ActionHint label="Stop">
+              <InputGroupButton size="icon-sm" variant="outline" aria-label="Stop" onClick={onStop}>
+                <SquareIcon weight="fill" />
+              </InputGroupButton>
+            </ActionHint>
           )}
           {/* While the bot works, a message is queued and answered in its own thread. */}
           {(!busy || !onStop || canSend) && (
-            <InputGroupButton
-              type="submit"
-              size="icon-sm"
-              variant="default"
-              aria-label={busy ? "Send; it waits until the bot finishes" : "Send"}
-              disabled={!canSend}
-              className="size-7 rounded-full data-disabled:bg-muted data-disabled:text-muted-foreground"
-            >
-              <ArrowUpIcon />
-            </InputGroupButton>
+            <ActionHint label={busy ? "Send; it waits until the bot finishes" : "Send"}>
+              <InputGroupButton
+                type="submit"
+                size="icon-sm"
+                variant="default"
+                aria-label={busy ? "Send; it waits until the bot finishes" : "Send"}
+                disabled={!canSend}
+                className="size-7 rounded-full data-disabled:bg-muted data-disabled:text-muted-foreground"
+              >
+                <ArrowUpIcon />
+              </InputGroupButton>
+            </ActionHint>
           )}
         </InputGroupAddon>
       </InputGroup>

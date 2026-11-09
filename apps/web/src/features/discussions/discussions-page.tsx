@@ -172,12 +172,15 @@ function PageHeader({
           to="/teams/$teamId/settings"
           params={{ teamId: team.teamId }}
           search={{ room: team.roomId }}
-          aria-label={`${title} settings`}
+          aria-label={`${title} team settings`}
           className="flex min-w-0 max-w-[60%] items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
         >
           {icon}
           <h2 className="truncate font-heading text-base font-medium leading-tight">{title}</h2>
-          <UsersIcon aria-label="Team" className="size-3.5 shrink-0 text-muted-foreground" />
+          {/* Hover only: the link's name ("… team settings") already says "Team", and focus and a tap belong to the link. */}
+          <ActionHint hoverOnly label="Team">
+            <UsersIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+          </ActionHint>
           <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
         </Link>
       ) : (

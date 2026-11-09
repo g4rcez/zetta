@@ -14,6 +14,7 @@ import { useState } from "react";
 import { cn } from "@zetta/ui/lib/utils";
 
 import { useRoutineAttention, useRoutineUnreadChats } from "../attention/summary";
+import { ActionHint } from "@/components/action-hint";
 import { call } from "../chat/chat-client";
 
 type Status =
@@ -60,43 +61,47 @@ function useRoutineRows() {
   return query.data ?? (query.isError ? [] : undefined);
 }
 
-/** The routine's current status as a mark. Each has a text name; colour never carries it alone. Amber is only for "a person is needed". */
+const STATUS_LABEL: Record<Status, string> = {
+  running: "Running",
+  failed: "Last run failed",
+  blocked: "Blocked",
+  interrupted: "Interrupted",
+  paused: "Paused",
+  completed: "Completed",
+  scheduled: "Scheduled",
+};
+const STATUS_ICON = {
+  running: CircleNotchIcon,
+  failed: WarningIcon,
+  blocked: WarningIcon,
+  interrupted: WarningIcon,
+  paused: PauseIcon,
+  completed: CheckIcon,
+  scheduled: ClockIcon,
+};
+
+/**
+ * The routine's current status as a mark. Each has a text name; colour never carries it alone. Amber is only for "a person is needed".
+ * The row is a link, so the hint opens on mouse hover only; focus and a tap stay with the row, whose name has the mark's text.
+ */
 function StatusMark({ status, needsYou }: { status: Status; needsYou: boolean }) {
   // An open Inbox card outlives the run status (a recovery run resets it), so it keeps the warning, except while the run spins.
-  if (needsYou && status !== "running" && !NEEDS_YOU.includes(status))
-    return <WarningIcon role="img" aria-label="Needs you" className={cn(mark, "text-attention")} />;
-  switch (status) {
-    case "running":
-      return (
-        <CircleNotchIcon
-          role="img"
-          aria-label="Running"
-          className={cn(mark, "motion-safe:animate-spin")}
-        />
-      );
-    case "failed":
-    case "interrupted":
-    case "blocked":
-      return (
-        <WarningIcon
-          role="img"
-          aria-label={
-            status === "failed"
-              ? "Last run failed"
-              : status === "blocked"
-                ? "Blocked"
-                : "Interrupted"
-          }
-          className={cn(mark, "text-attention")}
-        />
-      );
-    case "paused":
-      return <PauseIcon role="img" aria-label="Paused" className={mark} />;
-    case "completed":
-      return <CheckIcon role="img" aria-label="Completed" className={mark} />;
-    default:
-      return <ClockIcon role="img" aria-label="Scheduled" className={mark} />;
-  }
+  const warn = needsYou && status !== "running" && !NEEDS_YOU.includes(status);
+  const Icon = warn ? WarningIcon : STATUS_ICON[status];
+  const label = warn ? "Needs you" : STATUS_LABEL[status];
+  return (
+    <ActionHint hoverOnly label={label}>
+      <Icon
+        role="img"
+        aria-label={label}
+        className={cn(
+          mark,
+          (warn || NEEDS_YOU.includes(status)) && "text-attention",
+          status === "running" && "motion-safe:animate-spin",
+        )}
+      />
+    </ActionHint>
+  );
 }
 
 function RoutineRow({

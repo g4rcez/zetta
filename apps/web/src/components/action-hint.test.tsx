@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, test } from "bun:test";
+import { afterEach, expect, jest, mock, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -149,4 +149,86 @@ test("a Dropdown trigger can carry a hint and opens its panel on a click", async
   expect(win.document.querySelector('[role="dialog"][aria-label="Panel"]')?.textContent).toContain(
     "inside",
   );
+});
+
+// A status icon sits inside a row that is a link: the hint is for the mouse only; the row keeps focus and tap.
+const STATUS_ROW = (
+  <a href="#row">
+    <ActionHint hoverOnly label="Paused">
+      <svg role="img" aria-label="Paused" />
+    </ActionHint>
+    <span>Nightly report</span>
+  </a>
+);
+
+test("hoverOnly: the mouse shows the hint after the delay, and the icon stays a plain image", async () => {
+  jest.useFakeTimers();
+  try {
+    const host = await mount(STATUS_ROW);
+    const icon = host.querySelector("svg")!;
+    await fire(icon, ["pointerover", "pointerenter", "mouseover", "mouseenter", "mousemove"]);
+    expect(tooltip()).toBeNull();
+    await act(async () => void jest.advanceTimersByTime(300));
+    expect(tooltip()?.textContent).toBe("Paused");
+    expect(icon.getAttribute("role")).toBe("img");
+    expect(icon.getAttribute("aria-label")).toBe("Paused");
+    for (const name of ["tabindex", "aria-haspopup", "aria-expanded"])
+      expect(icon.hasAttribute(name)).toBe(false);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("hoverOnly: a click on the icon reaches the row and keeps no hint open", async () => {
+  jest.useFakeTimers();
+  try {
+    const onClick = mock((e: { preventDefault: () => void }) => e.preventDefault());
+    const host = await mount(<div onClick={onClick}>{STATUS_ROW}</div>);
+    const icon = host.querySelector("svg")!;
+    await fire(icon, ["pointerover", "pointerenter", "mouseover", "mouseenter", "mousemove"]);
+    await act(async () => void jest.advanceTimersByTime(300));
+    await press(icon);
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(tooltip()).toBeNull();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("hoverOnly: keyboard focus shows no hint, but a hint without hoverOnly does", async () => {
+  const host = await mount(
+    <>
+      <ActionHint hoverOnly label="Only mouse">
+        <button type="button" aria-label="Only mouse" />
+      </ActionHint>
+      <ActionHint label="Mouse and keys">
+        <button type="button" aria-label="Mouse and keys" />
+      </ActionHint>
+    </>,
+  );
+  const [first, second] = host.querySelectorAll("button") as unknown as HTMLButtonElement[];
+  await act(async () => first!.focus());
+  expect(tooltip()).toBeNull();
+  await act(async () => second!.focus());
+  expect(tooltip()?.textContent).toBe("Mouse and keys");
+});
+
+test("hoverOnly: a touch pointer shows no hint", async () => {
+  jest.useFakeTimers();
+  try {
+    const host = await mount(STATUS_ROW);
+    const icon = host.querySelector("svg")!;
+    await act(async () => {
+      for (const type of ["pointerover", "pointerenter", "pointerdown"])
+        icon.dispatchEvent(
+          new win.PointerEvent(type, { bubbles: true, pointerType: "touch" }) as unknown as Event,
+        );
+    });
+    // A touch tap makes the browser fire the compatibility mouse events after the pointer events.
+    await fire(icon, ["mouseover", "mouseenter", "mousemove"]);
+    await act(async () => void jest.advanceTimersByTime(1000));
+    expect(tooltip()).toBeNull();
+  } finally {
+    jest.useRealTimers();
+  }
 });

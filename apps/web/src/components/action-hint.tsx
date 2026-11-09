@@ -20,6 +20,11 @@ type ActionHintProps = Omit<ComponentProps<"span">, "children" | "title" | "ref"
   side?: "top" | "bottom" | "left" | "right";
   /** A click closes the hint (default). Turn it off when the click changes the hint itself, like "Copied!". */
   closeOnClick?: boolean;
+  /**
+   * For a status icon inside a row that is a link or a button: the hint opens on mouse hover only. Keyboard focus and a touch tap
+   * belong to the row, so they show no hint. The icon keeps `role="img"` and its `aria-label`.
+   */
+  hoverOnly?: boolean;
   ref?: Ref<HTMLElement>;
 };
 
@@ -36,6 +41,7 @@ export function ActionHint({
   children,
   side = "top",
   closeOnClick = true,
+  hoverOnly = false,
   ref,
   onClick,
   ...rest
@@ -49,6 +55,8 @@ export function ActionHint({
       open={open}
       onChange={setOpen}
       placement={side}
+      focus={!hoverOnly}
+      touch={!hoverOnly}
       onClick={(e: MouseEvent<HTMLSpanElement>) => {
         onClick?.(e);
         if (closeOnClick) setOpen(false);

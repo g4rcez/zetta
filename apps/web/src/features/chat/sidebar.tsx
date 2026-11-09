@@ -289,8 +289,17 @@ function ChatRow({
           <span className="block truncate">{c.title}</span>
           {bot && <span className="block truncate text-xs text-muted-foreground">{bot.name}</span>}
         </span>
-        {c.pinned && <PushPinIcon aria-label="Pinned" className="size-3 shrink-0" />}
-        {c.favorite && <StarIcon aria-label="Favorite" className="size-3 shrink-0" />}
+        {/* The row is a button: the hint opens on mouse hover only; focus and a tap stay with the row. */}
+        {c.pinned && (
+          <ActionHint hoverOnly label="Pinned">
+            <PushPinIcon role="img" aria-label="Pinned" className="size-3 shrink-0" />
+          </ActionHint>
+        )}
+        {c.favorite && (
+          <ActionHint hoverOnly label="Favorite">
+            <StarIcon role="img" aria-label="Favorite" className="size-3 shrink-0" />
+          </ActionHint>
+        )}
         {/* Nested rows give the title the whole width; the bot row carries the latest time. */}
         {bot && (
           <Hint title="Last activity" description={fullDate(c.updatedAt)}>

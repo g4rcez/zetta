@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "@/lib/notify";
 
+import { IconHint } from "@/components/icon-hint";
 import { Button } from "@/components/ui";
 
 import {
@@ -143,10 +144,15 @@ function AgendaEventLabel({ item }: { item: AgendaItem }) {
   const time = item.allDay ? "All day" : formatTime(item.startAt, tf);
   return (
     <span className="flex min-w-0 items-center gap-1.5">
+      {/* Static text in the day detail panel (no link or button around it), so `IconHint` fits. */}
       {item.status === "done" ? (
-        <CheckIcon className="size-3.5 shrink-0" aria-label="Done" />
+        <IconHint label="Done">
+          <CheckIcon className="size-3.5 shrink-0" />
+        </IconHint>
       ) : (
-        <Icon className="size-3.5 shrink-0" aria-label={KIND_LABEL[item.kind]} />
+        <IconHint label={KIND_LABEL[item.kind]}>
+          <Icon className="size-3.5 shrink-0" />
+        </IconHint>
       )}
       <span className="shrink-0 tabular-nums text-xs opacity-80">{time}</span>
       <span className={`truncate ${item.status === "done" ? "line-through" : ""}`}>

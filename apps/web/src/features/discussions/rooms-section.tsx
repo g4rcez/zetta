@@ -51,21 +51,26 @@ function Signal({ signal }: { signal: RoomSignal }) {
         className="size-2 shrink-0 rounded-full bg-attention"
       />
     );
+  // The row is a link: the hint opens on mouse hover only; focus and a tap stay with the row.
   if (signal === "working")
     return (
-      <CircleNotchIcon
-        role="img"
-        aria-label="A bot is working"
-        className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin"
-      />
+      <ActionHint hoverOnly label="A bot is working">
+        <CircleNotchIcon
+          role="img"
+          aria-label="A bot is working"
+          className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin"
+        />
+      </ActionHint>
     );
   if (signal === "paused")
     return (
-      <PauseIcon
-        role="img"
-        aria-label="Paused"
-        className="size-3.5 shrink-0 text-muted-foreground"
-      />
+      <ActionHint hoverOnly label="Paused">
+        <PauseIcon
+          role="img"
+          aria-label="Paused"
+          className="size-3.5 shrink-0 text-muted-foreground"
+        />
+      </ActionHint>
     );
   return null;
 }

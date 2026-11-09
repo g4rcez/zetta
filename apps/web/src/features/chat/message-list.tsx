@@ -28,6 +28,8 @@ export type RowActions = {
   onQueue?: (row: Row, action: "remove" | "retry") => void;
   /** Open a published file beside the chat. Without it, an artifact receipt is a plain link to the artifact page. */
   onOpenArtifact?: (id: string) => void;
+  /** Where the live output of a command of the running turn streams from. Without it a step is not clickable (rooms, threads). */
+  stepOutputUrl?: (stepId: string) => string | undefined;
 };
 
 /** Who wrote the message `row` quotes, found the same way as the author of a row. */

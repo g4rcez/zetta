@@ -12,7 +12,7 @@ export type ChatDataParts = {
   summary: { text: string };
   computer: { messageId: string; botId: string; vm: { id: string; name: string } };
   "computer-step": { messageId: string; vmId: string; step: string; at: number };
-  activity: { messageId: string; label: string; at: number };
+  activity: { messageId: string; label: string; at: number; stepId?: string };
   artifact: { messageId: string; id: string; title: string; at: number };
   steer: { messageId: string; noteIds: string[] };
   plan: {
@@ -84,7 +84,12 @@ export function toUIMessageStream(events: AsyncIterable<ChatEvent>) {
           // No id: every label is its own part, so the client can build the work timeline.
           writer.write({
             type: "data-activity",
-            data: { messageId: ev.messageId, label: ev.label, at: ev.at },
+            data: {
+              messageId: ev.messageId,
+              label: ev.label,
+              at: ev.at,
+              ...(ev.stepId ? { stepId: ev.stepId } : {}),
+            },
           });
         else if (ev.type === "steer")
           // A signal, not content: the client reloads the chat to see the notes leave the queue, and it need not keep the part.

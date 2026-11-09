@@ -3,7 +3,24 @@ import { chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises
 import { homedir, tmpdir } from "node:os";
 import { containerUser, engineOf, tmpfsOwner, type Engine } from "../container-user";
 import { trackRun } from "./processes";
-import { createClaudeStream, type CliProgress, type TokenUsage } from "./claude-stream";
+import {
+  createClaudeStream,
+  type ClaudeItem,
+  type CliProgress,
+  type TokenUsage,
+} from "./claude-stream";
+import {
+  beginStep,
+  closeLiveRun,
+  CONTAINER_LIVE_DIR,
+  createLiveDir,
+  endStep,
+  LIVE_SHELL,
+  openLiveRun,
+  removeLiveDir,
+  secretValues,
+  type LiveRun,
+} from "./step-output";
 import { dirname, join, resolve as resolvePath, sep } from "node:path";
 
 export type NativeHarness =
@@ -608,6 +625,8 @@ export function dockerArgs(
     codeDir?: string | undefined;
     pluginDir?: string | undefined;
     imageDir?: string | undefined;
+    /** Claude Code: where the wrapper copies the output of the commands it runs (see step-output.ts). Read and write. */
+    liveDir?: string | undefined;
     env: Record<string, string>;
   },
 ) {
@@ -645,6 +664,7 @@ export function dockerArgs(
   ];
   if (o.pluginDir) args.push("-v", `${o.pluginDir}:${CONTAINER_PLUGIN_DIR}:ro`);
   if (o.imageDir) args.push("-v", `${o.imageDir}:${CONTAINER_IMAGE_DIR}:ro`);
+  if (o.liveDir) args.push("-v", `${o.liveDir}:${CONTAINER_LIVE_DIR}:rw`);
   if (o.home) args.push("-v", `${o.home}:/home/agent:rw`);
   else args.push("--tmpfs", `/home/agent:rw,size=64m${tmpfsOwner(cfg.engine)}`);
   // Values never appear in argv (visible to every local user via `ps`): `-e KEY` makes docker read them from its own environment.
@@ -850,7 +870,7 @@ export const streamCli: StreamCli = async function* ({
       : undefined;
   // Claude Code makes a summary call after each reply (a few seconds, sometimes over ten) that no bot uses: this turns off that and other
   // optional traffic. What the caller set wins.
-  const extraEnv =
+  let extraEnv =
     harness === "claude-code"
       ? { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", ...callerEnv }
       : callerEnv;
@@ -869,7 +889,11 @@ export const streamCli: StreamCli = async function* ({
       }
     }
   };
-  let cwd: string | undefined, pluginDir: string | undefined, imageDir: string | undefined;
+  let cwd: string | undefined,
+    pluginDir: string | undefined,
+    imageDir: string | undefined,
+    liveDir: string | undefined,
+    live: LiveRun | undefined;
   let child: ReturnType<typeof Bun.spawn> | undefined;
   let untrack = () => {};
   let timer: ReturnType<typeof setTimeout> | undefined,
@@ -892,6 +916,24 @@ export const streamCli: StreamCli = async function* ({
         (harness === "hermes" && profile.skills.some((k) => k.files?.length)))
     )
       pluginDir = await writePluginDir(profile.files);
+    // Claude Code only: the wrapper copies what its commands print into this folder while they run, so the chat can show it live. The
+    // folder is removed with the run; nothing is stored. A prefix the caller set is left alone.
+    if (harness === "claude-code" && !extraEnv?.CLAUDE_CODE_SHELL_PREFIX) {
+      try {
+        liveDir = await createLiveDir(claudePluginRoot());
+        live = openLiveRun(signal, liveDir, secretValues(extraEnv));
+        const where = docker ? CONTAINER_LIVE_DIR : liveDir;
+        extraEnv = {
+          ...extraEnv,
+          CLAUDE_CODE_SHELL_PREFIX: join(where, LIVE_SHELL),
+          ZETTA_LIVE_DIR: where,
+        };
+      } catch {
+        // No live output, the run goes on as before.
+        if (liveDir) await rm(liveDir, { recursive: true, force: true }).catch(() => {});
+        liveDir = live = undefined;
+      }
+    }
     const imagePaths: string[] = [];
     if (images?.length) {
       // Native runs find them under the cwd; a container gets its own read-only mount because /work may be a tmpfs.
@@ -933,6 +975,7 @@ export const streamCli: StreamCli = async function* ({
               codeDir: codePath,
               pluginDir,
               imageDir: docker ? imageDir : undefined,
+              liveDir,
               env: extraEnv ?? {},
             }),
           ],
@@ -1015,14 +1058,20 @@ export const streamCli: StreamCli = async function* ({
       lastFeedback = Date.now(),
       beat = false,
       read: ReturnType<typeof reader.read> | undefined;
-    const items = (list: (string | CliProgress)[]) => {
+    const items = (list: ClaudeItem[]) => {
       const out: (string | CliProgress)[] = [];
       for (const item of list) {
         if (typeof item === "string") {
           total += item.length;
           if (total > OUTPUT_CAP) return { out, over: true };
-        }
-        out.push(item);
+          out.push(item);
+        } else if ("stepDone" in item) {
+          if (live) void endStep(live, item.stepDone);
+        } else if (item.command !== undefined && item.stepId) {
+          // The raw command only matches the step to its output file here; what goes on carries the label and the id.
+          if (live) beginStep(live, item.stepId, item.command);
+          out.push({ activity: item.activity, stepId: item.stepId });
+        } else out.push(item);
       }
       return { out, over: false };
     };
@@ -1108,6 +1157,8 @@ export const streamCli: StreamCli = async function* ({
     // A code directory is the user's persistent checkout; only throwaway directories are removed.
     if (cwd && cwd !== codePath) await rm(cwd, { recursive: true, force: true });
     if (pluginDir) await rm(pluginDir, { recursive: true, force: true });
+    if (live) closeLiveRun(live);
+    if (liveDir) await removeLiveDir(liveDir);
     // Docker copies live in their own temp dir; native copies sit in the cwd, which is removed above or (code directory) cleaned here.
     if (imageDir) await rm(imageDir, { recursive: true, force: true });
     release();

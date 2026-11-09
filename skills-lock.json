@@ -50,6 +50,12 @@
       "skillPath": "better-auth/emailAndPassword/SKILL.md",
       "computedHash": "863886759f729081e265941f4f72c503835d55a1f34f6d63cebe6571159fff4a"
     },
+    "g4rcez-components": {
+      "source": "g4rcez/components",
+      "sourceType": "github",
+      "skillPath": "skills/g4rcez-components/SKILL.md",
+      "computedHash": "c19058219ee006b67a43c12e4c6501f2188d141faabe00c1c9810f78296c5198"
+    },
     "linear-ui-skills": {
       "source": "ihlamury/design-skills",
       "sourceType": "github",

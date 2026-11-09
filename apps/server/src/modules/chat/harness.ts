@@ -917,8 +917,12 @@ export const streamCli: StreamCli = async function* ({
     )
       pluginDir = await writePluginDir(profile.files);
     // Claude Code only: the wrapper copies what its commands print into this folder while they run, so the chat can show it live. The
-    // folder is removed with the run; nothing is stored. A prefix the caller set is left alone.
-    if (harness === "claude-code" && !extraEnv?.CLAUDE_CODE_SHELL_PREFIX) {
+    // folder is removed with the run; nothing is stored. A prefix the caller set is left alone. Not on Windows: the wrapper is a .sh file.
+    if (
+      harness === "claude-code" &&
+      process.platform !== "win32" &&
+      !extraEnv?.CLAUDE_CODE_SHELL_PREFIX
+    ) {
       try {
         liveDir = await createLiveDir(claudePluginRoot());
         live = openLiveRun(signal, liveDir, secretValues(extraEnv));

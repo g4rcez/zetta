@@ -129,7 +129,7 @@ describe("live steps", () => {
   });
 });
 
-describe("the wrapper", () => {
+describe.skipIf(process.platform === "win32")("the wrapper", () => {
   const run = async (dir: string, command: string, env: Record<string, string> = {}) => {
     const p = Bun.spawn([join(dir, LIVE_SHELL), command], {
       env: { PATH: process.env.PATH ?? "", SHELL: "/bin/bash", ZETTA_LIVE_DIR: dir, ...env },

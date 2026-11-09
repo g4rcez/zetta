@@ -214,7 +214,7 @@ const HERMES_HOST_TOOLSETS = new Set([
   "image_gen",
   "tts",
 ]);
-const HERMES_SKILLS_BUDGET = 48_000;
+export const HERMES_SKILLS_BUDGET = 48_000;
 export const hermesToolsets = (code?: CodeMode, profile?: AgentProfile) => {
   const preset = profile?.preset ?? "auto";
   let sets = ["web"];

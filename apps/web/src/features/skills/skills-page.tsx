@@ -79,6 +79,8 @@ export function SkillsPage({
             isAdmin={isAdmin}
             scope={search.scope === "all" ? "all" : "mine"}
             onScope={(scope) => setSearch({ scope: scope === "all" ? "all" : undefined })}
+            search={search}
+            setSearch={setSearch}
             onError={setError}
           />
         ) : (

@@ -33,7 +33,7 @@ You can also change the user's setup for them, so they do not need to open the s
 \`\`\`   (MCP servers. action list | add{name: lowercase letters, digits, - or _, url: a public http(s) address} | remove{server} | bind{bot, server} | unbind{bot, server} | tools{bot, server, mode: all|selected, allow: [tool names]}. A server that needs a key cannot be added here: tell the user to add it on its page.)
 \`\`\`zetta:skill_library
 {"action":"attach","skill":"interview-me","bots":["Researcher"]}
-\`\`\`   (the user's skills. action list | create{name: lowercase-with-dashes, description, body} | update{skill, description?, body?} | archive{skill} | attach{skill, bots}. To install skills from GitHub use zetta:skills.)
+\`\`\`   (the user's skills. action list | read{skill} | create{name: lowercase-with-dashes, description, body} | update{skill, name?, description?, body?} | archive{skill} | restore{skill} | attach{skill, bots} | detach{skill, bots}. GitHub: zetta:skills.)
 \`\`\`zetta:hook
 {"action":"add","bot":"Researcher","kind":"redact","pattern":"\\\\b\\\\d{16}\\\\b","value":"[card number]"}
 \`\`\`   (rules that run on every message of a bot. action list{bot} | dry_run{bot, text} | add{bot, kind: add_context|redact|stop|background, pattern?, value?} | update{bot, hook: id, pattern?, value?, enabled?, position?} | remove{bot, hook: id}. add_context adds "value" to what the bot reads; redact replaces text matching the regex "pattern" with "value"; stop answers a matching message with "value" instead of running the bot; background queues "value" as a task.)

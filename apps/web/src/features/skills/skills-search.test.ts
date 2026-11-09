@@ -34,3 +34,41 @@ test("a change keeps the rest of the view and leaves empty values out of the add
     q: "anthropics/skills",
   });
 });
+
+const BOT = "00000000-0000-7000-8000-000000000001";
+test("the filters of My skills are read from the address; a value that is not understood is dropped", () => {
+  expect(
+    parseSkillsSearch({
+      find: " pdf ",
+      source: "github",
+      sort: "used",
+      bot: BOT,
+      view: "archived",
+      use: "unused",
+    }),
+  ).toEqual({
+    find: "pdf",
+    source: "github",
+    sort: "used",
+    bot: BOT,
+    view: "archived",
+    use: "unused",
+  });
+  expect(
+    parseSkillsSearch({
+      find: "  ",
+      source: "svn",
+      sort: "random",
+      bot: "not-an-id",
+      view: "all",
+      use: "yes",
+    }),
+  ).toEqual({});
+});
+
+test("changing one filter keeps the others, and an empty value leaves the address", () => {
+  const view = { find: "pdf", sort: "name" as const, use: "unused" as const };
+  expect(withSearch(view, { source: "github" })).toEqual({ ...view, source: "github" });
+  expect(withSearch(view, { use: undefined })).toEqual({ find: "pdf", sort: "name" });
+  expect(withSearch(view, { find: "" })).toEqual({ sort: "name", use: "unused" });
+});

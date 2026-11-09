@@ -177,7 +177,7 @@ suite("skill library", () => {
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: { access, chat },
     features: { access, features },
-    skills: { access, db, skills: library, market },
+    skills: { access, db, skills: library, market, claude: createBotClaude(db) },
     webOrigin: "http://web.test",
     desktopOrigins: [],
     drain: () => {},

@@ -24,6 +24,13 @@ export const SKILL_STATUSES = ["active", "archived"] as const;
 export type SkillStatus = (typeof SKILL_STATUSES)[number];
 
 /** `pending`: a GitHub skill installed before its folder was kept; the server downloads the other files at the pinned commit. */
+/**
+ * `pristine`: the text is what was installed from GitHub (or the skill was written here). `edited`: the owner changed an installed skill,
+ * so an update from GitHub would overwrite their work and asks first.
+ */
+export const SKILL_SOURCE_STATES = ["pristine", "edited"] as const;
+export type SkillSourceState = (typeof SKILL_SOURCE_STATES)[number];
+
 export const SKILL_FILES_STATUSES = ["complete", "pending"] as const;
 export type SkillFilesStatus = (typeof SKILL_FILES_STATUSES)[number];
 export const SKILL_FILE_MODES = ["file", "executable"] as const;
@@ -50,6 +57,7 @@ export const skill = zetta.table(
     sourcePath: text("source_path"),
     sourceRef: text("source_ref"),
     version: integer("version").default(1).notNull(),
+    sourceState: text("source_state", { enum: SKILL_SOURCE_STATES }).default("pristine").notNull(),
     status: text("status", { enum: SKILL_STATUSES }).default("active").notNull(),
     filesStatus: text("files_status", { enum: SKILL_FILES_STATUSES }).default("complete").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -102,5 +110,62 @@ export const botSkill = zetta.table(
   (t) => [
     primaryKey({ columns: [t.botId, t.skillId] }),
     index("bot_skill_skill_idx").on(t.skillId),
+  ],
+);
+
+/**
+ * One time a library skill was used: picked with `/` in the chat, or loaded by a Claude Code run. Pruned after 90 days. It only feeds the
+ * library page ("used 12 times, last 2 days ago", the Unused filter); nothing depends on it to run a bot.
+ */
+export const SKILL_USE_SOURCES = ["picked", "run"] as const;
+export type SkillUseSource = (typeof SKILL_USE_SOURCES)[number];
+export const skillUse = zetta.table(
+  "skill_use",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skill.id, restrict),
+    botId: uuid("bot_id")
+      .notNull()
+      .references(() => bot.id, restrict),
+    source: text("source", { enum: SKILL_USE_SOURCES }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("skill_use_skill_idx").on(t.skillId, t.usedAt),
+    index("skill_use_bot_idx").on(t.botId),
+  ],
+);
+
+/**
+ * What a skill looked like after one save (create, edit, restore, update from GitHub). Immutable. The page lists them with a diff and
+ * brings one back; only the last 50 are kept. `files_hash` says whether the folder changed without keeping the files.
+ */
+export const skillRevision = zetta.table(
+  "skill_revision",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skill.id, restrict),
+    /** The skill's `version` after this save. */
+    version: integer("version").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    body: text("body").notNull(),
+    filesHash: text("files_hash").default("").notNull(),
+    savedByUserId: text("saved_by_user_id")
+      .notNull()
+      .references(() => user.id, restrict),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("skill_revision_skill_version_idx").on(t.skillId, t.version),
+    index("skill_revision_skill_idx").on(t.skillId, t.createdAt),
   ],
 );

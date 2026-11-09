@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import {
   BellIcon,
   CalendarDotsIcon,
@@ -13,7 +14,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { uuidv7 } from "@zetta/core/uuid";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui";
@@ -171,14 +172,16 @@ export function DashboardPage() {
           <section aria-label="Examples" className="space-y-3">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <h2 className="text-sm font-normal">Get started with some examples</h2>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={hideExamples}
-                aria-label="Hide examples"
-              >
-                <XIcon aria-hidden />
-              </Button>
+              <ActionHint label="Hide examples">
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={hideExamples}
+                  aria-label="Hide examples"
+                >
+                  <XIcon aria-hidden />
+                </Button>
+              </ActionHint>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               {EXAMPLES.map(({ icon: Glyph, title, hint, prompt }) => (

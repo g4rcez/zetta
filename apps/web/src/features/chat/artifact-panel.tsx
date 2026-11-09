@@ -1,8 +1,8 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link } from "@tanstack/react-router";
 import { ArrowSquareOutIcon, DownloadSimpleIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 
-import { ActionHint } from "@zetta/ui/components/action-hint";
 import { Button } from "@/components/ui";
 
 import { artifactsApi, contentUrl, kindLabel, type Artifact } from "../artifacts/artifacts-api";
@@ -32,7 +32,12 @@ export function ArtifactPanel({ id, onClose }: { id: string; onClose: () => void
         </div>
         {artifact && (
           <ActionHint label="Download">
-            <a href={contentUrl(artifact.id, true)} aria-label="Download" className={iconButton}>
+            <a
+              href={contentUrl(artifact.id, true)}
+              aria-label="Download"
+
+              className={iconButton}
+            >
               <DownloadSimpleIcon aria-hidden="true" className="size-4" />
             </a>
           </ActionHint>
@@ -42,6 +47,7 @@ export function ArtifactPanel({ id, onClose }: { id: string; onClose: () => void
             to="/artifacts/$artifactId"
             params={{ artifactId: id }}
             aria-label="Open full page"
+
             className={iconButton}
           >
             <ArrowSquareOutIcon aria-hidden="true" className="size-4" />

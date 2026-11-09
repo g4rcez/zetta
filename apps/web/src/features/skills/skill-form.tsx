@@ -1,18 +1,22 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { EditorField } from "@/components/editor/editor";
 import { Button, Input } from "@/components/ui";
 import { parseMarkdown } from "../claude/claude-api";
-import { toSkillName, type SkillDraft } from "./skills-api";
+import { formatSize } from "../artifacts/artifacts-api";
+import { skillsApi, toSkillName, type SkillCheck, type SkillDraft } from "./skills-api";
 
 /** Name, when to use it, and the instructions. A SKILL.md file fills the three fields, so a skill from anywhere can be pasted in. */
 export function SkillForm({
   initial,
+  skillId,
   submitLabel,
   onSubmit,
   onCancel,
 }: {
   initial?: SkillDraft;
+  /** The skill being edited, so its own name is not taken for a clash. */
+  skillId?: string;
   submitLabel: string;
   onSubmit: (draft: SkillDraft) => void | Promise<void>;
   onCancel?: () => void;
@@ -21,6 +25,30 @@ export function SkillForm({
     initial ?? { name: "", description: "", body: "" },
   );
   const set = (patch: Partial<SkillDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  // What a save would say, asked a moment after typing stops. Only the fields that have text are sent, so a half-filled form shows no "required" noise.
+  const [check, setCheck] = useState<SkillCheck>();
+  useEffect(() => {
+    const fields = {
+      ...(draft.name.trim() && { name: draft.name.trim() }),
+      ...(draft.description.trim() && { description: draft.description.trim() }),
+      ...(draft.body.trim() && { body: draft.body.trim() }),
+    };
+    if (Object.keys(fields).length === 0) {
+      setCheck(undefined);
+      return;
+    }
+    let current = true;
+    const timer = setTimeout(() => {
+      skillsApi.check({ ...fields, ...(skillId && { skillId }) }).then(
+        (r) => current && setCheck(r),
+        () => current && setCheck(undefined),
+      );
+    }, 350);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [draft.name, draft.description, draft.body, skillId]);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     void onSubmit({
@@ -80,6 +108,7 @@ export function SkillForm({
         onChange={(body) => set({ body })}
         placeholder="1) List the merged pull requests. 2) Group them by area. 3) Write one line each."
       />
+      {check && <CheckNotes check={check} />}
       <div className="flex gap-2">
         <Button size="sm" type="submit">
           {submitLabel}
@@ -91,5 +120,30 @@ export function SkillForm({
         )}
       </div>
     </form>
+  );
+}
+
+/** The size, what would stop the save, what is worth knowing, and the skills that look the same. */
+function CheckNotes({ check }: { check: SkillCheck }) {
+  return (
+    <div role="status" aria-label="Checks" className="space-y-1 text-xs">
+      <p className="text-muted-foreground">{formatSize(check.bodyBytes)} of 64 KB</p>
+      {check.problems.map((p) => (
+        <p key={p} className="text-destructive">
+          {p}
+        </p>
+      ))}
+      {check.warnings.map((w) => (
+        <p key={w} className="text-warn">
+          {w}
+        </p>
+      ))}
+      {check.similar.length > 0 && (
+        <p className="text-muted-foreground">
+          You already have {check.similar.length === 1 ? "a similar skill" : "similar skills"}:{" "}
+          {check.similar.map((x) => x.name).join(", ")}.
+        </p>
+      )}
+    </div>
   );
 }

@@ -490,6 +490,8 @@ export function createMarket({
     list,
     preview,
     described,
+    /** The commit a name (a branch or HEAD) points to now. */
+    commit,
     /** Which trust level a repository has on the suggestions list, or null when it is not on it. */
     trust: (repo: string): Trust | null =>
       suggestions.find((s) => s.repo.toLowerCase() === repo.toLowerCase())?.trust ?? null,

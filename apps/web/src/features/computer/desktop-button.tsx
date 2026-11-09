@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useState } from "react";
 import { CircleNotchIcon, MonitorIcon } from "@phosphor-icons/react";
 
@@ -37,20 +38,22 @@ export function DesktopButton({
   }
   return (
     <>
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        aria-label={`Connect to ${botName}'s computer`}
-        title="Connect to the computer"
-        disabled={busy}
-        onClick={() => void connect()}
-      >
-        {busy ? (
-          <CircleNotchIcon className="animate-spin motion-reduce:animate-none" />
-        ) : (
-          <MonitorIcon />
-        )}
-      </Button>
+      <ActionHint label={`Connect to ${botName}'s computer`} side="bottom">
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={`Connect to ${botName}'s computer`}
+
+          disabled={busy}
+          onClick={() => void connect()}
+        >
+          {busy ? (
+            <CircleNotchIcon className="animate-spin motion-reduce:animate-none" />
+          ) : (
+            <MonitorIcon />
+          )}
+        </Button>
+      </ActionHint>
       {vmId && <VmDialog vmId={vmId} botName={botName} onClose={() => setVmId(undefined)} />}
     </>
   );

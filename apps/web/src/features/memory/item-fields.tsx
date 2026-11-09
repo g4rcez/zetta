@@ -4,20 +4,32 @@ import { EditorField } from "@/components/editor/editor";
 import { Input, Select } from "@/components/ui";
 
 import { MemoryLinkTextarea } from "./memory-link-textarea";
-import { TYPE, type Bot, type Item, type Page, type TeamName, type MemoryType } from "./memory-api";
+import {
+  BOT_ACCESS,
+  TYPE,
+  type Bot,
+  type BotAccess,
+  type Item,
+  type Page,
+  type TeamName,
+  type MemoryType,
+} from "./memory-api";
 
 export function Fields({
   page,
   meta,
+  contentLocked,
   bots,
   teams,
   items,
   self,
 }: {
   page?: Pick<Page, "title" | "howto" | "content" | "tags"> &
-    Partial<Pick<Page, "type" | "score" | "authorBotId" | "teams">>;
+    Partial<Pick<Page, "type" | "score" | "authorBotId" | "teams" | "botAccess">>;
   /** The visibility and score fields: not for a suggestion, and not for a shared item (the Share button sets that). */
   meta?: boolean;
+  /** A source item: its text is kept unchanged, so the form has no content field. */
+  contentLocked?: boolean;
   bots?: Bot[] | undefined;
   teams?: TeamName[] | undefined;
   /** The memory's items, for the `[[` autocomplete of the content. Without them the content is a plain textarea. */
@@ -48,7 +60,12 @@ export function Fields({
         defaultValue={page?.tags.join(", ")}
         placeholder="e.g. system, billing, instruction"
       />
-      {items ? (
+      {contentLocked ? (
+        <p className="text-sm text-muted-foreground">
+          The text of a source is kept unchanged, so it is not edited here. Title, tags and the
+          settings below can change.
+        </p>
+      ) : items ? (
         <MemoryLinkTextarea
           title="Content (Markdown; type [[ to link another item)"
           defaultValue={page?.content}
@@ -77,6 +94,17 @@ export function Fields({
             options={(["owner", "teams", "solo"] as const).map((value) => ({
               value,
               label: TYPE[value],
+            }))}
+          />
+          <Select
+            title="Bots can"
+            name="botAccess"
+            required={false}
+            // A new item is yours: bots suggest, you accept. The same default the server gives an item a person writes.
+            defaultValue={page?.botAccess ?? "suggest"}
+            options={(Object.keys(BOT_ACCESS) as BotAccess[]).map((value) => ({
+              value,
+              label: BOT_ACCESS[value],
             }))}
           />
           {type === "solo" && (
@@ -130,11 +158,13 @@ export const contentFields = (f: FormData) => ({
     .map((t) => t.trim())
     .filter(Boolean),
 });
-/** Who reads it and how important it is. A shared item has no type field: it stays shared. */
+/** Who reads it, what bots may do with it, and how important it is. A shared item has no type field: it stays shared. */
 export const metaFields = (f: FormData) => {
   const type = f.get("type");
+  const botAccess = f.get("botAccess");
   const score = Number(f.get("score"));
   return {
+    ...(botAccess && { botAccess: String(botAccess) }),
     ...(Number.isInteger(score) && f.get("score") !== null && { score }),
     ...(type && {
       type: String(type),

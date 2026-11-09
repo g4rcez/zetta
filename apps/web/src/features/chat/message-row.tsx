@@ -6,6 +6,7 @@ import {
   BookmarkSimpleIcon,
   CaretRightIcon,
   CalendarPlusIcon,
+  AppWindowIcon,
   CodeIcon,
   FileArchiveIcon,
   BrainIcon,
@@ -17,28 +18,20 @@ import {
   SmileyIcon,
 } from "@phosphor-icons/react";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@zetta/ui/components/avatar";
-import { Button } from "@/components/ui";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@zetta/ui/components/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
+import { ActionHint } from "@/components/action-hint";
+import { Button, Dropdown, Menu, MenuItem } from "@/components/ui";
 import {
   Message,
   MessageAvatar,
   MessageContent,
   MessageHeader,
 } from "@zetta/ui/components/message";
-import { ActionHint } from "@zetta/ui/components/action-hint";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
+import { BotIdentity, useBotIdentity } from "@/components/bot-identity";
 import { UserAvatar } from "@/components/user-avatar";
-import { parseAvatar } from "@zetta/core/avatar";
 
-import { errorMessage, isImage, type Bot } from "./chat-client";
+import { errorMessage, isImage, type Bot, type Receipt } from "./chat-client";
 import { chatQueries } from "./chat-queries";
 import { PictureStrip } from "./attachment-image";
 import { CopyButton } from "./chat-copy";
@@ -64,13 +57,6 @@ const time = (iso: string, f: TimeFormat) =>
   formatTime(iso, f, { hour: "numeric", minute: "2-digit" });
 const fullDate = (iso: string, f: TimeFormat) =>
   formatDateTime(iso, f, { dateStyle: "full", timeStyle: "short" });
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 
 function UsedNotes({ row }: { row: Row }) {
   const [opened, setOpened] = useState(false);
@@ -188,29 +174,30 @@ const QUICK_REACTIONS: { emoji: string; name: string }[] = [
   { emoji: "❤️", name: "Love" },
 ];
 
-/** Opens the full emoji set in a popover and reacts with the pick. */
+/** Opens the full emoji set in a panel and reacts with the pick. The picker focuses its own search field. */
 function ReactionPicker({ onReact }: { onReact: (emoji: string) => void }) {
   const [open, setOpen] = useState(false);
-  const search = useRef<HTMLInputElement>(null);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <ActionHint label="Add reaction">
-        <PopoverTrigger
-          render={<Button size="icon-xs" variant="ghost" aria-label="Add reaction" />}
-        >
-          <SmileyIcon />
-        </PopoverTrigger>
-      </ActionHint>
-      <PopoverContent align="end" initialFocus={search} className="w-auto rounded-lg p-2">
-        <EmojiPicker
-          searchRef={search}
-          onPick={(emoji) => {
-            setOpen(false);
-            onReact(emoji);
-          }}
-        />
-      </PopoverContent>
-    </Popover>
+    <Dropdown
+      asChild
+      open={open}
+      onChange={setOpen}
+      aria-label="Add reaction"
+      trigger={
+        <ActionHint label="Add reaction">
+          <Button size="icon-xs" variant="ghost" aria-label="Add reaction">
+            <SmileyIcon />
+          </Button>
+        </ActionHint>
+      }
+    >
+      <EmojiPicker
+        onPick={(emoji) => {
+          setOpen(false);
+          onReact(emoji);
+        }}
+      />
+    </Dropdown>
   );
 }
 
@@ -273,21 +260,25 @@ function HoverBar({
       )}
       <CopyButton text={row.content} label="Copy message" className="!size-7 [&_svg]:!size-3.5" />
       {row.role === "assistant" && (
-        <DropdownMenu>
-          <ActionHint label="More actions">
-            <DropdownMenuTrigger
-              render={<Button size="icon-xs" variant="ghost" aria-label="More actions" />}
-            >
-              <DotsThreeIcon />
-            </DropdownMenuTrigger>
-          </ActionHint>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onSaveToMemory}>
-              <BookmarkSimpleIcon />
-              Save to memory
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Menu
+          asChild
+          hover={false}
+          restoreFocus
+          title=""
+          floatingClassName="min-w-44"
+          label={
+            <ActionHint label="More actions">
+              <Button size="icon-xs" variant="ghost" aria-label="More actions">
+                <DotsThreeIcon />
+              </Button>
+            </ActionHint>
+          }
+        >
+          <MenuItem title="Save to memory" onClick={onSaveToMemory}>
+            <BookmarkSimpleIcon />
+            Save to memory
+          </MenuItem>
+        </Menu>
       )}
     </div>
   );
@@ -306,6 +297,26 @@ function showMessage(id: string) {
     });
 }
 
+/** One task the chief handed to a member of a team room: the member's identity, the task and what done looks like. */
+function HandoffReceipt({ r }: { r: Receipt }) {
+  const member = useBotIdentity(r.assignee!.botId, r.assignee!.name);
+  return (
+    <li>
+      <Link
+        to="/tasks"
+        className="block max-w-xl rounded-md px-1 py-0.5 hover:bg-accent"
+        title={r.doneWhen ? `Done when: ${r.doneWhen}` : r.text}
+      >
+        <BotIdentity
+          bot={member}
+          size={24}
+          sub={`${r.text}${r.doneWhen ? ` · Done when: ${r.doneWhen}` : ""}`}
+        />
+      </Link>
+    </li>
+  );
+}
+
 /** The message a channel reply answers: author and the first lines of it. Click goes to the original. */
 function QuoteBlock({
   quote,
@@ -316,6 +327,7 @@ function QuoteBlock({
 }) {
   const name = author?.name ?? "Message";
   return (
+    // No hint: it shows the quoted text.
     <button
       type="button"
       aria-label={`Go to the message from ${name}`}
@@ -375,6 +387,7 @@ export const MessageRow = memo(function MessageRow({
   onSaveToMemory,
   onQueue,
   onOpenArtifact,
+  stepOutputUrl,
 }: {
   row: Row;
   author: Author;
@@ -394,6 +407,8 @@ export const MessageRow = memo(function MessageRow({
   onQueue?: (row: Row, action: "remove" | "retry") => void;
   /** Open a published file beside the chat instead of leaving it. */
   onOpenArtifact?: (id: string) => void;
+  /** Where the live output of a command of this running turn streams from. */
+  stepOutputUrl?: (stepId: string) => string | undefined;
 }) {
   const tf = useTimeFormat();
   const saved = !row.streaming && !readOnly;
@@ -407,8 +422,15 @@ export const MessageRow = memo(function MessageRow({
       ? splitActionNotes(row.content)
       : { body: row.content, notes: [] };
   const all = row.meta?.receipts ?? [];
+  // A task the chief handed to a member is a handoff card of its own, stacked under the answer; the other receipts stay small chips.
+  const handoffs = all.filter((r) => r.kind === "task" && r.assignee);
   const receipts = all.filter(
-    (r) => r.kind !== "proposal" && r.kind !== "computer" && r.kind !== "bot" && r.kind !== "team",
+    (r) =>
+      r.kind !== "proposal" &&
+      r.kind !== "computer" &&
+      r.kind !== "bot" &&
+      r.kind !== "team" &&
+      !(r.kind === "task" && r.assignee),
   );
   const made = all.filter((r) => r.kind === "bot" || r.kind === "team");
   const computers = computersOf(row);
@@ -432,6 +454,7 @@ export const MessageRow = memo(function MessageRow({
       {saved &&
         (bar === "idle" ? (
           // The one tab stop each row had to reach the toolbar; focusing it swaps in the real toolbar.
+          // No hint: screen-reader-only control, never seen.
           <button
             type="button"
             aria-label="Message actions"
@@ -461,15 +484,8 @@ export const MessageRow = memo(function MessageRow({
         <MessageAvatar className="mt-0.5 size-8 min-w-8 self-start rounded-lg bg-transparent group-has-data-[slot=message-footer]/message:translate-y-0">
           {author.bot ? (
             <BotAvatar bot={author.bot} size={32} square />
-          ) : parseAvatar(author.avatar) ? (
-            <UserAvatar name={author.name} avatar={author.avatar} size={32} />
           ) : (
-            <Avatar className="size-8 rounded-full after:rounded-full">
-              {author.image && <AvatarImage src={author.image} alt="" className="rounded-full" />}
-              <AvatarFallback className="rounded-full bg-muted text-xs font-semibold text-foreground">
-                {initials(author.name)}
-              </AvatarFallback>
-            </Avatar>
+            <UserAvatar name={author.name} avatar={author.avatar} image={author.image} size={32} />
           )}
         </MessageAvatar>
       )}
@@ -504,7 +520,7 @@ export const MessageRow = memo(function MessageRow({
               ))}
           </ul>
         ) : null}
-        <WorkTimeline row={row} working={working} />
+        <WorkTimeline row={row} working={working} stepOutputUrl={stepOutputUrl} />
         {working && !visible ? (
           <WorkingStatus
             label={friendly(row.activity) ?? "Thinking"}
@@ -652,6 +668,13 @@ export const MessageRow = memo(function MessageRow({
             ))}
           </ul>
         )}
+        {handoffs.length > 0 && (
+          <ul className="flex flex-col gap-0.5" aria-label="Work handed to members">
+            {handoffs.map((r) => (
+              <HandoffReceipt key={`${r.kind}-${r.id}`} r={r} />
+            ))}
+          </ul>
+        )}
         {receipts.length > 0 && (
           <ul
             className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground"
@@ -708,6 +731,15 @@ export const MessageRow = memo(function MessageRow({
                     <CodeIcon aria-hidden="true" className="size-3.5" />
                     {r.created === false ? "ran or changed" : "created"} “{r.text}”
                   </Link>
+                ) : r.kind === "app" ? (
+                  <Link
+                    to="/apps/$ref"
+                    params={{ ref: r.id }}
+                    className="flex items-center gap-1 hover:text-foreground hover:underline"
+                  >
+                    <AppWindowIcon aria-hidden="true" className="size-3.5" />
+                    published app “{r.text}”
+                  </Link>
                 ) : r.kind === "memory" ? (
                   <Link
                     to="/memory/$slug"
@@ -744,6 +776,7 @@ export const MessageRow = memo(function MessageRow({
             {row.reactions
               .filter((r) => r.count > 0)
               .map((r) => (
+                // No hint: it shows the emoji and its count.
                 <button
                   key={r.emoji}
                   type="button"

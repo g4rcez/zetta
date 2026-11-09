@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseTools, toolPreamble } from "./tools";
+import { appLinkBlock, parseTools, toolPreamble } from "./tools";
 
 describe("toolPreamble", () => {
   test("computer tools are only described when the owner enabled them", () => {
@@ -234,8 +234,18 @@ describe("chief creation tools", () => {
     expect(chief).not.toContain("asks for a new bot or a team, create it yourself");
     // A playbook that grows creeps into every Chief turn: raise this limit on purpose, not by accident.
     // Raised from 30_000 to 30_500 on purpose: the memory-as-database guidance (list, append, ~600 characters) is read by every bot.
-    expect(chief.length).toBeLessThan(30_500);
+    // Raised from 30_500 to 31_100 on purpose: task plans and follow-up (subtasks, progress, checkAt, ~650 characters) are read by every bot.
+    // Raised from 31_100 to 31_400 on purpose: the Chart component of the zetta:ui catalog (one ~300 character line) is read by every bot.
+    // Raised from 31_400 to 31_700 on purpose: the zetta:app line (a guide action returns the full reference, ~300 characters) is read by every bot.
+    // Raised from 31_700 to 31_800 on purpose: how a bot points at an app with a zetta:app.linkto card (~120 characters) is read by every bot.
+    // Raised from 31_800 to 31_900 on purpose: the bot access flags ([suggest only], [read only], ~100 characters) are read by every bot.
+    expect(chief.length).toBeLessThan(31_900);
     expect(toolPreamble("off", false, false)).not.toContain("next_wave");
+  });
+  test("every bot is told that [suggest only] items change by suggestion and [read only] items not at all", () => {
+    for (const preamble of [toolPreamble("off", false, false), toolPreamble("off", false, true)])
+      for (const needed of ["[suggest only]", "[read only]", '"action":"suggest"'])
+        expect(preamble).toContain(needed);
   });
   test("create_team defaults to no goal, no context and no members", () => {
     expect(parseTools('```zetta:create_team\n{"name":"Launch"}\n```').calls).toEqual([
@@ -276,5 +286,23 @@ describe("zetta:memory as the bots' database", () => {
       `{"action":"append","slug":"x","content":"${"y".repeat(8001)}"}`,
     ])
       expect(parse(bad).calls).toEqual([]);
+  });
+});
+
+describe("app link block", () => {
+  test("it is built as one fenced JSON block and is not a tool call", () => {
+    const block = appLinkBlock({ app: "lista", name: "To `do`" });
+    expect(block).toBe('```zetta:app.linkto\n{"app":"lista","name":"To \'do\'"}\n```');
+    const r = parseTools(`Here it is.\n\n${block}`);
+    expect(r.calls).toEqual([]);
+    expect(r.rejected).toEqual([]);
+    expect(r.text).toContain("```zetta:app.linkto");
+  });
+  test("the app tool still parses next to a link block", () => {
+    const r = parseTools(
+      `${appLinkBlock({ app: "x" })}\n\n\`\`\`zetta:app\n{"action":"guide"}\n\`\`\``,
+    );
+    expect(r.calls.map((c) => c.kind)).toEqual(["app"]);
+    expect(r.text).toContain("zetta:app.linkto");
   });
 });

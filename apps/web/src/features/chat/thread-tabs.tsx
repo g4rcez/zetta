@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import {
   ArchiveIcon,
   CaretDownIcon,
@@ -10,17 +11,8 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@zetta/ui/components/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
 import { cn } from "@zetta/ui/lib/utils";
-import { ActionHint } from "@zetta/ui/components/action-hint";
-import { Button } from "@/components/ui";
+import { Button, Dropdown, MENU_DANGER, Menu, MenuItem, MenuSeparator } from "@/components/ui";
 import type { Conversation } from "./chat-client";
 import { chatQueries } from "./chat-queries";
 
@@ -106,13 +98,23 @@ export function ThreadTabs({
   }
   return (
     <div className="flex min-w-0 items-center gap-0.5">
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger className="flex h-8 min-w-0 items-center gap-1 rounded-md px-1.5 text-base font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
-          <span className="truncate">{current?.title ?? "New chat"}</span>
-          <span className="sr-only">, switch chat</span>
-          <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-80 max-w-[calc(100vw-1rem)] gap-1 p-1.5 text-sm">
+      <Dropdown
+        open={open}
+        onChange={setOpen}
+        aria-label="Switch chat"
+        buttonProps={{
+          className:
+            "flex h-8 min-w-0 items-center gap-1 rounded-md px-1.5 text-base font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
+        }}
+        trigger={
+          <>
+            <span className="truncate">{current?.title ?? "New chat"}</span>
+            <span className="sr-only">, switch chat</span>
+            <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+          </>
+        }
+      >
+        <div className="flex w-80 max-w-[calc(100vw-4rem)] flex-col gap-1 text-sm">
           <input
             autoFocus
             role="combobox"
@@ -212,8 +214,8 @@ export function ThreadTabs({
               <PlusIcon aria-hidden="true" className="size-4" /> New chat
             </button>
           </div>
-        </PopoverContent>
-      </Popover>
+        </div>
+      </Dropdown>
       {current && (
         <ActionHint label={current.favorite ? "Remove from favorites" : "Add to favorites"}>
           <Button
@@ -221,6 +223,7 @@ export function ThreadTabs({
             size="icon-sm"
             aria-pressed={!!current.favorite}
             aria-label={current.favorite ? "Remove from favorites" : "Add to favorites"}
+
             onClick={() => onUpdate(current.id, { favorite: !current.favorite })}
             className="shrink-0"
           >
@@ -233,28 +236,35 @@ export function ThreadTabs({
         </ActionHint>
       )}
       {current && (
-        <DropdownMenu>
-          <ActionHint label={`Actions for ${current.title}`}>
-            <DropdownMenuTrigger
-              aria-label={`Actions for ${current.title}`}
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            >
-              <DotsThreeIcon className="size-4" />
-            </DropdownMenuTrigger>
-          </ActionHint>
-          <DropdownMenuContent align="start" className="w-44">
-            <DropdownMenuItem onClick={() => setRenaming(true)}>
-              <PencilSimpleIcon /> Rename
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onUpdate(current.id, { archived: true })}>
-              <ArchiveIcon /> Archive
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={() => onDelete(current.id)}>
-              <TrashIcon /> Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Menu
+          asChild
+          hover={false}
+          restoreFocus
+          title=""
+          floatingClassName="w-44"
+          label={
+            <ActionHint label={`Actions for ${current.title}`}>
+              <button
+                type="button"
+                aria-label={`Actions for ${current.title}`}
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-open:bg-muted data-open:text-foreground"
+              >
+                <DotsThreeIcon aria-hidden="true" className="size-4" />
+              </button>
+            </ActionHint>
+          }
+        >
+          <MenuItem title="Rename" onClick={() => setRenaming(true)}>
+            <PencilSimpleIcon /> Rename
+          </MenuItem>
+          <MenuItem title="Archive" onClick={() => onUpdate(current.id, { archived: true })}>
+            <ArchiveIcon /> Archive
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem title="Delete" className={MENU_DANGER} onClick={() => onDelete(current.id)}>
+            <TrashIcon /> Delete
+          </MenuItem>
+        </Menu>
       )}
     </div>
   );

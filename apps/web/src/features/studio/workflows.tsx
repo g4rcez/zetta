@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { uuidv7 } from "@zetta/core/uuid";
 import { Suspense, lazy, useState, type FormEvent } from "react";
@@ -411,26 +412,30 @@ function Editor({
             </div>
           )}
           <div className="flex flex-wrap gap-1 sm:col-span-2">
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              disabled={i === 0}
-              onClick={() => move(i, -1)}
-              aria-label={`Move step ${i + 1} up`}
-            >
-              ↑
-            </Button>
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              disabled={i === steps.length - 1}
-              onClick={() => move(i, 1)}
-              aria-label={`Move step ${i + 1} down`}
-            >
-              ↓
-            </Button>
+            <ActionHint label={`Move step ${i + 1} up`}>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                disabled={i === 0}
+                onClick={() => move(i, -1)}
+                aria-label={`Move step ${i + 1} up`}
+              >
+                ↑
+              </Button>
+            </ActionHint>
+            <ActionHint label={`Move step ${i + 1} down`}>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                disabled={i === steps.length - 1}
+                onClick={() => move(i, 1)}
+                aria-label={`Move step ${i + 1} down`}
+              >
+                ↓
+              </Button>
+            </ActionHint>
             <Button
               type="button"
               size="xs"

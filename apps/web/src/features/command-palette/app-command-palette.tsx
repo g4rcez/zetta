@@ -51,7 +51,9 @@ type Action = Extract<CommandItemTypes, { type: "shortcut" }>["action"];
 const NO_HITS: SearchHit[] = [];
 const RECENT = 8; // conversations listed before typing; searching looks through all of them
 const isMac = () => /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
-const icon = (Icon: PhosphorIcon) => <Icon className="size-4" aria-hidden="true" />;
+function PaletteIcon({ icon: Icon }: { icon: PhosphorIcon }) {
+  return <Icon className="size-4" aria-hidden="true" />;
+}
 
 const STUDIO_ICONS: Partial<Record<StudioTab, PhosphorIcon>> = {
   attention: BellIcon,
@@ -157,8 +159,10 @@ export function AppCommandPalette({
       title: `${KIND_LABEL[h.kind]} · ${h.kind === "message" ? plainSnippet(h.snippet).slice(0, 80) : h.title}`,
       // The library filters by title and hint; the server already matched, so the typed text keeps the hit visible.
       hint: [q],
-      Icon: icon(
-        h.kind === "message" || h.kind === "conversation" ? ChatIcon : MagnifyingGlassIcon,
+      Icon: (
+        <PaletteIcon
+          icon={h.kind === "message" || h.kind === "conversation" ? ChatIcon : MagnifyingGlassIcon}
+        />
       ),
       action: go(() => {
         const t = hitTarget(h);
@@ -181,7 +185,7 @@ export function AppCommandPalette({
                   type: "shortcut" as const,
                   title: `See all results for "${q}"`,
                   hint: [q],
-                  Icon: icon(MagnifyingGlassIcon),
+                  Icon: <PaletteIcon icon={MagnifyingGlassIcon} />,
                   action: go(() => navigate({ to: "/search", search: { q } })),
                 },
               ],
@@ -196,7 +200,7 @@ export function AppCommandPalette({
           title: link.label,
           hint: ["go", "open", "page"],
           shortcut: `Alt + ${i + 1}`,
-          Icon: icon(link.icon),
+          Icon: <PaletteIcon icon={link.icon} />,
           action: go(() =>
             navigate({
               to: link.to as string,
@@ -213,7 +217,7 @@ export function AppCommandPalette({
             type: "shortcut",
             title: paused ? "Resume agents" : "Pause agents",
             hint: ["pause", "stop", "resume", "agents", "everything", "halt"],
-            Icon: icon(paused ? PlayIcon : PauseIcon),
+            Icon: <PaletteIcon icon={paused ? PlayIcon : PauseIcon} />,
             action: ({ setOpen }) => {
               setOpen(false);
               void toggleAgents();
@@ -230,7 +234,7 @@ export function AppCommandPalette({
             type: "shortcut",
             title: t.label,
             hint: ["studio", t.slug],
-            Icon: icon(STUDIO_ICONS[t.slug] ?? MonitorIcon),
+            Icon: <PaletteIcon icon={STUDIO_ICONS[t.slug] ?? MonitorIcon} />,
             action: go(() => navigate({ to: "/studio/$tab", params: { tab: t.slug } })),
           })),
       },
@@ -244,7 +248,7 @@ export function AppCommandPalette({
             title: `New chat with ${bot.name}`,
             hint: ["new", "conversation", "message", "draft", bot.kind],
             ...(bot.kind === "chief" ? { shortcut: "Alt + c" } : {}),
-            Icon: icon(NotePencilIcon),
+            Icon: <PaletteIcon icon={NotePencilIcon} />,
             action: go(() =>
               navigate({
                 to: "/chat/{-$chatId}",
@@ -258,7 +262,7 @@ export function AppCommandPalette({
             title: "New bot",
             hint: ["create", "agent", "assistant", "onboarding"],
             shortcut: "Alt + b",
-            Icon: icon(PlusIcon),
+            Icon: <PaletteIcon icon={PlusIcon} />,
             action: go(() => navigate({ to: "/bots/new" })),
           },
         ],
@@ -287,7 +291,7 @@ export function AppCommandPalette({
                 type: "shortcut",
                 title: c.title || "Untitled conversation",
                 hint: ["conversation", botName.get(c.botId) ?? ""],
-                Icon: icon(ChatIcon),
+                Icon: <PaletteIcon icon={ChatIcon} />,
                 action: go(() =>
                   navigate({ to: "/chat/{-$chatId}", params: { chatId: c.id }, search: {} }),
                 ),
@@ -304,28 +308,28 @@ export function AppCommandPalette({
             title: "Toggle theme",
             hint: ["dark", "light", "mode", "appearance"],
             shortcut: "Alt + t",
-            Icon: icon(SunDimIcon),
+            Icon: <PaletteIcon icon={SunDimIcon} />,
             action: theme(resolvedTheme === "dark" ? "light" : "dark"),
           },
           {
             type: "shortcut",
             title: "Light theme",
             hint: ["appearance", "mode"],
-            Icon: icon(SunIcon),
+            Icon: <PaletteIcon icon={SunIcon} />,
             action: theme("light"),
           },
           {
             type: "shortcut",
             title: "Dark theme",
             hint: ["appearance", "mode"],
-            Icon: icon(MoonIcon),
+            Icon: <PaletteIcon icon={MoonIcon} />,
             action: theme("dark"),
           },
           {
             type: "shortcut",
             title: "System theme",
             hint: ["appearance", "mode", "auto"],
-            Icon: icon(MonitorIcon),
+            Icon: <PaletteIcon icon={MonitorIcon} />,
             action: theme("system"),
           },
         ],

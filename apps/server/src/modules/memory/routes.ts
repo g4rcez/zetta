@@ -1,4 +1,5 @@
 import {
+  MEMORY_BOT_ACCESS,
   MEMORY_JOB_PROBLEMS,
   MEMORY_ITEM_STATUSES,
   MEMORY_SCORE_MAX,
@@ -7,7 +8,7 @@ import {
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
-import type { MemoryJobs } from "./jobs";
+import { IngestError, type MemoryJobs } from "./jobs";
 import { assistInput, type MemoryAssist } from "./assist";
 import type { MemoryGraphReader } from "./graph";
 import { MEMORY_LIMITS, MemoryError, type Memory, type MemoryFilter } from "./service";
@@ -45,6 +46,7 @@ const STATUS: Record<MemoryError["code"], [number, string]> = {
     409,
     "Another item already uses this name (published by a member, or private to another bot or team). Rename yours.",
   ],
+  READ_ONLY: [403, "Bots cannot change this item."],
   TOO_LONG: [
     400,
     `The item would pass ${MEMORY_LIMITS.content} characters. Remove old entries first.`,
@@ -65,6 +67,8 @@ const meta = {
   teams: z.array(uuid).max(MEMORY_LIMITS.teams).optional(),
   score: z.number().int().min(0).max(MEMORY_SCORE_MAX).optional(),
   authorBotId: uuid.nullable().optional(),
+  /** What bots may do with the item: edit it, only suggest changes, or only read it. */
+  botAccess: z.enum(MEMORY_BOT_ACCESS).optional(),
 };
 /** `expectedVersion` is the version the editor started from; 0 for a new item. */
 const page = z.strictObject({ ...text, ...meta, expectedVersion: z.number().int().min(0) });
@@ -93,6 +97,7 @@ const searchFilter = z
   .object({
     type: csv(MEMORY_TYPES),
     status: csv(MEMORY_ITEM_STATUSES),
+    botAccess: csv(MEMORY_BOT_ACCESS),
     tag: z.string().optional(),
     tagMode: z.enum(["any", "all"]).optional(),
     access: z.enum(["own", "shared"]).optional(),
@@ -107,6 +112,7 @@ const searchFilter = z
   .transform((v): MemoryFilter => ({
     ...(v.type.length && { types: v.type }),
     ...(v.status.length && { statuses: v.status }),
+    ...(v.botAccess.length && { botAccess: v.botAccess }),
     ...(v.tag && {
       tags: v.tag
         .split(",")
@@ -125,6 +131,36 @@ const searchFilter = z
     ...(v.since && { updatedSince: new Date(Date.now() - SINCE_DAYS[v.since] * 86_400_000) }),
   }));
 const user = { by: "user" } as const;
+/** A source to ingest: an address, pasted text or a file the browser read as text. The size limits are the memory's (`MEMORY_LIMITS.source`). */
+const ingest = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("url"),
+    url: z.url().max(2000),
+    title: z.string().trim().max(160).optional(),
+    botId: uuid.optional(),
+  }),
+  z.strictObject({
+    kind: z.literal("text"),
+    text: z.string().max(MEMORY_LIMITS.source),
+    title: z.string().trim().max(160).optional(),
+    botId: uuid.optional(),
+  }),
+  z.strictObject({
+    kind: z.literal("file"),
+    name: z.string().trim().min(1).max(200),
+    text: z.string().max(MEMORY_LIMITS.source),
+    title: z.string().trim().max(160).optional(),
+    botId: uuid.optional(),
+  }),
+]);
+const INGEST_FAIL: Record<IngestError["code"], [number, string]> = {
+  URL_UNREADABLE: [422, "That page could not be read. Paste its text instead."],
+  LIMIT: [429, "Too many sources are being added. Wait for one to finish and try again."],
+  NO_ENGINE: [
+    409,
+    "Adding a source needs a bot with a real engine (your chief, or the bot you pick).",
+  ],
+};
 
 /** Typed as a bare Elysia on purpose: app.ts chains every module and TypeScript gives up on the combined route type past this size. */
 export function createMemoryRoutes(
@@ -167,6 +203,8 @@ export function createMemoryRoutes(
         if (e instanceof RateLimited)
           return fail(429, "RATE_LIMITED", "Too many requests. Wait a minute and try again.");
         if (e instanceof MemoryError) return fail(STATUS[e.code][0], e.code, STATUS[e.code][1]);
+        if (e instanceof IngestError)
+          return fail(INGEST_FAIL[e.code][0], e.code, INGEST_FAIL[e.code][1]);
         if (e instanceof z.ZodError)
           return fail(400, "INVALID_REQUEST", "Check the details and try again.");
         return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
@@ -224,6 +262,7 @@ export function createMemoryRoutes(
             links: r.links,
             history: await memory.history(c.owner, p.slug),
             sources: await memory.sources(c.owner, p.slug),
+            raw: await memory.rawInfo(c.owner, p.id),
           };
         }),
       )
@@ -242,11 +281,21 @@ export function createMemoryRoutes(
           const key = slug.parse(c.params.slug);
           if (!("status" in v)) {
             const p = await memory.setMeta(c.owner, key, v, user);
-            return { slug: p.slug, version: p.version, type: p.type, score: p.score };
+            return {
+              slug: p.slug,
+              version: p.version,
+              type: p.type,
+              score: p.score,
+              botAccess: p.botAccess,
+            };
           }
           const r = await memory.setStatus(c.owner, key, v.status, user);
           return { slug: r.page.slug, version: r.page.version, status: r.page.status };
         }),
+      )
+      .post(
+        `/${n}-conventions`,
+        g(async (c) => ({ ...(await memory.ensureConventions(c.owner)) })),
       )
       .post(
         `/${n}/:slug/restore`,
@@ -307,6 +356,37 @@ export function createMemoryRoutes(
           return { id: j.id, status: j.status, conversationId: j.conversationId };
         }),
       ) as never;
-  const routes = new Elysia({ normalize: false }).use(mount("memory")).use(mount("wiki"));
+  // Adding a source: its own small route set, because one chain for all of the memory is already at the limit of what TypeScript can type.
+  const mountIngest = (n: "memory" | "wiki"): Elysia =>
+    new Elysia({ prefix: "/api", normalize: false })
+      .post(
+        `/${n}-ingest`,
+        g(async (c) => {
+          if (!jobs) throw new MemoryError("NOT_FOUND");
+          const { botId, ...input } = ingest.parse(c.body);
+          const r = await jobs.requestIngest(c.owner, input, botId);
+          return {
+            jobId: r.job.id,
+            status: r.job.status,
+            conversationId: r.job.conversationId,
+            slug: r.slug,
+            existing: r.existing,
+            screen: r.job.screen,
+          };
+        }),
+      )
+      .post(
+        `/${n}-ingest/:jobId/force`,
+        g(async (c) => {
+          if (!jobs) throw new MemoryError("NOT_FOUND");
+          const j = await jobs.forceIngest(c.owner, uuid.parse(c.params.jobId));
+          return { jobId: j.id, status: j.status, conversationId: j.conversationId };
+        }),
+      ) as never;
+  const routes = new Elysia({ normalize: false })
+    .use(mount("memory"))
+    .use(mount("wiki"))
+    .use(mountIngest("memory"))
+    .use(mountIngest("wiki"));
   return routes as never;
 }

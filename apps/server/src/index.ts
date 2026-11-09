@@ -20,6 +20,7 @@ import {
   outputStyleServices,
   skillServices,
   playgroundServices,
+  appsServices,
   artifactServices,
   chatServices,
   databaseReady,
@@ -36,10 +37,12 @@ import {
   installationServices,
   eventServices,
   loopServices,
+  taskFollowUp,
   networkMode,
   trustedExtraOrigins,
   resumeInterruptedRuns,
   zettaMcpServices,
+  apps,
 } from "./services";
 
 initLogger({
@@ -85,6 +88,7 @@ createApp({
   botClaude: botClaudeServices,
   skills: skillServices,
   playground: playgroundServices,
+  apps: appsServices,
   zettaMcp: zettaMcpServices,
   webOrigin: ENV.CORS_ORIGIN,
   desktopOrigins: trustedExtraOrigins,
@@ -164,9 +168,11 @@ if (runsWork) {
     void discussionServices.worker.tick().catch(() => {});
     void inboundServices.inbound.tick().catch(() => {});
     void loopServices.driver.tick().catch(() => {});
+    void taskFollowUp.heartbeat.tick().catch(() => {});
     void chatServices.chat.drainQueues().catch(() => {});
     void chatServices.chat.flagSlowTurns().catch(() => {});
     void chatServices.chat.expireProposals().catch(() => {});
+    void apps.expirePending().catch(() => {});
     void featureServices.features.routineTriggers.tick().catch(() => {});
   }, 30_000);
 

@@ -6,7 +6,7 @@ import {
   ChatIcon,
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { BotIdentity } from "@/components/bot-identity";
 import { errorMessage } from "../chat/chat-client";

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { killGroup } from "../chat/harness";
 import { hostVersion, LANGUAGES, PLAYGROUND_LIMITS } from "./languages";
-import { collectOutputs, emptyResult, GRACE_MS, tail, writeFolder } from "./run-folder";
+import { collectOutputs, emptyResult, GRACE_MS, readResult, tail, writeFolder } from "./run-folder";
 import { PlaygroundError, type Runner } from "./types";
 
 /**
@@ -35,7 +35,7 @@ export const hostRunner: Runner = async (spec, signal) => {
         PYTHONUTF8: "1",
         ZETTA_INPUTS: JSON.stringify(spec.inputs),
       },
-      stdin: "ignore",
+      stdin: spec.stdin === undefined ? "ignore" : Buffer.from(spec.stdin),
       stdout: "pipe",
       stderr: "pipe",
       detached: true,
@@ -60,6 +60,7 @@ export const hostRunner: Runner = async (spec, signal) => {
       signal.removeEventListener("abort", onAbort);
     }
     const kept = await collectOutputs(join(dir, "out"));
+    const result = await readResult(dir, spec);
     const code = proc.exitCode;
     return {
       status: reason ?? (code === 0 ? "ok" : "failed"),
@@ -69,6 +70,7 @@ export const hostRunner: Runner = async (spec, signal) => {
       truncated: out.cut() || err.cut() || kept.cut,
       outputs: kept.outputs,
       runtimeVersion: version,
+      ...(result !== undefined && { result }),
     };
   } finally {
     await rm(dir, { recursive: true, force: true });

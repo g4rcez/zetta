@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 
-import { ActionHint } from "@zetta/ui/components/action-hint";
+import { ActionHint } from "@/components/action-hint";
 import { Button } from "@/components/ui";
 
 /** Copies `text` to the clipboard; reports success for a moment. Never throws when the clipboard is unavailable. */
@@ -28,7 +28,7 @@ export function CopyButton({
     }
   }
   return (
-    <ActionHint label={done ? "Copied!" : label}>
+    <ActionHint label={done ? "Copied!" : label} closeOnClick={false}>
       <Button
         type="button"
         size="icon-sm"

@@ -17,7 +17,7 @@ import type { Bot } from "../chat/chat-client";
 import { useTheme } from "../../components/theme-provider";
 import type { DiscussionMember, RoomTask, RoomTurn } from "./discussions-api";
 import { NODE_W, roomToFlow, type MemberNode, type MemberState } from "./room-graph";
-import { IconHint } from "@zetta/ui/components/icon-hint";
+import { IconHint } from "@/components/icon-hint";
 
 const STATE_LABEL: Record<MemberState, string> = {
   idle: "Idle",

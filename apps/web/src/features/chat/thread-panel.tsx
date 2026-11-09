@@ -1,7 +1,7 @@
+import { ActionHint } from "@/components/action-hint";
 import { useMemo, useState } from "react";
 import { XIcon } from "@phosphor-icons/react";
 
-import { ActionHint } from "@zetta/ui/components/action-hint";
 import { Button } from "@/components/ui";
 
 import { errorMessage, type Bot } from "./chat-client";

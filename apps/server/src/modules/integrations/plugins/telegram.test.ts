@@ -298,6 +298,20 @@ describe("telegram plugin", () => {
       status: "member",
     });
   });
+  test("a zetta:ui view in the text is sent as plain words, never as JSON patches", async () => {
+    const view = JSON.stringify({
+      root: "c",
+      elements: {
+        c: { type: "Card", props: { title: "Status" }, children: ["t"] },
+        t: { type: "Text", props: { text: "All good" } },
+      },
+    });
+    await tool("send_message").handler(ctx({ allowSend: "yes" }), {
+      chat: "-1001",
+      text: `Update:\n\`\`\`zetta:ui\n${view}\n\`\`\``,
+    });
+    expect(sentTo("sendMessage")[0]!.body.text).toBe("Update:\n\nStatus\n\nAll good");
+  });
   test("writes are off by default, then plain text, capped, allowlisted and rate limited", async () => {
     const send = tool("send_message");
     await expect(send.handler(ctx(), { chat: "-1001", text: "hi" })).rejects.toMatchObject({

@@ -92,6 +92,8 @@ export async function buildBrowser(input: {
   entry: string;
   files: readonly PlaygroundFileSnapshot[];
   inputs: Record<string, unknown>;
+  /** Markup that goes first in the page's head, before everything else (an app's page puts its policy and its bridge here). */
+  head?: string;
 }): Promise<{ html: string }> {
   for (const f of input.files)
     if (SCRIPT.test(f.path) && MACRO.test(f.content))
@@ -149,11 +151,11 @@ export async function buildBrowser(input: {
     }
     // First thing in the document, so it is in place before any script of the page runs.
     const head = /<head\b[^>]*>/i.exec(page) ?? /<html\b[^>]*>/i.exec(page);
-    const html = head
-      ? page.slice(0, head.index + head[0].length) +
-        prelude(input.inputs) +
-        page.slice(head.index + head[0].length)
-      : prelude(input.inputs) + page;
+    const first = (input.head ?? "") + prelude(input.inputs);
+    // With no head or html tag the markup goes after the doctype: before it, the browser would read the page in quirks mode.
+    const doctype = /^\s*<!doctype[^>]*>/i.exec(page);
+    const at = head ? head.index + head[0].length : (doctype?.[0].length ?? 0);
+    const html = page.slice(0, at) + first + page.slice(at);
     if (Buffer.byteLength(html) > MAX_PAGE_BYTES)
       throw new PlaygroundError("TOO_LARGE", "The built page is over 5 MB.");
     return { html };

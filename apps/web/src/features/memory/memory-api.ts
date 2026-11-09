@@ -6,6 +6,8 @@ import type { GraphData } from "./memory-graph";
 
 export type Status = "current" | "stale" | "archived";
 export type MemoryType = "solo" | "owner" | "teams" | "all";
+/** What bots may do with an item: change it, only send suggestions you accept, or only read it. */
+export type BotAccess = "edit" | "suggest" | "read";
 export type Relation = "related" | "depends-on" | "part-of" | "supersedes";
 export type Link = { slug: string; title: string; relation: Relation };
 /** A bot as `/api/bots` returns it; the avatar is there so every mention of a bot can show who it is. */
@@ -28,6 +30,7 @@ export type Row = {
   tags: string[];
   score: number;
   status: Status;
+  botAccess: BotAccess;
   version: number;
   authorBotId: string | null;
   updatedByBotId: string | null;
@@ -61,6 +64,8 @@ export type Item = {
   tags: string[];
   score: number;
   status: Status;
+  /** Null for an item another member shared: their bots' access is theirs to set. */
+  botAccess: BotAccess | null;
   access: "own" | "shared";
   /** Who wrote the last version; shared items only know their owner. */
   by: Author | null;
@@ -87,6 +92,7 @@ export type Hit = {
   tags: string[];
   score: number;
   status: Status;
+  botAccess: BotAccess;
   access: "own" | "shared";
   ownerName: string | null;
   updatedAt: string;
@@ -95,7 +101,7 @@ export type Hit = {
 };
 export type Page = Omit<Row, "updatedByBotId"> & { content: string; updatedByBotId: string | null };
 export type Source = {
-  kind: "task" | "doc" | "artifact" | "url";
+  kind: "task" | "doc" | "artifact" | "url" | "item";
   ref: string;
   label: string;
   status: "current" | "changed" | "gone";
@@ -117,6 +123,8 @@ export type Detail =
       links: Link[];
       history: Version[];
       sources: Source[];
+      /** Set when the item stands for a source the person added: its text is kept unchanged. */
+      raw: { kind: "url" | "text" | "file"; origin: string; chars: number } | null;
     }
   | { access: "shared"; ownerName: string; page: Page; linkedFrom: Link[]; links: Link[] };
 export type Suggestions = {
@@ -131,6 +139,9 @@ export type Suggestions = {
     reason: string;
     baseVersion: number;
     authorName: string;
+    /** Set when one of your own bots wrote it, for an item that takes only suggestions from bots. */
+    botId: string | null;
+    botName: string | null;
     createdAt: string;
   }[];
   outgoing: {
@@ -143,6 +154,22 @@ export type Suggestions = {
   }[];
 };
 export type Brief = { slug: string; title: string };
+/** What the screen found in a source before a bot read it (the passages are quotes of the text). */
+export type Screen = {
+  verdict: "clean" | "suspicious" | "hostile";
+  checked: boolean;
+  note: string;
+  spans: { quote: string; why: string; by: "model" | "pattern"; located: boolean }[];
+};
+/** What POST /api/memory-ingest answers: a running ingest has a chat to watch; a held one waits for "Ingest anyway". */
+export type IngestStarted = {
+  jobId: string;
+  status: "running" | "blocked" | "done" | "failed";
+  conversationId: string | null;
+  slug: string;
+  existing: boolean;
+  screen: Screen | null;
+};
 /** What a review job works on: every check, or one group. */
 export type Problem = "all" | "brokenLinks" | "unlinked" | "old" | "stale" | "unsourced";
 export type Checks = {
@@ -156,10 +183,14 @@ export type Checks = {
   };
   jobs: {
     id: string;
-    kind: "learn" | "review";
+    kind: "learn" | "review" | "ingest";
     source: string;
     status: string;
     result: string;
+    /** An ingest: what the screen found in the source, and the source item it was made for. */
+    screen: Screen | null;
+    sourceSlug: string | null;
+    sourceTitle: string | null;
     /** A review: the group it works on. The chat of a review is `conversationId`; no chat list shows it. */
     problem: Problem;
     conversationId: string | null;
@@ -176,6 +207,11 @@ export const TYPE = {
   teams: "Teams",
   all: "Shared",
 } as const satisfies Record<MemoryType, string>;
+export const BOT_ACCESS = {
+  edit: "Edit it",
+  suggest: "Suggest changes",
+  read: "Only read it",
+} as const satisfies Record<BotAccess, string>;
 export const RELATION: Record<Relation, string> = {
   related: "Related",
   "depends-on": "Depends on",
@@ -192,6 +228,7 @@ export const SOURCE = {
   doc: "Document",
   artifact: "Artifact",
   url: "Web page",
+  item: "Source",
 } as const;
 
 export const path = (slug: string) => `/api/memory/${encodeURIComponent(slug)}`;

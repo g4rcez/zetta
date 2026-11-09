@@ -439,6 +439,7 @@ export function MachinesPanel({ onError }: { onError: (m: string) => void }) {
                 <code className="block min-w-0 flex-1 select-all break-all rounded bg-muted/50 px-2 py-1 text-xs">
                   {notice.publicKey}
                 </code>
+                {/* No hint: it shows the text Copy. */}
                 <Button
                   size="sm"
                   variant="outline"

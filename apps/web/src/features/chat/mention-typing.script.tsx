@@ -62,6 +62,26 @@ const press = (host: HTMLElement, key: string) =>
   });
 const list = (host: HTMLElement) => host.querySelector("[role=listbox]")?.textContent ?? null;
 
+// The controlled box, with the caller's own key handler: `keys` collects the keys that reach it, `shown` every value it renders.
+function Controlled({ keys, shown }: { keys: string[]; shown: string[] }) {
+  const [v, setV] = useState("");
+  shown.push(v);
+  return (
+    <MentionTextarea
+      title="Goal"
+      bots={bots}
+      value={v}
+      onChange={setV}
+      onKeyDown={(e) => keys.push(e.key)}
+    />
+  );
+}
+
+function Bare() {
+  const [v, setV] = useState("");
+  return <MentionField aria-label="Ask" bots={bots} value={v} onChange={setV} rows={1} />;
+}
+
 const out: Record<string, unknown> = {};
 
 // In a form: name + defaultValue.
@@ -83,20 +103,7 @@ const out: Record<string, unknown> = {};
 {
   const keys: string[] = [];
   const shown: string[] = [];
-  function Controlled() {
-    const [v, setV] = useState("");
-    shown.push(v);
-    return (
-      <MentionTextarea
-        title="Goal"
-        bots={bots}
-        value={v}
-        onChange={setV}
-        onKeyDown={(e) => keys.push(e.key)}
-      />
-    );
-  }
-  const host = await mount(<Controlled />);
+  const host = await mount(<Controlled keys={keys} shown={shown} />);
   await type(host, "Goal @Da");
   const opened = list(host);
   await press(host, "Enter");
@@ -109,10 +116,6 @@ const out: Record<string, unknown> = {};
 
 // The bare chat text box.
 {
-  function Bare() {
-    const [v, setV] = useState("");
-    return <MentionField aria-label="Ask" bots={bots} value={v} onChange={setV} rows={1} />;
-  }
   const host = await mount(<Bare />);
   await type(host, "Who is @Da");
   const opened = list(host);

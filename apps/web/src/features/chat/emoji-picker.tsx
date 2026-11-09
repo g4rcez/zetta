@@ -1,6 +1,7 @@
+import { ActionHint } from "@/components/action-hint";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
-import { Input } from "@zetta/ui/components/input";
+import { Input } from "@/components/ui";
 import { cn } from "@zetta/ui/lib/utils";
 import { saveLocal } from "@/lib/local-storage";
 
@@ -74,13 +75,7 @@ function rememberRecent(emoji: string) {
 }
 
 /** Searchable picker over every Unicode emoji, grouped by category, with a "recent" row. Calls `onPick` and leaves closing to the caller. */
-export function EmojiPicker({
-  onPick,
-  searchRef,
-}: {
-  onPick: (emoji: string) => void;
-  searchRef?: React.Ref<HTMLInputElement>;
-}) {
+export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
   const [data, setData] = useState<Catalog>();
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
@@ -130,26 +125,30 @@ export function EmojiPicker({
   return (
     <div className="flex w-80 flex-col gap-2" role="dialog" aria-label="Emoji picker">
       <Input
-        ref={searchRef}
+        // The picker opens in a Dropdown, which has no initial-focus prop: autoFocus keeps the focus manager from moving it elsewhere.
+        autoFocus
+        hiddenLabel
+        title="Search emoji"
+        size="small"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search emoji"
-        aria-label="Search emoji"
-        className="h-8"
       />
       {!deferred && data && (
         <nav aria-label="Emoji categories" className="flex justify-between border-b pb-1">
           {data.groups.map((g) => (
-            <button
-              key={g.key}
-              type="button"
-              aria-label={g.label}
-              title={g.label}
-              onClick={() => jump(g.key)}
-              className="rounded px-1 text-base leading-7 grayscale hover:bg-accent hover:grayscale-0"
-            >
-              {g.icon}
-            </button>
+            <ActionHint label={g.label}>
+              <button
+                key={g.key}
+                type="button"
+                aria-label={g.label}
+
+                onClick={() => jump(g.key)}
+                className="rounded px-1 text-base leading-7 grayscale hover:bg-accent hover:grayscale-0"
+              >
+                {g.icon}
+              </button>
+            </ActionHint>
           ))}
         </nav>
       )}
@@ -175,6 +174,7 @@ export function EmojiPicker({
             </h3>
             <div className="grid grid-cols-8">
               {s.emojis.map((e) => (
+                // No hint: the emoji itself is the visible label.
                 <button
                   key={e.unicode}
                   type="button"

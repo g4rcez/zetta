@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowsOutSimpleIcon,
@@ -8,9 +9,9 @@ import {
 } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "motion/react";
 import type { KeyboardEvent } from "react";
-import { toast } from "sonner";
-import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
-import { Button } from "@/components/ui";
+import { toast } from "@/lib/notify";
+import { Modal } from "@g4rcez/components/modal";
+import { Button, DRAWER_FLUSH } from "@/components/ui";
 import { useMedia } from "@/lib/use-media";
 import { StatusIcon } from "./task-badges";
 import { TaskDetail } from "./task-page";
@@ -71,47 +72,57 @@ function PeekPanel({
             {index + 1} of {tasks.length}
           </span>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Previous task"
-          disabled={!previous}
-          onClick={() => previous && onOpen(previous.id)}
-          className="ml-1"
-        >
-          <CaretUpIcon aria-hidden className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Next task"
-          disabled={!next}
-          onClick={() => next && onOpen(next.id)}
-        >
-          <CaretDownIcon aria-hidden className="size-4" />
-        </Button>
+        <ActionHint label="Previous task">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Previous task"
+            disabled={!previous}
+            onClick={() => previous && onOpen(previous.id)}
+            className="ml-1"
+          >
+            <CaretUpIcon aria-hidden className="size-4" />
+          </Button>
+        </ActionHint>
+        <ActionHint label="Next task">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Next task"
+            disabled={!next}
+            onClick={() => next && onOpen(next.id)}
+          >
+            <CaretDownIcon aria-hidden className="size-4" />
+          </Button>
+        </ActionHint>
         <span className="ml-auto" />
-        <Link
-          to="/tasks/$taskId"
-          params={{ taskId }}
-          aria-label="Open as a page"
-          title="Open as a page"
-          className={iconButton}
-        >
-          <ArrowsOutSimpleIcon aria-hidden className="size-4" />
-        </Link>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Copy link"
-          title="Copy link"
-          onClick={() => void copyLink()}
-        >
-          <LinkSimpleIcon aria-hidden className="size-4" />
-        </Button>
-        <Button variant="ghost" size="icon" aria-label="Close" title="Close" onClick={onClose}>
-          <XIcon aria-hidden className="size-4" />
-        </Button>
+        <ActionHint label="Open as a page">
+          <Link
+            to="/tasks/$taskId"
+            params={{ taskId }}
+            aria-label="Open as a page"
+
+            className={iconButton}
+          >
+            <ArrowsOutSimpleIcon aria-hidden className="size-4" />
+          </Link>
+        </ActionHint>
+        <ActionHint label="Copy link">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Copy link"
+
+            onClick={() => void copyLink()}
+          >
+            <LinkSimpleIcon aria-hidden className="size-4" />
+          </Button>
+        </ActionHint>
+        <ActionHint label="Close">
+          <Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}>
+            <XIcon aria-hidden className="size-4" />
+          </Button>
+        </ActionHint>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {/* `key` gives each task its own state, so the thread of the last task never shows on the next. */}
@@ -135,12 +146,20 @@ export function TaskPeek(props: PeekProps) {
   const reduceMotion = useReducedMotion();
   if (!desktop) {
     return (
-      <Sheet open onOpenChange={(open) => !open && props.onClose()}>
-        <SheetContent side="right" showCloseButton={false} className="w-full p-0 sm:max-w-xl">
-          <SheetTitle className="sr-only">Task details</SheetTitle>
-          <PeekPanel {...props} />
-        </SheetContent>
-      </Sheet>
+      <Modal
+        type="drawer"
+        forceType
+        open
+        onChange={(open) => !open && props.onClose()}
+        ariaTitle="Task details"
+        closable={false}
+        resizer={false}
+        overlayClickClose
+        className={`${DRAWER_FLUSH} [--var-modal-drawer-max-inline-size:100vw]`}
+        bodyClassName="flex w-[75vw] flex-col sm:w-sm"
+      >
+        <PeekPanel {...props} />
+      </Modal>
     );
   }
   return (

@@ -575,29 +575,123 @@ suite("group discussions against compose postgres", () => {
     expect(
       runs.find((x) => x.bot === "Front" && x.prompt.includes("Customer bug"))!.prompt,
     ).toContain("outside people");
-    // Front's reply mentioned Coder again: the brief was approved for this context version, so it runs; after a context change it asks again.
-    g = (await call(A, "GET", `/api/discussions/${r.discussion.id}`)).json;
+    // The approval is for this bot in this room: a changed context and a new post run at once, with no second card.
+    expect(
+      (await call(A, "GET", `/api/discussions/${r.discussion.id}`)).json.members.find(
+        (m: { name: string }) => m.name === "Coder",
+      ),
+    ).toMatchObject({ requireApproval: false });
     await call(A, "PATCH", `/api/discussions/${r.discussion.id}`, {
       context: "from WhatsApp, Android 14",
     });
+    replies.Coder = ["Reproduced on Android 14"];
+    const before = runs.filter((x) => x.bot === "Coder").length;
     await call(A, "POST", `/api/discussions/${r.discussion.id}/messages`, {
       content: "@Coder check again",
     });
     await worker.drain();
-    g = (await call(A, "GET", `/api/discussions/${r.discussion.id}`)).json;
-    expect(g.turns[0]).toMatchObject({ status: "awaiting_approval" });
-    // Declining skips the turn and says so in the transcript.
-    const brief2 = (await call(A, "GET", "/api/proposals")).json.proposals.find(
-      (p: { kind: string; patch: { turnId: string } }) =>
-        p.kind === "discussion_brief" && p.patch.turnId === g.turns[0].id,
-    );
+    expect(runs.filter((x) => x.bot === "Coder").length).toBe(before + 1);
     expect(
-      (await call(A, "POST", `/api/proposals/${brief2.id}/decision`, { approve: false })).json
+      (await call(A, "GET", "/api/proposals")).json.proposals.filter(
+        (p: { kind: string; status: string; patch: { discussionId: string } }) =>
+          p.kind === "discussion_brief" && p.patch.discussionId === r.discussion.id,
+      ),
+    ).toHaveLength(0);
+  });
+
+  test("outside content: turns of one bot wait behind one card, approving it runs them all, declining skips them all", async () => {
+    const front = await makeBot(A, "BriefFront");
+    await makeBot(A, "BriefCoderA", { harness: "claude-code" });
+    await makeBot(A, "BriefCoderB", { harness: "claude-code" });
+    const a = (await issueBackgroundActor(lookup, A))!;
+    const [fb] = await db.select().from(bot).where(eq(bot.id, front.id));
+    const room = (name: string) =>
+      store.open(a, {
+        title: `Brief ${name}`,
+        goal: "fix",
+        context: "from WhatsApp",
+        members: [{ bot: name }],
+        firstMessage: `@${name} please look`,
+        createdBy: fb!,
+        tainted: true,
+        originInbound: { plugin: "whatsapp", chat: `${name}@c.us`, chatName: "Maria" },
+      });
+    const briefsOf = async (id: string) =>
+      (await call(A, "GET", "/api/proposals")).json.proposals.filter(
+        (p: { kind: string; patch: { discussionId: string } }) =>
+          p.kind === "discussion_brief" && p.patch.discussionId === id,
+      );
+    const waiting = async (id: string) =>
+      ((await call(A, "GET", `/api/discussions/${id}`)).json.turns as { status: string }[]).filter(
+        (t) => t.status === "awaiting_approval",
+      );
+
+    const ra = await room("BriefCoderA");
+    await call(A, "POST", `/api/discussions/${ra.discussion.id}/messages`, {
+      content: "@BriefCoderA and the logs?",
+    });
+    await worker.drain();
+    let briefs = await briefsOf(ra.discussion.id);
+    expect(briefs).toHaveLength(1);
+    expect(runs.some((x) => x.bot === "BriefCoderA")).toBe(false);
+    expect(
+      (await call(A, "POST", `/api/proposals/${briefs[0].id}/decision`, { approve: true })).json
+        .status,
+    ).toBe("approved");
+    await worker.drain();
+    expect(runs.filter((x) => x.bot === "BriefCoderA").length).toBeGreaterThanOrEqual(2);
+    expect(await briefsOf(ra.discussion.id)).toHaveLength(0);
+    expect(await waiting(ra.discussion.id)).toHaveLength(0);
+
+    const rb = await room("BriefCoderB");
+    await call(A, "POST", `/api/discussions/${rb.discussion.id}/messages`, {
+      content: "@BriefCoderB and the logs?",
+    });
+    await worker.drain();
+    briefs = await briefsOf(rb.discussion.id);
+    expect(briefs).toHaveLength(1);
+    expect(
+      (await call(A, "POST", `/api/proposals/${briefs[0].id}/decision`, { approve: false })).json
         .status,
     ).toBe("rejected");
-    expect((await messagesOf(A, r.discussion.conversationId)).at(-1)!.content).toContain(
+    expect(runs.some((x) => x.bot === "BriefCoderB")).toBe(false);
+    expect(await waiting(rb.discussion.id)).toHaveLength(0);
+    expect((await messagesOf(A, rb.discussion.conversationId)).at(-1)!.content).toContain(
       "declined",
     );
+  });
+
+  test("a room opened by a bot or a person never holds its members for a brief, even with outside content", async () => {
+    const front = await makeBot(A, "OpenFront", { harness: "claude-code" });
+    await makeBot(A, "OpenCoder", { harness: "claude-code" });
+    const a = (await issueBackgroundActor(lookup, A))!;
+    const [fb] = await db.select().from(bot).where(eq(bot.id, front.id));
+    const r = await store.open(a, {
+      title: "Release chain",
+      goal: "merge and release",
+      context: "a PR from a contributor",
+      members: [{ bot: "OpenCoder" }],
+      firstMessage: "@OpenCoder please review",
+      createdBy: fb!,
+      tainted: true,
+    });
+    replies.OpenFront = ["Thanks, merging @OpenCoder"];
+    await worker.drain();
+    await call(A, "POST", `/api/discussions/${r.discussion.id}/messages`, {
+      content: "@OpenFront and @OpenCoder, status?",
+    });
+    await worker.drain();
+    expect(runs.some((x) => x.bot === "OpenCoder")).toBe(true);
+    expect(runs.some((x) => x.bot === "OpenFront")).toBe(true);
+    const g = (await call(A, "GET", `/api/discussions/${r.discussion.id}`)).json;
+    expect(g.members.every((m: { requireApproval: boolean }) => !m.requireApproval)).toBe(true);
+    expect(g.turns.some((t: { status: string }) => t.status === "awaiting_approval")).toBe(false);
+    expect(
+      (await call(A, "GET", "/api/proposals")).json.proposals.filter(
+        (p: { kind: string; patch: { discussionId: string } }) =>
+          p.kind === "discussion_brief" && p.patch.discussionId === r.discussion.id,
+      ),
+    ).toHaveLength(0);
   });
 
   test("a person can attach files to a post, like in a chat: bots read them as untrusted data and the message shows them", async () => {

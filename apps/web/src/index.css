@@ -52,6 +52,13 @@ summary,
   }
 }
 
+/* The DS "small" Input is 13px; below 768px iOS zooms the page on focus, so raise it to 16px. */
+@media (max-width: 767px) {
+  :root {
+    --var-free-text-small-font-size: var(--text-base);
+  }
+}
+
 .link {
   @apply ease-in duration-300 transition-all;
 }
@@ -87,6 +94,8 @@ html.dark {
   --var-color-background: var(--background);
   --var-color-foreground: var(--foreground);
   --var-color-border: var(--border);
+  /* Field borders (Input, MultiSelect) need 3:1 non-text contrast; --input is the app token for it. */
+  --var-color-input: var(--input);
   --var-color-ring: var(--ring);
   --var-color-muted: var(--muted);
   --var-color-muted-foreground: var(--muted-foreground);
@@ -98,6 +107,9 @@ html.dark {
   --var-card-background: var(--card);
   --var-card-border: var(--border);
   --var-card-muted: var(--muted);
+  --var-card-surface-radius: var(--var-radius-base);
+  --var-card-content-padding-inline: calc(var(--var-spacing-base) * 0.75);
+  --var-tag-tiny-font-size: var(--text-xs);
   --var-alert-surface-radius: var(--radius);
   --var-dropdown-surface-background: var(--popover);
   --var-menu-surface-background: var(--popover);
@@ -437,4 +449,33 @@ html.dark {
 .chat-inline-code,
 .chat-response [data-streamdown="inline-code"] {
   font-family: var(--font-mono);
+}
+
+/* Series colors of the chat's Chart (features/chat/chart.tsx), in a fixed order: blue, orange, aqua, yellow, magenta, green, violet, red.
+   Validated for color-blind separation and contrast against a light and a dark surface; the dark steps are chosen for the dark surface. */
+:root {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
+  --viz-7: #6250d6;
+  --viz-8: #e34948;
+}
+html.dark,
+[data-theme-preview="dark"] {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #008300;
+  --viz-7: #9085e9;
+  --viz-8: #e66767;
+}
+
+/* A Dropdown without a title (the emoji picker, the server-file list) still renders its header; hide the empty one. */
+.__dropdown__header:has(> .__dropdown__title:empty) {
+  display: none;
 }

@@ -10,14 +10,8 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@zetta/ui/components/dropdown-menu";
+import { toast } from "@/lib/notify";
+import { Button, Menu, MenuItem } from "@/components/ui";
 import { BotIdentity } from "@/components/bot-identity";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
@@ -32,6 +26,8 @@ import { Badge, ConfirmButton, Empty, field } from "../shared/ui";
 import { PriorityIcon, priorityLabel } from "./task-badges";
 import { LabelsEditor } from "./task-labels";
 import { extractLinks } from "./task-links";
+import { StepOf, TaskFollowUp, TaskSteps } from "./task-plan";
+import { stepsOf } from "./task-steps";
 import {
   TASK_COLUMNS,
   TASK_PRIORITIES,
@@ -43,6 +39,8 @@ import {
 } from "./tasks-api";
 
 const POLL_MS = 5000;
+const FOLLOW_POLL_MS = 10_000;
+const NO_STEPS: Task[] = [];
 const label = (status: TaskStatus) => TASK_COLUMNS.find((c) => c.status === status)!.label;
 
 /** What the thread shows: the main line of the chat, without tool-only turns. */
@@ -93,6 +91,7 @@ function splitSummary(thread: Message[]) {
 }
 
 type Change = {
+  followUp?: "auto" | "off";
   title?: string;
   description?: string;
   status?: TaskStatus;
@@ -146,12 +145,24 @@ export function TaskDetail({
   const qc = useQueryClient();
   const taskKey = tasksQueries.detail(id).queryKey;
   // `initial` only paints the first frame; the fresh copy replaces it.
-  const taskQuery = useQuery({ ...tasksQueries.detail(id), placeholderData: initial });
+  const taskQuery = useQuery({
+    ...tasksQueries.detail(id),
+    placeholderData: initial,
+    // While the server calls the bot back about this task, its progress and steps change without a click here.
+    refetchInterval: (q) => (q.state.data?.followUp === "auto" ? FOLLOW_POLL_MS : false),
+  });
   const task: Task | null | undefined =
     taskQuery.isError && !taskQuery.data ? null : taskQuery.data;
   const setTask = (next: Task | null | undefined) => {
     if (next) qc.setQueryData<Task>(taskKey, next);
   };
+  // The steps live in the board's cache, with the tasks; a followed task refreshes it while the bot works.
+  const steps =
+    useQuery({
+      ...tasksQueries.list(),
+      select: (all) => stepsOf(all, id),
+      refetchInterval: task?.followUp === "auto" ? FOLLOW_POLL_MS : false,
+    }).data ?? NO_STEPS;
   const [asking, setAsking] = useState(false);
   const [showAllLinks, setShowAllLinks] = useState(false);
   const fail = (e: unknown) => toast.error(errorMessage(e));
@@ -297,6 +308,11 @@ export function TaskDetail({
                     </Button>
                   </section>
                 )}
+              {!guest && task.parentTaskId && <StepOf parentId={task.parentTaskId} />}
+              {!guest && !task.parentTaskId && <TaskSteps task={task} steps={steps} />}
+              {!guest && !task.parentTaskId && (
+                <TaskFollowUp task={task} onFollowUp={(followUp) => patch({ followUp })} />
+              )}
               {!guest && (
                 <section aria-label="AI Summary" className="flex flex-col gap-2">
                   <div className="flex items-center gap-2">
@@ -378,46 +394,68 @@ export function TaskDetail({
             <aside className={`flex flex-col gap-6 text-sm ${peek ? "" : "lg:pt-2"}`}>
               <section aria-label="Properties" className="flex flex-col gap-2">
                 <h2 className="text-xs font-medium text-muted-foreground">Properties</h2>
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
-                    {label(task.status)}
-                    <CaretDownIcon aria-hidden="true" className="size-3" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-44">
-                    {TASK_COLUMNS.filter((c) => c.status !== task.status).map((c) => (
-                      <DropdownMenuItem key={c.status} onClick={() => patch({ status: c.status })}>
-                        {c.label}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Menu
+                  asChild
+                  hover={false}
+                  restoreFocus
+                  title=""
+                  floatingClassName="w-44"
+                  label={
+                    <button
+                      type="button"
+                      className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring data-open:bg-muted"
+                    >
+                      {label(task.status)}
+                      <CaretDownIcon aria-hidden="true" className="size-3" />
+                    </button>
+                  }
+                >
+                  {TASK_COLUMNS.filter((c) => c.status !== task.status).map((c) => (
+                    <MenuItem
+                      key={c.status}
+                      title={c.label}
+                      onClick={() => patch({ status: c.status })}
+                    >
+                      {c.label}
+                    </MenuItem>
+                  ))}
+                </Menu>
                 {guest ? (
                   <p className="inline-flex items-center gap-1.5">
                     <PriorityIcon priority={task.priority} />
                     {priorityLabel(task.priority)}
                   </p>
                 ) : (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      aria-label={`Priority: ${priorityLabel(task.priority)}`}
-                      className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-                    >
-                      <PriorityIcon priority={task.priority} />
-                      {priorityLabel(task.priority)}
-                      <CaretDownIcon aria-hidden="true" className="size-3" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-44">
-                      {TASK_PRIORITIES.filter((p) => p.priority !== task.priority).map((p) => (
-                        <DropdownMenuItem
-                          key={p.priority}
-                          onClick={() => patch({ priority: p.priority })}
-                        >
-                          <PriorityIcon priority={p.priority} />
-                          {p.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <Menu
+                    asChild
+                    hover={false}
+                    restoreFocus
+                    title=""
+                    floatingClassName="w-44"
+                    label={
+                      // No hint: it shows the priority name.
+                      <button
+                        type="button"
+                        aria-label={`Priority: ${priorityLabel(task.priority)}`}
+                        className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring data-open:bg-muted"
+                      >
+                        <PriorityIcon priority={task.priority} />
+                        {priorityLabel(task.priority)}
+                        <CaretDownIcon aria-hidden="true" className="size-3" />
+                      </button>
+                    }
+                  >
+                    {TASK_PRIORITIES.filter((p) => p.priority !== task.priority).map((p) => (
+                      <MenuItem
+                        key={p.priority}
+                        title={p.label}
+                        onClick={() => patch({ priority: p.priority })}
+                      >
+                        <PriorityIcon priority={p.priority} />
+                        {p.label}
+                      </MenuItem>
+                    ))}
+                  </Menu>
                 )}
                 {!guest && (
                   <LabelsEditor

@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import {
   RobotIcon as BotIcon,
   PencilSimpleIcon,
@@ -7,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { BotSkills } from "../skills/bot-skills";
 
 import { EditorField } from "@/components/editor/editor";
 import { Button, Input, Select } from "@/components/ui";
@@ -63,6 +65,7 @@ export function ClaudeSection({ bot, notify }: { bot: Bot; notify: (m: string) =
             onSaved={reload}
           />
           <Assets bot={bot} data={data} onChange={reload} notify={notify} />
+          <BotSkills bot={bot} />
         </>
       )}
     </section>
@@ -288,15 +291,17 @@ function Assets({
                           checked={a.enabled}
                           onChange={() => void toggle(a)}
                         />
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          type="button"
-                          aria-label={`Edit ${a.name}`}
-                          onClick={() => setEditing({ kind, asset: a })}
-                        >
-                          <PencilSimpleIcon aria-hidden className="size-3" />
-                        </Button>
+                        <ActionHint label={`Edit ${a.name}`}>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            type="button"
+                            aria-label={`Edit ${a.name}`}
+                            onClick={() => setEditing({ kind, asset: a })}
+                          >
+                            <PencilSimpleIcon aria-hidden className="size-3" />
+                          </Button>
+                        </ActionHint>
                         <ConfirmButton
                           size="xs"
                           label="Remove"

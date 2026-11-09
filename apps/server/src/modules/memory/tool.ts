@@ -1,7 +1,14 @@
 import type { z } from "zod";
 import type { toolSchemas } from "../chat/tools";
 import { defuse } from "../discussions/prompt";
-import { MemoryError, MEMORY_LIMITS, memoryTags, type Memory, type MemoryHit } from "./service";
+import {
+  accessFlag,
+  MemoryError,
+  MEMORY_LIMITS,
+  memoryTags,
+  type Memory,
+  type MemoryHit,
+} from "./service";
 
 export type MemoryToolArgs = z.infer<typeof toolSchemas.memory>;
 /** `note` is shown to the user, `result` goes back to the bot, `saved` becomes a receipt on the answer. */
@@ -24,12 +31,14 @@ const why: Record<MemoryError["code"], string> = {
     "it holds a Drive document: its title and text come from Drive and cannot be changed here",
   SLUG_TAKEN:
     "another item (shared by a member, or private to another bot or team) already uses this slug; pick another slug",
+  READ_ONLY:
+    "the owner keeps this item read only for bots, or it takes only suggestions and archiving it is theirs; leave it as it is",
   TOO_LONG: `the item would pass ${MEMORY_LIMITS.content} characters; archive or remove finished entries, or continue the list in a new item (<slug>-2) and link the two`,
 };
 
 /** One hit as a line of text for the bot: slug, title, flags, tags, when to use it, and a few linked items. */
 const hitLine = (h: MemoryHit) =>
-  `- ${h.slug} — ${h.title}${h.access === "shared" ? ` (shared by ${h.ownerName})` : ""}${h.status === "stale" ? " [stale]" : ""}${h.tags.length ? ` #${h.tags.join(" #")}` : ""}${h.score >= 80 ? " (important)" : ""}: ${defuse(h.howto)}${h.neighbors.length ? ` | linked: ${h.neighbors.map((n) => `${n.direction === "out" ? "" : "<-"}${n.relation === "related" ? "" : `${n.relation}:`}${n.slug}`).join(", ")}` : ""}`;
+  `- ${h.slug} — ${h.title}${h.access === "shared" ? ` (shared by ${h.ownerName})` : ""}${accessFlag(h)}${h.status === "stale" ? " [stale]" : ""}${h.tags.length ? ` #${h.tags.join(" #")}` : ""}${h.score >= 80 ? " (important)" : ""}: ${defuse(h.howto)}${h.neighbors.length ? ` | linked: ${h.neighbors.map((n) => `${n.direction === "out" ? "" : "<-"}${n.relation === "related" ? "" : `${n.relation}:`}${n.slug}`).join(", ")}` : ""}`;
 
 /**
  * One zetta:memory block for the asking user's memory, read as that bot (a `solo` item of another bot is invisible to it). Store errors
@@ -119,7 +128,11 @@ export async function runMemoryTool(
     const whose =
       found.access === "shared"
         ? `, shared by ${found.ownerName}: read only, send {"action":"suggest",...} to change it`
-        : "";
+        : p.botAccess === "read"
+          ? ", read only: the owner does not let bots change it"
+          : p.botAccess === "suggest"
+            ? ", bots only suggest: write, patch and append send your change to the owner, who decides; link, sources, mark_stale and confirm still apply, archive is theirs"
+            : "";
     const edge = (l: { slug: string; relation: string }) =>
       l.relation === "related" ? l.slug : `${l.relation}:${l.slug}`;
     return {
@@ -141,7 +154,9 @@ export async function runMemoryTool(
         { by: "bot", botId },
       );
       return {
-        note: `📖 Suggested a change to “${r.page.title}”, shared by ${r.page.ownerName}. They decide.`,
+        note: r.page.ownerName
+          ? `📖 Suggested a change to “${r.page.title}”, shared by ${r.page.ownerName}. They decide.`
+          : `📖 Suggested a change to “${r.page.title}”. The owner decides.`,
         result: `suggestion for ${r.page.slug} sent to its owner`,
       };
     }
@@ -161,10 +176,12 @@ export async function runMemoryTool(
             ? await memory.confirm(owner, a.slug, author)
             : await memory.read(reader, a.slug).then(async (f) =>
                 f && f.access === "own" && f.page.status !== "archived"
-                  ? {
-                      page: f.page,
-                      ...(await memory.linkSources(owner, f.page.id, a.sources, "add")),
-                    }
+                  ? f.page.botAccess === "read"
+                    ? Promise.reject(new MemoryError("READ_ONLY"))
+                    : {
+                        page: f.page,
+                        ...(await memory.linkSources(owner, f.page.id, a.sources, "add")),
+                      }
                   : Promise.reject(new MemoryError("NOT_FOUND")),
               );
       const p = done.page;
@@ -215,9 +232,15 @@ export async function runMemoryTool(
                 a.action === "archive" ? "archived" : "stale",
                 author,
               );
+    const p = r.page;
+    // The change of an item that takes only suggestions waits for its owner: nothing was saved, and its evidence is theirs to accept.
+    if (r.suggested)
+      return {
+        note: `📖 Suggested a change to “${p.title}”: bots only suggest changes to this item, and its owner decides.`,
+        result: `memory ${p.slug} takes only suggestions from bots: your change was sent to the owner as a suggestion and the item is unchanged${r.suggested.replaced ? " (it replaced another bot's open suggestion, built on top of it)" : ""}. Do not send it again.`,
+      };
     if (autoSources.length && a.action !== "mark_stale" && a.action !== "archive")
       await memory.linkSources(owner, r.page.id, autoSources, "add");
-    const p = r.page;
     const missing = "skippedSources" in r ? (r.skippedSources as string[]) : [];
     const skipped = missing.length ? ` Sources not found: ${missing.join(", ")}.` : "";
     if (!r.changed)

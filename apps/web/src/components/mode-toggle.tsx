@@ -1,16 +1,7 @@
-import { Button } from "@/components/ui";
-import { ActionHint } from "@zetta/ui/components/action-hint";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@zetta/ui/components/dropdown-menu";
+import { ActionHint } from "@/components/action-hint";
+import { Button, Menu, MenuGroup, MenuItem, MenuSeparator } from "@/components/ui";
 import { MoonIcon, SunIcon } from "@phosphor-icons/react";
+import { Fragment } from "react";
 
 import { usePreferences } from "@/features/preferences/preferences";
 import {
@@ -28,13 +19,16 @@ const GROUPS: { mode: Mode; title: string }[] = [
   { mode: "dark", title: "Dark" },
 ];
 
-/** A dot in the theme's own colors (themes.css, keyed by `data-theme-preview`). The device theme is half light, half dark. */
-function Swatch({ theme }: { theme: Theme }) {
-  const dot = (preview: string) => (
+function SwatchDot({ preview }: { preview: string }) {
+  return (
     <span data-theme-preview={preview} className="grid size-full place-items-center bg-background">
       <span className="size-1.5 rounded-full bg-primary" />
     </span>
   );
+}
+
+/** A dot in the theme's own colors (themes.css, keyed by `data-theme-preview`). The device theme is half light, half dark. */
+function Swatch({ theme }: { theme: Theme }) {
   return (
     <span
       aria-hidden="true"
@@ -42,11 +36,11 @@ function Swatch({ theme }: { theme: Theme }) {
     >
       {theme === "system" ? (
         <>
-          {dot("light")}
-          {dot("dark")}
+          <SwatchDot preview="light" />
+          <SwatchDot preview="dark" />
         </>
       ) : (
-        dot(theme)
+        <SwatchDot preview={theme} />
       )}
     </span>
   );
@@ -64,88 +58,84 @@ export function ModeToggle({
   const { preferences, set } = usePreferences();
   const current = preferences.theme ?? "system";
 
-  // A rail row has its own hint (`RailHint`) or a visible label; the other forms are icon-only.
-  const trigger = (
-    <DropdownMenuTrigger
-      render={
-        rail ? (
-          <button
-            type="button"
-            className={`${railRow} ${rail === "expanded" ? railRowExpanded : ""}`}
-          />
-        ) : inline ? (
-          <button
-            type="button"
-            className="relative grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          />
-        ) : (
-          <Button
-            variant={compact ? "ghost" : "outline"}
-            size="icon"
-            className={compact ? "size-10 rounded-md text-muted-foreground" : ""}
-          />
-        )
-      }
-    >
-      {rail ? (
+  const icons = rail ? (
+    <>
+      <span className="relative grid size-4 shrink-0 place-items-center">
+        <SunIcon className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
+        <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+      </span>
+      {rail === "expanded" ? (
         <>
-          <span className="relative grid size-4 shrink-0 place-items-center">
-            <SunIcon className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-            <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+          <span className={railLabel}>Theme</span>
+          <span className="max-w-24 truncate text-xs font-normal text-muted-foreground">
+            {THEME_LABEL[current]}
           </span>
-          {rail === "expanded" ? (
-            <>
-              <span className={railLabel}>Theme</span>
-              <span className="max-w-24 truncate text-xs font-normal text-muted-foreground">
-                {THEME_LABEL[current]}
-              </span>
-            </>
-          ) : null}
-          <span className="sr-only">{rail === "expanded" ? ", change theme" : "Change theme"}</span>
         </>
-      ) : (
-        <>
-          <SunIcon className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-          <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-          <span className="sr-only">Toggle theme</span>
-        </>
-      )}
-    </DropdownMenuTrigger>
+      ) : null}
+      <span className="sr-only">{rail === "expanded" ? ", change theme" : "Change theme"}</span>
+    </>
+  ) : (
+    <>
+      <SunIcon className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
+      <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+    </>
+  );
+  const trigger = rail ? (
+    <button type="button" className={`${railRow} ${rail === "expanded" ? railRowExpanded : ""}`}>
+      {icons}
+    </button>
+  ) : inline ? (
+    <ActionHint label="Toggle theme" side="bottom">
+      <button
+        type="button"
+        aria-label="Toggle theme"
+        className="relative grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        {icons}
+      </button>
+    </ActionHint>
+  ) : (
+    <ActionHint label="Toggle theme" side={compact ? "right" : "bottom"}>
+      <Button
+        variant={compact ? "ghost" : "outline"}
+        size="icon"
+        aria-label="Toggle theme"
+        className={compact ? "size-10 rounded-md text-muted-foreground" : ""}
+      >
+        {icons}
+      </Button>
+    </ActionHint>
   );
 
   return (
-    <DropdownMenu>
-      {rail ? (
-        trigger
-      ) : (
-        <ActionHint label="Toggle theme" side="bottom">
-          {trigger}
-        </ActionHint>
-      )}
-      <DropdownMenuContent
-        // The rail sits at the bottom of the screen: align the menu's bottom edge to the row so it opens upward.
-        align={rail ? "end" : compact ? "start" : "end"}
-        side={compact || rail ? (preferences.sidebarSide === "right" ? "left" : "right") : "bottom"}
-        className="max-h-[min(32rem,var(--available-height))] w-56 bg-card"
-      >
-        <DropdownMenuRadioGroup
-          value={current}
-          onValueChange={(theme) => set({ theme: theme as Theme })}
-        >
-          {GROUPS.map(({ mode, title }, i) => (
-            <DropdownMenuGroup key={mode}>
-              {i > 0 ? <DropdownMenuSeparator /> : null}
-              <DropdownMenuLabel>{title}</DropdownMenuLabel>
-              {THEMES.filter((theme) => THEME_MODE[theme] === mode).map((theme) => (
-                <DropdownMenuRadioItem key={theme} value={theme}>
-                  <Swatch theme={theme} />
-                  {THEME_LABEL[theme]}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuGroup>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    // The menu opens below its trigger and flips above it where the rail sits at the bottom of the screen.
+    <Menu
+      asChild
+      hover={false}
+      restoreFocus
+      title=""
+      floatingClassName="w-56 [--var-menu-surface-max-block-size:min(32rem,90dvh)]"
+      label={trigger}
+    >
+      {GROUPS.map(({ mode, title }, i) => (
+        <Fragment key={mode}>
+          {i > 0 ? <MenuSeparator /> : null}
+          <MenuGroup label={title}>
+            {THEMES.filter((theme) => THEME_MODE[theme] === mode).map((theme) => (
+              <MenuItem
+                key={theme}
+                title={THEME_LABEL[theme]}
+                role="menuitemradio"
+                checked={theme === current}
+                onClick={() => set({ theme })}
+              >
+                <Swatch theme={theme} />
+                {THEME_LABEL[theme]}
+              </MenuItem>
+            ))}
+          </MenuGroup>
+        </Fragment>
+      ))}
+    </Menu>
   );
 }

@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -32,18 +33,21 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
-import { Badge } from "@zetta/ui/components/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@zetta/ui/components/dropdown-menu";
+import { Tag } from "@g4rcez/components/tag";
 import { cn } from "@zetta/ui/lib/utils";
-import { Button, Checkbox, Input, Modal, Select } from "@/components/ui";
+import {
+  Button,
+  Checkbox,
+  Input,
+  MENU_DANGER,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  Modal,
+  Select,
+} from "@/components/ui";
 import { useProfile } from "@/features/preferences/profile-api";
 import { authClient } from "@/lib/auth-client";
 
@@ -57,6 +61,7 @@ import { pollEvery } from "@/lib/query-policy";
 import { chatQueries } from "../chat/chat-queries";
 import { useRooms, useSidebarData, useTeams } from "../chat/sidebar-data";
 import { BotAvatar } from "@/components/bot-avatar";
+import { BotsContext } from "@/components/bot-identity";
 import { Drawer } from "@/components/drawer";
 import { ComputerActivity } from "../computer/computer-activity";
 import { refreshAttention } from "../attention/summary";
@@ -162,6 +167,7 @@ function PageHeader({
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
       {team ? (
+        // No hint: it shows the room title.
         <Link
           to="/teams/$teamId/settings"
           params={{ teamId: team.teamId }}
@@ -455,6 +461,8 @@ function RoomView({
   const messages = (conversationId && messagesQuery.data) || NO_MESSAGES;
   const proposalsQuery = useQuery({ ...chatQueries.proposals(), refetchInterval: every });
   // Same panel as a chat: the briefs that gate this discussion and whatever its bots proposed (config changes, and so on).
+  // Rows of the transcript (a handed-over task shows its member) look bots up by id.
+  const botsById = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
   const briefs = useMemo(() => {
     const memberIds = new Set(detail?.members.map((m) => m.botId));
     return (proposalsQuery.data ?? []).filter((p) =>
@@ -644,21 +652,23 @@ function RoomView({
               {STATUS_LABEL[d.status]}
             </span>
           )}
-          <button
-            type="button"
-            onClick={() => setDetails(true)}
-            aria-label={`Members: ${detail.members.map((m) => m.name).join(", ")}`}
-            className="hidden items-center gap-1 rounded-md px-1.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:flex"
-          >
-            {detail.members.slice(0, 4).map((m) => (
-              <BotAvatar key={m.botId} bot={botOf(bots, m.botId)} size={20} />
-            ))}
-            {detail.members.length > 4 && (
-              <span className="text-xs text-muted-foreground tabular-nums">
-                +{detail.members.length - 4}
-              </span>
-            )}
-          </button>
+          <ActionHint label={`Members: ${detail.members.map((m) => m.name).join(", ")}`}>
+            <button
+              type="button"
+              onClick={() => setDetails(true)}
+              aria-label={`Members: ${detail.members.map((m) => m.name).join(", ")}`}
+              className="hidden items-center gap-1 rounded-md px-1.5 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:flex"
+            >
+              {detail.members.slice(0, 4).map((m) => (
+                <BotAvatar key={m.botId} bot={botOf(bots, m.botId)} size={20} />
+              ))}
+              {detail.members.length > 4 && (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  +{detail.members.length - 4}
+                </span>
+              )}
+            </button>
+          </ActionHint>
           {d.teamId && (
             <div role="group" aria-label="Room view" className="flex gap-0.5">
               {(
@@ -684,149 +694,156 @@ function RoomView({
               ))}
             </div>
           )}
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            title="Room details"
-            aria-label="Room details"
-            aria-pressed={details}
-            onClick={() => setDetails(!details)}
-          >
-            <InfoIcon />
-          </Button>
-          {!isClosed && (
+          <ActionHint label="Room details">
             <Button
               size="icon-sm"
               variant="ghost"
-              title="Silence the bots: stop their messages and goal loops until you post"
-              aria-label="Silence bots"
-              disabled={busy || d.status === "paused"}
-              onClick={() =>
-                void act(
-                  () => discussionsApi.silence(id).then(goalLoop.refresh),
-                  "Bots silenced. They wait until you post.",
-                )
-              }
+
+              aria-label="Room details"
+              aria-pressed={details}
+              onClick={() => setDetails(!details)}
             >
-              <SpeakerSlashIcon />
+              <InfoIcon />
             </Button>
-          )}
-          {!readOnly && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    title="Room actions"
-                    aria-label="Room actions"
-                    disabled={busy}
-                  />
+          </ActionHint>
+          {!isClosed && (
+            <ActionHint label="Silence bots">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+
+                aria-label="Silence bots"
+                disabled={busy || d.status === "paused"}
+                onClick={() =>
+                  void act(
+                    () => discussionsApi.silence(id).then(goalLoop.refresh),
+                    "Bots silenced. They wait until you post.",
+                  )
                 }
               >
-                <DotsThreeIcon />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                {!isClosed && (
-                  <>
-                    {d.createdByBotId &&
-                      detail.members.length > 1 &&
-                      goalLoop.loops.length === 0 && (
-                        <DropdownMenuItem
-                          onClick={() => setLoopForm({ goal: d.goal, doneWhen: "" })}
-                        >
-                          <RepeatIcon />
-                          Pursue goal
-                        </DropdownMenuItem>
-                      )}
-                    {d.teamId && (
-                      <DropdownMenuItem onClick={() => setTeamGoal(d.goal)}>
-                        <TargetIcon />
-                        Set team goal
-                      </DropdownMenuItem>
-                    )}
-                    {d.status === "open" ? (
-                      <DropdownMenuItem
-                        onClick={() => void act(() => discussionsApi.act(id, "pause"))}
-                      >
-                        <PauseIcon />
-                        Pause
-                      </DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem
-                        onClick={() => void act(() => discussionsApi.act(id, "resume"))}
-                      >
-                        <PlayIcon />
-                        Resume
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem
-                      onClick={async () => {
-                        const ok = await Modal.confirm<boolean>({
-                          title: "Stop all goals?",
-                          description: "The room and its history stay.",
-                          confirm: { text: "Stop goals", theme: "danger" },
-                        });
-                        if (ok)
-                          void act(
-                            () => discussionsApi.stopGoals(id).then(goalLoop.refresh),
-                            "Goals stopped.",
-                          );
-                      }}
+                <SpeakerSlashIcon />
+              </Button>
+            </ActionHint>
+          )}
+          {!readOnly && (
+            <Menu
+              asChild
+              hover={false}
+              restoreFocus
+              title="Room actions"
+              floatingClassName="w-52"
+              label={
+                <ActionHint label="Room actions">
+                  <Button size="icon-sm" variant="ghost" aria-label="Room actions" disabled={busy}>
+                    <DotsThreeIcon />
+                  </Button>
+                </ActionHint>
+              }
+            >
+              {!isClosed && (
+                <>
+                  {d.createdByBotId && detail.members.length > 1 && goalLoop.loops.length === 0 && (
+                    <MenuItem
+                      title="Pursue goal"
+                      onClick={() => setLoopForm({ goal: d.goal, doneWhen: "" })}
                     >
-                      <StopCircleIcon />
-                      Stop goals
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        const summary = window.prompt("What was the outcome?");
-                        if (summary?.trim())
-                          void act(() => discussionsApi.resolve(id, summary.trim()), "Resolved.");
-                      }}
+                      <RepeatIcon />
+                      Pursue goal
+                    </MenuItem>
+                  )}
+                  {d.teamId && (
+                    <MenuItem title="Set team goal" onClick={() => setTeamGoal(d.goal)}>
+                      <TargetIcon />
+                      Set team goal
+                    </MenuItem>
+                  )}
+                  {d.status === "open" ? (
+                    <MenuItem
+                      title="Pause"
+                      onClick={() => void act(() => discussionsApi.act(id, "pause"))}
                     >
-                      <CheckCircleIcon />
-                      Resolve
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onClick={async () => {
-                        const ok = await Modal.confirm<boolean>({
-                          title: "Cancel this room?",
-                          description: "Queued bot turns are dropped.",
-                          confirm: { text: "Cancel room", theme: "danger" },
-                        });
-                        if (ok) void act(() => discussionsApi.act(id, "cancel"));
-                      }}
+                      <PauseIcon />
+                      Pause
+                    </MenuItem>
+                  ) : (
+                    <MenuItem
+                      title="Resume"
+                      onClick={() => void act(() => discussionsApi.act(id, "resume"))}
                     >
-                      <XCircleIcon />
-                      Cancel room
-                    </DropdownMenuItem>
-                  </>
-                )}
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={async () => {
-                    const ok = await Modal.confirm<boolean>({
-                      title: "Delete this room?",
-                      description: "It stops and leaves your lists. Its history is kept.",
-                      confirm: { text: "Delete room", theme: "danger" },
-                    });
-                    if (ok)
-                      void act(
-                        () =>
-                          discussionsApi
-                            .remove(id)
-                            .then(() => navigate({ to: "/rooms", search: {} })),
-                        "Room deleted.",
-                      );
-                  }}
-                >
-                  <TrashIcon />
-                  Delete room
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                      <PlayIcon />
+                      Resume
+                    </MenuItem>
+                  )}
+                  <MenuItem
+                    title="Stop goals"
+                    onClick={async () => {
+                      const ok = await Modal.confirm<boolean>({
+                        title: "Stop all goals?",
+                        description: "The room and its history stay.",
+                        confirm: { text: "Stop goals", theme: "danger" },
+                      });
+                      if (ok)
+                        void act(
+                          () => discussionsApi.stopGoals(id).then(goalLoop.refresh),
+                          "Goals stopped.",
+                        );
+                    }}
+                  >
+                    <StopCircleIcon />
+                    Stop goals
+                  </MenuItem>
+                  <MenuItem
+                    title="Resolve"
+                    onClick={() => {
+                      const summary = window.prompt("What was the outcome?");
+                      if (summary?.trim())
+                        void act(() => discussionsApi.resolve(id, summary.trim()), "Resolved.");
+                    }}
+                  >
+                    <CheckCircleIcon />
+                    Resolve
+                  </MenuItem>
+                  <MenuSeparator />
+                  <MenuItem
+                    title="Cancel room"
+                    className={MENU_DANGER}
+                    onClick={async () => {
+                      const ok = await Modal.confirm<boolean>({
+                        title: "Cancel this room?",
+                        description: "Queued bot turns are dropped.",
+                        confirm: { text: "Cancel room", theme: "danger" },
+                      });
+                      if (ok) void act(() => discussionsApi.act(id, "cancel"));
+                    }}
+                  >
+                    <XCircleIcon />
+                    Cancel room
+                  </MenuItem>
+                </>
+              )}
+              <MenuItem
+                title="Delete room"
+                className={MENU_DANGER}
+                onClick={async () => {
+                  const ok = await Modal.confirm<boolean>({
+                    title: "Delete this room?",
+                    description: "It stops and leaves your lists. Its history is kept.",
+                    confirm: { text: "Delete room", theme: "danger" },
+                  });
+                  if (ok)
+                    void act(
+                      () =>
+                        discussionsApi
+                          .remove(id)
+                          .then(() => navigate({ to: "/rooms", search: {} })),
+                      "Room deleted.",
+                    );
+                }}
+              >
+                <TrashIcon />
+                Delete room
+              </MenuItem>
+            </Menu>
           )}
         </PageHeader>
         {(goalLoop.loops.length ? goalLoop.loops : goalLoop.loop ? [goalLoop.loop] : []).map(
@@ -947,50 +964,56 @@ function RoomView({
           </>
         ) : (
           <>
-            <MessageList
-              key={d.conversationId}
-              followToken={sent}
-              rows={rows}
-              bots={bots}
-              authorOf={authorOf}
-              busy={turnsOpen(detail) > 0 || streamBusy}
-              label="Room transcript"
-              threads={false}
-              actions={{
-                onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
-                onReply: () => {},
-                onQuote: setQuoting,
-                onSaveToMemory: (row) =>
-                  void chatClient.saveToMemory(d.title, row.content).then(
-                    (r) =>
-                      toast.success(
-                        <span>
-                          Saved to your{" "}
-                          <Link to="/memory/$slug" params={{ slug: r.slug }} className="underline">
-                            memory
-                          </Link>
-                          .
-                        </span>,
-                      ),
-                    fail,
-                  ),
-              }}
-              intro={
-                rows.length === 0 ? (
-                  <p role="status" className="px-4 py-6 text-sm text-muted-foreground">
-                    No messages yet.
-                  </p>
-                ) : null
-              }
-              footer={
-                unstreamed.length ? (
-                  <p role="status" className="px-4 py-2 text-xs text-muted-foreground">
-                    {unstreamed.map((t) => names.get(t.botId) ?? "A bot").join(", ")}{" "}
-                    {unstreamed.length === 1 ? "is" : "are"} working…
-                  </p>
-                ) : null
-              }
-            />
+            <BotsContext.Provider value={botsById}>
+              <MessageList
+                key={d.conversationId}
+                followToken={sent}
+                rows={rows}
+                bots={bots}
+                authorOf={authorOf}
+                busy={turnsOpen(detail) > 0 || streamBusy}
+                label="Room transcript"
+                threads={false}
+                actions={{
+                  onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
+                  onReply: () => {},
+                  onQuote: setQuoting,
+                  onSaveToMemory: (row) =>
+                    void chatClient.saveToMemory(d.title, row.content).then(
+                      (r) =>
+                        toast.success(
+                          <span>
+                            Saved to your{" "}
+                            <Link
+                              to="/memory/$slug"
+                              params={{ slug: r.slug }}
+                              className="underline"
+                            >
+                              memory
+                            </Link>
+                            .
+                          </span>,
+                        ),
+                      fail,
+                    ),
+                }}
+                intro={
+                  rows.length === 0 ? (
+                    <p role="status" className="px-4 py-6 text-sm text-muted-foreground">
+                      No messages yet.
+                    </p>
+                  ) : null
+                }
+                footer={
+                  unstreamed.length ? (
+                    <p role="status" className="px-4 py-2 text-xs text-muted-foreground">
+                      {unstreamed.map((t) => names.get(t.botId) ?? "A bot").join(", ")}{" "}
+                      {unstreamed.length === 1 ? "is" : "are"} working…
+                    </p>
+                  ) : null
+                }
+              />
+            </BotsContext.Provider>
             <div className="shrink-0 space-y-2 px-4 pb-4">
               {briefs.length > 0 && (
                 <ProposalsPanel
@@ -1058,14 +1081,16 @@ function RoomView({
                   Edit
                 </Button>
               )}
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Close details"
-                onClick={() => setDetails(false)}
-              >
-                <XIcon />
-              </Button>
+              <ActionHint label="Close details">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Close details"
+                  onClick={() => setDetails(false)}
+                >
+                  <XIcon />
+                </Button>
+              </ActionHint>
             </div>
           </div>
           {d.tainted && (
@@ -1210,14 +1235,14 @@ function RoomView({
                     <BotAvatar bot={botOf(bots, m.botId)} size={20} />
                     <span className="min-w-0 truncate font-medium">{m.name}</span>
                     {m.botId === d.createdByBotId && (
-                      <Badge variant="secondary" className="h-4 px-1 text-xs">
+                      <Tag theme="secondary" size="tiny">
                         Facilitator
-                      </Badge>
+                      </Tag>
                     )}
                     {m.code && (
-                      <Badge variant="outline" className="h-4 px-1 text-xs">
+                      <Tag theme="neutral" size="tiny">
                         Code
-                      </Badge>
+                      </Tag>
                     )}
                   </div>
                   {m.role && <p className="pl-7 text-xs text-muted-foreground">{m.role}</p>}

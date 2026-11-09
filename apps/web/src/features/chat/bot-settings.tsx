@@ -1,7 +1,7 @@
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Input, Modal, Select } from "@/components/ui";

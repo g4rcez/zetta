@@ -51,6 +51,26 @@ const COLUMNS: {
 /** Only a safe, same-purpose link: web addresses or paths inside the app. */
 const safeLink = (l: string) => /^(https?:\/\/|\/)/.test(l) && !l.startsWith("//");
 
+function CardAction({
+  label,
+  action,
+  variant = "outline",
+  busy,
+  onAction,
+}: {
+  label: string;
+  action: Action;
+  variant?: "outline" | "default";
+  busy: boolean;
+  onAction: (a: Action) => void;
+}) {
+  return (
+    <Button size="sm" variant={variant} disabled={busy} onClick={() => onAction(action)}>
+      {label}
+    </Button>
+  );
+}
+
 function Card({
   item,
   botName,
@@ -63,11 +83,6 @@ function Card({
   onAction: (a: Action) => void;
 }) {
   const unread = !item.readAt && item.status === "open";
-  const btn = (label: string, action: Action, variant: "outline" | "default" = "outline") => (
-    <Button size="sm" variant={variant} disabled={busy} onClick={() => onAction(action)}>
-      {label}
-    </Button>
-  );
   return (
     <article
       className="min-w-0 space-y-1.5 rounded-lg border bg-card p-3 text-sm shadow-xs"
@@ -123,17 +138,34 @@ function Card({
       <div className="flex flex-wrap gap-1 pt-1">
         {item.status === "open" && (
           <>
-            {btn("Resolve", "resolve", "default")}
-            {btn("I've seen this", "acknowledge")}
+            <CardAction
+              label="Resolve"
+              action="resolve"
+              variant="default"
+              busy={busy}
+              onAction={onAction}
+            />
+            <CardAction
+              label="I've seen this"
+              action="acknowledge"
+              busy={busy}
+              onAction={onAction}
+            />
           </>
         )}
         {item.status === "acknowledged" && (
           <>
-            {btn("Resolve", "resolve", "default")}
-            {btn("Reopen", "reopen")}
+            <CardAction
+              label="Resolve"
+              action="resolve"
+              variant="default"
+              busy={busy}
+              onAction={onAction}
+            />
+            <CardAction label="Reopen" action="reopen" busy={busy} onAction={onAction} />
           </>
         )}
-        {btn("Dismiss", "cancel")}
+        <CardAction label="Dismiss" action="cancel" busy={busy} onAction={onAction} />
       </div>
     </article>
   );

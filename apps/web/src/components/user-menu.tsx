@@ -1,28 +1,14 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Button } from "@/components/ui";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@zetta/ui/components/dropdown-menu";
-import { Skeleton } from "@zetta/ui/components/skeleton";
+import { Button, MENU_DANGER, Menu, MenuGroup, MenuItem, MenuSeparator } from "@/components/ui";
+import { Skeleton } from "@g4rcez/components";
 import { CaretUpDownIcon, SlidersHorizontalIcon, UserIcon } from "@phosphor-icons/react";
 import { useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { usePreferences } from "@/features/preferences/preferences";
 import { useProfile } from "@/features/preferences/profile-api";
-import {
-  TIME_FORMAT_LABEL,
-  TIME_FORMATS,
-  type TimeFormat,
-} from "@/features/preferences/time-format";
+import { TIME_FORMAT_LABEL, TIME_FORMATS } from "@/features/preferences/time-format";
 import { UserAvatar } from "@/components/user-avatar";
 import { railRow, railRowExpanded } from "@/components/rail-row";
 import { authClient } from "@/lib/auth-client";
@@ -62,7 +48,7 @@ export default function UserMenu({
   }
 
   if (isPending) {
-    return <Skeleton className={inline ? "h-8 w-20" : "size-8 sm:w-24"} />;
+    return <Skeleton as="div" decorative className={inline ? "h-8! w-20!" : "size-8! sm:w-24!"} />;
   }
 
   if (!session) {
@@ -79,104 +65,109 @@ export default function UserMenu({
     );
   }
 
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        // With visible text the name starts with it (WCAG 2.5.3); icon-only forms keep a label.
-        aria-label={
-          rail === "expanded" || inline ? undefined : `Account menu for ${session.user.name}`
-        }
-        render={
-          rail ? (
-            <button
-              type="button"
-              className={`${railRow} ${rail === "expanded" ? `${railRowExpanded} h-10` : ""}`}
-            />
-          ) : inline ? (
-            <button
-              type="button"
-              className="flex h-8 max-w-48 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            />
-          ) : compact ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-10 rounded-full bg-secondary text-sm font-semibold"
-            />
-          ) : (
-            <Button variant="outline" size="icon" className="sm:w-auto sm:max-w-40 sm:px-2.5" />
-          )
-        }
+  // With visible text the name starts with it (WCAG 2.5.3); icon-only forms keep a label.
+  const label = rail === "expanded" || inline ? undefined : `Account menu for ${session.user.name}`;
+  const trigger = rail ? (
+    <ActionHint label={label}>
+      <button
+        type="button"
+        aria-label={label}
+        className={`${railRow} ${rail === "expanded" ? `${railRowExpanded} h-10` : ""}`}
       >
-        {rail ? (
+        <UserAvatar name={session.user.name} avatar={profile?.avatar} size={20} />
+        {rail === "expanded" ? (
           <>
-            <UserAvatar name={session.user.name} avatar={profile?.avatar} size={20} />
-            {rail === "expanded" ? (
-              <>
-                <span className="flex min-w-0 flex-1 flex-col text-left leading-tight">
-                  <span className="truncate text-sm font-medium text-foreground">
-                    {session.user.name}
-                  </span>
-                  <span className="truncate text-xs font-normal text-muted-foreground">
-                    {session.user.email}
-                  </span>
-                </span>
-                <span className="sr-only">, account menu</span>
-                <CaretUpDownIcon aria-hidden="true" className="size-4 shrink-0" />
-              </>
-            ) : null}
-          </>
-        ) : inline ? (
-          <>
-            <UserAvatar name={session.user.name} avatar={profile?.avatar} size={24} />
-            <span className="hidden min-w-0 truncate sm:block">{session.user.name}</span>
+            <span className="flex min-w-0 flex-1 flex-col text-left leading-tight">
+              <span className="truncate text-sm font-medium text-foreground">
+                {session.user.name}
+              </span>
+              <span className="truncate text-xs font-normal text-muted-foreground">
+                {session.user.email}
+              </span>
+            </span>
             <span className="sr-only">, account menu</span>
+            <CaretUpDownIcon aria-hidden="true" className="size-4 shrink-0" />
           </>
-        ) : compact ? (
-          <UserAvatar name={session.user.name} avatar={profile?.avatar} size={32} />
-        ) : (
-          <>
-            <UserIcon aria-hidden="true" className="sm:hidden" />
-            <span className="hidden min-w-0 truncate sm:block">{session.user.name}</span>
-          </>
-        )}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align={compact || rail ? "start" : "end"}
-        side={compact || rail ? (preferences.sidebarSide === "right" ? "left" : "right") : "bottom"}
-        className="w-64 max-w-[calc(100vw-1rem)] bg-card"
+        ) : null}
+      </button>
+    </ActionHint>
+  ) : inline ? (
+    // No hint: it shows the user's name.
+    <button
+      type="button"
+      aria-label={label}
+      className="flex h-8 max-w-48 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      <UserAvatar name={session.user.name} avatar={profile?.avatar} size={24} />
+      <span className="hidden min-w-0 truncate sm:block">{session.user.name}</span>
+      <span className="sr-only">, account menu</span>
+    </button>
+  ) : compact ? (
+    <ActionHint label={label}>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={label}
+        className="size-10 rounded-full bg-secondary text-sm font-semibold"
       >
-        <DropdownMenuGroup>
-          <DropdownMenuLabel className="break-words">{session.user.name}</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem className="break-all">{session.user.email}</DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem render={<Link to="/preferences" />}>
-            <SlidersHorizontalIcon />
-            Preferences
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel>Time format</DropdownMenuLabel>
-          <DropdownMenuRadioGroup
-            value={preferences.timeFormat}
-            onValueChange={(value) => set({ timeFormat: value as TimeFormat })}
+        <UserAvatar name={session.user.name} avatar={profile?.avatar} size={32} />
+      </Button>
+    </ActionHint>
+  ) : (
+    // No hint: it shows the user's name.
+    <Button
+      variant="outline"
+      size="icon"
+      aria-label={label}
+      className="sm:w-auto sm:max-w-40 sm:px-2.5"
+    >
+      <UserIcon aria-hidden="true" className="sm:hidden" />
+      <span className="hidden min-w-0 truncate sm:block">{session.user.name}</span>
+    </Button>
+  );
+
+  return (
+    // The menu opens below its trigger and flips above it where the rail sits at the bottom of the screen.
+    <Menu
+      asChild
+      hover={false}
+      restoreFocus
+      title=""
+      floatingClassName="w-64 max-w-[calc(100vw-1rem)]"
+      label={trigger}
+    >
+      <div className="w-full px-2.5 py-1.5">
+        <p className="text-sm font-medium break-words">{session.user.name}</p>
+        <p className="text-xs break-all text-muted-foreground">{session.user.email}</p>
+      </div>
+      <MenuSeparator />
+      <MenuItem title="Preferences" onClick={() => void navigate({ to: "/preferences" })}>
+        <SlidersHorizontalIcon />
+        Preferences
+      </MenuItem>
+      <MenuSeparator />
+      <MenuGroup label="Time format">
+        {TIME_FORMATS.map((f) => (
+          <MenuItem
+            key={f}
+            title={TIME_FORMAT_LABEL[f]}
+            role="menuitemradio"
+            checked={f === preferences.timeFormat}
+            onClick={() => set({ timeFormat: f })}
           >
-            {TIME_FORMATS.map((f) => (
-              <DropdownMenuRadioItem key={f} value={f}>
-                {TIME_FORMAT_LABEL[f]}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            disabled={signingOut}
-            onClick={() => void signOut()}
-          >
-            {signingOut ? "Signing out…" : "Sign Out"}
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+            {TIME_FORMAT_LABEL[f]}
+          </MenuItem>
+        ))}
+      </MenuGroup>
+      <MenuSeparator />
+      <MenuItem
+        title="Sign Out"
+        className={MENU_DANGER}
+        disabled={signingOut}
+        onClick={() => void signOut()}
+      >
+        {signingOut ? "Signing out…" : "Sign Out"}
+      </MenuItem>
+    </Menu>
   );
 }

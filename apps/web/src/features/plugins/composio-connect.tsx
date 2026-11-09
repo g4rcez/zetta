@@ -184,6 +184,7 @@ export function ComposioConnect({
                 ) : (
                   <span className="text-xs text-muted-foreground">Save to connect</span>
                 )}
+                {/* No hint: it shows the text Remove. */}
                 <Button
                   size="sm"
                   variant="ghost"

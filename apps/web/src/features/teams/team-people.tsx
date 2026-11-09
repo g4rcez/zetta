@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { Button, Select } from "@/components/ui";
 

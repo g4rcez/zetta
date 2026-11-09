@@ -18,6 +18,7 @@ const item = (o: Partial<Item>): Item => ({
   tags: [],
   score: 50,
   status: "current",
+  botAccess: "edit",
   access: "own",
   by: "user",
   ownerName: null,

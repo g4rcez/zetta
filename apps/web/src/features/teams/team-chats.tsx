@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { HashIcon } from "@phosphor-icons/react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { cn } from "@zetta/ui/lib/utils";
 

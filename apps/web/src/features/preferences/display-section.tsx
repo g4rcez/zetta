@@ -1,7 +1,15 @@
 import { Alert } from "@g4rcez/components/alert";
+import { CoffeeIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
 import { Button, Radiobox } from "@/components/ui";
+import {
+  KEEP_AWAKE_LABEL,
+  KEEP_AWAKE_VALUES,
+  setKeepAwake,
+  useKeepAwake,
+  wakeLockSupported,
+} from "@/lib/keep-awake";
 import { useTheme } from "@/components/theme-provider";
 import { SIDEBAR_SIDE_LABEL, SIDEBAR_SIDES, usePreferences } from "./preferences";
 import { Section } from "./section";
@@ -27,6 +35,7 @@ export function DisplaySection() {
     });
     return () => cancelAnimationFrame(frame);
   }, [preferences.theme, preferences.primaryColor, resolvedTheme]);
+  const keepAwake = useKeepAwake();
   const { grounds, primary } = screen;
   const ratio =
     preferences.primaryColor && grounds.length
@@ -102,6 +111,32 @@ export function DisplaySection() {
               </Radiobox>
             ))}
           </div>
+        </fieldset>
+        <fieldset className="space-y-2">
+          <legend className="flex items-center gap-1.5 text-sm font-medium">
+            <CoffeeIcon aria-hidden="true" className="size-4" />
+            Keep the screen awake
+          </legend>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            {KEEP_AWAKE_VALUES.map((mode) => (
+              <Radiobox
+                key={mode}
+                name="keep-awake"
+                checked={keepAwake === mode}
+                onChange={() => setKeepAwake(mode)}
+              >
+                {KEEP_AWAKE_LABEL[mode]}
+              </Radiobox>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Stops this computer from dimming or locking the screen during long tasks. Saved on this
+            device only. The browser lets go of it when you switch to another tab and takes it back
+            when you return.
+          </p>
+          {wakeLockSupported() ? null : (
+            <Alert theme="warn">This browser does not support keeping the screen awake.</Alert>
+          )}
         </fieldset>
       </div>
     </Section>

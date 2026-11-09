@@ -3,6 +3,7 @@ import { Alert } from "@g4rcez/components/alert";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { appsApi, type Published } from "../apps/apps-api";
 import { errorMessage } from "../chat/chat-client";
 import { Loading } from "../shared/ui";
 import { CodeEditor } from "./code-editor";
@@ -50,6 +51,7 @@ export function PlaygroundPage({
   setSearch,
   onOpen,
   onLeave,
+  onOpenApp,
 }: {
   id: string;
   search: PlaygroundSearch;
@@ -61,6 +63,8 @@ export function PlaygroundPage({
   onOpen: (id: string) => void;
   /** Back to the list. */
   onLeave: () => void;
+  /** Opens the app a publish made. Absent: the notice names it without a link. */
+  onOpenApp?: (slug: string) => void;
 }) {
   const qc = useQueryClient();
   const detail = useQuery(playgroundQueries.detail(id));
@@ -73,6 +77,8 @@ export function PlaygroundPage({
   /** The saved version the edits started from. A newer one means someone else saved in the meantime. */
   const [from, setFrom] = useState<number>();
   const [fields, setFields] = useState<Record<string, FieldValue>>({});
+  /** What the last Publish made, shown until the next change. */
+  const [published, setPublished] = useState<Published>();
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
   const [page, setPage] = useState<string>();
@@ -298,6 +304,25 @@ export function PlaygroundPage({
               <Tool disabled={!unsaved || busy !== undefined} onClick={() => void save()}>
                 Save
               </Tool>
+              {(draft.language === "typescript" || draft.language === "javascript") &&
+                draft.runner !== "browser" && (
+                  <Tool
+                    disabled={unsaved || busy !== undefined}
+                    title={
+                      unsaved
+                        ? "Save first: an app is published from the saved files."
+                        : "Publish these files as an app that bots can call"
+                    }
+                    onClick={() =>
+                      void attempt("Publishing", async () => {
+                        setPublished(await appsApi.publish({ playgroundId: id }));
+                        void qc.invalidateQueries({ queryKey: ["apps"] });
+                      })
+                    }
+                  >
+                    Publish
+                  </Tool>
+                )}
               {confirming ? (
                 <span
                   role="group"
@@ -343,6 +368,23 @@ export function PlaygroundPage({
           )}
         </div>
       </div>
+      {published && (
+        <div className="border-b px-3 py-2">
+          <Alert theme="success">
+            Published {published.app.name} as <code>apps.{published.app.slug}</code>, version{" "}
+            {published.version.n}.{" "}
+            {published.changes.added.length > 0 &&
+              `New tools: ${published.changes.added.join(", ")}. `}
+            {published.changes.removed.length > 0 &&
+              `Removed: ${published.changes.removed.join(", ")}. `}
+            {onOpenApp && (
+              <Tool className="ml-2" onClick={() => onOpenApp(published.app.slug)}>
+                Open the app
+              </Tool>
+            )}
+          </Alert>
+        </div>
+      )}
       {(error || changedElsewhere || (draft.runner === "host" && info && !info.hostVersion)) && (
         <div className="space-y-2 border-b px-3 py-2">
           {error && <Alert theme="danger">{error}</Alert>}

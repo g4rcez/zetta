@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { Autocomplete } from "@/components/ui";
 import { isKnownLocale, localeLabel, localeOptions } from "./laya-locales";
 
@@ -29,15 +30,17 @@ export function LanguagePicker({
           >
             {localeLabel(tag)}
             {!fixed.includes(tag) && (
-              <button
-                type="button"
-                aria-label={`Remove ${localeLabel(tag)}`}
-                disabled={disabled}
-                className="rounded-full px-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
-                onClick={() => onChange(value.filter((t) => t !== tag))}
-              >
-                ×
-              </button>
+              <ActionHint label={`Remove ${localeLabel(tag)}`}>
+                <button
+                  type="button"
+                  aria-label={`Remove ${localeLabel(tag)}`}
+                  disabled={disabled}
+                  className="rounded-full px-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  onClick={() => onChange(value.filter((t) => t !== tag))}
+                >
+                  ×
+                </button>
+              </ActionHint>
             )}
           </li>
         ))}

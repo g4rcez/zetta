@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
+import { BotIdentity } from "@/components/bot-identity";
 import { Button } from "@/components/ui";
 import { call } from "../chat/chat-client";
+import { chatQueries } from "../chat/chat-queries";
 import { Badge, list, listItem } from "../shared/ui";
 import { RailSection } from "./rail-section";
 import { useAction } from "./use-action";
@@ -10,6 +12,7 @@ import { memoryQueries } from "./memory-api";
 
 export function SuggestionsPanel() {
   const { data } = useQuery(memoryQueries.suggestions());
+  const bots = useQuery(chatQueries.bots()).data;
   const { run, feedback } = useAction();
   if (!data || (!data.incoming.length && !data.outgoing.length)) return null;
   return (
@@ -17,14 +20,28 @@ export function SuggestionsPanel() {
       title="Suggestions"
       label="Memory suggestions"
       count={data.incoming.length}
-      description="Changes other members suggested for items you shared, and the ones you sent."
+      description="Changes your bots or other members suggested for your items, and the ones you sent."
     >
       {data.incoming.length > 0 && (
         <ul className={list} aria-label="Suggestions for your items">
           {data.incoming.map((s) => (
             <li key={s.id} className={`${listItem} space-y-2`}>
-              <p>
-                <span className="font-medium">{s.authorName}</span> suggests a change to{" "}
+              <p className="flex flex-wrap items-center gap-x-1.5">
+                {s.botId ? (
+                  <BotIdentity
+                    bot={
+                      bots?.find((b) => b.id === s.botId) ?? {
+                        id: s.botId,
+                        name: s.botName ?? "A bot",
+                      }
+                    }
+                    size={20}
+                    className="w-auto flex-none"
+                  />
+                ) : (
+                  <span className="font-medium">{s.authorName}</span>
+                )}{" "}
+                suggests a change to{" "}
                 <Link
                   to="/memory/$slug"
                   params={{ slug: s.slug }}

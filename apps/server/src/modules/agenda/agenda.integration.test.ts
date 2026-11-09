@@ -559,10 +559,15 @@ suite("Agenda against compose postgres", () => {
       async () => ({ isAdmin: false }),
     );
     let script: string[] = [];
+    const prompts: string[] = [];
     const fakeRun = Object.assign(
-      async () => ({ text: script.shift() ?? "done", stopped: false }),
+      async (o: { prompt?: string }) => {
+        prompts.push(o.prompt ?? "");
+        return { text: script.shift() ?? "done", stopped: false };
+      },
       {
-        stream: async function* () {
+        stream: async function* (o: { prompt?: string }) {
+          prompts.push(o.prompt ?? "");
           yield script.shift() ?? "done";
         },
       },
@@ -691,11 +696,18 @@ suite("Agenda against compose postgres", () => {
         kind: string;
       }[]
     ).filter((p) => p.kind === "bot_action");
+    prompts.length = 0;
     expect(
       (await call(A, "POST", `/api/proposals/${again!.id}/decision`, { approve: true })).json
         .status,
     ).toBe("approved");
     expect(await injected()).toHaveLength(1);
+    // The click also wakes the bot, so the work goes on instead of waiting for the person to write again.
+    for (let i = 0; i < 50 && !prompts.some((p) => p.includes("approved the changes")); i++)
+      await new Promise((ok) => setTimeout(ok, 100));
+    const resumed = prompts.find((p) => p.includes("approved the changes"));
+    expect(resumed).toContain("agenda add");
+    expect(resumed).toContain("Do not send these changes again");
     expect(
       (await db.select().from(agendaSync).where(eq(agendaSync.ownerUserId, A)))[0]?.enabled,
     ).toBe(true);

@@ -378,7 +378,12 @@ export function createDiscussionStore(
             ? roles.get(b.id) || "facilitator"
             : (roles.get(b.id) ?? "")
           ).slice(0, 200),
-          requireApproval: codeEnabled(b, a.userId),
+          // Only a room that came from an outside channel (a stranger wrote the content) holds a code bot for one approval, and never
+          // the bot that opened it. Everywhere else a member in the room acts without asking.
+          requireApproval:
+            Boolean(input.originInbound) &&
+            b.id !== input.createdBy?.id &&
+            codeEnabled(b, a.userId),
         })),
       );
       const first = await insertMessage(
@@ -420,18 +425,35 @@ export function createDiscussionStore(
     return row;
   }
 
-  /** Turns in the gate get a brief the owner approves: the bot, the context version it will act on, and the post that woke it. */
+  /**
+   * Turns in the gate get a brief the owner approves: the bot, the context version it will act on, and the post that woke it. One card
+   * per bot and room: later turns of the same bot wait behind it, and approving it releases them all and lifts the gate for that room.
+   */
   async function gate(tx: Tx, c: Claimed, botName: string) {
+    await tx
+      .update(discussionTurn)
+      .set({ status: "awaiting_approval" })
+      .where(eq(discussionTurn.id, c.turn.id));
+    const [waiting] = await tx
+      .select({ id: configProposal.id })
+      .from(configProposal)
+      .where(
+        and(
+          eq(configProposal.ownerUserId, c.discussion.ownerUserId),
+          eq(configProposal.kind, "discussion_brief"),
+          eq(configProposal.status, "pending"),
+          eq(configProposal.botId, c.turn.botId),
+          sql`${configProposal.patch}->>'discussionId' = ${c.discussion.id}`,
+        ),
+      )
+      .limit(1);
+    if (waiting) return;
     const [trigger] = c.turn.triggerMessageId
       ? await tx
           .select({ content: message.content })
           .from(message)
           .where(eq(message.id, c.turn.triggerMessageId))
       : [];
-    await tx
-      .update(discussionTurn)
-      .set({ status: "awaiting_approval" })
-      .where(eq(discussionTurn.id, c.turn.id));
     const patch = {
       discussionId: c.discussion.id,
       turnId: c.turn.id,
@@ -890,6 +912,31 @@ export function createDiscussionStore(
       if (d.status !== "open") throw new DiscussionError("CLOSED", `That room is ${d.status}.`);
       return post(db, d, who, text);
     },
+    /** Wakes one member for a post (even its own author): a bot that waited for the person's approval goes on once the click is done. */
+    async wakeBot(a: ActiveActor, id: string, botId: string, messageId: string) {
+      const d = await this.forMember(a, id, botId);
+      const n = await transaction(db, async (tx) => {
+        const [cur] = await tx
+          .select()
+          .from(discussion)
+          .where(eq(discussion.id, d.id))
+          .for("update");
+        if (cur?.status !== "open") return 0;
+        const rows = await tx
+          .insert(discussionTurn)
+          .values({
+            ownerUserId: d.ownerUserId,
+            discussionId: d.id,
+            botId,
+            triggerMessageId: messageId,
+          })
+          .onConflictDoNothing()
+          .returning({ id: discussionTurn.id });
+        return rows.length;
+      });
+      if (n) onEnqueue?.();
+      return n;
+    },
     /** A post that already exists (a member turn's reply): only wakes the next members. */
     async afterReply(
       d: Discussion,
@@ -1140,7 +1187,7 @@ export function createDiscussionStore(
         await refreshMentionLabels(db, "room", row.id, row.title);
       return row;
     },
-    /** A member rewrites the shared context (bumps the version, so pending approvals must be given again). */
+    /** A member rewrites the shared context (bumps the version). */
     async updateContextAsBot(a: ActiveActor, id: string, who: Bot, text: string) {
       const d = await this.forMember(a, id, who.id);
       if (d.status === "resolved" || d.status === "cancelled")
@@ -1900,23 +1947,35 @@ export function createDiscussionStore(
           .where(eq(discussion.id, t.discussionId));
       return t;
     },
-    /** Approved brief: the turn runs against exactly that context version (a later change asks again). */
+    /**
+     * Approved brief: approved once for this bot in this room. Every turn of the bot that waited behind the card runs, and the gate is
+     * lifted for the room (the owner can turn it back on with the member toggle).
+     */
     async approveBrief(a: ActiveActor, patch: Record<string, unknown>) {
       const d = await loadOwned(a, String(patch.discussionId));
-      const [t] = await db
-        .update(discussionTurn)
-        .set({ status: "queued", approvedContextVersion: Number(patch.contextVersion) })
-        .where(
-          and(
-            eq(discussionTurn.id, String(patch.turnId)),
-            eq(discussionTurn.discussionId, d.id),
-            eq(discussionTurn.status, "awaiting_approval"),
-          ),
-        )
-        .returning();
-      if (!t) throw new AccessError("NOT_FOUND");
+      const botId = String(patch.botId);
+      const queued = await transaction(db, async (tx) => {
+        const rows = await tx
+          .update(discussionTurn)
+          .set({ status: "queued", approvedContextVersion: d.contextVersion })
+          .where(
+            and(
+              eq(discussionTurn.discussionId, d.id),
+              eq(discussionTurn.botId, botId),
+              eq(discussionTurn.status, "awaiting_approval"),
+            ),
+          )
+          .returning();
+        if (!rows.length) return rows;
+        await tx
+          .update(discussionMember)
+          .set({ requireApproval: false })
+          .where(and(eq(discussionMember.discussionId, d.id), eq(discussionMember.botId, botId)));
+        return rows;
+      });
+      if (!queued.length) throw new AccessError("NOT_FOUND");
       onEnqueue?.();
-      return t;
+      return queued.find((t) => t.id === String(patch.turnId)) ?? queued[0]!;
     },
     async declineBrief(a: ActiveActor, patch: Record<string, unknown>) {
       const d = await loadOwned(a, String(patch.discussionId));
@@ -1925,8 +1984,8 @@ export function createDiscussionStore(
         .set({ status: "skipped", reasonCode: "declined", finishedAt: new Date() })
         .where(
           and(
-            eq(discussionTurn.id, String(patch.turnId)),
             eq(discussionTurn.discussionId, d.id),
+            eq(discussionTurn.botId, String(patch.botId)),
             eq(discussionTurn.status, "awaiting_approval"),
           ),
         )
@@ -2080,6 +2139,7 @@ export function createDiscussionStore(
   // Methods that take the room id as their second argument, after the actor.
   for (const name of [
     "postAsBot",
+    "wakeBot",
     "postAsOwner",
     "updateContext",
     "updateContextAsBot",

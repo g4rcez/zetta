@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
+import { TaskRuleError } from "./follow-up";
 import { TASK_PRIORITIES, TASK_STATUSES, type TaskStore } from "./store";
 import { accessFail, createGuardedRoute, fail } from "../http-response";
 
@@ -18,6 +19,8 @@ const create = z.strictObject({
   status: status.optional(),
   priority: priority.optional(),
   labels: labels.optional(),
+  /** Makes it a subtask of this task (one level). */
+  parentTaskId: z.string().uuid().optional(),
 });
 const patch = z.strictObject({
   title: z.string().trim().min(1).max(200).optional(),
@@ -25,6 +28,8 @@ const patch = z.strictObject({
   status: status.optional(),
   priority: priority.optional(),
   labels: labels.optional(),
+  /** "auto" resumes a paused follow-up, "off" stops it. The server sets "paused" itself. */
+  followUp: z.enum(["auto", "off"]).optional(),
 });
 
 export function createTaskRoutes(
@@ -38,6 +43,7 @@ export function createTaskRoutes(
   };
   function mapError(e: unknown) {
     if (e instanceof AccessError) return accessFail(e);
+    if (e instanceof TaskRuleError) return fail(409, e.code, e.message);
     if (e instanceof z.ZodError)
       return fail(400, "INVALID_REQUEST", "Check the details and try again.");
     return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");

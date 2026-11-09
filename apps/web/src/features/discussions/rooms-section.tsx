@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   CaretRightIcon,
@@ -181,15 +182,17 @@ export function RoomsSection({ query }: { query: string }) {
           open={roomsOpen}
           onToggle={() => toggle("rooms")}
           action={
-            <Link
-              to="/rooms"
-              search={{ new: true }}
-              aria-label="New room"
-              title="New room"
-              className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            >
-              <PlusIcon aria-hidden="true" className="size-4" />
-            </Link>
+            <ActionHint label="New room">
+              <Link
+                to="/rooms"
+                search={{ new: true }}
+                aria-label="New room"
+
+                className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                <PlusIcon aria-hidden="true" className="size-4" />
+              </Link>
+            </ActionHint>
           }
         />
         {roomsOpen && (

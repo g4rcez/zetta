@@ -1,6 +1,6 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link } from "@tanstack/react-router";
 import { GearSixIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
-import { ActionHint } from "@zetta/ui/components/action-hint";
 import { Button } from "@/components/ui";
 
 import { BotAvatar } from "@/components/bot-avatar";

@@ -1,4 +1,4 @@
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { RoomsSection } from "../discussions/rooms-section";
 import { RoutinesSection } from "../routines/routines-section";
 import {
@@ -27,22 +27,16 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type KeyboardEvent,
   type ReactElement,
   type ReactNode,
   type RefObject,
 } from "react";
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@zetta/ui/components/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@zetta/ui/components/tooltip";
 import { cn } from "@zetta/ui/lib/utils";
-import { Button, Input, Select } from "@/components/ui";
+import { ActionHint } from "@/components/action-hint";
+import { Button, Input, MENU_DANGER, Menu, MenuItem, MenuSeparator, Select } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotStatusDot } from "@/components/bot-status";
 import { usePreferences } from "../preferences/preferences";
@@ -119,24 +113,32 @@ function bucketByDay(chats: Conversation[]) {
 
 const NO_CHATS: Conversation[] = [];
 
-/** Hover and focus popover with a title and a description. `children` is the element that opens it. */
+/**
+ * Hover and focus hint with a title and a description. `children` is the element that shows it. It passes the extra props and the
+ * `ref` on, so it can be the trigger of a `Menu` with `asChild`.
+ */
 function Hint({
   title,
   description,
   children,
+  ...rest
 }: {
   title: string;
   description: string;
   children: ReactElement;
-}) {
+} & Omit<ComponentProps<typeof ActionHint>, "label" | "children">) {
   return (
-    <Tooltip>
-      <TooltipTrigger render={children} />
-      <TooltipContent className="flex-col items-start gap-0.5">
-        <span className="font-medium">{title}</span>
-        <span className="opacity-70">{description}</span>
-      </TooltipContent>
-    </Tooltip>
+    <ActionHint
+      {...rest}
+      label={
+        <span className="flex flex-col items-start gap-0.5">
+          <span className="font-medium">{title}</span>
+          <span className="opacity-70">{description}</span>
+        </span>
+      }
+    >
+      {children}
+    </ActionHint>
   );
 }
 
@@ -301,40 +303,48 @@ function ChatRow({
           </Hint>
         )}
       </button>
-      <DropdownMenu>
-        <Hint title="Chat actions" description="Rename, pin, favorite or delete this chat.">
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                aria-label={`Actions for ${c.title}`}
-                className="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring group-hover/chat:opacity-100 data-popup-open:opacity-100"
-              />
-            }
-          >
-            <DotsThreeIcon aria-hidden="true" className="size-4" />
-          </DropdownMenuTrigger>
-        </Hint>
-        <DropdownMenuContent align="start" className="w-44">
-          <DropdownMenuItem onClick={() => setEditing(true)}>
-            <PencilSimpleIcon />
-            Rename
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => onUpdate(c.id, { pinned: !c.pinned })}>
-            {c.pinned ? <PushPinSlashIcon /> : <PushPinIcon />}
-            {c.pinned ? "Unpin" : "Pin"}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => onUpdate(c.id, { favorite: !c.favorite })}>
-            <StarIcon />
-            {c.favorite ? "Remove from favorites" : "Add to favorites"}
-          </DropdownMenuItem>
-          <DropdownMenuItem variant="destructive" onClick={() => onDelete(c)}>
-            <TrashIcon />
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <Menu
+        asChild
+        hover={false}
+        restoreFocus
+        title=""
+        floatingClassName="w-44"
+        label={
+          <Hint title="Chat actions" description="Rename, pin, favorite or delete this chat.">
+            <button
+              type="button"
+              aria-label={`Actions for ${c.title}`}
+              className="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring group-hover/chat:opacity-100 data-open:opacity-100"
+            >
+              <DotsThreeIcon aria-hidden="true" className="size-4" />
+            </button>
+          </Hint>
+        }
+      >
+        <MenuItem title="Rename" onClick={() => setEditing(true)}>
+          <PencilSimpleIcon />
+          Rename
+        </MenuItem>
+        <MenuItem
+          title={c.pinned ? "Unpin" : "Pin"}
+          onClick={() => onUpdate(c.id, { pinned: !c.pinned })}
+        >
+          {c.pinned ? <PushPinSlashIcon /> : <PushPinIcon />}
+          {c.pinned ? "Unpin" : "Pin"}
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem
+          title={c.favorite ? "Remove from favorites" : "Add to favorites"}
+          onClick={() => onUpdate(c.id, { favorite: !c.favorite })}
+        >
+          <StarIcon />
+          {c.favorite ? "Remove from favorites" : "Add to favorites"}
+        </MenuItem>
+        <MenuItem title="Delete" className={MENU_DANGER} onClick={() => onDelete(c)}>
+          <TrashIcon />
+          Delete
+        </MenuItem>
+      </Menu>
     </motion.li>
   );
 }
@@ -407,6 +417,7 @@ function BotSection({
 }) {
   const controls = useDragControls();
   const reduce = useReducedMotion();
+  const navigate = useNavigate();
   const listId = useId();
   // The open page is one row: the chat when one is open, the bot only on its empty draft.
   const page = current && !chats.some((c) => c.id === chatId);
@@ -438,22 +449,24 @@ function BotSection({
         reordering.onMove(e.key === "ArrowUp" ? -1 : 1);
       }}
     >
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={open ? listId : undefined}
-        aria-label={`${open ? "Hide" : "Show"} conversations of ${bot.name}`}
-        onClick={onToggle}
-        className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-      >
-        <CaretRightIcon
-          aria-hidden="true"
-          className={cn(
-            "size-3 transition-transform duration-150 motion-reduce:transition-none",
-            open && "rotate-90",
-          )}
-        />
-      </button>
+      <ActionHint label={`${open ? "Hide" : "Show"} conversations of ${bot.name}`}>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={open ? listId : undefined}
+          aria-label={`${open ? "Hide" : "Show"} conversations of ${bot.name}`}
+          onClick={onToggle}
+          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          <CaretRightIcon
+            aria-hidden="true"
+            className={cn(
+              "size-3 transition-transform duration-150 motion-reduce:transition-none",
+              open && "rotate-90",
+            )}
+          />
+        </button>
+      </ActionHint>
       <button
         type="button"
         data-chat-row
@@ -513,49 +526,55 @@ function BotSection({
             <PlusIcon aria-hidden="true" className="size-3.5" />
           </Button>
         </Hint>
-        <DropdownMenu>
-          <Hint title="Bot actions" description="Reorder this bot or open its settings.">
-            <DropdownMenuTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label={`Actions for ${bot.name}`}
-                  className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-sidebar hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-                />
-              }
-            >
-              <DotsThreeIcon aria-hidden="true" className="size-4" />
-            </DropdownMenuTrigger>
-          </Hint>
-          <DropdownMenuContent align="start" className="w-48">
-            {reordering && (
-              <>
-                <DropdownMenuItem disabled={at <= 0} onClick={() => reordering.onMove(-1)}>
-                  <ArrowUpIcon />
-                  Move up
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={at < 0 || at >= reordering.ids.length - 1}
-                  onClick={() => reordering.onMove(1)}
-                >
-                  <ArrowDownIcon />
-                  Move down
-                </DropdownMenuItem>
-              </>
-            )}
-            {bot.canEdit && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  render={<Link to="/bots/$botId/settings" params={{ botId: bot.id }} />}
-                >
-                  <GearSixIcon />
-                  Settings
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Menu
+          asChild
+          hover={false}
+          restoreFocus
+          title=""
+          floatingClassName="w-48"
+          label={
+            <Hint title="Bot actions" description="Reorder this bot or open its settings.">
+              <button
+                type="button"
+                aria-label={`Actions for ${bot.name}`}
+                className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-sidebar hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-open:text-foreground"
+              >
+                <DotsThreeIcon aria-hidden="true" className="size-4" />
+              </button>
+            </Hint>
+          }
+        >
+          {reordering && (
+            <>
+              <MenuItem title="Move up" disabled={at <= 0} onClick={() => reordering.onMove(-1)}>
+                <ArrowUpIcon />
+                Move up
+              </MenuItem>
+              <MenuItem
+                title="Move down"
+                disabled={at < 0 || at >= reordering.ids.length - 1}
+                onClick={() => reordering.onMove(1)}
+              >
+                <ArrowDownIcon />
+                Move down
+              </MenuItem>
+            </>
+          )}
+          {bot.canEdit && (
+            <>
+              {reordering && <MenuSeparator />}
+              <MenuItem
+                title="Settings"
+                onClick={() =>
+                  void navigate({ to: "/bots/$botId/settings", params: { botId: bot.id } })
+                }
+              >
+                <GearSixIcon />
+                Settings
+              </MenuItem>
+            </>
+          )}
+        </Menu>
         {attention ? (
           <AttentionCount attention={attention} />
         ) : (
@@ -731,33 +750,28 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
       `${botById.get(id)?.name ?? "Bot"} moved to position ${moved.position} of ${ids.length}`,
     );
   };
-  const section = (b: Bot, ids?: string[]) => {
-    const list = chatsOf(b);
-    if (q && list.length === 0) return null;
-    return (
-      <BotSection
-        key={b.id}
-        bot={b}
-        chats={list}
-        open={isOpen(b)}
-        expanded={!!q || showAll.has(b.id)}
-        current={b.id === botId}
-        attention={botAttention.get(b.id)}
-        chatId={chatId}
-        reordering={ids ? { ids, dragging, onMove: (delta) => move(ids, b.id, delta) } : undefined}
-        onToggle={() => toggle(b)}
-        onMore={() => setShowAll((s) => new Set(s).add(b.id))}
-        onBot={(id) => {
-          setOpened((o) => ({ ...o, [id]: true }));
-          toBot(id);
-        }}
-        onChat={toChat}
-        onNewChat={toDraft}
-        onUpdateChat={updateChat}
-        onDeleteChat={onDeleteChat}
-      />
-    );
-  };
+  // With a search on, a bot with no matching chat is left out.
+  const shows = (b: Bot) => !q || chatsOf(b).length > 0;
+  const sectionProps = (b: Bot, ids?: string[]): ComponentProps<typeof BotSection> => ({
+    bot: b,
+    chats: chatsOf(b),
+    open: isOpen(b),
+    expanded: !!q || showAll.has(b.id),
+    current: b.id === botId,
+    attention: botAttention.get(b.id),
+    chatId,
+    reordering: ids ? { ids, dragging, onMove: (delta) => move(ids, b.id, delta) } : undefined,
+    onToggle: () => toggle(b),
+    onMore: () => setShowAll((s) => new Set(s).add(b.id)),
+    onBot: (id) => {
+      setOpened((o) => ({ ...o, [id]: true }));
+      toBot(id);
+    },
+    onChat: toChat,
+    onNewChat: toDraft,
+    onUpdateChat: updateChat,
+    onDeleteChat,
+  });
   const spaceGroups = [
     ...spaces.map((w) => ({ id: w.id as string | null, name: w.name })),
     { id: null, name: "Ungrouped" },
@@ -780,18 +794,15 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
     }
     return latest;
   }, [chats]);
-  const rowOf = (c: Conversation) => (
-    <ChatRow
-      key={c.id}
-      c={c}
-      bot={botById.get(c.botId)}
-      alert={latestOf.get(c.botId)?.id === c.id && !!botAttention.get(c.botId)?.unread}
-      current={c.id === chatId}
-      onOpen={toChat}
-      onUpdate={updateChat}
-      onDelete={onDeleteChat}
-    />
-  );
+  const chatRowProps = (c: Conversation): ComponentProps<typeof ChatRow> => ({
+    c,
+    bot: botById.get(c.botId),
+    alert: latestOf.get(c.botId)?.id === c.id && !!botAttention.get(c.botId)?.unread,
+    current: c.id === chatId,
+    onOpen: toChat,
+    onUpdate: updateChat,
+    onDelete: onDeleteChat,
+  });
   const loading = !chatsLoaded && bots.length === 0;
   const empty =
     q &&
@@ -889,42 +900,45 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
               <ClockCounterClockwiseIcon aria-hidden="true" className="size-4" />
             </button>
           </Hint>
-          <DropdownMenu>
-            <Hint title="Add" description="Create a chat, bot, folder or room.">
-              <DropdownMenuTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label="Add a chat, bot or folder"
-                    className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-                  />
-                }
-              >
-                <PlusIcon aria-hidden="true" className="size-4" />
-              </DropdownMenuTrigger>
-            </Hint>
-            <DropdownMenuContent align="start" className="w-52">
-              {newChatBot && (
-                <DropdownMenuItem onClick={() => toDraft(newChatBot)}>
-                  <ChatCircleIcon />
-                  New chat
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={toNewBot}>
-                <BotIcon />
-                New bot
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setAdding(true)}>
-                <FolderPlusIcon />
-                New folder
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => void navigate({ to: "/rooms", search: { new: true } })}
-              >
-                New room
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Menu
+            asChild
+            hover={false}
+            restoreFocus
+            title=""
+            floatingClassName="w-52"
+            label={
+              <Hint title="Add" description="Create a chat, bot, folder or room.">
+                <button
+                  type="button"
+                  aria-label="Add a chat, bot or folder"
+                  className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  <PlusIcon aria-hidden="true" className="size-4" />
+                </button>
+              </Hint>
+            }
+          >
+            {newChatBot && (
+              <MenuItem title="New chat" onClick={() => toDraft(newChatBot)}>
+                <ChatCircleIcon />
+                New chat
+              </MenuItem>
+            )}
+            <MenuItem title="New bot" onClick={toNewBot}>
+              <BotIcon />
+              New bot
+            </MenuItem>
+            <MenuItem title="New folder" onClick={() => setAdding(true)}>
+              <FolderPlusIcon />
+              New folder
+            </MenuItem>
+            <MenuItem
+              title="New room"
+              onClick={() => void navigate({ to: "/rooms", search: { new: true } })}
+            >
+              New room
+            </MenuItem>
+          </Menu>
         </div>
         {loading && (
           <ul role="status" aria-label="Loading bots" className="space-y-1">
@@ -939,7 +953,11 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
               <section key={g.title}>
                 <GroupTitle>{g.title}</GroupTitle>
                 <ul className="space-y-px">
-                  <AnimatePresence initial={false}>{g.list.map(rowOf)}</AnimatePresence>
+                  <AnimatePresence initial={false}>
+                    {g.list.map((c) => (
+                      <ChatRow key={c.id} {...chatRowProps(c)} />
+                    ))}
+                  </AnimatePresence>
                 </ul>
               </section>
             ))
@@ -949,12 +967,16 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
                 <section aria-label="Favorites">
                   <GroupTitle>Favorites</GroupTitle>
                   <ul className="space-y-px">
-                    <AnimatePresence initial={false}>{favorites.map(rowOf)}</AnimatePresence>
+                    <AnimatePresence initial={false}>
+                      {favorites.map((c) => (
+                        <ChatRow key={c.id} {...chatRowProps(c)} />
+                      ))}
+                    </AnimatePresence>
                   </ul>
                 </section>
               )}
               <ul className="space-y-px">
-                {chief && section(chief)}
+                {chief && shows(chief) && <BotSection key={chief.id} {...sectionProps(chief)} />}
                 {spaceGroups.map((group) => {
                   const members = rest.filter((b) => (b.folderId ?? null) === group.id);
                   if (!members.length) return null;
@@ -978,10 +1000,16 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
                             onReorder={saveGroup}
                             className="space-y-px"
                           >
-                            {members.map((b) => section(b, ids))}
+                            {members.filter(shows).map((b) => (
+                              <BotSection key={b.id} {...sectionProps(b, ids)} />
+                            ))}
                           </Reorder.Group>
                         ) : (
-                          <ul className="space-y-px">{members.map((b) => section(b))}</ul>
+                          <ul className="space-y-px">
+                            {members.filter(shows).map((b) => (
+                              <BotSection key={b.id} {...sectionProps(b)} />
+                            ))}
+                          </ul>
                         )}
                       </div>
                     </li>

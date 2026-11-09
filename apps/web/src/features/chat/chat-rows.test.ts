@@ -164,6 +164,28 @@ describe("liveRows", () => {
       { at: 5000, label: "write_file" },
     ]);
   });
+  test("a command step keeps its id and is never merged with the same label before it", () => {
+    const step = (at: number, stepId?: string) =>
+      ({
+        type: "data-activity",
+        data: { messageId: "m1", label: "Running cd", at, ...(stepId ? { stepId } : {}) },
+      }) as const;
+    const turn: ZettaUIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { type: "data-speaker", id: "m1", data: { messageId: "m1", botName: "Chief" } },
+          step(1000, "toolu_1"),
+          step(2000, "toolu_2"),
+        ],
+      },
+    ];
+    expect(liveRows(turn)[0]!.timeline).toEqual([
+      { at: 1000, label: "Running cd", stepId: "toolu_1" },
+      { at: 2000, label: "Running cd", stepId: "toolu_2" },
+    ]);
+  });
 });
 
 describe("live artifact receipt", () => {

@@ -5,6 +5,7 @@ import { and, asc, desc, eq, inArray, isNull } from "@zetta/db/query";
 import { bot, conversation, message } from "@zetta/db/schema/chat";
 import { attachment, reaction, snapshot } from "@zetta/db/schema/features";
 import { AccessError, type ActiveActor } from "../identity/access";
+import { uiToText } from "@zetta/render/chat-text";
 import { parseTools } from "../chat/tools";
 
 export class SnapshotError extends Error {
@@ -95,7 +96,7 @@ export function createSnapshots(db: Database) {
     const scrub = (t: string) =>
       attachmentLines.reduce((acc, l) => acc.split(l).join("[attachment content omitted]"), t);
     const parts: SnapshotPart[] = rows.map((m) => {
-      const cleaned = scrub(parseTools(m.content).text);
+      const cleaned = scrub(uiToText(parseTools(m.content).text));
       const counts: Record<string, number> = {};
       for (const r of reacts.filter((x) => x.messageId === m.id))
         counts[r.emoji] = (counts[r.emoji] ?? 0) + 1;

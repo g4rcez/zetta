@@ -1,6 +1,14 @@
 /** What a run reports while it works, next to the reply text. `activity` is a short line for the chat's status and timeline. */
-export type CliProgress = { activity: string };
-export type ClaudeItem = string | CliProgress;
+export type CliProgress = {
+  activity: string;
+  /** A Bash step only: the tool call's id. The chat uses it to open the live output of that command. */
+  stepId?: string;
+};
+/** What the parser reports for a Bash step: `command` is the raw text, only to match the step to its output file; it never leaves the server. */
+export type ClaudeActivity = CliProgress & { command?: string };
+/** The tool result of a Bash step arrived: the command is done. */
+export type ClaudeStepDone = { stepDone: string };
+export type ClaudeItem = string | ClaudeActivity | ClaudeStepDone;
 /** Token counts of a run, as Claude Code reports them in its `result` event. Counts only: no text. */
 export type TokenUsage = { input: number; cacheRead: number; cacheWrite: number; output: number };
 export const noUsage = (): TokenUsage => ({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 });
@@ -96,10 +104,13 @@ export function createClaudeStream() {
     lastActivity: "",
   };
 
-  const activity = (label: string) => {
+  const bashSteps = new Set<string>();
+  const activity = (label: string, step?: { id: string; command: string }) => {
     if (!label) return;
     if (label !== "Thinking") state.lastActivity = label;
-    out.push({ activity: label });
+    out.push(
+      step ? { activity: label, stepId: step.id, command: step.command } : { activity: label },
+    );
   };
 
   const handle = (line: string) => {
@@ -121,8 +132,18 @@ export function createClaudeStream() {
         else if (part.type === "tool_use") {
           if (note) activity(clip(note.split("\n")[0]!.trim(), NOTE_MAX));
           note = "";
-          activity(toolLabel(str(part.name), part.input));
+          const id = str(part.id);
+          const command = str(asObj(part.input).command);
+          const bash = str(part.name) === "Bash" && id && command;
+          if (bash) bashSteps.add(id);
+          activity(toolLabel(str(part.name), part.input), bash ? { id, command } : undefined);
         }
+      }
+    } else if (ev.type === "user") {
+      const content = asObj(ev.message).content;
+      for (const part of Array.isArray(content) ? content.map(asObj) : []) {
+        const id = str(part.tool_use_id);
+        if (part.type === "tool_result" && bashSteps.delete(id)) out.push({ stepDone: id });
       }
     } else if (ev.type === "result") {
       answered = true;

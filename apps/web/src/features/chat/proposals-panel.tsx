@@ -15,6 +15,7 @@ import {
   type SkillsOffer,
 } from "../skills/skills-install-card";
 import { draftFromProposal } from "../memory/draft";
+import { ToolPauseCard, type FormAnswer, type PausedCallPatch } from "./tool-card";
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@zetta/ui/components/item";
 
 import {
@@ -42,6 +43,8 @@ const KIND_LABEL: Record<ProposalKind, string> = {
   install_skills: "Install skills",
   chief_action: "Change your setup",
   bot_action: "Let the bot make these changes",
+  tool_resume: "Answer a tool",
+  publish_app: "Publish an app",
 };
 const FIELD_LABEL: Record<string, string> = {
   outputStyle: "Output style",
@@ -160,11 +163,11 @@ export function ProposalsPanel({
   const approvalMode = useApprovalMode();
   const [busy, setBusy] = useState<string>();
   const [errors, setErrors] = useState<Record<string, string>>({});
-  async function decide(p: Proposal, approve: boolean, choice?: SkillsChoice) {
+  async function decide(p: Proposal, approve: boolean, choice?: SkillsChoice, answer?: FormAnswer) {
     setBusy(p.id);
     setErrors((m) => Object.fromEntries(Object.entries(m).filter(([id]) => id !== p.id)));
     try {
-      const r = await chatClient.decide(p.id, approve, choice);
+      const r = await chatClient.decide(p.id, approve, choice, answer);
       onResolved(p.id);
       // An approved change can touch the bot's hooks, skills, accounts, decision routing or plugins. The bot list itself is `onBotsChanged`'s.
       void qc.invalidateQueries({
@@ -175,8 +178,14 @@ export function ProposalsPanel({
       if (r.status === "stale") notify(STALE);
       else if (r.status === "rejected")
         notify(
-          p.kind === "install_skills" ? "Nothing was installed." : "Rejected. Nothing was changed.",
+          p.kind === "install_skills"
+            ? "Nothing was installed."
+            : p.kind === "tool_resume"
+              ? "Declined. The tool did not run, and the bot is told."
+              : "Rejected. Nothing was changed.",
         );
+      else if (p.kind === "tool_resume")
+        notify("Sent. The tool is running; the bot tells you the result in the chat.");
       else if (r.skills) notify(skillsResult(r.skills));
       else if (r.memory)
         notify(
@@ -230,6 +239,18 @@ export function ProposalsPanel({
                 onDecide={(approve, choice) => void decide(p, approve, choice)}
               />
             </div>
+          );
+        if (p.kind === "tool_resume" && p.patch)
+          return (
+            <ToolPauseCard
+              key={p.id}
+              asker={asker}
+              patch={p.patch as unknown as PausedCallPatch}
+              expiresAt={p.expiresAt}
+              busy={busy === p.id}
+              error={errors[p.id]}
+              onDecide={(approve, answer) => void decide(p, approve, undefined, answer)}
+            />
           );
         const creating = p.kind && p.kind !== "config";
         const draft = p.kind === "create_memory_item" ? draftFromProposal(p.patch) : undefined;

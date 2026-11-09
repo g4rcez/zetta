@@ -17,6 +17,12 @@ export type Skill = {
   sourcePath: string | null;
   sourceRef: string | null;
   version: number;
+  status: "active" | "archived";
+  /** Size of the text in bytes. */
+  bodyBytes: number;
+  /** When a bot last used it (picked with `/` or loaded by a run), and how many times in the last 30 days. */
+  lastUsedAt: string | null;
+  uses30d: number;
   /** `pending`: installed before folders were kept; the server is still to download the other files from GitHub. */
   filesStatus: "complete" | "pending";
   createdAt: string;
@@ -89,9 +95,138 @@ export const FAILURE_TEXT: Record<string, string> = {
 
 const q = (params: Record<string, string>) => new URLSearchParams(params).toString();
 
+/** The filters of My skills, as the address holds them (see skills-search.ts). */
+export type SkillListFilters = {
+  find?: string | undefined;
+  source?: "github" | "manual" | undefined;
+  sort?: "name" | "used" | "size" | undefined;
+  bot?: string | undefined;
+  view?: "archived" | undefined;
+  use?: "unused" | undefined;
+};
+const listParams = (scope: "mine" | "all", f: SkillListFilters) =>
+  q({
+    scope,
+    ...(f.find && { q: f.find }),
+    ...(f.source && { source: f.source }),
+    ...(f.sort && { sort: f.sort }),
+    ...(f.bot && { bot: f.bot }),
+    ...(f.view && { status: f.view }),
+    ...(f.use && { unused: "yes" }),
+  });
+/** What saving a draft would say, without saving (see modules/skills/service.ts `check`). */
+export type SkillCheck = {
+  problems: string[];
+  warnings: string[];
+  bodyBytes: number;
+  hermesBytes: number;
+  similar: { id: string; name: string; description: string; why: "name" | "topic" }[];
+};
+/** What the update check says about one skill installed from GitHub (see modules/skills/install.ts). */
+export type SkillUpdate = {
+  id: string;
+  name: string;
+  repo: string;
+  installedRef: string;
+  latestRef: string;
+  state: "update" | "current" | "gone" | "unknown";
+  /** The owner changed it after installing: updating replaces their changes. */
+  edited: boolean;
+};
+/** One save of a skill (create, edit, restore). */
+export type SkillRevisionRow = {
+  id: string;
+  version: number;
+  name: string;
+  description: string;
+  bodyBytes: number;
+  filesHash: string;
+  savedBy: string;
+  createdAt: string;
+};
+export type SkillHistory = { currentVersion: number; revisions: SkillRevisionRow[] };
+export type SkillRevision = {
+  id: string;
+  version: number;
+  name: string;
+  description: string;
+  body: string;
+  filesHash: string;
+  createdAt: string;
+};
+/** One skill of a bot, from any place (see modules/skills/overview.ts). */
+export type SkillOverviewRow = {
+  name: string;
+  description: string;
+  source: "library" | "bot" | "builtin" | "host";
+  skillId: string | null;
+  bytes: number | null;
+  hiddenBy: "bot" | null;
+  unusable: boolean;
+  fits: boolean | null;
+};
+export type SkillOverview = {
+  harness: string;
+  budget: { used: number; limit: number; dropped: number } | null;
+  skills: SkillOverviewRow[];
+};
+
 export const skillsApi = {
-  list: (scope: "mine" | "all") =>
-    call<{ skills: Skill[] }>(`/api/skills?scope=${scope}`).then((r) => r.skills),
+  list: (scope: "mine" | "all", filters: SkillListFilters = {}) =>
+    call<{ skills: Skill[] }>(`/api/skills?${listParams(scope, filters)}`).then((r) => r.skills),
+  history: (id: string) =>
+    call<{ history: SkillHistory }>(`/api/skills/${id}/history`).then((r) => r.history),
+  revision: (id: string, revisionId: string) =>
+    call<{ revision: SkillRevision }>(`/api/skills/${id}/revisions/${revisionId}`).then(
+      (r) => r.revision,
+    ),
+  revert: (id: string, revisionId: string, expectedVersion: number) =>
+    call<{ skill: SkillWithText }>(`/api/skills/${id}/revert`, "POST", {
+      revisionId,
+      expectedVersion,
+    }).then((r) => r.skill),
+  updates: () => call<{ updates: SkillUpdate[] }>("/api/skills/updates").then((r) => r.updates),
+  updateFromSource: (id: string, ref: string, overwriteEdited: boolean) =>
+    call<{ skill: SkillWithText }>(`/api/skills/${id}/update`, "POST", {
+      ref,
+      ...(overwriteEdited && { overwriteEdited: "yes" }),
+    }).then((r) => r.skill),
+  check: (draft: Partial<SkillDraft> & { skillId?: string }) =>
+    call<{ check: SkillCheck }>("/api/skills/check", "POST", draft).then((r) => r.check),
+  /** One file of the folder: text as text, anything else as base64. */
+  file: (id: string, path: string) =>
+    call<{
+      file: {
+        path: string;
+        mode: "file" | "executable";
+        size: number;
+        encoding: "utf8" | "base64";
+        content: string;
+      };
+    }>(`/api/skills/${id}/file?${q({ path })}`).then((r) => r.file),
+  putFiles: (
+    id: string,
+    files: {
+      path: string;
+      content: string;
+      encoding?: "utf8" | "base64";
+      mode?: "file" | "executable";
+    }[],
+  ) =>
+    call<{ files: SkillFile[] }>(`/api/skills/${id}/files`, "PUT", { files }).then((r) => r.files),
+  removeFiles: (id: string, paths: string[]) =>
+    call<{ files: SkillFile[] }>(`/api/skills/${id}/files/remove`, "POST", { paths }).then(
+      (r) => r.files,
+    ),
+  restore: (id: string) =>
+    call<{ skill: SkillWithText }>(`/api/skills/${id}/restore`, "POST").then((r) => r.skill),
+  bulk: (input: {
+    action: "attach" | "detach" | "archive";
+    skillIds: string[];
+    botIds?: string[];
+  }) => call<{ changed: number; skippedBots: string[] }>("/api/skills/bulk", "POST", input),
+  overview: (botId: string) =>
+    call<{ overview: SkillOverview }>(`/api/bots/${botId}/skills/overview`).then((r) => r.overview),
   get: (id: string) => call<{ skill: SkillWithText }>(`/api/skills/${id}`).then((r) => r.skill),
   create: (draft: SkillDraft) =>
     call<{ skill: SkillWithText }>("/api/skills", "POST", draft).then((r) => r.skill),
@@ -128,8 +263,18 @@ export type MarketAnswer =
 
 /** Keys nest under `["skills"]`: `list` is the library, `market` is GitHub. */
 export const skillsQueries = {
-  list: (scope: "mine" | "all") =>
-    queryOptions({ queryKey: ["skills", "list", scope], queryFn: () => skillsApi.list(scope) }),
+  list: (scope: "mine" | "all", filters: SkillListFilters = {}) =>
+    queryOptions({
+      queryKey: ["skills", "list", scope, filters],
+      queryFn: () => skillsApi.list(scope, filters),
+    }),
+  history: (id: string) =>
+    queryOptions({ queryKey: ["skills", "history", id], queryFn: () => skillsApi.history(id) }),
+  overview: (botId: string) =>
+    queryOptions({
+      queryKey: ["skills", "overview", botId],
+      queryFn: () => skillsApi.overview(botId),
+    }),
   suggestions: () =>
     queryOptions({
       queryKey: ["skills", "market", "suggestions"],

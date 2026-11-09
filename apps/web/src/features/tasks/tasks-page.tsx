@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { mentionsAsText } from "@zetta/core/mentions";
 import { Link } from "@tanstack/react-router";
 import {
@@ -11,20 +12,14 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type DragEvent } from "react";
-import { toast } from "sonner";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@zetta/ui/components/dropdown-menu";
-import { Button, Input } from "@/components/ui";
+import { toast } from "@/lib/notify";
+import { Button, Input, MENU_DANGER, Menu, MenuItem } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
 import { authClient } from "@/lib/auth-client";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { relativeTime } from "../shared/relative-time";
-import { LabelChips, PriorityIcon } from "./task-badges";
+import { FollowUpChip, LabelChips, PriorityIcon, StepChip } from "./task-badges";
 import { GROUP_OPTIONS, Segmented, TaskFilterBar } from "./task-filter-bar";
 import {
   activeCount,
@@ -39,9 +34,11 @@ import {
 } from "./task-filters";
 import { GroupIcon, openOnClick, TaskList, TaskTitleLink } from "./task-list";
 import { TaskPeek } from "./task-peek";
+import { stepCounts, type StepCount } from "./task-steps";
 import { TASK_COLUMNS, tasksApi, tasksQueries, type Task, type TaskStatus } from "./tasks-api";
 
 const NO_TASKS: Task[] = [];
+const NO_COUNTS = new Map<string, StepCount>();
 const NO_BOTS: Bot[] = [];
 
 const LAYOUTS: { value: TaskLayout; label: string; icon: React.ReactNode }[] = [
@@ -49,7 +46,6 @@ const LAYOUTS: { value: TaskLayout; label: string; icon: React.ReactNode }[] = [
   { value: "list", label: "List", icon: <ListIcon aria-hidden className="size-4" /> },
 ];
 
-/** The shared board: one fixed set of columns for every bot of the user. Bots move their own cards; the user can drag or use the card menu. */
 export function TasksPage({
   search,
   onSearch,
@@ -61,6 +57,8 @@ export function TasksPage({
   const tasksQuery = useQuery(tasksQueries.list());
   const botsQuery = useQuery(chatQueries.bots());
   const tasks = tasksQuery.data ?? NO_TASKS;
+  const counts = useQuery({ ...tasksQueries.list(), select: stepCounts }).data ?? NO_COUNTS;
+  const cached = () => qc.getQueryData<Task[]>(tasksQueries.list().queryKey) ?? tasks;
   const bots = botsQuery.data ?? NO_BOTS;
   const loaded = !tasksQuery.isPending;
   const setTasks = (next: (all: Task[]) => Task[]) =>
@@ -69,7 +67,6 @@ export function TasksPage({
   const [over, setOver] = useState<TaskStatus>();
   const [adding, setAdding] = useState<TaskStatus>();
   const viewerId = authClient.useSession().data?.user.id;
-  // The router keeps raw URL keys that `validateSearch` leaves out, so read the search through the parser again.
   const state: TaskState = { ...DEFAULT_STATE, ...parseTaskSearch(search) };
   const setState = (next: TaskState) => onSearch(toTaskSearch(next));
   const now = Date.now();
@@ -86,7 +83,7 @@ export function TasksPage({
   const settled = () => void qc.invalidateQueries({ queryKey: ["tasks"] });
 
   const move = (id: string, status: TaskStatus) => {
-    const before = tasks;
+    const before = cached();
     if (before.find((t) => t.id === id)?.status === status) return;
     setTasks((all) => all.map((t) => (t.id === id ? { ...t, status } : t)));
     tasksApi
@@ -98,7 +95,7 @@ export function TasksPage({
       .finally(settled);
   };
   const remove = (id: string) => {
-    const before = tasks;
+    const before = cached();
     setTasks((all) => all.filter((t) => t.id !== id));
     tasksApi
       .remove(id)
@@ -166,6 +163,7 @@ export function TasksPage({
                 container="w-56"
                 onChange={(e) => setTitle(e.target.value)}
               />
+              {/* No hint: it shows the text Add. */}
               <Button type="submit" aria-label="Add task">
                 <PlusIcon /> Add
               </Button>
@@ -196,6 +194,7 @@ export function TasksPage({
             groupBy={state.groupBy}
             bots={bots}
             now={now}
+            steps={counts}
             openId={state.task}
             onOpen={open}
           />
@@ -233,15 +232,17 @@ export function TasksPage({
                       {group.tasks.length}
                     </span>
                     {byStatus && (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        aria-label={`Add task to ${group.label}`}
-                        onClick={() => setAdding(status)}
-                        className="ml-auto"
-                      >
-                        <PlusIcon className="size-4" />
-                      </Button>
+                      <ActionHint label={`Add task to ${group.label}`}>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label={`Add task to ${group.label}`}
+                          onClick={() => setAdding(status)}
+                          className="ml-auto"
+                        >
+                          <PlusIcon className="size-4" />
+                        </Button>
+                      </ActionHint>
                     )}
                   </header>
                   {byStatus && adding === status && (
@@ -268,6 +269,7 @@ export function TasksPage({
                         key={t.id}
                         task={t}
                         now={now}
+                        steps={counts.get(t.id)}
                         bot={bots.find((b) => b.id === t.botId)}
                         viewerId={viewerId}
                         draggable={byStatus}
@@ -305,6 +307,7 @@ export function TasksPage({
 function TaskCard({
   task,
   now,
+  steps,
   bot,
   viewerId,
   draggable,
@@ -315,6 +318,7 @@ function TaskCard({
 }: {
   task: Task;
   now: number;
+  steps: StepCount | undefined;
   bot: Bot | undefined;
   /** Who looks at the board. Only the owner deletes a task; a person it is assigned to moves it. */
   viewerId: string | undefined;
@@ -350,35 +354,46 @@ function TaskCard({
             <BotAvatar bot={bot} size={20} square />
           </span>
         )}
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label={`${task.title} menu`}
-            className="-mr-1 rounded p-0.5 text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <DotsThreeIcon className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            {TASK_COLUMNS.filter((c) => c.status !== task.status).map((c) => (
-              <DropdownMenuItem key={c.status} onClick={() => onMove(c.status)}>
-                Move to {c.label}
-              </DropdownMenuItem>
-            ))}
-            {(!viewerId || task.ownerUserId === viewerId) && (
-              <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                <TrashIcon /> Delete
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Menu
+          asChild
+          hover={false}
+          restoreFocus
+          title=""
+          floatingClassName="w-44"
+          label={
+            <ActionHint label={`${task.title} menu`}>
+              <button
+                type="button"
+                aria-label={`${task.title} menu`}
+                className="-mr-1 rounded p-0.5 text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring data-open:bg-muted"
+              >
+                <DotsThreeIcon aria-hidden="true" className="size-4" />
+              </button>
+            </ActionHint>
+          }
+        >
+          {TASK_COLUMNS.filter((c) => c.status !== task.status).map((c) => (
+            <MenuItem key={c.status} title={`Move to ${c.label}`} onClick={() => onMove(c.status)}>
+              Move to {c.label}
+            </MenuItem>
+          ))}
+          {(!viewerId || task.ownerUserId === viewerId) && (
+            <MenuItem title="Delete" className={MENU_DANGER} onClick={onDelete}>
+              <TrashIcon /> Delete
+            </MenuItem>
+          )}
+        </Menu>
       </div>
       {task.description && (
         <p className="line-clamp-2 break-words text-xs text-muted-foreground">
           {mentionsAsText(task.description)}
         </p>
       )}
-      {(task.priority !== "none" || task.labels.length > 0) && (
+      {(task.priority !== "none" || task.labels.length > 0 || steps || task.followUp !== "off") && (
         <div className="flex flex-wrap items-center gap-1.5">
           {task.priority !== "none" && <PriorityIcon priority={task.priority} />}
+          {steps && <StepChip count={steps} />}
+          <FollowUpChip task={task} />
           <LabelChips labels={task.labels} />
         </div>
       )}

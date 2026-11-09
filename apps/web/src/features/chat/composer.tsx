@@ -40,11 +40,9 @@ import {
   AttachmentTitle,
 } from "@zetta/ui/components/attachment";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@zetta/ui/components/input-group";
-import { Button } from "@/components/ui";
-import { Popover, PopoverContent, PopoverTrigger } from "@zetta/ui/components/popover";
+import { ActionHint } from "@/components/action-hint";
+import { Button, Dropdown, Separator } from "@/components/ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { Separator } from "@zetta/ui/components/separator";
-import { ActionHint } from "@zetta/ui/components/action-hint";
 import { cn } from "@zetta/ui/lib/utils";
 
 import { ImageViewer } from "./attachment-image";
@@ -57,7 +55,7 @@ import {
   type Bot,
 } from "./chat-client";
 import { matchTrigger } from "./triggers";
-import { useMention } from "./mention";
+import { MentionPopup, useMention } from "./mention";
 import { chatQueries } from "./chat-queries";
 import { memoryQueries } from "../memory/memory-api";
 import { BotAvatar } from "@/components/bot-avatar";
@@ -219,7 +217,6 @@ export function Composer({
     (!!value.trim() || attached.length > 0 || pictures.length > 0) &&
     !staged.some((x) => x.uploading) &&
     !disabled;
-  const sendLabel = busy ? "Send; it waits until the bot finishes" : "Send";
 
   function dropStaged(key: string) {
     setStaged((l) =>
@@ -557,7 +554,7 @@ export function Composer({
           ))}
         </ul>
       )}
-      {mention.popup("above")}
+      <MentionPopup mention={mention} placement="above" />
       <InputGroup className="h-auto rounded-xl border-border bg-card focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
         {replyTo && (
           <InputGroupAddon align="block-start" className="border-b px-2 py-1.5">
@@ -608,33 +605,37 @@ export function Composer({
             <ul aria-label="Images to send" className="flex flex-wrap gap-2">
               {staged.map((x) => (
                 <li key={x.key} className="group/thumb relative">
-                  <button
-                    type="button"
-                    disabled={x.uploading}
-                    aria-label={`Preview ${x.name}`}
-                    onClick={() => setViewing(pictures.findIndex((p) => p.key === x.key))}
-                    className="block size-16 cursor-zoom-in overflow-hidden rounded-lg border bg-muted outline-offset-2 focus-visible:outline-2 disabled:cursor-progress"
-                  >
-                    <img
-                      src={x.preview}
-                      alt={x.name}
-                      className={cn("size-full object-cover", x.uploading && "opacity-50")}
-                    />
-                  </button>
+                  <ActionHint label={`Preview ${x.name}`}>
+                    <button
+                      type="button"
+                      disabled={x.uploading}
+                      aria-label={`Preview ${x.name}`}
+                      onClick={() => setViewing(pictures.findIndex((p) => p.key === x.key))}
+                      className="block size-16 cursor-zoom-in overflow-hidden rounded-lg border bg-muted outline-offset-2 focus-visible:outline-2 disabled:cursor-progress"
+                    >
+                      <img
+                        src={x.preview}
+                        alt={x.name}
+                        className={cn("size-full object-cover", x.uploading && "opacity-50")}
+                      />
+                    </button>
+                  </ActionHint>
                   {x.uploading && (
                     <CircleNotchIcon
                       aria-label="Uploading"
                       className="pointer-events-none absolute inset-0 m-auto size-5 animate-spin text-foreground"
                     />
                   )}
-                  <button
-                    type="button"
-                    aria-label={`Remove ${x.name}`}
-                    onClick={() => dropStaged(x.key)}
-                    className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-xs hover:text-foreground"
-                  >
-                    <XIcon className="size-3" />
-                  </button>
+                  <ActionHint label={`Remove ${x.name}`}>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${x.name}`}
+                      onClick={() => dropStaged(x.key)}
+                      className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-xs hover:text-foreground"
+                    >
+                      <XIcon className="size-3" />
+                    </button>
+                  </ActionHint>
                 </li>
               ))}
             </ul>
@@ -772,26 +773,26 @@ export function Composer({
                   <BrainIcon />
                 </Tool>
               )}
-              <Popover
+              <Dropdown
+                asChild
                 open={!!picker}
-                onOpenChange={(open) => {
+                onChange={(open) => {
                   if (!open) setPicker(undefined);
                 }}
+                aria-label="Server files"
+                trigger={
+                  <ActionHint label="Server files">
+                    <InputGroupButton
+                      size="icon-xs"
+                      aria-label="Server files"
+                      onClick={() => (picker ? setPicker(undefined) : openFiles("shared"))}
+                    >
+                      <FolderOpenIcon />
+                    </InputGroupButton>
+                  </ActionHint>
+                }
               >
-                <ActionHint label="Server files">
-                  <PopoverTrigger
-                    render={
-                      <InputGroupButton
-                        size="icon-xs"
-                        aria-label="Server files"
-                        onClick={() => openFiles("shared")}
-                      />
-                    }
-                  >
-                    <FolderOpenIcon />
-                  </PopoverTrigger>
-                </ActionHint>
-                <PopoverContent align="start" className="w-72 p-2 text-sm">
+                <div className="w-64 max-w-[calc(100vw-4rem)] text-sm">
                   <p className="truncate px-1 pb-1 text-xs font-medium text-muted-foreground">
                     {picker?.path}
                   </p>
@@ -820,8 +821,8 @@ export function Composer({
                       </li>
                     )}
                   </ul>
-                </PopoverContent>
-              </Popover>
+                </div>
+              </Dropdown>
               <Tool
                 label="Mention a bot"
                 onClick={() => {
@@ -854,12 +855,12 @@ export function Composer({
           )}
           {/* While the bot works, a message is queued and answered in its own thread. */}
           {(!busy || !onStop || canSend) && (
-            <ActionHint label={sendLabel}>
+            <ActionHint label={busy ? "Send; it waits until the bot finishes" : "Send"}>
               <InputGroupButton
                 type="submit"
                 size="icon-sm"
                 variant="default"
-                aria-label={sendLabel}
+                aria-label={busy ? "Send; it waits until the bot finishes" : "Send"}
                 disabled={!canSend}
                 className="size-7 rounded-full data-disabled:bg-muted data-disabled:text-muted-foreground"
               >

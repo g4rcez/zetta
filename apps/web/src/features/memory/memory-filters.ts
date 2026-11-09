@@ -1,5 +1,14 @@
 import { isUuid, searchText } from "../shared/search-params";
-import type { Author, Hit, Item, Row, SharedRow, Status, MemoryType } from "./memory-api";
+import type {
+  Author,
+  BotAccess,
+  Hit,
+  Item,
+  Row,
+  SharedRow,
+  Status,
+  MemoryType,
+} from "./memory-api";
 
 export const SORTS = ["relevance", "updated", "created", "score", "title"] as const;
 export type Sort = (typeof SORTS)[number];
@@ -8,6 +17,7 @@ export type Since = keyof typeof SINCE;
 const TYPES: readonly MemoryType[] = ["solo", "owner", "teams", "all"];
 const STATUSES: readonly Status[] = ["current", "stale", "archived"];
 const AUTHORS: readonly Author[] = ["user", "bot", "system"];
+const BOT_LEVELS: readonly BotAccess[] = ["edit", "suggest", "read"];
 
 /** What the address holds. Lists are comma separated so the URL stays readable. */
 export type MemorySearch = {
@@ -19,6 +29,8 @@ export type MemorySearch = {
   tag?: string;
   tagMode?: "all";
   status?: string;
+  /** What bots may do with the item: edit, suggest, read (comma separated). */
+  botAccess?: string;
   access?: "own" | "shared";
   by?: Author;
   bot?: string;
@@ -39,6 +51,7 @@ export type MemoryFilter = {
   tags: string[];
   tagMode: "any" | "all";
   statuses: Status[];
+  botAccess: BotAccess[];
   access?: "own" | "shared";
   by?: Author;
   bot?: string;
@@ -74,6 +87,7 @@ export function parseMemorySearch(raw: Record<string, unknown>): MemorySearch {
   const type = list(raw.type, TYPES),
     tag = list(raw.tag),
     status = list(raw.status, STATUSES),
+    botAccess = list(raw.botAccess, BOT_LEVELS),
     min = score(raw.min),
     max = score(raw.max),
     q = searchText(raw.q, 200),
@@ -86,6 +100,7 @@ export function parseMemorySearch(raw: Record<string, unknown>): MemorySearch {
     ...(tag.length && { tag: tag.join(",") }),
     ...(raw.tagMode === "all" && tag.length > 1 && { tagMode: "all" as const }),
     ...(status.length && { status: status.join(",") }),
+    ...(botAccess.length && { botAccess: botAccess.join(",") }),
     ...((raw.access === "own" || raw.access === "shared") && { access: raw.access }),
     ...(AUTHORS.includes(raw.by as Author) && { by: raw.by as Author }),
     ...(isUuid(raw.bot) && { bot: raw.bot }),
@@ -105,6 +120,7 @@ export const filterOf = (s: MemorySearch): MemoryFilter => ({
   tags: list(s.tag),
   tagMode: s.tagMode === "all" ? "all" : "any",
   statuses: list(s.status, STATUSES),
+  botAccess: list(s.botAccess, BOT_LEVELS),
   ...(s.access && { access: s.access }),
   ...(s.by && { by: s.by }),
   ...(s.bot && { bot: s.bot }),
@@ -123,6 +139,7 @@ export const activeCount = (f: MemoryFilter) =>
     f.types.length,
     f.tags.length,
     f.statuses.length,
+    f.botAccess.length,
     f.access,
     f.by,
     f.bot,
@@ -143,6 +160,7 @@ export function mergeRows(pages: readonly Row[], shared: readonly SharedRow[]): 
       tags: r.tags,
       score: r.score,
       status: r.status,
+      botAccess: r.botAccess,
       access: "own",
       by: r.updatedBy,
       ownerName: null,
@@ -161,6 +179,7 @@ export function mergeRows(pages: readonly Row[], shared: readonly SharedRow[]): 
       tags: r.tags,
       score: r.score,
       status: r.status,
+      botAccess: null,
       access: "shared",
       by: null,
       ownerName: r.ownerName,
@@ -187,6 +206,9 @@ export function matches(item: Item, f: MemoryFilter, now = Date.now()) {
     const has = (t: string) => item.tags.includes(t);
     if (f.tagMode === "all" ? !f.tags.every(has) : !f.tags.some(has)) return false;
   }
+  // An item another member shared has no level of yours: a filter on the level leaves it out.
+  if (f.botAccess.length && (!item.botAccess || !f.botAccess.includes(item.botAccess)))
+    return false;
   if (f.access && item.access !== f.access) return false;
   if (f.by && item.by !== f.by) return false;
   if (f.bot && item.botId !== f.bot) return false;
@@ -226,6 +248,7 @@ export function searchQuery(s: MemorySearch) {
   put("q", s.q);
   put("type", s.type);
   put("status", s.status);
+  put("botAccess", s.botAccess);
   put("tag", s.tag);
   put("tagMode", s.tagMode);
   put("access", s.access);
@@ -250,6 +273,7 @@ export function itemOfHit(h: Hit): Item {
     tags: h.tags,
     score: h.score,
     status: h.status,
+    botAccess: h.access === "own" ? h.botAccess : null,
     access: h.access,
     by: null,
     ownerName: h.ownerName,

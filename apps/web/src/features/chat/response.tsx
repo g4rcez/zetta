@@ -1,13 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { createElement, memo, useContext, useMemo, type ReactNode } from "react";
+import { memo, useContext, useMemo, type ComponentProps, type ReactNode } from "react";
 import { defaultRehypePlugins, Streamdown } from "streamdown";
-
 import { splitReply, UI_FENCE } from "@zetta/render/reply";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotsContext } from "@/components/bot-identity";
 import { BotTag } from "@/components/bot-tag";
 import { MentionTag } from "@/components/mention-tag";
-
 import { RELATION } from "@/features/memory/memory-api";
 import type { Relation } from "@/features/memory/memory-api";
 import { rehypeMemoryLinks } from "@/features/memory/memory-markdown";
@@ -18,6 +16,8 @@ import { tagPatches } from "./code-fence";
 import { codePlugins } from "./highlighted-code";
 import { FormCard } from "./form-card";
 import { parseFormCard } from "./form-card-data";
+import { AppLinkCard } from "./app-link-card";
+import { parseAppLink } from "./app-link-data";
 import { InboundCard } from "./inbound-card";
 import { parseInboundCard } from "./inbound-card-data";
 import { SetupCard } from "./setup-card";
@@ -54,10 +54,10 @@ const BODY = "chat-response min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0
  * A reply can carry text from outside (a web page, an email) that makes the bot write `![x](https://host/?d=private)`; drawing the
  * image would send that request as soon as the reply renders. Show the alt text instead.
  */
-const NO_REMOTE_IMAGES = {
-  img: ({ alt }: { alt?: string | undefined }) =>
-    alt ? <span className="text-muted-foreground">[{alt}]</span> : null,
-};
+function AltTextOnly({ alt }: { alt?: string | undefined }) {
+  return alt ? <span className="text-muted-foreground">[{alt}]</span> : null;
+}
+const NO_REMOTE_IMAGES = { img: AltTextOnly };
 
 /** A GitHub issue, pull request or commit named in a reply (see github-refs). It leaves the app, so it is a plain link. */
 function GithubRef({ children, ...props }: { children?: ReactNode }) {
@@ -104,6 +104,19 @@ function MemoryRef({ info, ...props }: { info: MemoryLinkInfo; children?: ReactN
   );
 }
 
+/** A `@bot` named in a reply: the bot's tag when it is one of ours, else the plain text. */
+function BotTagRef({
+  bots,
+  children,
+  ...props
+}: {
+  bots: ComponentProps<typeof MentionTag>["bots"];
+  children?: ReactNode;
+}) {
+  const bot = bots.get(String((props as Record<string, unknown>)["data-bot-id"]));
+  return bot ? <BotTag bot={bot}>{children}</BotTag> : <span>{children}</span>;
+}
+
 const Markdown = memo(function Markdown({
   text,
   streaming,
@@ -139,14 +152,7 @@ const Markdown = memo(function Markdown({
           ),
         }),
         ...(list.length && {
-          "bot-tag": ({ children, ...props }: { children?: ReactNode }) => {
-            const bot = bots.get(String((props as Record<string, unknown>)["data-bot-id"]));
-            return bot ? (
-              <BotTag bot={bot}>{children}</BotTag>
-            ) : (
-              createElement("span", null, children)
-            );
-          },
+          "bot-tag": (props: { children?: ReactNode }) => <BotTagRef bots={bots} {...props} />,
         }),
       },
     };
@@ -170,7 +176,7 @@ const Markdown = memo(function Markdown({
  * Message body. Markdown goes through Streamdown, which tolerates half-written syntax while a reply streams; fenced `zetta:ui`
  * blocks are drawn by json-render from the shared catalog (a block that never validates is shown as the code it is).
  */
-const CARD = /```zetta:(whatsapp|setup-card|inbound-card|form-card)\s*\n([\s\S]*?)```/g;
+const CARD = /```zetta:(whatsapp|setup-card|inbound-card|form-card|app\.linkto)\s*\n([\s\S]*?)```/g;
 
 export const Response = memo(function Response({
   text: raw,
@@ -188,7 +194,8 @@ export const Response = memo(function Response({
   memoryLinks?: MemoryLinkInfo | undefined;
 }) {
   const text = streaming ? stripToolFences(raw) : raw;
-  const whatsapp = !streaming && /```zetta:(whatsapp|setup-card|inbound-card|form-card)/.test(text);
+  const whatsapp =
+    !streaming && /```zetta:(whatsapp|setup-card|inbound-card|form-card|app\.linkto)/.test(text);
   // Hooks stay above the early return (a reply can flip to the WhatsApp view when it settles). A reply with no ui fence skips the parse on every chunk.
   const segments = useMemo(
     () => (whatsapp || !text.includes("```" + UI_FENCE) ? [] : splitReply(text, streaming)),
@@ -201,6 +208,7 @@ export const Response = memo(function Response({
       setup?: ReturnType<typeof parseSetupCard>;
       inbound?: ReturnType<typeof parseInboundCard>;
       form?: ReturnType<typeof parseFormCard>;
+      appLink?: ReturnType<typeof parseAppLink>;
       raw?: string;
     }[] = [];
     let last = 0;
@@ -213,7 +221,9 @@ export const Response = memo(function Response({
             ? { inbound: parseInboundCard(m[2]!), raw: m[2]! }
             : m[1] === "form-card"
               ? { form: parseFormCard(m[2]!), raw: m[2]! }
-              : { wa: parseWhatsapp(m[2]!), raw: m[2]! },
+              : m[1] === "app.linkto"
+                ? { appLink: parseAppLink(m[2]!), raw: m[2]! }
+                : { wa: parseWhatsapp(m[2]!), raw: m[2]! },
       );
       last = m.index! + m[0].length;
     }
@@ -231,6 +241,8 @@ export const Response = memo(function Response({
             <InboundCard key={i} data={p.inbound} />
           ) : p.form ? (
             <FormCard key={i} data={p.form} />
+          ) : p.appLink ? (
+            <AppLinkCard key={i} data={p.appLink} />
           ) : p.wa ? (
             <WhatsappView key={i} data={p.wa} />
           ) : (

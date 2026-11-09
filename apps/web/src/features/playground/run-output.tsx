@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -88,13 +89,15 @@ function OutputFile({ runId, file }: { runId: string; file: RunOutput }) {
       <div className="flex items-center gap-2 text-sm">
         <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
         <span className="text-xs text-muted-foreground">{formatSize(file.size)}</span>
-        <a
-          href={outputUrl(runId, file.path, true)}
-          aria-label={`Download ${file.path}`}
-          className="grid size-7 place-items-center rounded-md hover:bg-muted"
-        >
-          <DownloadSimpleIcon className="size-4" />
-        </a>
+        <ActionHint label={`Download ${file.path}`}>
+          <a
+            href={outputUrl(runId, file.path, true)}
+            aria-label={`Download ${file.path}`}
+            className="grid size-7 place-items-center rounded-md hover:bg-muted"
+          >
+            <DownloadSimpleIcon className="size-4" />
+          </a>
+        </ActionHint>
       </div>
       {body}
     </li>

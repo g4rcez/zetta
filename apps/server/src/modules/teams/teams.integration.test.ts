@@ -1,9 +1,10 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
-import { eq } from "@zetta/db/query";
+import { and, eq } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
-import { bot } from "@zetta/db/schema/chat";
+import { bot, message } from "@zetta/db/schema/chat";
+import { task } from "@zetta/db/schema/tasks";
 import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
@@ -12,6 +13,7 @@ import { createIdentityAccess } from "../identity/access";
 import { createLoopDriver, createLoopStore } from "../chat/loops";
 import { createDiscussionStore } from "../discussions/store";
 import { createDiscussionWorker } from "../discussions/worker";
+import { createTaskStore } from "../tasks/store";
 import { createTeamStore } from "./store";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
@@ -59,7 +61,7 @@ suite("teams against compose postgres", () => {
     undefined,
     undefined,
     undefined,
-    { discussions, loops },
+    { discussions, loops, tasks: createTaskStore(db) },
   );
   const worker = createDiscussionWorker(db, discussions, chat, lookup);
   discussions.onEnqueue = worker.kick;
@@ -539,6 +541,168 @@ suite("teams against compose postgres", () => {
       "Goal Writer",
       "Goal Lead",
     ]);
+  });
+
+  test("the chief hands each member its own brief with zetta:assign: a board task per member, only they wake, and each reads its own brief", async () => {
+    const id = await teamOf("Assign team", ["Assign Lead", "Assign Front", "Assign Rev"]);
+    runs.length = 0;
+    const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
+    const d = (await call("GET", `/api/discussions/${room}`)).json;
+    const conversationId = d.discussion.conversationId as string;
+    const front = d.members.find((m: { name: string }) => m.name === "Assign Front");
+    const rev = d.members.find((m: { name: string }) => m.name === "Assign Rev");
+    const lead = d.members.find((m: { name: string }) => m.name === "Assign Lead");
+    replies["Assign Lead"] = [
+      'Merging now.\n```zetta:assign\n{"bot":"AssignFront","task":"Merge PR 74","done_when":"merge SHA on main","details":"keep the branch"}\n```\n```zetta:assign\n{"bot":"AssignRev","task":"Review PR 74","done_when":"no problems, or an issue link"}\n```',
+    ];
+    replies["Assign Front"] = ["Merged abc123."];
+    replies["Assign Rev"] = ["No problems."];
+    await call("POST", `/api/discussions/${room}/messages`, { content: "Merge it" });
+    await worker.drain();
+
+    const board = await db.select().from(task).where(eq(task.conversationId, conversationId));
+    expect(
+      board
+        .map((t) => ({ title: t.title, botId: t.botId, status: t.status }))
+        .sort((a, b) => a.title.localeCompare(b.title)),
+    ).toEqual([
+      { title: "Merge PR 74", botId: front.botId, status: "in_progress" },
+      { title: "Review PR 74", botId: rev.botId, status: "in_progress" },
+    ]);
+    expect(board.find((t) => t.botId === front.botId)!.description).toBe(
+      "Done when: merge SHA on main\n\nkeep the branch",
+    );
+
+    // The post that handed the work over carries a mention token per member (that is what woke them) and a receipt per task.
+    const post = (
+      await db
+        .select()
+        .from(message)
+        .where(and(eq(message.conversationId, conversationId), eq(message.botId, lead.botId)))
+        .orderBy(message.createdAt)
+    ).find((m) => m.content.startsWith("Merging now."));
+    expect(post!.content).toContain(`[@Assign Front](bot:${front.botId})`);
+    expect(post!.content).toContain(`[@Assign Rev](bot:${rev.botId})`);
+    expect(
+      (post!.meta as { receipts: { assignee?: { botId: string }; doneWhen?: string }[] }).receipts
+        .filter((r) => r.assignee)
+        .map((r) => ({ botId: r.assignee!.botId, doneWhen: r.doneWhen }))
+        .sort((a, b) => a.doneWhen!.localeCompare(b.doneWhen!)),
+    ).toEqual([
+      { botId: front.botId, doneWhen: "merge SHA on main" },
+      { botId: rev.botId, doneWhen: "no problems, or an issue link" },
+    ]);
+
+    // Each member ran once and read its own brief, not the other's.
+    const frontRuns = runs.filter((r) => r.bot === "Assign Front");
+    const revRuns = runs.filter((r) => r.bot === "Assign Rev");
+    expect(frontRuns).toHaveLength(1);
+    expect(revRuns).toHaveLength(1);
+    expect(frontRuns[0]!.prompt).toContain("Your open tasks in this room");
+    expect(frontRuns[0]!.prompt).toContain("Done when: merge SHA on main");
+    expect(frontRuns[0]!.prompt).not.toContain("Done when: no problems");
+    expect(revRuns[0]!.prompt).toContain("Done when: no problems, or an issue link");
+    expect(revRuns[0]!.prompt).not.toContain("Done when: merge SHA on main");
+
+    // The same task assigned again is updated, never added twice.
+    replies["Assign Lead"] = [
+      'Same task, new detail.\n```zetta:assign\n{"bot":"AssignFront","task":"Merge PR 74","done_when":"merge SHA on main and the publish run link"}\n```',
+    ];
+    await call("POST", `/api/discussions/${room}/messages`, { content: "Also the publish run" });
+    await worker.drain();
+    const after = await db
+      .select()
+      .from(task)
+      .where(and(eq(task.conversationId, conversationId), eq(task.botId, front.botId)));
+    expect(after).toHaveLength(1);
+    expect(after[0]!.description).toBe("Done when: merge SHA on main and the publish run link");
+  });
+
+  test("the chief's zetta:assign after it read the board applies at once, with no Approve card", async () => {
+    const id = await teamOf("Held team", ["Held Lead", "Held Dev"]);
+    runs.length = 0;
+    const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
+    const d = (await call("GET", `/api/discussions/${room}`)).json;
+    const conversationId = d.discussion.conversationId as string;
+    const dev = d.members.find((m: { name: string }) => m.name === "Held Dev");
+    replies["Held Lead"] = [
+      'Looking at the board.\n```zetta:task\n{"action":"list"}\n```',
+      'Handing it over.\n```zetta:assign\n{"bot":"HeldDev","task":"Ship it","done_when":"it is shipped"}\n```',
+    ];
+    replies["Held Dev"] = ["Shipped."];
+    await call("POST", `/api/discussions/${room}/messages`, { content: "Ship it" });
+    await worker.drain();
+    // The lead runs the work: no card, the task is on the board and the member was woken.
+    const cards = (await call("GET", "/api/proposals")).json.proposals.filter(
+      (p: { kind: string; diff: { to: string }[] }) =>
+        p.kind === "bot_action" && p.diff.some((x) => x.to === "assign HeldDev: Ship it"),
+    );
+    expect(cards).toEqual([]);
+    const board = await db.select().from(task).where(eq(task.conversationId, conversationId));
+    expect(board.map((t) => ({ title: t.title, botId: t.botId }))).toEqual([
+      { title: "Ship it", botId: dev.botId },
+    ]);
+    const devRuns = runs.filter((r) => r.bot === "Held Dev");
+    expect(devRuns).toHaveLength(1);
+    expect(devRuns[0]!.prompt).toContain("Done when: it is shipped");
+  });
+
+  test("a member's write after it read the board waits for a card; Approve runs it and wakes the member again", async () => {
+    const id = await teamOf("Member held team", ["Mheld Lead", "Mheld Dev"]);
+    runs.length = 0;
+    const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
+    const d = (await call("GET", `/api/discussions/${room}`)).json;
+    const conversationId = d.discussion.conversationId as string;
+    const dev = d.members.find((m: { name: string }) => m.name === "Mheld Dev");
+    replies["Mheld Lead"] = ["@MheldDev please plan the release"];
+    replies["Mheld Dev"] = [
+      'Looking at the board.\n```zetta:task\n{"action":"list"}\n```',
+      'Planning.\n```zetta:task\n{"action":"add","title":"Plan the release"}\n```',
+      "Plan saved, moving on.",
+    ];
+    await call("POST", `/api/discussions/${room}/messages`, { content: "Plan the release" });
+    await worker.drain();
+    const mine = () =>
+      db
+        .select()
+        .from(task)
+        .where(and(eq(task.conversationId, conversationId), eq(task.botId, dev.botId)));
+    // Held: nothing on the board yet, and one card holds the write.
+    expect(await mine()).toEqual([]);
+    const card = (await call("GET", "/api/proposals")).json.proposals.find(
+      (p: { kind: string; diff: { to: string }[] }) =>
+        p.kind === "bot_action" && p.diff.some((x) => x.to.startsWith("task add")),
+    );
+    expect(card).toBeDefined();
+    const before = runs.filter((r) => r.bot === "Mheld Dev").length;
+
+    const decided = await call("POST", `/api/proposals/${card.id}/decision`, { approve: true });
+    expect(decided.json).toMatchObject({ status: "approved" });
+    await worker.drain();
+    expect((await mine()).map((t) => t.title)).toEqual(["Plan the release"]);
+    // Nothing was handed to another member, so the proposer itself goes on.
+    expect(runs.filter((r) => r.bot === "Mheld Dev").length).toBe(before + 1);
+  });
+
+  test("zetta:assign to someone who is not another member of the room adds nothing and tells the chief", async () => {
+    const id = await teamOf("Assign refuse team", ["Refuse Lead", "Refuse Dev"]);
+    runs.length = 0;
+    const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
+    const conversationId = (await call("GET", `/api/discussions/${room}`)).json.discussion
+      .conversationId as string;
+    replies["Refuse Lead"] = [
+      'On it.\n```zetta:assign\n{"bot":"Nobody","task":"Do a thing","done_when":"it is done"}\n```\n```zetta:assign\n{"bot":"RefuseLead","task":"Do it myself","done_when":"it is done"}\n```',
+      "I will ask the right member.",
+    ];
+    await call("POST", `/api/discussions/${room}/messages`, { content: "Go" });
+    await worker.drain();
+    expect(await db.select().from(task).where(eq(task.conversationId, conversationId))).toEqual([]);
+    expect(runs.some((r) => r.bot === "Refuse Dev")).toBe(false);
+    // The refusal went back to the chief in the same turn: its second scripted reply was the follow-up.
+    expect(replies["Refuse Lead"]).toEqual([]);
+    expect(runs.filter((r) => r.bot === "Refuse Lead").at(-1)!.prompt).toContain(
+      'assign refused: "Nobody" is not another member',
+    );
   });
 
   test("two members can each have an active loop in one room, but a member cannot have two", async () => {

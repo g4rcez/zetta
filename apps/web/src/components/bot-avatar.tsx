@@ -26,7 +26,7 @@ export type AvatarShape = {
   label: string;
   layout: SidebarLayout;
   /** Where the face sits on the 64x64 canvas. */ face: [number, number];
-  draw: (fill: string) => ReactNode;
+  Draw: (props: { fill: string }) => ReactNode;
 };
 
 /** Swatches offered in the picker; a preset's `colors[0]` is its base color (any hex is accepted). */
@@ -63,6 +63,104 @@ const octagon = polygon(8, () => 26, 32, -67.5);
 const burst = polygon(16, (i) => (i % 2 ? 22 : 27), 32);
 const rounded = { strokeWidth: 5, strokeLinejoin: "round" as const };
 
+function ArrowShape({ fill: f }: { fill: string }) {
+  return <path d="M12 9Q14 4 19 7L56 34Q61 38 54 40L38 43L30 57Q27 62 24 56Z" fill={f} />;
+}
+
+function BlobShape({ fill: f }: { fill: string }) {
+  return (
+    <path d="M32 6C48 4 58 18 56 34C54 50 42 58 28 56C14 54 6 42 8 28C10 14 20 7 32 6Z" fill={f} />
+  );
+}
+
+function CircleShape({ fill: f }: { fill: string }) {
+  return <circle cx="32" cy="32" r="26" fill={f} />;
+}
+
+function SquareShape({ fill: f }: { fill: string }) {
+  return <rect x="7" y="7" width="50" height="50" rx="14" fill={f} />;
+}
+
+function PillShape({ fill: f }: { fill: string }) {
+  return <rect x="14" y="5" width="36" height="54" rx="18" fill={f} />;
+}
+
+function DropShape({ fill: f }: { fill: string }) {
+  return (
+    <path
+      d="M32 5C40 17 54 26 54 40C54 52 44 59 32 59C20 59 10 52 10 40C10 26 24 17 32 5Z"
+      fill={f}
+    />
+  );
+}
+
+function BellShape({ fill: f }: { fill: string }) {
+  return <path d="M22 8Q32 4 42 8L56 52Q57 58 50 58H14Q7 58 8 52Z" fill={f} />;
+}
+
+function HexagonShape({ fill: f }: { fill: string }) {
+  return <polygon points="32,7 54,19 54,45 32,57 10,45 10,19" fill={f} stroke={f} {...rounded} />;
+}
+
+function DiamondShape({ fill: f }: { fill: string }) {
+  return (
+    <rect
+      x="15"
+      y="15"
+      width="34"
+      height="34"
+      rx="5"
+      fill={f}
+      stroke={f}
+      {...rounded}
+      transform="rotate(45 32 32)"
+    />
+  );
+}
+
+function StarShape({ fill: f }: { fill: string }) {
+  return <polygon points={star} fill={f} stroke={f} {...rounded} />;
+}
+
+function TriangleShape({ fill: f }: { fill: string }) {
+  return <polygon points="32,9 56,52 8,52" fill={f} stroke={f} {...rounded} />;
+}
+
+function PentagonShape({ fill: f }: { fill: string }) {
+  return <polygon points={pentagon} fill={f} stroke={f} {...rounded} />;
+}
+
+function OctagonShape({ fill: f }: { fill: string }) {
+  return <polygon points={octagon} fill={f} stroke={f} {...rounded} />;
+}
+
+function CrossShape({ fill: f }: { fill: string }) {
+  return (
+    <polygon
+      points="24,8 40,8 40,24 56,24 56,40 40,40 40,56 24,56 24,40 8,40 8,24 24,24"
+      fill={f}
+      stroke={f}
+      {...rounded}
+    />
+  );
+}
+
+function ArchShape({ fill: f }: { fill: string }) {
+  return <path d="M10 57V32A22 22 0 0 1 54 32V57Z" fill={f} stroke={f} {...rounded} />;
+}
+
+function ParallelogramShape({ fill: f }: { fill: string }) {
+  return <polygon points="20,10 58,10 44,54 6,54" fill={f} stroke={f} {...rounded} />;
+}
+
+function KiteShape({ fill: f }: { fill: string }) {
+  return <polygon points="32,6 54,28 32,58 10,28" fill={f} stroke={f} {...rounded} />;
+}
+
+function BurstShape({ fill: f }: { fill: string }) {
+  return <polygon points={burst} fill={f} stroke={f} {...rounded} />;
+}
+
 /** Body shapes drawn at the frontend. Each is filled with a gradient of one customizable color and carries a small face. */
 export const AVATAR_SHAPES: AvatarShape[] = [
   {
@@ -70,157 +168,126 @@ export const AVATAR_SHAPES: AvatarShape[] = [
     label: "Arrow",
     layout: "mail",
     face: [30, 29],
-    draw: (f) => <path d="M12 9Q14 4 19 7L56 34Q61 38 54 40L38 43L30 57Q27 62 24 56Z" fill={f} />,
+    Draw: ArrowShape,
   },
   {
     id: "blob",
     label: "Blob",
     layout: "compact",
     face: [32, 32],
-    draw: (f) => (
-      <path
-        d="M32 6C48 4 58 18 56 34C54 50 42 58 28 56C14 54 6 42 8 28C10 14 20 7 32 6Z"
-        fill={f}
-      />
-    ),
+    Draw: BlobShape,
   },
   {
     id: "circle",
     label: "Circle",
     layout: "bubble",
     face: [32, 32],
-    draw: (f) => <circle cx="32" cy="32" r="26" fill={f} />,
+    Draw: CircleShape,
   },
   {
     id: "square",
     label: "Square",
     layout: "card",
     face: [32, 32],
-    draw: (f) => <rect x="7" y="7" width="50" height="50" rx="14" fill={f} />,
+    Draw: SquareShape,
   },
   {
     id: "pill",
     label: "Pill",
     layout: "terminal",
     face: [32, 30],
-    draw: (f) => <rect x="14" y="5" width="36" height="54" rx="18" fill={f} />,
+    Draw: PillShape,
   },
   {
     id: "drop",
     label: "Drop",
     layout: "poster",
     face: [32, 41],
-    draw: (f) => (
-      <path
-        d="M32 5C40 17 54 26 54 40C54 52 44 59 32 59C20 59 10 52 10 40C10 26 24 17 32 5Z"
-        fill={f}
-      />
-    ),
+    Draw: DropShape,
   },
   {
     id: "bell",
     label: "Bell",
     layout: "banner",
     face: [32, 37],
-    draw: (f) => <path d="M22 8Q32 4 42 8L56 52Q57 58 50 58H14Q7 58 8 52Z" fill={f} />,
+    Draw: BellShape,
   },
   {
     id: "hexagon",
     label: "Hexagon",
     layout: "tile",
     face: [32, 32],
-    draw: (f) => (
-      <polygon points="32,7 54,19 54,45 32,57 10,45 10,19" fill={f} stroke={f} {...rounded} />
-    ),
+    Draw: HexagonShape,
   },
   {
     id: "diamond",
     label: "Diamond",
     layout: "outline",
     face: [32, 32],
-    draw: (f) => (
-      <rect
-        x="15"
-        y="15"
-        width="34"
-        height="34"
-        rx="5"
-        fill={f}
-        stroke={f}
-        {...rounded}
-        transform="rotate(45 32 32)"
-      />
-    ),
+    Draw: DiamondShape,
   },
   {
     id: "star",
     label: "Star",
     layout: "spotlight",
     face: [32, 37],
-    draw: (f) => <polygon points={star} fill={f} stroke={f} {...rounded} />,
+    Draw: StarShape,
   },
   {
     id: "triangle",
     label: "Triangle",
     layout: "card",
     face: [32, 40],
-    draw: (f) => <polygon points="32,9 56,52 8,52" fill={f} stroke={f} {...rounded} />,
+    Draw: TriangleShape,
   },
   {
     id: "pentagon",
     label: "Pentagon",
     layout: "compact",
     face: [32, 33],
-    draw: (f) => <polygon points={pentagon} fill={f} stroke={f} {...rounded} />,
+    Draw: PentagonShape,
   },
   {
     id: "octagon",
     label: "Octagon",
     layout: "terminal",
     face: [32, 32],
-    draw: (f) => <polygon points={octagon} fill={f} stroke={f} {...rounded} />,
+    Draw: OctagonShape,
   },
   {
     id: "cross",
     label: "Cross",
     layout: "banner",
     face: [32, 32],
-    draw: (f) => (
-      <polygon
-        points="24,8 40,8 40,24 56,24 56,40 40,40 40,56 24,56 24,40 8,40 8,24 24,24"
-        fill={f}
-        stroke={f}
-        {...rounded}
-      />
-    ),
+    Draw: CrossShape,
   },
   {
     id: "arch",
     label: "Arch",
     layout: "poster",
     face: [32, 38],
-    draw: (f) => <path d="M10 57V32A22 22 0 0 1 54 32V57Z" fill={f} stroke={f} {...rounded} />,
+    Draw: ArchShape,
   },
   {
     id: "parallelogram",
     label: "Parallelogram",
     layout: "mail",
     face: [32, 32],
-    draw: (f) => <polygon points="20,10 58,10 44,54 6,54" fill={f} stroke={f} {...rounded} />,
+    Draw: ParallelogramShape,
   },
   {
     id: "kite",
     label: "Kite",
     layout: "bubble",
     face: [32, 30],
-    draw: (f) => <polygon points="32,6 54,28 32,58 10,28" fill={f} stroke={f} {...rounded} />,
+    Draw: KiteShape,
   },
   {
     id: "burst",
     label: "Burst",
     layout: "tile",
     face: [32, 32],
-    draw: (f) => <polygon points={burst} fill={f} stroke={f} {...rounded} />,
+    Draw: BurstShape,
   },
 ];
 
@@ -230,9 +297,171 @@ export type AvatarCharacter = {
   layout: SidebarLayout;
   colors: [string, string, string];
   colorLabels: [string, string, string];
-  art: (c: string[]) => ReactNode;
+  Art: (props: { colors: string[] }) => ReactNode;
 };
 const DARK = "#1b1b1f";
+
+function OrbitArt({ colors: [bg, body, accent] }: { colors: string[] }) {
+  return (
+    <>
+      <rect width="64" height="64" fill={bg} />
+      <circle cx="32" cy="32" r="13" fill={body} />
+      <ellipse
+        cx="32"
+        cy="32"
+        rx="25"
+        ry="9"
+        fill="none"
+        stroke={accent}
+        strokeWidth="3.5"
+        transform="rotate(-28 32 32)"
+      />
+      <path d="M14 52 50 12" stroke={accent} strokeWidth="3.5" strokeLinecap="round" />
+    </>
+  );
+}
+
+function MouseArt({ colors: [bg, body, accent] }: { colors: string[] }) {
+  return (
+    <>
+      <rect width="64" height="64" fill={bg} />
+      <circle cx="15" cy="17" r="11" fill={body} />
+      <circle cx="49" cy="17" r="11" fill={body} />
+      <circle cx="15" cy="17" r="6" fill={accent} />
+      <circle cx="49" cy="17" r="6" fill={accent} />
+      <ellipse cx="32" cy="38" rx="20" ry="18" fill={body} />
+      <circle cx="24" cy="34" r="3" fill={DARK} />
+      <circle cx="40" cy="34" r="3" fill={DARK} />
+      <ellipse cx="32" cy="43" rx="3.5" ry="2.8" fill={accent} />
+      <path
+        d="M10 40h9M10 46l9-3M54 40h-9M54 46l-9-3"
+        stroke={DARK}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </>
+  );
+}
+
+function RobotArt({ colors: [bg, body, accent] }: { colors: string[] }) {
+  return (
+    <>
+      <rect width="64" height="64" fill={bg} />
+      <path d="M32 8v8" stroke={accent} strokeWidth="3" strokeLinecap="round" />
+      <circle cx="32" cy="8" r="3.5" fill={accent} />
+      <rect x="10" y="16" width="44" height="36" rx="9" fill={body} />
+      <rect x="17" y="26" width="10" height="9" rx="3" fill={accent} />
+      <rect x="37" y="26" width="10" height="9" rx="3" fill={accent} />
+      <path d="M22 43h20" stroke={bg} strokeWidth="3" strokeLinecap="round" strokeDasharray="4 3" />
+    </>
+  );
+}
+
+function CatArt({ colors: [bg, body, accent] }: { colors: string[] }) {
+  return (
+    <>
+      <rect width="64" height="64" fill={bg} />
+      <path d="M10 28 12 6l16 12zM54 28 52 6 36 18z" fill={body} />
+      <circle cx="32" cy="36" r="22" fill={body} />
+      <ellipse cx="32" cy="44" rx="10" ry="7" fill={accent} />
+      <ellipse cx="23" cy="33" rx="2.5" ry="3.5" fill={DARK} />
+      <ellipse cx="41" cy="33" rx="2.5" ry="3.5" fill={DARK} />
+      <path d="M29 41h6l-3 3z" fill={DARK} />
+      <path
+        d="M6 36h10M6 42l10-2M58 36H48M58 42l-10-2"
+        stroke={DARK}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </>
+  );
+}
+
+function OwlArt({ colors: [bg, body, accent] }: { colors: string[] }) {
+  return (
+    <>
+      <rect width="64" height="64" fill={bg} />
+      <path d="M12 10 22 18H42L52 10V40C52 50 43 58 32 58S12 50 12 40z" fill={body} />
+      <circle cx="23" cy="30" r="9" fill="#fff" />
+      <circle cx="41" cy="30" r="9" fill="#fff" />
+      <circle cx="23" cy="30" r="4.5" fill={accent} />
+      <circle cx="41" cy="30" r="4.5" fill={accent} />
+      <circle cx="23" cy="30" r="2" fill={DARK} />
+      <circle cx="41" cy="30" r="2" fill={DARK} />
+      <path d="M28 38h8l-4 8z" fill={accent} />
+    </>
+  );
+}
+
+function SparkArt({ colors: [bg, body, accent] }: { colors: string[] }) {
+  return (
+    <>
+      <rect width="64" height="64" fill={bg} />
+      <path
+        d="M30 8c2 14 8 20 22 22-14 2-20 8-22 22-2-14-8-20-22-22 14-2 20-8 22-22z"
+        fill={body}
+      />
+      <path d="M50 36c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z" fill={accent} />
+    </>
+  );
+}
+
+function GhostArt({ colors: [bg, body, accent] }: { colors: string[] }) {
+  return (
+    <>
+      <rect width="64" height="64" fill={bg} />
+      <path
+        d="M15 56V30C15 18 22 9 32 9S49 18 49 30V56L43 50L37.5 56L32 50L26.5 56L21 50Z"
+        fill={body}
+      />
+      <ellipse cx="26" cy="29" rx="3" ry="4" fill={DARK} />
+      <ellipse cx="38" cy="29" rx="3" ry="4" fill={DARK} />
+      <circle cx="20.5" cy="37" r="3" fill={accent} />
+      <circle cx="43.5" cy="37" r="3" fill={accent} />
+      <ellipse cx="32" cy="38" rx="3" ry="4" fill={DARK} />
+    </>
+  );
+}
+
+function RocketArt({ colors: [bg, body, accent] }: { colors: string[] }) {
+  return (
+    <>
+      <rect width="64" height="64" fill={bg} />
+      <circle cx="11" cy="13" r="1.5" fill={body} />
+      <circle cx="53" cy="18" r="1.5" fill={body} />
+      <circle cx="50" cy="55" r="1.5" fill={body} />
+      <path d="M26 46Q32 66 38 46Z" fill={accent} />
+      <path d="M25 34 14 50l12-4zM39 34l11 16-12-4z" fill={accent} />
+      <path d="M32 5C43 14 45 30 42 47H22C19 30 21 14 32 5z" fill={body} />
+      <circle cx="32" cy="26" r="6" fill={bg} stroke={accent} strokeWidth="2.5" />
+    </>
+  );
+}
+
+function FrogArt({ colors: [bg, body, accent] }: { colors: string[] }) {
+  return (
+    <>
+      <rect width="64" height="64" fill={bg} />
+      <ellipse cx="32" cy="41" rx="23" ry="17" fill={body} />
+      <circle cx="19" cy="23" r="10" fill={body} />
+      <circle cx="45" cy="23" r="10" fill={body} />
+      <circle cx="19" cy="23" r="6.5" fill="#fff" />
+      <circle cx="45" cy="23" r="6.5" fill="#fff" />
+      <circle cx="20" cy="24" r="3.2" fill={DARK} />
+      <circle cx="44" cy="24" r="3.2" fill={DARK} />
+      <circle cx="14" cy="43" r="3.5" fill={accent} />
+      <circle cx="50" cy="43" r="3.5" fill={accent} />
+      <path
+        d="M20 45Q32 54 44 45"
+        fill="none"
+        stroke={DARK}
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+      <path d="M29 36h.1M35 36h.1" stroke={DARK} strokeWidth="2.4" strokeLinecap="round" />
+    </>
+  );
+}
 
 /** Illustrated characters. Each takes three colors (background, body, accent). */
 export const AVATAR_CHARACTERS: AvatarCharacter[] = [
@@ -242,23 +471,7 @@ export const AVATAR_CHARACTERS: AvatarCharacter[] = [
     layout: "ring",
     colors: ["#0b0b0f", "#f4f4f5", "#7c7cff"],
     colorLabels: ["Background", "Planet", "Slash"],
-    art: ([bg, body, accent]) => (
-      <>
-        <rect width="64" height="64" fill={bg} />
-        <circle cx="32" cy="32" r="13" fill={body} />
-        <ellipse
-          cx="32"
-          cy="32"
-          rx="25"
-          ry="9"
-          fill="none"
-          stroke={accent}
-          strokeWidth="3.5"
-          transform="rotate(-28 32 32)"
-        />
-        <path d="M14 52 50 12" stroke={accent} strokeWidth="3.5" strokeLinecap="round" />
-      </>
-    ),
+    Art: OrbitArt,
   },
   {
     id: "mouse",
@@ -266,25 +479,7 @@ export const AVATAR_CHARACTERS: AvatarCharacter[] = [
     layout: "cozy",
     colors: ["#fde68a", "#9ca3af", "#f9a8d4"],
     colorLabels: ["Background", "Fur", "Ears & nose"],
-    art: ([bg, body, accent]) => (
-      <>
-        <rect width="64" height="64" fill={bg} />
-        <circle cx="15" cy="17" r="11" fill={body} />
-        <circle cx="49" cy="17" r="11" fill={body} />
-        <circle cx="15" cy="17" r="6" fill={accent} />
-        <circle cx="49" cy="17" r="6" fill={accent} />
-        <ellipse cx="32" cy="38" rx="20" ry="18" fill={body} />
-        <circle cx="24" cy="34" r="3" fill={DARK} />
-        <circle cx="40" cy="34" r="3" fill={DARK} />
-        <ellipse cx="32" cy="43" rx="3.5" ry="2.8" fill={accent} />
-        <path
-          d="M10 40h9M10 46l9-3M54 40h-9M54 46l-9-3"
-          stroke={DARK}
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </>
-    ),
+    Art: MouseArt,
   },
   {
     id: "robot",
@@ -292,23 +487,7 @@ export const AVATAR_CHARACTERS: AvatarCharacter[] = [
     layout: "console",
     colors: ["#0f172a", "#94a3b8", "#22d3ee"],
     colorLabels: ["Background", "Casing", "Eyes & antenna"],
-    art: ([bg, body, accent]) => (
-      <>
-        <rect width="64" height="64" fill={bg} />
-        <path d="M32 8v8" stroke={accent} strokeWidth="3" strokeLinecap="round" />
-        <circle cx="32" cy="8" r="3.5" fill={accent} />
-        <rect x="10" y="16" width="44" height="36" rx="9" fill={body} />
-        <rect x="17" y="26" width="10" height="9" rx="3" fill={accent} />
-        <rect x="37" y="26" width="10" height="9" rx="3" fill={accent} />
-        <path
-          d="M22 43h20"
-          stroke={bg}
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeDasharray="4 3"
-        />
-      </>
-    ),
+    Art: RobotArt,
   },
   {
     id: "cat",
@@ -316,23 +495,7 @@ export const AVATAR_CHARACTERS: AvatarCharacter[] = [
     layout: "sticker",
     colors: ["#c7d2fe", "#f59e0b", "#fef3c7"],
     colorLabels: ["Background", "Fur", "Muzzle"],
-    art: ([bg, body, accent]) => (
-      <>
-        <rect width="64" height="64" fill={bg} />
-        <path d="M10 28 12 6l16 12zM54 28 52 6 36 18z" fill={body} />
-        <circle cx="32" cy="36" r="22" fill={body} />
-        <ellipse cx="32" cy="44" rx="10" ry="7" fill={accent} />
-        <ellipse cx="23" cy="33" rx="2.5" ry="3.5" fill={DARK} />
-        <ellipse cx="41" cy="33" rx="2.5" ry="3.5" fill={DARK} />
-        <path d="M29 41h6l-3 3z" fill={DARK} />
-        <path
-          d="M6 36h10M6 42l10-2M58 36H48M58 42l-10-2"
-          stroke={DARK}
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </>
-    ),
+    Art: CatArt,
   },
   {
     id: "owl",
@@ -340,19 +503,7 @@ export const AVATAR_CHARACTERS: AvatarCharacter[] = [
     layout: "ribbon",
     colors: ["#134e4a", "#a16207", "#fde047"],
     colorLabels: ["Background", "Feathers", "Beak & pupils"],
-    art: ([bg, body, accent]) => (
-      <>
-        <rect width="64" height="64" fill={bg} />
-        <path d="M12 10 22 18H42L52 10V40C52 50 43 58 32 58S12 50 12 40z" fill={body} />
-        <circle cx="23" cy="30" r="9" fill="#fff" />
-        <circle cx="41" cy="30" r="9" fill="#fff" />
-        <circle cx="23" cy="30" r="4.5" fill={accent} />
-        <circle cx="41" cy="30" r="4.5" fill={accent} />
-        <circle cx="23" cy="30" r="2" fill={DARK} />
-        <circle cx="41" cy="30" r="2" fill={DARK} />
-        <path d="M28 38h8l-4 8z" fill={accent} />
-      </>
-    ),
+    Art: OwlArt,
   },
   {
     id: "spark",
@@ -360,16 +511,7 @@ export const AVATAR_CHARACTERS: AvatarCharacter[] = [
     layout: "glass",
     colors: ["#312e81", "#fbbf24", "#f472b6"],
     colorLabels: ["Background", "Big star", "Small star"],
-    art: ([bg, body, accent]) => (
-      <>
-        <rect width="64" height="64" fill={bg} />
-        <path
-          d="M30 8c2 14 8 20 22 22-14 2-20 8-22 22-2-14-8-20-22-22 14-2 20-8 22-22z"
-          fill={body}
-        />
-        <path d="M50 36c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z" fill={accent} />
-      </>
-    ),
+    Art: SparkArt,
   },
   {
     id: "ghost",
@@ -377,20 +519,7 @@ export const AVATAR_CHARACTERS: AvatarCharacter[] = [
     layout: "spotlight",
     colors: ["#1e1b4b", "#e0e7ff", "#f9a8d4"],
     colorLabels: ["Background", "Body", "Cheeks"],
-    art: ([bg, body, accent]) => (
-      <>
-        <rect width="64" height="64" fill={bg} />
-        <path
-          d="M15 56V30C15 18 22 9 32 9S49 18 49 30V56L43 50L37.5 56L32 50L26.5 56L21 50Z"
-          fill={body}
-        />
-        <ellipse cx="26" cy="29" rx="3" ry="4" fill={DARK} />
-        <ellipse cx="38" cy="29" rx="3" ry="4" fill={DARK} />
-        <circle cx="20.5" cy="37" r="3" fill={accent} />
-        <circle cx="43.5" cy="37" r="3" fill={accent} />
-        <ellipse cx="32" cy="38" rx="3" ry="4" fill={DARK} />
-      </>
-    ),
+    Art: GhostArt,
   },
   {
     id: "rocket",
@@ -398,18 +527,7 @@ export const AVATAR_CHARACTERS: AvatarCharacter[] = [
     layout: "outline",
     colors: ["#0c1a3a", "#e5e7eb", "#f97316"],
     colorLabels: ["Background", "Hull", "Fins & flame"],
-    art: ([bg, body, accent]) => (
-      <>
-        <rect width="64" height="64" fill={bg} />
-        <circle cx="11" cy="13" r="1.5" fill={body} />
-        <circle cx="53" cy="18" r="1.5" fill={body} />
-        <circle cx="50" cy="55" r="1.5" fill={body} />
-        <path d="M26 46Q32 66 38 46Z" fill={accent} />
-        <path d="M25 34 14 50l12-4zM39 34l11 16-12-4z" fill={accent} />
-        <path d="M32 5C43 14 45 30 42 47H22C19 30 21 14 32 5z" fill={body} />
-        <circle cx="32" cy="26" r="6" fill={bg} stroke={accent} strokeWidth="2.5" />
-      </>
-    ),
+    Art: RocketArt,
   },
   {
     id: "frog",
@@ -417,28 +535,7 @@ export const AVATAR_CHARACTERS: AvatarCharacter[] = [
     layout: "bubble",
     colors: ["#fef9c3", "#4ade80", "#fb7185"],
     colorLabels: ["Background", "Skin", "Cheeks"],
-    art: ([bg, body, accent]) => (
-      <>
-        <rect width="64" height="64" fill={bg} />
-        <ellipse cx="32" cy="41" rx="23" ry="17" fill={body} />
-        <circle cx="19" cy="23" r="10" fill={body} />
-        <circle cx="45" cy="23" r="10" fill={body} />
-        <circle cx="19" cy="23" r="6.5" fill="#fff" />
-        <circle cx="45" cy="23" r="6.5" fill="#fff" />
-        <circle cx="20" cy="24" r="3.2" fill={DARK} />
-        <circle cx="44" cy="24" r="3.2" fill={DARK} />
-        <circle cx="14" cy="43" r="3.5" fill={accent} />
-        <circle cx="50" cy="43" r="3.5" fill={accent} />
-        <path
-          d="M20 45Q32 54 44 45"
-          fill="none"
-          stroke={DARK}
-          strokeWidth="2.2"
-          strokeLinecap="round"
-        />
-        <path d="M29 36h.1M35 36h.1" stroke={DARK} strokeWidth="2.4" strokeLinecap="round" />
-      </>
-    ),
+    Art: FrogArt,
   },
 ];
 
@@ -543,7 +640,7 @@ function BotPicture({
             <stop offset="1" stopColor={shade(base, -0.25)} />
           </linearGradient>
         </defs>
-        {shape.draw(`url(#${gradient})`)}
+        <shape.Draw fill={`url(#${gradient})`} />
         <g stroke="#fff" strokeOpacity="0.92" strokeLinecap="round" strokeWidth="2.6">
           <path d={`M${fx - 7} ${fy - 3}v3M${fx + 5} ${fy - 3}v3`} />
           <path d={`M${fx - 3} ${fy + 5}h5`} strokeWidth="2" />
@@ -564,7 +661,7 @@ function BotPicture({
         className={`shrink-0 shadow-sm ${className}`}
         style={{ borderRadius: square ? "22%" : "50%" }}
       >
-        {character.art(character.colors.map((d, i) => a.colors[i] ?? d))}
+        <character.Art colors={character.colors.map((d, i) => a.colors[i] ?? d)} />
       </svg>
     );
   }

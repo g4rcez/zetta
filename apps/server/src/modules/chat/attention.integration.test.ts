@@ -16,6 +16,7 @@ const page: MemoryHit = {
   tags: [],
   score: 50,
   status: "current",
+  botAccess: "edit",
   access: "own",
   ownerName: null,
   neighbors: [],

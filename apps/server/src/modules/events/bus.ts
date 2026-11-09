@@ -16,9 +16,20 @@ export type BusItem = { u: string[]; t: string[] };
 export type BusMessage = { v: 1; from: string; items: BusItem[] };
 export type BusLink = { send(message: BusMessage): void };
 
+export type SubscribeOptions = { max?: number; onEvict?: () => void };
+
+type Entry = { listener: (topic: string) => void; onEvict?: () => void };
+
 export type EventBus = {
-  /** Calls `listener` for each topic published to `userId`. Returns the function that stops it. */
-  subscribe(userId: string, listener: (topic: string) => void): () => void;
+  /**
+   * Calls `listener` for each topic published to `userId`. Returns the function that stops it.
+   * With `max`, a user who already has `max` listeners loses the oldest one first: its `onEvict` runs and it is removed.
+   */
+  subscribe(
+    userId: string,
+    listener: (topic: string) => void,
+    options?: SubscribeOptions,
+  ): () => void;
   publish(userIds: Iterable<string>, ...topics: string[]): void;
   /** How many listeners the user has now (one per open tab). */
   count(userId: string): number;
@@ -74,7 +85,7 @@ export function toMessages(from: string, items: BusItem[]): BusMessage[] {
 
 export function createEventBus(delayMs = 100): EventBus {
   const id = uuidv7();
-  const listeners = new Map<string, Set<(topic: string) => void>>();
+  const listeners = new Map<string, Set<Entry>>();
   const pending = new Map<string, Set<string>>();
   const outbox = new Map<string, Set<string>>(); // user -> topics, waiting to leave for other instances
   let link: BusLink | undefined;
@@ -84,7 +95,8 @@ export function createEventBus(delayMs = 100): EventBus {
     const topics = pending.get(userId);
     pending.delete(userId);
     for (const topic of topics ?? [])
-      for (const listener of listeners.get(userId) ?? [])
+      for (const { listener } of Array.from(listeners.get(userId) ?? []))
+        // a copy: a listener may leave while we call the others
         try {
           listener(topic);
         } catch {
@@ -125,13 +137,25 @@ export function createEventBus(delayMs = 100): EventBus {
 
   return {
     id,
-    subscribe(userId, listener) {
-      const set = listeners.get(userId) ?? new Set();
-      set.add(listener);
+    subscribe(userId, listener, options = {}) {
+      const set = listeners.get(userId) ?? new Set<Entry>();
       listeners.set(userId, set);
+      // Sets keep insertion order: the first entry is the oldest stream.
+      while (options.max !== undefined && set.size >= options.max) {
+        const oldest = set.values().next().value as Entry;
+        set.delete(oldest);
+        try {
+          oldest.onEvict?.();
+        } catch {
+          /* a closed stream */
+        }
+      }
+      const entry: Entry = { listener, onEvict: options.onEvict };
+      set.add(entry);
+      listeners.set(userId, set); // an evicted stream's own unsubscribe may have dropped an emptied set
       return () => {
-        set.delete(listener);
-        if (set.size === 0) listeners.delete(userId);
+        set.delete(entry);
+        if (set.size === 0 && listeners.get(userId) === set) listeners.delete(userId);
       };
     },
     publish(userIds, ...topics) {

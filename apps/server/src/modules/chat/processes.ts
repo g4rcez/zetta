@@ -36,8 +36,8 @@ export const runsOf = (signal: AbortSignal): RunningCli[] => [...(runs.get(signa
 const COMMAND_MAX = 200;
 const PROCESSES_MAX = 10;
 
-/** Masks what a command line can carry that must not reach a screen: env assignments, flags, bearer tokens, keys, URL passwords. */
-export function redactCommand(command: string): string {
+/** Masks what text can carry that must not reach a screen: env assignments, flags, bearer tokens, keys, URL passwords. Keeps layout. */
+export function maskSecrets(command: string): string {
   // A value is a quoted string or a run of non-space characters; a bare token stops before a closing quote.
   const value = String.raw`(?:"[^"]*"|'[^']*'|\S+)`;
   const bare = String.raw`[^\s"']+`;
@@ -63,10 +63,12 @@ export function redactCommand(command: string): string {
     .replace(new RegExp(String.raw`\bBearer\s+${bare}`, "gi"), "Bearer [redacted]")
     .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, "[redacted]")
     .replace(/\bgh[pousr]_[A-Za-z0-9]{8,}/g, "[redacted]")
-    .replace(/:\/\/[^/\s:@]+:[^/\s@]+@/g, "://[redacted]@")
-    .trim()
-    .slice(0, COMMAND_MAX);
+    .replace(/:\/\/[^/\s:@]+:[^/\s@]+@/g, "://[redacted]@");
 }
+
+/** A command line for the slow-turn card: masked, trimmed and cut short. */
+export const redactCommand = (command: string): string =>
+  maskSecrets(command).trim().slice(0, COMMAND_MAX);
 
 /** `ps` elapsed time `[[dd-]hh:]mm:ss` in seconds; undefined when it does not match. */
 export function parseEtime(etime: string): number | undefined {

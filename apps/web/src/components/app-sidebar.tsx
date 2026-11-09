@@ -11,7 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
-import { ActionHint } from "@zetta/ui/components/action-hint";
+import { ActionHint } from "@/components/action-hint";
 import { cn } from "@zetta/ui/lib/utils";
 
 import { appLinks } from "@/components/app-links";
@@ -53,6 +53,7 @@ const MORE = [
   linkOf("Studio"),
   linkOf("Plugins"),
   linkOf("Skills"),
+  linkOf("Apps"),
   linkOf("Playground"),
   linkOf("Computer"),
   linkOf("Dashboard"),
@@ -221,26 +222,33 @@ function RailBots() {
         const blocked = !b.canEdit && !b.onboarded;
         return (
           <li key={b.id}>
+            {/* A disabled button gets no mouse events, so the hint hangs on a wrapper and the button lets the pointer through. */}
             <RailHint collapsed label={b.name} icon={<BotAvatar bot={b} size={16} />}>
-              <button
-                type="button"
-                disabled={blocked}
-                aria-current={b.id === botId ? "page" : undefined}
-                onClick={() => toBot(b.id)}
-                className={cn(railRow, b.id === botId && railRowActive, "disabled:opacity-50")}
-              >
-                <BotAvatar bot={b} size={20} />
-                <span className="sr-only">
-                  {b.name}
-                  {needs ? ", needs you" : ""}
-                </span>
-                {needs && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute top-0.5 right-0.5 size-2 rounded-full border border-sidebar bg-attention"
-                  />
-                )}
-              </button>
+              <span className="block">
+                <button
+                  type="button"
+                  disabled={blocked}
+                  aria-current={b.id === botId ? "page" : undefined}
+                  onClick={() => toBot(b.id)}
+                  className={cn(
+                    railRow,
+                    b.id === botId && railRowActive,
+                    "disabled:pointer-events-none disabled:opacity-50",
+                  )}
+                >
+                  <BotAvatar bot={b} size={20} />
+                  <span className="sr-only">
+                    {b.name}
+                    {needs ? ", needs you" : ""}
+                  </span>
+                  {needs && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-0.5 right-0.5 size-2 rounded-full border border-sidebar bg-attention"
+                    />
+                  )}
+                </button>
+              </span>
             </RailHint>
           </li>
         );
@@ -387,14 +395,16 @@ export function AppSidebar({
           collapsed ? "flex-col items-center py-2" : "h-12 items-center",
         )}
       >
-        <Link
-          to="/"
-          aria-label="Zetta home"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 focus-visible:outline-2 focus-visible:outline-ring"
-        >
-          <Logo size={collapsed ? 24 : 20} tile />
-          {!collapsed && <span className="truncate text-sm font-semibold">Zetta</span>}
-        </Link>
+        <ActionHint label="Zetta home">
+          <Link
+            to="/"
+            aria-label="Zetta home"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <Logo size={collapsed ? 24 : 20} tile />
+            {!collapsed && <span className="truncate text-sm font-semibold">Zetta</span>}
+          </Link>
+        </ActionHint>
         <RailHint
           collapsed={collapsed}
           label="Search"

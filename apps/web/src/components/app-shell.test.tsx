@@ -23,6 +23,13 @@ Object.assign(win, {
 let sidebarSide: "left" | "right" = "left";
 let railMode: "expanded" | "collapsed" = "expanded";
 let agentsState: "running" | "paused" = "running";
+const blockedBot = {
+  id: "bot-blocked",
+  kind: "specialist",
+  name: "Blocked Bot",
+  canEdit: false,
+  onboarded: false,
+};
 // The auth client keeps the first `fetch` it sees for the whole test process, and this file loads it before the others. So once this
 // file is done the fake hands every request to whatever `fetch` the next file installed (or the real one), and cannot hijack it.
 const realFetch = globalThis.fetch;
@@ -46,6 +53,7 @@ const fake = (async (input: URL | Request | string, init?: RequestInit) => {
         botOrder: [],
       },
     });
+  if (url.pathname === "/api/bots") return Response.json({ bots: [blockedBot] });
   return Response.json({ error: { code: "TEST", message: "offline" } }, { status: 500 });
 }) as typeof fetch;
 globalThis.fetch = fake;
@@ -119,7 +127,7 @@ test("on the right the frame is reversed, the panel keeps its gap, and the resiz
   await unmount();
 });
 
-const popup = () => win.document.querySelector('[data-slot="tooltip-content"]');
+const popup = () => win.document.querySelector('[role="tooltip"]');
 const openHint = async (button: Element) => {
   await act(async () => (button as unknown as HTMLElement).focus());
   const text = popup()?.textContent;
@@ -170,5 +178,58 @@ test('while the agents run, the expanded sidebar hints "Collapse sidebar" on the
   const button = host.querySelector('aside button[aria-label="Collapse sidebar"]')!;
   expect(button.hasAttribute("title")).toBe(false);
   expect(await openHint(button)).toBe("Collapse sidebar");
+  await unmount();
+});
+
+test("in the collapsed sidebar, a bot you cannot open still shows its name when you point at it", async () => {
+  const { host, unmount } = await mountShell("left", { railMode: "collapsed" });
+  const button = host.querySelector('aside [aria-label="Bots"] button')!;
+  expect(button.hasAttribute("disabled")).toBe(true);
+  // A browser sends no mouse event to a disabled button, so the pointer reaches the element that wraps it.
+  await act(async () => {
+    const wrapper = button.parentElement!;
+    for (const type of ["pointerover", "pointerenter", "pointermove"])
+      wrapper.dispatchEvent(
+        new win.PointerEvent(type, { pointerType: "mouse", bubbles: type !== "pointerenter" }),
+      );
+    for (const type of ["mouseover", "mouseenter", "mousemove"])
+      wrapper.dispatchEvent(new win.MouseEvent(type, { bubbles: type !== "mouseenter" }));
+  });
+  await act(async () => void (await new Promise((r) => setTimeout(r, 400))));
+  expect(popup()?.textContent).toBe("Blocked Bot");
+  await unmount();
+});
+
+const press = (el: unknown) =>
+  act(async () => {
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"])
+      (el as Element).dispatchEvent(
+        new win.MouseEvent(type, { bubbles: true, button: 0 }) as unknown as Event,
+      );
+  });
+
+test("the theme button opens a menu of radio items; the current theme is the only checked one and a pick moves the check", async () => {
+  const { THEME_LABEL } = await import("../features/preferences/theme");
+  const { host, unmount } = await mountShell("left");
+  const trigger = [...host.querySelectorAll("aside button")].find((b) =>
+    b.textContent?.includes("change theme"),
+  )!;
+  expect(win.document.querySelector('[role="menu"]')).toBeNull();
+  await press(trigger);
+  const radios = () => [...win.document.querySelectorAll('[role="menu"] [role="menuitemradio"]')];
+  const checked = () =>
+    radios()
+      .filter((r) => r.getAttribute("aria-checked") === "true")
+      .map((r) => r.textContent?.trim());
+  expect(radios().length).toBeGreaterThan(3);
+  // No theme is saved, so the device theme is the current one.
+  expect(checked()).toEqual([THEME_LABEL.system]);
+  const other = radios().find((r) => r.getAttribute("aria-checked") === "false")!;
+  const name = other.textContent?.trim();
+  await press(other);
+  // The menu closes on a pick; open it again to read the new state.
+  expect(win.document.querySelector('[role="menu"]')).toBeNull();
+  await press(trigger);
+  expect(checked()).toEqual([name]);
   await unmount();
 });

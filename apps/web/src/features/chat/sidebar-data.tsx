@@ -10,7 +10,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { pollEvery } from "@/lib/query-policy";
 
@@ -44,7 +44,8 @@ type Value = {
 
 const Ctx = createContext<Value | null>(null);
 
-const UNDO_MS = 6000;
+/** How long "Undo" is offered before the chat is deleted on the server. The toast stays at least 10 seconds when it has an action. */
+const UNDO_MS = 10_000;
 const NONE: never[] = [];
 
 /**
@@ -114,15 +115,16 @@ export function SidebarDataProvider({ children }: { children: ReactNode }) {
       const gone = qc.getQueryData<Conversation[]>(chatsKey)?.find((c) => c.id === id);
       if (!gone) return;
       setChats((all) => all.filter((c) => c.id !== id));
-      const timer = setTimeout(
-        () =>
-          void chatClient.deleteConversation(id).catch((e) => {
-            setChats((all) => (all.some((c) => c.id === id) ? all : [gone, ...all]));
-            fail(e);
-          }),
-        UNDO_MS,
-      );
-      toast(`Deleted “${gone.title}”`, {
+      let undoToast: ReturnType<typeof toast>;
+      const timer = setTimeout(() => {
+        // The toast waits while the pointer is on it, so close it: after this point Undo would not bring the chat back.
+        undoToast?.close();
+        void chatClient.deleteConversation(id).catch((e) => {
+          setChats((all) => (all.some((c) => c.id === id) ? all : [gone, ...all]));
+          fail(e);
+        });
+      }, UNDO_MS);
+      undoToast = toast(`Deleted “${gone.title}”`, {
         duration: UNDO_MS,
         action: {
           label: "Undo",

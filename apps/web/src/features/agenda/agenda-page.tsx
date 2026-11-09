@@ -2,7 +2,7 @@ import { PageCalendar, type CalendarEvent, type CalendarFilter } from "@g4rcez/c
 import { CheckIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { Button } from "@/components/ui";
 

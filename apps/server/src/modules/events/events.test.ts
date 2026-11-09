@@ -33,6 +33,34 @@ describe("event bus", () => {
     await wait(20);
     expect(seen).toEqual([]);
   });
+
+  test("with a max, a new listener evicts the oldest once and keeps the others", async () => {
+    const bus = createEventBus(5);
+    const evicted: string[] = [];
+    const heard: string[] = [];
+    for (const name of ["a", "b"])
+      bus.subscribe("user-a", (t) => heard.push(`${name}:${t}`), {
+        max: 2,
+        onEvict: () => evicted.push(name),
+      });
+    bus.subscribe("user-a", (t) => heard.push(`c:${t}`), { max: 2 });
+    expect(evicted).toEqual(["a"]);
+    expect(bus.count("user-a")).toBe(2);
+    bus.publish(["user-a"], "rooms");
+    await wait(20);
+    expect(heard.sort()).toEqual(["b:rooms", "c:rooms"]);
+  });
+
+  test("a stream that unsubscribes while being evicted does not lose the new listener", async () => {
+    const bus = createEventBus(5);
+    let stop = () => {};
+    stop = bus.subscribe("user-a", () => {}, { max: 1, onEvict: () => stop() });
+    const seen: string[] = [];
+    bus.subscribe("user-a", (t) => seen.push(t), { max: 1 });
+    bus.publish(["user-a"], "rooms");
+    await wait(20);
+    expect(seen).toEqual(["rooms"]);
+  });
 });
 
 function app(bus = createEventBus(5)) {
@@ -67,7 +95,7 @@ describe("GET /api/events", () => {
     expect(res.headers.get("content-type")).toBe("text/event-stream");
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
-    expect(decoder.decode((await reader.read()).value)).toBe(": ok\n\n");
+    expect(decoder.decode((await reader.read()).value)).toBe("retry: 5000\n: ok\n\n");
     bus.publish(["user-b"], "attention"); // someone else's topic never arrives
     bus.publish(["user-a"], "conversation:1");
     expect(decoder.decode((await reader.read()).value)).toBe(
@@ -84,17 +112,39 @@ describe("GET /api/events", () => {
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("SIGN_IN_REQUIRED");
   });
 
-  test("a person with ten streams open cannot open an eleventh", async () => {
+  test("an eleventh stream closes the oldest one instead of being refused", async () => {
     const { app: a, bus } = app();
     const open = () =>
       a.handle(
         new Request("http://localhost/api/events", { headers: { cookie: "user-a", origin } }),
       );
-    const streams = await Promise.all(Array.from({ length: 10 }, open));
+    const streams: Response[] = [];
+    for (let i = 0; i < 10; i++) streams.push(await open());
     expect(streams.every((r) => r.status === 200)).toBe(true);
+    const readers = streams.map((r) => r.body!.getReader());
+    const decoder = new TextDecoder();
+    for (const reader of readers) await reader.read(); // the first frame of each
     const extra = await open();
-    expect(extra.status).toBe(429);
-    await Promise.all(streams.map((r) => r.body!.cancel()));
+    expect(extra.status).toBe(200);
+    expect(bus.count("user-a")).toBe(10);
+    expect(decoder.decode((await readers[0]!.read()).value)).toBe("event: evicted\ndata: {}\n\n");
+    expect((await readers[0]!.read()).done).toBe(true);
+    await Promise.all([...readers.slice(1).map((r) => r.cancel()), extra.body!.cancel()]);
+    expect(bus.count("user-a")).toBe(0);
+  });
+
+  test("a request that is aborted frees its slot without a cancel", async () => {
+    const { app: a, bus } = app();
+    const controller = new AbortController();
+    const res = await a.handle(
+      new Request("http://localhost/api/events", {
+        headers: { cookie: "user-a", origin },
+        signal: controller.signal,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(bus.count("user-a")).toBe(1);
+    controller.abort();
     expect(bus.count("user-a")).toBe(0);
   });
 });

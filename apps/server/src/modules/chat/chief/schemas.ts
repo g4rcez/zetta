@@ -219,19 +219,28 @@ export const chiefSchemas = {
       action: z.literal("create"),
       name: z.string().regex(/^[a-z][a-z0-9-]{0,62}$/),
       description: bounded(600),
-      body: bounded(24_000),
+      body: bounded(64_000),
     }),
+    z.strictObject({ action: z.literal("read"), skill: ref }),
     z
       .strictObject({
         action: z.literal("update"),
         skill: ref,
+        name: z
+          .string()
+          .regex(/^[a-z][a-z0-9-]{0,62}$/)
+          .optional(),
         description: bounded(600).optional(),
-        body: bounded(24_000).optional(),
+        body: bounded(64_000).optional(),
       })
       .refine((v) => Object.keys(v).length > 2, { message: "give at least one field to change" }),
     z.strictObject({ action: z.literal("archive"), skill: ref }),
     /** Gives the skill to more bots; the bots that have it keep it. */
     z.strictObject({ action: z.literal("attach"), skill: ref, bots: z.array(ref).min(1).max(50) }),
+    /** Takes the skill from these bots; the skill stays in the library. */
+    z.strictObject({ action: z.literal("detach"), skill: ref, bots: z.array(ref).min(1).max(50) }),
+    /** Brings back a skill that was deleted. */
+    z.strictObject({ action: z.literal("restore"), skill: ref }),
   ]),
   hook: z.discriminatedUnion("action", [
     z.strictObject({ action: z.literal("list"), bot: ref }),

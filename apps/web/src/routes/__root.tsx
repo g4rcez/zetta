@@ -6,13 +6,13 @@ import {
 } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import { Toaster } from "@zetta/ui/components/sonner";
 
 import Header, { inApp } from "@/components/header";
 import { KeyboardHints } from "@/components/keyboard-hints";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ModalConfirmProvider } from "@/components/ui";
 import { PreferencesProvider } from "@/features/preferences/preferences";
+import { NotificationsProvider } from "@/lib/notify";
 
 import logoUrl from "../assets/logo.svg?url";
 import "../index.css";
@@ -68,28 +68,29 @@ function RootComponent() {
         storageKey="vite-ui-theme"
       >
         <ModalConfirmProvider>
-          {REGEX_COMPUTER.test(pathname) ? (
-            <main className="h-svh overflow-hidden">
-              <Outlet />
-            </main>
-          ) : app ? (
-            // The signed-in layout (routes/_auth) draws the app shell around these pages.
-            <PreferencesProvider>
-              <Outlet />
-            </PreferencesProvider>
-          ) : (
-            // The public header holds the account menu, which reads the person's preferences; signed out, the provider keeps the defaults.
-            <PreferencesProvider>
-              <div className="grid h-svh grid-rows-[auto_1fr]">
-                <Header />
-                <main className="min-h-0 overflow-y-auto">
-                  <Outlet />
-                </main>
-              </div>
-            </PreferencesProvider>
-          )}
-          <Toaster richColors />
-          <KeyboardHints />
+          <NotificationsProvider>
+            {REGEX_COMPUTER.test(pathname) ? (
+              <main className="h-svh overflow-hidden">
+                <Outlet />
+              </main>
+            ) : app ? (
+              // The signed-in layout (routes/_auth) draws the app shell around these pages.
+              <PreferencesProvider>
+                <Outlet />
+              </PreferencesProvider>
+            ) : (
+              // The public header holds the account menu, which reads the person's preferences; signed out, the provider keeps the defaults.
+              <PreferencesProvider>
+                <div className="grid h-svh grid-rows-[auto_1fr]">
+                  <Header />
+                  <main className="min-h-0 overflow-y-auto">
+                    <Outlet />
+                  </main>
+                </div>
+              </PreferencesProvider>
+            )}
+            <KeyboardHints />
+          </NotificationsProvider>
         </ModalConfirmProvider>
       </ThemeProvider>
       {import.meta.env.DEV && !import.meta.env.VITE_HIDE_DEVTOOLS ? (

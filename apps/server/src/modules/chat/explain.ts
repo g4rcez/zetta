@@ -1,3 +1,4 @@
+import { uiBlock } from "@zetta/render/build";
 import { DEFAULT_SAFE, PluginError } from "../integrations/plugins/registry";
 
 /**
@@ -206,18 +207,11 @@ export function explain(what: string, e: unknown): Problem {
 export const problemForBot = (p: Problem) =>
   `failed (${p.code}): ${p.why} To fix it the user can: ${p.fix} Explain this to the user in plain words, say what they can do, and do not repeat the identical call.`;
 
-/** The callout the user sees: a trusted `zetta:ui` Alert (props are clipped to the catalog limits so it always validates). */
+/** The callout the user sees: a trusted `zetta:ui` Alert, built with the typed builder so it always validates. */
 export function problemBlock(p: Problem, botName: string): string {
   const message = `${clip(p.why, 280)}\n\nWhat you can do: ${clip(p.fix, 220)}\nThen ask ${clip(botName, 40)} to try again.`;
-  const spec = {
-    root: "a",
-    elements: {
-      a: {
-        type: "Alert",
-        props: { title: clip(p.title, 110), message: clip(message, 600), tone: "danger" },
-        children: [],
-      },
-    },
-  };
-  return `\`\`\`zetta:ui\n${JSON.stringify(spec).replace(/`/g, "'")}\n\`\`\``;
+  return uiBlock({
+    type: "Alert",
+    props: { title: clip(p.title, 110), message: clip(message, 600), tone: "danger" },
+  });
 }

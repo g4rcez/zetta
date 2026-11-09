@@ -16,6 +16,8 @@ export const topics = {
   agents: "agents",
   /** A run of a playground started or finished, or the playground changed. */
   playground: (id: string) => `playground:${id}`,
+  /** An app was published, changed or rolled back, or one of its calls started, waited for approval or finished. */
+  apps: "apps",
   /** Events may have been missed (a server link dropped, or the stream reconnected): refetch what is on screen. */
   resync: "resync",
 } as const;

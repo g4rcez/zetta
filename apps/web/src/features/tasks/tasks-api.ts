@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 
 import { call } from "../chat/chat-client";
+import { topLevel } from "./task-steps";
 
 export const TASK_COLUMNS = [
   { status: "backlog", label: "Backlog" },
@@ -18,6 +19,8 @@ export const TASK_PRIORITIES = [
   { priority: "urgent", label: "Urgent" },
 ] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number]["priority"];
+/** Whether the server calls the bot back while the task is open: "auto" it does, "paused" it stopped (see `followUpReason`), "off" nobody follows it. */
+export type TaskFollowUp = "auto" | "paused" | "off";
 export type Task = {
   id: string;
   title: string;
@@ -32,6 +35,14 @@ export type Task = {
   assigneeName: string | null;
   botId: string | null;
   conversationId: string | null;
+  /** Set on a step: the task it belongs to. The list holds steps and tasks together (see task-steps.ts). */
+  parentTaskId: string | null;
+  /** The bot's note on what is done, where it stopped and what comes next. */
+  progress: string;
+  followUp: TaskFollowUp;
+  followUpReason: string | null;
+  nextCheckAt: string | null;
+  checks: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -39,20 +50,31 @@ export type Task = {
 export const tasksApi = {
   get: (id: string) => call<{ task: Task }>(`/api/tasks/${id}`).then((r) => r.task),
   list: () => call<{ tasks: Task[] }>("/api/tasks").then((r) => r.tasks),
-  create: (title: string, status?: TaskStatus) =>
-    call<{ task: Task }>("/api/tasks", "POST", { title, status }).then((r) => r.task),
+  create: (title: string, status?: TaskStatus, parentTaskId?: string) =>
+    call<{ task: Task }>("/api/tasks", "POST", { title, status, parentTaskId }).then((r) => r.task),
   move: (id: string, status: TaskStatus) =>
     call<{ task: Task }>(`/api/tasks/${id}`, "PATCH", { status }).then((r) => r.task),
   update: (
     id: string,
-    patch: { title?: string; description?: string; priority?: TaskPriority; labels?: string[] },
+    patch: {
+      title?: string;
+      description?: string;
+      priority?: TaskPriority;
+      labels?: string[];
+      /** "auto" resumes a paused follow-up; "off" stops it. */
+      followUp?: "auto" | "off";
+    },
   ) => call<{ task: Task }>(`/api/tasks/${id}`, "PATCH", patch).then((r) => r.task),
   remove: (id: string) => call(`/api/tasks/${id}`, "DELETE"),
 };
 
-/** The board filters on the client, so one list key serves every filter in the URL. */
+/**
+ * The board filters on the client, so one list key serves every filter in the URL. The cache holds steps and tasks together; `list`
+ * gives the tasks only, and a view that needs the steps or their counts reads the same cache with another `select`.
+ */
 export const tasksQueries = {
-  list: () => queryOptions({ queryKey: ["tasks"], queryFn: () => tasksApi.list() }),
+  list: () =>
+    queryOptions({ queryKey: ["tasks"], queryFn: () => tasksApi.list(), select: topLevel }),
   detail: (id: string) =>
     queryOptions({ queryKey: ["tasks", id], queryFn: () => tasksApi.get(id) }),
 };

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -28,10 +28,17 @@ const bots = [
 
 const wait = (ms: number) => act(() => new Promise<void>((done) => setTimeout(done, ms)));
 
+const roots: { unmount: () => void }[] = [];
+// Each tooltip of the library is its own: one left open by the previous test would still be in the document.
+afterEach(async () => {
+  await act(async () => roots.splice(0).forEach((r) => r.unmount()));
+});
+
 async function mount() {
   const host = win.document.createElement("div");
   win.document.body.append(host);
   const root = createRoot(host as unknown as Element);
+  roots.push(root);
   await act(async () => {
     root.render(
       <TaskFilterBar state={DEFAULT_STATE} onChange={() => {}} bots={bots} labels={[]} />,
@@ -60,24 +67,22 @@ async function hover(el: HTMLElement) {
 
 test("hovering a bot avatar names it and says what it is", async () => {
   const host = await mount();
-  expect(win.document.querySelector('[data-slot="tooltip-content"]')).toBeNull();
+  expect(win.document.querySelector('[role="tooltip"]')).toBeNull();
   await hover(avatar(host as unknown as Element, "Da Vinci"));
-  const popup = win.document.querySelector('[data-slot="tooltip-content"]');
+  const popup = win.document.querySelector('[role="tooltip"]');
   expect(popup?.textContent).toBe("Da VinciDraws and designs");
 });
 
 test("a bot with no description falls back to its role", async () => {
   const host = await mount();
   await hover(avatar(host as unknown as Element, "Scout"));
-  expect(win.document.querySelector('[data-slot="tooltip-content"]')?.textContent).toBe(
-    "ScoutSpecialist",
-  );
+  expect(win.document.querySelector('[role="tooltip"]')?.textContent).toBe("ScoutSpecialist");
 });
 
 test("the fixed avatars explain themselves", async () => {
   const host = await mount();
   await hover(avatar(host as unknown as Element, "Unassigned"));
-  expect(win.document.querySelector('[data-slot="tooltip-content"]')?.textContent).toBe(
+  expect(win.document.querySelector('[role="tooltip"]')?.textContent).toBe(
     "UnassignedTasks nobody owns",
   );
 });

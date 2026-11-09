@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Button, Checkbox, Input, Select } from "@/components/ui";
@@ -97,26 +98,30 @@ export function BotHooks({ bot }: { bot: Bot }) {
             <span className="min-w-0 flex-1 break-words text-xs text-muted-foreground">
               {h.pattern || h.value.slice(0, 40)}
             </span>
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              disabled={i === 0}
-              onClick={() => void move(i, -1)}
-              aria-label={`Move ${KIND[h.kind]} hook up`}
-            >
-              ↑
-            </Button>
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              disabled={i === hooks.length - 1}
-              onClick={() => void move(i, 1)}
-              aria-label={`Move ${KIND[h.kind]} hook down`}
-            >
-              ↓
-            </Button>
+            <ActionHint label={`Move ${KIND[h.kind]} hook up`}>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                disabled={i === 0}
+                onClick={() => void move(i, -1)}
+                aria-label={`Move ${KIND[h.kind]} hook up`}
+              >
+                ↑
+              </Button>
+            </ActionHint>
+            <ActionHint label={`Move ${KIND[h.kind]} hook down`}>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                disabled={i === hooks.length - 1}
+                onClick={() => void move(i, 1)}
+                aria-label={`Move ${KIND[h.kind]} hook down`}
+              >
+                ↓
+              </Button>
+            </ActionHint>
             <Button
               type="button"
               size="xs"

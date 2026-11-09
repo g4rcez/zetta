@@ -1,5 +1,3 @@
-import { mergeProps } from "@base-ui/react/merge-props";
-import { useRender } from "@base-ui/react/use-render";
 import { Button } from "@zetta/ui/components/button";
 import { cn } from "@zetta/ui/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
@@ -152,24 +150,17 @@ function AttachmentAction({
 
 function AttachmentTrigger({
   className,
-  render,
-  type,
+  type = "button",
   ...props
-}: useRender.ComponentProps<"button">) {
-  return useRender({
-    defaultTagName: "button",
-    props: mergeProps<"button">(
-      {
-        type: render ? type : (type ?? "button"),
-        className: cn("absolute inset-0 z-10 outline-none", className),
-      },
-      props,
-    ),
-    render,
-    state: {
-      slot: "attachment-trigger",
-    },
-  });
+}: React.ComponentProps<"button">) {
+  return (
+    <button
+      data-slot="attachment-trigger"
+      type={type}
+      className={cn("absolute inset-0 z-10 outline-none", className)}
+      {...props}
+    />
+  );
 }
 
 function AttachmentGroup({ className, ...props }: React.ComponentProps<"div">) {

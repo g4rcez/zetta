@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { CaretDownIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 
@@ -121,20 +122,24 @@ export function SkillPicker({
                   </a>
                 )}
               </div>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={
-                  open === i.key ? `Hide details of ${i.name}` : `Show details of ${i.name}`
-                }
-                aria-expanded={open === i.key}
-                onClick={() => setOpen(open === i.key ? undefined : i.key)}
+              <ActionHint
+                label={open === i.key ? `Hide details of ${i.name}` : `Show details of ${i.name}`}
               >
-                <CaretDownIcon
-                  aria-hidden
-                  className={`size-4 transition-transform ${open === i.key ? "rotate-180" : ""}`}
-                />
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={
+                    open === i.key ? `Hide details of ${i.name}` : `Show details of ${i.name}`
+                  }
+                  aria-expanded={open === i.key}
+                  onClick={() => setOpen(open === i.key ? undefined : i.key)}
+                >
+                  <CaretDownIcon
+                    aria-hidden
+                    className={`size-4 transition-transform ${open === i.key ? "rotate-180" : ""}`}
+                  />
+                </Button>
+              </ActionHint>
             </div>
           </li>
         ))}

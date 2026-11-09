@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
@@ -14,6 +15,7 @@ import { DesktopButton } from "../computer/desktop-button";
 import {
   BrainIcon,
   CaretRightIcon,
+  CoffeeIcon,
   LockIcon,
   ShareNetworkIcon,
   SidebarSimpleIcon,
@@ -28,20 +30,26 @@ import { ArtifactPanel } from "./artifact-panel";
 import { ThreadTabs } from "./thread-tabs";
 import { Skeleton } from "@g4rcez/components";
 
-import { ActionHint } from "@zetta/ui/components/action-hint";
-import { Button } from "@/components/ui";
-import { Sheet, SheetContent, SheetTitle } from "@zetta/ui/components/sheet";
+import { Button, DRAWER_FLUSH } from "@/components/ui";
+import { Modal } from "@g4rcez/components/modal";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotStatusDot, BotStatusLabel } from "@/components/bot-status";
 import { ResizeHandle, toWidth } from "@/components/resize-handle";
 import { authClient } from "@/lib/auth-client";
+import {
+  setChatKeepAwake,
+  useChatKeepAwake,
+  useWakeLock,
+  wakeLockSupported,
+} from "@/lib/keep-awake";
 import { useMedia } from "@/lib/use-media";
 
 import { refreshAttention } from "../attention/summary";
 import {
   chatClient,
   errorMessage,
+  stepOutputUrl,
   type Conversation,
   type Message,
   type Proposal,
@@ -125,6 +133,10 @@ export function ChatPage() {
   const threadId = search.thread;
   const urlChat = params.chatId;
   const chatId = urlChat && urlChat !== NEW_CHAT ? urlChat : undefined;
+  const keepAwake = useChatKeepAwake(chatId);
+  useWakeLock(keepAwake === "on");
+  const awakeLabel =
+    keepAwake === "on" ? "Screen kept awake in this chat" : "Keep the screen awake in this chat";
   // A routine's chat is not in the sidebar list (`chats`): it is opened from Routines, so it is looked up by id.
   const listedRow = chatId ? chats.find((c) => c.id === chatId) : undefined;
   const lookup = useQuery({
@@ -418,6 +430,7 @@ export function ChatPage() {
     onReply: (row) => setThread(row.id),
     onQuote: (row) => setQuoting(row),
     onOpenArtifact: (id) => setArtifact(id),
+    stepOutputUrl: (stepId) => (chatId ? stepOutputUrl(chatId, stepId) : undefined),
     onSaveToMemory: (row) =>
       void chatClient.saveToMemory(`From chat: ${row.content.slice(0, 40)}`, row.content).then(
         (r) =>
@@ -449,6 +462,7 @@ export function ChatPage() {
       onSaveToMemory: (row) => latestActions.current.onSaveToMemory(row),
       onQueue: (row, action) => latestActions.current.onQueue?.(row, action),
       onOpenArtifact: (id) => latestActions.current.onOpenArtifact?.(id),
+      stepOutputUrl: (stepId) => latestActions.current.stepOutputUrl?.(stepId),
     }),
     [],
   );
@@ -661,10 +675,11 @@ export function ChatPage() {
                   <DesktopButton botName={current.name} onError={fail} />
                 )}
                 {current && (
-                  <ActionHint label="Memories this bot created">
+                  <ActionHint label="Memories this bot created" side="bottom">
                     <Link
                       to="/memory"
                       search={{ createdBy: current.id }}
+
                       aria-label="Memories this bot created"
                       className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
                     >
@@ -672,11 +687,26 @@ export function ChatPage() {
                     </Link>
                   </ActionHint>
                 )}
-                {chatId && saved.length > 0 && (
-                  <ActionHint label="Publish snapshot to team">
+                {chatId && wakeLockSupported() && (
+                  <ActionHint label={awakeLabel} side="bottom">
                     <Button
                       size="icon-sm"
                       variant="ghost"
+
+                      aria-label={awakeLabel}
+                      aria-pressed={keepAwake === "on"}
+                      onClick={() => setChatKeepAwake(chatId, keepAwake === "on" ? "off" : "on")}
+                    >
+                      <CoffeeIcon weight={keepAwake === "on" ? "fill" : "regular"} />
+                    </Button>
+                  </ActionHint>
+                )}
+                {chatId && saved.length > 0 && (
+                  <ActionHint label="Publish snapshot to team" side="bottom">
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+
                       onClick={() => setPublishing(true)}
                       aria-label="Publish snapshot to team"
                     >
@@ -684,10 +714,11 @@ export function ChatPage() {
                     </Button>
                   </ActionHint>
                 )}
-                <ActionHint label="Details">
+                <ActionHint label="Details" side="bottom">
                   <Button
                     size="icon-sm"
                     variant="ghost"
+
                     aria-label="Details"
                     aria-pressed={details && !thread && !search.artifact}
                     onClick={() => {
@@ -910,26 +941,25 @@ export function ChatPage() {
             </aside>
           )}
           {!desktop && (
-            <Sheet
+            <Modal
+              type="drawer"
+              forceType
               open={!!sidePane}
-              onOpenChange={(open) => {
+              onChange={(open) => {
                 if (open) return;
                 if (search.artifact) setArtifact(undefined);
                 else setThread(undefined);
                 setDetails(false);
               }}
+              ariaTitle={artifactPane ? "Artifact" : threadPane ? "Thread" : "Details"}
+              closable={false}
+              resizer={false}
+              overlayClickClose
+              className={`${DRAWER_FLUSH} [--var-modal-drawer-max-inline-size:100vw]`}
+              bodyClassName="flex w-[75vw] flex-col sm:w-sm"
             >
-              <SheetContent
-                side="right"
-                showCloseButton={false}
-                className={cn("w-full p-0", artifactPane ? "sm:max-w-2xl" : "sm:max-w-sm")}
-              >
-                <SheetTitle className="sr-only">
-                  {artifactPane ? "Artifact" : threadPane ? "Thread" : "Details"}
-                </SheetTitle>
-                {sidePane}
-              </SheetContent>
-            </Sheet>
+              {sidePane}
+            </Modal>
           )}
           {publishing && chatId && (
             <PublishDialog

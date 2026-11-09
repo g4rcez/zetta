@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArchiveIcon,
@@ -17,10 +18,10 @@ import {
 } from "@phosphor-icons/react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 import { BotIdentity } from "@/components/bot-identity";
-import { Button } from "@/components/ui";
+import { Button, Progress } from "@/components/ui";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { Badge, ConfirmButton, Empty, field, list, listItem } from "../shared/ui";
@@ -265,19 +266,13 @@ function UsageBar({
   const pct = Math.min(100, Math.round((usage.used / usage.quota) * 100));
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
-      <div
-        role="progressbar"
-        aria-label="Storage used"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={pct}
-        className="h-1.5 w-40 overflow-hidden rounded-full bg-muted"
-      >
-        <div
-          className={`h-full ${pct >= 90 ? "bg-destructive" : "bg-primary"}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+      <Progress
+        label="Storage used"
+        value={pct}
+        size="small"
+        tone={pct >= 90 ? "danger" : "primary"}
+        className="w-40"
+      />
       <span>
         {formatSize(usage.used)} of {formatSize(usage.quota)} used
         {pct >= 90 && " · bots cannot publish when it is full"}
@@ -353,20 +348,22 @@ function Row({
         </time>
       </Link>
       {children}
-      <Button
-        variant={a.pinnedAt ? "link" : "ghost"}
-        size="icon-sm"
-        aria-pressed={Boolean(a.pinnedAt)}
-        aria-label={a.pinnedAt ? `Unpin ${a.title}` : `Pin ${a.title}`}
-        onClick={() => onPin(a)}
-        className="shrink-0"
-      >
-        <PushPinIcon
-          aria-hidden="true"
-          weight={a.pinnedAt ? "fill" : "regular"}
-          className="size-4"
-        />
-      </Button>
+      <ActionHint label={a.pinnedAt ? `Unpin ${a.title}` : `Pin ${a.title}`}>
+        <Button
+          variant={a.pinnedAt ? "link" : "ghost"}
+          size="icon-sm"
+          aria-pressed={Boolean(a.pinnedAt)}
+          aria-label={a.pinnedAt ? `Unpin ${a.title}` : `Pin ${a.title}`}
+          onClick={() => onPin(a)}
+          className="shrink-0"
+        >
+          <PushPinIcon
+            aria-hidden="true"
+            weight={a.pinnedAt ? "fill" : "regular"}
+            className="size-4"
+          />
+        </Button>
+      </ActionHint>
       {manage && (
         <ConfirmButton
           label="Delete"

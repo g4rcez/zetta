@@ -78,8 +78,24 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
   await q("delete from team where owner_user_id = any($1)");
   await q("delete from team_role where owner_user_id = any($1)");
   await q(
+    "delete from skill_revision where skill_id in (select id from skill where owner_user_id = any($1)) or saved_by_user_id = any($1)",
+  );
+  await q(
+    "delete from skill_use where bot_id in (select id from bot where owner_user_id = any($1)) or skill_id in (select id from skill where owner_user_id = any($1))",
+  );
+  await q(
     "delete from bot_skill where bot_id in (select id from bot where owner_user_id = any($1)) or skill_id in (select id from skill where owner_user_id = any($1))",
   );
+  // Apps: the calls, then the grants, then the versions the apps point to, then the apps (a team app may hold calls by another test user).
+  const apps = "select id from app where owner_user_id = any($1)";
+  await q(`delete from app_record where user_id = any($1) or app_id in (${apps})`);
+  await q(`delete from app_call where actor_user_id = any($1) or app_id in (${apps})`);
+  await q(
+    `delete from bot_app where bot_id in (select id from bot where owner_user_id = any($1)) or app_id in (${apps})`,
+  );
+  await q("update app set active_version_id = null where owner_user_id = any($1)");
+  await q(`delete from app_version where app_id in (${apps}) or published_by_user_id = any($1)`);
+  await q("delete from app where owner_user_id = any($1)");
   // A team playground may hold runs by another test user, so runs go by playground or actor.
   const mine = "select id from playground where owner_user_id = any($1)";
   const runs = `select id from playground_run where actor_user_id = any($1) or playground_id in (${mine})`;

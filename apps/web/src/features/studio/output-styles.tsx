@@ -21,9 +21,51 @@ const exportLink = "text-xs underline underline-offset-2 hover:text-foreground";
 
 function Download({ href, name }: { href: string; name: string }) {
   return (
+    // No hint: it shows the text Export.
     <a href={href} download className={exportLink} aria-label={`Export ${name} as a file`}>
       Export
     </a>
+  );
+}
+
+/** The fields of a style, empty for a new one and filled in for an edit. They are read from the surrounding form. */
+function StyleFields({ style }: { style?: OutputStyle }) {
+  return (
+    <>
+      <Input
+        title="Name"
+        name="name"
+        required
+        maxLength={60}
+        defaultValue={style?.name}
+        placeholder="e.g. Friendly mentor"
+      />
+      <Input
+        title="Description (optional)"
+        name="description"
+        required={false}
+        maxLength={280}
+        defaultValue={style?.description}
+        placeholder="One line that tells people what it sounds like"
+      />
+      {/* Plain on purpose: a style is shared with other users, so a mention of one of my bots would mean nothing to them. */}
+      <EditorField
+        title="How the bot should write"
+        name="body"
+        required
+        rows={5}
+        maxLength={8192}
+        defaultValue={style?.body}
+        placeholder="Lead with the answer. Use plain words. Never use jargon without explaining it."
+      />
+      <Select
+        title="Who can use it"
+        required={false}
+        name="scope"
+        defaultValue={style?.scope ?? "private"}
+        options={SCOPES}
+      />
+    </>
   );
 }
 
@@ -53,44 +95,6 @@ export function OutputStyles({ onError }: { onError: (m: string) => void }) {
     body: String(f.get("body") ?? "").trim(),
     scope: String(f.get("scope") ?? "private") as StyleScope,
   });
-  const fields = (s?: OutputStyle) => (
-    <>
-      <Input
-        title="Name"
-        name="name"
-        required
-        maxLength={60}
-        defaultValue={s?.name}
-        placeholder="e.g. Friendly mentor"
-      />
-      <Input
-        title="Description (optional)"
-        name="description"
-        required={false}
-        maxLength={280}
-        defaultValue={s?.description}
-        placeholder="One line that tells people what it sounds like"
-      />
-      {/* Plain on purpose: a style is shared with other users, so a mention of one of my bots would mean nothing to them. */}
-      <EditorField
-        title="How the bot should write"
-        name="body"
-        required
-        rows={5}
-        maxLength={8192}
-        defaultValue={s?.body}
-        placeholder="Lead with the answer. Use plain words. Never use jargon without explaining it."
-      />
-      <Select
-        title="Who can use it"
-        required={false}
-        name="scope"
-        defaultValue={s?.scope ?? "private"}
-        options={SCOPES}
-      />
-    </>
-  );
-
   const mine = data?.styles.filter((s) => s.mine) ?? [];
   const shared = data?.styles.filter((s) => !s.mine) ?? [];
   return (
@@ -165,7 +169,7 @@ export function OutputStyles({ onError }: { onError: (m: string) => void }) {
           }}
           className="space-y-2"
         >
-          {fields()}
+          <StyleFields />
           <Button size="sm" type="submit">
             Save style
           </Button>
@@ -186,7 +190,7 @@ export function OutputStyles({ onError }: { onError: (m: string) => void }) {
                   }}
                   className="space-y-2"
                 >
-                  {fields(s)}
+                  <StyleFields style={s} />
                   <div className="flex gap-2">
                     <Button size="sm" type="submit">
                       Save

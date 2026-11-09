@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -8,7 +9,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 
-import { Skeleton } from "@zetta/ui/components/skeleton";
+import { Skeleton } from "@g4rcez/components";
 import { cn } from "@zetta/ui/lib/utils";
 import { ENV } from "../../env";
 
@@ -71,7 +72,11 @@ export function AttachmentImage({
   }, [near]);
   const src = useAttachmentSrc(pic.id, near);
   if (src === undefined)
-    return <Skeleton ref={tile} className={cn("size-40 rounded-lg", className)} />;
+    return (
+      <div ref={tile} className={className}>
+        <Skeleton as="div" decorative className="size-40! rounded-lg!" />
+      </div>
+    );
   if (src === null)
     return (
       <span
@@ -85,23 +90,25 @@ export function AttachmentImage({
       </span>
     );
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={`Open ${pic.name}`}
-      className="block max-w-full cursor-zoom-in overflow-hidden rounded-lg border bg-muted/30 outline-offset-2 focus-visible:outline-2"
-    >
-      <img
-        src={src}
-        alt={pic.name}
-        width={sizes.get(pic.id)?.w}
-        height={sizes.get(pic.id)?.h}
-        onLoad={(e) =>
-          sizes.set(pic.id, { w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
-        }
-        className={cn("block h-auto max-h-[360px] max-w-full object-contain", className)}
-      />
-    </button>
+    <ActionHint label={`Open ${pic.name}`}>
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Open ${pic.name}`}
+        className="block max-w-full cursor-zoom-in overflow-hidden rounded-lg border bg-muted/30 outline-offset-2 focus-visible:outline-2"
+      >
+        <img
+          src={src}
+          alt={pic.name}
+          width={sizes.get(pic.id)?.w}
+          height={sizes.get(pic.id)?.h}
+          onLoad={(e) =>
+            sizes.set(pic.id, { w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
+          }
+          className={cn("block h-auto max-h-[360px] max-w-full object-contain", className)}
+        />
+      </button>
+    </ActionHint>
   );
 }
 
@@ -175,23 +182,27 @@ export function ImageViewer({
           </span>
         )}
         {src && (
-          <a
-            href={src}
-            download={pic.name}
-            aria-label="Download"
+          <ActionHint label="Download">
+            <a
+              href={src}
+              download={pic.name}
+              aria-label="Download"
+              className="rounded p-1.5 hover:bg-muted"
+            >
+              <DownloadSimpleIcon className="size-4" />
+            </a>
+          </ActionHint>
+        )}
+        <ActionHint label="Close">
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => ref.current?.close()}
             className="rounded p-1.5 hover:bg-muted"
           >
-            <DownloadSimpleIcon className="size-4" />
-          </a>
-        )}
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={() => ref.current?.close()}
-          className="rounded p-1.5 hover:bg-muted"
-        >
-          <XIcon className="size-4" />
-        </button>
+            <XIcon className="size-4" />
+          </button>
+        </ActionHint>
       </div>
       <div className="relative flex max-h-[calc(94vh-3rem)] min-h-48 items-center justify-center bg-black/80 p-2">
         {src ? (
@@ -203,26 +214,30 @@ export function ImageViewer({
         ) : src === null ? (
           <span className="text-sm text-white/70">Image unavailable</span>
         ) : (
-          <Skeleton className="size-64" />
+          <Skeleton as="div" decorative className="size-64!" />
         )}
         {pics.length > 1 && (
           <>
-            <button
-              type="button"
-              aria-label="Previous image"
-              onClick={() => step(-1)}
-              className="absolute left-3 rounded-full bg-background/80 p-2 hover:bg-background"
-            >
-              <CaretLeftIcon className="size-5" />
-            </button>
-            <button
-              type="button"
-              aria-label="Next image"
-              onClick={() => step(1)}
-              className="absolute right-3 rounded-full bg-background/80 p-2 hover:bg-background"
-            >
-              <CaretRightIcon className="size-5" />
-            </button>
+            <ActionHint label="Previous image">
+              <button
+                type="button"
+                aria-label="Previous image"
+                onClick={() => step(-1)}
+                className="absolute left-3 rounded-full bg-background/80 p-2 hover:bg-background"
+              >
+                <CaretLeftIcon className="size-5" />
+              </button>
+            </ActionHint>
+            <ActionHint label="Next image">
+              <button
+                type="button"
+                aria-label="Next image"
+                onClick={() => step(1)}
+                className="absolute right-3 rounded-full bg-background/80 p-2 hover:bg-background"
+              >
+                <CaretRightIcon className="size-5" />
+              </button>
+            </ActionHint>
           </>
         )}
       </div>

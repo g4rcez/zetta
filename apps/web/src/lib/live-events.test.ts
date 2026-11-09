@@ -13,6 +13,9 @@ describe("keysFor", () => {
   test("a playground topic refreshes what is on screen of the playground: the list, the files, the runs and the run", () => {
     expect(keysFor("playground:p1")).toEqual([{ queryKey: ["playground"] }]);
   });
+  test("an apps topic refreshes everything on screen about apps: the list, an app, its calls and the tools", () => {
+    expect(keysFor("apps")).toEqual([{ queryKey: ["apps"] }]);
+  });
   test("a room topic refreshes the room, its proposals and, once the room is cached, its transcript", () => {
     expect(keysFor("discussion:r1")).toEqual([
       { queryKey: ["discussions", "r1"] },

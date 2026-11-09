@@ -25,6 +25,40 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** One radio tile: a style's name and what it sounds like, with an optional note on who shares it. */
+function StyleTile({
+  name,
+  styleKey,
+  title,
+  description,
+  hint,
+  selected,
+  onChange,
+}: {
+  /** Radio group name. */
+  name: string;
+  styleKey: string;
+  title: string;
+  description: string;
+  hint?: string | undefined;
+  /** The key of the chosen style. */
+  selected: string;
+  onChange: (v: StyleChoice) => void;
+}) {
+  return (
+    <Choice
+      name={name}
+      value={styleKey}
+      checked={selected === styleKey}
+      onSelect={(k) => onChange(choiceOf(k))}
+      title={title}
+    >
+      {description}
+      {hint && <span className="block text-xs">{hint}</span>}
+    </Choice>
+  );
+}
+
 /** Picks how a bot writes: a built-in style, one of my styles, or one another member shared. */
 export function OutputStylePicker({
   value,
@@ -53,43 +87,55 @@ export function OutputStylePicker({
     );
 
   const selected = keyOf(value);
-  const tile = (key: string, title: string, description: string, hint?: string) => (
-    <Choice
-      key={key}
-      name={name}
-      value={key}
-      checked={selected === key}
-      onSelect={(k) => onChange(choiceOf(k))}
-      title={title}
-    >
-      {description}
-      {hint && <span className="block text-xs">{hint}</span>}
-    </Choice>
-  );
   const mine = data.styles.filter((s) => s.mine);
   const shared = data.styles.filter((s) => !s.mine);
   const missing =
     value.outputStyle === "custom" && !data.styles.some((s) => s.id === value.outputStyleId);
   return (
     <div className="space-y-4">
-      <Group label="Built-in">{data.builtins.map((b) => tile(b.key, b.name, b.description))}</Group>
+      <Group label="Built-in">
+        {data.builtins.map((b) => (
+          <StyleTile
+            key={b.key}
+            name={name}
+            styleKey={b.key}
+            title={b.name}
+            description={b.description}
+            selected={selected}
+            onChange={onChange}
+          />
+        ))}
+      </Group>
       {mine.length > 0 && (
         <Group label="My styles">
-          {mine.map((s) =>
-            tile(
-              `custom:${s.id}`,
-              s.name,
-              s.description,
-              s.scope === "installation" ? "Shared with everyone here." : undefined,
-            ),
-          )}
+          {mine.map((s) => (
+            <StyleTile
+              key={s.id}
+              name={name}
+              styleKey={`custom:${s.id}`}
+              title={s.name}
+              description={s.description}
+              hint={s.scope === "installation" ? "Shared with everyone here." : undefined}
+              selected={selected}
+              onChange={onChange}
+            />
+          ))}
         </Group>
       )}
       {shared.length > 0 && (
         <Group label="Shared with me">
-          {shared.map((s) =>
-            tile(`custom:${s.id}`, s.name, s.description, `Shared by ${s.ownerName}.`),
-          )}
+          {shared.map((s) => (
+            <StyleTile
+              key={s.id}
+              name={name}
+              styleKey={`custom:${s.id}`}
+              title={s.name}
+              description={s.description}
+              hint={`Shared by ${s.ownerName}.`}
+              selected={selected}
+              onChange={onChange}
+            />
+          ))}
         </Group>
       )}
       {missing && (

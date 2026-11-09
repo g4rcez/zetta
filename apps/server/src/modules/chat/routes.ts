@@ -125,6 +125,19 @@ const decision = z.strictObject({
       target: z.enum(["bot", "all", "picked"]),
     })
     .optional(),
+  /** Only for a paused plugin call that asks for input: the filled form. The service checks it against the question it asked. */
+  answer: z
+    .record(
+      z.string().min(1).max(64),
+      z.union([
+        z.string().max(4000),
+        z.number().finite(),
+        z.boolean(),
+        z.array(z.string().max(500)).max(50),
+      ]),
+    )
+    .refine((o) => Object.keys(o).length <= 12)
+    .optional(),
 });
 const sendBody = z.strictObject({
   clientRequestId: z.string().min(8).max(100).optional(),
@@ -618,7 +631,7 @@ export function createChatRoutes(
         chat.decideProposal(
           actor,
           parse(uuid, params.id),
-          ...((d) => [d.approve, d.selection] as const)(parse(decision, body)),
+          ...((d) => [d.approve, d.selection, d.answer] as const)(parse(decision, body)),
         ),
       ),
     )

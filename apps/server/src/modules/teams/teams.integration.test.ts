@@ -618,7 +618,7 @@ suite("teams against compose postgres", () => {
     expect(after[0]!.description).toBe("Done when: merge SHA on main and the publish run link");
   });
 
-  test("a zetta:assign after the chief read the board waits for an Approve card, and the click puts the task on the board and wakes the member", async () => {
+  test("the chief's zetta:assign after it read the board applies at once, with no Approve card", async () => {
     const id = await teamOf("Held team", ["Held Lead", "Held Dev"]);
     runs.length = 0;
     const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
@@ -632,18 +632,12 @@ suite("teams against compose postgres", () => {
     replies["Held Dev"] = ["Shipped."];
     await call("POST", `/api/discussions/${room}/messages`, { content: "Ship it" });
     await worker.drain();
-    // Nothing yet: the write waits for the person, and the member is not woken.
-    expect(await db.select().from(task).where(eq(task.conversationId, conversationId))).toEqual([]);
-    expect(runs.some((r) => r.bot === "Held Dev")).toBe(false);
-    const card = (await call("GET", "/api/proposals")).json.proposals.find(
+    // The lead runs the work: no card, the task is on the board and the member was woken.
+    const cards = (await call("GET", "/api/proposals")).json.proposals.filter(
       (p: { kind: string; diff: { to: string }[] }) =>
         p.kind === "bot_action" && p.diff.some((x) => x.to === "assign HeldDev: Ship it"),
     );
-    expect(card).toBeDefined();
-
-    const decided = await call("POST", `/api/proposals/${card.id}/decision`, { approve: true });
-    expect(decided.json).toMatchObject({ status: "approved" });
-    await worker.drain();
+    expect(cards).toEqual([]);
     const board = await db.select().from(task).where(eq(task.conversationId, conversationId));
     expect(board.map((t) => ({ title: t.title, botId: t.botId }))).toEqual([
       { title: "Ship it", botId: dev.botId },
@@ -651,6 +645,43 @@ suite("teams against compose postgres", () => {
     const devRuns = runs.filter((r) => r.bot === "Held Dev");
     expect(devRuns).toHaveLength(1);
     expect(devRuns[0]!.prompt).toContain("Done when: it is shipped");
+  });
+
+  test("a member's write after it read the board waits for a card; Approve runs it and wakes the member again", async () => {
+    const id = await teamOf("Member held team", ["Mheld Lead", "Mheld Dev"]);
+    runs.length = 0;
+    const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
+    const d = (await call("GET", `/api/discussions/${room}`)).json;
+    const conversationId = d.discussion.conversationId as string;
+    const dev = d.members.find((m: { name: string }) => m.name === "Mheld Dev");
+    replies["Mheld Lead"] = ["@MheldDev please plan the release"];
+    replies["Mheld Dev"] = [
+      'Looking at the board.\n```zetta:task\n{"action":"list"}\n```',
+      'Planning.\n```zetta:task\n{"action":"add","title":"Plan the release"}\n```',
+      "Plan saved, moving on.",
+    ];
+    await call("POST", `/api/discussions/${room}/messages`, { content: "Plan the release" });
+    await worker.drain();
+    const mine = () =>
+      db
+        .select()
+        .from(task)
+        .where(and(eq(task.conversationId, conversationId), eq(task.botId, dev.botId)));
+    // Held: nothing on the board yet, and one card holds the write.
+    expect(await mine()).toEqual([]);
+    const card = (await call("GET", "/api/proposals")).json.proposals.find(
+      (p: { kind: string; diff: { to: string }[] }) =>
+        p.kind === "bot_action" && p.diff.some((x) => x.to.startsWith("task add")),
+    );
+    expect(card).toBeDefined();
+    const before = runs.filter((r) => r.bot === "Mheld Dev").length;
+
+    const decided = await call("POST", `/api/proposals/${card.id}/decision`, { approve: true });
+    expect(decided.json).toMatchObject({ status: "approved" });
+    await worker.drain();
+    expect((await mine()).map((t) => t.title)).toEqual(["Plan the release"]);
+    // Nothing was handed to another member, so the proposer itself goes on.
+    expect(runs.filter((r) => r.bot === "Mheld Dev").length).toBe(before + 1);
   });
 
   test("zetta:assign to someone who is not another member of the room adds nothing and tells the chief", async () => {

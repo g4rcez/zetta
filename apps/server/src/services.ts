@@ -37,8 +37,12 @@ import { createOutputStyles } from "./modules/output-styles/service";
 import { createMarket } from "./modules/skills/market";
 import { createSkills } from "./modules/skills/service";
 import { createPlayground } from "./modules/playground/service";
+import { createAppAuthor } from "./modules/apps/author";
+import { createApps } from "./modules/apps/service";
+import { configureApps } from "./modules/integrations/plugins/apps";
 import { containerConfig, createContainerRunner } from "./modules/playground/runner-container";
 import { createMemoryJobs } from "./modules/memory/jobs";
+import { createMemoryScreen } from "./modules/memory/screen";
 import { createMemoryAssist } from "./modules/memory/assist";
 import { createMemoryGraph } from "./modules/memory/graph";
 import { createMemory } from "./modules/memory/service";
@@ -251,7 +255,15 @@ const turnRunner = createTurnRunner(
     decisionRouting.reply(b, text, userId ? { userId, isAdmin: false } : undefined),
 );
 // Bots learn from finished work and the chief reviews the memory, through the same turn runner as the chat.
-const memoryJobs = createMemoryJobs(db, { memory, run: turnRunner, lookup: membershipLookup });
+const memoryJobs = createMemoryJobs(db, {
+  memory,
+  run: turnRunner,
+  lookup: membershipLookup,
+  // A source added to the memory is checked by the person's chief before a bot reads it, and a web address is read in the browser
+  // profile "memory" (the same guarded reader the chat's /browse uses).
+  screen: createMemoryScreen(db),
+  readPage: (owner, url) => computer.read(owner, "memory", url),
+});
 const agendaScheduler = createAgendaScheduler(db, mcp.plugins, membershipLookup);
 const skillsLibrary = createSkills(db);
 const containerConfigPlayground = containerConfig();
@@ -260,6 +272,15 @@ const playgroundContainers = containerConfigPlayground
   : undefined;
 const playgrounds = createPlayground(db, {
   runners: playgroundContainers ? { container: playgroundContainers.run } : {},
+});
+// Zetta Apps: published code whose tools bots call through the built-in `apps` plugin (docs/decisions/apps.md).
+export const apps = createApps(db, {
+  runners: playgroundContainers ? { container: playgroundContainers.run } : {},
+});
+const appAuthor = createAppAuthor({ apps, playgrounds });
+configureApps({
+  apps,
+  actorFor: (userId) => issueBackgroundActor(membershipLookup, userId),
 });
 const outputStyles = createOutputStyles(db);
 const botClaude = createBotClaude(db);
@@ -289,6 +310,7 @@ export const chatServices = {
       tasks,
       artifacts,
       playground: playgrounds,
+      appAuthor,
       memory,
       skills: { skills: skillsLibrary, market: skillsMarket },
       teams: teamStore,
@@ -347,14 +369,30 @@ features.routines.useChat(async (userId, conversationId, prompt, requestKey, opt
   }
 });
 // The chief's memory review is a real chat turn too, in a conversation the lists leave out (see listConversations).
-memoryJobs.useChat(async (userId, conversationId, prompt, requestKey) => {
+memoryJobs.useChat(async (userId, conversationId, prompt, requestKey, opts) => {
   const actor = await issueBackgroundActor(membershipLookup, userId);
   if (!actor) return { ok: false, text: "", slugs: [], error: "OWNER_INACTIVE" };
   for (let attempt = 0; ; attempt++) {
     try {
+      // An ingest's source goes in as an attached file: the chat shows it as one, and the bot is told it is outside data.
+      const attachmentIds: string[] = [];
+      for (const a of opts?.attachments ?? [])
+        attachmentIds.push(
+          (
+            await chatServices.chat.addAttachment(actor, {
+              name: a.name,
+              mimeType: "text/plain",
+              text: a.text,
+              conversationId,
+            })
+          ).id,
+        );
       const { follow } = await chatServices.chat.startTurn(actor, conversationId, {
         content: prompt,
         clientRequestId: requestKey,
+        ...(attachmentIds.length ? { attachmentIds } : {}),
+        // A memory job's own writes apply at once; the memory enforces what each item allows (see Converse.memoryJob).
+        ...(opts?.memoryJob ? { memoryJob: opts.memoryJob } : {}),
       });
       let saved: { status: string; content: string; meta?: unknown } | undefined;
       for await (const { event } of follow()) if (event.type === "message") saved = event.message;
@@ -587,12 +625,14 @@ export const skillServices = {
   db,
   skills: skillsLibrary,
   market: skillsMarket,
+  claude: botClaude,
 };
 export const playgroundServices = {
   access: identity.access,
   playground: playgrounds,
   containers: playgroundContainers,
 };
+export const appsServices = { access: identity.access, apps };
 export const zettaMcpServices = {
   auth,
   resource: mcpResource(ENV),

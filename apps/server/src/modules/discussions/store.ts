@@ -912,6 +912,31 @@ export function createDiscussionStore(
       if (d.status !== "open") throw new DiscussionError("CLOSED", `That room is ${d.status}.`);
       return post(db, d, who, text);
     },
+    /** Wakes one member for a post (even its own author): a bot that waited for the person's approval goes on once the click is done. */
+    async wakeBot(a: ActiveActor, id: string, botId: string, messageId: string) {
+      const d = await this.forMember(a, id, botId);
+      const n = await transaction(db, async (tx) => {
+        const [cur] = await tx
+          .select()
+          .from(discussion)
+          .where(eq(discussion.id, d.id))
+          .for("update");
+        if (cur?.status !== "open") return 0;
+        const rows = await tx
+          .insert(discussionTurn)
+          .values({
+            ownerUserId: d.ownerUserId,
+            discussionId: d.id,
+            botId,
+            triggerMessageId: messageId,
+          })
+          .onConflictDoNothing()
+          .returning({ id: discussionTurn.id });
+        return rows.length;
+      });
+      if (n) onEnqueue?.();
+      return n;
+    },
     /** A post that already exists (a member turn's reply): only wakes the next members. */
     async afterReply(
       d: Discussion,
@@ -2114,6 +2139,7 @@ export function createDiscussionStore(
   // Methods that take the room id as their second argument, after the actor.
   for (const name of [
     "postAsBot",
+    "wakeBot",
     "postAsOwner",
     "updateContext",
     "updateContextAsBot",

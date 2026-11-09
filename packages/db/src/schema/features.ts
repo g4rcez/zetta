@@ -380,6 +380,9 @@ export const configProposal = zetta.table(
         "install_skills",
         "chief_action",
         "bot_action",
+        // A plugin call that stopped for the person's answer (see PluginPause); approving or declining continues it.
+        "tool_resume",
+        "publish_app",
       ],
     })
       .default("config")

@@ -239,6 +239,20 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
     expect((await features.routines.list(actor))[0]?.paused).toBe(true);
   });
 
+  test("the chief's own write after a tool result applies at once, with no bot_action card", async () => {
+    const { say } = await chiefOf(B);
+    await say(
+      [
+        '```zetta:task\n{"action":"list"}\n```',
+        '```zetta:task\n{"action":"add","title":"Chief plans the launch"}\n```',
+      ],
+      "plan the launch",
+    );
+    expect((await pending(B)).filter((p) => p.kind === "bot_action")).toEqual([]);
+    const actor = (await actorOf(B))!;
+    expect((await tasks.list(actor)).map((t) => t.title)).toContain("Chief plans the launch");
+  });
+
   test("changing a bot's computer waits for the user, then applies", async () => {
     const { say } = await chiefOf(A);
     await say(
@@ -718,5 +732,109 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
     expect(p).toMatchObject({ kind: "bot_permission" });
     await approve(A, p!.id);
     expect((await claude.get(ops.id)).config.allow).toContain("Bash(rm:*)");
+  });
+
+  test("the chief manages the whole library: a long skill, read, rename, give, take away, delete, bring back", async () => {
+    const { say } = await chiefOf(A);
+    const decideAll = async () => {
+      const cards = await pending(A);
+      for (const p of cards) await approve(A, p.id);
+      return cards;
+    };
+    const long = "Step by step. ".repeat(3000);
+    await say(
+      [
+        '```zetta:create_bot\n{"name":"Skiller","personality":"tester"}\n```',
+        `\`\`\`zetta:skill_library\n${JSON.stringify({ action: "create", name: "long-playbook", description: "A long one", body: long })}\n\`\`\``,
+      ],
+      "make a long skill",
+    );
+    expect((await pending(A)).map((p) => p.patch.title)).toEqual(["New skill long-playbook"]);
+    await decideAll();
+    // Read it back: the text reaches the bot, framed as data.
+    prompts.length = 0;
+    await say(
+      ['```zetta:skill_library\n{"action":"read","skill":"long-playbook"}\n```', "Read it."],
+      "show me the playbook",
+    );
+    expect(prompts.join("\n")).toContain("Step by step.");
+    expect(prompts.join("\n")).toContain("UNTRUSTED EXTERNAL CONTENT");
+    // A rename is a card with the old and the new name; a taken name is refused at once.
+    await say(
+      [
+        '```zetta:skill_library\n{"action":"update","skill":"long-playbook","name":"main-playbook"}\n```',
+      ],
+      "rename it",
+    );
+    const [rename] = await pending(A);
+    expect(rename!.diff.map((d) => d.field)).toEqual(["skill", "name"]);
+    await approve(A, rename!.id);
+    // Give it to a bot and take it away again.
+    await say(
+      [
+        '```zetta:skill_library\n{"action":"attach","skill":"main-playbook","bots":["Skiller"]}\n```',
+      ],
+      "give it to Skiller",
+    );
+    await decideAll();
+    const lib = createSkills(db);
+    const me = (await actorOf(A))!;
+    const botsOf = async () => (await lib.list(me)).find((x) => x.name === "main-playbook")!.botIds;
+    expect(await botsOf()).toHaveLength(1);
+    await say(
+      [
+        '```zetta:skill_library\n{"action":"detach","skill":"main-playbook","bots":["Skiller"]}\n```',
+      ],
+      "take it from Skiller",
+    );
+    const [detach] = await pending(A);
+    expect(detach!.patch.title).toBe("Take skill main-playbook from Skiller");
+    await approve(A, detach!.id);
+    expect(await botsOf()).toHaveLength(0);
+    // Delete it, then bring it back.
+    await say(
+      ['```zetta:skill_library\n{"action":"archive","skill":"main-playbook"}\n```'],
+      "delete it",
+    );
+    await decideAll();
+    expect((await lib.list(me)).some((x) => x.name === "main-playbook")).toBe(false);
+    await say(
+      ['```zetta:skill_library\n{"action":"restore","skill":"main-playbook"}\n```'],
+      "bring it back",
+    );
+    const [restore] = await pending(A);
+    expect(restore!.patch.title).toBe("Bring back skill main-playbook");
+    await approve(A, restore!.id);
+    expect((await lib.list(me)).some((x) => x.name === "main-playbook")).toBe(true);
+  });
+
+  test("a body over the library limit and a rename to a taken name are refused", async () => {
+    const { say } = await chiefOf(A);
+    prompts.length = 0;
+    await say(
+      [
+        `\`\`\`zetta:skill_library\n${JSON.stringify({ action: "create", name: "too-long", description: "d", body: "x ".repeat(33_000) })}\n\`\`\``,
+        "Done.",
+      ],
+      "make a huge skill",
+    );
+    expect(await pending(A)).toEqual([]);
+    await say(
+      [
+        '```zetta:skill_library\n{"action":"create","name":"other-skill","description":"d","body":"b"}\n```',
+      ],
+      "another",
+    );
+    await approve(A, (await pending(A))[0]!.id);
+    prompts.length = 0;
+    await say(
+      [
+        '```zetta:skill_library\n{"action":"update","skill":"other-skill","name":"main-playbook"}\n```',
+        "Done.",
+      ],
+      "rename it to a taken name",
+    );
+    expect(await pending(A)).toEqual([]);
+    expect(prompts.join("\n")).toContain('a skill called "main-playbook" already exists');
   });
 });

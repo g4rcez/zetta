@@ -13,8 +13,10 @@ import {
   type CredentialField,
   type CredentialGrant,
   type InboundFilter,
+  type PluginAnswer,
   type PluginContext,
   type PluginDef,
+  PluginPause,
   type PluginStatus,
 } from "./registry";
 
@@ -810,6 +812,70 @@ export function createPlugins(
         await outcome("ok");
         return out;
       } catch (e) {
+        if (e instanceof PluginPause) {
+          e.pluginTool ??= tool;
+          await outcome("ok"); // the call ran and stopped for the person's answer; that is not a failure
+          throw e;
+        }
+        await outcome(e instanceof PluginError && e.code === "TIMEOUT" ? "timeout" : "failed");
+        throw e instanceof PluginError ? e : new PluginError("FAILED");
+      }
+    },
+    /**
+     * Continues a call that stopped for the person (a PluginPause) with their answer. The binding rules are those of the call that stopped:
+     * the bot must still be bound (or the plugin built in and available) and allowed the tool that paused. A "no" always goes through, so a decline is never blocked by a changed setting.
+     */
+    async resumeTool(
+      a: ActiveActor,
+      botId: string,
+      id: string,
+      requestId: string,
+      answer: PluginAnswer,
+      pluginTool: string,
+      config?: Scope,
+    ): Promise<string> {
+      const outcome = (o: "ok" | "failed" | "timeout" | "denied") =>
+        audit(db, a.userId, {
+          kind: "tool_call",
+          botId,
+          outcome: o,
+          detail: auditToolDetail("plugin", `resume:${answer.action}`),
+        });
+      const d = getPlugin(id);
+      if (!d || d.kind !== "native" || !d.pausing)
+        throw new PluginError("NOT_SUPPORTED", "That plugin does not pause for approval.");
+      if (!d.tools?.some((t) => t.name === pluginTool))
+        throw new PluginError("UNKNOWN_TOOL", "That plugin has no such tool.");
+      // A built-in plugin has no binding: the bot is checked by the plugin itself. Any other needs this user's binding.
+      const binding = d.always ? undefined : pickBinding(await mcp().bound(a, botId), id, config);
+      if (d.always ? !(await d.always.available(botId, a.userId).catch(() => false)) : !binding)
+        throw new PluginError("NOT_BOUND", "That plugin is not connected to this bot any more.");
+      if (answer.action === "accept" && binding && !toolAllowed(binding, pluginTool)) {
+        await outcome("denied");
+        throw new PluginError(
+          "TOOL_NOT_ALLOWED",
+          "This bot may not use that tool any more.",
+          `Open the bot's settings > Plugins & MCP and allow ${pluginTool.replace(/_/g, " ")}.`,
+        );
+      }
+      try {
+        const ctx: PluginContext = d.always
+          ? {
+              userId: a.userId,
+              botId,
+              config: {},
+              setConfig: () => Promise.reject(new PluginError("FAILED")),
+            }
+          : await ctxFor(a, d, await boundRow(a, binding!), undefined, botId);
+        const out = render(await withDeadline(d.pausing.resume(ctx, requestId, answer)));
+        await outcome("ok");
+        return out;
+      } catch (e) {
+        if (e instanceof PluginPause) {
+          e.pluginTool ??= pluginTool;
+          await outcome("ok"); // it ran and stopped again for a new question
+          throw e;
+        }
         await outcome(e instanceof PluginError && e.code === "TIMEOUT" ? "timeout" : "failed");
         throw e instanceof PluginError ? e : new PluginError("FAILED");
       }

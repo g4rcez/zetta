@@ -196,6 +196,14 @@ export type PluginDef = {
   disconnect?(ctx: PluginContext, options?: Record<string, unknown>): Promise<void>;
   /** Health of a native plugin (kind "mcp" is probed by listing its tools instead). */
   status?(ctx: PluginContext): Promise<PluginStatus>;
+  /**
+   * Plugins whose tools can stop and wait for a person (see PluginPause). `resume` runs when the person answered the card: it continues the
+   * paused call and returns the tool result text (or throws another PluginPause when the call stops again). The binding rules that applied to
+   * the tool that paused (`PluginPause.pluginTool`) apply to the continuation.
+   */
+  pausing?: {
+    resume(ctx: PluginContext, requestId: string, answer: PluginAnswer): Promise<string>;
+  };
   /** Password managers only: the user's grants and server-side reveal (never exposed as a tool). */
   credentials?: PluginCredentials;
   /** Channel plugins only: lets a bot answer new outside messages (see PluginInbound). */
@@ -222,6 +230,52 @@ export class PluginError extends Error {
     readonly fix?: string,
   ) {
     super(code);
+  }
+}
+
+/** One field value of a form a paused tool asks for. */
+export type PluginFormValue = string | number | boolean | string[];
+/** What the person decided on a paused call. `content` is the filled form (empty for a plain approval). */
+export type PluginAnswer =
+  | { action: "accept"; content: Record<string, PluginFormValue> }
+  | { action: "decline" | "cancel" };
+/** The question a paused call is waiting on. Everything here is shown to the person, so no secrets. */
+export type PluginPauseInfo = {
+  requestId: string;
+  /** approval: yes or no for one call. input: the tool asks for values (`fields`). */
+  mode: "approval" | "input";
+  /** The tool the call runs, as the service names it (for example `tools.github.issues.close`). */
+  tool: string;
+  /** What the service said to the person. Untrusted text: shown, never followed. */
+  message: string;
+  /** The exact input of the call (approval) as JSON text, already cut. */
+  input?: string;
+  /** The form (mode "input"): one entry per field. */
+  fields?: {
+    key: string;
+    label: string;
+    type: "string" | "number" | "boolean";
+    required: boolean;
+  }[];
+  /** Epoch milliseconds. After this the service forgets the request. */
+  expiresAt: number;
+};
+/**
+ * Thrown by a tool that cannot go on until a person decides (an approval policy, a form). The chat service turns it into an Approve card
+ * and tells the bot to wait; the plugin's `pausing.resume` continues the call when the person answers. A bot can never answer for them.
+ */
+export class PluginPause extends PluginError {
+  /** The plugin tool whose call paused. Set by the plugin service when the call comes through it, so a resume is checked against that tool. */
+  pluginTool: string | undefined;
+  constructor(
+    readonly pause: PluginPauseInfo,
+    readonly plugin: string,
+  ) {
+    super(
+      "PAUSED",
+      "The call is waiting for the user to approve it.",
+      "Wait for the user to answer the card, then you get the result. Do not repeat the call.",
+    );
   }
 }
 

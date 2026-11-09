@@ -21,6 +21,7 @@ import "./plugins/google"; // importing registers the plugin
 import "./plugins/telegram"; // importing registers the plugin
 import "./plugins/reddit"; // importing registers the plugin
 import "./plugins/composio"; // importing registers the plugin
+import "./plugins/apps"; // importing registers the plugin
 import { configureVault } from "./plugins/vault"; // importing registers 1Password and Bitwarden
 import {
   createPlugins,

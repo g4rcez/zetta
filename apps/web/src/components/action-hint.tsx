@@ -25,7 +25,8 @@ type ActionHintProps = Omit<ComponentProps<"span">, "children" | "title" | "ref"
 
 /**
  * Shows the name of an icon-only control that does an action. It opens on mouse hover (after 200ms, the library's delay) and on
- * keyboard focus; Escape closes it, and a click closes it and only runs the action. A touch tap shows no hint: it runs the action.
+ * keyboard focus; Escape closes it, and a click closes it and only runs the action. It stays closed while the child has
+ * `aria-expanded="true"` (an open menu). A touch tap shows no hint: it runs the action.
  * The library tooltip is merged onto the child with `Slot` (no wrapper element, so the layout does not change). The child gets
  * `aria-describedby`, never `aria-haspopup` or `aria-expanded`. For an icon with no action, use `IconHint`.
  *
@@ -41,13 +42,18 @@ export function ActionHint({
   ...rest
 }: ActionHintProps) {
   const [open, setOpen] = useState(false);
+  // A menu or dropdown trigger sets `aria-expanded` (on this element or on the child): while its panel is open, the hint stays closed.
+  const expanded =
+    String(
+      rest["aria-expanded"] ?? (children.props as { "aria-expanded"?: unknown })["aria-expanded"],
+    ) === "true";
   return (
     <HintTooltip
       {...rest}
       as={Slot}
       ref={ref}
-      open={open}
-      onChange={setOpen}
+      open={open && !expanded}
+      onChange={(next: boolean) => setOpen(next && !expanded)}
       placement={side}
       onClick={(e: MouseEvent<HTMLSpanElement>) => {
         onClick?.(e);

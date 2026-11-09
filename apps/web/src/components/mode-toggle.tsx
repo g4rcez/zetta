@@ -1,3 +1,4 @@
+import { ActionHint } from "@/components/action-hint";
 import { Button, Menu, MenuGroup, MenuItem, MenuSeparator } from "@/components/ui";
 import { MoonIcon, SunIcon } from "@phosphor-icons/react";
 import { Fragment } from "react";
@@ -77,7 +78,6 @@ export function ModeToggle({
     <>
       <SunIcon className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
       <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-      <span className="sr-only">Toggle theme</span>
     </>
   );
   const trigger = rail ? (
@@ -85,20 +85,26 @@ export function ModeToggle({
       {icons}
     </button>
   ) : inline ? (
-    <button
-      type="button"
-      className="relative grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
-    >
-      {icons}
-    </button>
+    <ActionHint label="Toggle theme" side="bottom">
+      <button
+        type="button"
+        aria-label="Toggle theme"
+        className="relative grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        {icons}
+      </button>
+    </ActionHint>
   ) : (
-    <Button
-      variant={compact ? "ghost" : "outline"}
-      size="icon"
-      className={compact ? "size-10 rounded-md text-muted-foreground" : ""}
-    >
-      {icons}
-    </Button>
+    <ActionHint label="Toggle theme" side={compact ? "right" : "bottom"}>
+      <Button
+        variant={compact ? "ghost" : "outline"}
+        size="icon"
+        aria-label="Toggle theme"
+        className={compact ? "size-10 rounded-md text-muted-foreground" : ""}
+      >
+        {icons}
+      </Button>
+    </ActionHint>
   );
 
   return (

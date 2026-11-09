@@ -150,3 +150,29 @@ test("a Dropdown trigger can carry a hint and opens its panel on a click", async
     "inside",
   );
 });
+
+test("a Menu trigger shows no hint while its menu is open", async () => {
+  const host = await mount(
+    <Menu
+      asChild
+      hover={false}
+      restoreFocus
+      title=""
+      label={
+        <ActionHint label="Toggle theme" side="bottom">
+          <button type="button" aria-label="Toggle theme">
+            t
+          </button>
+        </ActionHint>
+      }
+    >
+      <MenuItem title="Dark">Dark</MenuItem>
+    </Menu>,
+  );
+  const button = host.querySelector("button")!;
+  await press(button);
+  expect(button.getAttribute("aria-expanded")).toBe("true");
+  await hover(button);
+  await fire(button, ["focusin", "focus"]);
+  expect(tooltip()).toBeNull();
+});

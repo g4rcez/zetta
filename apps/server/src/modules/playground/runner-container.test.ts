@@ -81,6 +81,37 @@ real("playground container runner", () => {
     expect(result.stdout).toBe(`${containerUser().uid}\n1\n`);
   });
 
+  test("a payload on stdin reaches the script and a result file comes back; the payload is not in its environment", async () => {
+    const script =
+      'payload=$(cat)\nenv | grep -c SECRETVALUE\nprintf \'{"echo":%s}\' "$payload" > result.json\n';
+    const result = await runner.run(
+      { ...bash(script), stdin: '{"token":"SECRETVALUE"}', resultFile: "result.json" },
+      never,
+    );
+    expect(result).toMatchObject({ status: "ok", stdout: "0\n" });
+    expect(result.result).toBe('{"echo":{"token":"SECRETVALUE"}}');
+    // Without stdin the script reads nothing and no result is reported.
+    const none = await runner.run({ ...bash("cat | wc -c\n"), resultFile: "result.json" }, never);
+    expect(none.stdout.trim()).toBe("0");
+    expect(none.result).toBeUndefined();
+  });
+
+  test("a result file that is a link, or too large, is not read", async () => {
+    const link = await runner.run(
+      { ...bash("ln -s /etc/hostname result.json\n"), resultFile: "result.json" },
+      never,
+    );
+    expect(link.result).toBeUndefined();
+    const big = await runner.run(
+      {
+        ...bash("head -c 1100000 /dev/zero | tr '\\0' 'a' > result.json\n"),
+        resultFile: "result.json",
+      },
+      never,
+    );
+    expect(big.result).toBeUndefined();
+  });
+
   test("a failing script reports its exit code", async () => {
     const result = await runner.run(bash("echo oops >&2\nexit 7\n"), never);
     expect(result).toMatchObject({ status: "failed", exitCode: 7, stderr: "oops\n" });

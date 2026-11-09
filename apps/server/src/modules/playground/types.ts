@@ -25,6 +25,13 @@ export type RunSpec = {
   files: readonly PlaygroundFileSnapshot[];
   inputs: Record<string, unknown>;
   timeoutMs: number;
+  /**
+   * Bytes for the script's standard input (an app call sends its payload here, so a secret never appears in an argument or in the
+   * environment). Absent: the script gets no input.
+   */
+  stdin?: string;
+  /** A file the script writes in its folder (for example `result.json`); its text comes back as `RunResult.result`. */
+  resultFile?: string;
 };
 export type RunOutputFile = { path: string; content: Buffer; mimeType: string };
 export type RunResult = {
@@ -37,6 +44,8 @@ export type RunResult = {
   truncated: boolean;
   outputs: RunOutputFile[];
   runtimeVersion: string;
+  /** The text of `RunSpec.resultFile` when the script wrote one within the size limit. */
+  result?: string;
 };
 /** Runs one script to the end. Throws `PlaygroundError("UNAVAILABLE")` when it cannot start at all (no CLI, no engine). */
 export type Runner = (spec: RunSpec, signal: AbortSignal) => Promise<RunResult>;

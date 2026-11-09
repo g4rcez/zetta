@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { containerUser, engineOf, tmpfsOwner, type Engine } from "../container-user";
 import { LANGUAGES, PLAYGROUND_LIMITS, type Cli } from "./languages";
-import { collectOutputs, emptyResult, GRACE_MS, tail, writeFolder } from "./run-folder";
+import { collectOutputs, emptyResult, GRACE_MS, readResult, tail, writeFolder } from "./run-folder";
 import { PlaygroundError, type Runner } from "./types";
 
 export type ContainerConfig = {
@@ -176,6 +176,8 @@ export function createContainerRunner(c: ContainerConfig) {
         [
           c.bin,
           "exec",
+          // The payload of an app call arrives on stdin; the engine needs -i to pass it on.
+          ...(spec.stdin === undefined ? [] : ["-i"]),
           "-w",
           inside,
           "-e",
@@ -198,7 +200,7 @@ export function createContainerRunner(c: ContainerConfig) {
           ...cli.args(spec.entry),
         ],
         {
-          stdin: "ignore",
+          stdin: spec.stdin === undefined ? "ignore" : Buffer.from(spec.stdin),
           stdout: "pipe",
           stderr: "pipe",
           env: { ...process.env, ZETTA_INPUTS: JSON.stringify(spec.inputs) },
@@ -227,6 +229,7 @@ export function createContainerRunner(c: ContainerConfig) {
         signal.removeEventListener("abort", onAbort);
       }
       const kept = await collectOutputs(join(dir, "out"));
+      const result = await readResult(dir, spec);
       const code = proc.exitCode;
       // With `-s KILL`, `timeout` answers 137 (the kill signal) when it ended the script; without it, 124. A script that exits with
       // one of these by itself, before the limit, is a plain failure.
@@ -241,6 +244,7 @@ export function createContainerRunner(c: ContainerConfig) {
         truncated: out.cut() || err.cut() || kept.cut,
         outputs: kept.outputs,
         runtimeVersion: version,
+        ...(result !== undefined && { result }),
       };
     } finally {
       // A folder the container user cannot hand back stays until the next boot sweep.

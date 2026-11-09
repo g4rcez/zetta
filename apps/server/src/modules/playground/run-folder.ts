@@ -80,3 +80,20 @@ export const emptyResult = (status: RunResult["status"], runtimeVersion: string)
   outputs: [],
   runtimeVersion,
 });
+
+/** The most a result file may hold. A larger one is dropped, so a script cannot fill memory through it. */
+export const RESULT_BYTES = 1_000_000;
+
+/** The text of the result file a script wrote in its folder, or undefined (none, not a plain file, or too large). A link is never followed. */
+export async function readResult(dir: string, spec: Pick<RunSpec, "resultFile">) {
+  if (!spec.resultFile) return undefined;
+  const target = resolve(dir, spec.resultFile);
+  if (!target.startsWith(dir + sep)) return undefined;
+  try {
+    const st = await lstat(target);
+    if (!st.isFile() || st.size > RESULT_BYTES) return undefined;
+    return (await readFile(target, "utf8")).replaceAll("\0", "");
+  } catch {
+    return undefined;
+  }
+}

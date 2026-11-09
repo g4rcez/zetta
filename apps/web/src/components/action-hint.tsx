@@ -16,7 +16,7 @@ type ActionHintProps = Omit<ComponentProps<"span">, "children" | "title" | "ref"
   /** The text of the hint. Use the same text as the `aria-label` of the button, so a screen reader does not read it two times. */
   label: ReactNode;
   /** The icon-only button, link or menu trigger. It keeps its own `aria-label`; remove its native `title`. It must forward `ref` and DOM props. */
-  children: ReactElement<{ "aria-expanded"?: boolean | "true" | "false" }>;
+  children: ReactElement;
   side?: "top" | "bottom" | "left" | "right";
   /** A click closes the hint (default). Turn it off when the click changes the hint itself, like "Copied!". */
   closeOnClick?: boolean;
@@ -43,7 +43,10 @@ export function ActionHint({
 }: ActionHintProps) {
   const [open, setOpen] = useState(false);
   // A menu or dropdown trigger sets `aria-expanded` (on this element or on the child): while its panel is open, the hint stays closed.
-  const expanded = String(rest["aria-expanded"] ?? children.props["aria-expanded"]) === "true";
+  const expanded =
+    String(
+      rest["aria-expanded"] ?? (children.props as { "aria-expanded"?: unknown })["aria-expanded"],
+    ) === "true";
   return (
     <HintTooltip
       {...rest}

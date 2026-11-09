@@ -1,37 +1,10 @@
 import { defineConfig } from "vite-plus";
+import oxfmt from "./oxfmt.config";
+import oxlint from "./oxlint.config";
 
 export default defineConfig({
-  lint: {
-    ignorePatterns: [
-      "node_modules/**",
-      "**/node_modules/**",
-      "apps/web/dist/**",
-      "apps/web/.tanstack/**",
-      "apps/web/src/routeTree.gen.ts",
-      "apps/server/dist/**",
-      "packages/db/dist/**",
-      ".alchemy/**",
-    ],
-    options: {
-      typeAware: false,
-      typeCheck: false,
-    },
-  },
-  fmt: {
-    ignorePatterns: [
-      "node_modules/**",
-      "**/node_modules/**",
-      "apps/web/dist/**",
-      "apps/web/.tanstack/**",
-      "apps/web/src/routeTree.gen.ts",
-      "apps/server/dist/**",
-      "packages/db/dist/**",
-      ".alchemy/**",
-    ],
-    singleQuote: false,
-    semi: true,
-    sortPackageJson: true,
-  },
+  lint: { ...oxlint, options: { typeAware: false, typeCheck: false } },
+  fmt: oxfmt,
   staged: {
     "*.{js,ts,jsx,tsx,vue,svelte,json,jsonc,css,md}": "vp check --fix",
   },

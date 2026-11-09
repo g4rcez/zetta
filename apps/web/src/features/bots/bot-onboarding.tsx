@@ -1,22 +1,18 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
-  ChartBarIcon,
   CheckIcon,
   WarningCircleIcon,
-  CodeIcon,
-  BellSimpleIcon,
   FilePlusIcon,
-  HandshakeIcon,
   PencilLineIcon,
-  BinocularsIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 
 import { BotAvatar, type AvatarValue } from "@/components/bot-avatar";
-import { Button, Input, Select } from "@/components/ui";
+import { Button, Input, Progress, Select } from "@/components/ui";
 import "../code/register";
 import "../computer/register";
 import "../plugins/register";
@@ -26,25 +22,33 @@ import { BotAccounts } from "../chat/bot-accounts";
 import { BotAvatarPicker } from "../chat/bot-avatar-picker";
 import { BotDecision } from "../chat/bot-decision";
 import { BotHooks } from "../chat/bot-hooks";
-import {
-  PERSONALITY_PRESETS,
-  duplicateOf,
-  isAllowedModel,
-  modelOptions,
-} from "../chat/bot-presets";
+import { duplicateOf, isAllowedModel, modelOptions } from "../chat/bot-presets";
 import { registeredBotSections } from "../chat/bot-sections";
 import { chatClient, errorMessage, type Bot, type OutputStyleKey } from "../chat/chat-client";
 import { OutputStylePicker } from "../output-styles/output-style-picker";
 import { styleLabel } from "../output-styles/output-styles-api";
 import { MentionTextarea } from "../chat/mention";
 import { useSidebarData } from "../chat/sidebar-data";
-import { Choice, field } from "../shared/ui";
+import { Badge, Choice, field } from "../shared/ui";
+import { harnessQueries } from "../studio/studio-queries";
+import { usePlugins } from "../plugins/plugins-api";
+import {
+  BOT_TEMPLATES,
+  TEMPLATE_CATEGORIES,
+  sameAvatar,
+  templateById,
+  templateInput,
+  templateSettings,
+  templateTools,
+  type BotTemplate,
+} from "./bot-templates";
+import { TemplatePreview, type TemplateEngine } from "./template-preview";
 import { extractActions, reviewInstructions, reviewScore } from "./instruction-review";
 import { FRESH_INTERVIEW, type InterviewState } from "./interview-flow";
 import { InstructionsInterview } from "./instructions-interview";
 import { Response } from "../chat/response";
 import { Alert } from "@g4rcez/components/alert";
-import { IconHint } from "@zetta/ui/components/icon-hint";
+import { IconHint } from "@/components/icon-hint";
 
 export type Draft = {
   name: string;
@@ -149,15 +153,7 @@ const PRIMARY_HARNESSES = [
     blurb: "Canned replies, no provider needed. Good to try the flow, not for real work.",
   },
 ] as const;
-/** Illustration per template: an icon and a tint, so the grid scans by shape and colour before reading. */
-const TEMPLATE_ART: Record<string, { icon: PhosphorIcon; tint: string }> = {
-  researcher: { icon: BinocularsIcon, tint: "bg-info/12 text-info" },
-  coder: { icon: CodeIcon, tint: "bg-info/12 text-info" },
-  editor: { icon: PencilLineIcon, tint: "bg-warn/12 text-warn" },
-  analyst: { icon: ChartBarIcon, tint: "bg-success/12 text-success" },
-  coach: { icon: HandshakeIcon, tint: "bg-destructive/12 text-destructive" },
-  concierge: { icon: BellSimpleIcon, tint: "bg-success/12 text-success" },
-};
+/** A flat tile for choices that are not a bot (start blank). Templates show the picture the bot will get. */
 const ArtTile = ({ icon: Icon, tint }: { icon: PhosphorIcon; tint: string }) => (
   <span
     aria-hidden="true"
@@ -191,7 +187,25 @@ export function BotOnboarding() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
-  const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
+  // The engine the person did not pick yet follows what works here: Claude Code when it is ready, else the offline test engine.
+  const engineChosen = useRef(false);
+  const harnesses = useQuery(harnessQueries.list());
+  const claudeReady = harnesses.data?.some(
+    (h) => h.harness === "claude-code" && h.status === "ready",
+  );
+  useEffect(() => {
+    if (claudeReady && !engineChosen.current && !bot)
+      setDraft((d) => (d.harness === "fixture" ? { ...d, harness: "claude-code", model: "" } : d));
+  }, [claudeReady, bot]);
+  const set = (patch: Partial<Draft>) => {
+    if (patch.harness !== undefined) engineChosen.current = true;
+    setDraft((d) => ({ ...d, ...patch }));
+  };
+  const template = templateById(origin);
+  const engine: TemplateEngine =
+    draft.harness === "fixture"
+      ? { label: "the offline test engine", ready: false }
+      : { label: draft.harness === "claude-code" ? "Claude Code" : draft.harness, ready: true };
   const checks = useMemo(
     () => reviewInstructions(draft.personality, draft.instructions),
     [draft.personality, draft.instructions],
@@ -205,14 +219,24 @@ export function BotOnboarding() {
       setDraft((d) => ({ ...BLANK, name: d.name, description: d.description }));
       return;
     }
-    const preset = PERSONALITY_PRESETS.find((p) => p.id === id);
-    if (preset) {
-      set({
-        personality: preset.personality,
-        instructions: preset.instructions,
-        description: draft.description || preset.description,
-        name: draft.name || preset.label,
-      });
+    const chosen = templateById(id);
+    if (chosen) {
+      // Switching templates replaces what the last one filled in; a name or description the person typed is kept.
+      const previous = template;
+      setDraft((d) => ({
+        ...d,
+        personality: chosen.personality,
+        instructions: chosen.instructions,
+        outputStyle: chosen.outputStyle,
+        outputStyleId: null,
+        description:
+          !d.description || d.description === previous?.description
+            ? chosen.description
+            : d.description,
+        name: !d.name || d.name === previous?.title ? chosen.title : d.name,
+      }));
+      // Keep a picture the person chose themselves; take the template's when there is none or it was the last template's.
+      setAvatar((a) => (a === null || sameAvatar(a, previous?.avatar) ? chosen.avatar : a));
       return;
     }
     const source = bots.find((b) => b.id === id);
@@ -221,12 +245,14 @@ export function BotOnboarding() {
       setAvatar(source.avatar ?? null);
     }
   }
-  async function create() {
+  /** Creates the bot from the draft. With `fromTemplate`, the template's own settings (computer use, code access) come along. */
+  async function create(fromTemplate?: BotTemplate) {
     if (busy || !draft.name.trim()) return;
     setBusy(true);
     setError(undefined);
     try {
       const created = await chatClient.createBot({
+        ...(fromTemplate ? templateInput(fromTemplate) : {}),
         avatar,
         name: draft.name.trim(),
         description: draft.description,
@@ -240,7 +266,8 @@ export function BotOnboarding() {
       });
       setBot(created);
       setBots((l) => [...l, created]);
-      setStep(CREATE_AT + 1);
+      // Suggested plugins are the next useful thing to set up; with none, go straight to the test drive.
+      setStep(fromTemplate && fromTemplate.tools.length === 0 ? STEPS.length - 1 : CREATE_AT + 1);
       setNotice(
         `${created.name} is created. The next steps are optional: skip any of them and change it later in its settings.`,
       );
@@ -340,7 +367,15 @@ export function BotOnboarding() {
             {error && <Alert theme="danger">{error}</Alert>}
 
             {current.id === "start" && (
-              <StartStep origin={origin} bots={bots.filter((b) => b.canEdit)} onChoose={choose} />
+              <StartStep
+                origin={origin}
+                bots={bots.filter((b) => b.canEdit)}
+                onChoose={choose}
+                engine={engine}
+                busy={busy}
+                onCreate={(t) => void create(t)}
+                onCustomize={() => go(step + 1)}
+              />
             )}
             {current.id === "identity" && (
               <IdentityStep draft={draft} set={set} avatar={avatar} setAvatar={setAvatar} />
@@ -356,9 +391,17 @@ export function BotOnboarding() {
                 checks={checks}
               />
             )}
-            {current.id === "review" && <ReviewStep draft={draft} checks={checks} onEdit={go} />}
+            {current.id === "review" && (
+              <ReviewStep draft={draft} checks={checks} onEdit={go} template={template} />
+            )}
             {current.id === "plugins" && bot && (
-              <PluginsStep bot={bot} bots={bots} onBotChange={replaceBot} notify={setNotice} />
+              <PluginsStep
+                bot={bot}
+                bots={bots}
+                onBotChange={replaceBot}
+                notify={setNotice}
+                template={template}
+              />
             )}
             {current.id === "accounts" && bot && (
               <Guided
@@ -377,7 +420,9 @@ export function BotOnboarding() {
             {current.id === "extras" && bot && (
               <ExtrasStep bot={bot} bots={bots} onBotChange={replaceBot} />
             )}
-            {current.id === "done" && bot && <DoneStep bot={bot} draft={draft} checks={checks} />}
+            {current.id === "done" && bot && (
+              <DoneStep bot={bot} draft={draft} checks={checks} template={template} />
+            )}
           </div>
 
           <footer className="sticky bottom-0 -mx-4 flex items-center justify-between gap-2 border-t bg-background px-4 py-3 md:mx-0 md:px-0">
@@ -403,7 +448,7 @@ export function BotOnboarding() {
               )}
               {step < CREATE_AT && (
                 <Button type="button" disabled={!canNext} onClick={() => go(step + 1)}>
-                  Continue
+                  {current.id === "start" && template ? "Customize" : "Continue"}
                   <ArrowRightIcon />
                 </Button>
               )}
@@ -411,7 +456,7 @@ export function BotOnboarding() {
                 <Button
                   type="button"
                   disabled={busy || !draft.name.trim()}
-                  onClick={() => void create()}
+                  onClick={() => void create(template)}
                 >
                   {busy ? "Creating…" : "Create bot"}
                 </Button>
@@ -486,17 +531,30 @@ function StepGroup({
 }
 
 /** A step body with quiet "what works / what to avoid" guidance beside it (below it on narrow screens). */
-function Guided({ good, bad, children }: { good: string[]; bad: string[]; children: ReactNode }) {
+function Guided({
+  good,
+  bad,
+  children,
+  aside,
+}: {
+  good: string[];
+  bad: string[];
+  children: ReactNode;
+  /** Replaces the tips column (the start step shows the chosen template there). */
+  aside?: ReactNode;
+}) {
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-12 xl:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="min-w-0 space-y-8 text-sm">{children}</div>
-      <aside
-        aria-label="Tips"
-        className="space-y-5 border-t pt-6 text-sm leading-relaxed lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
-      >
-        <TipList title="What works" tone="text-success" items={good} />
-        <TipList title="What to avoid" tone="text-warn" items={bad} />
-      </aside>
+      {aside ?? (
+        <aside
+          aria-label="Tips"
+          className="space-y-5 border-t pt-6 text-sm leading-relaxed lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+        >
+          <TipList title="What works" tone="text-success" items={good} />
+          <TipList title="What to avoid" tone="text-warn" items={bad} />
+        </aside>
+      )}
     </div>
   );
 }
@@ -532,12 +590,39 @@ function StartStep({
   origin,
   bots,
   onChoose,
+  engine,
+  busy,
+  onCreate,
+  onCustomize,
 }: {
   origin: string;
   bots: Bot[];
   onChoose: (id: string) => void;
+  engine: TemplateEngine;
+  busy: boolean;
+  onCreate: (t: BotTemplate) => void;
+  onCustomize: () => void;
 }) {
   const copying = bots.some((b) => b.id === origin);
+  const chosen = templateById(origin);
+  const previewRef = useRef<HTMLElement>(null);
+  const shown = useRef(chosen?.id);
+  useEffect(() => {
+    // Below the lg breakpoint the preview sits under the gallery: bring it into view when the choice changes.
+    if (chosen && shown.current !== chosen.id && !window.matchMedia("(min-width: 1024px)").matches)
+      previewRef.current?.scrollIntoView({ block: "nearest" });
+    shown.current = chosen?.id;
+  }, [chosen]);
+  const { catalog } = usePlugins(() => {});
+  // A suggestion this install's catalog does not know is left out; a required one stays, because hiding it would hide the requirement.
+  const tools = chosen
+    ? templateTools(chosen).flatMap((t) => {
+        const meta = catalog?.find((c) => c.id === t.id);
+        return meta || t.need === "required"
+          ? [{ id: t.id, name: meta?.name ?? t.id, why: t.why, need: t.need }]
+          : [];
+      })
+    : [];
   return (
     <Guided
       good={[
@@ -548,37 +633,73 @@ function StartStep({
         "One bot for everything. Narrow specialists give sharper answers and are easier to fix.",
         "Keeping a template's text without adapting it to your context.",
       ]}
+      aside={
+        chosen ? (
+          <aside
+            ref={previewRef}
+            aria-label="Chosen template"
+            className="lg:sticky lg:top-8 lg:self-start"
+          >
+            <TemplatePreview
+              template={chosen}
+              engine={engine}
+              tools={tools}
+              busy={busy}
+              onCreate={() => onCreate(chosen)}
+              onCustomize={onCustomize}
+            />
+          </aside>
+        ) : undefined
+      }
     >
       <div role="radiogroup" aria-label="Starting point" className="space-y-8">
-        <Choice
-          name="origin"
-          value="blank"
-          checked={origin === "blank"}
-          onSelect={onChoose}
-          art={<ArtTile icon={FilePlusIcon} tint="bg-muted text-muted-foreground" />}
-          title="Start blank"
+        <Group
+          label="Start from a template"
+          hint="Each one comes set up. Create it as it is, or change anything first."
         >
-          Write it yourself. The instructions step will guide you with a few questions.
-        </Choice>
-        <Group label="Or start from a template">
-          <div className="grid gap-3 lg:grid-cols-2">
-            {PERSONALITY_PRESETS.map((p) => (
-              <Choice
-                key={p.id}
-                name="origin"
-                value={p.id}
-                checked={origin === p.id}
-                onSelect={onChoose}
-                title={p.label}
-                art={TEMPLATE_ART[p.id] && <ArtTile {...TEMPLATE_ART[p.id]!} />}
-              >
-                {p.description}
-                <span className="mt-3 block border-t pt-3 text-xs leading-relaxed text-muted-foreground/80">
-                  <span className="line-clamp-2">“{extractActions(p.instructions)[0]}”</span>
-                </span>
-              </Choice>
+          <div className="space-y-6">
+            {TEMPLATE_CATEGORIES.map((c) => (
+              <section key={c.id} aria-label={c.label} className="space-y-2">
+                <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {c.label}
+                </h4>
+                <div className="grid gap-3 xl:grid-cols-2">
+                  {BOT_TEMPLATES.filter((t) => t.category === c.id).map((t) => (
+                    <Choice
+                      key={t.id}
+                      name="origin"
+                      value={t.id}
+                      checked={origin === t.id}
+                      onSelect={onChoose}
+                      title={t.title}
+                      art={
+                        <BotAvatar
+                          bot={{ id: t.id, avatar: t.avatar }}
+                          size={44}
+                          square
+                          className="shrink-0"
+                        />
+                      }
+                    >
+                      {t.description}
+                    </Choice>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
+        </Group>
+        <Group label="Or start from scratch">
+          <Choice
+            name="origin"
+            value="blank"
+            checked={origin === "blank"}
+            onSelect={onChoose}
+            art={<ArtTile icon={FilePlusIcon} tint="bg-muted text-muted-foreground" />}
+            title="Blank bot"
+          >
+            Write it yourself. The instructions step will guide you with a few questions.
+          </Choice>
         </Group>
         {bots.length > 0 && (
           <Group
@@ -978,7 +1099,7 @@ function ConfigPreview({
 
 function ReviewCard({ checks }: { checks: ReturnType<typeof reviewInstructions> }) {
   const score = reviewScore(checks);
-  const tone = score >= 85 ? "bg-success" : score >= 55 ? "bg-warn" : "bg-destructive";
+  const tone = score >= 85 ? "success" : score >= 55 ? "warn" : "danger";
   return (
     <section aria-label="Quality checks" className="rounded-lg border bg-card p-4 text-sm">
       <div className="mb-2 flex items-baseline justify-between">
@@ -987,19 +1108,7 @@ function ReviewCard({ checks }: { checks: ReturnType<typeof reviewInstructions> 
           {checks.filter((c) => c.ok).length}/{checks.length} good
         </span>
       </div>
-      <div
-        className="mb-4 h-1 overflow-hidden rounded-full bg-muted"
-        role="meter"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={score}
-        aria-label="Instruction quality"
-      >
-        <div
-          className={`h-full rounded-full transition-[width] duration-200 ease-out ${tone}`}
-          style={{ width: `${score}%` }}
-        />
-      </div>
+      <Progress className="mb-4" label="Instruction quality" value={score} tone={tone} />
       <ul className="space-y-3">
         {checks.map((c) => (
           <li key={c.id} className="flex gap-2">
@@ -1023,21 +1132,23 @@ function ReviewCard({ checks }: { checks: ReturnType<typeof reviewInstructions> 
   );
 }
 
-export function ReviewStep({
-  draft,
-  checks,
+/** One line of the review: what was chosen, and a button that jumps back to the step that sets it. */
+function ReviewRow({
+  label,
+  step,
   onEdit,
+  children,
 }: {
-  draft: Draft;
-  checks: ReturnType<typeof reviewInstructions>;
+  label: string;
+  step: number;
   onEdit: (step: number) => void;
+  children: ReactNode;
 }) {
-  const idx = (id: (typeof STEPS)[number]["id"]) => STEPS.findIndex((s) => s.id === id);
-  const missing = checks.filter((c) => !c.ok);
-  const row = (label: string, value: ReactNode, step: number) => (
+  return (
     <div className="grid grid-cols-[7rem_minmax(0,1fr)_auto] items-start gap-3 py-3">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words">{value}</dd>
+      <dd className="min-w-0 break-words">{children}</dd>
+      {/* No hint: it shows the text Edit. */}
       <Button
         type="button"
         size="xs"
@@ -1049,41 +1160,72 @@ export function ReviewStep({
       </Button>
     </div>
   );
+}
+
+export function ReviewStep({
+  draft,
+  checks,
+  onEdit,
+  template,
+}: {
+  draft: Draft;
+  checks: ReturnType<typeof reviewInstructions>;
+  onEdit: (step: number) => void;
+  /** The template the draft started from: its computer use and code access are applied when the bot is created. */
+  template?: BotTemplate;
+}) {
+  const idx = (id: (typeof STEPS)[number]["id"]) => STEPS.findIndex((s) => s.id === id);
+  const missing = checks.filter((c) => !c.ok);
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-12 xl:grid-cols-[minmax(0,1fr)_22rem]">
       <div className="min-w-0 space-y-6 text-sm">
         <dl className="divide-y border-y">
-          {row("Name", <span className="font-medium">{draft.name}</span>, idx("identity"))}
-          {row(
-            "Description",
-            draft.description || <span className="text-muted-foreground">None</span>,
-            idx("identity"),
-          )}
-          {row("Visibility", draft.visibility === "team" ? "Team" : "Private", idx("identity"))}
-          {row(
-            "Engine",
-            `${draft.harness === "fixture" ? "Offline test" : draft.harness}${draft.model ? ` · ${draft.model}` : ""}`,
-            idx("engine"),
-          )}
-          {row(
-            "Personality",
-            draft.personality ? (
+          <ReviewRow label="Name" step={idx("identity")} onEdit={onEdit}>
+            <span className="font-medium">{draft.name}</span>
+          </ReviewRow>
+          <ReviewRow label="Description" step={idx("identity")} onEdit={onEdit}>
+            {draft.description || <span className="text-muted-foreground">None</span>}
+          </ReviewRow>
+          <ReviewRow label="Visibility" step={idx("identity")} onEdit={onEdit}>
+            {draft.visibility === "team" ? "Team" : "Private"}
+          </ReviewRow>
+          <ReviewRow label="Engine" step={idx("engine")} onEdit={onEdit}>
+            {`${draft.harness === "fixture" ? "Offline test" : draft.harness}${draft.model ? ` · ${draft.model}` : ""}`}
+          </ReviewRow>
+          <ReviewRow label="Personality" step={idx("instructions")} onEdit={onEdit}>
+            {draft.personality ? (
               <span className="line-clamp-3 whitespace-pre-wrap">{draft.personality}</span>
             ) : (
               <span className="text-muted-foreground">Empty</span>
-            ),
-            idx("instructions"),
-          )}
-          {row(
-            "Instructions",
-            draft.instructions ? (
+            )}
+          </ReviewRow>
+          <ReviewRow label="Instructions" step={idx("instructions")} onEdit={onEdit}>
+            {draft.instructions ? (
               <span className="line-clamp-6 whitespace-pre-wrap">{draft.instructions}</span>
             ) : (
               <span className="text-muted-foreground">Empty</span>
-            ),
-            idx("instructions"),
-          )}
-          {row("Output style", styleLabel(draft.outputStyle), idx("instructions"))}
+            )}
+          </ReviewRow>
+          <ReviewRow label="Output style" step={idx("instructions")} onEdit={onEdit}>
+            {styleLabel(draft.outputStyle)}
+          </ReviewRow>
+          {template &&
+            templateSettings(template)
+              .filter((x) => x.label !== "Output style")
+              .map((x) => (
+                <div
+                  key={x.label}
+                  className="grid grid-cols-[7rem_minmax(0,1fr)] items-start gap-3 py-3"
+                >
+                  <dt className="text-muted-foreground">{x.label}</dt>
+                  <dd className="min-w-0 break-words">
+                    {x.value}
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      from the {template.title} template
+                    </span>
+                  </dd>
+                </div>
+              ))}
         </dl>
         {draft.harness === "fixture" && (
           <Alert theme="warn">
@@ -1110,13 +1252,24 @@ export function PluginsStep({
   bots,
   onBotChange,
   notify,
+  template,
 }: {
   bot: Bot;
   bots: Bot[];
   onBotChange: (b: Bot) => void;
   notify: (m: string) => void;
+  template?: BotTemplate;
 }) {
   const plugins = registeredBotSections().find((s) => s.id === "plugins");
+  const { catalog } = usePlugins(() => {});
+  const wanted = template
+    ? templateTools(template).flatMap((t) => {
+        const meta = catalog?.find((c) => c.id === t.id);
+        return meta || t.need === "required"
+          ? [{ id: t.id, name: meta?.name ?? t.id, why: t.why, need: t.need }]
+          : [];
+      })
+    : [];
   return (
     <Guided
       good={[
@@ -1128,6 +1281,27 @@ export function PluginsStep({
         "Write access (email, calendar) on a team bot without saying when to use it.",
       ]}
     >
+      {template && wanted.length > 0 && (
+        <section aria-label="Plugins for this template" className="rounded-lg border bg-card p-4">
+          <h3 className="mb-2 font-medium">
+            {wanted.some((t) => t.need === "required")
+              ? `The ${template.title} template needs a plugin`
+              : `The ${template.title} template works well with`}
+          </h3>
+          <ul className="space-y-2">
+            {wanted.map((t) => (
+              <li key={t.id} className="flex flex-wrap items-baseline gap-x-2">
+                <strong className="font-medium">{t.name}</strong>
+                {t.need === "required" && <Badge tone="warning">Required</Badge>}
+                <span className="text-muted-foreground">{t.why}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Install it if you have not, then turn it on for this bot below.
+          </p>
+        </section>
+      )}
       {plugins?.render({ bot, bots, onBotChange, notify })}
       <p className="text-xs text-muted-foreground">
         Install more in{" "}
@@ -1144,17 +1318,17 @@ export function PluginsStep({
   );
 }
 
-function ExtrasStep({
-  bot,
-  bots,
-  onBotChange,
+/** A folded section of optional setup: its title and why you would want it, with the controls inside. */
+function ExtraSection({
+  title,
+  why,
+  children,
 }: {
-  bot: Bot;
-  bots: Bot[];
-  onBotChange: (b: Bot) => void;
+  title: string;
+  why: string;
+  children: ReactNode;
 }) {
-  const computer = registeredBotSections().find((s) => s.id === "computer");
-  const extra = (title: string, why: string, body: ReactNode) => (
+  return (
     <details className="group border-b py-1 first:border-t">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-md py-3 focus-visible:outline-2 focus-visible:outline-ring">
         <span>
@@ -1166,9 +1340,21 @@ function ExtrasStep({
           Hide
         </span>
       </summary>
-      <div className="pb-4">{body}</div>
+      <div className="pb-4">{children}</div>
     </details>
   );
+}
+
+function ExtrasStep({
+  bot,
+  bots,
+  onBotChange,
+}: {
+  bot: Bot;
+  bots: Bot[];
+  onBotChange: (b: Bot) => void;
+}) {
+  const computer = registeredBotSections().find((s) => s.id === "computer");
   return (
     <Guided
       good={[
@@ -1181,22 +1367,23 @@ function ExtrasStep({
       ]}
     >
       <div>
-        {computer &&
-          extra(
-            "Computer use",
-            "Let it browse websites or drive a desktop session.",
-            computer.render({ bot, bots, onBotChange, notify: () => {} }),
-          )}
-        {extra(
-          "Hooks",
-          "Rules that run on every message: add context, redact text, stop or run in the background.",
-          <BotHooks bot={bot} />,
+        {computer && (
+          <ExtraSection
+            title="Computer use"
+            why="Let it browse websites or drive a desktop session."
+          >
+            {computer.render({ bot, bots, onBotChange, notify: () => {} })}
+          </ExtraSection>
         )}
-        {extra(
-          "Routing",
-          "Decide when this bot hands a message to another bot.",
-          <BotDecision bot={bot} bots={bots} />,
-        )}
+        <ExtraSection
+          title="Hooks"
+          why="Rules that run on every message: add context, redact text, stop or run in the background."
+        >
+          <BotHooks bot={bot} />
+        </ExtraSection>
+        <ExtraSection title="Routing" why="Decide when this bot hands a message to another bot.">
+          <BotDecision bot={bot} bots={bots} />
+        </ExtraSection>
       </div>
     </Guided>
   );
@@ -1206,10 +1393,12 @@ function DoneStep({
   bot,
   draft,
   checks,
+  template,
 }: {
   bot: Bot;
   draft: Draft;
   checks: ReturnType<typeof reviewInstructions>;
+  template?: BotTemplate;
 }) {
   const first = draft.instructions ? extractActions(draft.instructions)[0] : undefined;
   const left = checks.filter((c) => !c.ok).length;
@@ -1241,6 +1430,16 @@ function DoneStep({
           <p className="text-muted-foreground">{bot.description || "Ready to chat"}</p>
         </div>
       </div>
+      {template && (
+        <section aria-label="Try asking" className="space-y-2">
+          <h3 className="font-medium">Try asking</h3>
+          <ul className="space-y-1.5 text-pretty text-muted-foreground">
+            {template.starters.map((q) => (
+              <li key={q}>“{q}”</li>
+            ))}
+          </ul>
+        </section>
+      )}
       <ol className="grid gap-x-8 divide-y border-y lg:grid-cols-3 lg:divide-y-0">
         {tips.map((t, i) => (
           <li key={t.title} className="flex gap-3 py-3">

@@ -158,7 +158,8 @@ describe("identity client boundary", () => {
       capturedSignal = init.signal;
       return new Promise<Response>(() => {});
     };
-    const client = createIdentityClient("https://zetta.example", stalledFetch, { timeoutMs: 5 });
+    // A deadline of a few ms can fire before the fetch is called when a full run pauses (garbage collection), so calls would be 0.
+    const client = createIdentityClient("https://zetta.example", stalledFetch, { timeoutMs: 50 });
     await expect(client.accept("synthetic-invitation")).rejects.toMatchObject({
       code: "IDENTITY_UNAVAILABLE",
     });
@@ -177,7 +178,7 @@ describe("identity client boundary", () => {
       capturedSignal = init.signal;
       return new StalledBodyResponse();
     };
-    const client = createIdentityClient("https://zetta.example", stalledBody, { timeoutMs: 5 });
+    const client = createIdentityClient("https://zetta.example", stalledBody, { timeoutMs: 50 });
     await expect(client.status()).rejects.toMatchObject({ code: "IDENTITY_UNAVAILABLE" });
     expect(capturedSignal?.aborted).toBe(true);
   });

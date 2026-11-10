@@ -12,7 +12,7 @@ import {
 } from "@zetta/db/schema/preferences";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import type { PreferenceStore } from "./store";
-import { fail, out, rejectUntrustedOrigin } from "../http-response";
+import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type PreferenceServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -57,12 +57,7 @@ export function createPreferenceRoutes(
         if (denied) return denied;
         return out(await work({ actor: await access.requireActive(request.headers), body }));
       } catch (e) {
-        if (e instanceof AccessError)
-          return fail(
-            e.code === "SIGN_IN_REQUIRED" ? 401 : e.code === "IDENTITY_UNAVAILABLE" ? 503 : 403,
-            e.code,
-            e.message,
-          );
+        if (e instanceof AccessError) return accessFail(e);
         if (e instanceof z.ZodError)
           return fail(400, "INVALID_REQUEST", "Check the details and try again.");
         return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");

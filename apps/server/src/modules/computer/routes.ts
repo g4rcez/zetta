@@ -19,7 +19,7 @@ import { MAX_SECRET, type MachineService } from "./machines";
 import { ComputerError, type ComputerService } from "./service";
 import type { VmService } from "./vm";
 import { openVncBridge, type VncBridge } from "./vnc";
-import { fail, out, rejectUntrustedOrigin } from "../http-response";
+import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type ComputerServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -117,12 +117,7 @@ export function createComputerRoutes(
         const actor = await access.requireActive(request.headers);
         return out(await work({ userId: actor.userId, actor, body, params }), status);
       } catch (e) {
-        if (e instanceof AccessError)
-          return fail(
-            e.code === "SIGN_IN_REQUIRED" ? 401 : e.code === "IDENTITY_UNAVAILABLE" ? 503 : 403,
-            e.code,
-            e.message,
-          );
+        if (e instanceof AccessError) return accessFail(e);
         if (e instanceof ComputerError)
           return fail(
             e.code === "NOT_FOUND"

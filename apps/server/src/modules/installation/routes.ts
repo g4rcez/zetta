@@ -8,7 +8,7 @@ import {
   type InstallationService,
   type NetworkMode,
 } from "./service";
-import { fail, out, rejectUntrustedOrigin } from "../http-response";
+import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
 
 export type InstallationServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -38,12 +38,7 @@ export function createInstallationRoutes(
     restartRequired: settings.networkMode !== runningMode,
   });
   function mapError(e: unknown) {
-    if (e instanceof AccessError)
-      return fail(
-        e.code === "SIGN_IN_REQUIRED" ? 401 : e.code === "IDENTITY_UNAVAILABLE" ? 503 : 403,
-        e.code,
-        e.message,
-      );
+    if (e instanceof AccessError) return accessFail(e);
     if (e instanceof InvalidInstallationError)
       return fail(400, "INVALID_REQUEST", "Network mode needs an https public URL.");
     if (e instanceof z.ZodError)

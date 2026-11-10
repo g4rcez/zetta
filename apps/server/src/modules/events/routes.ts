@@ -2,7 +2,8 @@ import { Elysia } from "elysia";
 
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import type { EventBus } from "./bus";
-import { fail } from "../http-response";
+import { accessFail, fail } from "../http-response";
+import { envNumber } from "../env-number";
 
 export type EventServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -58,7 +59,7 @@ export function createEventRoutes(
             // A comment frame keeps proxies and the server's idle timeout from closing a quiet stream.
             beat = setInterval(
               () => send(": ping\n\n"),
-              Number(process.env.ZETTA_SSE_HEARTBEAT_MS ?? 30_000),
+              envNumber(process.env.ZETTA_SSE_HEARTBEAT_MS, 30_000),
             );
             stop = bus.subscribe(
               actor.userId,
@@ -84,12 +85,7 @@ export function createEventRoutes(
         },
       );
     } catch (e) {
-      if (e instanceof AccessError)
-        return fail(
-          e.code === "SIGN_IN_REQUIRED" ? 401 : e.code === "IDENTITY_UNAVAILABLE" ? 503 : 403,
-          e.code,
-          e.message,
-        );
+      if (e instanceof AccessError) return accessFail(e);
       return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
     }
   });

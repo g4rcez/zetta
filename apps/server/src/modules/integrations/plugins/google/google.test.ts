@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { getPlugin, type PluginContext } from "../registry";
 import { createRoutinePollers } from "../../../features/routine-pollers";
-import { newMessages } from "./gmail";
+import { newMessages, stripHtml } from "./gmail";
 import { configureGoogleForTests, redirectUri } from "./oauth";
 import "./index";
 
@@ -835,5 +835,19 @@ describe("google docs and sheets", () => {
         tool("sheets_append_rows").handler(as("spreadsheets"), { ...ok, values }),
       ).rejects.toMatchObject({ code: "INVALID_ARGS" });
     expect(calls.length).toBe(0);
+  });
+});
+
+describe("stripHtml", () => {
+  test("&amp; is decoded last, so an escaped entity stays text", () => {
+    expect(stripHtml("<p>a &amp;lt;b&amp;gt; c</p>")).toBe("a &lt;b&gt; c");
+    expect(stripHtml("<p>Tom &amp; Jerry</p>")).toBe("Tom & Jerry");
+  });
+  test("tags are dropped before entities are decoded, so decoded angle brackets stay text", () => {
+    expect(stripHtml("<p>1 &lt; 2 &gt; 0</p>")).toBe("1 < 2 > 0");
+    expect(stripHtml("&lt;script&gt;x&lt;/script&gt;<b>hi</b>&nbsp;there")).toBe(
+      "<script>x</script> hi there",
+    );
+    expect(stripHtml("<style>p{}</style><script>alert(1)</script>ok")).toBe("ok");
   });
 });

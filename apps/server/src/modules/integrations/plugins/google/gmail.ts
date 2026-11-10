@@ -3,7 +3,7 @@ import { createSendLimit } from "../send-limit";
 import {
   ACCOUNT_ARG,
   clip,
-  gfetch,
+  gjson,
   num,
   pickAccount,
   settings,
@@ -19,14 +19,15 @@ const hdr = (h: { name?: string; value?: string }[] | undefined, n: string) =>
   h?.find((x) => x.name?.toLowerCase() === n)?.value ?? "";
 type Part = { mimeType?: string; body?: { data?: string }; parts?: Part[] };
 const dec = (d?: string) => (d ? Buffer.from(d, "base64url").toString("utf8") : "");
-const stripHtml = (h: string) =>
+/** The text of an HTML mail. `&amp;` is decoded last: `&amp;lt;` is the text `&lt;`, and decoding it first would turn it into `<`. */
+export const stripHtml = (h: string) =>
   h
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim();
 function bodyOf(p: Part): string {
@@ -74,7 +75,7 @@ async function messageMeta(g: PluginContext, id: string) {
   const mu = new URL(`${settings().gmailBase}/users/me/messages/${encodeURIComponent(id)}`);
   mu.searchParams.set("format", "metadata");
   for (const h of ["From", "Subject", "Date"]) mu.searchParams.append("metadataHeaders", h);
-  const j = (await (await gfetch(g, mu.toString())).json()) as {
+  const j = (await gjson(g, mu.toString())) as {
     id: string;
     snippet?: string;
     payload?: { headers?: { name?: string; value?: string }[] };
@@ -103,7 +104,7 @@ export async function newMessages(
   const u = new URL(`${settings().gmailBase}/users/me/messages`);
   u.searchParams.set("q", `${str(query, 300)} after:${Math.max(0, Math.floor(afterSeconds))}`);
   u.searchParams.set("maxResults", "25");
-  const list = (await (await gfetch(g, u.toString())).json()) as { messages?: { id: string }[] };
+  const list = (await gjson(g, u.toString())) as { messages?: { id: string }[] };
   const found = await Promise.all(
     (list.messages ?? []).slice(0, 25).map((m) => messageMeta(g, m.id)),
   );
@@ -131,7 +132,7 @@ export const gmailTools: PluginTool[] = [
       const u = new URL(`${settings().gmailBase}/users/me/messages`);
       u.searchParams.set("q", str(a.query, 300));
       u.searchParams.set("maxResults", String(num(a.max, 5, 1, 10)));
-      const list = (await (await gfetch(g, u.toString())).json()) as {
+      const list = (await gjson(g, u.toString())) as {
         messages?: { id: string }[];
       };
       const items = await Promise.all(
@@ -154,12 +155,10 @@ export const gmailTools: PluginTool[] = [
       const g = pickAccount(ctx, a.account, "gmail.readonly");
       const id = str(a.id, 64);
       if (!ID.test(id)) throw new PluginError("INVALID_ARGS", "Invalid message id.");
-      const j = (await (
-        await gfetch(
-          g,
-          `${settings().gmailBase}/users/me/messages/${encodeURIComponent(id)}?format=full`,
-        )
-      ).json()) as {
+      const j = (await gjson(
+        g,
+        `${settings().gmailBase}/users/me/messages/${encodeURIComponent(id)}?format=full`,
+      )) as {
         id: string;
         payload?: Part & { headers?: { name?: string; value?: string }[] };
       };
@@ -195,12 +194,10 @@ export const gmailTools: PluginTool[] = [
     async handler(ctx, a) {
       const g = pickAccount(ctx, a.account, "gmail.compose");
       const raw = rfc822(recipients(a.to), str(a.subject, 200), str(a.body, 20_000));
-      const j = (await (
-        await gfetch(g, `${settings().gmailBase}/users/me/drafts`, {
-          method: "POST",
-          json: { message: { raw } },
-        })
-      ).json()) as { id?: string };
+      const j = (await gjson(g, `${settings().gmailBase}/users/me/drafts`, {
+        method: "POST",
+        json: { message: { raw } },
+      })) as { id?: string };
       return {
         status: "draft_created",
         draftId: j.id ?? null,
@@ -234,12 +231,10 @@ export const gmailTools: PluginTool[] = [
       const raw = rfc822(to, str(a.subject, 200), str(a.body, 20_000));
       if (!sendLimit.allow(g.userId, settings().now()))
         throw new PluginError("RATE_LIMITED", "Too many emails sent this hour.");
-      const j = (await (
-        await gfetch(g, `${settings().gmailBase}/users/me/messages/send`, {
-          method: "POST",
-          json: { raw },
-        })
-      ).json()) as { id?: string };
+      const j = (await gjson(g, `${settings().gmailBase}/users/me/messages/send`, {
+        method: "POST",
+        json: { raw },
+      })) as { id?: string };
       return { status: "sent", messageId: j.id ?? null };
     },
   },

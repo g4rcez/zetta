@@ -12,6 +12,12 @@ Private chat supports Markdown, attachments, authorized server-file references, 
 
 Work runs on the server. Closing or reconnecting the browser is not a cancellation or a request to repeat the task. Cancellation must be explicit; it cannot undo an external action that already happened.
 
+## Add to a task, correct it, or stop it
+
+You can keep writing while a bot works. Each message is saved at once and waits. When the reply in progress ends, the bot reads everything that waited together, oldest first, and answers once. A later message can therefore correct or cancel an earlier one: "send it to Ana", then "no, to Bruno" sends it to Bruno. A message that waits can be removed before it is read.
+
+To stop the work, press Stop or type it: "stop", "cancel that", "para", "pode parar". The word alone is the Stop button; a sentence that only contains it ("stop the dev server and restart it") is an ordinary message. Stop ends the reply in progress, pauses the tasks the bot was being called back for, ends its goal loops, and silences rooms that chat opened that were still working. Messages that waited are held, not thrown away and not run behind your back: each shows "Send now" and "Remove".
+
 ## Read the outcome, not just the status
 
 A useful task view answers:

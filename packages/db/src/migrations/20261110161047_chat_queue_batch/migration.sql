@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."chat_queue" ADD COLUMN "batch_id" uuid;

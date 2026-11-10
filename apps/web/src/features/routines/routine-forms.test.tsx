@@ -189,7 +189,12 @@ test("creating sends the words in place of the time fields", async () => {
   await send("New routine");
   const made = lastCall("/api/routines")!;
   expect(made.method).toBe("POST");
-  expect(made.body).toMatchObject({ title: "Digest", when: "Monday to Friday at 8:30" });
+  // A new routine is switched on when it is created: left paused, it only ever runs from "Run now".
+  expect(made.body).toMatchObject({
+    title: "Digest",
+    when: "Monday to Friday at 8:30",
+    activate: "on",
+  });
   for (const field of ["dailyAt", "everyMinutes", "onceAt", "weekdays"])
     expect(made.body).not.toHaveProperty(field);
   expect(saved).toHaveLength(1);

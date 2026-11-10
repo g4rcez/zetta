@@ -353,7 +353,7 @@ suite("durable chat turns against compose postgres", () => {
   const chatReq = (as: string, c: string, body: object) =>
     req(as, "POST", `/api/conversations/${c}/chat`, body);
 
-  test("messages sent while a turn runs are saved at once and each is answered in its own thread, in order", async () => {
+  test("messages sent while a turn runs are saved at once and answered together by one turn, in order", async () => {
     const { c } = await setup(A);
     const first = await chatReq(A, c, { content: "FIRST" });
     const reader = first.body!.getReader();
@@ -374,39 +374,205 @@ suite("durable chat turns against compose postgres", () => {
     ]);
     while (!(await reader.read()).done);
     prompts.length = 0;
+    const before = runs;
     const msgs = await drained(c);
-    const second = msgs.find((m) => m.content === "SECOND")!;
+    // One turn answered both, on the main line, after the last of them: no thread, no second turn.
+    expect(runs - before).toBe(1);
+    const replies = msgs.filter((m) => m.role === "assistant");
+    expect(replies.map((m) => [m.status, m.parentMessageId ?? null])).toEqual([
+      ["complete", null],
+      ["complete", null],
+    ]);
     const third = msgs.find((m) => m.content === "THIRD")!;
-    const answerOf = (id: string) =>
-      msgs.find((m) => m.role === "assistant" && m.parentMessageId === id)!;
-    expect(answerOf(second.id).status).toBe("complete");
-    expect(answerOf(third.id).status).toBe("complete");
-    expect(answerOf(second.id).seq).toBeLessThan(answerOf(third.id).seq);
-    expect(msgs.filter((m) => m.role === "assistant" && !m.parentMessageId)).toHaveLength(1);
+    expect(replies[1]!.seq).toBeGreaterThan(third.seq);
     expect(msgs.some((m) => m.queue)).toBe(false);
-    // The answer to SECOND sees what came before it, itself once, and not the message queued after it.
+    // The bot reads both messages once, oldest first, is told the later one wins, and still has what came before them.
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("Message 1 of 2:\nSECOND");
+    expect(prompts[0]).toContain("Message 2 of 2:\nTHIRD");
+    expect(prompts[0]).toContain("the latest instruction wins");
     expect(prompts[0]!.split("SECOND").length - 1).toBe(1);
+    expect(prompts[0]!.split("THIRD").length - 1).toBe(1);
     expect(prompts[0]).toContain("FIRST");
-    expect(prompts[0]).not.toContain("THIRD");
   });
 
-  test("Stop cancels only the reply in progress; queued messages are still answered", async () => {
+  test("a message sent while the batch is answered waits for the next turn", async () => {
     const { c } = await setup(A);
     const first = await chatReq(A, c, { content: "slow" });
     const reader = first.body!.getReader();
     await reader.read();
-    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "Q1" });
-    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "Q2" });
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "B1" });
+    while (!(await reader.read()).done);
+    // The batch turn (B1) is running now: B2 is not part of it.
+    for (let i = 0; i < 100; i++) {
+      const [row] = await db.select().from(chatQueue).where(eq(chatQueue.conversationId, c));
+      if (row?.status === "running") break;
+      await Bun.sleep(10);
+    }
+    prompts.length = 0;
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "B2" });
+    const msgs = await drained(c);
+    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
+      "complete",
+      "complete",
+      "complete",
+    ]);
+    // B2's own turn reads B2 as typed (one message is never wrapped), with B1 and its answer as history.
+    const last = prompts.at(-1)!;
+    expect(last).toContain("B2");
+    expect(last).not.toContain("Message 1 of");
+    expect(last).toContain("B1");
+  });
+
+  test("Stop ends the reply and holds the queued messages until the person sends or removes them", async () => {
+    const { c } = await setup(A);
+    const first = await chatReq(A, c, { content: "slow" });
+    const reader = first.body!.getReader();
+    await reader.read();
+    const q1 = await call(A, "POST", `/api/conversations/${c}/queue`, { content: "Q1" });
+    const q2 = await call(A, "POST", `/api/conversations/${c}/queue`, { content: "Q2" });
     expect((await call(A, "POST", `/api/conversations/${c}/cancel`)).json.cancelled).toBe(true);
     while (!(await reader.read()).done);
-    const msgs = await drained(c);
-    expect(msgs.find((m) => m.role === "assistant" && !m.parentMessageId)!.status).toBe(
+    let msgs = await drained(c);
+    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual(["cancelled"]);
+    expect(msgs.filter((m) => m.queue).map((m) => [m.content, m.queue])).toEqual([
+      ["Q1", "held"],
+      ["Q2", "held"],
+    ]);
+    // Nothing runs behind the person's back: a tick later the held messages are still held.
+    const before = runs;
+    await chat.drainQueues();
+    await Bun.sleep(100);
+    expect(runs).toBe(before);
+    // Someone else cannot release it; the owner sends one and removes the other.
+    const id1 = q1.json.message.id as string;
+    const id2 = q2.json.message.id as string;
+    expect((await call(B, "POST", `/api/conversations/${c}/queue/${id1}/retry`)).status).toBe(404);
+    expect((await call(A, "DELETE", `/api/conversations/${c}/queue/${id2}`)).status).toBe(200);
+    expect((await call(A, "POST", `/api/conversations/${c}/queue/${id1}/retry`)).status).toBe(200);
+    msgs = await drained(c);
+    expect(msgs.some((m) => m.content === "Q2")).toBe(false);
+    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
       "cancelled",
+      "complete",
+    ]);
+    expect(msgs.some((m) => m.queue)).toBe(false);
+  });
+
+  test("a message sent after Stop is answered; it does not release what was held", async () => {
+    const { c } = await setup(A);
+    const first = await chatReq(A, c, { content: "slow" });
+    const reader = first.body!.getReader();
+    await reader.read();
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "HELD" });
+    await call(A, "POST", `/api/conversations/${c}/cancel`);
+    while (!(await reader.read()).done);
+    await drained(c);
+    prompts.length = 0;
+    const next = await chatReq(A, c, { content: "NEW-REQUEST" });
+    await next.text();
+    const msgs = await drained(c);
+    expect(msgs.find((m) => m.content === "HELD")!.queue).toBe("held");
+    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
+      "cancelled",
+      "complete",
+    ]);
+    expect(prompts).toHaveLength(1);
+  });
+
+  test("Send now interrupts the reply: the waiting message runs at once, continues the same session, and is told what was done", async () => {
+    const { c } = await setup(A);
+    const first = await chatReq(A, c, { content: "slow" });
+    const reader = first.body!.getReader();
+    await reader.read();
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "use the other file" });
+    prompts.length = 0;
+    expect((await call(A, "POST", `/api/conversations/${c}/interrupt`)).json).toEqual({
+      interrupted: true,
+    });
+    expect((await call(B, "POST", `/api/conversations/${c}/interrupt`)).status).toBe(404);
+    while (!(await reader.read()).done);
+    const msgs = await drained(c);
+    // Nothing held: the interrupted reply is stopped and the message is answered.
+    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
+      "cancelled",
+      "complete",
+    ]);
+    expect(msgs.some((m) => m.queue)).toBe(false);
+    expect(prompts.at(-1)).toContain("interrupted you");
+    expect(prompts.at(-1)).toContain("use the other file");
+  });
+
+  test("with Interrupt chosen in preferences, a message sent while the bot works interrupts it and is read at once", async () => {
+    const { c } = await setup(A);
+    await db.$client.query(
+      "insert into user_preference (owner_user_id, steer_mode) values ($1, 'interrupt') on conflict (owner_user_id) do update set steer_mode = 'interrupt'",
+      [A],
     );
-    for (const q of ["Q1", "Q2"]) {
-      const asked = msgs.find((m) => m.content === q)!;
-      expect(msgs.find((m) => m.parentMessageId === asked.id)!.status).toBe("complete");
+    try {
+      const first = await chatReq(A, c, { content: "slow" });
+      const reader = first.body!.getReader();
+      await reader.read();
+      prompts.length = 0;
+      await call(A, "POST", `/api/conversations/${c}/queue`, { content: "use the staging db" });
+      while (!(await reader.read()).done);
+      const msgs = await drained(c);
+      expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
+        "cancelled",
+        "complete",
+      ]);
+      expect(prompts.at(-1)).toContain("interrupted you");
+    } finally {
+      await db.$client.query(
+        "update user_preference set steer_mode = 'park' where owner_user_id = $1",
+        [A],
+      );
     }
+  });
+
+  test('"para" typed while the bot works stops it: the reply ends, the waiting message is held, the word is not answered', async () => {
+    const { c } = await setup(A);
+    const first = await chatReq(A, c, { content: "slow" });
+    const reader = first.body!.getReader();
+    await reader.read();
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "ALSO-THIS" });
+    const seen = prompts.length;
+    const stop = await chatReq(A, c, { content: "Para!" });
+    expect(stop.status).toBe(200);
+    expect(await stop.text()).toContain('"type":"data-user-saved"');
+    while (!(await reader.read()).done);
+    const msgs = await drained(c);
+    await Bun.sleep(100);
+    // No run ever read the held message or the stop word (the first run may only just have started when the word arrived).
+    expect(prompts.slice(seen).some((p) => /ALSO-THIS|Para!/.test(p))).toBe(false);
+    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual(["cancelled"]);
+    expect(msgs.find((m) => m.content === "ALSO-THIS")!.queue).toBe("held");
+    const word = msgs.find((m) => m.content === "Para!")! as Row & { meta?: { stop?: unknown } };
+    expect(word.queue).toBeUndefined();
+    expect(word.meta?.stop).toEqual({ held: 1, rooms: 0 });
+  });
+
+  test("a sentence that only contains a stop word is an ordinary queued message", async () => {
+    const { c } = await setup(A);
+    const first = await chatReq(A, c, { content: "slow" });
+    const reader = first.body!.getReader();
+    await reader.read();
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "para o João revisar" });
+    while (!(await reader.read()).done);
+    const msgs = await drained(c);
+    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
+      "complete",
+      "complete",
+    ]);
+  });
+
+  test('"stop" in an idle chat with nothing running is a message for the bot', async () => {
+    const { c } = await setup(A);
+    const before = runs;
+    await (await chatReq(A, c, { content: "stop" })).text();
+    const msgs = await drained(c);
+    expect(runs - before).toBe(1);
+    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual(["complete"]);
   });
 
   test("a queued message can be removed before it starts, and a repeated clientRequestId queues it once", async () => {
@@ -427,32 +593,46 @@ suite("durable chat turns against compose postgres", () => {
     const msgs = await drained(c);
     expect(msgs.some((m) => m.content === "DROP-ME")).toBe(false);
     const keep = msgs.find((m) => m.content === "KEEP-ME")!;
-    expect(msgs.find((m) => m.parentMessageId === keep.id)!.status).toBe("complete");
+    expect(
+      msgs.find((m) => m.role === "assistant" && m.seq > keep.seq && !m.parentMessageId)!.status,
+    ).toBe("complete");
   });
 
-  test("after a restart a queued answer that was running starts again; one that keeps failing stops and can be retried", async () => {
+  test("after a restart a batch that was running starts again whole; a message that keeps failing stops and can be retried", async () => {
     const { c } = await setup(A);
-    const [asked] = await db
+    const [early, asked] = await db
       .insert(message)
+      .values([
+        { conversationId: c, ownerUserId: A, seq: 1, role: "user", content: "RODE-ALONG" },
+        { conversationId: c, ownerUserId: A, seq: 2, role: "user", content: "LOST-IN-RESTART" },
+      ])
+      .returning();
+    const [anchor] = await db
+      .insert(chatQueue)
       .values({
-        conversationId: c,
         ownerUserId: A,
-        seq: 1,
-        role: "user",
-        content: "LOST-IN-RESTART",
+        conversationId: c,
+        messageId: asked!.id,
+        status: "running",
+        attempts: 1,
       })
       .returning();
     await db.insert(chatQueue).values({
       ownerUserId: A,
       conversationId: c,
-      messageId: asked!.id,
-      status: "running",
+      messageId: early!.id,
+      status: "merged",
+      batchId: anchor!.id,
       attempts: 1,
+      createdAt: new Date(anchor!.createdAt.getTime() - 1000),
     });
-    expect(await chat.recoverQueue()).toBeGreaterThanOrEqual(1);
+    expect(await chat.recoverQueue()).toBeGreaterThanOrEqual(2);
+    prompts.length = 0;
     await chat.drainQueues();
     let msgs = await drained(c);
-    expect(msgs.find((m) => m.parentMessageId === asked!.id)!.status).toBe("complete");
+    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual(["complete"]);
+    expect(prompts[0]).toContain("Message 1 of 2:\nRODE-ALONG");
+    expect(prompts[0]).toContain("Message 2 of 2:\nLOST-IN-RESTART");
     expect(msgs.some((m) => m.queue)).toBe(false);
 
     const [stuck] = await db
@@ -465,11 +645,11 @@ suite("durable chat turns against compose postgres", () => {
     await chat.drainQueues();
     msgs = await drained(c);
     expect(msgs.find((m) => m.id === stuck!.id)!.queue).toBe("failed");
-    expect(msgs.some((m) => m.parentMessageId === stuck!.id)).toBe(false);
+    expect(msgs.some((m) => m.role === "assistant" && m.seq > stuck!.seq)).toBe(false);
     expect((await call(A, "POST", `/api/conversations/${c}/queue/${stuck!.id}/retry`)).status).toBe(
       200,
     );
     msgs = await drained(c);
-    expect(msgs.find((m) => m.parentMessageId === stuck!.id)!.status).toBe("complete");
+    expect(msgs.find((m) => m.role === "assistant" && m.seq > stuck!.seq)!.status).toBe("complete");
   });
 });

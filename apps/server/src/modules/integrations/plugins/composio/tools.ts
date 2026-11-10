@@ -1,5 +1,5 @@
 import { PluginError, type PluginContext, type PluginTool } from "../registry";
-import { str, untrustedDoc, untrustedList } from "../untrusted";
+import { obj, str, untrustedDoc, untrustedList } from "../untrusted";
 import {
   allowedToolkits,
   cfetch,
@@ -16,12 +16,6 @@ import {
 
 const MAX_ARGS = 20_000;
 const SETTINGS_HINT = "Open Studio > Plugins > Composio.";
-const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
-  type: "object" as const,
-  properties,
-  required,
-  additionalProperties: false,
-});
 
 const NOT_CONNECTED = (toolkit: string) =>
   new PluginError(

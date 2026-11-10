@@ -1,3 +1,4 @@
+import { isRecord } from "@zetta/core/is-record";
 import type { AppAccountManifest, AppManifest, AppToolManifest } from "@zetta/db/schema/apps";
 import { approvalProblem } from "./policy";
 import { schemaProblem } from "./schema";
@@ -17,9 +18,6 @@ const TOOL_NAME = /^[a-z][A-Za-z0-9_]{0,39}(\.[a-z][A-Za-z0-9_]{0,39}){0,3}$/;
 const ACCOUNT_NAME = /^[a-z][a-z0-9_-]{0,29}$/;
 export const COLLECTION_NAME = /^[a-z][a-z0-9_-]{0,39}$/;
 const FIELD_KEY = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 
 export class ManifestError extends Error {
   constructor(readonly problems: string[]) {

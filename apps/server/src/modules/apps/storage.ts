@@ -1,3 +1,4 @@
+import { isRecord } from "@zetta/core/is-record";
 import type { Database } from "@zetta/db";
 import { and, eq, inArray, isNull, or, sql } from "@zetta/db/query";
 import { appRecord, type AppToolManifest } from "@zetta/db/schema/apps";
@@ -35,9 +36,6 @@ export type StorageOp =
   | { op: "delete"; collection: string; key: string };
 export type Snapshot = Record<string, Record<string, unknown>>;
 type Declared = NonNullable<AppToolManifest["storage"]>;
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
  * Reads the writes a tool reported and checks them against what it declared. Only the last write of a key counts. Throws StorageError

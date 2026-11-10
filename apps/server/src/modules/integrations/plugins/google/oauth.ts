@@ -1,4 +1,5 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { b64u, sha } from "../oauth2";
 import { PluginError, type PluginContext, type PluginStatus } from "../registry";
 
 /**
@@ -134,8 +135,6 @@ const requireConfigured = (config: Readonly<Record<string, string>>) => {
   return s as GoogleSettings & { clientId: string; clientSecret: string; redirectBase: string };
 };
 
-const b64u = (b: Buffer) => b.toString("base64url");
-const sha = (v: string) => createHash("sha256").update(v).digest();
 const STATE_TTL_MS = 10 * 60_000,
   SKEW_MS = 60_000,
   HTTP_MS = 15_000;
@@ -619,6 +618,10 @@ export async function gfetch(
     throw new PluginError("RATE_LIMITED", "Google is rate limiting requests. Try again later.");
   throw new PluginError("GOOGLE_ERROR", "Google could not complete that.");
 }
+
+/** `gfetch`, then the response body read as JSON. */
+export const gjson = async (...args: Parameters<typeof gfetch>): Promise<any> =>
+  (await gfetch(...args)).json();
 
 /** Without `options.account` every account is revoked and removed (only the OAuth client stays); with it, only that account. */
 export async function disconnect(

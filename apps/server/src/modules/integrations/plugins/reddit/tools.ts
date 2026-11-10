@@ -1,5 +1,5 @@
 import { PluginError, type PluginContext, type PluginTool } from "../registry";
-import { clean, num, str, untrustedList } from "../untrusted";
+import { clean, num, obj, str, untrustedList } from "../untrusted";
 import { needScope, rfetch, SCOPE_IDS, subName } from "./oauth";
 
 const SRC = "Reddit";
@@ -168,12 +168,6 @@ function comments(children: Thing[], depth: number, budget: { left: number }): C
   return out;
 }
 
-const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
-  type: "object" as const,
-  properties,
-  required,
-  additionalProperties: false,
-});
 const LIMIT = { type: "number", description: "1-25, default 10" };
 const AFTER_ARG = {
   type: "string",

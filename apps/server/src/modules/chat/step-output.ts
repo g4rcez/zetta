@@ -12,6 +12,7 @@ import {
 import { join } from "node:path";
 
 import { maskSecrets } from "./processes";
+import { sleep } from "./sleep";
 
 /**
  * Live output of the commands a Claude Code bot runs, so the chat can show what a step prints while it runs.
@@ -214,18 +215,6 @@ export function scrub(text: string, secrets: readonly string[]): string {
 /** The values of a run's environment that look like credentials, for `scrub`. Short values (flags, locales) would mask ordinary words. */
 export const secretValues = (env: Record<string, string> | undefined): string[] =>
   Object.values(env ?? {}).filter((v) => v.length >= 8);
-
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve) => {
-    if (signal?.aborted) return resolve();
-    const t = setTimeout(done, ms);
-    function done() {
-      clearTimeout(t);
-      signal?.removeEventListener("abort", done);
-      resolve();
-    }
-    signal?.addEventListener("abort", done, { once: true });
-  });
 
 async function readFrom(file: string, from: number, max: number) {
   const handle = await open(file, "r").catch(() => undefined);

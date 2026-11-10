@@ -9,7 +9,7 @@ import {
   type PluginDef,
   type PluginTool,
 } from "./registry";
-import { clip, str, untrustedDoc } from "./untrusted";
+import { clip, obj, str, untrustedDoc } from "./untrusted";
 
 /**
  * The bot's door to Zetta Apps (modules/apps): built in, switched on for a bot when its owner grants it at least one app. A bot sees only
@@ -25,12 +25,6 @@ export const configureApps = (d: NonNullable<typeof deps>) => {
   deps = d;
 };
 
-const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
-  type: "object" as const,
-  properties,
-  required,
-  additionalProperties: false,
-});
 const PATH = /^apps\.([a-z][a-z0-9-]{0,39})\.([a-z][A-Za-z0-9_]*(?:\.[a-z][A-Za-z0-9_]*){0,3})$/;
 const MAX_INPUT = 20_000;
 const json = (v: unknown, max = 6_500) => clip(JSON.stringify(v ?? null) ?? "null", max);

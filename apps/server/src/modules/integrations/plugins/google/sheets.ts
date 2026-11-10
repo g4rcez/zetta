@@ -1,5 +1,5 @@
 import { PluginError, type PluginTool } from "../registry";
-import { ACCOUNT_ARG, clip, gfetch, pickAccount, settings, str, untrustedList } from "./oauth";
+import { ACCOUNT_ARG, clip, gjson, pickAccount, settings, str, untrustedList } from "./oauth";
 
 const SRC = "Google Sheets";
 const ID = /^[A-Za-z0-9_-]{5,128}$/;
@@ -75,7 +75,7 @@ export const sheetsTools: PluginTool[] = [
       if (a.range === undefined || a.range === "") {
         const u = new URL(`${settings().sheetsBase}/spreadsheets/${id}`);
         u.searchParams.set("fields", "properties.title,sheets.properties(title,gridProperties)");
-        const j = (await (await gfetch(g, u.toString())).json()) as {
+        const j = (await gjson(g, u.toString())) as {
           properties?: { title?: string };
           sheets?: {
             properties?: {
@@ -98,7 +98,7 @@ export const sheetsTools: PluginTool[] = [
       const range = rangeOf(a.range);
       const u = new URL(values(id, range));
       u.searchParams.set("majorDimension", "ROWS");
-      const j = (await (await gfetch(g, u.toString())).json()) as {
+      const j = (await gjson(g, u.toString())) as {
         range?: string;
         values?: unknown[][];
       };
@@ -125,12 +125,10 @@ export const sheetsTools: PluginTool[] = [
       const g = pickAccount(ctx, a.account, "spreadsheets");
       const title = str(a.title, 200);
       if (!title) throw new PluginError("INVALID_ARGS", "title is required.");
-      const j = (await (
-        await gfetch(g, `${settings().sheetsBase}/spreadsheets`, {
-          method: "POST",
-          json: { properties: { title } },
-        })
-      ).json()) as { spreadsheetId?: string; spreadsheetUrl?: string };
+      const j = (await gjson(g, `${settings().sheetsBase}/spreadsheets`, {
+        method: "POST",
+        json: { properties: { title } },
+      })) as { spreadsheetId?: string; spreadsheetUrl?: string };
       return {
         status: "created",
         spreadsheetId: j.spreadsheetId ?? null,
@@ -161,12 +159,10 @@ export const sheetsTools: PluginTool[] = [
       // RAW, never USER_ENTERED: a value read from untrusted content must not become a formula (IMPORTXML and friends can send data out).
       const u = new URL(values(id, range));
       u.searchParams.set("valueInputOption", "RAW");
-      const j = (await (
-        await gfetch(g, u.toString(), {
-          method: "PUT",
-          json: { range, majorDimension: "ROWS", values: rows },
-        })
-      ).json()) as { updatedRange?: string; updatedCells?: number };
+      const j = (await gjson(g, u.toString(), {
+        method: "PUT",
+        json: { range, majorDimension: "ROWS", values: rows },
+      })) as { updatedRange?: string; updatedCells?: number };
       return {
         status: "updated",
         updatedRange: j.updatedRange ?? null,
@@ -197,12 +193,10 @@ export const sheetsTools: PluginTool[] = [
       const u = new URL(`${values(id, range)}:append`);
       u.searchParams.set("valueInputOption", "RAW");
       u.searchParams.set("insertDataOption", "INSERT_ROWS");
-      const j = (await (
-        await gfetch(g, u.toString(), {
-          method: "POST",
-          json: { range, majorDimension: "ROWS", values: rows },
-        })
-      ).json()) as { updates?: { updatedRange?: string; updatedRows?: number } };
+      const j = (await gjson(g, u.toString(), {
+        method: "POST",
+        json: { range, majorDimension: "ROWS", values: rows },
+      })) as { updates?: { updatedRange?: string; updatedRows?: number } };
       return {
         status: "appended",
         updatedRange: j.updates?.updatedRange ?? null,

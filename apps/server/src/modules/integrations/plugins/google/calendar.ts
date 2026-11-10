@@ -1,5 +1,5 @@
 import { PluginError, type PluginTool } from "../registry";
-import { ACCOUNT_ARG, clip, gfetch, num, pickAccount, settings, str, untrustedList } from "./oauth";
+import { ACCOUNT_ARG, clip, gjson, num, pickAccount, settings, str, untrustedList } from "./oauth";
 
 const iso = (v: unknown, what: string) => {
   const s = str(v, 40);
@@ -49,7 +49,7 @@ export const calendarTools: PluginTool[] = [
       }))
         u.searchParams.set(k, v);
       if (a.query) u.searchParams.set("q", str(a.query, 200));
-      const j = (await (await gfetch(g, u.toString())).json()) as { items?: Ev[] };
+      const j = (await gjson(g, u.toString())) as { items?: Ev[] };
       return untrustedList(
         "Google Calendar",
         "events",
@@ -90,18 +90,16 @@ export const calendarTools: PluginTool[] = [
       if (e.t <= s.t) throw new PluginError("INVALID_ARGS", "end must be after start.");
       const u = new URL(`${settings().calendarBase}/calendars/primary/events`);
       u.searchParams.set("sendUpdates", "none");
-      const j = (await (
-        await gfetch(g, u.toString(), {
-          method: "POST",
-          json: {
-            summary: title,
-            description: str(a.description, 2000) || undefined,
-            location: str(a.location, 200) || undefined,
-            start: { dateTime: s.s },
-            end: { dateTime: e.s },
-          },
-        })
-      ).json()) as Ev;
+      const j = (await gjson(g, u.toString(), {
+        method: "POST",
+        json: {
+          summary: title,
+          description: str(a.description, 2000) || undefined,
+          location: str(a.location, 200) || undefined,
+          start: { dateTime: s.s },
+          end: { dateTime: e.s },
+        },
+      })) as Ev;
       return { status: "created", eventId: j.id ?? null, link: j.htmlLink ?? null };
     },
   },

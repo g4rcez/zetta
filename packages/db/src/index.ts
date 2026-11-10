@@ -19,6 +19,8 @@ export function createDb(env: DatabaseConfig) {
 }
 
 export type Database = ReturnType<typeof createDb>;
+/** The handle a `db.transaction(...)` callback receives. */
+export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /** A single connection outside the pool, for `LISTEN` (a pooled connection goes back to other callers). */
 export { Client as PgClient };

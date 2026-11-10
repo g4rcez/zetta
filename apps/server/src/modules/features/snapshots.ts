@@ -5,6 +5,7 @@ import { and, asc, desc, eq, inArray, isNull } from "@zetta/db/query";
 import { bot, conversation, message } from "@zetta/db/schema/chat";
 import { attachment, reaction, snapshot } from "@zetta/db/schema/features";
 import { AccessError, type ActiveActor } from "../identity/access";
+import { first } from "./first";
 import { uiToText } from "@zetta/render/chat-text";
 import { parseTools } from "../chat/tools";
 
@@ -16,10 +17,6 @@ export class SnapshotError extends Error {
     super(code);
   }
 }
-const first = <T>(rows: T[]): T => {
-  if (!rows[0]) throw new AccessError("NOT_FOUND");
-  return rows[0];
-};
 
 export type SnapshotPart = {
   seq: number;

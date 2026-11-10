@@ -16,6 +16,7 @@ import { z } from "zod";
 import { FILE_LIMITS, instructions, LIMITS, skillName } from "../bot-claude/profile";
 import { looksSecret } from "../features/safety";
 import type { ActiveActor } from "../identity/access";
+import { hasUniqueViolation } from "../pg-error";
 import {
   FILE_WARNINGS,
   MarketError,
@@ -132,11 +133,6 @@ const fileRows = (skillId: string, files: readonly SkillFileUpload[]) =>
     mode: f.mode,
     size: f.content.length,
   }));
-
-const uniqueViolation = (e: unknown) =>
-  [e, (e as { cause?: unknown } | null)?.cause].some(
-    (x) => (x as { code?: string } | null)?.code === "23505",
-  );
 
 const columns = {
   id: skill.id,
@@ -367,7 +363,7 @@ export function createSkills(db: Database) {
           return created!;
         });
       } catch (e) {
-        if (uniqueViolation(e)) throw new SkillError("DUPLICATE");
+        if (hasUniqueViolation(e)) throw new SkillError("DUPLICATE");
         throw e;
       }
     },
@@ -529,7 +525,7 @@ export function createSkills(db: Database) {
         });
         return get(actor, row.id);
       } catch (e) {
-        if (uniqueViolation(e)) throw new SkillError("DUPLICATE");
+        if (hasUniqueViolation(e)) throw new SkillError("DUPLICATE");
         throw e;
       }
     },
@@ -584,7 +580,7 @@ export function createSkills(db: Database) {
           throw new SkillError(exists ? "CONFLICT" : "NOT_FOUND");
         }
       } catch (e) {
-        if (uniqueViolation(e)) throw new SkillError("DUPLICATE");
+        if (hasUniqueViolation(e)) throw new SkillError("DUPLICATE");
         throw e;
       }
       return get(actor, id);
@@ -1047,7 +1043,7 @@ export function createSkills(db: Database) {
         if (!row) throw new SkillError("NOT_FOUND");
         return get(actor, row.id);
       } catch (e) {
-        if (uniqueViolation(e)) throw new SkillError("DUPLICATE");
+        if (hasUniqueViolation(e)) throw new SkillError("DUPLICATE");
         throw e;
       }
     },

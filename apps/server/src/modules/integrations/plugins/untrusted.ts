@@ -58,3 +58,11 @@ export const requiredText = (v: unknown, max: number, name = "text") => {
     throw new PluginError("INVALID_ARGS", `${name} is longer than ${max} characters.`);
   return t;
 };
+
+/** A closed JSON-schema object for a tool's input: only the listed properties are accepted. */
+export const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
+  type: "object" as const,
+  properties,
+  required,
+  additionalProperties: false,
+});

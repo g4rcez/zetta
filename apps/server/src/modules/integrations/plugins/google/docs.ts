@@ -1,5 +1,5 @@
 import { PluginError, type PluginTool } from "../registry";
-import { ACCOUNT_ARG, gfetch, pickAccount, settings, str, untrustedDoc } from "./oauth";
+import { ACCOUNT_ARG, gfetch, gjson, pickAccount, settings, str, untrustedDoc } from "./oauth";
 
 const SRC = "Google Docs";
 const ID = /^[A-Za-z0-9_-]{5,128}$/;
@@ -50,9 +50,11 @@ export const docsTools: PluginTool[] = [
     async handler(ctx, a) {
       const g = pickAccount(ctx, a.account, "documents.readonly", "documents");
       const id = docId(a.id);
-      const j = (await (
-        await gfetch(g, `${settings().docsBase}/documents/${encodeURIComponent(id)}`)
-      ).json()) as { documentId?: string; title?: string; body?: { content?: El[] } };
+      const j = (await gjson(g, `${settings().docsBase}/documents/${encodeURIComponent(id)}`)) as {
+        documentId?: string;
+        title?: string;
+        body?: { content?: El[] };
+      };
       return untrustedDoc(
         SRC,
         { id: j.documentId ?? id, title: j.title ?? "" },
@@ -75,9 +77,10 @@ export const docsTools: PluginTool[] = [
       const title = str(a.title, 200);
       if (!title) throw new PluginError("INVALID_ARGS", "title is required.");
       const text = str(a.text, MAX_WRITE);
-      const j = (await (
-        await gfetch(g, `${settings().docsBase}/documents`, { method: "POST", json: { title } })
-      ).json()) as { documentId?: string };
+      const j = (await gjson(g, `${settings().docsBase}/documents`, {
+        method: "POST",
+        json: { title },
+      })) as { documentId?: string };
       if (!j.documentId) throw new PluginError("GOOGLE_ERROR", "Google could not complete that.");
       const out: Record<string, unknown> = {
         status: "created",

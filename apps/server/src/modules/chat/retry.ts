@@ -1,4 +1,5 @@
 import { HarnessError } from "./harness";
+import { sleep } from "./sleep";
 
 /** How a failed run should be treated: wait and retry, wait longer (limit resets), or stop and ask a person. */
 export type FailureKind = "transient" | "quota" | "needs_person";
@@ -34,18 +35,6 @@ export function retryDelayMs(kind: FailureKind, attempt: number): number | null 
 
 /** Short in-turn retries for one CLI call, before the turn is reported as failed. */
 export const TURN_RETRY_MS = [2_000, 10_000];
-
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve) => {
-    if (signal?.aborted) return resolve();
-    const t = setTimeout(done, ms);
-    function done() {
-      clearTimeout(t);
-      signal?.removeEventListener("abort", done);
-      resolve();
-    }
-    signal?.addEventListener("abort", done, { once: true });
-  });
 
 /** True for a harness failure that a short wait can fix (not a cancel, a sign-in or a quota). */
 export const isTransient = (e: unknown) =>

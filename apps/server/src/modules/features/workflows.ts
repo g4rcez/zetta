@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
 import { workflow, workflowRun, workflowVersion } from "@zetta/db/schema/features";
 import { AccessError, type ActiveActor } from "../identity/access";
+import { first } from "./first";
 import type { ComputerService } from "../computer/service";
 import type { DecisionService } from "../decisions/service";
 import { raiseAttention } from "./attention";
@@ -19,10 +20,6 @@ export class WorkflowError extends Error {
     super(code);
   }
 }
-const first = <T>(rows: T[]): T => {
-  if (!rows[0]) throw new AccessError("NOT_FOUND");
-  return rows[0];
-};
 
 type RunTurn = (t: {
   userId: string;

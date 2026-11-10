@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
-import { ARTIFACT_HTML_CSP, ARTIFACT_HTML_SANDBOX } from "@zetta/core/artifact-csp";
+import { UNTRUSTED_BYTES_HEADERS, UNTRUSTED_HTML_HEADERS } from "@zetta/core/artifact-csp";
 import { ARTIFACT_KINDS } from "@zetta/db/schema/artifacts";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { withDesignSystem } from "./design-system";
@@ -22,18 +22,9 @@ const query = z.object({
 });
 const pin = z.strictObject({ pinned: z.boolean() });
 
-/** Untrusted bytes: HTML may run scripts but only in an opaque origin (no cookies, no API); everything else runs nothing. */
-const SECURITY: Record<string, string> = {
-  "x-content-type-options": "nosniff",
-  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-};
-const HTML_SECURITY = {
-  ...SECURITY,
-  "content-security-policy": `sandbox ${ARTIFACT_HTML_SANDBOX}; ${ARTIFACT_HTML_CSP}`,
-};
 // Chrome's PDF viewer does not start inside a sandboxed document.
 const PDF_SECURITY = {
-  ...SECURITY,
+  ...UNTRUSTED_BYTES_HEADERS,
   "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
 };
 
@@ -132,7 +123,11 @@ export function createArtifactRoutes(
           row.kind === "video" ||
           row.kind === "audio";
         const headers: Record<string, string> = {
-          ...(row.kind === "html" ? HTML_SECURITY : row.kind === "pdf" ? PDF_SECURITY : SECURITY),
+          ...(row.kind === "html"
+            ? UNTRUSTED_HTML_HEADERS
+            : row.kind === "pdf"
+              ? PDF_SECURITY
+              : UNTRUSTED_BYTES_HEADERS),
           // The preview CSP for a PDF has no sandbox, so a bot-declared type must not turn it into another document type.
           "content-type":
             row.kind === "binary"

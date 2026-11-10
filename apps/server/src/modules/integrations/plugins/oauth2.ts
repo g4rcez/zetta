@@ -20,8 +20,9 @@ export type OAuthProvider = {
 };
 
 const STATE_TTL_MS = 10 * 60_000;
-const b64u = (b: Buffer) => b.toString("base64url");
-const sha = (s: string) => createHash("sha256").update(s).digest();
+/** PKCE and state helpers, shared with the Google and Reddit flows. */
+export const b64u = (b: Buffer) => b.toString("base64url");
+export const sha = (s: string) => createHash("sha256").update(s).digest();
 
 export const redirectBase = () =>
   (process.env.ZETTA_OAUTH_REDIRECT_BASE || process.env.BETTER_AUTH_URL || "").replace(/\/+$/, "");

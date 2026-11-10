@@ -1,6 +1,6 @@
 import { PluginError, type PluginContext, type PluginTool } from "../registry";
 import { createSendLimit } from "../send-limit";
-import { clean, requiredText, str } from "../untrusted";
+import { clean, obj, requiredText, str } from "../untrusted";
 import { allowlist, needScope, rfetch, subName, type ScopeId } from "./oauth";
 import { allowsNsfw } from "./tools";
 
@@ -129,12 +129,6 @@ const thingOut = (d: { things?: { data?: Record<string, unknown> }[] }) => {
   };
 };
 
-const obj = (properties: Record<string, unknown>, required: string[]) => ({
-  type: "object" as const,
-  properties,
-  required,
-  additionalProperties: false,
-});
 const PUBLIC =
   "This is a PUBLIC action on the user's own Reddit account: do it only when the user asked for it.";
 

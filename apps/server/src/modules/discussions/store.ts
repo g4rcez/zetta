@@ -30,6 +30,7 @@ import { legacyMentions, mentionIds, mentionToken } from "@zetta/core/mentions";
 import { HELP_PREFIX, isIdleChatter, mentionKey, wakeTargets } from "./prompt";
 import { topics } from "@zetta/core/live-topics";
 import { events } from "../events/bus";
+import { hasUniqueViolation } from "../pg-error";
 import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
 import { STUCK_MS, type StuckReason } from "./watchdog";
 
@@ -1168,11 +1169,7 @@ export function createDiscussionStore(
         .where(and(eq(discussion.id, d.id), eq(discussion.version, d.version)))
         .returning()
         .catch((e) => {
-          if (
-            [e, (e as { cause?: unknown } | null)?.cause].some(
-              (x) => (x as { code?: string } | null)?.code === "23505",
-            )
-          )
+          if (hasUniqueViolation(e))
             throw new DiscussionError(
               "CONFLICT",
               "A room with this name already exists. Pick another name.",

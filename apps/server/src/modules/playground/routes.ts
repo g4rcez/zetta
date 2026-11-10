@@ -1,4 +1,4 @@
-import { ARTIFACT_HTML_CSP, ARTIFACT_HTML_SANDBOX } from "@zetta/core/artifact-csp";
+import { UNTRUSTED_BYTES_HEADERS, UNTRUSTED_HTML_HEADERS } from "@zetta/core/artifact-csp";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { accessFail, createGuardedRoute, fail } from "../http-response";
@@ -25,15 +25,6 @@ const runBody = z.strictObject({
 /** What the browser may show inline from `out/`. Anything else downloads. The type is ours, never the script's word. */
 const INLINE =
   /^(image\/(png|jpeg|gif|webp|avif|svg\+xml)|text\/(html|plain|csv|markdown)|application\/json)$/;
-/** Untrusted bytes: HTML runs scripts only in an opaque origin (no cookies, no API); everything else runs nothing. */
-const SECURITY = {
-  "x-content-type-options": "nosniff",
-  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-};
-const HTML_SECURITY = {
-  ...SECURITY,
-  "content-security-policy": `sandbox ${ARTIFACT_HTML_SANDBOX}; ${ARTIFACT_HTML_CSP}`,
-};
 
 /** The Playground API. Typed as a bare Elysia on purpose: app.ts chains every module and TypeScript gives up on the combined route type. */
 export function createPlaygroundRoutes(
@@ -141,7 +132,7 @@ export function createPlaygroundRoutes(
         const name = path.split("/").pop() ?? "file";
         return new Response(new Uint8Array(file.content), {
           headers: {
-            ...(file.mimeType === "text/html" ? HTML_SECURITY : SECURITY),
+            ...(file.mimeType === "text/html" ? UNTRUSTED_HTML_HEADERS : UNTRUSTED_BYTES_HEADERS),
             "content-type": inline
               ? /^(text\/|application\/json)/.test(file.mimeType)
                 ? `${file.mimeType}; charset=utf-8`

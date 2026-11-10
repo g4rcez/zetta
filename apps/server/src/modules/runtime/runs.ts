@@ -1,6 +1,6 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { z } from "zod";
-import type { Database } from "@zetta/db";
+import type { Database, Transaction } from "@zetta/db";
 import { and, eq, sql } from "@zetta/db/query";
 import { runs, runAttempts } from "@zetta/db/schema/runs";
 import { membership } from "@zetta/db/schema/identity";
@@ -19,7 +19,6 @@ import {
 import { readRunRows, readRunResult, runProjection, RunStoreError } from "./run-rows";
 import { transitionRun, type RunBackendFact, type RunTransitionToken } from "./run-state";
 
-type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Stored = Awaited<ReturnType<typeof loadCurrent>>;
 const resultRequest = z.strictObject({ runId: runUuidSchema, attemptId: runUuidSchema });
 async function loadAttempt(tx: Transaction, row: typeof runs.$inferSelect) {

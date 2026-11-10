@@ -267,6 +267,21 @@ export function createPlugins(
       throw new PluginError("NOT_BOUND", "That plugin is not connected to this bot any more.");
     return s;
   }
+  /** The context a tool call or its resume runs with: a built-in plugin has no configuration, any other uses the bot's binding. */
+  const toolCtx = async (
+    a: ActiveActor,
+    d: PluginDef,
+    binding: { id: string } | undefined,
+    botId: string,
+  ): Promise<PluginContext> =>
+    d.always
+      ? {
+          userId: a.userId,
+          botId,
+          config: {},
+          setConfig: () => Promise.reject(new PluginError("FAILED")),
+        }
+      : ctxFor(a, d, await boundRow(a, binding!), undefined, botId);
   const withDeadline = async <T>(work: Promise<T>): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -800,14 +815,7 @@ export function createPlugins(
       const missing = (t.inputSchema.required ?? []).filter((k) => args[k] === undefined);
       if (missing.length) throw new PluginError("INVALID_ARGS", `Missing: ${missing.join(", ")}`);
       try {
-        const ctx: PluginContext = d.always
-          ? {
-              userId: a.userId,
-              botId,
-              config: {},
-              setConfig: () => Promise.reject(new PluginError("FAILED")),
-            }
-          : await ctxFor(a, d, await boundRow(a, binding!), undefined, botId);
+        const ctx = await toolCtx(a, d, binding, botId);
         const out = render(await withDeadline(t.handler(ctx, args)));
         await outcome("ok");
         return out;
@@ -859,14 +867,7 @@ export function createPlugins(
         );
       }
       try {
-        const ctx: PluginContext = d.always
-          ? {
-              userId: a.userId,
-              botId,
-              config: {},
-              setConfig: () => Promise.reject(new PluginError("FAILED")),
-            }
-          : await ctxFor(a, d, await boundRow(a, binding!), undefined, botId);
+        const ctx = await toolCtx(a, d, binding, botId);
         const out = render(await withDeadline(d.pausing.resume(ctx, requestId, answer)));
         await outcome("ok");
         return out;

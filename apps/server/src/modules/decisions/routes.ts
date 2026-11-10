@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
+import { out } from "../http-response";
 import { DecisionError, type DecisionService } from "./service";
 
 export type DecisionServices = {
@@ -35,8 +36,6 @@ const request = z.strictObject({
     return n >= 1 && n <= 8;
   }),
 });
-const json = (body: unknown, status = 200) =>
-  Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
 export function createDecisionRoutes(
   { access, decisions }: DecisionServices,
@@ -46,18 +45,18 @@ export function createDecisionRoutes(
     .get("/status", async ({ request: r }) => {
       try {
         await access.requireActive(r.headers);
-        return json(decisions.status());
+        return out(decisions.status());
       } catch (e) {
         return e instanceof AccessError
-          ? json({ error: { code: e.code } }, 401)
-          : json({ error: { code: "UNAVAILABLE" } }, 503);
+          ? out({ error: { code: e.code } }, 401)
+          : out({ error: { code: "UNAVAILABLE" } }, 503);
       }
     })
     .post("/", async ({ request: r, body }) => {
       try {
         const origin = r.headers.get("origin");
         if (!origin || !trustedOrigins.includes(origin))
-          return json(
+          return out(
             {
               error: {
                 code: "UNTRUSTED_ORIGIN",
@@ -68,17 +67,17 @@ export function createDecisionRoutes(
           );
         const actor = await access.requireActive(r.headers);
         const v = request.parse(body);
-        return json(await decisions.decide(v.subject, v.questions as never, actor.userId));
+        return out(await decisions.decide(v.subject, v.questions as never, actor.userId));
       } catch (e) {
         if (e instanceof AccessError)
-          return json({ error: { code: e.code } }, e.code === "SIGN_IN_REQUIRED" ? 401 : 403);
+          return out({ error: { code: e.code } }, e.code === "SIGN_IN_REQUIRED" ? 401 : 403);
         if (e instanceof z.ZodError)
-          return json(
+          return out(
             { error: { code: "INVALID_REQUEST", message: "Check the details and try again." } },
             400,
           );
         if (e instanceof DecisionError && e.code === "off")
-          return json(
+          return out(
             {
               error: {
                 code: "DECISION_MODEL_OFF",
@@ -88,7 +87,7 @@ export function createDecisionRoutes(
             },
             409,
           );
-        return json(
+        return out(
           {
             error: {
               code: e instanceof DecisionError ? e.code.toUpperCase() : "DECISION_UNAVAILABLE",

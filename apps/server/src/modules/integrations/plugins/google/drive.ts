@@ -3,6 +3,7 @@ import {
   ACCOUNT_ARG,
   clip,
   gfetch,
+  gjson,
   num,
   pickAccount,
   settings,
@@ -92,7 +93,7 @@ export const driveTools: PluginTool[] = [
       u.searchParams.set("pageSize", String(num(a.max, 5, 1, 10)));
       u.searchParams.set("fields", "files(id,name,mimeType,modifiedTime,size)");
       u.searchParams.set("orderBy", "modifiedTime desc");
-      const j = (await (await gfetch(g, u.toString())).json()) as {
+      const j = (await gjson(g, u.toString())) as {
         files?: {
           id: string;
           name?: string;
@@ -129,7 +130,7 @@ export const driveTools: PluginTool[] = [
       const id = str(a.id, 128);
       if (!ID.test(id)) throw new PluginError("INVALID_ARGS", "Invalid file id.");
       const base = `${settings().driveBase}/files/${encodeURIComponent(id)}`;
-      const m = (await (await gfetch(g, `${base}?fields=id,name,mimeType,size`)).json()) as {
+      const m = (await gjson(g, `${base}?fields=id,name,mimeType,size`)) as {
         id: string;
         name?: string;
         mimeType?: string;

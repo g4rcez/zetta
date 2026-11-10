@@ -18,6 +18,7 @@ import { requireOwned, requireTeamMember, type ActiveActor } from "../identity/a
 import { createTeamPeople } from "./people";
 import { DiscussionError, type DiscussionStore } from "../discussions/store";
 import { insertMessage } from "../chat/messages";
+import { hasUniqueViolation } from "../pg-error";
 
 /**
  * Teams: named groups of bots with one chief. A room is a discussion opened for a team: the chief is its facilitator, so the user's
@@ -80,11 +81,6 @@ export type TeamInput = {
   members: TeamMemberInput[];
 };
 
-const isUnique = (e: unknown) =>
-  [e, (e as { cause?: unknown } | null)?.cause].some(
-    (x) => (x as { code?: string } | null)?.code === "23505",
-  );
-
 export function createTeamStore(
   db: Database,
   discussions: Pick<DiscussionStore, "open" | "postAsOwner">,
@@ -145,7 +141,7 @@ export function createTeamStore(
           .returning();
         return row!;
       } catch (e) {
-        if (isUnique(e))
+        if (hasUniqueViolation(e))
           throw new TeamError("NAME_TAKEN", "You already have a role with this name.");
         throw e;
       }
@@ -159,7 +155,7 @@ export function createTeamStore(
           .returning();
         return requireOwned(a, row);
       } catch (e) {
-        if (isUnique(e))
+        if (hasUniqueViolation(e))
           throw new TeamError("NAME_TAKEN", "You already have a role with this name.");
         throw e;
       }
@@ -204,7 +200,8 @@ export function createTeamStore(
         });
         return { ...row, members: [] };
       } catch (e) {
-        if (isUnique(e)) throw new TeamError("INVALID", "You already have a team with this name.");
+        if (hasUniqueViolation(e))
+          throw new TeamError("INVALID", "You already have a team with this name.");
         throw e;
       }
     },
@@ -263,7 +260,8 @@ export function createTeamStore(
             await tx.insert(teamMember).values(v.members.map((m) => ({ ...m, teamId: id })));
         });
       } catch (e) {
-        if (isUnique(e)) throw new TeamError("INVALID", "You already have a team with this name.");
+        if (hasUniqueViolation(e))
+          throw new TeamError("INVALID", "You already have a team with this name.");
         throw e;
       }
       const [t] = await db.select().from(team).where(eq(team.id, id));
@@ -357,7 +355,7 @@ export function createTeamStore(
           wake: false,
         })
         .catch((e) => {
-          throw isUnique(e)
+          throw hasUniqueViolation(e)
             ? new TeamError(
                 "NAME_TAKEN",
                 "A room with this name already exists. Pick another name.",
@@ -448,7 +446,7 @@ export function createTeamStore(
           return row;
         });
       } catch (e) {
-        if (isUnique(e))
+        if (hasUniqueViolation(e))
           throw new TeamError(
             "NAME_TAKEN",
             "A room with this name already exists. Pick another name.",

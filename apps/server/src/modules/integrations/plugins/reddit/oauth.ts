@@ -1,4 +1,5 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { b64u, sha } from "../oauth2";
 import { PluginError, type PluginContext, type PluginStatus } from "../registry";
 import { clean } from "../untrusted";
 
@@ -86,8 +87,6 @@ const requireConfigured = (config: Readonly<Record<string, string>>) => {
   return s as RedditSettings & { clientId: string; clientSecret: string; redirectBase: string };
 };
 
-const b64u = (b: Buffer) => b.toString("base64url");
-const sha = (v: string) => createHash("sha256").update(v).digest();
 const STATE_TTL_MS = 10 * 60_000,
   SKEW_MS = 60_000,
   HTTP_MS = 15_000;

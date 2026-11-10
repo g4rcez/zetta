@@ -1,3 +1,4 @@
+import { isRecord } from "@zetta/core/is-record";
 import type { AppJsonSchema } from "@zetta/db/schema/apps";
 
 /**
@@ -31,8 +32,6 @@ const MAX_ARRAY = 1000;
 const MAX_PROPERTIES = 100;
 export const MAX_SCHEMA_BYTES = 20_000;
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 const clone = <T>(v: T): T => (v === undefined ? v : (JSON.parse(JSON.stringify(v)) as T));
 
 /** Null when `schema` only uses what the validator understands; else why not. Run when an app is published. */

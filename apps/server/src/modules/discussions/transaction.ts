@@ -1,10 +1,7 @@
 import type { Database } from "@zetta/db";
+import { sqlstate } from "../pg-error";
 
 export type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
-
-const sqlstate = (e: unknown) =>
-  (e as { code?: string; cause?: { code?: string } })?.code ??
-  (e as { cause?: { code?: string } })?.cause?.code;
 
 /**
  * A room is written from two sides that lock in opposite orders: the room worker takes a turn and then its room, while most writers take the

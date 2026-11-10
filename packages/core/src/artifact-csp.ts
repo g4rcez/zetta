@@ -20,3 +20,14 @@ export const ARTIFACT_HTML_CSP = [
 ].join("; ");
 /** Sandbox flags for the served page and the preview iframe: scripts and links in new tabs, never forms or same-origin. */
 export const ARTIFACT_HTML_SANDBOX = "allow-scripts allow-popups";
+
+/** Response headers for untrusted bytes served from the app's own origin: nothing runs, nothing loads. */
+export const UNTRUSTED_BYTES_HEADERS: Record<string, string> = {
+  "x-content-type-options": "nosniff",
+  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+};
+/** The same for a bot-written HTML page: scripts may run, but only in an opaque origin (no cookies, no API). */
+export const UNTRUSTED_HTML_HEADERS: Record<string, string> = {
+  ...UNTRUSTED_BYTES_HEADERS,
+  "content-security-policy": `sandbox ${ARTIFACT_HTML_SANDBOX}; ${ARTIFACT_HTML_CSP}`,
+};

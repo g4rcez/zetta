@@ -8,6 +8,8 @@
  *
  * Pure and free of DOM types, so the server tests the page script and the web tests the host with the same code.
  */
+import { isRecord } from "./is-record";
+
 export const BRIDGE_FROM_FRAME = "zetta-app";
 export const BRIDGE_FROM_HOST = "zetta-host";
 export const BRIDGE_LIMITS = {
@@ -56,9 +58,6 @@ export const errorReply = (id: number, code: string, message: string): BridgeRep
   ok: false,
   error: { code, message: message.slice(0, 500) },
 });
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
  * Reads a message that came from the page. `ignore`: not ours or not shaped like a request, so nothing is answered (a page, or any other

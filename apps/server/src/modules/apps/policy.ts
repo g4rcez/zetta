@@ -1,3 +1,4 @@
+import { isRecord } from "@zetta/core/is-record";
 import type {
   AppApproval,
   AppApprovalCondition,
@@ -13,9 +14,6 @@ import type {
  * Outside people (an inbound chat) may only run queries that need no one's answer: the rest is denied, whatever the owner chose.
  */
 export type Decision = { decision: "run" | "ask" | "deny"; reason: string };
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** The value at a dotted path (`repo.private`, `labels.0`), or undefined. */
 export function at(input: unknown, path: string): unknown {

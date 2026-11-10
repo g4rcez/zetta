@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
+import { safeUser } from "../safe-user";
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
@@ -31,8 +32,6 @@ export function sniffImage(b: Uint8Array): ImageType | undefined {
     return "image/webp";
   return undefined;
 }
-
-const safeUser = (userId: string) => userId.replace(/[^A-Za-z0-9_-]/g, "_");
 
 /** Absolute path of a stored image; refuses anything that would leave the root. */
 export function imagePath(rel: string, root = attachmentsRoot()) {

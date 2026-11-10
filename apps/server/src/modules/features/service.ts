@@ -4,6 +4,7 @@ import { bot, message } from "@zetta/db/schema/chat";
 import { memoryItem } from "@zetta/db/schema/memory";
 import { attentionItem, delegation, hook, reaction } from "@zetta/db/schema/features";
 import { AccessError, type ActiveActor } from "../identity/access";
+import { first } from "./first";
 import type { ComputerService } from "../computer/service";
 import { createTurnRunner, evaluateHooks } from "../chat/pipeline";
 import type { DecisionService } from "../decisions/service";
@@ -39,10 +40,6 @@ export function isReactionEmoji(value: string): boolean {
     /^(\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\uFE0F?\u20E3)/u.test(value)
   );
 }
-const first = <T>(rows: T[]): T => {
-  if (!rows[0]) throw new AccessError("NOT_FOUND");
-  return rows[0];
-};
 
 export function createFeaturesService(
   db: Database,

@@ -130,14 +130,15 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       ? { userId: s.ownerUserId, isAdmin: false }
       : a;
 
-  /** Opens one connected session (credentials resolved now). The caller must close it. */
-  async function openSession(a: ActiveActor, s: Server) {
+  /** Checks the server may be used by this person, resolves its credential, and builds a client and transport that are not connected yet. */
+  async function prepare(a: ActiveActor, s: Server) {
     if (s.url?.startsWith(NATIVE_URL_PREFIX)) throw new McpError("INVALID"); // in-process plugins have no MCP session
     // A team server was added by the administrator, who chose to let members use it.
     if (s.transport === "stdio" && s.sharing !== "team" && !stdioOk(a))
       throw new McpError("STDIO_NOT_ALLOWED");
     let auth: string | undefined;
     if (s.connectionId) {
+      // Fails closed: a revoked/missing connection means the call does not happen, and no other credential is tried.
       const secret = connections
         ? await connections.secretFor(secretOwner(a, s), s.connectionId).catch(() => undefined)
         : undefined;
@@ -150,8 +151,14 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       await assertPublicUrl(s.url!).catch(() => {
         throw new McpError("BLOCKED_URL");
       });
-    const client = new Client({ name: "zetta", version: "1" });
-    const transport = await connect(s, auth);
+    return {
+      client: new Client({ name: "zetta", version: "1" }),
+      transport: await connect(s, auth),
+    };
+  }
+  /** Opens one connected session (credentials resolved now). The caller must close it. */
+  async function openSession(a: ActiveActor, s: Server) {
+    const { client, transport } = await prepare(a, s);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const deadline = new Promise<never>((_, rej) => {
@@ -191,26 +198,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     s: Server,
     work: (c: Client) => Promise<T>,
   ): Promise<T> {
-    if (s.url?.startsWith(NATIVE_URL_PREFIX)) throw new McpError("INVALID");
-    // A team server was added by the administrator, who chose to let members use it.
-    if (s.transport === "stdio" && s.sharing !== "team" && !stdioOk(a))
-      throw new McpError("STDIO_NOT_ALLOWED");
-    let auth: string | undefined;
-    if (s.connectionId) {
-      // Fails closed: a revoked/missing connection means the call does not happen, and no other credential is tried.
-      const secret = connections
-        ? await connections.secretFor(secretOwner(a, s), s.connectionId).catch(() => undefined)
-        : undefined;
-      if (!secret) throw new McpError("FAILED");
-      auth = `Bearer ${secret.toString("utf8")}`;
-      secret.fill(0);
-    }
-    if (s.transport === "http" && !opts.allowPrivate)
-      await assertPublicUrl(s.url!).catch(() => {
-        throw new McpError("BLOCKED_URL");
-      });
-    const client = new Client({ name: "zetta", version: "1" });
-    const transport = await connect(s, auth);
+    const { client, transport } = await prepare(a, s);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const deadline = new Promise<never>((_, rej) => {

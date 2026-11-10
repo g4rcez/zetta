@@ -290,12 +290,13 @@ A theme passes when all these pairs pass. The current values pass. The lowest te
 From top to bottom:
 
 1. **Top row.** The Zetta mark (home), then search (`⌘K`, the command palette) and new chat with the open bot (or the chief).
-2. **Fixed block.** Inbox (the attention model: needs input, blocked, new results; amber count), Tasks (the kanban), Routines, Memory (what the bots know: the explorer at `/memory` and one page per item at `/memory/<slug>`; the old `/wiki` addresses redirect).
+2. **Fixed block.** Inbox (the attention model: needs input, blocked, new results; amber count), Tasks (the kanban), Routines (unread runs count).
 3. **Filter.** One field that filters rooms, bots and chats.
 4. **Rooms.** Group discussions where several bots and people share one conversation ("rooms" is the product's word for them). Rows start with `#`; the Chief's help and permission rooms sit apart under "Bot issues".
 5. **Bots.** The heading has a clock toggle that lists every chat by time instead of by bot, and a `+` menu (New chat, New bot, New folder, New room). Favorites come first, then the chief, pinned first and not movable, then the other bots in the user's order, grouped by folder when the user has folders. Each bot row expands to "New chat" and its five most recent chats, then "Show N more". Hover or focus shows "New chat" (`+`) and a menu (`⋯`: New chat, Move up, Move down, Settings) on the row.
-6. **More.** Agenda, Studio, Plugins, Computer, Dashboard, Teams, Artifacts. Closed by default; open while one of its pages is shown.
-7. **Footer.** Theme, Collapse, and the account menu (name, email, sign out).
+6. **Library.** What bots know and can use: Teams, Memory (the explorer at `/memory`, one page per item at `/memory/<slug>`; the old `/wiki` addresses redirect), Skills, Plugins, Apps, Artifacts. Open by default.
+7. **Advanced.** Building and oversight tools: Studio, Agenda, Playground, Computer. Closed by default; open while one of its pages is shown. Hidden in Simple navigation (`user_preference.nav_mode: simple | full`, Preferences > Display); new installs start Simple, existing accounts stay Full. Home is the Zetta mark at the top, not a row.
+8. **Footer.** Theme, Collapse, and the account menu (name, email, sign out).
 
 A group heading toggles its group; the open or closed state is kept in the browser.
 

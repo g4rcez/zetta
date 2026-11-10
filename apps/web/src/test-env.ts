@@ -23,3 +23,6 @@ process.env.__VARLOCK_ENV ??= JSON.stringify({
   if (had.document) g.document = saved.document;
   else delete g.document;
 }
+
+// Makes this file a module so the top-level awaits above typecheck.
+export {};

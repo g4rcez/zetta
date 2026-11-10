@@ -48,6 +48,8 @@ export const hostRunner: Runner = async (spec, signal) => {
     const timer = setTimeout(() => stop("timeout"), spec.timeoutMs);
     const onAbort = () => stop("cancelled");
     signal.addEventListener("abort", onAbort, { once: true });
+    // A cancel that came while the folder was being written (before the listener existed) must still stop the run.
+    if (signal.aborted) onAbort();
     const out = tail(proc.stdout, PLAYGROUND_LIMITS.streamBytes);
     const err = tail(proc.stderr, PLAYGROUND_LIMITS.streamBytes);
     try {

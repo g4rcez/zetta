@@ -8,7 +8,7 @@
 # environment (nothing is read from apps/*/.env), and a container CLI wrapper (bin/docker) that keeps the server's sweep away from your
 # computers. It needs a container engine (Podman or Docker) and the desktop images (docker/desktop, see docs/operations/runtime-modes.md).
 #
-# Variables: ZETTA_DEMO_DIR (state, default $TMPDIR/zetta-demo-computer), ZETTA_DEMO_ENGINE (podman or docker), ZETTA_VM_IMAGE,
+# Variables: ZETTA_DEMO_PG_NAME (database container, default zetta-demo-pg), ZETTA_DEMO_DIR (state, default $TMPDIR/zetta-demo-computer), ZETTA_DEMO_ENGINE (podman or docker), ZETTA_VM_IMAGE,
 # ZETTA_VM_IMAGE_UBUNTU, ZETTA_DEMO_WEB_PORT, ZETTA_DEMO_API_PORT, ZETTA_DEMO_PG_PORT.
 set -euo pipefail
 
@@ -19,7 +19,8 @@ DEMO=${DEMO%/}
 WEB_PORT=${ZETTA_DEMO_WEB_PORT:-3056}
 API_PORT=${ZETTA_DEMO_API_PORT:-3077}
 PG_PORT=${ZETTA_DEMO_PG_PORT:-55434}
-PG=zetta-demo-pg
+# Another session may run its own demo stack: give this one its own container (and ports) so `up` never drops someone else's database.
+PG=${ZETTA_DEMO_PG_NAME:-zetta-demo-pg}
 ENGINE=${ZETTA_DEMO_ENGINE:-$(command -v podman || command -v docker || true)}
 [ -n "$ENGINE" ] || { echo "No container engine: install Podman or Docker, or set ZETTA_DEMO_ENGINE." >&2; exit 1; }
 ORIGIN="https://localhost:$WEB_PORT"

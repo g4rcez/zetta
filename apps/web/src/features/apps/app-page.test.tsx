@@ -437,7 +437,9 @@ test("an app with a page opens on it, with the frame drawn and the tools one tab
   reset();
   hasUi = true;
   const { changes, unmount } = await mount({});
-  expect(win.document.querySelector("iframe")?.getAttribute("sandbox")).toBe("allow-scripts");
+  expect(win.document.querySelector("iframe")?.getAttribute("sandbox")).toBe(
+    "allow-scripts allow-forms",
+  );
   expect(
     buttons()
       .find((b) => b.textContent === "Open")

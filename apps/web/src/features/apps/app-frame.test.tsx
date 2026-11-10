@@ -93,7 +93,8 @@ test("the page is drawn in a frame that can run scripts and nothing else, under 
   failUi = false;
   const { unmount } = await mount();
   const f = frame();
-  expect(f.getAttribute("sandbox")).toBe("allow-scripts");
+  // Scripts and forms (a page's own submit handler); `form-action 'none'` in the policy keeps forms from going anywhere.
+  expect(f.getAttribute("sandbox")).toBe("allow-scripts allow-forms");
   expect(f.getAttribute("csp")).toContain("connect-src 'none'");
   expect(f.getAttribute("srcdoc")).toBe(html);
   expect(f.getAttribute("title")).toBe("To do");

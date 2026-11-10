@@ -217,6 +217,8 @@ export function createContainerRunner(c: ContainerConfig) {
       const timer = setTimeout(() => stop("timeout"), spec.timeoutMs + 5000);
       const onAbort = () => stop("cancelled");
       signal.addEventListener("abort", onAbort, { once: true });
+      // A cancel that came while the run was being prepared must still stop it.
+      if (signal.aborted) onAbort();
       const out = tail(proc.stdout, PLAYGROUND_LIMITS.streamBytes);
       const err = tail(proc.stderr, PLAYGROUND_LIMITS.streamBytes);
       try {

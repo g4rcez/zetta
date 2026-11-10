@@ -3,8 +3,8 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
-  # Zetta must run the same way on Linux, macOS and Windows, with or without Docker: unit tests run everywhere,
-  # database-backed suites run where a Postgres service is available (Linux).
+  # Zetta must run the same way on Linux, macOS and Windows, with or without Docker: unit tests run everywhere. Database-backed suites
+  # run on Linux against a Postgres service and on macOS against the embedded Postgres (docs/decisions/embedded-postgres.md).
   test:
     strategy:
       fail-fast: false
@@ -27,10 +27,18 @@ jobs:
         working-directory: packages/db
         run: bunx drizzle-kit migrate
         env: { DATABASE_URL: "postgresql://postgres:password@127.0.0.1:5432/zetta_test" }
-      - name: Server tests (database-backed on Linux)
+      - name: Embedded Postgres runtime
+        if: matrix.os == 'macos-latest'
+        run: bun run db:runtime
+      - name: Embedded Postgres tests
+        if: matrix.os == 'macos-latest'
+        working-directory: packages/db
+        run: bun test src/embedded
+      - name: Server tests (database-backed on Linux and macOS)
         working-directory: apps/server
         run: bun test
         env:
+          ZETTA_TEST_DB: ${{ matrix.os == 'macos-latest' && 'embedded' || '' }}
           ZETTA_CHAT_TEST_DATABASE_URL: ${{ matrix.os == 'ubuntu-latest' && 'postgresql://postgres:password@127.0.0.1:5432/zetta_test' || '' }}
           ZETTA_TEST_DATABASE_URL: ${{ matrix.os == 'ubuntu-latest' && 'postgresql://postgres:password@127.0.0.1:5432/zetta_test' || '' }}
           # Both only need a Postgres URL (the instance suite wants the migrations applied; LISTEN/NOTIFY writes no data).

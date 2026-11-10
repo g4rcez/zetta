@@ -27,15 +27,12 @@ bun install
 
 ## Database Setup
 
-This project uses PostgreSQL with Drizzle ORM.
+This project uses PostgreSQL with Drizzle ORM. You do not need to install it.
 
-1. Make sure you have a PostgreSQL database set up.
-2. Update your `apps/server/.env` file with your PostgreSQL connection details.
-3. Apply the schema to your database:
+- **Embedded (default).** Leave `DATABASE_URL` empty in `apps/server/.env`. Build the Postgres runtime once with `bun run db:runtime` (macOS and Linux; needs a C compiler, make, perl, bison and flex). The server then starts its own Postgres in `~/.zetta/postgres` (`ZETTA_HOME` changes the folder) and applies pending migrations at boot. `bun run db:embedded start|stop|status|url` controls it without the server, for `bun run db:studio`.
+- **Your own Postgres.** Set `DATABASE_URL` to a Postgres 18 with the `vector` and `unaccent` extensions (`bun run db:start` runs one in Docker or Podman) and apply the migrations with `bun run db:migrate`.
 
-```bash
-bun run db:push
-```
+See [docs/decisions/embedded-postgres.md](docs/decisions/embedded-postgres.md). `ZETTA_TEST_DB=embedded bun test` in `apps/server` runs the database-backed tests on a throwaway embedded Postgres.
 
 Then, run the development server:
 
@@ -150,6 +147,8 @@ zetta/
 - `bun run db:generate`: Generate database client/types
 - `bun run db:migrate`: Run database migrations
 - `bun run db:studio`: Open database studio UI
+- `bun run db:runtime`: Build the embedded Postgres runtime for this computer
+- `bun run db:embedded start|stop|status|url`: Control the embedded Postgres without the server
 - `bun run check`: Lint, then rewrite formatting in place (`oxlint && oxfmt --write`). It changes files and does not typecheck.
 - `bun run verify`: Lint, typecheck every package and run every unit suite that needs no database (the same steps as the `checks` job in CI)
 - `bun run lint`: Run Vite+ lint checks

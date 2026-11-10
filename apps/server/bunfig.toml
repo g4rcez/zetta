@@ -1,1 +1,4 @@
 env = false
+
+[test]
+preload = ["./src/test-support/embedded-db.preload.ts"]

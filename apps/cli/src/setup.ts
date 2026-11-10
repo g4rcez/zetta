@@ -46,9 +46,7 @@ export function planSetup(input: SetupInput): SetupResult {
     serverValues[key] = secret();
     if (key === "ZETTA_SETUP_KEY") setupKey = serverValues[key];
   }
-  // The compose postgres, published on 127.0.0.1:5432 with its default dev password.
-  if (empty(input.server, "DATABASE_URL"))
-    serverValues.DATABASE_URL = "postgresql://postgres:password@localhost:5432/zetta";
+  // DATABASE_URL is left alone: empty means the Postgres that ships inside Zetta.
 
   Object.assign(serverValues, {
     BETTER_AUTH_URL: `${scheme}://${host}:3000`,

@@ -34,7 +34,7 @@ Phases:
 6. Run Zetta on this computer: not started.
 7. Windows and Linux companion runtime: not started.
 
-Run it with `bun run dev:desktop` (`apps/desktop/scripts/dev.ts`): the server on `:6000`, the web dev server on `https://localhost:3000` (with the `.certs` mkcert pair when present) and the app, which opens that address as "Dev server". It starts nothing else (no landing page) and does not start Postgres (`bun run db:start`). Stopping it stops all three process trees.
+Run it with `bun run dev:desktop` (`apps/desktop/scripts/dev.ts`): the server on `:6000`, the web dev server on `https://localhost:3000` (with the `.certs` mkcert pair when present) and the app, which opens that address as "Dev server". It starts nothing else (no landing page) and no database container: with an empty `DATABASE_URL` the server runs the [embedded Postgres](embedded-postgres.md). Stopping it stops all three process trees.
 
 Still missing for a release: a macOS icon (`icon.iconset`; the build warns), Windows and Linux icons, code signing and notarization, auto-update.
 

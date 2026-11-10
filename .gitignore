@@ -13,6 +13,9 @@ apps/web/src/routeTree.gen.ts
 local.db
 local.db-*
 
+# Postgres runtime archives built by packages/db/scripts/pg-runtime.ts
+.pg-runtime
+
 # Environment variables (only .env.schema is tracked: names, no values)
 .env
 .env.*

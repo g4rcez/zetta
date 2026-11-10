@@ -41,6 +41,8 @@
     "db:studio": "vp run --filter @zetta/db db:studio",
     "db:generate": "vp run --filter @zetta/db db:generate",
     "db:migrate": "vp run --filter @zetta/db db:migrate",
+    "db:runtime": "bun packages/db/scripts/pg-runtime.ts build",
+    "db:embedded": "bun packages/db/scripts/embedded.ts",
     "db:start": "docker compose up -d postgres",
     "db:watch": "docker compose up postgres",
     "db:stop": "docker compose stop postgres",

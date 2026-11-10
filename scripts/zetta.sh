@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# bun run zetta (everything runs through Vite+ `vp`): start postgres, apply migrations, then run backend + frontend, open to the local network.
+# bun run zetta (everything runs through Vite+ `vp`): run backend + frontend, open to the local network. With an empty DATABASE_URL the server
+# starts the Postgres that ships inside Zetta and migrates it; with DATABASE_URL set, this script starts the compose postgres and migrates it.
 # The web dev server is the only HTTPS entry point (https://<address>:3000, certificate from mkcert, see scripts/dev-certs.sh). It forwards /api to
 # the API on http://127.0.0.1:6000 (apps/web/vite.config.ts), so the browser makes no cross-origin call and the API never listens on the network.
 # <address> is this machine's private IPv4 address; set ZETTA_ADDRESS=<ip-or-host> to choose another. Open that address on every device, this one too:
@@ -7,24 +8,34 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CONTAINER=""
-for runtime in docker podman; do
-  if command -v "$runtime" >/dev/null 2>&1 && "$runtime" info >/dev/null 2>&1; then CONTAINER=$runtime; break; fi
-done
-[ -n "$CONTAINER" ] || { echo "a running docker or podman is required to run postgres" >&2; exit 1; }
+# Process variables win over apps/server/.env, like in varlock.
+DATABASE_URL=${DATABASE_URL:-$(sed -n 's/^DATABASE_URL=//p' apps/server/.env 2>/dev/null | tail -1 | tr -d "\"'")}
 
-echo "▶ Starting postgres"
-$CONTAINER compose up -d postgres
+if [ -z "$DATABASE_URL" ]; then
+  if ! ls packages/db/.pg-runtime/pg-runtime-*.tar.zst >/dev/null 2>&1; then
+    echo "▶ Building the Postgres runtime (once, about a minute)"
+    bun run db:runtime
+  fi
+else
+  CONTAINER=""
+  for runtime in docker podman; do
+    if command -v "$runtime" >/dev/null 2>&1 && "$runtime" info >/dev/null 2>&1; then CONTAINER=$runtime; break; fi
+  done
+  [ -n "$CONTAINER" ] || { echo "a running docker or podman is required to run postgres" >&2; exit 1; }
 
-echo "▶ Waiting for postgres"
-for _ in $(seq 1 60); do
-  $CONTAINER exec zetta-postgres pg_isready -U postgres >/dev/null 2>&1 && break
-  sleep 1
-done
-$CONTAINER exec zetta-postgres pg_isready -U postgres >/dev/null || { echo "postgres did not become ready" >&2; exit 1; }
+  echo "▶ Starting postgres"
+  $CONTAINER compose up -d postgres
 
-echo "▶ Applying migrations"
-(cd packages/db && vp exec varlock run -- vp exec drizzle-kit migrate)
+  echo "▶ Waiting for postgres"
+  for _ in $(seq 1 60); do
+    $CONTAINER exec zetta-postgres pg_isready -U postgres >/dev/null 2>&1 && break
+    sleep 1
+  done
+  $CONTAINER exec zetta-postgres pg_isready -U postgres >/dev/null || { echo "postgres did not become ready" >&2; exit 1; }
+
+  echo "▶ Applying migrations"
+  (cd packages/db && vp exec varlock run -- vp exec drizzle-kit migrate)
+fi
 
 ADDRESS=${ZETTA_ADDRESS:-$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')}
 [ -n "$ADDRESS" ] || { echo "no network address found: set ZETTA_ADDRESS=<ip-or-host>" >&2; exit 1; }

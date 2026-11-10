@@ -77,10 +77,6 @@ async function waitFor(label: string, probe: () => Promise<boolean>, seconds = 9
   stop(1);
 }
 
-if (!(await listening("127.0.0.1", 5432)))
-  console.warn(
-    "[dev:desktop] Nothing listens on 5432: start Postgres with `bun run db:start` or the server will fail.",
-  );
 if (!trusted)
   console.warn(
     "[dev:desktop] No .certs pair: run `bun run certs` (needs mkcert) if the app shows a certificate error.",

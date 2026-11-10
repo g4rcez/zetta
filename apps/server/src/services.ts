@@ -5,6 +5,7 @@ import { connectStdio } from "./modules/computer/mcp-client";
 import { ComputerError } from "./modules/computer/service";
 import { createAuth, mcpResource } from "@zetta/auth";
 import { createDb } from "@zetta/db";
+import { type ResolvedDatabase, resolveDatabase } from "@zetta/db/embedded/resolve";
 import { sql } from "@zetta/db/query";
 
 import { ENV, desktopOrigins } from "./env.server";
@@ -88,8 +89,13 @@ import { createInvitationSignupPreflight } from "./modules/identity/signup-prefl
 
 // `bun --hot` re-runs this module on every edit: keep one connection pool per process instead of leaking a new one (100 connections
 // fill up after a few dozen reloads).
-const reloaded = globalThis as { zettaDb?: ReturnType<typeof createDb> };
-export const db = (reloaded.zettaDb ??= createDb(ENV));
+const reloaded = globalThis as {
+  zettaDb?: ReturnType<typeof createDb>;
+  zettaDatabase?: ResolvedDatabase;
+};
+// An empty DATABASE_URL starts (or adopts) the Postgres that ships inside Zetta and applies pending migrations before anything reads it.
+export const database = (reloaded.zettaDatabase ??= await resolveDatabase(ENV));
+export const db = (reloaded.zettaDb ??= createDb({ DATABASE_URL: database.url }));
 // `decisions` is created further down; the callback only runs on a later settings update, after it exists.
 const installation = createInstallationService(db, (s) =>
   decisions.setMode(s.laya, {

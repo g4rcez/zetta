@@ -26,6 +26,7 @@ import {
   artifactServices,
   chatServices,
   databaseReady,
+  database,
   db,
   computerServices,
   connectionServices,
@@ -63,7 +64,15 @@ const instance = createInstance({ db, role: ROLE });
 await instance.start();
 // A stopped process tells its peers at once, instead of after the heartbeat times out.
 for (const signal of ["SIGTERM", "SIGINT"] as const)
-  process.once(signal, () => void instance.stop().finally(() => process.exit(0)));
+  process.once(
+    signal,
+    () =>
+      void instance.stop().finally(() => {
+        // The embedded Postgres stops with the process that started it; an external one is left alone.
+        database.stop();
+        process.exit(0);
+      }),
+  );
 
 createApp({
   auth,
@@ -127,7 +136,7 @@ void signals.zettaSignals?.stop();
 signals.zettaSignals =
   busMode === "pg"
     ? startPgSignals({
-        connectionString: ENV.DATABASE_URL,
+        connectionString: database.url,
         notify: (channel, payload) => db.execute(sql`select pg_notify(${channel}, ${payload})`),
         onError: (e) => console.error("[events] link:", e instanceof Error ? e.message : e),
       })

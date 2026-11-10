@@ -854,7 +854,7 @@ export function Composer({
               </InputGroupButton>
             </ActionHint>
           )}
-          {/* While the bot works, a message is queued and answered in its own thread. */}
+          {/* While the bot works, a message waits and is answered with the others that wait when the reply ends. */}
           {(!busy || !onStop || canSend) && (
             <ActionHint label={busy ? "Send; it waits until the bot finishes" : "Send"}>
               <InputGroupButton

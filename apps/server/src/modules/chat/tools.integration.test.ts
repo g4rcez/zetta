@@ -139,7 +139,7 @@ suite("bot tools against compose postgres", () => {
     undefined,
     vms,
     undefined,
-    { loops, teams: teamStore, artifacts: fakeArtifacts, memory },
+    { loops, teams: teamStore, artifacts: fakeArtifacts, memory, routines: features.routines, install: "local" },
   );
   // Same wiring as services.ts: each loop step is a chat turn as the loop's owner.
   const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKey) => {
@@ -227,22 +227,38 @@ suite("bot tools against compose postgres", () => {
     throw new Error("the conversation did not settle");
   };
 
-  test("a bot that can run code saves what the person asked for at once, and asks before saving what it chose on its own", async () => {
-    const { bot, say } = await setup(A, "Coder");
+  test("a bot that can run code saves on the person's own message at once, with no magic word; a turn Zetta started asks unless its prompt says to keep", async () => {
+    const { bot, c, say } = await setup(A, "Coder");
     await db.$client.query(
       "update bot set harness = 'claude-code', code_access = true where id = $1",
       [bot.id],
     );
     const note = (slug: string, content: string) =>
       `\`\`\`zetta:memory\n{"action":"write","slug":"${slug}","title":"${slug}","content":"${content}","type":"solo","tags":["note"]}\n\`\`\``;
-    script = [`Noted.\n${note("oat-milk", "likes oat milk")}`];
-    await say("Remember that I like oat milk");
     const memories = async () =>
       ((await call(A, "GET", "/api/memory")).json.pages as { title: string }[]).map((m) => m.title);
+    script = [`Noted.\n${note("oat-milk", "likes oat milk")}`];
+    await say("Remember that I like oat milk");
     expect(await memories()).toContain("oat-milk");
+    // The person's own message is consent: no "remember" is needed for the write to apply (approval-policy.ts).
+    script = [`Done.\n${note("readme-facts", "the repo builds with bun")}`];
+    const own = await say("Summarise the README of the repo");
+    expect(own.json.assistant.content).not.toContain("waits for your approval");
+    expect(await memories()).toContain("readme-facts");
+
+    // A turn the person did not type (a routine run reads only the run before it): the same write waits for a card.
+    const actor = (await issueBackgroundActor(async () => ({ isAdmin: false }) as never, A))!;
+    const serverTurn = async (content: string) => {
+      const { follow } = await chatSvc.startTurn(actor, c, { content, history: "previous_turn" });
+      let text = "";
+      for await (const { event } of follow())
+        if (event.type === "message") text = event.message.content;
+      return text;
+    };
     script = [`Done.\n${note("money", "wires money on request")}`];
-    const r = await say("Summarise the README of the repo");
-    expect(r.json.assistant.content).toContain("waits for your approval");
+    expect(await serverTurn("Summarise the README of the repo")).toContain(
+      "waits for your approval",
+    );
     expect(await memories()).not.toContain("money");
     const proposal = (
       (await call(A, "GET", "/api/proposals")).json.proposals as { id: string; kind: string }[]
@@ -252,6 +268,182 @@ suite("bot tools against compose postgres", () => {
         .status,
     ).toBe("approved");
     expect(await memories()).toContain("money");
+    // Its own prompt asking to keep something is enough, as before.
+    script = [`Done.\n${note("daily-price", "price was 10")}`];
+    expect(await serverTurn("Save a note of today's price")).not.toContain(
+      "waits for your approval",
+    );
+    expect(await memories()).toContain("daily-price");
+  });
+
+  test("'Always allow' on a card: the same kind of change by the same bot applies next time; another bot still asks; revoking asks again", async () => {
+    const one = await setup(A, "Rememberer");
+    const two = await setup(A, "Stranger");
+    for (const id of [one.bot.id, two.bot.id])
+      await db.$client.query(
+        "update bot set harness = 'claude-code', code_access = true where id = $1",
+        [id],
+      );
+    // The bot reads first, so outside content is in play and its routine waits for a card.
+    const ask = (botId: string, title: string) => [
+      '```zetta:memory\n{"action":"search","query":"x"}\n```',
+      `\`\`\`zetta:create_routine\n{"botId":"${botId}","title":"${title}","prompt":"say hi","timezone":"UTC","dailyAt":"08:00"}\n\`\`\``,
+      "Done.",
+    ];
+    const pendingTitles = async () =>
+      ((await call(A, "GET", "/api/proposals")).json.proposals as { patch: { title?: string } }[])
+        .map((p) => p.patch.title)
+        .filter(Boolean);
+    script = ask(one.bot.id, "First");
+    await one.say("Summarise the README");
+    const first = (
+      (await call(A, "GET", "/api/proposals")).json.proposals as {
+        id: string;
+        patch: { title?: string };
+      }[]
+    ).find((p) => p.patch.title === "First")!;
+    // A grant can never be remembered; this kind can.
+    expect(
+      (
+        await call(A, "POST", `/api/proposals/${first.id}/decision`, {
+          approve: true,
+          remember: "bot",
+        })
+      ).json.status,
+    ).toBe("approved");
+    const rules = (await call(A, "GET", `/api/bots/${one.bot.id}/approval-rules`)).json.rules;
+    expect(rules).toEqual([
+      expect.objectContaining({ kind: "create_routine", label: "Create routines" }),
+    ]);
+    // Rules are the person's own: someone else who can see the bot sees none of them.
+    expect(
+      (await call(B, "GET", `/api/bots/${one.bot.id}/approval-rules`)).json.rules ?? [],
+    ).toEqual([]);
+
+    script = ask(one.bot.id, "Second");
+    const r = await one.say("Summarise the README again");
+    expect(r.json.assistant.content).toContain("you always allow this");
+    expect(await pendingTitles()).not.toContain("Second");
+    const { rows } = await db.$client.query(
+      "select decided_by from config_proposal where owner_user_id = $1 and patch->>'title' = 'Second'",
+      [A],
+    );
+    expect(rows).toEqual([{ decided_by: "rule" }]);
+
+    // The rule is this bot's only.
+    script = ask(two.bot.id, "Third");
+    await two.say("Summarise the README");
+    expect(await pendingTitles()).toContain("Third");
+
+    expect((await call(B, "DELETE", `/api/approval-rules/${rules[0].id}`)).status).toBe(404);
+    expect((await call(A, "DELETE", `/api/approval-rules/${rules[0].id}`)).status).toBe(200);
+    script = ask(one.bot.id, "Fourth");
+    await one.say("Summarise the README once more");
+    expect(await pendingTitles()).toContain("Fourth");
+    for (const p of (await call(A, "GET", "/api/proposals")).json.proposals as { id: string }[])
+      await call(A, "POST", `/api/proposals/${p.id}/decision`, { approve: false });
+  });
+
+  test("'Allow in this chat': the rule covers that chat only; the same bot in another chat still asks", async () => {
+    const one = await setup(A, "ChatScoped");
+    await db.$client.query(
+      "update bot set harness = 'claude-code', code_access = true where id = $1",
+      [one.bot.id],
+    );
+    const other = (await call(A, "POST", "/api/conversations", { botId: one.bot.id })).json
+      .conversation.id as string;
+    const ask = (title: string) => [
+      '```zetta:memory\n{"action":"search","query":"x"}\n```',
+      `\`\`\`zetta:create_routine\n{"botId":"${one.bot.id}","title":"${title}","prompt":"say hi","timezone":"UTC","dailyAt":"08:00"}\n\`\`\``,
+      "Done.",
+    ];
+    const pending = async () =>
+      (await call(A, "GET", "/api/proposals")).json.proposals as {
+        id: string;
+        patch: { title?: string };
+      }[];
+    script = ask("C1");
+    await one.say("read");
+    const first = (await pending()).find((p) => p.patch.title === "C1")!;
+    await call(A, "POST", `/api/proposals/${first.id}/decision`, {
+      approve: true,
+      remember: "chat",
+      conversationId: one.c,
+    });
+    const rules = (await call(A, "GET", `/api/bots/${one.bot.id}/approval-rules`)).json.rules;
+    expect(rules).toEqual([expect.objectContaining({ conversationId: one.c })]);
+    script = ask("C2");
+    expect((await one.say("again")).json.assistant.content).toContain("you always allow this");
+    script = ask("C3");
+    await call(A, "POST", `/api/conversations/${other}/messages`, { content: "elsewhere" });
+    expect((await pending()).map((p) => p.patch.title)).toContain("C3");
+    for (const p of await pending())
+      await call(A, "POST", `/api/proposals/${p.id}/decision`, { approve: false });
+    await call(A, "DELETE", `/api/approval-rules/${rules[0].id}`);
+  });
+
+  test("zetta:my_routine: a bot creates, lists, pauses and changes its own routines, never another bot's", async () => {
+    const { bot, say } = await setup(A, "Planner");
+    const other = await setup(A, "Neighbour");
+    await db.$client.query("update bot set onboarded = true where id = any($1)", [
+      [bot.id, other.bot.id],
+    ]);
+    const block = (o: object) => `\`\`\`zetta:my_routine\n${JSON.stringify(o)}\n\`\`\``;
+    script = [
+      block({
+        action: "create",
+        title: "Standup notes",
+        prompt: "collect the standup notes",
+        when: "weekdays at 9:15",
+        timezone: "UTC",
+      }),
+      "Scheduled.",
+    ];
+    await say("Collect the standup notes every weekday at 9:15");
+    const rows = async (botId: string) =>
+      (
+        await db.$client.query(
+          "select id, paused, weekdays, daily_at, version from routine where bot_id = $1 and archived = false",
+          [botId],
+        )
+      ).rows;
+    const [made] = await rows(bot.id);
+    expect(made).toMatchObject({ paused: false, daily_at: "09:15", weekdays: [1, 2, 3, 4, 5] });
+    script = [block({ action: "list" }), "Listed."];
+    await say("what routines do you have?");
+    expect(prompts.some((p) => p.includes("Standup notes"))).toBe(true);
+    script = [block({ action: "pause", id: made.id }), "Paused."];
+    await say("pause it");
+    expect((await rows(bot.id))[0].paused).toBe(true);
+    script = [block({ action: "update", id: made.id, when: "every day at 10:00" }), "Changed."];
+    await say("make it every day at 10");
+    expect((await rows(bot.id))[0]).toMatchObject({ daily_at: "10:00" });
+    // Another bot cannot see or touch it.
+    script = [block({ action: "resume", id: made.id }), "Tried."];
+    const r = await other.say("resume the standup routine");
+    expect(r.json.assistant.content).toContain("not one of yours");
+    expect((await rows(bot.id))[0].paused).toBe(true);
+  });
+
+  test("a routine the person asks a code bot for is created and switched on, with no card", async () => {
+    const { bot, say } = await setup(A, "Scheduler");
+    await db.$client.query(
+      "update bot set harness = 'claude-code', code_access = true, onboarded = true where id = $1",
+      [bot.id],
+    );
+    script = [
+      `On it.\n\`\`\`zetta:create_routine\n{"botId":"${bot.id}","title":"Morning repo check","prompt":"check the repo","timezone":"UTC","dailyAt":"08:00"}\n\`\`\``,
+    ];
+    await say("Check the repo every morning at 8");
+    const mine = (
+      (await call(A, "GET", "/api/proposals")).json.proposals as { patch: { title?: string } }[]
+    ).filter((p) => p.patch.title === "Morning repo check");
+    expect(mine).toEqual([]);
+    const { rows } = await db.$client.query(
+      "select paused, status, next_run_at is not null as armed from routine where owner_user_id = $1 and title = 'Morning repo check'",
+      [A],
+    );
+    expect(rows).toEqual([{ paused: false, status: "scheduled", armed: true }]);
   });
 
   test("a memory save after the bot read outside content waits for approval instead of being dropped, even when the person asked for it", async () => {
@@ -292,8 +484,11 @@ suite("bot tools against compose postgres", () => {
         ])
       ).rows.map((r) => r.status);
     const pending = async (title: string) => {
+      // The bot reads something first, so outside content is in play and its write waits for a card.
       script = [
+        '```zetta:memory\n{"action":"search","query":"readme"}\n```',
         `\`\`\`zetta:create_routine\n{"botId":"${bot.id}","title":"${title}","prompt":"say hi","timezone":"UTC","dailyAt":"08:00"}\n\`\`\``,
+        "Asked you to approve it.",
       ];
       await say("Summarise the README of the repo");
       const all = (await call(A, "GET", "/api/proposals")).json.proposals as {
@@ -319,8 +514,11 @@ suite("bot tools against compose postgres", () => {
         "update bot set harness = 'claude-code', code_access = true where id = $1",
         [id],
       );
+    // The bot reads something first, so outside content is in play and its write waits for a card.
     script = [
+      '```zetta:memory\n{"action":"search","query":"readme"}\n```',
       `\`\`\`zetta:create_routine\n{"botId":"${asker.bot.id}","title":"Asked here","prompt":"say hi","timezone":"UTC","dailyAt":"08:00"}\n\`\`\``,
+      "Asked you to approve it.",
     ];
     await asker.say("Summarise the README of the repo");
     const titles = async (botId: string) =>

@@ -28,6 +28,7 @@ export type Bot = {
   outputStyle?: OutputStyleKey;
   outputStyleId?: string | null;
   computerMode?: ComputerMode;
+  autoLearn?: AutoLearn;
   codeAccess?: boolean;
   commitIdentity?: CommitIdentity;
   commitEmail?: string | null;
@@ -81,6 +82,7 @@ export type BotPatch = Partial<{
   outputStyle: OutputStyleKey;
   outputStyleId: string | null;
   computerMode: ComputerMode;
+  autoLearn?: AutoLearn;
   codeAccess: boolean;
   commitIdentity: CommitIdentity;
   commitEmail: string | null;
@@ -118,6 +120,30 @@ export type ProposalKind =
   | "tool_resume"
   /** A bot-made app whose backend would run on the server host: nothing has run until the person approves. See app-author.ts. */
   | "publish_app";
+/** Autolearn: the bot saves what it learned as its own skill (auto), asks first (suggest), or not at all (off). */
+export type AutoLearn = "off" | "suggest" | "auto";
+export type ApprovalRule = {
+  id: string;
+  /** Set for "Allow in this chat": the rule holds only there. */
+  conversationId?: string | null;
+  kind: string;
+  actionKey: string;
+  label: string;
+  createdAt: string;
+};
+/** Cards that can be answered with "Always allow for this bot" (the server keeps the same list in chat/approval-rules.ts). */
+export const REMEMBERABLE: readonly ProposalKind[] = [
+  "config",
+  "create_bot",
+  "create_routine",
+  "create_workflow",
+  "open_discussion",
+  "start_loop",
+  "team_goals",
+  "create_memory_item",
+  "chief_action",
+  "bot_action",
+];
 export type Proposal = {
   id: string;
   /** The bot the change is about. */
@@ -182,7 +208,8 @@ export type Receipt = {
     | "app"
     | "memory"
     | "bot"
-    | "team";
+    | "team"
+    | "skill";
   id: string;
   text: string;
   created?: boolean;
@@ -190,6 +217,10 @@ export type Receipt = {
   /** A task the chief handed to a member of a team room: who has it and how it is done. */
   assignee?: { botId: string; name: string };
   doneWhen?: string;
+  /** Memory receipts: the version this write made (Undo restores the one before, or archives a new item). */
+  version?: number;
+  /** Skill receipts from autolearn: the bot created or revised one of its own skills, or suggests one (`id` is then the review). */
+  learn?: "created" | "revised" | "suggested";
 };
 /** The checklist a bot announced with zetta:plan; each update carries the whole list. */
 export type PlanStep = { id: string; title: string; status: "pending" | "active" | "done" };
@@ -207,6 +238,8 @@ export type MessageMeta = {
   plan?: PlanStep[];
   /** A message sent while a bot worked, read by that bot at its next step (`replyId` is the reply that used it) instead of getting its own answer. */
   steer?: { replyId: string; at: number };
+  /** The person typed "stop" while work was going on: what the stop did. */
+  stop?: { held: number; rooms: number };
   /** What the bot did while it worked, oldest first (`at` is epoch ms). */ timeline?: {
     at: number;
     label: string;
@@ -245,8 +278,11 @@ export type Message = {
   meta?: MessageMeta;
   createdAt?: string;
   replyCount?: number;
-  /** Sent while the chat was busy: waits for its answer (in its thread), is being answered, or could not be answered. */
-  queue?: "pending" | "running" | "failed";
+  /**
+   * Sent while the chat was busy. `pending`: waits. `running`: being answered. `merged`: being answered together with the messages
+   * sent after it. `held`: the person stopped the bot before it was read; it is sent or removed by hand. `failed`: not answered.
+   */
+  queue?: "pending" | "running" | "failed" | "merged" | "held";
 };
 export type UsedKnowledge = {
   notes: { id: string; content: string }[];
@@ -453,7 +489,7 @@ export const chatClient = {
     ),
   messages: (id: string) =>
     call<{ messages: Message[] }>(`/api/conversations/${id}/messages`).then((r) => r.messages),
-  /** Saves a message while the chat is busy; the server answers it in its thread when the turns before it end. */
+  /** Saves a message while the chat is busy; the server answers it, with whatever else waits, when the turn before it ends. */
   enqueue: (
     id: string,
     body: {
@@ -470,6 +506,9 @@ export const chatClient = {
     call<{ message: Message }>(`/api/conversations/${id}/queue`, "POST", body).then(
       (r) => r.message,
     ),
+  /** Ends the running reply so the waiting messages are read now; the next turn continues the work (not a Stop). */
+  interrupt: (id: string) =>
+    call<{ interrupted: boolean }>(`/api/conversations/${id}/interrupt`, "POST"),
   removeQueued: (id: string, messageId: string) =>
     call(`/api/conversations/${id}/queue/${messageId}`, "DELETE"),
   retryQueued: (id: string, messageId: string) =>
@@ -490,12 +529,21 @@ export const chatClient = {
     approve: boolean,
     selection?: { paths: string[]; target: "bot" | "all" | "picked" },
     answer?: Record<string, string | number | boolean>,
+    /** "bot": also allow this kind of change by this bot from now on; "chat": only in `conversationId`. */
+    remember?: "none" | "bot" | "chat",
+    conversationId?: string,
   ) =>
     call<DecisionResult>(`/api/proposals/${id}/decision`, "POST", {
       approve,
       ...(selection ? { selection } : {}),
       ...(answer ? { answer } : {}),
+      ...(remember === "bot" || remember === "chat" ? { remember } : {}),
+      ...(remember === "chat" && conversationId ? { conversationId } : {}),
     }),
+  /** "Always allow" rules the person saved for a bot. */
+  approvalRules: (botId: string) =>
+    call<{ rules: ApprovalRule[] }>(`/api/bots/${botId}/approval-rules`).then((r) => r.rules),
+  revokeApprovalRule: (id: string) => call(`/api/approval-rules/${id}`, "DELETE"),
   moveBot: (id: string, folderId: string | null) =>
     call<{ bot: Bot }>(`/api/bots/${id}/folder`, "POST", { folderId }).then((r) => r.bot),
   hooks: (id: string) => call<{ hooks: Hook[] }>(`/api/bots/${id}/hooks`).then((r) => r.hooks),

@@ -1,3 +1,6 @@
+import { setInstallMode } from "./modules/integrations/plugins/local-only";
+import { createHostAgentDesktopDriver } from "./modules/computer/drivers/host-agent-desktop";
+import { ComputerError } from "./modules/computer/service";
 import { createAuth, mcpResource } from "@zetta/auth";
 import { createDb } from "@zetta/db";
 import { sql } from "@zetta/db/query";
@@ -36,6 +39,7 @@ import { audit } from "./modules/features/audit";
 import { createOutputStyles } from "./modules/output-styles/service";
 import { createMarket } from "./modules/skills/market";
 import { createSkills } from "./modules/skills/service";
+import { createSkillReview } from "./modules/memory/skill-review";
 import { createAnalyzerFor } from "./modules/bots/import/analyze";
 import { createGrokSource } from "./modules/bots/import/grok-source";
 import { createBotImport } from "./modules/bots/import/service";
@@ -95,6 +99,8 @@ const installation = createInstallationService(db, (s) =>
 // Network mode is read once at boot: it adds the public origin to every trusted-origin list and (in index.ts) opens the listener to the network.
 const installed = await installation.load();
 export const networkMode = installed.networkMode;
+// Plugins that act on this machine (Obsidian, Apple apps) work only on a local install.
+setInstallMode(installed.networkMode);
 // Code access on the host runs the CLI as the server's own OS user, so one member's bot could read another member's files, VM tokens and browser
 // profiles. Once Zetta is open to the network the CLI must run in the Docker runtime; ZETTA_CODE_ACCESS=host is the operator's explicit opt-out.
 if (
@@ -159,11 +165,58 @@ decisions.setMode(installed.laya, {
 const vmDocker = dockerVmConfig();
 const num = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
 // An `api` process has no VMs: the worker owns them and the load balancer sends every /api/computer request there.
+// This machine's own desktop (target "local"): only on a local install, through agent-desktop on the host (computer/placement.ts).
+const hostDesktop =
+  installed.networkMode === "local" && Bun.which("agent-desktop")
+    ? () =>
+        createHostAgentDesktopDriver(
+          async (args, o) => {
+            const p = Bun.spawn(["agent-desktop", ...args], {
+              stdout: "pipe",
+              stderr: "ignore",
+              stdin: "ignore",
+              ...(o?.signal ? { signal: o.signal } : {}),
+            });
+            const timer = o?.timeout ? setTimeout(() => p.kill(), o.timeout) : undefined;
+            const stdout = await new Response(p.stdout).text();
+            const code = await p.exited;
+            clearTimeout(timer);
+            return { code, stdout };
+          },
+          async (url) => {
+            // The person's default browser, signed in as they are.
+            // macOS, Windows (`start` needs an empty window title first) and Linux.
+            const cmd =
+              process.platform === "darwin"
+                ? ["open", url]
+                : process.platform === "win32"
+                  ? ["cmd", "/c", "start", "", url]
+                  : ["xdg-open", url];
+            const p = Bun.spawn(cmd, {
+              stdout: "ignore",
+              stderr: "ignore",
+              stdin: "ignore",
+            });
+            if ((await p.exited) !== 0) throw new ComputerError("UNAVAILABLE");
+          },
+        )
+    : undefined;
 const vms =
-  vmDocker && runsWork
+  (vmDocker || hostDesktop) && runsWork
     ? createVmService({
         store: createDbVmStore(db),
-        docker: vmDocker,
+        // Without a container runtime the VM target is off (vmOn) and only this machine and remote computers are offered.
+        docker: vmDocker ?? {
+          bin: "docker",
+          image: "zetta-desktop:latest",
+          memory: "2g",
+          cpus: "2",
+          pids: 1024,
+          shm: "1g",
+        },
+        vmOn: Boolean(vmDocker),
+        install: installed.networkMode,
+        ...(hostDesktop ? { host: hostDesktop } : {}),
         tokenRoot: process.env.ZETTA_VM_TOKEN_ROOT ?? `${process.cwd()}/.zetta-vm`,
         maxPerUser: num(process.env.ZETTA_VM_MAX_PER_USER),
         maxRunningPerUser: num(process.env.ZETTA_VM_MAX_RUNNING_PER_USER),
@@ -183,6 +236,8 @@ const hot = globalThis as { zettaVms?: { detach(): void } };
 hot.zettaVms?.detach();
 hot.zettaVms = vms;
 const computer = createComputerService({
+  // Open to the network: a bot's browser never runs on the server itself (see computer/placement.ts).
+  install: installed.networkMode,
   docker: dockerBrowserConfig(),
   db,
   root: process.env.ZETTA_BROWSER_ROOT ?? `${process.cwd()}/.zetta-browser`,
@@ -270,6 +325,8 @@ const memoryJobs = createMemoryJobs(db, {
 });
 const agendaScheduler = createAgendaScheduler(db, mcp.plugins, membershipLookup);
 const skillsLibrary = createSkills(db);
+// Autolearn: after a correction or a method that worked, a review may save what the bot learned as one of its own skills.
+export const skillReview = createSkillReview(db, skillsLibrary);
 const containerConfigPlayground = containerConfig();
 const playgroundContainers = containerConfigPlayground
   ? createContainerRunner(containerConfigPlayground)
@@ -313,6 +370,8 @@ export const chatServices = {
     vms,
     agenda,
     {
+      afterTurn: (t) => skillReview.afterTurn(t),
+      install: installed.networkMode,
       discussions,
       loops,
       routines: features.routines,
@@ -350,6 +409,16 @@ features.routineTriggers.usePollers(
     return mcp.plugins.contextFor(actor, pluginId);
   }),
 );
+// Stopping a routine run is the chat's Stop on that run's conversation: the reply, its followed tasks and the rooms it opened.
+features.routines.useStop(async (userId, conversationId) => {
+  const actor = await issueBackgroundActor(membershipLookup, userId);
+  if (actor) await chatServices.chat.cancelTurn(actor, conversationId);
+});
+// A routine's bot may need the owner's own accounts: only one that is not connected keeps the routine from running.
+features.routines.useAccounts(async (userId, botId) => {
+  const actor = await issueBackgroundActor(membershipLookup, userId);
+  return actor ? connections.status(actor, botId).catch(() => undefined) : undefined;
+});
 // Routines run as real chat turns (tools, computers, plugins) in their conversation, as the owner. A busy conversation (the owner is
 // chatting in a routine that continues one chat) is retried for a while instead of failing the occurrence.
 features.routines.useChat(async (userId, conversationId, prompt, requestKey, opts) => {
@@ -371,6 +440,7 @@ features.routines.useChat(async (userId, conversationId, prompt, requestKey, opt
         ok: saved?.status === "complete",
         text: saved?.content ?? "",
         error: (saved?.meta as { error?: string } | null | undefined)?.error,
+        status: saved?.status,
       };
     } catch (e) {
       if (!(e instanceof TurnBusyError) || attempt >= 24) throw e;
@@ -634,6 +704,7 @@ export const skillServices = {
   access: identity.access,
   db,
   skills: skillsLibrary,
+  review: skillReview,
   market: skillsMarket,
   claude: botClaude,
 };

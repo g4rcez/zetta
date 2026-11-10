@@ -112,6 +112,11 @@ export const bot = zetta.table(
     computerMode: text("computer_mode", { enum: ["off", "browser", "desktop"] })
       .default("off")
       .notNull(),
+    // Autolearn: after a correction or a method that worked, a review saves what the bot learned as a skill of its own (auto), asks
+    // first (suggest), or does nothing (off). See memory/skill-review.ts.
+    autoLearn: text("auto_learn", { enum: ["off", "suggest", "auto"] })
+      .default("auto")
+      .notNull(),
     // Code access the owner granted this bot: a persistent per-user code directory where it can run git, edit files and push. On by default.
     codeAccess: boolean("code_access").default(true).notNull(),
     // Who a commit of this bot is signed as: the server's git config (default), the bot's own address, the owner's account, or `commit_email`.
@@ -247,6 +252,9 @@ export const message = zetta.table(
   ],
 );
 
+export const CHAT_QUEUE_STATUSES = ["pending", "running", "failed", "merged", "held"] as const;
+export type ChatQueueStatus = (typeof CHAT_QUEUE_STATUSES)[number];
+
 /** A user message sent while its chat was busy: saved at once, answered in its thread when the turn before it ends. The row is deleted
  * when that answer ends, so it only lives while the message waits or is being answered (and survives a restart). */
 export const chatQueue = zetta.table(
@@ -264,9 +272,11 @@ export const chatQueue = zetta.table(
     messageId: uuid("message_id")
       .notNull()
       .references(() => message.id, cascade),
-    status: text("status", { enum: ["pending", "running", "failed"] })
-      .default("pending")
-      .notNull(),
+    // `merged`: answered together with the running row named by `batchId`. `held`: the person stopped the bot before this message was
+    // read; it waits until they send it or remove it.
+    status: text("status", { enum: CHAT_QUEUE_STATUSES }).default("pending").notNull(),
+    /** The running row whose turn also answers this message (set while `merged`). */
+    batchId: uuid("batch_id"),
     // Starts of this answer; a message that keeps failing (or crashing the process) stops at a limit instead of looping.
     attempts: integer("attempts").default(0).notNull(),
     reasonCode: text("reason_code"),

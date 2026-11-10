@@ -45,6 +45,7 @@ import {
   resumeInterruptedRuns,
   zettaMcpServices,
   apps,
+  skillReview,
 } from "./services";
 
 initLogger({
@@ -93,6 +94,7 @@ createApp({
   playground: playgroundServices,
   apps: appsServices,
   zettaMcp: zettaMcpServices,
+  runTools: computerServices.vms,
   webOrigin: ENV.CORS_ORIGIN,
   apiOrigin: ENV.BETTER_AUTH_URL,
   desktopOrigins: trustedExtraOrigins,
@@ -180,6 +182,7 @@ if (runsWork) {
     void background.run("memory", () => memoryServices.memory.tick());
     void background.run("memory:sources", () => memoryServices.memory.checkSources());
     void background.run("memory:jobs", () => memoryServices.jobs.tick());
+    void background.run("skills:review", () => skillReview.tick());
     void background.run("rooms", () => discussionServices.worker.tick());
     void background.run("inbound", () => inboundServices.inbound.tick());
     void background.run("loops", () => loopServices.driver.tick());

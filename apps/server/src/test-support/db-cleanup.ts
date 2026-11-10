@@ -104,6 +104,8 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
   await q(`delete from playground_file where playground_id in (${mine})`);
   await q("delete from playground where owner_user_id = any($1)");
   await q("delete from task where assignee_user_id = any($1)");
+  await q("delete from approval_rule where owner_user_id = any($1)");
+  await q("delete from skill_review where owner_user_id = any($1)");
   await q("delete from bot where owner_user_id = any($1)");
   await q(
     "delete from skill_file where skill_id in (select id from skill where owner_user_id = any($1))",

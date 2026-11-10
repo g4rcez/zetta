@@ -55,6 +55,7 @@ export function useZettaChat({
   handlers.current = { onSettled, onProposal, onArtifact, onSteer };
   const leaving = useRef(false); // a stop() we issued while switching away from a chat: not a user abort, nothing to settle
   const [dropped, setDropped] = useState(false);
+  const [stopFailed, setStopFailed] = useState(false); // the server did not confirm a Stop: the bot is still working
   const origin = useRef<"send" | "resume" | undefined>(undefined); // only surface errors from turns the person started (a missing resume is not an error)
 
   const transport = useMemo(
@@ -178,8 +179,11 @@ export function useZettaChat({
     rows,
     summary,
     busy,
-    error:
-      origin.current === "send" && chat.error
+    error: stopFailed
+      ? new Error(
+          "Could not stop the bot: it is still working. Check your connection and press Stop again.",
+        )
+      : origin.current === "send" && chat.error
         ? isNetworkError(chat.error)
           ? new Error(
               "The connection to the server dropped while the bot was working. The reply usually still finishes on the server: reconnecting and refreshing. If nothing appears, reload the page.",
@@ -189,11 +193,12 @@ export function useZettaChat({
     dropped,
     clearError: () => {
       setDropped(false);
+      setStopFailed(false);
       chat.clearError();
     },
     send: async (text: string, extras: Extras & { conversationId?: string } = {}) => {
       // A second useChat request would run beside the first one and break its status, stop and finish: the server queues this
-      // message instead and answers it in its thread after the current turn.
+      // message instead and answers it, with whatever else waits, after the current turn.
       const id = extras.conversationId ?? conv.current;
       if (busy && id) {
         await chatClient.enqueue(id, {
@@ -228,9 +233,20 @@ export function useZettaChat({
       void chat.resumeStream().catch(() => {});
     },
     stop: async () => {
+      const id = conv.current;
+      // The server decides whether the bot stopped, so it is asked first. When it does not answer, the live reply stays on screen:
+      // clearing it would show a stopped chat while the bot goes on working.
+      if (id) {
+        try {
+          await cancelTurn(id);
+          setStopFailed(false);
+        } catch {
+          setStopFailed(true);
+          return;
+        }
+      }
       await chat.stop();
-      if (conv.current) await cancelTurn(conv.current).catch(() => {});
-      if (conv.current) await handlers.current.onSettled(conv.current);
+      if (id) await handlers.current.onSettled(id);
       chat.setMessages([]);
     },
   };

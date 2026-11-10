@@ -93,6 +93,7 @@ const botInput = z.strictObject({
   outputStyle: z.enum(OUTPUT_STYLE_KEYS).optional(),
   outputStyleId: z.string().uuid().nullable().optional(),
   computerMode: z.enum(["off", "browser", "desktop"]).optional(),
+  autoLearn: z.enum(["off", "suggest", "auto"]).optional(),
   codeAccess: z.boolean().optional(),
   commitIdentity: z.enum(["git-config", "bot", "account", "custom"]).optional(),
   commitEmail: z.email().max(254).nullable().optional(),
@@ -118,6 +119,10 @@ const onboarding = z.strictObject({
 });
 const decision = z.strictObject({
   approve: z.boolean(),
+  /** "bot": also allow this kind of change by this bot from now on, without a card (see approval-rules.ts). */
+  remember: z.enum(["none", "bot", "chat"]).optional(),
+  /** The chat the card is answered in (remember "chat"). */
+  conversationId: z.string().uuid().optional(),
   /** Only for a proposal to install skills: which of the offered skills, and whose bots get them. */
   selection: z
     .strictObject({
@@ -362,15 +367,20 @@ export function createChatRoutes(
       const actor = await access.requireActive(request.headers);
       const id = parse(uuid, params.id);
       const input = parse(send, body);
-      // A busy chat queues the message: it is saved now and answered in its thread when the turns before it end.
-      const turn = (await chat.isBusy(actor, id))
-        ? undefined
-        : await chat.startTurn(actor, id, input).catch((e) => {
-            if (e instanceof TurnBusyError) return undefined;
-            throw e;
-          });
+      // A busy chat queues the message: it is saved now and answered, with whatever else waits, when the turn before it ends.
+      const busy = await chat.isBusy(actor, id);
+      // "stop" typed in an idle chat still stops the work that goes on behind it (a goal loop, a followed task); a busy chat reads the
+      // word in `enqueue`.
+      const stop = busy ? undefined : await chat.stopIfAsked(actor, id, input);
+      const turn =
+        busy || stop
+          ? undefined
+          : await chat.startTurn(actor, id, input).catch((e) => {
+              if (e instanceof TurnBusyError) return undefined;
+              throw e;
+            });
       if (turn) return uiStream({ rec: turn.rec, follow: () => turn.follow(0) });
-      const saved = await chat.enqueue(actor, id, input);
+      const saved = stop ?? (await chat.enqueue(actor, id, input));
       return uiStream({
         rec: {},
         follow: async function* () {
@@ -519,6 +529,10 @@ export function createChatRoutes(
       ),
     )
     .post(
+      "/conversations/:id/interrupt",
+      guarded(async ({ actor, params }) => chat.interrupt(actor, parse(uuid, params.id))),
+    )
+    .post(
       "/conversations/:id/cancel",
       guarded(async ({ actor, params }) => ({
         cancelled: await chat.cancelTurn(actor, parse(uuid, params.id)),
@@ -664,9 +678,29 @@ export function createChatRoutes(
         chat.decideProposal(
           actor,
           parse(uuid, params.id),
-          ...((d) => [d.approve, d.selection, d.answer] as const)(parse(decision, body)),
+          ...((d) =>
+            [
+              d.approve,
+              d.selection,
+              d.answer,
+              {
+                by: "user" as const,
+                remember: d.remember ?? ("none" as const),
+                ...(d.conversationId ? { conversationId: d.conversationId } : {}),
+              },
+            ] as const)(parse(decision, body)),
         ),
       ),
+    )
+    .get(
+      "/bots/:id/approval-rules",
+      guarded(async ({ actor, params }) => ({
+        rules: await chat.approvalRules(actor, parse(uuid, params.id)),
+      })),
+    )
+    .delete(
+      "/approval-rules/:id",
+      guarded(async ({ actor, params }) => chat.revokeApprovalRule(actor, parse(uuid, params.id))),
     )
     .get(
       "/bots/:id/skills",

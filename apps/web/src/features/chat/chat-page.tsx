@@ -267,7 +267,7 @@ export function ChatPage() {
     },
   });
   // A running goal loop starts each step on the server: follow it live, and reload when it moves on.
-  // The server answers queued messages one after another, each in its thread: follow each answer live and refresh until none waits.
+  // The server answers the waiting messages together when the turn before them ends: follow that answer live and refresh until none waits.
   const waiting = saved.some((m) => m.queue === "pending" || m.queue === "running");
   const follow = useRef(main);
   follow.current = main;
@@ -450,7 +450,9 @@ export function ChatPage() {
       void (
         action === "remove"
           ? chatClient.removeQueued(chatId, row.id)
-          : chatClient.retryQueued(chatId, row.id)
+          : action === "interrupt"
+            ? chatClient.interrupt(chatId)
+            : chatClient.retryQueued(chatId, row.id)
       ).then(() => reload(chatId), fail);
     },
   };
@@ -829,6 +831,7 @@ export function ChatPage() {
             </SetupActionsContext.Provider>
             <div className="w-full shrink-0 space-y-2 px-4 pb-4">
               <ProposalsPanel
+                conversationId={chatId}
                 proposals={proposals}
                 bots={bots}
                 notify={setNotice}

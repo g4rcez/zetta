@@ -43,6 +43,7 @@ import { Response } from "./response";
 import { splitActionNotes } from "./action-notes";
 import { stripToolFences } from "./tool-fences";
 import { uniqueReceipts } from "./receipts";
+import { ReceiptUndo, SkillReceipt } from "./receipt-undo";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime, formatTime, type TimeFormat } from "@/features/preferences/time-format";
 
@@ -344,6 +345,96 @@ function QuoteBlock({
 }
 
 /** Live feedback line for a reply that is not ready yet: the label, plus the time since `since` (when known) and bouncing dots. */
+/** What a "stop" typed in the chat did, said under the message. */
+function stopLine(stop: { held: number; rooms: number }) {
+  const parts = ["Stopped the bot."];
+  if (stop.held)
+    parts.push(
+      stop.held === 1
+        ? "The message that was waiting is held."
+        : `The ${stop.held} messages that were waiting are held.`,
+    );
+  if (stop.rooms)
+    parts.push(stop.rooms === 1 ? "One room was silenced." : `${stop.rooms} rooms were silenced.`);
+  return parts.join(" ");
+}
+
+/** What a person can do with a message that waits: send it now (interrupting the reply), send a held one, or remove it. */
+export type QueueAction = "remove" | "retry" | "interrupt";
+
+type QueueStateProps = {
+  state: NonNullable<Row["queue"]>;
+  /** Absent in a read-only log: the state is shown, with no way to change it. */
+  onAct?: (action: QueueAction) => void;
+};
+/** A message sent while the bot worked: waiting, being answered (alone or with the others that waited), held by a Stop, or failed. */
+function QueueState({ state, onAct }: QueueStateProps) {
+  if (state === "pending")
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>
+          Waiting: the bot reads it at its next step, or with your other waiting messages when this
+          reply ends.
+        </span>
+        {onAct && (
+          <>
+            {/* No hint: the button has visible text. */}
+            <Button
+              size="xs"
+              variant="ghost"
+              aria-label="Send now: interrupt the reply so the bot reads this first"
+              onClick={() => onAct("interrupt")}
+            >
+              Send now
+            </Button>
+            <Button size="xs" variant="ghost" onClick={() => onAct("remove")}>
+              Remove
+            </Button>
+          </>
+        )}
+      </div>
+    );
+  if (state === "running" || state === "merged")
+    return (
+      <WorkingStatus
+        label={state === "merged" ? "Answering it with the messages below" : "Answering"}
+      />
+    );
+  if (state === "held")
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>Held: you stopped the bot before it read this.</span>
+        {onAct && (
+          <>
+            <Button size="xs" variant="ghost" onClick={() => onAct("retry")}>
+              Send now
+            </Button>
+            <Button size="xs" variant="ghost" onClick={() => onAct("remove")}>
+              Remove
+            </Button>
+          </>
+        )}
+      </div>
+    );
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span role="alert" className="font-medium text-destructive">
+        Not answered.
+      </span>
+      {onAct && (
+        <>
+          <Button size="xs" variant="ghost" onClick={() => onAct("retry")}>
+            Retry
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => onAct("remove")}>
+            Remove
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function WorkingStatus({ label, since }: { label: string; since?: string }) {
   const now = useNow(!!since);
   const secs = since ? now - new Date(since).getTime() : undefined;
@@ -405,7 +496,7 @@ export const MessageRow = memo(function MessageRow({
   onQuote?: (row: Row) => void;
   onSaveToMemory: (row: Row) => void;
   /** A queued message: drop it before it is answered, or put a failed one back in line. */
-  onQueue?: (row: Row, action: "remove" | "retry") => void;
+  onQueue?: (row: Row, action: QueueAction) => void;
   /** Open a published file beside the chat instead of leaving it. */
   onOpenArtifact?: (id: string) => void;
   /** Where the live output of a command of this running turn streams from. */
@@ -574,45 +665,16 @@ export const MessageRow = memo(function MessageRow({
         {row.meta?.steer && (
           <p className="text-xs text-muted-foreground">Used by the bot at its next step.</p>
         )}
-        {row.queue === "pending" && (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>
-              Queued: the bot reads it at its next step, or answers it in its thread after the
-              current reply.
-            </span>
-            {onQueue && !readOnly && (
-              <Button size="xs" variant="ghost" onClick={() => onQueue(row, "remove")}>
-                Remove
-              </Button>
-            )}
-          </div>
+        {row.meta?.stop && (
+          <p className="text-xs text-muted-foreground">{stopLine(row.meta.stop)}</p>
         )}
-        {row.queue === "running" && (
-          <div className="flex flex-wrap items-center gap-2">
-            <WorkingStatus label="Answering in its thread" />
-            {!inThread && (
-              <Button size="xs" variant="ghost" onClick={() => onReply(row)}>
-                View thread
-              </Button>
-            )}
-          </div>
-        )}
-        {row.queue === "failed" && (
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span role="alert" className="font-medium text-destructive">
-              Not answered.
-            </span>
-            {onQueue && !readOnly && (
-              <>
-                <Button size="xs" variant="ghost" onClick={() => onQueue(row, "retry")}>
-                  Retry
-                </Button>
-                <Button size="xs" variant="ghost" onClick={() => onQueue(row, "remove")}>
-                  Remove
-                </Button>
-              </>
-            )}
-          </div>
+        {row.queue && (
+          <QueueState
+            state={row.queue}
+            {...(onQueue && !readOnly
+              ? { onAct: (action: QueueAction) => onQueue(row, action) }
+              : {})}
+          />
         )}
         {computers.map((vm) => (
           <VmCard
@@ -742,14 +804,19 @@ export const MessageRow = memo(function MessageRow({
                     published app “{r.text}”
                   </Link>
                 ) : r.kind === "memory" ? (
-                  <Link
-                    to="/memory/$slug"
-                    params={{ slug: r.id }}
-                    className="flex items-center gap-1 hover:text-foreground hover:underline"
-                  >
-                    <BrainIcon aria-hidden="true" className="size-3.5" />
-                    {r.created === false ? "updated memory" : "added to memory"} “{r.text}”
-                  </Link>
+                  <>
+                    <Link
+                      to="/memory/$slug"
+                      params={{ slug: r.id }}
+                      className="flex items-center gap-1 hover:text-foreground hover:underline"
+                    >
+                      <BrainIcon aria-hidden="true" className="size-3.5" />
+                      {r.created === false ? "updated memory" : "added to memory"} “{r.text}”
+                    </Link>
+                    {!readOnly && <ReceiptUndo receipt={r} />}
+                  </>
+                ) : r.kind === "skill" ? (
+                  <SkillReceipt receipt={r} readOnly={Boolean(readOnly)} />
                 ) : r.kind === "discussion" ? (
                   <Link
                     to="/rooms"

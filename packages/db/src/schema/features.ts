@@ -27,6 +27,18 @@ const owner = () =>
     .references(() => user.id, restrict);
 const created = () => timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
 
+export const ROUTINE_RUN_STATUSES = [
+  "running",
+  "succeeded",
+  "failed",
+  "skipped",
+  "blocked",
+  "interrupted",
+  "cancelled",
+  "following",
+] as const;
+export const ROUTINE_OVERLAP_POLICIES = ["skip", "queue"] as const;
+export const ROUTINE_CATCH_UPS = ["run_once", "skip"] as const;
 /** Pre-model hooks: add_context | redact | stop | background (start an owned background chat task). */
 export const hook = zetta.table(
   "hook",
@@ -87,6 +99,17 @@ export const routine = zetta.table(
       .notNull(),
     statusReason: text("status_reason"),
     statusAt: timestamp("status_at", { withTimezone: true }).defaultNow().notNull(),
+    /** When an occurrence comes while the previous run still works: skip it, or wait for the run to end. */
+    overlapPolicy: text("overlap_policy", { enum: ROUTINE_OVERLAP_POLICIES })
+      .default("skip")
+      .notNull(),
+    /** After the server was down past one or more occurrences: run once for all of them, or skip to the next one. */
+    catchUp: text("catch_up", { enum: ROUTINE_CATCH_UPS }).default("run_once").notNull(),
+    /** "Skip next": every occurrence due at or before this instant is skipped, then it is cleared. */
+    skipUntil: timestamp("skip_until", { withTimezone: true }),
+    /** Failed occurrences in a row; at `maxFailures` the routine pauses itself with one card. A success sets it back to 0. */
+    failures: integer("failures").default(0).notNull(),
+    maxFailures: integer("max_failures").default(5).notNull(),
     /** The room whose bot proposed this routine. While the routine is active, the room is not idle: its work happens in the routine's chat. */
     originDiscussionId: uuid("origin_discussion_id").references(() => discussion.id, setNull),
     createdAt: created(),
@@ -147,9 +170,9 @@ export const routineRun = zetta.table(
       .notNull()
       .references(() => routine.id, restrict),
     ownerUserId: owner(),
-    status: text("status", {
-      enum: ["running", "succeeded", "failed", "skipped", "blocked", "interrupted"],
-    }).notNull(),
+    // "cancelled": the person stopped it (not retried). "following": the bot finished its reply but still works on the tasks it set
+    // itself in that run (the task heartbeat calls it back); it settles as succeeded when they close.
+    status: text("status", { enum: ROUTINE_RUN_STATUSES }).notNull(),
     reasonCode: text("reason_code"),
     output: text("output").notNull(),
     conversationId: uuid("conversation_id").references(() => conversation.id, restrict),
@@ -359,6 +382,9 @@ export const attachment = zetta.table(
 );
 
 /** Bot-proposed configuration changes. Nothing is applied until the owner approves the exact diff. */
+export const PROPOSAL_DECIDERS = ["user", "auto", "rule"] as const;
+export const APPROVAL_RULE_STATUSES = ["active", "revoked"] as const;
+
 export const configProposal = zetta.table(
   "config_proposal",
   {
@@ -405,6 +431,8 @@ export const configProposal = zetta.table(
     expiresAt: timestamp("expires_at", { withTimezone: true })
       .default(sql`now() + interval '24 hours'`)
       .notNull(),
+    /** Who decided: the person, the end-of-turn auto-apply, or an "Always allow" rule they saved (`approval_rule`). Null before. */
+    decidedBy: text("decided_by", { enum: PROPOSAL_DECIDERS }),
   },
   (t) => [
     index("config_proposal_pending_expiry_idx")
@@ -413,6 +441,41 @@ export const configProposal = zetta.table(
     index("config_proposal_proposed_by_bot_id_idx").on(t.proposedByBotId),
     index("config_proposal_bot_id_idx").on(t.botId),
     index("config_proposal_owner_idx").on(t.ownerUserId, t.status),
+  ],
+);
+
+/**
+ * "Always allow" on an approval card: the same kind of change by the same bot applies from then on without a card. Kept per person and
+ * bot, listed and revoked on the bot's page. Never made for grants, outside skills, host code or computers (see chat/approval-rules.ts).
+ */
+export const approvalRule = zetta.table(
+  "approval_rule",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    ownerUserId: owner(),
+    botId: uuid("bot_id")
+      .notNull()
+      .references(() => bot.id, { onDelete: "cascade", onUpdate: "restrict" }),
+    /** "Allow for this chat": the rule holds only in this conversation. Null: every chat of the bot. */
+    conversationId: uuid("conversation_id").references(() => conversation.id, {
+      onDelete: "cascade",
+      onUpdate: "restrict",
+    }),
+    kind: text("kind").notNull(),
+    /** Narrows a broad kind: the tool of a chief action, the call kinds of a held bot action. Empty for the other kinds. */
+    actionKey: text("action_key").default("").notNull(),
+    /** A short line saying what the rule allows, for the bot page. */
+    label: text("label").default("").notNull(),
+    status: text("status", { enum: APPROVAL_RULE_STATUSES }).default("active").notNull(),
+    sourceProposalId: uuid("source_proposal_id"),
+    createdAt: created(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("approval_rule_bot_idx").on(t.ownerUserId, t.botId, t.status),
+    index("approval_rule_bot_id_idx").on(t.botId),
   ],
 );
 

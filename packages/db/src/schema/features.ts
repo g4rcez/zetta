@@ -62,6 +62,8 @@ export const routine = zetta.table(
     prompt: text("prompt").notNull(),
     timezone: text("timezone").default("UTC").notNull(),
     dailyAt: text("daily_at"),
+    // Days a daily routine runs on, 0 = Sunday … 6 = Saturday. Null = every day. Only read together with `daily_at`.
+    weekdays: integer("weekdays").array(),
     everyMinutes: integer("every_minutes"),
     kind: text("kind", { enum: ["recurring", "once"] })
       .default("recurring")

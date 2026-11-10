@@ -22,6 +22,20 @@ const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
 const cascade = { onDelete: "cascade", onUpdate: "restrict" } as const;
 
+/**
+ * Where a bot came from when it was imported from outside (today: the Grok Bot marketplace). Credits the author, keeps the source link and
+ * the integrations the original needs, matched to a Zetta plugin id when one exists (null = no Zetta equivalent).
+ */
+export type BotOrigin = {
+  source: "grok_marketplace";
+  url: string;
+  slug: string;
+  creator: string;
+  handle: string | null;
+  importedAt: string;
+  integrations: { name: string; description: string; pluginId: string | null }[];
+};
+
 /** Visual grouping of bots. Never an access boundary (RFC-001). */
 export const folder = zetta.table(
   "folder",
@@ -91,6 +105,8 @@ export const bot = zetta.table(
     avatar: jsonb("avatar").$type<
       { kind: "preset"; preset: string; colors: string[] } | { kind: "image"; src: string }
     >(),
+    // Set when the bot was imported from outside; null for a bot made here.
+    origin: jsonb("origin").$type<BotOrigin>(),
     onboarded: boolean("onboarded").default(true).notNull(),
     // Computer use the owner granted this bot: off (default), browser only, or browser + desktop.
     computerMode: text("computer_mode", { enum: ["off", "browser", "desktop"] })

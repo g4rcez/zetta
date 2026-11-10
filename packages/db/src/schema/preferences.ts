@@ -67,6 +67,9 @@ export const userPreference = zetta.table("user_preference", {
   /** The person's sidebar order of bots (ids, first on top). Only that person reads it; a bot missing from it sorts after, by
    * the server's order, so no foreign key is needed and a deleted bot just drops out. The chief is always first and never listed. */
   botOrder: uuid("bot_order").array().default([]).notNull(),
+  /** The person's sidebar order of rooms (ids, first on top). Same rules as `botOrder`: only that person reads it, a room missing
+   * from it sorts after by name, and a deleted room just drops out. */
+  roomOrder: uuid("room_order").array().default([]).notNull(),
   /** The person's picture: a preset with colors, or a small uploaded image (data URL). Null = the initial of their name. It lives here and
    * not in `user.image`, because every API request reads the user row. Only the profile API reads and writes it. */
   avatar: jsonb("avatar").$type<

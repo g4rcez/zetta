@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."user_preference" ADD COLUMN "room_order" uuid[] DEFAULT '{}'::uuid[] NOT NULL;

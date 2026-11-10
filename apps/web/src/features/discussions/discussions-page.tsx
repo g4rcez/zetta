@@ -579,8 +579,9 @@ function RoomView({
       void refreshAttention();
     } catch (e) {
       fail(e);
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
   async function send(out: Outgoing) {
     setBusy(true);
@@ -1328,8 +1329,9 @@ function NewRoom({
       void refreshAttention();
     } catch (e) {
       toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
   return (
     <>

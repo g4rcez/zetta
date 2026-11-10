@@ -944,12 +944,15 @@ export function Routines({
   };
   const run = async (id: string) => {
     setBusy(id);
-    await act(
-      // "start": the answer comes when the run is claimed, not when the bot is done (a run can take minutes).
-      () => call(`/api/routines/${id}/run`, "POST", { requestKey: uuidv7(), wait: "start" }),
-      "Run started. Open History to follow it.",
-    );
-    setBusy(undefined);
+    try {
+      await act(
+        // "start": the answer comes when the run is claimed, not when the bot is done (a run can take minutes).
+        () => call(`/api/routines/${id}/run`, "POST", { requestKey: uuidv7(), wait: "start" }),
+        "Run started. Open History to follow it.",
+      );
+    } finally {
+      setBusy(undefined);
+    }
   };
   const botName = (id: string) => bots.find((b) => b.id === id)?.name ?? "A bot";
   const needs = (rows ?? []).filter((r) => NEEDS_ATTENTION.includes(statusOf(r)));

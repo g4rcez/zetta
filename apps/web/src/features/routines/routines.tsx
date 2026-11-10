@@ -48,7 +48,7 @@ export type Routine = {
   lastRunAt?: string | null;
   statusAt?: string;
   /** When an occurrence comes while the previous run still works. */
-  overlapPolicy?: "skip" | "queue";
+  overlapPolicy?: "skip" | "queue" | "replace";
   /** After downtime: run once for what was missed, or skip to the next. */
   catchUp?: "run_once" | "skip";
   /** "goal": a standing goal; each run continues from the last run's report, and only the owner ends it. */

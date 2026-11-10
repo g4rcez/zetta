@@ -1157,6 +1157,36 @@ suite("group discussions against compose postgres", () => {
     expect(runs.map((r) => r.bot)).toEqual(["Lead"]);
   });
 
+  test("a post made while a member works reaches that member at its next step", async () => {
+    const painter = await makeBot(F, "Painter");
+    const created = await call(F, "POST", "/api/discussions", {
+      title: "Paint room",
+      goal: "",
+      members: [{ bot: painter.id }],
+      firstMessage: "Hello",
+    });
+    const roomId = created.json.discussion.id as string;
+    await worker.drain();
+    let release!: () => void;
+    gates.Painter = new Promise<void>((r) => (release = r));
+    // The artifact block makes the run take a second step, where the notes come in.
+    replies.Painter = [
+      '```zetta:artifact\n{"title":"Sketch","content":"<p>x</p>"}\n```',
+      "Painted it blue.",
+    ];
+    runs.length = 0;
+    await call(F, "POST", `/api/discussions/${roomId}/messages`, { content: "@Painter draw it" });
+    for (let i = 0; i < 400 && !runs.some((r) => r.bot === "Painter"); i++) await Bun.sleep(25);
+    await call(F, "POST", `/api/discussions/${roomId}/messages`, { content: "NOTE make it blue" });
+    release();
+    await worker.drain();
+    const painted = runs.filter((r) => r.bot === "Painter");
+    expect(painted.length).toBeGreaterThanOrEqual(2);
+    expect(painted[0]!.prompt).not.toContain("NOTE make it blue");
+    expect(painted[1]!.prompt).toContain("A person: NOTE make it blue");
+    delete gates.Painter;
+  });
+
   test("nothing caps how many rooms run or how many bots join: the person decides", async () => {
     const crew = await Promise.all(
       ["Crew1", "Crew2", "Crew3", "Crew4", "Crew5", "Crew6", "Crew7", "Crew8"].map((n) =>

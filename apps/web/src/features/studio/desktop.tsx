@@ -20,6 +20,9 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
   const { data: vms, error } = useQuery(computerQueries.vms());
   const { data: caps } = useQuery(computerQueries.capabilities());
   const drivers = caps?.targets?.vm ?? [];
+  /** Drivers installed for this computer's own desktop (agent-desktop, Cua). */
+  const localDrivers = caps?.targets?.local ?? [];
+  const driversFor = (target: string | undefined) => (target === "local" ? localDrivers : drivers);
   const systems = caps?.os ?? [];
   const creatable = systems.filter((o) => o.available);
   const remoteOffered = (caps?.targets?.cua?.length ?? 0) > 0;
@@ -100,7 +103,10 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
                 </span>
               )}
               {vm.target === "local" ? (
-                <span className="text-xs text-muted-foreground">this computer</span>
+                <span className="text-xs text-muted-foreground">
+                  this computer
+                  {localDrivers.length > 1 && ` · ${vm.driver === "cua" ? "Cua" : "agent-desktop"}`}
+                </span>
               ) : vm.target === "cua" ? (
                 <span className="break-all text-xs text-muted-foreground">
                   remote Cua · {vm.endpoint}
@@ -123,7 +129,7 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
                 <span className="truncate text-xs text-muted-foreground">· {vm.purpose}</span>
               )}
               <span className="ml-auto flex items-center gap-1">
-                {drivers.length > 1 &&
+                {driversFor(vm.target).length > 1 &&
                   vm.target !== "cua" &&
                   vm.status !== "running" &&
                   vm.id !== "default" && (
@@ -138,7 +144,7 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
                           call(`/api/computer/vms/${vm.id}`, "PATCH", { driver: e.target.value }),
                         )
                       }
-                      options={drivers.map((d) => ({
+                      options={driversFor(vm.target).map((d) => ({
                         value: d,
                         label: d === "cua" ? "Cua" : "agent-desktop",
                       }))}
@@ -244,7 +250,17 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
                     }),
                 );
               else if (draft.type === "local")
-                await call("/api/computer/vms", "POST", { name, target: "local" });
+                await call("/api/computer/vms", "POST", {
+                  name,
+                  target: "local",
+                  ...(localDrivers.length > 1
+                    ? {
+                        driver: localDrivers.includes(draft.driver)
+                          ? draft.driver
+                          : localDrivers[0],
+                      }
+                    : {}),
+                });
               else
                 await call("/api/computer/vms", "POST", {
                   name,
@@ -323,13 +339,17 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
             options={creatable.map((o) => ({ value: o.id, label: o.label }))}
           />
         )}
-        {!remote && drivers.length > 1 && (
+        {!remote && driversFor(draft.type).length > 1 && (
           <Select
             title="Driver"
             required={false}
-            value={draft.driver}
+            value={
+              driversFor(draft.type).includes(draft.driver)
+                ? draft.driver
+                : driversFor(draft.type)[0]
+            }
             onChange={(e) => setDraft({ ...draft, driver: e.target.value as ComputerDriver })}
-            options={drivers.map((d) => ({
+            options={driversFor(draft.type).map((d) => ({
               value: d,
               label: d === "cua" ? "Cua" : "agent-desktop",
             }))}

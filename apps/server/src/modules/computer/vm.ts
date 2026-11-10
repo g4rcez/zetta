@@ -333,8 +333,9 @@ export type VmOptions = {
   connectRemote?: RemoteConnect;
   /** "network": this machine's own desktop is never offered (see placement.ts). Default "network", the safe side. */
   install?: InstallMode;
-  /** Drives this machine's own desktop (target "local"). Without it, or on a network install, the target is off. */
-  host?: () => DesktopDriver;
+  /** Drives this machine's own desktop (target "local"), one factory per driver installed here. Without any, or on a network install,
+   * the target is off. */
+  host?: Partial<Record<DriverName, () => DesktopDriver>>;
   /** False when there is no container runtime: only remote computers and this machine are offered. Default true. */
   vmOn?: boolean;
 };
@@ -365,8 +366,9 @@ export function createVmService({
   vmDrivers = ["cua"],
   vmOs = ["debian"],
 }: VmOptions) {
+  const hostDrivers = (Object.keys(host ?? {}) as DriverName[]).filter((d) => host?.[d]);
   const hostOn =
-    Boolean(host) &&
+    hostDrivers.length > 0 &&
     desktopTargets(install, { vm: false, remote: false, host: true }).includes("local");
   const sessions = new Map<string, VSession>();
   const tickets = new Map<string, { userId: string; id: string; expires: number }>();
@@ -563,7 +565,8 @@ export function createVmService({
         "UNSUPPORTED",
         "This computer's own desktop is only offered when Zetta runs on it.",
       );
-    const driver = host!();
+    const make = host?.[row.driver as DriverName] ?? host?.[hostDrivers[0]!];
+    const driver = make!();
     await driver.ready();
     sessions.set(row.id, {
       id: row.id,
@@ -888,7 +891,8 @@ export function createVmService({
       // A VM, or this machine's own desktop on a local install (see placement.ts); the driver must be one the operator allows.
       if (v.target === "local") {
         if (!hostOn) throw new ComputerError("UNSUPPORTED");
-        v = { ...v, driver: "agent-desktop" };
+        if (v.driver && !hostDrivers.includes(v.driver)) throw new ComputerError("UNSUPPORTED");
+        v = { ...v, driver: v.driver ?? hostDrivers[0]! };
       } else {
         if (v.target && v.target !== "vm") throw new ComputerError("UNSUPPORTED");
         if (!vmOn) throw new ComputerError("UNSUPPORTED");
@@ -934,8 +938,9 @@ export function createVmService({
     },
     /** Switches the driver of a stopped computer; a running one keeps the driver it started with. */
     async setDriver(userId: string, id: string, driver: DriverName) {
-      if ((await owned(userId, id)).target !== "vm") throw new ComputerError("UNSUPPORTED");
-      if (!vmDrivers.includes(driver)) throw new ComputerError("UNSUPPORTED");
+      const target = (await owned(userId, id)).target;
+      const allowed = target === "vm" ? vmDrivers : target === "local" && hostOn ? hostDrivers : [];
+      if (!allowed.includes(driver)) throw new ComputerError("UNSUPPORTED");
       if (sessions.has(id)) throw new ComputerError("LIMIT");
       await store.setDriver(userId, id, driver);
     },
@@ -943,7 +948,7 @@ export function createVmService({
     options: () => ({
       targets: {
         vm: vmOn ? [...vmDrivers] : ([] as DriverName[]),
-        local: hostOn ? (["agent-desktop"] as DriverName[]) : ([] as DriverName[]),
+        local: hostOn ? [...hostDrivers] : ([] as DriverName[]),
         cua: secrets ? (["cua"] as DriverName[]) : ([] as DriverName[]),
       },
       os: osOptions(vmOs),

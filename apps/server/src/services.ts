@@ -1,5 +1,7 @@
 import { setInstallMode } from "./modules/integrations/plugins/local-only";
 import { createHostAgentDesktopDriver } from "./modules/computer/drivers/host-agent-desktop";
+import { createHostCuaDriver } from "./modules/computer/drivers/host-cua";
+import { connectStdio } from "./modules/computer/mcp-client";
 import { ComputerError } from "./modules/computer/service";
 import { createAuth, mcpResource } from "@zetta/auth";
 import { createDb } from "@zetta/db";
@@ -166,7 +168,18 @@ const vmDocker = dockerVmConfig();
 const num = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
 // An `api` process has no VMs: the worker owns them and the load balancer sends every /api/computer request there.
 // This machine's own desktop (target "local"): only on a local install, through agent-desktop on the host (computer/placement.ts).
-const hostDesktop =
+/** Opens an address in the person's default browser, signed in as they are: macOS, Windows (`start` needs an empty title first), Linux. */
+const openInBrowser = async (url: string) => {
+  const cmd =
+    process.platform === "darwin"
+      ? ["open", url]
+      : process.platform === "win32"
+        ? ["cmd", "/c", "start", "", url]
+        : ["xdg-open", url];
+  const p = Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore", stdin: "ignore" });
+  if ((await p.exited) !== 0) throw new ComputerError("UNAVAILABLE");
+};
+const hostAgentDesktop =
   installed.networkMode === "local" && Bun.which("agent-desktop")
     ? () =>
         createHostAgentDesktopDriver(
@@ -183,22 +196,7 @@ const hostDesktop =
             clearTimeout(timer);
             return { code, stdout };
           },
-          async (url) => {
-            // The person's default browser, signed in as they are.
-            // macOS, Windows (`start` needs an empty window title first) and Linux.
-            const cmd =
-              process.platform === "darwin"
-                ? ["open", url]
-                : process.platform === "win32"
-                  ? ["cmd", "/c", "start", "", url]
-                  : ["xdg-open", url];
-            const p = Bun.spawn(cmd, {
-              stdout: "ignore",
-              stderr: "ignore",
-              stdin: "ignore",
-            });
-            if ((await p.exited) !== 0) throw new ComputerError("UNAVAILABLE");
-          },
+          openInBrowser,
           // Linux (X11): keys and typing through xdotool when it is installed (see host-agent-desktop.ts).
           process.platform === "linux" && Bun.which("xdotool")
             ? {
@@ -215,6 +213,26 @@ const hostDesktop =
               }
             : {},
         )
+    : undefined;
+// The same desktop through cua-driver when it is installed (one MCP session on stdio for the server's life).
+const cuaHost =
+  installed.networkMode === "local" && Bun.which("cua-driver")
+    ? connectStdio("cua-driver", ["mcp"])
+    : undefined;
+const hostDesktop =
+  hostAgentDesktop || cuaHost
+    ? {
+        ...(hostAgentDesktop ? { "agent-desktop": hostAgentDesktop } : {}),
+        ...(cuaHost
+          ? {
+              cua: () =>
+                createHostCuaDriver(
+                  async (tool, args, o) => (await cuaHost()).call(tool, args, o),
+                  openInBrowser,
+                ),
+            }
+          : {}),
+      }
     : undefined;
 const vms =
   (vmDocker || hostDesktop) && runsWork

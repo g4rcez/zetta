@@ -56,7 +56,7 @@ export type RoutineInput = {
    */
   activate?: "on" | "paused";
   /** When an occurrence comes while the previous run still works (default "skip"). */
-  overlapPolicy?: "skip" | "queue";
+  overlapPolicy?: "skip" | "queue" | "replace";
   /** After downtime: run once for the missed occurrences, or skip to the next one (default "run_once"). */
   catchUp?: "run_once" | "skip";
   /** Failed occurrences in a row before the routine pauses itself (default 5). */
@@ -252,6 +252,26 @@ export function createRoutines(
     return row?.output || undefined;
   }
 
+  /**
+   * Ends a run that is working or following its tasks: its reply stops, its followed tasks pause, the rooms it opened go silent, and it
+   * ends as cancelled (never retried). `undefined` when the run's own end got there first.
+   */
+  async function cancelRun(
+    ownerUserId: string,
+    run: { id: string; conversationId: string | null },
+    reason: "stopped" | "replaced",
+  ) {
+    // Marked first, so the reason is recorded before the stopped reply ends the run (its own end keeps this reason).
+    const [done] = await db
+      .update(routineRun)
+      .set({ status: "cancelled", reasonCode: reason, retryAt: null, finishedAt: new Date() })
+      .where(and(eq(routineRun.id, run.id), inArray(routineRun.status, ["running", "following"])))
+      .returning();
+    if (run.conversationId) await stopChat?.(ownerUserId, run.conversationId);
+    changed(ownerUserId);
+    return done;
+  }
+
   /** Executes one claimed occurrence row. Never throws: the row ends as succeeded/failed/blocked. */
   async function execute(
     r: Routine,
@@ -278,7 +298,11 @@ export function createRoutines(
         .set({
           status,
           output: output.slice(0, 8000),
-          reasonCode,
+          // A run cancelled from outside (Stop, or replaced by a newer occurrence) already says why: keep that reason.
+          reasonCode:
+            status === "cancelled" && reasonCode
+              ? sql`coalesce(${routineRun.reasonCode}, ${reasonCode})`
+              : reasonCode,
           conversationId: conversationId ?? null,
           finishedAt: new Date(),
         })
@@ -652,6 +676,16 @@ export function createRoutines(
         return false;
       }
     }
+    // "replace": the new occurrence wins; the run still working (or following its tasks) is stopped and ends as cancelled.
+    if (r.overlapPolicy === "replace") {
+      const busy = await db
+        .select()
+        .from(routineRun)
+        .where(
+          and(eq(routineRun.routineId, r.id), inArray(routineRun.status, ["running", "following"])),
+        );
+      for (const old of busy) await cancelRun(r.ownerUserId, old, "replaced");
+    }
     const claimed = await claim(r, `sched:${r.nextRunAt!.toISOString()}`, "schedule", now);
     const advance =
       r.kind === "once"
@@ -871,19 +905,7 @@ export function createRoutines(
         .where(and(eq(routineRun.id, runId), eq(routineRun.ownerUserId, a.userId)));
       const r = first(run ? [run] : []);
       if (r.status !== "running" && r.status !== "following") return r;
-      if (r.conversationId) await stopChat?.(a.userId, r.conversationId);
-      // A following run has no reply to end, and a running one may end before its own `finish` marks it: say so here.
-      const [done] = await db
-        .update(routineRun)
-        .set({
-          status: "cancelled",
-          reasonCode: "stopped",
-          retryAt: null,
-          finishedAt: new Date(),
-        })
-        .where(and(eq(routineRun.id, runId), inArray(routineRun.status, ["running", "following"])))
-        .returning();
-      changed(a.userId);
+      const done = await cancelRun(a.userId, r, "stopped");
       if (done) return done;
       // The run's own end got there first (it also records a stop as cancelled): return what it saved.
       const [now] = await db.select().from(routineRun).where(eq(routineRun.id, runId));

@@ -37,7 +37,7 @@ export const ROUTINE_RUN_STATUSES = [
   "cancelled",
   "following",
 ] as const;
-export const ROUTINE_OVERLAP_POLICIES = ["skip", "queue"] as const;
+export const ROUTINE_OVERLAP_POLICIES = ["skip", "queue", "replace"] as const;
 export const ROUTINE_CATCH_UPS = ["run_once", "skip"] as const;
 /** "task": each run does the prompt. "goal": a standing goal; each run continues from the last run's progress, and only the person ends it. */
 export const ROUTINE_MODES = ["task", "goal"] as const;

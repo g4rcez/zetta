@@ -277,6 +277,25 @@ suite("a routine stays on: created active, and only a missing account blocks it"
     await waitFor(async () => (await runsOf(r.id)).some((x) => x.status === "succeeded"));
   });
 
+  test('"replace": a new occurrence stops the run still working and starts its own', async () => {
+    const b = await newBot("Replacer");
+    const r = (await routine(b.id, { activate: "on", overlapPolicy: "replace" })).json.routine;
+    await only(r.id);
+    turns.length = 0;
+    stopped.length = 0;
+    await call("POST", `/api/routines/${r.id}/run`, { requestKey: `k-${uuidv7()}`, wait: "start" });
+    await waitFor(() => turns.length === 1);
+    const due = await nextRunAt(r.id);
+    void features.routines.runDue(new Date(due.getTime() + 1000));
+    await waitFor(() => turns.length === 2);
+    expect(stopped).toHaveLength(1);
+    await waitFor(async () =>
+      (await runsOf(r.id)).some((x) => x.status === "cancelled" && x.reasonCode === "replaced"),
+    );
+    finishRun!();
+    await waitFor(async () => (await runsOf(r.id)).some((x) => x.status === "succeeded"));
+  });
+
   test("Stop on a running run ends it as cancelled, stops its chat, and does not retry it or pause the routine", async () => {
     const b = await newBot("Stoppable");
     const r = (await routine(b.id, { activate: "on" })).json.routine;

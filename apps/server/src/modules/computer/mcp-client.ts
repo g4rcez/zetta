@@ -1,4 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ComputerError } from "./service";
 
@@ -78,6 +79,24 @@ export const connectSpacesdUrl: RemoteConnect = async (endpoint, token, attempts
   );
   return wrapClient(c);
 };
+/**
+ * A desktop driver that runs on this machine and speaks MCP on stdin/stdout (`cua-driver mcp`). One session for the server's life: the
+ * driver keeps its own state (snapshots, element tokens) across calls.
+ */
+export function connectStdio(command: string, args: string[]): () => Promise<McpSession> {
+  let session: Promise<McpSession> | undefined;
+  return () =>
+    (session ??= (async () => {
+      const c = new Client({ name: "zetta-host", version: "1" });
+      const transport = new StdioClientTransport({ command, args, stderr: "ignore" });
+      transport.onclose = () => void (session = undefined);
+      await c.connect(transport);
+      return wrapClient(c);
+    })().catch((e) => {
+      session = undefined;
+      throw e;
+    }));
+}
 /** A spacesd in a local container: loopback, on the port Docker published. */
 export const connectSpacesd: VmConnect = (port, token, attempts = 240) =>
   connectSpacesdUrl(`http://127.0.0.1:${port}`, token, attempts);

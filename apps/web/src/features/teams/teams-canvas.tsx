@@ -45,12 +45,12 @@ import {
   flowToTeams,
   groupsOf,
   makeChief,
-  TEAM_DEFAULT_SIZE,
   teamsToFlow,
   type BotNode,
   type TeamNode,
   type TeamsNode,
 } from "./team-graph";
+import { NewTeamForm } from "./new-team-form";
 import { RolesContext, useRoleLabel, useTeamRoles } from "./team-roles";
 import {
   TEAM_SIZE_WARNING,
@@ -206,7 +206,7 @@ function Editor() {
   const [nodes, setNodes, onNodesChange] = useNodesState<TeamsNode>([]);
   const bots = useMemo(() => allBots.filter((x) => x.onboarded), [allBots]);
   const { roles } = useTeamRoles();
-  const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
   const synced = useRef(new Map<string, { version: number; key: string }>());
   const queue = useRef<Promise<void>>(Promise.resolve());
   const fail = useCallback((e: unknown) => toast.error(errorMessage(e)), []);
@@ -229,16 +229,6 @@ function Editor() {
     void load();
   }, [load]);
 
-  async function work(fn: () => Promise<unknown>) {
-    setBusy(true);
-    try {
-      await fn();
-    } catch (e) {
-      fail(e);
-    }
-    void reloadTeams();
-    setBusy(false);
-  }
   // Every change is saved as it happens: `sync` sends each team that differs from what the server holds. Saves run one at a time so each carries the version the last one returned.
   const sync = (ns: TeamsNode[]) =>
     (queue.current = queue.current.then(async () => {
@@ -357,27 +347,22 @@ function Editor() {
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
                 <h1 className="mr-auto text-base font-semibold">Teams</h1>
-                <Tip tip="Add an empty team box to the canvas">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() =>
-                      void work(async () => {
-                        const k = groupsOf(nodes).length;
-                        await teamsApi.create(`Team ${k + 1}`, {
-                          x: 40 + (k % 2) * (TEAM_DEFAULT_SIZE.w + 40),
-                          y: 40 + Math.floor(k / 2) * (TEAM_DEFAULT_SIZE.h + 40),
-                          ...TEAM_DEFAULT_SIZE,
-                        });
-                        await load();
-                      })
-                    }
-                  >
-                    <PlusIcon className="size-4" aria-hidden="true" /> New team
-                  </Button>
-                </Tip>
+                <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
+                  <PlusIcon className="size-4" aria-hidden="true" /> New team
+                </Button>
               </div>
+              {creating && (
+                <NewTeamForm
+                  bots={bots}
+                  existing={groupsOf(nodes).length}
+                  onCancel={() => setCreating(false)}
+                  onCreated={(t) => {
+                    setCreating(false);
+                    void load().then(() => reloadTeams());
+                    void navigate({ to: "/teams/$teamId", params: { teamId: t.id } });
+                  }}
+                />
+              )}
               <div
                 className="min-h-0 flex-1"
                 role="application"

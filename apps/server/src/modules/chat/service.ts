@@ -7983,6 +7983,43 @@ export function createChatService(
             status: "complete" | "failed" | "cancelled";
           }
         | undefined;
+      // What is posted in the room while this bot works reaches it at its next tool round (each post once): the person changing the
+      // task, or another member's result. Its own posts are left out.
+      const [{ top } = { top: 0 }] = await db
+        .select({ top: sql<number>`coalesce(max(${message.seq}), 0)` })
+        .from(message)
+        .where(eq(message.conversationId, d.conversationId));
+      let seenSeq = Number(top);
+      const roomNotes = async () => {
+        const rows = await db
+          .select({
+            id: message.id,
+            seq: message.seq,
+            role: message.role,
+            botId: message.botId,
+            content: message.content,
+          })
+          .from(message)
+          .where(
+            and(
+              eq(message.conversationId, d.conversationId),
+              gt(message.seq, seenSeq),
+              eq(message.status, "complete"),
+              inArray(message.role, ["user", "assistant"]),
+            ),
+          )
+          .orderBy(asc(message.seq))
+          .limit(20);
+        if (rows.length) seenSeq = rows.at(-1)!.seq;
+        return rows
+          .filter((m) => m.botId !== who.id && m.content.trim())
+          .map((m) => ({
+            id: m.id,
+            content: defuse(
+              `${m.role === "user" ? "A person" : (names.get(m.botId ?? "") ?? "Another bot")}: ${m.content.trim().slice(0, 2000)}`,
+            ),
+          }));
+      };
       let rec;
       try {
         // One key per turn: the person's post starts a new instance beside the bots that are still working.
@@ -7993,6 +8030,7 @@ export function createChatService(
             who,
             hist: [],
             prompt,
+            takeNotes: () => roomNotes(),
             parentMessageId: null,
             untrusted: d.tainted,
             images: discussionImages,

@@ -19,6 +19,7 @@ const NO_BOTS: Bot[] = [];
 const OVERLAP = [
   { value: "skip", label: "Skip it: one run at a time" },
   { value: "queue", label: "Run it when the last one ends" },
+  { value: "replace", label: "Stop the last one and start this one" },
 ];
 const CATCH_UP = [
   { value: "run_once", label: "Run once for what was missed" },

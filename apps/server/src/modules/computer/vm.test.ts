@@ -983,7 +983,10 @@ describe("this machine's own desktop (target local)", () => {
   };
   test("a server open to the network never offers it, even with a host driver", async () => {
     const h = hostDriver();
-    const { vm } = await setup({ install: "network", host: () => h.driver as never });
+    const { vm } = await setup({
+      install: "network",
+      host: { "agent-desktop": () => h.driver as never },
+    });
     expect(vm.options().targets.local).toEqual([]);
     await expect(vm.create("alice", { name: "Mine", target: "local" })).rejects.toMatchObject({
       code: "UNSUPPORTED",
@@ -991,7 +994,10 @@ describe("this machine's own desktop (target local)", () => {
   });
   test("a local install offers it; starting it runs no container and acts on this desktop", async () => {
     const h = hostDriver();
-    const { vm, d } = await setup({ install: "local", host: () => h.driver as never });
+    const { vm, d } = await setup({
+      install: "local",
+      host: { "agent-desktop": () => h.driver as never },
+    });
     expect(vm.options().targets.local).toEqual(["agent-desktop"]);
     const made = await vm.create("alice", { name: "Mine", target: "local" });
     const before = d.log.length;
@@ -1003,9 +1009,28 @@ describe("this machine's own desktop (target local)", () => {
     await vm.remove("alice", made.id);
     expect(d.log.slice(before).some((x) => x[0] === "rm" || x[0] === "volume")).toBe(false);
   });
+  test("with both drivers installed the person picks one, and the computer starts with that one", async () => {
+    const ad = hostDriver();
+    const cua = hostDriver();
+    const { vm } = await setup({
+      install: "local",
+      host: { "agent-desktop": () => ad.driver as never, cua: () => cua.driver as never },
+    });
+    expect(vm.options().targets.local).toEqual(["agent-desktop", "cua"]);
+    const made = await vm.create("alice", { name: "Mine via Cua", target: "local", driver: "cua" });
+    await vm.start("alice", made.id);
+    await vm.act("alice", made.id, "agent", { type: "launch", app: "Notes" });
+    expect(cua.acts).toEqual(["launch"]);
+    expect(ad.acts).toEqual([]);
+    await vm.remove("alice", made.id);
+  });
   test("without a container runtime only this machine is offered, and a VM does not start", async () => {
     const h = hostDriver();
-    const { vm } = await setup({ install: "local", host: () => h.driver as never, vmOn: false });
+    const { vm } = await setup({
+      install: "local",
+      host: { "agent-desktop": () => h.driver as never },
+      vmOn: false,
+    });
     expect(vm.options().targets.vm).toEqual([]);
     await expect(vm.create("alice", { name: "Box" })).rejects.toMatchObject({
       code: "UNSUPPORTED",

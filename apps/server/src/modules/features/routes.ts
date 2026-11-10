@@ -32,7 +32,7 @@ const schedule = {
 const MAX_HOOK_BYTES = 64_000;
 /** How a routine behaves when runs overlap, after downtime, and after failures (see routines.ts). */
 const routineControls = {
-  overlapPolicy: z.enum(["skip", "queue"]).optional(),
+  overlapPolicy: z.enum(["skip", "queue", "replace"]).optional(),
   catchUp: z.enum(["run_once", "skip"]).optional(),
   mode: z.enum(["task", "goal"]).optional(),
   maxFailures: z.number().int().min(1).max(50).optional(),

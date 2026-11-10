@@ -1,6 +1,7 @@
 import { initLogger } from "evlog";
 
 import { createApp } from "./app";
+import { createBackground } from "./background";
 import { sweepHarnessContainers } from "./modules/chat/harness";
 import { ENV } from "./env.server";
 import { startPgSignals } from "./modules/events/pg-signals";
@@ -130,6 +131,7 @@ signals.zettaSignals =
 // An `api` process never owns work: no ticker, no recovery, no sweeps. Recovery marks every running row of the database as interrupted,
 // so it must run in exactly one process (the worker, or the single `all` process).
 if (runsWork) {
+  const background = createBackground();
   // Work of a dead process is recovered by the one that is alive: at boot (including rows written before owners were recorded, when no
   // other worker is alive) and on every tick (a peer that died while this one ran). Work of a live process is never touched.
   async function recoverDead(boot: boolean) {
@@ -141,7 +143,7 @@ if (runsWork) {
       inboundServices.inbound.recover(scope),
       chatServices.chat.recoverQueue(scope),
     ]);
-    await featureServices.features.recover(scope, boot).catch(() => {});
+    await background.run("recover:features", () => featureServices.features.recover(scope, boot));
     await loopServices.driver.tick();
     // Claude Code runs a dead process cut off continue in their own sessions. At boot, once per process.
     const g = globalThis as { zettaResumed?: boolean };
@@ -154,30 +156,41 @@ if (runsWork) {
     await chatServices.chat.drainQueues();
   }
 
+  // The routine jobs are armed apart from the recovery chain: a failure earlier in the chain must not leave every routine unscheduled
+  // until the next restart. Tried again on each tick until it has worked once in this process.
+  let routinesArmed = false;
+  const armRoutines = async () => {
+    if (routinesArmed) return;
+    await featureServices.features.armRoutines();
+    routinesArmed = true;
+  };
+
   // Simple in-process ticker for the other workers (routines run from node-schedule jobs, see features/routines.ts); each unit is claimed atomically before it runs. A `bun --hot` reload replaces
   // the timer instead of stacking another one that keeps driving the previous module's services.
   const ticker = globalThis as { zettaTick?: ReturnType<typeof setInterval> };
   clearInterval(ticker.zettaTick);
   ticker.zettaTick = setInterval(() => {
-    void recoverDead(false).catch(() => {});
-    void agendaServices.scheduler.tick().catch(() => {});
-    void knowledgeServices.knowledge.tick().catch(() => {});
-    void memoryServices.memory.tick().catch(() => {});
-    void memoryServices.memory.checkSources().catch(() => {});
-    void memoryServices.jobs.tick().catch(() => {});
-    void discussionServices.worker.tick().catch(() => {});
-    void inboundServices.inbound.tick().catch(() => {});
-    void loopServices.driver.tick().catch(() => {});
-    void taskFollowUp.heartbeat.tick().catch(() => {});
-    void chatServices.chat.drainQueues().catch(() => {});
-    void chatServices.chat.flagSlowTurns().catch(() => {});
-    void chatServices.chat.expireProposals().catch(() => {});
-    void apps.expirePending().catch(() => {});
-    void featureServices.features.routineTriggers.tick().catch(() => {});
+    void background.exclusive("recover", () => recoverDead(false));
+    void background.run("routines:arm", armRoutines);
+    void background.run("agenda", () => agendaServices.scheduler.tick());
+    void background.run("knowledge", () => knowledgeServices.knowledge.tick());
+    void background.run("memory", () => memoryServices.memory.tick());
+    void background.run("memory:sources", () => memoryServices.memory.checkSources());
+    void background.run("memory:jobs", () => memoryServices.jobs.tick());
+    void background.run("rooms", () => discussionServices.worker.tick());
+    void background.run("inbound", () => inboundServices.inbound.tick());
+    void background.run("loops", () => loopServices.driver.tick());
+    void background.run("tasks:heartbeat", () => taskFollowUp.heartbeat.tick());
+    void background.run("chat:queues", () => chatServices.chat.drainQueues());
+    void background.run("chat:slow-turns", () => chatServices.chat.flagSlowTurns());
+    void background.run("chat:proposals", () => chatServices.chat.expireProposals());
+    void background.run("apps:pending", () => apps.expirePending());
+    void background.run("routines:triggers", () => featureServices.features.routineTriggers.tick());
   }, 30_000);
 
   // Generations that were running when the previous process died are marked interrupted (never silently "complete").
-  void recoverDead(true).catch(() => {});
+  void background.exclusive("recover", () => recoverDead(true));
+  void background.run("routines:arm", armRoutines);
 
   // Skills installed before their folder was kept get their files from GitHub. Once per process: `bun --hot` re-runs this module on every edit.
   const skillsBoot = globalThis as { zettaSkillFiles?: boolean };
@@ -212,12 +225,12 @@ if (runsWork) {
   }
 
   // Containers and Spaces left by a previous process are removed at boot (this server assumes it is the only instance).
-  void sweepHarnessContainers().catch(() => {});
-  void computerServices.computer.sweep().catch(() => {});
+  void background.run("sweep:harness", () => sweepHarnessContainers());
+  void background.run("sweep:computer", () => computerServices.computer.sweep());
   // Once per process: `bun --hot` re-runs this module on every edit, and sweeping then would stop the computers people are using.
   const boot = globalThis as { zettaVmSwept?: boolean };
   if (!boot.zettaVmSwept) {
     boot.zettaVmSwept = true;
-    void computerServices.vms?.sweep().catch(() => {});
+    void background.run("sweep:vm", async () => computerServices.vms?.sweep());
   }
 }

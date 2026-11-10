@@ -1,6 +1,6 @@
 import { ComputerError } from "../service";
 import type { CredentialField } from "../../integrations/plugins/registry";
-import { parsePage, type Run } from "./agent-desktop";
+import { parsePage, xdotoolKey, type Run } from "./agent-desktop";
 import type { DesktopDriver } from "./types";
 
 /**
@@ -28,15 +28,24 @@ export const NEEDS_PERMISSION_DETAIL =
 
 /** agent-desktop's own permission report (macOS, Linux and Windows): each capability with its state and, when missing, how to fix it. */
 type Permissions = Record<string, { state?: string; suggestion?: string } | undefined>;
+const MISSING = new Set(["denied", "not_granted", "missing", "restricted"]);
 /** Pure: the fix to show when a capability is not granted, or undefined when it is usable. */
 export function permissionProblem(
   p: Permissions | undefined,
   capability: "accessibility" | "screen_recording",
 ) {
   const c = p?.[capability];
-  if (!c || c.state === "granted" || c.state === "unknown" || c.state === "not_needed")
-    return undefined;
+  // Only an explicit refusal blocks: "granted", "not_required" (Linux), "not_needed" and "unknown" (macOS asks on first use) all go on.
+  if (!c || !MISSING.has(c.state ?? "")) return undefined;
   return c.suggestion || NEEDS_PERMISSION_DETAIL;
+}
+
+/** The base64 PNG of a `screenshot` envelope: agent-desktop puts it in `data.data` (with `format`, `width`, `height`). */
+export function pngOf(data: unknown): string | undefined {
+  const d = (data ?? {}) as { data?: unknown; format?: unknown };
+  return typeof d.data === "string" && (d.format === undefined || d.format === "png")
+    ? d.data
+    : undefined;
 }
 
 /** The first element ref of a snapshot tree (the focused element when the snapshot was of the focused surface). */
@@ -72,7 +81,13 @@ export function createHostAgentDesktopDriver(
   cli: Run,
   /** Opens an address in the person's default browser (macOS `open <url>`), signed in as they are. */
   openUrl: (url: string, signal?: AbortSignal) => Promise<void>,
+  /**
+   * Linux with X11: `xdotool` for keys and as a fallback for typing. agent-desktop's own `press` restarts Chromium on some Linux
+   * desktops (seen on XFCE), and Linux has no "focused" snapshot surface.
+   */
+  extra: { xdotool?: Run } = {},
 ): DesktopDriver {
+  const { xdotool } = extra;
   let items = new Map<number, { ref: string; label: string; role: string }>();
   async function run(args: string[], signal?: AbortSignal): Promise<Envelope> {
     const r = await cli(args, { signal, timeout: CALL_MS });
@@ -131,25 +146,50 @@ export function createHostAgentDesktopDriver(
           ),
         );
       else if (action.type === "type") {
-        // `type` needs a target: the element that has the keyboard focus in the window the bot works in.
+        // `type` needs a target: the element that has the keyboard focus in the window the bot works in. macOS has a "focused"
+        // snapshot surface; Linux does not, so the window is read and its focused field (or the browser's address bar) is used.
         const w = await window(signal);
-        const e = must(
-          await run(
-            [
-              "snapshot",
-              "--surface",
-              "focused",
-              "--interactive-only",
-              ...(w ? ["--window-id", w.id] : []),
-            ],
-            signal,
-          ),
+        const focused = await run(
+          [
+            "snapshot",
+            "--surface",
+            "focused",
+            "--interactive-only",
+            ...(w ? ["--window-id", w.id] : []),
+          ],
+          signal,
         );
-        const ref = firstRef(e.data?.tree);
-        if (!ref) throw new ComputerError("NO_INPUT");
-        must(await run(["type", "--headed", "--", ref, action.text], signal));
-      } else if (action.type === "key") must(await run(["press", pressKey(action.key)], signal));
-      else if (action.type === "scroll") {
+        let ref = focused.ok ? firstRef(focused.data?.tree) : undefined;
+        if (!ref && w) {
+          const e = await run(
+            ["snapshot", "--window-id", w.id, "--include-bounds", "--compact", "--max-depth", "30"],
+            signal,
+          );
+          if (e.ok) {
+            const page = parsePage(e.data.tree, { whole: true });
+            ref = page.focusedInput ?? page.omnibox;
+          }
+        }
+        const typed = ref
+          ? await run(["type", "--headed", "--", ref, action.text], signal)
+          : undefined;
+        if (!typed?.ok) {
+          if (!xdotool) throw new ComputerError(ref ? "UNAVAILABLE" : "NO_INPUT");
+          const r = await xdotool(["type", "--clearmodifiers", "--delay", "6", "--", action.text], {
+            signal,
+            timeout: CALL_MS,
+          });
+          if (r.code !== 0) throw new ComputerError("UNAVAILABLE");
+        }
+      } else if (action.type === "key") {
+        if (xdotool) {
+          const r = await xdotool(["key", "--clearmodifiers", xdotoolKey(action.key)], {
+            signal,
+            timeout: CALL_MS,
+          });
+          if (r.code !== 0) throw new ComputerError("UNAVAILABLE");
+        } else must(await run(["press", pressKey(action.key)], signal));
+      } else if (action.type === "scroll") {
         // `scroll` needs a ref: the window's own root from a shallow snapshot.
         const w = await window(signal);
         if (!w) throw new ComputerError("NO_ELEMENT");
@@ -178,10 +218,12 @@ export function createHostAgentDesktopDriver(
     async screenshot() {
       const problem = permissionProblem(await permissions(), "screen_recording");
       if (problem) throw new ComputerError("UNAVAILABLE", problem);
+      // The window the bot works in; when another window covers it (agent-desktop then cannot read its pixels), the whole screen.
       const w = await window();
-      const e = must(await run(w ? ["screenshot", "--window-id", w.id] : ["screenshot"]));
-      const png = (e.data as { png?: string; base64?: string } | undefined)?.png ?? e.data?.base64;
-      if (typeof png !== "string") throw new ComputerError("UNAVAILABLE");
+      let e = w ? await run(["screenshot", "--window-id", w.id]) : undefined;
+      if (!e?.ok) e = must(await run(["screenshot"]));
+      const png = pngOf(e.data);
+      if (!png) throw new ComputerError("UNAVAILABLE");
       return png;
     },
     async read(o) {

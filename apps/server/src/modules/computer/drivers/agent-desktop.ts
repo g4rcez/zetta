@@ -72,7 +72,7 @@ const KEY_NAMES: Record<string, string> = {
 };
 
 /** "ctrl+l" / "Return" as xdotool names it. agent-desktop's own `press` crashes Chromium on the VM display (see the decision doc). */
-function xdotoolKey(key: string) {
+export function xdotoolKey(key: string) {
   const parts = key
     .split("+")
     .map((k) => k.trim())

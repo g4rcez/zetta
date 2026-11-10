@@ -199,6 +199,21 @@ const hostDesktop =
             });
             if ((await p.exited) !== 0) throw new ComputerError("UNAVAILABLE");
           },
+          // Linux (X11): keys and typing through xdotool when it is installed (see host-agent-desktop.ts).
+          process.platform === "linux" && Bun.which("xdotool")
+            ? {
+                xdotool: async (args, o) => {
+                  const p = Bun.spawn(["xdotool", ...args], {
+                    stdout: "pipe",
+                    stderr: "ignore",
+                    stdin: "ignore",
+                    ...(o?.signal ? { signal: o.signal } : {}),
+                  });
+                  const stdout = await new Response(p.stdout).text();
+                  return { code: await p.exited, stdout };
+                },
+              }
+            : {},
         )
     : undefined;
 const vms =

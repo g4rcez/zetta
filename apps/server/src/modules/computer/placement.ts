@@ -20,6 +20,21 @@ export function browserPlacement(install: InstallMode, runtime: BrowserRuntime):
   return { ok: true };
 }
 
+/** The person's own running browser: only on a local install, where the server and the browser are the person's own machine. */
+export function ownBrowserPlacement(install: InstallMode): Placement {
+  return install === "local"
+    ? { ok: true }
+    : {
+        ok: false,
+        reason:
+          "Your own browser can only be used when Zetta runs on your computer (a local install). This server is open to the network.",
+      };
+}
+
+/** A DevTools port the person typed: a plain unprivileged TCP port, always reached on 127.0.0.1. */
+export const validCdpPort = (port: unknown): port is number =>
+  typeof port === "number" && Number.isInteger(port) && port >= 1024 && port <= 65535;
+
 /** The computer targets a person may add here. "local" is this machine's own desktop. */
 export function desktopTargets(
   install: InstallMode,

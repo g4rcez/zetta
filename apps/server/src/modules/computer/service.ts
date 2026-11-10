@@ -1,4 +1,4 @@
-import { browserPlacement, type InstallMode } from "./placement";
+import { browserPlacement, ownBrowserPlacement, validCdpPort, type InstallMode } from "./placement";
 import { uuidv7 } from "@zetta/core/uuid";
 import { containerUser, engineOf, tmpfsOwner, type Engine } from "../container-user";
 import { createSerializer } from "./serial";
@@ -73,6 +73,8 @@ type Session = {
   epoch: number;
   lastUsed: number;
   queue: Promise<unknown>;
+  /** The person's own browser: closing only closes the bot's tab and disconnects. */
+  own?: boolean;
 };
 // Full special-purpose address table (IANA IPv4/IPv6 special registries): anything not a plain public unicast address is refused.
 const blocked = new BlockList();
@@ -372,12 +374,14 @@ export function createComputerService({
     serial(userId, () => startOne(userId, profileName));
   async function startOne(userId: string, profileName = "default") {
     const profile = safeProfile(profileName);
+    let ownRow: { kind: string; cdpPort: number | null } | undefined;
     if (db) {
       const [row] = await db
         .select()
         .from(browserProfile)
         .where(and(eq(browserProfile.ownerUserId, userId), eq(browserProfile.name, profile)));
       if (row?.revokedAt) throw new ComputerError("REVOKED");
+      ownRow = row;
       if (!row)
         await db
           .insert(browserProfile)
@@ -390,6 +394,7 @@ export function createComputerService({
     }
     const existing = sessions.get(key(userId, profile));
     if (existing) return info(existing);
+    if (ownRow?.kind === "own") return startOwn(userId, profile, ownRow.cdpPort);
     if (!placement.ok) throw new ComputerError("UNSUPPORTED", placement.reason);
     if (
       [...sessions.values()].filter((s) => s.userId === userId).length >= maxPerUser ||
@@ -475,6 +480,44 @@ export function createComputerService({
       epoch: 0,
       lastUsed: Date.now(),
       queue: Promise.resolve(),
+    };
+    sessions.set(key(userId, profile), session);
+    return info(session);
+  }
+  /**
+   * Attaches to the person's running browser on its DevTools port (127.0.0.1 only) and pins the session to a new tab, so the bot never
+   * touches the person's other tabs. No container, no egress proxy and no separate profile: it is the person's browser, signed in as
+   * they are, and this is allowed only on a local install.
+   */
+  async function startOwn(userId: string, profile: string, port: number | null) {
+    const allowed = ownBrowserPlacement(install);
+    if (!allowed.ok) throw new ComputerError("UNSUPPORTED", allowed.reason);
+    if (!validCdpPort(port)) throw new ComputerError("INVALID");
+    await ensureConfig();
+    const run = hostRunner({
+      bin: await abBin(),
+      config,
+      session: sessionName(userId, profile),
+      namespace: "zetta",
+      launch: ["--cdp", String(port), "--pin-tab"],
+    });
+    const boot = await run([["open", "about:blank"]]).catch(() => undefined);
+    if (!boot || firstError(boot) !== undefined || boot.some((r) => !r.success))
+      throw new ComputerError(
+        "UNAVAILABLE",
+        `Could not reach your browser on port ${port}. Start it with remote debugging on that port (for example --remote-debugging-port=${port}, or turn it on at chrome://inspect/#remote-debugging), then try again.`,
+      );
+    const session: Session = {
+      run,
+      id: profile,
+      userId,
+      profile,
+      url: "about:blank",
+      control: "agent",
+      epoch: 0,
+      lastUsed: Date.now(),
+      queue: Promise.resolve(),
+      own: true,
     };
     sessions.set(key(userId, profile), session);
     return info(session);
@@ -672,6 +715,8 @@ export function createComputerService({
     },
     capabilities: () => ({
       browser: true,
+      /** A local install may point a profile at the person's own running browser. */
+      ownBrowser: ownBrowserPlacement(install).ok,
       desktop: false as const,
       note: "Desktop (whole-screen) control is not available in this installation; only isolated browser sessions are.",
     }),
@@ -699,8 +744,47 @@ export function createComputerService({
       return db
         ? (
             await db.select().from(browserProfile).where(eq(browserProfile.ownerUserId, userId))
-          ).map((p) => ({ name: p.name, mode: p.mode, revoked: Boolean(p.revokedAt) }))
+          ).map((p) => ({
+            name: p.name,
+            mode: p.mode,
+            kind: p.kind,
+            cdpPort: p.cdpPort,
+            revoked: Boolean(p.revokedAt),
+          }))
         : [];
+    },
+    /** Whether a local install may offer "Your own browser". */
+    ownBrowser: () => ownBrowserPlacement(install),
+    /**
+     * Points a profile at the person's own browser (`port`) or back to an isolated one (`null`). A running session of the profile is
+     * closed so the next start uses the new kind.
+     */
+    async setOwnBrowser(userId: string, profile: string, port: number | null) {
+      safeProfile(profile);
+      if (port !== null) {
+        const allowed = ownBrowserPlacement(install);
+        if (!allowed.ok) throw new ComputerError("UNSUPPORTED", allowed.reason);
+        if (!validCdpPort(port)) throw new ComputerError("INVALID");
+      }
+      if (!db) throw new ComputerError("UNAVAILABLE");
+      await close(userId, profile);
+      const values = {
+        kind: port === null ? ("isolated" as const) : ("own" as const),
+        cdpPort: port,
+      };
+      await db
+        .insert(browserProfile)
+        .values({
+          ownerUserId: userId,
+          name: profile,
+          mode: profile.startsWith("b-") ? "dedicated" : "shared",
+          ...values,
+        })
+        .onConflictDoUpdate({
+          target: [browserProfile.ownerUserId, browserProfile.name],
+          set: values,
+        });
+      return values;
     },
     async close(userId: string, profile: string) {
       return close(userId, profile);
@@ -715,7 +799,8 @@ export function createComputerService({
     const s = sessions.get(key(userId, profile));
     if (!s) return;
     sessions.delete(key(userId, profile));
-    await s.run([["close"]]).catch(() => {});
+    // The person's own browser: close the bot's tab and disconnect; the browser and its other tabs stay.
+    await s.run(s.own ? [["tab", "close"], ["close"]] : [["close"]]).catch(() => {});
     if (docker && s.container) {
       try {
         Bun.spawn([docker.bin, "kill", s.container], { stdout: "ignore", stderr: "ignore" });

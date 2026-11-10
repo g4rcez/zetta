@@ -64,9 +64,18 @@ export type Machine = {
 };
 export type HostKeyCandidate = { key: string; type: string; fingerprint: string };
 export type ComputerSession = { profile: string; control: "agent" | "human"; url: string };
-export type ComputerProfile = { name: string; mode: "dedicated" | "shared"; revoked: boolean };
+export type ComputerProfile = {
+  name: string;
+  mode: "dedicated" | "shared";
+  /** "own": the person's running browser on its DevTools port (local install). */
+  kind?: "isolated" | "own";
+  cdpPort?: number | null;
+  revoked: boolean;
+};
 export type ComputerCapabilities = {
   browser: boolean;
+  /** This install may use the person's own browser (local install only). */
+  ownBrowser?: boolean;
   desktop: boolean;
   desktopBackend?: string | null;
   /** Drivers offered per kind of computer. */

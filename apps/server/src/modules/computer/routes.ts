@@ -386,6 +386,15 @@ export function createComputerRoutes(
         "/profiles",
         g(async (c) => ({ profiles: await computer.profiles(c.userId) })),
       )
+      .put(
+        "/profiles/:profile/own-browser",
+        g(async (c) => {
+          const b = z
+            .strictObject({ port: z.number().int().min(1024).max(65535).nullable() })
+            .parse(c.body);
+          return { profile: await computer.setOwnBrowser(c.userId, p(c), b.port) };
+        }),
+      )
       .post(
         "/profiles/:profile/reset",
         g(async (c) => {

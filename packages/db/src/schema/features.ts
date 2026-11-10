@@ -568,6 +568,9 @@ export const botConnection = zetta.table(
   ],
 );
 
+/** "isolated": a browser Zetta starts with its own empty profile. "own": the person's running browser (local install only), reached on
+ * its DevTools port on this machine; the bot works in a tab of its own and never quits the browser. */
+export const BROWSER_PROFILE_KINDS = ["isolated", "own"] as const;
 /** Isolated browser profiles per user: dedicated to one bot or explicitly shared among the same user's bots. */
 export const browserProfile = zetta.table(
   "browser_profile",
@@ -580,6 +583,9 @@ export const browserProfile = zetta.table(
     mode: text("mode", { enum: ["dedicated", "shared"] })
       .default("shared")
       .notNull(),
+    kind: text("kind", { enum: BROWSER_PROFILE_KINDS }).default("isolated").notNull(),
+    /** "own": the DevTools port of the person's browser on 127.0.0.1. */
+    cdpPort: integer("cdp_port"),
     botId: uuid("bot_id").references(() => bot.id, restrict),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     resetAt: timestamp("reset_at", { withTimezone: true }),

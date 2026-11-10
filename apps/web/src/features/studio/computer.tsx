@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { VmPanel } from "./desktop";
 import { MachinesPanel } from "./machines";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Button, Input } from "@/components/ui";
 
 import { ApiError, call, errorMessage } from "../chat/chat-client";
@@ -21,9 +21,55 @@ export function computerError(e: unknown): string {
   return errorMessage(e);
 }
 
-function Profiles({ onError }: { onError: (m: string) => void }) {
+const ownBrowserUrl = (name: string) =>
+  `/api/computer/profiles/${encodeURIComponent(name)}/own-browser`;
+
+/**
+ * Points a profile at the person's own browser (Chrome, Brave, Helium or another Chromium browser started with remote debugging).
+ * The bot then works in a tab of its own there, signed in as the person is.
+ */
+function OwnBrowserForm({ onSave }: { onSave: (name: string, port: number) => Promise<void> }) {
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    await onSave(String(f.get("name") || "default"), Number(f.get("port") || 9222));
+  }
+  return (
+    <form
+      aria-label="Use your own browser"
+      onSubmit={(e) => void submit(e)}
+      className="mt-3 space-y-2 rounded-md border p-3 text-sm"
+    >
+      <p className="font-medium">Use your own browser</p>
+      <p className="text-xs text-muted-foreground">
+        Start your browser with remote debugging on a port (for example{" "}
+        <code>--remote-debugging-port=9222</code>, or turn it on at{" "}
+        <code>chrome://inspect/#remote-debugging</code>). Bots then work in a tab of their own,
+        signed in as you are, and never touch your other tabs.
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <Input name="name" title="Profile" defaultValue="default" required={false} />
+        <Input
+          name="port"
+          title="Port"
+          type="number"
+          min={1024}
+          max={65535}
+          defaultValue="9222"
+          required={false}
+        />
+        <Button type="submit" size="sm">
+          Use my browser
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+export function Profiles({ onError }: { onError: (m: string) => void }) {
   const qc = useQueryClient();
   const { data: profiles, error } = useQuery(computerQueries.profiles());
+  const { data: caps } = useQuery(computerQueries.capabilities());
   useLoadError(error, onError, computerError);
   const [status, setStatus] = useState<string>();
   const load = () => qc.invalidateQueries({ queryKey: computerQueries.profiles().queryKey });
@@ -58,8 +104,23 @@ function Profiles({ onError }: { onError: (m: string) => void }) {
                 {p.mode === "shared" ? "Shared by your bots" : "For one bot"}
               </span>
               {p.revoked && <Badge tone="danger">Revoked</Badge>}
+              {p.kind === "own" && <Badge>Your browser, port {p.cdpPort}</Badge>}
             </span>
             <span className="flex flex-wrap gap-1">
+              {p.kind === "own" && (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() =>
+                    void run(
+                      () => call(ownBrowserUrl(p.name), "PUT", { port: null }),
+                      `${p.name} uses an isolated browser again.`,
+                    )
+                  }
+                >
+                  Use an isolated browser
+                </Button>
+              )}
               <ConfirmButton
                 size="xs"
                 label="Reset"
@@ -91,6 +152,16 @@ function Profiles({ onError }: { onError: (m: string) => void }) {
           </li>
         ))}
       </ul>
+      {caps?.ownBrowser && (
+        <OwnBrowserForm
+          onSave={(name, port) =>
+            run(
+              () => call(ownBrowserUrl(name), "PUT", { port }),
+              `${name} now uses your browser on port ${port}.`,
+            )
+          }
+        />
+      )}
       <p role="status" className="text-xs empty:hidden">
         {status}
       </p>

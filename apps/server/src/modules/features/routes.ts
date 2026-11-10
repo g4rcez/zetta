@@ -30,6 +30,12 @@ const schedule = {
   when: text(200).optional(),
 };
 const MAX_HOOK_BYTES = 64_000;
+/** How a routine behaves when runs overlap, after downtime, and after failures (see routines.ts). */
+const routineControls = {
+  overlapPolicy: z.enum(["skip", "queue"]).optional(),
+  catchUp: z.enum(["run_once", "skip"]).optional(),
+  maxFailures: z.number().int().min(1).max(50).optional(),
+};
 const schemas = {
   trigger: z.discriminatedUnion("kind", [
     z.strictObject({ kind: z.literal("webhook") }),
@@ -59,8 +65,12 @@ const schemas = {
     ...schedule,
     conversationMode: z.enum(["new", "continue"]).optional(),
     workflowId: uuid.optional(),
+    // "on": switched on at once when it is ready to run. Default: created paused.
+    activate: z.enum(["on", "paused"]).optional(),
+    ...routineControls,
   }),
   routineUpdate: z.strictObject({
+    ...routineControls,
     expectedVersion: counter,
     botId: uuid.optional(),
     title: text(120).optional(),
@@ -81,7 +91,12 @@ const schemas = {
   calendar: z.strictObject({ from: z.string().datetime(), to: z.string().datetime() }),
   routineRead: z.strictObject({ conversationId: uuid }),
   paused: z.strictObject({ paused: z.boolean() }),
-  runNow: z.strictObject({ requestKey: z.string().min(8).max(100) }),
+  // `wait: "start"` answers as soon as the run is claimed (a page must not hold a request open for a whole run); the default waits
+  // for the run to finish.
+  runNow: z.strictObject({
+    requestKey: z.string().min(8).max(100),
+    wait: z.enum(["finish", "start"]).optional(),
+  }),
   attention: z.strictObject({
     title: text(160),
     detail: z.string().max(4000).optional(),
@@ -147,6 +162,12 @@ export function createFeatureRoutes(
   { access, features: f }: FeatureServices,
   trustedOrigins: readonly string[],
 ) {
+  const runNow = (
+    actor: Parameters<typeof f.routines.runNow>[0],
+    routineId: string,
+    v: { requestKey: string; wait?: "finish" | "start" | undefined },
+  ) =>
+    f.routines.runNow(actor, routineId, v.requestKey, v.wait === "start" ? "background" : "wait");
   type Ctx = {
     actor: Awaited<ReturnType<typeof access.requireActive>>;
     body: unknown;
@@ -395,9 +416,21 @@ export function createFeatureRoutes(
         })),
       )
       .post(
+        "/routines/:id/skip-next",
+        g(async (c) => ({ routine: await f.routines.skipNext(c.actor, id(c)) })),
+      )
+      .delete(
+        "/routines/:id/skip-next",
+        g(async (c) => ({ routine: await f.routines.unskip(c.actor, id(c)) })),
+      )
+      .post(
+        "/routine-runs/:id/stop",
+        g(async (c) => ({ run: await f.routines.stopRun(c.actor, id(c)) })),
+      )
+      .post(
         "/routines/:id/run",
         g(async (c) => ({
-          run: await f.routines.runNow(c.actor, id(c), schemas.runNow.parse(c.body).requestKey),
+          run: await runNow(c.actor, id(c), schemas.runNow.parse(c.body)),
         })),
       )
       .get(

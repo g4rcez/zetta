@@ -1,3 +1,4 @@
+import type { QueueAction } from "./message-row";
 import { Fragment, memo, useEffect, useMemo, type ComponentProps, type ReactNode } from "react";
 
 import {
@@ -25,7 +26,7 @@ export type RowActions = {
   /** Reply in the channel: the next message quotes this one. Without it the toolbar has no Reply button (threads, rooms). */
   onQuote?: (row: Row) => void;
   onSaveToMemory: (row: Row) => void;
-  onQueue?: (row: Row, action: "remove" | "retry") => void;
+  onQueue?: (row: Row, action: QueueAction) => void;
   /** Open a published file beside the chat. Without it, an artifact receipt is a plain link to the artifact page. */
   onOpenArtifact?: (id: string) => void;
   /** Where the live output of a command of the running turn streams from. Without it a step is not clickable (rooms, threads). */

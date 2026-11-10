@@ -1,6 +1,6 @@
 import type { Database } from "@zetta/db";
 import schedule from "node-schedule";
-import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from "@zetta/db/query";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, sql } from "@zetta/db/query";
 import { bot, conversation } from "@zetta/db/schema/chat";
 import { routine, routineRun, routineTrigger, workflow } from "@zetta/db/schema/features";
 import { discussion } from "@zetta/db/schema/discussions";
@@ -13,7 +13,8 @@ import { failureKind, retryDelayMs } from "../chat/retry";
 import { topics } from "@zetta/core/live-topics";
 import { runsWork } from "../../role";
 import { events } from "../events/bus";
-import { raiseAttention } from "./attention";
+import { closeAttentionKey, raiseAttention } from "./attention";
+import { task } from "@zetta/db/schema/tasks";
 import { audit } from "./audit";
 import {
   computeNextRun,
@@ -49,6 +50,17 @@ export type RoutineInput = {
   workflowId?: string;
   /** The room whose bot proposed the routine (set by the chat service, never by a client). */
   originDiscussionId?: string;
+  /**
+   * "on": the routine is switched on as soon as it is created, when it is ready to run (a routine whose bot still needs setup is
+   * created paused, with the reason in its checklist). "paused" (the default): it waits for the person to activate it. Not stored.
+   */
+  activate?: "on" | "paused";
+  /** When an occurrence comes while the previous run still works (default "skip"). */
+  overlapPolicy?: "skip" | "queue";
+  /** After downtime: run once for the missed occurrences, or skip to the next one (default "run_once"). */
+  catchUp?: "run_once" | "skip";
+  /** Failed occurrences in a row before the routine pauses itself (default 5). */
+  maxFailures?: number;
 };
 /** What started a webhook or event run, cut to 16 KB so a large body cannot fill the table or the prompt. */
 const EVENT_LIMIT = 16_000;
@@ -83,7 +95,21 @@ export type ChatTurn = (
   requestKey: string,
   /** `untrusted`: the prompt carries an outside event, so the turn is tainted like one that read a page. */
   opts?: { untrusted?: boolean },
-) => Promise<{ ok: boolean; text: string; error?: string | undefined }>;
+) => Promise<{
+  ok: boolean;
+  text: string;
+  error?: string | undefined;
+  /** The saved reply's status: "cancelled" when the person stopped the run. */
+  status?: string | undefined;
+}>;
+/** The accounts a bot needs, with the state of this person's own binding for each. Undefined: the person cannot be checked now. */
+export type AccountCheck = (
+  userId: string,
+  botId: string,
+) => Promise<{ key: string; status: "ready" | "missing" | "unusable" }[] | undefined>;
+/** An occurrence later than this after its time counts as missed (the server was down), for the "skip" catch-up policy. */
+const CATCH_UP_GRACE_MS = 10 * 60_000;
+
 export function createRoutines(
   db: Database,
   run: RunTurn,
@@ -95,6 +121,10 @@ export function createRoutines(
 ) {
   // Set once the chat service exists (it depends on this module for proposals). Without it, routines run the bare bot without tools.
   let chatTurn: ChatTurn | undefined;
+  // Set with the chat service too: reads which of a bot's accounts this person has connected.
+  let accounts: AccountCheck | undefined;
+  // Set with the chat service too: stops the work of one conversation (the reply, its followed tasks, the rooms it opened).
+  let stopChat: ((userId: string, conversationId: string) => Promise<unknown>) | undefined;
   const usableBot = async (actor: { userId: string }, botId: string) =>
     first(
       await db
@@ -127,10 +157,16 @@ export function createRoutines(
       missing.push(
         `${b.name} has not finished onboarding (chat with it and confirm you are satisfied).`,
       );
-    else if (b.requiredConnections.length)
-      missing.push(
-        `${b.name} needs accounts connected: ${b.requiredConnections.map((c) => c.key).join(", ")}.`,
-      );
+    else if (b.requiredConnections.length) {
+      // A run that is a chat turn gets the owner's own accounts for this bot (connections.envFor), so only an account that is not
+      // connected stands in the way. A workflow run, or a server without the chat, has no account injection: it fails closed.
+      const states = chatTurn && !r.workflowId ? await accounts?.(userId, b.id) : undefined;
+      const notReady = states
+        ? states.filter((x) => x.status !== "ready").map((x) => x.key)
+        : b.requiredConnections.map((c) => c.key);
+      if (notReady.length)
+        missing.push(`${b.name} needs accounts connected: ${notReady.join(", ")}.`);
+    }
     if (r.workflowId) {
       const [w] = await db
         .select()
@@ -196,7 +232,7 @@ export function createRoutines(
     const attempt = retry?.attempt ?? 0;
     await mark(r.id, "running");
     const finish = (
-      status: "succeeded" | "failed" | "blocked" | "skipped",
+      status: "succeeded" | "failed" | "blocked" | "skipped" | "cancelled" | "following",
       output: string,
       reasonCode: string | null,
       conversationId?: string,
@@ -213,6 +249,7 @@ export function createRoutines(
         .where(eq(routineRun.id, runId))
         .then(async () => {
           if (status === "blocked" || status === "failed") return mark(r.id, status, reasonCode);
+          // A run the person stopped is not a failure: the routine goes on with its schedule.
           // A routine paused in the meantime (or run by hand while paused) goes back to "paused"; a finished one-time routine is completed.
           if (r.kind === "once") return mark(r.id, "completed");
           await db
@@ -282,7 +319,7 @@ export function createRoutines(
       )[0]!.id;
     // Link the live chat now so a running occurrence can be opened from the timeline.
     await db.update(routineRun).set({ conversationId: convId }).where(eq(routineRun.id, runId));
-    let status: "succeeded" | "failed" = "succeeded",
+    let status: "succeeded" | "failed" | "cancelled" = "succeeded",
       output = "",
       reason: string | null = null,
       errCode: string | undefined;
@@ -292,7 +329,10 @@ export function createRoutines(
           untrusted: event != null || retry?.untrusted === true,
         });
         output = t.text;
-        if (!t.ok) {
+        if (t.status === "cancelled") {
+          status = "cancelled";
+          reason = "stopped";
+        } else if (!t.ok) {
           status = "failed";
           reason = "bot_failed";
           errCode = t.error;
@@ -333,7 +373,12 @@ export function createRoutines(
         botId: b!.id,
       });
     }
-    await finish(status, output, reason, convId);
+    // The reply is done but the bot set itself tasks in this run and is called back for them: the run goes on until they close
+    // (settled by the sweep, see settleFollowing).
+    const following =
+      status === "succeeded" && chatTurn && !r.workflowId && (await followedTasks(convId)) > 0;
+    await finish(following ? "following" : status, output, reason, convId);
+    if (status === "succeeded" || status === "cancelled") await countFailure(r, "reset");
     if (status === "failed" && (await agentsPaused(db, r.ownerUserId))) {
       // The pause stopped (or refused) this run: it goes again after "resume", with no alert about a failure that is not one.
       await db.update(routineRun).set({ retryAt: new Date() }).where(eq(routineRun.id, runId));
@@ -351,6 +396,8 @@ export function createRoutines(
           .where(eq(routineRun.id, runId));
         return;
       }
+      // Too many occurrences in a row failed: the routine pauses itself with one card, instead of failing on every occurrence.
+      if (await countFailure(r, "add")) return;
       await raiseAttention(db, r.ownerUserId, {
         botId: b!.id,
         title: `Routine "${r.title}" failed`,
@@ -363,6 +410,138 @@ export function createRoutines(
       });
     }
     return;
+  }
+
+  /** Open tasks the bot set itself in this conversation and is called back for (see tasks/follow-up.ts). */
+  async function followedTasks(conversationId: string) {
+    const [row] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(task)
+      .where(
+        and(
+          eq(task.conversationId, conversationId),
+          eq(task.followUp, "auto"),
+          ne(task.status, "done"),
+        ),
+      );
+    return row?.n ?? 0;
+  }
+
+  /**
+   * Failed occurrences in a row. "add" counts one more and, at the routine's limit, pauses it with one card (true: paused, the caller
+   * raises nothing else). "reset" after a run that did not fail.
+   */
+  async function countFailure(r: Routine, op: "add" | "reset") {
+    if (op === "reset") {
+      if (r.failures) await db.update(routine).set({ failures: 0 }).where(eq(routine.id, r.id));
+      return false;
+    }
+    const [row] = await db
+      .update(routine)
+      .set({ failures: sql`${routine.failures} + 1` })
+      .where(eq(routine.id, r.id))
+      .returning({ failures: routine.failures, maxFailures: routine.maxFailures });
+    if (!row || row.failures < row.maxFailures) return false;
+    disarm(r.id);
+    await db.update(routine).set({ paused: true, nextRunAt: null }).where(eq(routine.id, r.id));
+    await mark(r.id, "blocked", "too_many_failures");
+    await raiseAttention(db, r.ownerUserId, {
+      botId: r.botId,
+      title: `Routine "${r.title}" paused after ${row.failures} failures in a row`,
+      detail: "Each of its last runs failed, so it stopped trying.",
+      nextAction: "Open the last run to see why, fix it, then activate the routine again.",
+      resultLink: `/routines?routine=${r.id}`,
+      source: "routine",
+      sourceKey: `routine:${r.id}:failed`,
+      remaining: "Next occurrence",
+    });
+    return true;
+  }
+
+  /** An occurrence that does not run (skipped by the person, the previous run still works, missed while down): recorded, not run. */
+  async function skipOccurrence(r: Routine, now: Date, reason: "skipped_by_you" | "still_running") {
+    const claimed = await claim(r, `sched:${r.nextRunAt!.toISOString()}`, "schedule", now);
+    if (!claimed) return;
+    await db
+      .update(routineRun)
+      .set({
+        status: "skipped",
+        reasonCode: reason,
+        output:
+          reason === "skipped_by_you"
+            ? "Skipped: you asked to skip this run."
+            : "Skipped: the previous run was still working.",
+        finishedAt: now,
+      })
+      .where(eq(routineRun.id, claimed.id));
+    changed(r.ownerUserId);
+  }
+
+  /** Runs that were following their bot's tasks end as succeeded once those tasks are closed or no longer followed. */
+  async function settleFollowing() {
+    const rows = await db
+      .select({
+        id: routineRun.id,
+        conversationId: routineRun.conversationId,
+        owner: routineRun.ownerUserId,
+      })
+      .from(routineRun)
+      .where(eq(routineRun.status, "following"));
+    for (const run of rows) {
+      if (run.conversationId && (await followedTasks(run.conversationId)) > 0) continue;
+      await db
+        .update(routineRun)
+        .set({ status: "succeeded", finishedAt: new Date() })
+        .where(and(eq(routineRun.id, run.id), eq(routineRun.status, "following")));
+      changed(run.owner);
+    }
+    return rows.length;
+  }
+
+  /**
+   * A routine Zetta paused because something was missing (its bot not ready, an account not connected) switches itself back on once
+   * nothing is missing, and its card closes. One the person paused, or that failed too often, stays paused.
+   */
+  async function reviveBlocked() {
+    const rows = await db
+      .select()
+      .from(routine)
+      .where(
+        and(
+          eq(routine.status, "blocked"),
+          eq(routine.statusReason, "not_ready"),
+          eq(routine.paused, true),
+          eq(routine.archived, false),
+        ),
+      );
+    let revived = 0;
+    for (const r of rows) {
+      if (!(await active(r.ownerUserId))) continue;
+      if ((await prerequisites(r.ownerUserId, r)).length) continue;
+      await switchOn(r);
+      await closeAttentionKey(db, r.ownerUserId, `routine:${r.id}:blocked`, "resolved");
+      revived++;
+    }
+    return revived;
+  }
+
+  /** Switches a routine on: its next run is computed from now and its job is armed. The caller has checked the prerequisites. */
+  async function switchOn(r: Routine) {
+    const row = first(
+      await db
+        .update(routine)
+        .set({
+          paused: false,
+          nextRunAt: computeNextRun(new Date(), rec(r)),
+          status: "scheduled",
+          statusReason: null,
+          statusAt: new Date(),
+        })
+        .where(eq(routine.id, r.id))
+        .returning(),
+    );
+    arm(row);
+    return row;
   }
 
   /** Claims an occurrence by inserting its unique key first (a crash, retry or second worker cannot run it twice). */
@@ -399,6 +578,44 @@ export function createRoutines(
     // Paused agents: claim nothing and move nothing. `nextRunAt` stays in the past, so the 5-minute sweep (runDue) runs the routine once
     // after "resume" instead of dropping the occurrence.
     if (await agentsPaused(db, r.ownerUserId)) return false;
+    const due = r.nextRunAt!;
+    const advanceOnly = async () => {
+      const [next] = await db
+        .update(routine)
+        .set({
+          nextRunAt: r.kind === "once" ? null : computeNextRun(now, rec(r)),
+          ...(r.kind === "once" ? { paused: true } : {}),
+          // "Skip next" covers the occurrences up to its instant; past it the routine runs again.
+          ...(r.skipUntil && r.skipUntil <= due ? { skipUntil: null } : {}),
+        })
+        .where(and(eq(routine.id, r.id), eq(routine.nextRunAt, due)))
+        .returning();
+      if (next) arm(next);
+    };
+    if (r.skipUntil && due <= r.skipUntil) {
+      await skipOccurrence(r, now, "skipped_by_you");
+      await advanceOnly();
+      return false;
+    }
+    // Missed while the server was down: "skip" goes straight to the next occurrence instead of running a late one.
+    if (r.catchUp === "skip" && now.getTime() - due.getTime() > CATCH_UP_GRACE_MS) {
+      await advanceOnly();
+      return false;
+    }
+    if (r.overlapPolicy === "skip") {
+      const [busy] = await db
+        .select({ id: routineRun.id })
+        .from(routineRun)
+        .where(
+          and(eq(routineRun.routineId, r.id), inArray(routineRun.status, ["running", "following"])),
+        )
+        .limit(1);
+      if (busy) {
+        await skipOccurrence(r, now, "still_running");
+        await advanceOnly();
+        return false;
+      }
+    }
     const claimed = await claim(r, `sched:${r.nextRunAt!.toISOString()}`, "schedule", now);
     const advance =
       r.kind === "once"
@@ -564,12 +781,77 @@ export function createRoutines(
       sweep.zettaRoutineSweep = schedule.scheduleJob("routine-sweep", "*/5 * * * *", () => {
         void runDue().catch(() => {});
         void retryDue().catch(() => {});
+        void settleFollowing().catch(() => {});
+        void reviveBlocked().catch(() => {});
         if (new Date().getMinutes() < 5) void trimOldOutput().catch(() => {}); // once an hour
       });
       return active.length;
     },
     useChat(turn: ChatTurn) {
       chatTurn = turn;
+    },
+    useAccounts(check: AccountCheck) {
+      accounts = check;
+    },
+    useStop(stop: (userId: string, conversationId: string) => Promise<unknown>) {
+      stopChat = stop;
+    },
+    settleFollowing,
+    reviveBlocked,
+    /** "Skip next": the next occurrence is recorded as skipped instead of running; the ones after it run as usual. */
+    async skipNext(a: ActiveActor, id: string) {
+      const [cur] = await db
+        .select()
+        .from(routine)
+        .where(and(eq(routine.id, id), eq(routine.ownerUserId, a.userId)));
+      const r = first(cur ? [cur] : []);
+      if (r.paused || !r.nextRunAt) throw new RoutineError("INVALID");
+      const [row] = await db
+        .update(routine)
+        .set({ skipUntil: r.nextRunAt })
+        .where(eq(routine.id, id))
+        .returning();
+      changed(a.userId);
+      return row!;
+    },
+    /** Undoes "Skip next" before the occurrence comes. */
+    async unskip(a: ActiveActor, id: string) {
+      const [row] = await db
+        .update(routine)
+        .set({ skipUntil: null })
+        .where(and(eq(routine.id, id), eq(routine.ownerUserId, a.userId)))
+        .returning();
+      changed(a.userId);
+      return first(row ? [row] : []);
+    },
+    /**
+     * Stops a run that is working (or following its tasks): the reply ends, its followed tasks pause, the rooms it opened go silent.
+     * The run ends as cancelled and is not tried again; the routine keeps its schedule.
+     */
+    async stopRun(a: ActiveActor, runId: string) {
+      const [run] = await db
+        .select()
+        .from(routineRun)
+        .where(and(eq(routineRun.id, runId), eq(routineRun.ownerUserId, a.userId)));
+      const r = first(run ? [run] : []);
+      if (r.status !== "running" && r.status !== "following") return r;
+      if (r.conversationId) await stopChat?.(a.userId, r.conversationId);
+      // A following run has no reply to end, and a running one may end before its own `finish` marks it: say so here.
+      const [done] = await db
+        .update(routineRun)
+        .set({
+          status: "cancelled",
+          reasonCode: "stopped",
+          retryAt: null,
+          finishedAt: new Date(),
+        })
+        .where(and(eq(routineRun.id, runId), inArray(routineRun.status, ["running", "following"])))
+        .returning();
+      changed(a.userId);
+      if (done) return done;
+      // The run's own end got there first (it also records a stop as cancelled): return what it saved.
+      const [now] = await db.select().from(routineRun).where(eq(routineRun.id, runId));
+      return now ?? r;
     },
     async create(a: ActiveActor, v: RoutineInput) {
       await usableBot(a, v.botId);
@@ -596,7 +878,7 @@ export function createRoutines(
               and(eq(discussion.id, v.originDiscussionId), eq(discussion.ownerUserId, a.userId)),
             )
         : [];
-      return first(
+      const made = first(
         await db
           .insert(routine)
           .values({
@@ -615,9 +897,16 @@ export function createRoutines(
             onceAt: v.onceAt ? new Date(v.onceAt) : null,
             conversationMode: v.conversationMode ?? "new",
             workflowId: v.workflowId ?? null,
+            ...(v.overlapPolicy ? { overlapPolicy: v.overlapPolicy } : {}),
+            ...(v.catchUp ? { catchUp: v.catchUp } : {}),
+            ...(v.maxFailures ? { maxFailures: v.maxFailures } : {}),
           })
           .returning(),
       );
+      if (v.activate !== "on") return made;
+      // Not ready (the bot needs setup or an account): the routine exists and stays paused; its checklist says what is missing.
+      if ((await prerequisites(a.userId, made)).length) return made;
+      return switchOn(made);
     },
     async update(
       a: ActiveActor,
@@ -632,8 +921,9 @@ export function createRoutines(
       const r = first(cur ? [cur] : []);
       if (v.botId) await usableBot(a, v.botId);
       if (v.timezone && !validTimezone(v.timezone)) throw new RoutineError("INVALID");
+      const { activate: _activate, ...fields } = v;
       const next = {
-        ...v,
+        ...fields,
         ...(v.prompt !== undefined
           ? { prompt: await normalizeMentionText(db, a.userId, v.prompt) }
           : {}),
@@ -899,13 +1189,14 @@ export function createRoutines(
         const missing = await prerequisites(a.userId, r);
         if (missing.length) throw new RoutineError("NOT_READY", missing);
       }
+      if (!paused) return switchOn(r);
       const row = first(
         await db
           .update(routine)
           .set({
-            paused,
-            nextRunAt: paused ? null : computeNextRun(new Date(), rec(r)),
-            status: paused ? "paused" : "scheduled",
+            paused: true,
+            nextRunAt: null,
+            status: "paused",
             statusReason: null,
             statusAt: new Date(),
           })
@@ -946,8 +1237,16 @@ export function createRoutines(
         .returning({ id: routine.id });
       for (const r of rows) disarm(r.id);
     },
-    /** Idempotent with `requestKey`: the same key returns the same occurrence instead of running again. */
-    async runNow(a: ActiveActor, id: string, requestKey: string) {
+    /**
+     * Idempotent with `requestKey`: the same key returns the same occurrence instead of running again. "background" answers with the
+     * claimed run at once and lets the bot work (a page must not hold a request open for a whole run); "wait" returns the finished run.
+     */
+    async runNow(
+      a: ActiveActor,
+      id: string,
+      requestKey: string,
+      mode: "wait" | "background" = "wait",
+    ) {
       const [cur] = await db
         .select()
         .from(routine)
@@ -963,6 +1262,13 @@ export function createRoutines(
             .from(routineRun)
             .where(and(eq(routineRun.routineId, id), eq(routineRun.occurrenceKey, key))),
         );
+      if (mode === "background") {
+        // A failure is recorded on the run by `execute`; one that escapes it must not become an unhandled rejection.
+        void execute(r, claimed.id).catch((e) =>
+          console.error(`routine ${r.id}: manual run ${claimed.id} failed`, e),
+        );
+        return claimed;
+      }
       await execute(r, claimed.id);
       return first(await db.select().from(routineRun).where(eq(routineRun.id, claimed.id)));
     },

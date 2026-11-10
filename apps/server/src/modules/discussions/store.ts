@@ -1838,6 +1838,9 @@ export function createDiscussionStore(
             where t.status = 'queued' and (d.status = 'open' or (t.kind = 'wrapup' and d.status = 'resolved'))
               -- "Pause everything": a paused owner's turns stay queued, and the worker takes them after "resume".
               and not exists (select 1 from user_preference up where up.owner_user_id = t.owner_user_id and up.agents_state = 'paused')
+              -- One running turn per bot and room, in both lanes: three quick posts are one answer that reads all three, not three
+              -- answers racing each other (the wakes it covers are merged when it is claimed, below).
+              and not exists (select 1 from discussion_turn b where b.discussion_id = t.discussion_id and b.bot_id = t.bot_id and b.status = 'running')
               and ${
                 lane === "user"
                   ? sql`t.kind = 'reply' and exists (select 1 from message m where m.id = t.trigger_message_id and m.role = 'user')`
@@ -1899,6 +1902,21 @@ export function createDiscussionStore(
             .where(eq(discussionTurn.id, id))
             .returning();
           c.turn = running!;
+          // Its prompt is built from the whole transcript when it starts, so the bot's other waiting replies in this room are already
+          // covered: they end as merged instead of running again on the same posts.
+          if (turn!.kind === "reply")
+            await tx
+              .update(discussionTurn)
+              .set({ status: "skipped", reasonCode: "merged", finishedAt: new Date() })
+              .where(
+                and(
+                  eq(discussionTurn.discussionId, d!.id),
+                  eq(discussionTurn.botId, turn!.botId),
+                  eq(discussionTurn.status, "queued"),
+                  eq(discussionTurn.kind, "reply"),
+                  ne(discussionTurn.id, id),
+                ),
+              );
           return c;
         });
         if (out !== "again") return out;

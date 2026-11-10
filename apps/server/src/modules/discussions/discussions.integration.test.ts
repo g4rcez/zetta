@@ -605,6 +605,36 @@ suite("group discussions against compose postgres", () => {
     ).toHaveLength(0);
   });
 
+  test("posts sent while a bot answers are answered by its next turn, all together, not one turn each", async () => {
+    const q1 = await makeBot(A, "Quick1");
+    const q2 = await makeBot(A, "Quick2");
+    let open!: () => void;
+    gates.Quick1 = new Promise<void>((done) => (open = done));
+    const before = runs.length;
+    const roomId = (
+      await call(A, "POST", "/api/discussions", {
+        title: "Quick room",
+        goal: "x",
+        members: [{ bot: q1.id }, { bot: q2.id }],
+        firstMessage: "@Quick1 send the report to Ana",
+      })
+    ).json.discussion.id as string;
+    const draining = worker.drain();
+    for (let i = 0; i < 200 && !runs.slice(before).some((r) => r.bot === "Quick1"); i++)
+      await Bun.sleep(10);
+    for (const text of ["@Quick1 wait", "@Quick1 actually send it to Bruno"])
+      await call(A, "POST", `/api/discussions/${roomId}/messages`, { content: text });
+    open();
+    delete gates.Quick1;
+    await draining;
+    await worker.drain();
+    const mine = runs.slice(before).filter((r) => r.bot === "Quick1");
+    // The first answer, then ONE answer for both later posts (it reads the whole transcript).
+    expect(mine).toHaveLength(2);
+    expect(mine[1]!.prompt).toContain("wait");
+    expect(mine[1]!.prompt).toContain("actually send it to Bruno");
+  });
+
   test("outside content: turns of one bot wait behind one card, approving it runs them all, declining skips them all", async () => {
     const front = await makeBot(A, "BriefFront");
     await makeBot(A, "BriefCoderA", { harness: "claude-code" });
@@ -645,7 +675,13 @@ suite("group discussions against compose postgres", () => {
         .status,
     ).toBe("approved");
     await worker.drain();
-    expect(runs.filter((x) => x.bot === "BriefCoderA").length).toBeGreaterThanOrEqual(2);
+    // Both waiting turns are released; the bot answers them in one turn that reads both posts (one running turn per bot and room).
+    expect(runs.filter((x) => x.bot === "BriefCoderA")).toHaveLength(1);
+    const turns = (await call(A, "GET", `/api/discussions/${ra.discussion.id}`)).json.turns as {
+      status: string;
+      reasonCode: string | null;
+    }[];
+    expect(turns.some((t) => t.status === "skipped" && t.reasonCode === "merged")).toBe(true);
     expect(await briefsOf(ra.discussion.id)).toHaveLength(0);
     expect(await waiting(ra.discussion.id)).toHaveLength(0);
 
@@ -892,7 +928,10 @@ suite("group discussions against compose postgres", () => {
     ];
     await worker.drain();
     const routines = (await call(E, "GET", `/api/discussions/${roomId}`)).json.routines;
-    expect(routines).toEqual([{ id: expect.any(String), title: "Repo watch", status: "paused" }]);
+    // A routine a bot makes is switched on when it is created (it stays paused only when its bot is not ready).
+    expect(routines).toEqual([
+      { id: expect.any(String), title: "Repo watch", status: "scheduled" },
+    ]);
     const routineId = routines[0].id as string;
     const idleCards = () =>
       db
@@ -906,7 +945,12 @@ suite("group discussions against compose postgres", () => {
         );
     const later = () => new Date(Date.now() + 31 * 60_000);
 
+    // The routine works for the room: the room is not waiting for anyone.
+    await store.sweepIdle(later());
+    expect(await idleCards()).toEqual([]);
+
     // A routine that is not active does not hide the idle room.
+    await call(E, "POST", `/api/routines/${routineId}/paused`, { paused: true });
     await store.sweepIdle(later());
     expect(await idleCards()).toEqual([{ title: 'Room "Watch room" is waiting' }]);
     await db.delete(attentionItem).where(eq(attentionItem.sourceKey, `discussion:${roomId}:idle`));
@@ -914,10 +958,6 @@ suite("group discussions against compose postgres", () => {
     await call(E, "POST", `/api/routines/${routineId}/paused`, { paused: false });
     await store.sweepIdle(later());
     expect(await idleCards()).toEqual([]);
-
-    await call(E, "POST", `/api/routines/${routineId}/paused`, { paused: true });
-    await store.sweepIdle(later());
-    expect(await idleCards()).toEqual([{ title: 'Room "Watch room" is waiting' }]);
   });
 
   test("opening a room closes its 'is waiting' card, and the next sweeps do not bring it back for one idle period", async () => {

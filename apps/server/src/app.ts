@@ -36,6 +36,7 @@ import { createInboundRoutes, type InboundServices } from "./modules/inbound/rou
 import { createIdentityRoutes, type IdentityServices } from "./modules/identity/routes";
 import { createBotClaudeRoutes, type BotClaudeServices } from "./modules/bot-claude/routes";
 import { createZettaMcpRoutes, type ZettaMcpRouteServices } from "./modules/zetta-mcp/routes";
+import { createRunToolRoutes } from "./modules/run-tools/routes";
 
 export interface AppAuth extends BetterAuthInstance {
   handler: (request: Request) => Response | Promise<Response>;
@@ -70,6 +71,8 @@ export type CreateAppOptions = {
   inbound?: InboundServices;
   botClaude?: BotClaudeServices;
   zettaMcp?: ZettaMcpRouteServices;
+  /** The computer as MCP tools inside a Claude Code run (computer/run-tools.ts). */
+  runTools?: Parameters<typeof createRunToolRoutes>[0];
   webOrigin: string;
   /** Where this server's API answers, for `GET /api/meta`. Defaults to `webOrigin`. */
   apiOrigin?: string;
@@ -111,6 +114,7 @@ export function createApp({
   inbound,
   botClaude,
   zettaMcp,
+  runTools,
   webOrigin,
   apiOrigin = webOrigin,
   desktopOrigins,
@@ -173,6 +177,7 @@ export function createApp({
         return status(405);
       })
       .use(zettaMcp ? createZettaMcpRoutes(zettaMcp, auth.handler) : new Elysia())
+      .use(runTools ? createRunToolRoutes(runTools) : new Elysia())
       .use(identity ? createIdentityRoutes(identity, [webOrigin, ...desktopOrigins]) : new Elysia())
       .use(
         installation

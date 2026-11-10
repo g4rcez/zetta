@@ -963,3 +963,52 @@ describe("remote Cua computer (a spacesd on another machine)", () => {
     );
   });
 });
+
+describe("this machine's own desktop (target local)", () => {
+  const hostDriver = () => {
+    const acts: string[] = [];
+    return {
+      acts,
+      driver: {
+        ready: async () => {},
+        probe: async () => true,
+        act: async (a: { type: string }) => void acts.push(a.type),
+        screenshot: async () => "png",
+        read: async () => ({ kind: "plain" as const, text: "Notes" }),
+        fillCredential: async () => {
+          throw new Error("never");
+        },
+      },
+    };
+  };
+  test("a server open to the network never offers it, even with a host driver", async () => {
+    const h = hostDriver();
+    const { vm } = await setup({ install: "network", host: () => h.driver as never });
+    expect(vm.options().targets.local).toEqual([]);
+    await expect(vm.create("alice", { name: "Mine", target: "local" })).rejects.toMatchObject({
+      code: "UNSUPPORTED",
+    });
+  });
+  test("a local install offers it; starting it runs no container and acts on this desktop", async () => {
+    const h = hostDriver();
+    const { vm, d } = await setup({ install: "local", host: () => h.driver as never });
+    expect(vm.options().targets.local).toEqual(["agent-desktop"]);
+    const made = await vm.create("alice", { name: "Mine", target: "local" });
+    const before = d.log.length;
+    expect((await vm.start("alice", made.id)).status).toBe("running");
+    expect(d.log.slice(before).some((x) => x[0] === "run")).toBe(false);
+    await vm.act("alice", made.id, "agent", { type: "launch", app: "Notes" });
+    await vm.act("alice", made.id, "agent", { type: "navigate", url: "https://example.com" });
+    expect(h.acts).toEqual(["launch", "navigate"]);
+    await vm.remove("alice", made.id);
+    expect(d.log.slice(before).some((x) => x[0] === "rm" || x[0] === "volume")).toBe(false);
+  });
+  test("without a container runtime only this machine is offered, and a VM does not start", async () => {
+    const h = hostDriver();
+    const { vm } = await setup({ install: "local", host: () => h.driver as never, vmOn: false });
+    expect(vm.options().targets.vm).toEqual([]);
+    await expect(vm.create("alice", { name: "Box" })).rejects.toMatchObject({
+      code: "UNSUPPORTED",
+    });
+  });
+});

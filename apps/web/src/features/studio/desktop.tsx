@@ -23,11 +23,14 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
   const systems = caps?.os ?? [];
   const creatable = systems.filter((o) => o.available);
   const remoteOffered = (caps?.targets?.cua?.length ?? 0) > 0;
+  // This machine's own desktop: offered only when Zetta runs on it (a local install with agent-desktop).
+  const hostOffered = (caps?.targets?.local?.length ?? 0) > 0;
+  const vmOffered = drivers.length > 0;
   const [draft, setDraft] = useState<{
     name: string;
     driver: ComputerDriver;
     os: ComputerOsId;
-    type: "vm" | "cua";
+    type: "vm" | "cua" | "local";
   }>({
     name: "",
     driver: "cua",
@@ -96,7 +99,9 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
                   {systems.find((o) => o.id === vm.os)?.label ?? vm.os}
                 </span>
               )}
-              {vm.target === "cua" ? (
+              {vm.target === "local" ? (
+                <span className="text-xs text-muted-foreground">this computer</span>
+              ) : vm.target === "cua" ? (
                 <span className="break-all text-xs text-muted-foreground">
                   remote Cua · {vm.endpoint}
                 </span>
@@ -238,6 +243,8 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
                       sealed,
                     }),
                 );
+              else if (draft.type === "local")
+                await call("/api/computer/vms", "POST", { name, target: "local" });
               else
                 await call("/api/computer/vms", "POST", {
                   name,
@@ -260,17 +267,27 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
           required={false}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
         />
-        {remoteOffered && (
+        {(remoteOffered || hostOffered) && (
           <Select
             title="Type"
             required={false}
             value={draft.type}
-            onChange={(e) => setDraft({ ...draft, type: e.target.value as "vm" | "cua" })}
+            onChange={(e) => setDraft({ ...draft, type: e.target.value as "vm" | "cua" | "local" })}
             options={[
-              { value: "vm", label: "Computer in a container" },
-              { value: "cua", label: "Remote Cua computer" },
+              ...(vmOffered ? [{ value: "vm", label: "Computer in a container" }] : []),
+              ...(hostOffered
+                ? [{ value: "local", label: "This computer (your own desktop and browser)" }]
+                : []),
+              ...(remoteOffered ? [{ value: "cua", label: "Remote Cua computer" }] : []),
             ]}
           />
+        )}
+        {draft.type === "local" && (
+          <p className="text-xs text-muted-foreground">
+            Bots act on your screen with your apps and your default browser, signed in as you are.
+            macOS asks you to allow the app that runs Zetta under Privacy &amp; Security &gt;
+            Accessibility (and Screen Recording for screenshots).
+          </p>
         )}
         {remote && (
           <>

@@ -1,3 +1,4 @@
+import { browserPlacement, type InstallMode } from "./placement";
 import { uuidv7 } from "@zetta/core/uuid";
 import { containerUser, engineOf, tmpfsOwner, type Engine } from "../container-user";
 import { createSerializer } from "./serial";
@@ -279,6 +280,8 @@ export type ComputerOptions = {
   maxTotal?: number;
   idleMs?: number;
   executablePath?: string;
+  /** "network": a server open to the network never runs a browser on itself (see placement.ts). Default "local". */
+  install?: InstallMode;
 };
 
 const PASSWORD_INPUTS = "input[type=password]";
@@ -333,7 +336,9 @@ export function createComputerService({
   maxTotal = 6,
   idleMs = 10 * 60_000,
   executablePath,
+  install = "local",
 }: ComputerOptions) {
+  const placement = browserPlacement(install, docker ? "docker" : "host");
   const sessions = new Map<string, Session>();
   const key = (userId: string, profile: string) => `${userId}\u0000${profile}`;
   const reaper = setInterval(() => {
@@ -385,6 +390,7 @@ export function createComputerService({
     }
     const existing = sessions.get(key(userId, profile));
     if (existing) return info(existing);
+    if (!placement.ok) throw new ComputerError("UNSUPPORTED", placement.reason);
     if (
       [...sessions.values()].filter((s) => s.userId === userId).length >= maxPerUser ||
       sessions.size >= maxTotal

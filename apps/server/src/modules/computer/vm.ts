@@ -1,3 +1,4 @@
+import { desktopTargets, type InstallMode } from "./placement";
 import { createSerializer } from "./serial";
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
@@ -330,6 +331,12 @@ export type VmOptions = {
   /** Where the bearer token of a remote Cua computer is kept (sealed in the connections store). Without it, remote computers are off. */
   secrets?: VmSecrets;
   connectRemote?: RemoteConnect;
+  /** "network": this machine's own desktop is never offered (see placement.ts). Default "network", the safe side. */
+  install?: InstallMode;
+  /** Drives this machine's own desktop (target "local"). Without it, or on a network install, the target is off. */
+  host?: () => DesktopDriver;
+  /** False when there is no container runtime: only remote computers and this machine are offered. Default true. */
+  vmOn?: boolean;
 };
 /** The sealed token of a remote computer. `read` throws a `ComputerError` REVOKED when it is gone. */
 export type VmSecrets = {
@@ -341,6 +348,9 @@ export function createVmService({
   store,
   docker,
   exec = createCliExec(docker.bin),
+  install = "network",
+  host,
+  vmOn = true,
   connect = connectSpacesd,
   connectRemote = connectSpacesdUrl,
   secrets,
@@ -355,6 +365,9 @@ export function createVmService({
   vmDrivers = ["cua"],
   vmOs = ["debian"],
 }: VmOptions) {
+  const hostOn =
+    Boolean(host) &&
+    desktopTargets(install, { vm: false, remote: false, host: true }).includes("local");
   const sessions = new Map<string, VSession>();
   const tickets = new Map<string, { userId: string; id: string; expires: number }>();
   const serial = createSerializer();
@@ -543,6 +556,36 @@ export function createVmService({
       throw e instanceof ComputerError ? e : new ComputerError("UNAVAILABLE");
     }
   }
+  /** This machine's own desktop (a local install only). Nothing is started: the driver acts on the screen the person is using. */
+  async function startLocal(userId: string, row: VmRow) {
+    if (!hostOn)
+      throw new ComputerError(
+        "UNSUPPORTED",
+        "This computer's own desktop is only offered when Zetta runs on it.",
+      );
+    const driver = host!();
+    await driver.ready();
+    sessions.set(row.id, {
+      id: row.id,
+      userId,
+      port: 0,
+      remote: true,
+      viewers: 0,
+      keyboard: "us",
+      close: async () => {},
+      driver,
+      // navigate opens the person's own default browser (the address is still checked first).
+      browser: true,
+      cdp: null,
+      control: "agent",
+      epoch: 0,
+      lastUsed: Date.now(),
+      queue: Promise.resolve(),
+      row: { ...row, status: "running" },
+    });
+    await store.setStatus(row.id, "running");
+    return view({ ...row, status: "running" });
+  }
   /** Starts the user's VM (the default one when no id is given). One start at a time per user, so caps cannot be raced. */
   const start = (userId: string, vmId?: string) => {
     const hot = sessions.get(vmId ?? defaults.get(userId) ?? "");
@@ -560,6 +603,8 @@ export function createVmService({
         return view(row);
       }
       if (row.target === "cua") return startRemote(userId, row);
+      if (row.target === "local") return startLocal(userId, row);
+      if (!vmOn) throw new ComputerError("UNSUPPORTED");
       // A computer keeps the driver it was given; if the operator has since turned that driver off, it does not start under another one.
       if (!vmDrivers.includes(row.driver)) throw new ComputerError("UNSUPPORTED");
       const running = [...sessions.values()];
@@ -840,9 +885,15 @@ export function createVmService({
     ) {
       if (!SAFE_NAME.test(v.name)) throw new ComputerError("INVALID");
       if (v.os && !vmOs.includes(v.os)) throw new ComputerError("UNSUPPORTED");
-      // Only the VM target exists until the server host can be driven; the driver must be one the operator allows.
-      if (v.target && v.target !== "vm") throw new ComputerError("UNSUPPORTED");
-      if (v.driver && !vmDrivers.includes(v.driver)) throw new ComputerError("UNSUPPORTED");
+      // A VM, or this machine's own desktop on a local install (see placement.ts); the driver must be one the operator allows.
+      if (v.target === "local") {
+        if (!hostOn) throw new ComputerError("UNSUPPORTED");
+        v = { ...v, driver: "agent-desktop" };
+      } else {
+        if (v.target && v.target !== "vm") throw new ComputerError("UNSUPPORTED");
+        if (!vmOn) throw new ComputerError("UNSUPPORTED");
+        if (v.driver && !vmDrivers.includes(v.driver)) throw new ComputerError("UNSUPPORTED");
+      }
       return serial(userId, async () => {
         await store.ensureDefault(userId);
         if ((await store.count(userId)) >= maxPerUser) throw new ComputerError("LIMIT");
@@ -883,7 +934,7 @@ export function createVmService({
     },
     /** Switches the driver of a stopped computer; a running one keeps the driver it started with. */
     async setDriver(userId: string, id: string, driver: DriverName) {
-      if ((await owned(userId, id)).target === "cua") throw new ComputerError("UNSUPPORTED");
+      if ((await owned(userId, id)).target !== "vm") throw new ComputerError("UNSUPPORTED");
       if (!vmDrivers.includes(driver)) throw new ComputerError("UNSUPPORTED");
       if (sessions.has(id)) throw new ComputerError("LIMIT");
       await store.setDriver(userId, id, driver);
@@ -891,8 +942,8 @@ export function createVmService({
     /** What a person may choose when they create or edit a computer. */
     options: () => ({
       targets: {
-        vm: [...vmDrivers],
-        local: [] as DriverName[],
+        vm: vmOn ? [...vmDrivers] : ([] as DriverName[]),
+        local: hostOn ? (["agent-desktop"] as DriverName[]) : ([] as DriverName[]),
         cua: secrets ? (["cua"] as DriverName[]) : ([] as DriverName[]),
       },
       os: osOptions(vmOs),
@@ -901,6 +952,11 @@ export function createVmService({
     async remove(userId: string, id: string) {
       const row = await owned(userId, id);
       await stop(userId, id);
+      if (row.target === "local") {
+        // This machine is not ours to destroy: only the row goes.
+        await store.setStatus(id, "deleted");
+        return;
+      }
       if (row.target === "cua") {
         // Nothing of a remote computer lives here except its sealed token.
         if (row.connectionId)

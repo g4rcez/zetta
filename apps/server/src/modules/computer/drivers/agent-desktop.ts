@@ -92,7 +92,8 @@ const clean = (x?: string) => (x ?? "").replace(/\s+/g, " ").trim();
  * The page as text, from agent-desktop's accessibility tree. Only the web content is numbered and listed (the browser's own toolbar is
  * not the page); the omnibox, the focused input and the "Not secure" badge are kept aside for the credential fill.
  */
-export function parsePage(tree: Node): Page {
+/** `whole`: read the whole window, for a native app with no web page in it (the host desktop). Default: only the web page. */
+export function parsePage(tree: Node, o: { whole?: boolean } = {}): Page {
   const page: Page = {
     lines: [],
     items: new Map(),
@@ -107,7 +108,7 @@ export function parsePage(tree: Node): Page {
     if (n.role === "textfield" && n.ref_id && n.states?.includes("focused"))
       page.focusedInput = n.ref_id;
   }
-  const web = [...walk(tree)].find((n) => n.role === "webarea");
+  const web = [...walk(tree)].find((n) => n.role === "webarea") ?? (o.whole ? tree : undefined);
   if (!web) return page;
   let last = "";
   const visit = (n: Node, skip: string) => {

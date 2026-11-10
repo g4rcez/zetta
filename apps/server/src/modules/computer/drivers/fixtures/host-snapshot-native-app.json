@@ -1,0 +1,145 @@
+{
+  "command": "snapshot",
+  "data": {
+    "complete": true,
+    "ref_count": 11,
+    "snapshot_id": "s22e4jfkhh5ecg",
+    "tree": {
+      "bounds": { "height": 947.0, "width": 1512.0, "x": 0.0, "y": 35.0 },
+      "children": [
+        {
+          "bounds": { "height": 947.0, "width": 1512.0, "x": 0.0, "y": 35.0 },
+          "children": [
+            {
+              "bounds": { "height": 40.0, "width": 1512.0, "x": 0.0, "y": 35.0 },
+              "children": [
+                {
+                  "available_actions": ["Click", "Toggle", "SetFocus"],
+                  "bounds": { "height": 30.0, "width": 242.0, "x": 127.0, "y": 40.0 },
+                  "name": "Item 2",
+                  "ref_id": "@s22e4jfkhh5ecg:e1",
+                  "role": "radiobutton"
+                },
+                {
+                  "available_actions": ["Click", "Toggle", "SetFocus"],
+                  "bounds": { "height": 30.0, "width": 242.0, "x": 368.0, "y": 40.0 },
+                  "name": "Item 3",
+                  "ref_id": "@s22e4jfkhh5ecg:e2",
+                  "role": "radiobutton",
+                  "states": ["selected"]
+                },
+                {
+                  "available_actions": ["Click", "SetFocus"],
+                  "bounds": { "height": 34.0, "width": 40.0, "x": 81.0, "y": 38.0 },
+                  "name": "Change Session",
+                  "ref_id": "@s22e4jfkhh5ecg:e3",
+                  "role": "button"
+                },
+                {
+                  "available_actions": ["Click", "SetFocus"],
+                  "bounds": { "height": 28.0, "width": 33.5, "x": 1443.0, "y": 40.5 },
+                  "name": "Command Palette",
+                  "ref_id": "@s22e4jfkhh5ecg:e4",
+                  "role": "button"
+                },
+                {
+                  "available_actions": ["Click", "SetFocus"],
+                  "bounds": { "height": 30.0, "width": 33.5, "x": 1411.0, "y": 40.0 },
+                  "name": "Activity",
+                  "ref_id": "@s22e4jfkhh5ecg:e5",
+                  "role": "button"
+                },
+                {
+                  "available_actions": ["Click", "SetFocus"],
+                  "bounds": { "height": 30.0, "width": 34.0, "x": 1475.0, "y": 39.5 },
+                  "name": "New Tab",
+                  "ref_id": "@s22e4jfkhh5ecg:e6",
+                  "role": "button"
+                }
+              ],
+              "name": "Item 1",
+              "role": "group"
+            },
+            {
+              "bounds": { "height": 908.0, "width": 1512.0, "x": 0.0, "y": 74.0 },
+              "children": [
+                {
+                  "bounds": { "height": 909.0, "width": 1514.0, "x": -1.0, "y": 74.0 },
+                  "children": [
+                    {
+                      "bounds": { "height": 909.0, "width": 1514.0, "x": -1.0, "y": 74.0 },
+                      "children": [
+                        {
+                          "bounds": { "height": 909.0, "width": 1514.0, "x": -1.0, "y": 74.0 },
+                          "children": [
+                            {
+                              "available_actions": ["RightClick", "SetFocus"],
+                              "bounds": { "height": 909.0, "width": 1514.0, "x": -1.0, "y": 74.0 },
+                              "children": [
+                                {
+                                  "available_actions": ["Scroll"],
+                                  "bounds": {
+                                    "height": 909.0,
+                                    "width": 1514.0,
+                                    "x": -1.0,
+                                    "y": 74.0
+                                  },
+                                  "ref_id": "@s22e4jfkhh5ecg:e8",
+                                  "role": "scrollarea"
+                                }
+                              ],
+                              "name": "Item 6",
+                              "ref_id": "@s22e4jfkhh5ecg:e7",
+                              "role": "textfield",
+                              "states": ["focused", "readonly"]
+                            }
+                          ],
+                          "name": "Item 5",
+                          "role": "group"
+                        }
+                      ],
+                      "role": "group"
+                    }
+                  ],
+                  "name": "Item 4",
+                  "role": "group"
+                }
+              ],
+              "role": "group"
+            }
+          ],
+          "role": "group"
+        },
+        {
+          "available_actions": ["Click"],
+          "bounds": { "height": 16.0, "width": 16.0, "x": 12.0, "y": 47.0 },
+          "name": "Close",
+          "ref_id": "@s22e4jfkhh5ecg:e9",
+          "role": "button"
+        },
+        {
+          "available_actions": ["Click", "RightClick"],
+          "bounds": { "height": 16.0, "width": 16.0, "x": 58.0, "y": 47.0 },
+          "children": [
+            { "bounds": { "height": 14.0, "width": 14.0, "x": 59.0, "y": 48.0 }, "role": "group" }
+          ],
+          "name": "Full Screen",
+          "ref_id": "@s22e4jfkhh5ecg:e10",
+          "role": "button"
+        },
+        {
+          "available_actions": ["Click"],
+          "bounds": { "height": 16.0, "width": 16.0, "x": 35.0, "y": 47.0 },
+          "name": "Minimize",
+          "ref_id": "@s22e4jfkhh5ecg:e11",
+          "role": "button"
+        }
+      ],
+      "name": "Item 0",
+      "native_id": { "kind": "ax_identifier", "value": "session-AppWindow-1" },
+      "role": "window"
+    }
+  },
+  "ok": true,
+  "version": "2.5"
+}

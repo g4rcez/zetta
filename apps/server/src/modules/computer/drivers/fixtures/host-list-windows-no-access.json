@@ -1,0 +1,39 @@
+{
+  "command": "list-windows",
+  "data": [
+    {
+      "accessible": false,
+      "app_name": "Notes",
+      "bounds": {
+        "height": 947.0,
+        "width": 1512.0,
+        "x": 1511.0,
+        "y": 942.0
+      },
+      "id": "w-10",
+      "is_focused": false,
+      "pid": 100,
+      "process_instance": "macos-proc-v1:1:0",
+      "title": "Notes",
+      "visible": true
+    },
+    {
+      "accessible": false,
+      "app_name": "Finder",
+      "bounds": {
+        "height": 0.0,
+        "width": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      },
+      "id": "w-11",
+      "is_focused": false,
+      "pid": 101,
+      "process_instance": "macos-proc-v1:1:1",
+      "title": "Downloads",
+      "visible": false
+    }
+  ],
+  "ok": true,
+  "version": "2.5"
+}

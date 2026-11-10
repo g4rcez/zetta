@@ -42,6 +42,7 @@ import { VmCard } from "./vm-card";
 import { Response } from "./response";
 import { splitActionNotes } from "./action-notes";
 import { stripToolFences } from "./tool-fences";
+import { uniqueReceipts } from "./receipts";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime, formatTime, type TimeFormat } from "@/features/preferences/time-format";
 
@@ -421,7 +422,7 @@ export const MessageRow = memo(function MessageRow({
     row.role === "assistant" && !working
       ? splitActionNotes(row.content)
       : { body: row.content, notes: [] };
-  const all = row.meta?.receipts ?? [];
+  const all = uniqueReceipts(row.meta?.receipts ?? []);
   // A task the chief handed to a member is a handoff card of its own, stacked under the answer; the other receipts stay small chips.
   const handoffs = all.filter((r) => r.kind === "task" && r.assignee);
   const receipts = all.filter(

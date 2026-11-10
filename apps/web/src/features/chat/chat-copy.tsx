@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
 import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 
 import { ActionHint } from "@/components/action-hint";
 import { Button } from "@/components/ui";
+import { useCopy } from "../shared/use-copy";
+
+const ignoreCopyFailure = () => {};
 
 /** Copies `text` to the clipboard; reports success for a moment. Never throws when the clipboard is unavailable. */
 export function CopyButton({
@@ -14,19 +16,7 @@ export function CopyButton({
   label?: string;
   className?: string;
 }) {
-  const [done, setDone] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setDone(true);
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => setDone(false), 1500);
-    } catch {
-      setDone(false);
-    }
-  }
+  const { copied: done, copy } = useCopy(ignoreCopyFailure);
   return (
     <ActionHint label={done ? "Copied!" : label} closeOnClick={false}>
       <Button
@@ -35,7 +25,7 @@ export function CopyButton({
         variant="ghost"
         className={className}
         aria-label={done ? "Copied" : label}
-        onClick={() => void copy()}
+        onClick={() => void copy(text)}
       >
         {done ? <CheckIcon /> : <CopyIcon />}
       </Button>

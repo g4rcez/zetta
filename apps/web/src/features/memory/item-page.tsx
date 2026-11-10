@@ -10,6 +10,7 @@ import { ApiError, call, errorMessage } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { Response } from "../chat/response";
 import { Badge, ConfirmButton, Empty, Loading } from "../shared/ui";
+import { useCopy } from "../shared/use-copy";
 import { AddLinkPanel } from "./add-link-panel";
 import { AssistPanel } from "./assist-panel";
 import { AskBox } from "./ask-box";
@@ -44,7 +45,6 @@ export function MemoryItemPage({
   const tf = useTimeFormat();
   const [editing, setEditing] = useState(edit);
   const [dirty, setDirty] = useState(false);
-  const [copied, setCopied] = useState(false);
   const h1 = useRef<HTMLHeadingElement>(null);
   const form = useRef<HTMLFormElement>(null);
   const { items, memoryLinks } = useMemoryIndex();
@@ -60,6 +60,9 @@ export function MemoryItemPage({
       ? ""
       : memoryError(query.error);
   const { run, feedback, setError } = useAction();
+  const { copied, copy } = useCopy(() =>
+    setError("Could not copy. Select the text and copy it by hand."),
+  );
   const botsQuery = useQuery(chatQueries.bots());
   const teamsQuery = useQuery(teamsQueries.list());
   const bots = botsQuery.data;
@@ -240,7 +243,8 @@ export function MemoryItemPage({
               size="sm"
               variant="outline"
               onClick={() => {
-                void navigator.clipboard?.writeText(`[[${p.slug}]]`).then(() => setCopied(true));
+                setError(undefined);
+                void copy(`[[${p.slug}]]`);
               }}
             >
               {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}

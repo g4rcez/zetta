@@ -10,7 +10,7 @@ export type DiscussionServices = {
   access: ReturnType<typeof createIdentityAccess>;
   store: DiscussionStore;
   worker: DiscussionWorker;
-  /** Silence also aborts the turns that are running now. */
+  /** Silence, cancel and delete also abort the turns that are running now. */
   chat: { cancelTurn(actor: ActiveActor, conversationId: string): Promise<unknown> };
 };
 const uuid = z.string().uuid();
@@ -173,15 +173,19 @@ export function createDiscussionRoutes(
     )
     .post(
       "/discussions/:id/cancel",
-      g(async (c) => ({
-        discussion: publicRoom(await store.setStatus(c.actor, id(c), "cancel")),
-      })),
+      g(async (c) => {
+        const room = await store.setStatus(c.actor, id(c), "cancel");
+        await chat.cancelTurn(c.actor, room.conversationId);
+        return { discussion: publicRoom(room) };
+      }),
     )
     .post(
       "/discussions/:id/delete",
-      g(async (c) => ({
-        discussion: publicRoom((await store.remove(c.actor, id(c), null)).discussion),
-      })),
+      g(async (c) => {
+        const { discussion: room } = await store.remove(c.actor, id(c), null);
+        await chat.cancelTurn(c.actor, room.conversationId);
+        return { discussion: publicRoom(room) };
+      }),
     )
     .post(
       "/discussions/:id/seen",

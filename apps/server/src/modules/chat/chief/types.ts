@@ -23,6 +23,8 @@ import type { ActiveActor } from "../../identity/access";
 import type { OutputStyles } from "../../output-styles/service";
 import type { TaskStore } from "../../tasks/store";
 import type { TeamStore } from "../../teams/store";
+import type { Analyzer } from "../../bots/import/analyze";
+import type { GrokSource } from "../../bots/import/grok-source";
 import type { BotInput } from "../service";
 import type { FormCardBody } from "./forms";
 
@@ -56,6 +58,10 @@ export type ChiefChat = {
     patch: Partial<BotInput>,
   ): Promise<unknown>;
   archiveBot(actor: ActiveActor, id: string): Promise<unknown>;
+  createBot(
+    actor: ActiveActor,
+    input: BotInput,
+  ): Promise<{ id: string; name: string; slug: string } | undefined>;
   moveBot(actor: ActiveActor, botId: string, folderId: string | null): Promise<unknown>;
   listConversations(
     actor: ActiveActor,
@@ -133,7 +139,11 @@ export type ChiefDeps = {
   connections?: Pick<ConnectionsService, "configured" | "list" | "revoke"> | undefined;
   agenda?: Pick<AgendaService, "setSyncSettings"> | undefined;
   agendaScheduler?: Pick<AgendaScheduler, "syncUser"> | undefined;
-  memory?: Pick<Memory, "suggestions" | "decide" | "restore" | "setStatus"> | undefined;
+  memory?:
+    | Pick<Memory, "suggestions" | "decide" | "restore" | "setStatus" | "remember">
+    | undefined;
+  /** The Grok Bot marketplace reader and the analyzer that writes an imported bot's missing playbooks. */
+  botImport?: { source: GrokSource; analyzer: Analyzer } | undefined;
 };
 
 export type ChiefCtx = {

@@ -43,6 +43,10 @@ import {
   type BotTemplate,
 } from "./bot-templates";
 import { TemplatePreview, type TemplateEngine } from "./template-preview";
+import type { BotsNewSearch } from "./bots-new-search";
+import { grokApi, localTimezone, type BotImportDraft } from "./grok-api";
+import { GrokCatalog, GrokPreviewPanel } from "./grok-market";
+import { GrokReview } from "./grok-review";
 import { extractActions, reviewInstructions, reviewScore } from "./instruction-review";
 import { FRESH_INTERVIEW, type InterviewState } from "./interview-flow";
 import { InstructionsInterview } from "./instructions-interview";
@@ -174,7 +178,17 @@ const EXPERIMENTAL_HARNESSES = [
 ] as const;
 
 /** Full-page, step-by-step "new bot" experience: explains each choice, reviews the instructions, then wires plugins, accounts and extras. */
-export function BotOnboarding() {
+export function BotOnboarding({
+  search = {},
+  setSearch = () => {},
+}: {
+  /** The Grok Bot marketplace view (source, search, category, pick) as the address holds it. */
+  search?: BotsNewSearch;
+  setSearch?: (
+    patch: Partial<Record<keyof BotsNewSearch, string | undefined>>,
+    options?: { replace?: boolean },
+  ) => void;
+} = {}) {
   const navigate = useNavigate();
   // The sidebar's list: a bot added here shows in the sidebar at once.
   const { bots, setBots } = useSidebarData();
@@ -187,6 +201,10 @@ export function BotOnboarding() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  // A marketplace bot adapted into a draft the person is reviewing, and what the page is doing about it.
+  const [grokDraft, setGrokDraft] = useState<BotImportDraft | null>(null);
+  const [grokWork, setGrokWork] = useState<"idle" | "adapting" | "creating">("idle");
+  const reviewing = grokDraft !== null && !bot;
   // The engine the person did not pick yet follows what works here: Claude Code when it is ready, else the offline test engine.
   const engineChosen = useRef(false);
   const harnesses = useQuery(harnessQueries.list());
@@ -277,6 +295,57 @@ export function BotOnboarding() {
       setBusy(false);
     }
   }
+  /** Has the person's Chief adapt a marketplace bot into a draft to review. Nothing is created yet; it can take a minute or two. */
+  async function adaptGrok(id: string) {
+    if (grokWork !== "idle") return;
+    setGrokWork("adapting");
+    setError(undefined);
+    try {
+      setGrokDraft(await grokApi.analyze(id, localTimezone()));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setGrokWork("idle");
+    }
+  }
+  /** Creates what the reviewed draft says, then carries on at the plugins step with the bot that now exists. */
+  async function createFromGrok() {
+    if (!grokDraft || grokWork !== "idle") return;
+    setGrokWork("creating");
+    setError(undefined);
+    try {
+      const result = await grokApi.install(grokDraft);
+      const created = (await chatClient.bots()).find((b) => b.id === result.bot.id);
+      if (!created)
+        throw new Error("The bot was created, but it could not be opened. Find it in the sidebar.");
+      setBot(created);
+      setBots((l) => (l.some((b) => b.id === created.id) ? l : [...l, created]));
+      setDraft({
+        ...BLANK,
+        name: created.name,
+        description: created.description,
+        harness: created.harness,
+        model: created.model ?? "",
+        personality: created.personality,
+        instructions: created.instructions,
+        visibility: created.visibility,
+      });
+      setAvatar(grokDraft.avatar);
+      const running = result.routines.filter((r) => r.state === "active").length;
+      const paused = result.routines.length - running;
+      setGrokDraft(null);
+      setStep(CREATE_AT + 1);
+      setNotice(
+        `${created.name} is created with ${result.skills.length} skill${result.skills.length === 1 ? "" : "s"}, ${result.notes} note${result.notes === 1 ? "" : "s"} and ${result.routines.length} routine${result.routines.length === 1 ? "" : "s"}` +
+          `${result.routines.length ? ` (${running} running${paused ? `, ${paused} paused` : ""})` : ""}.` +
+          `${result.integrations.length ? ` It needs ${result.integrations.map((i) => i.name).join(", ")}: connect them under Plugins.` : ""}`,
+      );
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setGrokWork("idle");
+    }
+  }
   const go = (to: number) => {
     setError(undefined);
     setStep(to);
@@ -293,7 +362,11 @@ export function BotOnboarding() {
         : { to: "/chat/{-$chatId}" },
     );
   const reachable = (i: number) =>
-    bot ? i > CREATE_AT : i <= step || (i <= CREATE_AT && draft.name.trim().length > 0);
+    reviewing
+      ? false
+      : bot
+        ? i > CREATE_AT
+        : i <= step || (i <= CREATE_AT && draft.name.trim().length > 0);
   const progress = Math.round(((step + 1) / STEPS.length) * 100);
 
   return (
@@ -351,10 +424,12 @@ export function BotOnboarding() {
             )}
             <div className="min-w-0">
               <h2 className="text-2xl font-semibold tracking-tight text-balance">
-                {current.question}
+                {reviewing ? "Read it over before it exists" : current.question}
               </h2>
               <p className="mt-1.5 max-w-[72ch] text-pretty text-muted-foreground">
-                {current.lede}
+                {reviewing
+                  ? "Your Chief adapted this bot. Change anything, or leave parts out. Nothing is created until you press Create."
+                  : current.lede}
               </p>
             </div>
           </header>
@@ -364,117 +439,140 @@ export function BotOnboarding() {
                 {notice}
               </Alert>
             )}
-            {error && <Alert theme="danger">{error}</Alert>}
+            {error && !reviewing && <Alert theme="danger">{error}</Alert>}
 
-            {current.id === "start" && (
-              <StartStep
-                origin={origin}
-                bots={bots.filter((b) => b.canEdit)}
-                onChoose={choose}
-                engine={engine}
-                busy={busy}
-                onCreate={(t) => void create(t)}
-                onCustomize={() => go(step + 1)}
-              />
-            )}
-            {current.id === "identity" && (
-              <IdentityStep draft={draft} set={set} avatar={avatar} setAvatar={setAvatar} />
-            )}
-            {current.id === "engine" && <EngineStep draft={draft} set={set} />}
-            {current.id === "instructions" && (
-              <InstructionsStep
-                draft={draft}
-                set={set}
-                avatar={avatar}
-                interview={interview}
-                setInterview={setInterview}
-                checks={checks}
-              />
-            )}
-            {current.id === "review" && (
-              <ReviewStep draft={draft} checks={checks} onEdit={go} template={template} />
-            )}
-            {current.id === "plugins" && bot && (
-              <PluginsStep
-                bot={bot}
+            {reviewing && grokDraft ? (
+              <GrokReview
+                draft={grokDraft}
+                onChange={setGrokDraft}
                 bots={bots}
-                onBotChange={replaceBot}
-                notify={setNotice}
-                template={template}
+                busy={grokWork === "creating"}
+                error={error}
+                onBack={() => {
+                  setError(undefined);
+                  setGrokDraft(null);
+                }}
+                onCreate={() => void createFromGrok()}
               />
-            )}
-            {current.id === "accounts" && bot && (
-              <Guided
-                good={[
-                  "Each teammate connects their own key, so usage is billed to whoever chats.",
-                  "Name keys after what they're for, e.g. “llm” or “search”.",
-                ]}
-                bad={[
-                  "Sharing one personal key across the team.",
-                  "Requiring accounts the bot never uses: people get blocked for nothing.",
-                ]}
-              >
-                <BotAccounts bot={bot} onBotChange={replaceBot} />
-              </Guided>
-            )}
-            {current.id === "extras" && bot && (
-              <ExtrasStep bot={bot} bots={bots} onBotChange={replaceBot} />
-            )}
-            {current.id === "done" && bot && (
-              <DoneStep bot={bot} draft={draft} checks={checks} template={template} />
+            ) : (
+              <>
+                {current.id === "start" && (
+                  <StartStep
+                    origin={origin}
+                    bots={bots.filter((b) => b.canEdit)}
+                    onChoose={choose}
+                    engine={engine}
+                    busy={busy}
+                    onCreate={(t) => void create(t)}
+                    onCustomize={() => go(step + 1)}
+                    search={search}
+                    setSearch={setSearch}
+                    adapting={grokWork === "adapting"}
+                    onAdapt={(id) => void adaptGrok(id)}
+                  />
+                )}
+                {current.id === "identity" && (
+                  <IdentityStep draft={draft} set={set} avatar={avatar} setAvatar={setAvatar} />
+                )}
+                {current.id === "engine" && <EngineStep draft={draft} set={set} />}
+                {current.id === "instructions" && (
+                  <InstructionsStep
+                    draft={draft}
+                    set={set}
+                    avatar={avatar}
+                    interview={interview}
+                    setInterview={setInterview}
+                    checks={checks}
+                  />
+                )}
+                {current.id === "review" && (
+                  <ReviewStep draft={draft} checks={checks} onEdit={go} template={template} />
+                )}
+                {current.id === "plugins" && bot && (
+                  <PluginsStep
+                    bot={bot}
+                    bots={bots}
+                    onBotChange={replaceBot}
+                    notify={setNotice}
+                    template={template}
+                  />
+                )}
+                {current.id === "accounts" && bot && (
+                  <Guided
+                    good={[
+                      "Each teammate connects their own key, so usage is billed to whoever chats.",
+                      "Name keys after what they're for, e.g. “llm” or “search”.",
+                    ]}
+                    bad={[
+                      "Sharing one personal key across the team.",
+                      "Requiring accounts the bot never uses: people get blocked for nothing.",
+                    ]}
+                  >
+                    <BotAccounts bot={bot} onBotChange={replaceBot} />
+                  </Guided>
+                )}
+                {current.id === "extras" && bot && (
+                  <ExtrasStep bot={bot} bots={bots} onBotChange={replaceBot} />
+                )}
+                {current.id === "done" && bot && (
+                  <DoneStep bot={bot} draft={draft} checks={checks} template={template} />
+                )}
+              </>
             )}
           </div>
 
-          <footer className="sticky bottom-0 -mx-4 flex items-center justify-between gap-2 border-t bg-background px-4 py-3 md:mx-0 md:px-0">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={step === 0 || step === CREATE_AT + 1}
-              onClick={() => go(step - 1)}
-            >
-              <ArrowLeftIcon />
-              Back
-            </Button>
-            <div className="flex items-center gap-2">
-              {current.id === "identity" && !canNext && (
-                <span className="hidden text-xs text-muted-foreground sm:inline">
-                  Give it a name to continue
-                </span>
-              )}
-              {step > CREATE_AT && step < STEPS.length - 1 && (
-                <Button type="button" variant="ghost" onClick={() => go(step + 1)}>
-                  Skip
-                </Button>
-              )}
-              {step < CREATE_AT && (
-                <Button type="button" disabled={!canNext} onClick={() => go(step + 1)}>
-                  {current.id === "start" && template ? "Customize" : "Continue"}
-                  <ArrowRightIcon />
-                </Button>
-              )}
-              {step === CREATE_AT && (
-                <Button
-                  type="button"
-                  disabled={busy || !draft.name.trim()}
-                  onClick={() => void create(template)}
-                >
-                  {busy ? "Creating…" : "Create bot"}
-                </Button>
-              )}
-              {step > CREATE_AT && step < STEPS.length - 1 && (
-                <Button type="button" onClick={() => go(step + 1)}>
-                  Continue
-                  <ArrowRightIcon />
-                </Button>
-              )}
-              {step === STEPS.length - 1 && (
-                <Button type="button" onClick={finish}>
-                  Start chatting
-                  <ArrowRightIcon />
-                </Button>
-              )}
-            </div>
-          </footer>
+          {!reviewing && (
+            <footer className="sticky bottom-0 -mx-4 flex items-center justify-between gap-2 border-t bg-background px-4 py-3 md:mx-0 md:px-0">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={step === 0 || step === CREATE_AT + 1}
+                onClick={() => go(step - 1)}
+              >
+                <ArrowLeftIcon />
+                Back
+              </Button>
+              <div className="flex items-center gap-2">
+                {current.id === "identity" && !canNext && (
+                  <span className="hidden text-xs text-muted-foreground sm:inline">
+                    Give it a name to continue
+                  </span>
+                )}
+                {step > CREATE_AT && step < STEPS.length - 1 && (
+                  <Button type="button" variant="ghost" onClick={() => go(step + 1)}>
+                    Skip
+                  </Button>
+                )}
+                {step < CREATE_AT && !(current.id === "start" && search.source === "grok") && (
+                  <Button type="button" disabled={!canNext} onClick={() => go(step + 1)}>
+                    {current.id === "start" && template ? "Customize" : "Continue"}
+                    <ArrowRightIcon />
+                  </Button>
+                )}
+                {step === CREATE_AT && (
+                  <Button
+                    type="button"
+                    disabled={busy || !draft.name.trim()}
+                    onClick={() => void create(template)}
+                  >
+                    {busy ? "Creating…" : "Create bot"}
+                  </Button>
+                )}
+                {step > CREATE_AT && step < STEPS.length - 1 && (
+                  <Button type="button" onClick={() => go(step + 1)}>
+                    Continue
+                    <ArrowRightIcon />
+                  </Button>
+                )}
+                {step === STEPS.length - 1 && (
+                  <Button type="button" onClick={finish}>
+                    Start chatting
+                    <ArrowRightIcon />
+                  </Button>
+                )}
+              </div>
+            </footer>
+          )}
         </main>
       </div>
     </div>
@@ -586,6 +684,37 @@ function Group({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
+const SOURCES = [
+  { id: "templates", label: "Templates and your bots" },
+  { id: "grok", label: "Grok Bot marketplace" },
+] as const;
+
+/** Where the bot starts from. The choice is in the address, so a link opens the marketplace view directly. */
+function SourceTabs({
+  value,
+  onChange,
+}: {
+  value: "templates" | "grok";
+  onChange: (s: "templates" | "grok") => void;
+}) {
+  return (
+    <div role="tablist" aria-label="Where to start from" className="flex gap-1 border-b">
+      {SOURCES.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          role="tab"
+          aria-selected={value === s.id}
+          onClick={() => onChange(s.id)}
+          className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${value === s.id ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+        >
+          {s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function StartStep({
   origin,
   bots,
@@ -594,6 +723,10 @@ function StartStep({
   busy,
   onCreate,
   onCustomize,
+  search,
+  setSearch,
+  adapting,
+  onAdapt,
 }: {
   origin: string;
   bots: Bot[];
@@ -602,7 +735,16 @@ function StartStep({
   busy: boolean;
   onCreate: (t: BotTemplate) => void;
   onCustomize: () => void;
+  search: BotsNewSearch;
+  setSearch: (
+    patch: Partial<Record<keyof BotsNewSearch, string | undefined>>,
+    options?: { replace?: boolean },
+  ) => void;
+  /** The person's Chief is adapting a marketplace bot. */
+  adapting: boolean;
+  onAdapt: (id: string) => void;
 }) {
+  const grok = search.source === "grok";
   const copying = bots.some((b) => b.id === origin);
   const chosen = templateById(origin);
   const previewRef = useRef<HTMLElement>(null);
@@ -625,16 +767,34 @@ function StartStep({
     : [];
   return (
     <Guided
-      good={[
-        "Pick the template closest to the job and adapt it: it's faster than a blank page.",
-        "Copy a bot that already works when you need a variant of it.",
-      ]}
-      bad={[
-        "One bot for everything. Narrow specialists give sharper answers and are easier to fix.",
-        "Keeping a template's text without adapting it to your context.",
-      ]}
+      good={
+        grok
+          ? [
+              "Open a bot to see its skills, its scheduled runs and what it needs before you decide.",
+              "Read the draft closely: the skill steps are written by your Chief from one-line descriptions.",
+            ]
+          : [
+              "Pick the template closest to the job and adapt it: it's faster than a blank page.",
+              "Copy a bot that already works when you need a variant of it.",
+            ]
+      }
+      bad={
+        grok
+          ? [
+              "Switching on routines you have not read: they start running on their schedule.",
+              "Trusting a bot's text because it is on a public marketplace. Read what it tells the bot to do.",
+            ]
+          : [
+              "One bot for everything. Narrow specialists give sharper answers and are easier to fix.",
+              "Keeping a template's text without adapting it to your context.",
+            ]
+      }
       aside={
-        chosen ? (
+        grok ? (
+          search.grok ? (
+            <GrokPreviewPanel id={search.grok} busy={adapting} onAdapt={onAdapt} />
+          ) : undefined
+        ) : chosen ? (
           <aside
             ref={previewRef}
             aria-label="Chosen template"
@@ -652,78 +812,93 @@ function StartStep({
         ) : undefined
       }
     >
-      <div role="radiogroup" aria-label="Starting point" className="space-y-8">
-        <Group
-          label="Start from a template"
-          hint="Each one comes set up. Create it as it is, or change anything first."
-        >
-          <div className="space-y-6">
-            {TEMPLATE_CATEGORIES.map((c) => (
-              <section key={c.id} aria-label={c.label} className="space-y-2">
-                <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {c.label}
-                </h4>
-                <div className="grid gap-3 xl:grid-cols-2">
-                  {BOT_TEMPLATES.filter((t) => t.category === c.id).map((t) => (
-                    <Choice
-                      key={t.id}
-                      name="origin"
-                      value={t.id}
-                      checked={origin === t.id}
-                      onSelect={onChoose}
-                      title={t.title}
-                      art={
-                        <BotAvatar
-                          bot={{ id: t.id, avatar: t.avatar }}
-                          size={44}
-                          square
-                          className="shrink-0"
-                        />
-                      }
-                    >
-                      {t.description}
-                    </Choice>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        </Group>
-        <Group label="Or start from scratch">
-          <Choice
-            name="origin"
-            value="blank"
-            checked={origin === "blank"}
-            onSelect={onChoose}
-            art={<ArtTile icon={FilePlusIcon} tint="bg-muted text-muted-foreground" />}
-            title="Blank bot"
-          >
-            Write it yourself. The instructions step will guide you with a few questions.
-          </Choice>
-        </Group>
-        {bots.length > 0 && (
+      <SourceTabs
+        value={grok ? "grok" : "templates"}
+        onChange={(s) => setSearch({ source: s === "grok" ? "grok" : undefined })}
+      />
+      {grok ? (
+        <GrokCatalog
+          q={search.q ?? ""}
+          category={search.category ?? ""}
+          picked={search.grok}
+          onQuery={(q) => setSearch({ q: q || undefined }, { replace: true })}
+          onCategory={(category) => setSearch({ category: category || undefined })}
+          onPick={(id) => setSearch({ grok: id })}
+        />
+      ) : (
+        <div role="radiogroup" aria-label="Starting point" className="space-y-8">
           <Group
-            label="Or copy one of your bots"
-            hint="Copies its personality, instructions and engine."
+            label="Start from a template"
+            hint="Each one comes set up. Create it as it is, or change anything first."
           >
-            <select
-              aria-label="Bot to copy"
-              className={`${field} max-w-md ${copying ? "border-primary" : ""}`}
-              value={copying ? origin : ""}
-              onChange={(e) => e.target.value && onChoose(e.target.value)}
-            >
-              <option value="" disabled>
-                Choose a bot…
-              </option>
-              {bots.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
+            <div className="space-y-6">
+              {TEMPLATE_CATEGORIES.map((c) => (
+                <section key={c.id} aria-label={c.label} className="space-y-2">
+                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {c.label}
+                  </h4>
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    {BOT_TEMPLATES.filter((t) => t.category === c.id).map((t) => (
+                      <Choice
+                        key={t.id}
+                        name="origin"
+                        value={t.id}
+                        checked={origin === t.id}
+                        onSelect={onChoose}
+                        title={t.title}
+                        art={
+                          <BotAvatar
+                            bot={{ id: t.id, avatar: t.avatar }}
+                            size={44}
+                            square
+                            className="shrink-0"
+                          />
+                        }
+                      >
+                        {t.description}
+                      </Choice>
+                    ))}
+                  </div>
+                </section>
               ))}
-            </select>
+            </div>
           </Group>
-        )}
-      </div>
+          <Group label="Or start from scratch">
+            <Choice
+              name="origin"
+              value="blank"
+              checked={origin === "blank"}
+              onSelect={onChoose}
+              art={<ArtTile icon={FilePlusIcon} tint="bg-muted text-muted-foreground" />}
+              title="Blank bot"
+            >
+              Write it yourself. The instructions step will guide you with a few questions.
+            </Choice>
+          </Group>
+          {bots.length > 0 && (
+            <Group
+              label="Or copy one of your bots"
+              hint="Copies its personality, instructions and engine."
+            >
+              <select
+                aria-label="Bot to copy"
+                className={`${field} max-w-md ${copying ? "border-primary" : ""}`}
+                value={copying ? origin : ""}
+                onChange={(e) => e.target.value && onChoose(e.target.value)}
+              >
+                <option value="" disabled>
+                  Choose a bot…
+                </option>
+                {bots.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </Group>
+          )}
+        </div>
+      )}
     </Guided>
   );
 }

@@ -5,6 +5,7 @@ import { runAdmin } from "./admin";
 import { applyBrowserProfile, applyDecision, runBrowserProfile, runDecision } from "./decision";
 import { applyHook, runHook } from "./hook";
 import { applyInboundRoute, runInboundRoute } from "./inbound-route";
+import { applyImportBot, runImportBot } from "./import-bot";
 import { applyConnection, runConnection, applyAgendaSync, runAgendaSync } from "./accounts";
 import {
   applyAttention,
@@ -113,6 +114,8 @@ export function createChief(deps: ChiefDeps) {
           return runBrowserProfile(ctx, args as never);
         case "decision":
           return runDecision(ctx, args as never);
+        case "import_bot":
+          return runImportBot(ctx, args as never);
         case "task":
           return runTaskRemove(ctx, (args as { id: string }).id);
       }
@@ -173,6 +176,8 @@ export function createChief(deps: ChiefDeps) {
           return applyBrowserProfile(ctx, patch);
         case "decision":
           return applyDecision(ctx, patch);
+        case "import_bot":
+          return applyImportBot(ctx, patch);
         case "task":
           return applyTask(ctx, patch);
         default:

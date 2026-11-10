@@ -36,6 +36,9 @@ import { audit } from "./modules/features/audit";
 import { createOutputStyles } from "./modules/output-styles/service";
 import { createMarket } from "./modules/skills/market";
 import { createSkills } from "./modules/skills/service";
+import { createAnalyzerFor } from "./modules/bots/import/analyze";
+import { createGrokSource } from "./modules/bots/import/grok-source";
+import { createBotImport } from "./modules/bots/import/service";
 import { createPlayground } from "./modules/playground/service";
 import { hostCodeFromEnv } from "./modules/playground/host-gate";
 import { createAppAuthor } from "./modules/apps/author";
@@ -291,6 +294,9 @@ const preferences = createPreferenceStore(db);
 // The incoming-message service needs the chat service, which needs it back for its chief tools: a late-bound reference.
 const inboundRef: { current?: ReturnType<typeof createInbound> } = {};
 const skillsMarket = createMarket();
+// The Grok Bot marketplace reader and the analyzer that writes an import's missing playbooks: shared by the import routes and Chief.
+const grokSource = createGrokSource();
+const botImportAnalyzer = createAnalyzerFor(db);
 export const chatServices = {
   access: identity.access,
   chat: createChatService(
@@ -316,6 +322,7 @@ export const chatServices = {
       appAuthor,
       memory,
       skills: { skills: skillsLibrary, market: skillsMarket },
+      botImport: { source: grokSource, analyzer: botImportAnalyzer },
       teams: teamStore,
       outputStyles,
       features,
@@ -629,6 +636,19 @@ export const skillServices = {
   skills: skillsLibrary,
   market: skillsMarket,
   claude: botClaude,
+};
+export const botImportServices = {
+  access: identity.access,
+  db,
+  botImport: createBotImport({
+    db,
+    chat: chatServices.chat,
+    skills: skillsLibrary,
+    memory,
+    routines: features.routines,
+    source: grokSource,
+    analyzer: botImportAnalyzer,
+  }),
 };
 export const playgroundServices = {
   access: identity.access,

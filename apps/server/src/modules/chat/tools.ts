@@ -655,7 +655,7 @@ export function parseTools(reply: string): {
   let plan: PlanStep[] | undefined;
   const text = reply
     .replace(
-      /```zetta:(memory|wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|machine|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal_stop|next_wave|goal|team_goals|assign|artifact|playground|app|setup|inbound|skills|bot|folder|routine|team|output_style|artifacts|plugins|mcp_server|skill_library|hook|claude|room|preferences|conversation|attention|workflow|computer|snapshot|source|company_docs|connection|agenda_sync|memory_admin|wiki_admin|browser_profile|decision|inbound_route|admin)\s*\n([\s\S]*?)```/g,
+      /```zetta:(memory|wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|machine|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal_stop|next_wave|goal|team_goals|assign|artifact|playground|app|setup|inbound|skills|bot|folder|routine|team|output_style|artifacts|plugins|mcp_server|skill_library|hook|claude|room|preferences|conversation|attention|workflow|computer|snapshot|source|company_docs|connection|agenda_sync|memory_admin|wiki_admin|browser_profile|decision|inbound_route|admin|import_bot)\s*\n([\s\S]*?)```/g,
       (_, fence: string, body: string) => {
         const kind = (FENCE_ALIAS[fence] ?? fence) as keyof typeof toolSchemas;
         let json: unknown;

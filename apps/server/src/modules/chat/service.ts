@@ -29,7 +29,16 @@ import { createBotClaude, skillsOf } from "../bot-claude/store";
 import { installSelection } from "../skills/install";
 import { parseSource, type Market } from "../skills/market";
 import type { Skills } from "../skills/service";
-import { bot, botRevision, conversation, message, folder } from "@zetta/db/schema/chat";
+import type { Analyzer } from "../bots/import/analyze";
+import type { GrokSource } from "../bots/import/grok-source";
+import {
+  bot,
+  botRevision,
+  conversation,
+  message,
+  folder,
+  type BotOrigin,
+} from "@zetta/db/schema/chat";
 import {
   attachment,
   botConnection,
@@ -273,6 +282,8 @@ export type BotInput = {
   /** A built-in key, or `custom` together with `outputStyleId`. A patch sends both or neither. */
   outputStyle?: (typeof bot.$inferInsert)["outputStyle"];
   outputStyleId?: string | null;
+  /** Where the bot came from, when it was imported (set by the importer, never by a client). */
+  origin?: BotOrigin | null;
 };
 
 export class AttachmentError extends Error {
@@ -507,6 +518,10 @@ export type ChatDeps = {
   /** The skill library and the GitHub marketplace (modules/skills): bots ask to install skills with zetta:skills. */ skills?: {
     skills: Skills;
     market: Market;
+  };
+  /** The Grok Bot marketplace reader and the analyzer behind the chief's zetta:import_bot (modules/bots/import). */ botImport?: {
+    source: GrokSource;
+    analyzer: Analyzer;
   };
   /** Routines (modules/features): a deleted bot's routines are archived and disarmed. */ routines?: Routines;
   /** Output styles (modules/output-styles): the chief manages them with zetta:output_style. */ outputStyles?: OutputStyles;
@@ -5389,6 +5404,7 @@ export function createChatService(
                 outputStyle: input.outputStyle ?? "default",
                 outputStyleId: input.outputStyleId ?? null,
                 avatar: input.avatar ?? null,
+                origin: input.origin ?? null,
                 computerMode: input.computerMode ?? "off",
                 codeAccess: input.codeAccess ?? true,
                 commitIdentity: input.commitIdentity ?? "git-config",
@@ -7695,6 +7711,7 @@ export function createChatService(
     vms,
     connections,
     agenda,
+    botImport: deps.botImport,
     memory: deps.memory,
     computer,
     routing,

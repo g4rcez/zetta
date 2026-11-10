@@ -470,6 +470,16 @@ export const chiefSchemas = {
       accept: z.boolean(),
     }),
   ]),
+  /** A bot from the Grok Bot marketplace. `source` is the bot's x.ai page address or its id. */
+  import_bot: z.discriminatedUnion("action", [
+    z.strictObject({ action: z.literal("preview"), source: bounded(300) }),
+    z.strictObject({
+      action: z.literal("install"),
+      source: bounded(300),
+      /** The IANA timezone the bot's routines run in: the person's own. */
+      timezone: bounded(64),
+    }),
+  ]),
 } as const;
 
 export type ChiefKind = keyof typeof chiefSchemas;

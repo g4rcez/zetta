@@ -22,6 +22,7 @@ import { createMemoryRoutes, type MemoryServices } from "./modules/memory/routes
 import { createOutputStyleRoutes, type OutputStyleServices } from "./modules/output-styles/routes";
 import { createSkillRoutes, type SkillServices } from "./modules/skills/routes";
 import { createPlaygroundRoutes, type PlaygroundServices } from "./modules/playground/routes";
+import { createBotImportRoutes, type BotImportServices } from "./modules/bot-import/routes";
 import { createAppsRoutes, type AppsServices } from "./modules/apps/routes";
 import { createSearchRoutes, type SearchServices } from "./modules/search/routes";
 import { createPreferenceRoutes, type PreferenceServices } from "./modules/preferences/routes";
@@ -60,6 +61,7 @@ export type CreateAppOptions = {
   outputStyles?: OutputStyleServices;
   skills?: SkillServices;
   playground?: PlaygroundServices;
+  botImport?: BotImportServices;
   apps?: AppsServices;
   artifacts?: ArtifactServices;
   discussions?: DiscussionServices;
@@ -100,6 +102,7 @@ export function createApp({
   playground,
   apps,
   artifacts,
+  botImport,
   discussions,
   teams,
   inbound,
@@ -216,6 +219,9 @@ export function createApp({
         playground
           ? createPlaygroundRoutes(playground, [webOrigin, ...desktopOrigins])
           : new Elysia(),
+      )
+      .use(
+        botImport ? createBotImportRoutes(botImport, [webOrigin, ...desktopOrigins]) : new Elysia(),
       )
       .use(apps ? createAppsRoutes(apps, [webOrigin, ...desktopOrigins]) : new Elysia())
       .use(

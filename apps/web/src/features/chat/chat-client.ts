@@ -32,6 +32,18 @@ export type Bot = {
   commitIdentity?: CommitIdentity;
   commitEmail?: string | null;
   requiredConnections?: RequiredConnection[];
+  /** Set when the bot was imported from outside. Only the owner's own list carries it. */
+  origin?: BotOrigin | null;
+};
+/** Where an imported bot came from, and the outside apps it was built to use (matched to a Zetta plugin when one exists). */
+export type BotOrigin = {
+  source: "grok_marketplace";
+  url: string;
+  slug: string;
+  creator: string;
+  handle: string | null;
+  importedAt: string;
+  integrations: { name: string; description: string; pluginId: string | null }[];
 };
 /** A built-in key, or `custom` together with `outputStyleId`. A patch sends both or neither. */
 export type OutputStyleKey =

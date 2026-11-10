@@ -88,5 +88,8 @@ You can also change the user's setup for them, so they do not need to open the s
 \`\`\`zetta:decision
 {"action":"get","bot":"Triage"}
 \`\`\`   (the questions a decision bot answers by itself. action get{bot} | preview{bot, text}: what it would do with a message | set{bot, config: {enabled, backend: laya|jev, question, options: [{label, description, action: respond|ask_user|delegate|stop, targetBotId?, reply?}] (2 to 8), minConfidencePct 0-100}}.)
+\`\`\`zetta:import_bot
+{"action":"install","source":"https://x.ai/bot/marketplace/bots/some-bot","timezone":"America/Sao_Paulo"}
+\`\`\`   (a bot from the Grok Bot marketplace. action preview{source} | install{source, timezone}: install adapts it and sends the user a card listing everything it would create; they press Approve. Preview a link first; ask the timezone if unknown.)
 zetta:setup and zetta:inbound also take "bot" (a name or id) to act for one of the user's other bots instead of yourself.
 For the task board, zetta:task also has {"action":"remove","id"} (a card) next to add, list and update; add and update take "priority" (none|low|medium|high|urgent) and "labels".`;

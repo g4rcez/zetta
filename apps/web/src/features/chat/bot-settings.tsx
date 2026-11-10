@@ -14,6 +14,7 @@ import {
 
 import { BotAvatarPicker } from "./bot-avatar-picker";
 import { BotAccounts } from "./bot-accounts";
+import { BotOriginSection } from "../bots/bot-origin";
 import { BotDecision } from "./bot-decision";
 import { BotHooks } from "./bot-hooks";
 import { harnessOptions, isAllowedModel, modelOptions } from "./bot-presets";
@@ -350,7 +351,7 @@ type Entry = {
 
 /** Order and grouping of the page. A registered section missing here lands in "More", so a new one still shows up. */
 const GROUPS: { label: string; ids: string[] }[] = [
-  { label: "Profile", ids: ["general", "picture", "personality", "output-style"] },
+  { label: "Profile", ids: ["general", "picture", "personality", "output-style", "origin"] },
   { label: "Behavior", ids: ["claude", "hooks", "decision"] },
   { label: "Capabilities", ids: ["code", "computer", "plugins", "database"] },
   { label: "Connections", ids: ["accounts", "inbound", "teams", "peers"] },
@@ -416,6 +417,16 @@ function SettingsBody({
       description: "How the bot writes: its tone of voice and the shape of its answers.",
       node: <OutputStyleForm key={`${bot.id}-${bot.version}`} {...common} />,
     },
+    ...(bot.origin
+      ? [
+          {
+            id: "origin",
+            title: "Where it came from",
+            description: "Who made this bot, and the apps it was built to use.",
+            node: <BotOriginSection origin={bot.origin} />,
+          },
+        ]
+      : []),
     {
       id: "accounts",
       title: "Accounts",

@@ -98,7 +98,7 @@ Every plugin is private to the user who installed it. A plugin that declares **t
 ## Accepted / noted
 
 - `docker/browser/Dockerfile` runs Chromium with `--no-sandbox`; the container drops capabilities and publishes only on `127.0.0.1`. Matters only on multi-user hosts.
-- Desktop (Electrobun): no IPC, no `shell.openExternal`, no updater: nothing to attack today. Re-audit if any is added.
+- Desktop (Electrobun, [desktop-app](../decisions/desktop-app.md)): the only page with an IPC channel is the bundled launcher (`views://launcher`: list, add, open and remove servers; no file, shell or network access beyond asking an address for `/api/meta`). Server windows run sandboxed with no IPC and no bridge, open other sites in the system browser (http, https and mailto only) and block every other scheme. There is no updater. Re-audit when the native bridge (phase 2), deep links (phase 3) or the companion (phase 5) land: each adds a way for a remote page to reach the app.
 
 ## Checked and found sound
 

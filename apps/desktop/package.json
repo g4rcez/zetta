@@ -3,17 +3,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "vp run --filter web build && electrobun dev",
-    "dev:hmr": "vp run --filter web build && concurrently \"bun run hmr\" \"electrobun dev --watch\"",
-    "hmr": "vp run -r dev",
-    "build": "vp run --filter web build && electrobun build",
-    "build:stable": "vp run --filter web build && electrobun build --env=stable",
-    "build:canary": "vp run --filter web build && electrobun build --env=canary",
+    "start": "electrobun dev",
+    "dev:hmr": "bun scripts/dev.ts",
+    "build": "electrobun build",
+    "build:stable": "electrobun build --env=stable",
+    "build:canary": "electrobun build --env=canary",
+    "test": "bun test src",
     "check-types": "electrobun prepare && tsc --noEmit"
+  },
+  "dependencies": {
+    "@zetta/core": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "concurrently": "^10.0.6",
     "electrobun": "^2.0.2",
     "typescript": "catalog:"
   }

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zetta</title>
+    <link rel="stylesheet" href="views://launcher/index.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Zetta</h1>
+        <p>Pick a server, or add the address of one.</p>
+      </header>
+      <ul id="servers" aria-label="Servers"></ul>
+      <p id="empty" hidden>No server yet. Add the address of your Zetta server below.</p>
+      <form id="add" autocomplete="off">
+        <label for="address">Server address</label>
+        <div class="row">
+          <input
+            id="address"
+            name="address"
+            type="text"
+            inputmode="url"
+            placeholder="zetta.example.com or localhost:3000"
+            spellcheck="false"
+          />
+          <button type="submit">Add server</button>
+        </div>
+        <p id="status" role="status"></p>
+      </form>
+    </main>
+    <script src="views://launcher/index.js"></script>
+  </body>
+</html>

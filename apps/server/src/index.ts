@@ -94,6 +94,7 @@ createApp({
   apps: appsServices,
   zettaMcp: zettaMcpServices,
   webOrigin: ENV.CORS_ORIGIN,
+  apiOrigin: ENV.BETTER_AUTH_URL,
   desktopOrigins: trustedExtraOrigins,
   role: ROLE,
   ready: databaseReady,

@@ -6,6 +6,7 @@ import { varlockVitePlugin } from "@varlock/vite-integration";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite-plus";
+import { zettaWellKnown } from "./vite/well-known";
 
 export default defineConfig(({ mode }) => {
   // The browser only talks to this dev server (https://localhost:3000). It forwards /api to the API on localhost:6000, so there is no
@@ -14,7 +15,8 @@ export default defineConfig(({ mode }) => {
     ZETTA_TLS_CERT: cert,
     ZETTA_TLS_KEY: key,
     ZETTA_HOST: host,
-  } = loadEnv(mode, process.cwd(), "ZETTA_");
+    VITE_SERVER_URL: serverUrl,
+  } = loadEnv(mode, process.cwd(), ["ZETTA_", "VITE_SERVER_URL"]);
   if (!cert !== !key)
     throw new Error("Set both ZETTA_TLS_CERT and ZETTA_TLS_KEY in apps/web/.env, or neither.");
   return {
@@ -43,6 +45,7 @@ export default defineConfig(({ mode }) => {
         autoCodeSplitting: true,
       }),
       react(),
+      zettaWellKnown(serverUrl),
       ...(cert && key ? [] : [basicSsl()]),
     ],
   };

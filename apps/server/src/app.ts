@@ -6,6 +6,7 @@ import { evlog, type EvlogElysiaOptions } from "evlog/elysia";
 import { stampClientIp } from "./client-ip";
 import { responseEncoding } from "./response-encoding";
 import { healthRoutes } from "./health";
+import { metaRoutes } from "./modules/meta/routes";
 import type { Role } from "./role";
 import { workerOnlyGuard } from "./worker-only";
 import { createChatRoutes, type ChatServices } from "./modules/chat/routes";
@@ -70,6 +71,8 @@ export type CreateAppOptions = {
   botClaude?: BotClaudeServices;
   zettaMcp?: ZettaMcpRouteServices;
   webOrigin: string;
+  /** Where this server's API answers, for `GET /api/meta`. Defaults to `webOrigin`. */
+  apiOrigin?: string;
   desktopOrigins: readonly string[];
   /** Optional; without it evlog writes plain console logs. */
   drain?: EvlogElysiaOptions["drain"];
@@ -109,6 +112,7 @@ export function createApp({
   botClaude,
   zettaMcp,
   webOrigin,
+  apiOrigin = webOrigin,
   desktopOrigins,
   drain,
   role = "all",
@@ -159,6 +163,7 @@ export function createApp({
       // Typed as a plain Elysia: one more fully typed `.use` makes this chain too complex for the compiler.
       .use(role === "api" ? (workerOnlyGuard() as unknown as Elysia) : new Elysia())
       .use(healthRoutes(ready) as unknown as Elysia)
+      .use(metaRoutes(webOrigin, apiOrigin) as unknown as Elysia)
       .all("/api/auth/*", async (context) => {
         const { request, status, server } = context;
         if (["POST", "GET"].includes(request.method)) {

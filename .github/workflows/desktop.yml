@@ -1,0 +1,41 @@
+name: desktop
+# Unsigned builds of the desktop app for each platform, uploaded as artifacts. Code signing, notarization and auto-update are not set up yet
+# (see docs/decisions/desktop-app.md), so these builds open with the operating system's "unidentified developer" warning.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["desktop-v*"]
+  pull_request:
+    paths:
+      - apps/desktop/**
+      - packages/core/**
+      - .github/workflows/desktop.yml
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: macos-arm64 }
+          - { os: macos-15-intel, target: macos-x64 }
+          - { os: windows-latest, target: windows-x64 }
+          - { os: ubuntu-latest, target: linux-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Tests
+        working-directory: apps/desktop
+        run: bun test src
+      - name: Build
+        working-directory: apps/desktop
+        run: bun run build:canary
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zetta-desktop-${{ matrix.target }}
+          path: apps/desktop/artifacts/
+          if-no-files-found: error
+          retention-days: 14

@@ -9,5 +9,5 @@
     "noEmit": true,
     "types": ["bun"]
   },
-  "include": ["src/**/*.ts", "electrobun.config.ts"]
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "electrobun.config.ts"]
 }

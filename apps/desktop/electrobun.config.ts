@@ -1,25 +1,32 @@
 import type { ElectrobunConfig } from "electrobun";
 
-const webBuildDir = "../web/dist";
-
 export default {
   app: {
     name: "zetta",
-    identifier: "dev.bettertstack.zetta.desktop",
+    identifier: "app.zettabot.desktop",
     version: "0.0.1",
   },
   runtime: {
-    exitOnLastWindowClosed: true,
+    // Closing every window hides the app in the tray (see src/bun/windows.ts); only Quit ends it.
+    exitOnLastWindowClosed: false,
   },
   build: {
-    mainProcess: "cottontail",
-    cottontail: {
+    // The Bun main process, not the experimental Cottontail one: the app supervises a local server and database, runs the computer
+    // companion and keeps a WebSocket to the server, all of which use Bun's own process, socket and WebSocket APIs.
+    mainProcess: "bun",
+    bun: {
       entrypoint: "src/bun/index.ts",
     },
-    copy: {
-      [webBuildDir]: "views/mainview",
+    // The launcher is the only bundled page. Every server window loads the server's own web UI, so there is no copy of apps/web in the app
+    // (the web app talks to the server it was served from, and a bundled copy could not follow a server's version).
+    views: {
+      launcher: { entrypoint: "src/launcher/index.ts" },
     },
-    watchIgnore: [`${webBuildDir}/**`],
+    copy: {
+      "src/launcher/index.html": "views/launcher/index.html",
+      "src/launcher/index.css": "views/launcher/index.css",
+      "../web/public/icons/icon-192.png": "views/assets/tray.png",
+    },
     mac: {
       bundleCEF: true,
       defaultRenderer: "cef",

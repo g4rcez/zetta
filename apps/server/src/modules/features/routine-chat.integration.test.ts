@@ -146,6 +146,51 @@ suite("a routine has one chat for all its runs", () => {
     expect(histories).toEqual(["", "Summarize the news\nreply-1", "Summarize the news\nreply-2"]);
   });
 
+  test("each run lists the steps of the reply it produced", async () => {
+    const { rid, run, chats } = await setup();
+    await run("steps-run-00001");
+    const [conversationId] = await chats();
+    for (let i = 0; i < 50; i++) {
+      const done = await sql(
+        "select 1 from routine_run where routine_id=$1 and finished_at is not null",
+        [rid],
+      );
+      if (done.rows.length) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    await sql(
+      `update message set meta = coalesce(meta, '{}'::jsonb) || '{"timeline":[{"label":"Read the news"},{"label":"Wrote the digest"},{"nolabel":1}]}'::jsonb
+       where conversation_id=$1 and role='assistant'`,
+      [conversationId],
+    );
+    const runs = (await call(A, "GET", `/api/routines/${rid}/runs`)).json.runs;
+    expect(runs[0].steps).toEqual(["Read the news", "Wrote the digest"]);
+  });
+
+  test("a standing goal: the next run starts from what the last run reported", async () => {
+    const { rid, run, chats } = await setup();
+    await call(A, "PATCH", `/api/routines/${rid}`, { expectedVersion: 1, mode: "goal" });
+    expect((await sql("select mode from routine where id=$1", [rid])).rows[0].mode).toBe("goal");
+    await run("goal-run-000001");
+    await run("goal-run-000002");
+    const [conversationId] = await chats();
+    const asked = (
+      await sql(
+        "select content from message where conversation_id=$1 and role='user' order by created_at",
+        [conversationId],
+      )
+    ).rows.map((r) => r.content as string);
+    expect(asked[0]).toContain("first run toward this goal");
+    const lastReply = (
+      await sql(
+        "select content from message where conversation_id=$1 and role='assistant' order by created_at limit 1",
+        [conversationId],
+      )
+    ).rows[0].content as string;
+    expect(asked[1]).toContain("Where the last run left it");
+    expect(asked[1]).toContain(lastReply);
+  });
+
   test("the routine list gives each routine its chat, null before the first run", async () => {
     const { rid, run, chats } = await setup();
     const listed = async () =>

@@ -11,6 +11,7 @@ import { chatQueries } from "../chat/chat-queries";
 import { ConfirmButton, Empty, Loading, Panel } from "../shared/ui";
 import { ChoiceBoxes } from "./choice-boxes";
 import { ComposioConnect } from "./composio-connect";
+import { CUSTOM_OAUTH, OAuthConnect } from "./oauth-connect";
 import { GithubAuth, type GithubMethod } from "./github-auth";
 import { GoogleConnect } from "./google-connect";
 import { FieldInput, probeKey, StatusBadge, useProbes, type Probe } from "./plugin-parts";
@@ -395,6 +396,15 @@ function ConnectionSection({
         )}
         {canManage && meta.id === "composio" && (
           <ComposioConnect probe={p} onChanged={onTest} onError={onError} />
+        )}
+        {canManage && meta.auth === "oauth" && !CUSTOM_OAUTH.has(meta.id) && (
+          <OAuthConnect
+            pluginId={meta.id}
+            name={meta.name}
+            probe={p}
+            onChanged={onTest}
+            onError={onError}
+          />
         )}
         {canManage && meta.credentials && (
           <VaultGrants

@@ -39,6 +39,8 @@ export const ROUTINE_RUN_STATUSES = [
 ] as const;
 export const ROUTINE_OVERLAP_POLICIES = ["skip", "queue"] as const;
 export const ROUTINE_CATCH_UPS = ["run_once", "skip"] as const;
+/** "task": each run does the prompt. "goal": a standing goal; each run continues from the last run's progress, and only the person ends it. */
+export const ROUTINE_MODES = ["task", "goal"] as const;
 /** Pre-model hooks: add_context | redact | stop | background (start an owned background chat task). */
 export const hook = zetta.table(
   "hook",
@@ -105,6 +107,7 @@ export const routine = zetta.table(
       .notNull(),
     /** After the server was down past one or more occurrences: run once for all of them, or skip to the next one. */
     catchUp: text("catch_up", { enum: ROUTINE_CATCH_UPS }).default("run_once").notNull(),
+    mode: text("mode", { enum: ROUTINE_MODES }).default("task").notNull(),
     /** "Skip next": every occurrence due at or before this instant is skipped, then it is cleared. */
     skipUntil: timestamp("skip_until", { withTimezone: true }),
     /** Failed occurrences in a row; at `maxFailures` the routine pauses itself with one card. A success sets it back to 0. */

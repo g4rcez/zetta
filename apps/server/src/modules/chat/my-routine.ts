@@ -80,6 +80,13 @@ export async function runMyRoutine(
       result: `${a.action} refused: not your routine (list first to get ids)`,
     };
   try {
+    // A standing goal is the person's: the bot works on it but never ends it.
+    if (a.action === "pause" && target.mode === "goal")
+      return {
+        note: `⚠️ “${target.title}” is a standing goal: only you can pause it.`,
+        result: "pause refused: a standing goal is paused only by its owner",
+        routineId: target.id,
+      };
     if (a.action === "pause" || a.action === "resume") {
       await routines.setPaused(actor, target.id, a.action === "pause");
       return {

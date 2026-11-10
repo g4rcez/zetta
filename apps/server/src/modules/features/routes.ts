@@ -34,6 +34,7 @@ const MAX_HOOK_BYTES = 64_000;
 const routineControls = {
   overlapPolicy: z.enum(["skip", "queue"]).optional(),
   catchUp: z.enum(["run_once", "skip"]).optional(),
+  mode: z.enum(["task", "goal"]).optional(),
   maxFailures: z.number().int().min(1).max(50).optional(),
 };
 const schemas = {

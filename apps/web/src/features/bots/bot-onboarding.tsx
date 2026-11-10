@@ -95,7 +95,7 @@ const STEPS = [
     id: "engine",
     title: "Engine",
     question: "What runs it?",
-    lede: "The harness reads the instructions, calls tools and writes the answers.",
+    lede: "The program that reads the instructions, uses tools and writes the answers. Claude Code fits almost every bot.",
   },
   {
     id: "instructions",
@@ -123,9 +123,9 @@ const STEPS = [
   },
   {
     id: "extras",
-    title: "Extras",
-    question: "Anything extra?",
-    lede: "Power features most bots don't need. Each can be changed later in the bot's settings.",
+    title: "Advanced",
+    question: "Anything advanced?",
+    lede: "Hooks, routing and other power features most bots don't need. Skip this step; each can be changed later in the bot's settings.",
   },
   {
     id: "done",
@@ -981,16 +981,16 @@ export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draf
   return (
     <Guided
       good={[
-        "Claude Code for real work: it's the verified harness.",
+        "Claude Code for real work: it's the one we verify.",
         "The offline test engine if you only want to try the flow.",
-        "Keep the harness default model, or pick a smaller one (e.g. Haiku) for cheap, fast bots.",
+        "Keep the default model, or pick a smaller one (e.g. Haiku) for cheap, fast bots.",
       ]}
       bad={[
         "Shipping a team bot on the offline test engine: its answers are canned.",
         "The biggest model for simple, high-volume tasks.",
       ]}
     >
-      <div role="radiogroup" aria-label="Harness" className="space-y-8">
+      <div role="radiogroup" aria-label="Engine" className="space-y-8">
         <div className="grid gap-3 sm:grid-cols-2">
           {PRIMARY_HARNESSES.map((h) => (
             <Choice

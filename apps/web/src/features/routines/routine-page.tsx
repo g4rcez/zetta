@@ -24,6 +24,10 @@ const CATCH_UP = [
   { value: "run_once", label: "Run once for what was missed" },
   { value: "skip", label: "Skip to the next one" },
 ];
+const MODES = [
+  { value: "task", label: "Do the prompt each time" },
+  { value: "goal", label: "Standing goal: keep going until I stop it" },
+];
 const FAILURES = [1, 3, 5, 10].map((n) => ({ value: String(n), label: `${n} in a row` }));
 
 /** How the routine behaves when runs overlap, after downtime, and after failures. */
@@ -38,6 +42,7 @@ function BehaviorForm({ r, onSaved }: { r: Routine; onSaved: () => void }) {
         overlapPolicy: f.get("overlapPolicy"),
         catchUp: f.get("catchUp"),
         maxFailures: Number(f.get("maxFailures")),
+        mode: f.get("mode"),
       });
       onSaved();
     } catch (x) {
@@ -50,6 +55,20 @@ function BehaviorForm({ r, onSaved }: { r: Routine; onSaved: () => void }) {
       onSubmit={(e) => void submit(e)}
       className="grid gap-3 rounded-lg border bg-card p-4 text-sm sm:grid-cols-3"
     >
+      <div className="sm:col-span-3">
+        <Select
+          title="Each run"
+          name="mode"
+          required={false}
+          defaultValue={r.mode ?? "task"}
+          options={MODES}
+        />
+        {(r.mode ?? "task") === "goal" && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Each run picks up from the last run's report. The bot cannot pause it; only you can.
+          </p>
+        )}
+      </div>
       <Select
         title="When the last run is still working"
         name="overlapPolicy"

@@ -51,6 +51,8 @@ export type Routine = {
   overlapPolicy?: "skip" | "queue";
   /** After downtime: run once for what was missed, or skip to the next. */
   catchUp?: "run_once" | "skip";
+  /** "goal": a standing goal; each run continues from the last run's report, and only the owner ends it. */
+  mode?: "task" | "goal";
   /** "Skip next" is on until this instant. */
   skipUntil?: string | null;
   failures?: number;
@@ -90,6 +92,8 @@ export type Run = {
     | "following";
   reasonCode: string | null;
   output: string;
+  /** What the bot did in this run: the step labels of the reply it produced (older servers send none). */
+  steps?: string[];
   conversationId: string | null;
   startedAt: string;
   finishedAt: string | null;
@@ -296,6 +300,16 @@ export function History({ routineId }: { routineId: string }) {
                 <pre className="max-w-full whitespace-pre-wrap break-words text-xs">
                   {JSON.stringify(r.event, null, 2).slice(0, 2000)}
                 </pre>
+              </details>
+            )}
+            {r.steps && r.steps.length > 0 && (
+              <details>
+                <summary className="cursor-pointer text-xs">Steps ({r.steps.length})</summary>
+                <ol className="ml-4 list-decimal text-xs text-muted-foreground">
+                  {r.steps.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ol>
               </details>
             )}
             {r.output && (

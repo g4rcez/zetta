@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."routine" ADD COLUMN "mode" text DEFAULT 'task' NOT NULL;

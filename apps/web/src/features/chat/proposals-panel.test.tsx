@@ -107,8 +107,10 @@ test("a change the chief asks for says what it is, shows each old and new value,
   expect(host.textContent).toContain("Add member: Editor (Reviewer)");
   expect(host.textContent).toContain("Add member: Writer");
   expect(host.textContent).not.toContain("Approve and create");
+  // "Always allow" answers this kind of card for good (see approval-rules.ts).
   expect([...host.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
     "Reject",
+    "Always allow",
     "Approve",
   ]);
   await unmount();
@@ -142,8 +144,10 @@ test("a card that asks for a click keeps its Approve button", async () => {
     patch: { title: "Change Treinador" },
     confirm: "click",
   });
+  // "Always allow" answers this kind of card for good (see approval-rules.ts).
   expect([...host.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
     "Reject",
+    "Always allow",
     "Approve",
   ]);
   await unmount();

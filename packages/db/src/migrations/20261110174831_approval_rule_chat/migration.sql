@@ -1,0 +1,2 @@
+ALTER TABLE "zetta"."approval_rule" ADD COLUMN "conversation_id" uuid;--> statement-breakpoint
+ALTER TABLE "zetta"."approval_rule" ADD CONSTRAINT "approval_rule_conversation_id_conversation_id_fkey" FOREIGN KEY ("conversation_id") REFERENCES "zetta"."conversation"("id") ON DELETE CASCADE ON UPDATE RESTRICT;

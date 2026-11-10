@@ -15,7 +15,8 @@ export type MemoryToolArgs = z.infer<typeof toolSchemas.memory>;
 export type MemoryToolOutcome = {
   note?: string;
   result?: string;
-  saved?: { slug: string; title: string; created: boolean };
+  /** `version`: the item's version after this write; Undo goes back to the one before it (or archives a new item). */
+  saved?: { slug: string; title: string; created: boolean; version?: number };
 };
 
 const why: Record<MemoryError["code"], string> = {
@@ -261,7 +262,7 @@ export async function runMemoryTool(
     return {
       note: `📖 ${verb}: ${p.title}.`,
       result: `memory ${p.slug} saved (version ${p.version}).${skipped}`,
-      saved: { slug: p.slug, title: p.title, created: r.created },
+      saved: { slug: p.slug, title: p.title, created: r.created, version: p.version },
     };
   } catch (e) {
     if (!(e instanceof MemoryError)) throw e;

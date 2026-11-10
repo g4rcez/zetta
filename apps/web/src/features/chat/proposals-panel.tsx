@@ -26,6 +26,7 @@ import {
   type DecisionResult,
   type Proposal,
   type ProposalKind,
+  REMEMBERABLE,
 } from "./chat-client";
 
 const KIND_LABEL: Record<ProposalKind, string> = {
@@ -155,7 +156,10 @@ export function ProposalsPanel({
   onResolved,
   onBotsChanged,
   notify,
+  conversationId,
 }: {
+  /** The chat the panel sits in: cards then offer "Allow in this chat". */
+  conversationId?: string | undefined;
   proposals: Proposal[];
   bots: Bot[];
   onResolved: (id: string) => void;
@@ -166,11 +170,24 @@ export function ProposalsPanel({
   const approvalMode = useApprovalMode();
   const [busy, setBusy] = useState<string>();
   const [errors, setErrors] = useState<Record<string, string>>({});
-  async function decide(p: Proposal, approve: boolean, choice?: SkillsChoice, answer?: FormAnswer) {
+  async function decide(
+    p: Proposal,
+    approve: boolean,
+    choice?: SkillsChoice,
+    answer?: FormAnswer,
+    remember?: "bot" | "chat",
+  ) {
     setBusy(p.id);
     setErrors((m) => Object.fromEntries(Object.entries(m).filter(([id]) => id !== p.id)));
     try {
-      const r = await chatClient.decide(p.id, approve, choice, answer);
+      const r = await chatClient.decide(
+        p.id,
+        approve,
+        choice,
+        answer,
+        remember,
+        remember === "chat" ? conversationId : undefined,
+      );
       onResolved(p.id);
       // An approved change can touch the bot's hooks, skills, accounts, decision routing or plugins. The bot list itself is `onBotsChanged`'s.
       void qc.invalidateQueries({
@@ -366,14 +383,36 @@ export function ProposalsPanel({
                   Hold to approve
                 </HoldButton>
               ) : (
-                <Button
-                  size="sm"
-                  variant="success"
-                  disabled={busy === p.id}
-                  onClick={() => void decide(p, true)}
-                >
-                  {approveLabel}
-                </Button>
+                <>
+                  {p.kind && REMEMBERABLE.includes(p.kind) && conversationId && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy === p.id}
+                      onClick={() => void decide(p, true, undefined, undefined, "chat")}
+                    >
+                      Allow in this chat
+                    </Button>
+                  )}
+                  {p.kind && REMEMBERABLE.includes(p.kind) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy === p.id}
+                      onClick={() => void decide(p, true, undefined, undefined, "bot")}
+                    >
+                      Always allow
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="success"
+                    disabled={busy === p.id}
+                    onClick={() => void decide(p, true)}
+                  >
+                    {approveLabel}
+                  </Button>
+                </>
               )}
             </ItemActions>
           </Item>

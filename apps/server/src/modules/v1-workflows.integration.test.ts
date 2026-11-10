@@ -326,18 +326,12 @@ suite("v1 user journeys", () => {
     const first = await call("POST", `/api/conversations/${conv}/messages`, {
       content: "Summarize this week's metrics",
     });
-    // The bot can run code and the message did not ask to save anything, so the item waits for the person's approval.
+    // The person's own message is consent for what the bot saves from it: the item is saved at once and shown as a receipt
+    // (approval-policy.ts), with no card.
     expect(first.json.assistant.meta.receipts[0]).toMatchObject({
-      kind: "proposal",
+      kind: "memory",
       text: "Weekly metrics summary",
     });
-    expect(
-      (
-        await call("POST", `/api/proposals/${first.json.assistant.meta.receipts[0].id}/decision`, {
-          approve: true,
-        })
-      ).json.status,
-    ).toBe("approved");
     const ins = (await call("GET", "/api/memory")).json.pages.find(
       (i: { title: string }) => i.title === "Weekly metrics summary",
     );

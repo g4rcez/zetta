@@ -489,7 +489,13 @@ suite("operator memory against compose postgres", () => {
     });
     expect(r.status).toBe(201);
     expect(r.json.assistant.meta.receipts).toEqual([
-      { kind: "memory", id: "old-fence", text: "Old fence", created: true },
+      {
+        kind: "memory",
+        id: "old-fence",
+        text: "Old fence",
+        created: true,
+        version: expect.any(Number),
+      },
     ]);
   });
 
@@ -507,7 +513,13 @@ suite("operator memory against compose postgres", () => {
     });
     expect(r.json.assistant.content).toContain("📖 Added a memory item: CRM login.");
     expect(r.json.assistant.meta.receipts).toEqual([
-      { kind: "memory", id: "crm-login", text: "CRM login", created: true },
+      {
+        kind: "memory",
+        id: "crm-login",
+        text: "CRM login",
+        created: true,
+        version: expect.any(Number),
+      },
     ]);
     const got = await call(A, "GET", "/api/memory/crm-login");
     expect(got.json.page).toMatchObject({
@@ -1499,7 +1511,12 @@ suite("operator memory against compose postgres", () => {
       slug: "ls-sources",
       content: "r/Frontend",
     });
-    expect(added.saved).toEqual({ slug: "ls-sources", title: "Sources", created: false });
+    expect(added.saved).toEqual({
+      slug: "ls-sources",
+      title: "Sources",
+      created: false,
+      version: 2,
+    });
     expect(added.result).toBe("memory ls-sources saved (version 2).");
     expect((await memory.read(A, "ls-sources"))!.page.content).toBe("r/css\nr/Frontend");
     expect(

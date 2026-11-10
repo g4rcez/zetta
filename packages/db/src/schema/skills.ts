@@ -17,7 +17,8 @@ import { bot } from "./chat";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 
-export const SKILL_SOURCES = ["manual", "github"] as const;
+/** "learned": a bot wrote it from its own work (see memory/skill-review.ts); it may revise it until the owner edits it. */
+export const SKILL_SOURCES = ["manual", "github", "learned"] as const;
 export type SkillSource = (typeof SKILL_SOURCES)[number];
 /** Delete = archive: an archived skill leaves every bot's run and frees its name, the row stays. */
 export const SKILL_STATUSES = ["active", "archived"] as const;
@@ -56,6 +57,8 @@ export const skill = zetta.table(
     sourceRepo: text("source_repo"),
     sourcePath: text("source_path"),
     sourceRef: text("source_ref"),
+    /** The bot that learned it (source "learned"). Only that bot may revise it, and only while `sourceState` is pristine. */
+    learnedByBotId: uuid("learned_by_bot_id"),
     version: integer("version").default(1).notNull(),
     sourceState: text("source_state", { enum: SKILL_SOURCE_STATES }).default("pristine").notNull(),
     status: text("status", { enum: SKILL_STATUSES }).default("active").notNull(),
@@ -162,10 +165,48 @@ export const skillRevision = zetta.table(
     savedByUserId: text("saved_by_user_id")
       .notNull()
       .references(() => user.id, restrict),
+    /** Set when a bot saved this revision for its owner (a learned skill). */
+    savedByBotId: uuid("saved_by_bot_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     uniqueIndex("skill_revision_skill_version_idx").on(t.skillId, t.version),
     index("skill_revision_skill_idx").on(t.skillId, t.createdAt),
+  ],
+);
+
+export const SKILL_REVIEW_STATUSES = ["pending", "running", "done", "skipped", "failed"] as const;
+export const SKILL_REVIEW_OUTCOMES = ["none", "created", "revised"] as const;
+/**
+ * Autolearn: one review of a finished reply that may teach the bot something (a correction, a method that worked). The review reads
+ * the turn and may save a learned skill for that bot or revise one of its own. One row per reply (see memory/skill-review.ts).
+ */
+export const skillReview = zetta.table(
+  "skill_review",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => user.id, restrict),
+    botId: uuid("bot_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
+    /** The bot's reply the review reads; the chat shows the outcome on it. */
+    replyId: uuid("reply_id").notNull(),
+    /** Why it was queued: the person corrected the bot, stopped it, or the reply was a long piece of work. */
+    reason: text("reason").notNull(),
+    status: text("status", { enum: SKILL_REVIEW_STATUSES }).default("pending").notNull(),
+    outcome: text("outcome", { enum: SKILL_REVIEW_OUTCOMES }),
+    skillId: uuid("skill_id"),
+    detail: text("detail").default("").notNull(),
+    runAfter: timestamp("run_after", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("skill_review_reply_unique").on(t.replyId),
+    index("skill_review_due_idx").on(t.status, t.runAfter),
+    index("skill_review_owner_idx").on(t.ownerUserId),
   ],
 );

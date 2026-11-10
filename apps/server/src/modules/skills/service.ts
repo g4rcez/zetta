@@ -167,7 +167,8 @@ export function createSkills(db: Database) {
    */
   const screen = (
     v: { name?: string; description?: string; body?: string },
-    source: "manual" | "github" = "manual",
+    // A learned skill is screened as strictly as one written here: a bot wrote it from a conversation.
+    source: "manual" | "github" | "learned" = "manual",
   ) => {
     const text = `${v.name ?? ""}\n${v.description ?? ""}\n${v.body ?? ""}`;
     if (source === "github" ? hasKeyFormat(text) : looksSecret(text))
@@ -208,6 +209,8 @@ export function createSkills(db: Database) {
     d: Pick<Database, "select" | "insert" | "delete">,
     userId: string,
     row: { id: string; version: number; name: string; description: string; body: string },
+    /** The bot that saved it for its owner (a learned skill). */
+    botId?: string,
   ) => {
     await d
       .insert(skillRevision)
@@ -219,6 +222,7 @@ export function createSkills(db: Database) {
         body: row.body,
         filesHash: await filesHashOf(d, row.id),
         savedByUserId: userId,
+        ...(botId ? { savedByBotId: botId } : {}),
       })
       .onConflictDoNothing();
     const old = await d
@@ -334,6 +338,134 @@ export function createSkills(db: Database) {
     recordRevision,
     filesHashOf,
 
+    /**
+     * Autolearn: a skill a bot wrote from its own work, owned by the bot's owner and attached to that bot only. Fails with FULL at the
+     * owner's or the bot's limit and with SECRET_REJECTED like a skill written here.
+     */
+    async createLearned(ownerUserId: string, botId: string, fields: SkillFields) {
+      const v = skillFields.parse(fields);
+      screen(v, "learned");
+      const [{ n } = { n: 0 }] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(skill)
+        .where(and(eq(skill.ownerUserId, ownerUserId), eq(skill.status, "active")));
+      if (n >= SKILL_LIMITS.perOwner) throw new SkillError("FULL");
+      const [{ m } = { m: 0 }] = await db
+        .select({ m: sql<number>`count(*)::int` })
+        .from(botSkill)
+        .innerJoin(skill, eq(skill.id, botSkill.skillId))
+        .where(and(eq(botSkill.botId, botId), eq(skill.status, "active")));
+      if (m >= SKILL_LIMITS.perBot) throw new SkillError("FULL");
+      try {
+        return await db.transaction(async (tx) => {
+          const [created] = await tx
+            .insert(skill)
+            .values({ ownerUserId, ...v, source: "learned", learnedByBotId: botId })
+            .returning();
+          await tx.insert(botSkill).values({ botId, skillId: created!.id });
+          await recordRevision(tx, ownerUserId, { ...created!, version: 1 }, botId);
+          return created!;
+        });
+      } catch (e) {
+        if (uniqueViolation(e)) throw new SkillError("DUPLICATE");
+        throw e;
+      }
+    },
+
+    /**
+     * Autolearn: the bot revises one of its OWN learned skills. Never a skill written here, one from GitHub, another bot's, or one its
+     * owner edited (FORBIDDEN).
+     */
+    async reviseLearned(
+      ownerUserId: string,
+      botId: string,
+      id: string,
+      patch: Partial<Pick<SkillFields, "description" | "body">>,
+    ) {
+      const v = skillFields.pick({ description: true, body: true }).partial().parse(patch);
+      screen(v, "learned");
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(skill)
+          .set({ ...v, version: sql`${skill.version} + 1`, updatedAt: new Date() })
+          .where(
+            and(
+              active(id),
+              eq(skill.ownerUserId, ownerUserId),
+              eq(skill.source, "learned"),
+              eq(skill.learnedByBotId, botId),
+              eq(skill.sourceState, "pristine"),
+            ),
+          )
+          .returning();
+        if (!row) throw new SkillError("FORBIDDEN");
+        await recordRevision(tx, ownerUserId, row, botId);
+        return row;
+      });
+    },
+
+    /**
+     * Undo of a learned change from the chat: a skill the bot created is archived; one it revised goes back to the version before
+     * (kept as a new revision, so the change itself stays in the history). Only the owner, only a learned skill.
+     */
+    async undoLearned(ownerUserId: string, id: string) {
+      const [cur] = await db
+        .select()
+        .from(skill)
+        .where(and(active(id), eq(skill.ownerUserId, ownerUserId), eq(skill.source, "learned")));
+      if (!cur) throw new SkillError("NOT_FOUND");
+      if (cur.version <= 1) {
+        await db
+          .update(skill)
+          .set({ status: "archived", version: sql`${skill.version} + 1`, updatedAt: new Date() })
+          .where(eq(skill.id, id));
+        return { id, undone: "archived" as const };
+      }
+      const [prev] = await db
+        .select()
+        .from(skillRevision)
+        .where(and(eq(skillRevision.skillId, id), eq(skillRevision.version, cur.version - 1)));
+      if (!prev) throw new SkillError("NOT_FOUND");
+      await db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(skill)
+          .set({
+            description: prev.description,
+            body: prev.body,
+            version: sql`${skill.version} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(skill.id, id), eq(skill.version, cur.version)))
+          .returning();
+        if (!row) throw new SkillError("CONFLICT");
+        await recordRevision(tx, ownerUserId, row);
+      });
+      return { id, undone: "restored" as const };
+    },
+
+    /** The bot's own learned skills that it may still revise (the review reads their names and descriptions). */
+    learnedBy(ownerUserId: string, botId: string) {
+      return db
+        .select({
+          id: skill.id,
+          name: skill.name,
+          description: skill.description,
+          body: skill.body,
+          version: skill.version,
+        })
+        .from(skill)
+        .where(
+          and(
+            eq(skill.ownerUserId, ownerUserId),
+            eq(skill.source, "learned"),
+            eq(skill.learnedByBotId, botId),
+            eq(skill.sourceState, "pristine"),
+            eq(skill.status, "active"),
+          ),
+        )
+        .orderBy(desc(skill.updatedAt));
+    },
+
     /** The caller's skills installed from GitHub (one repository, or all), to mark them in the marketplace. */
     async installedFrom(actor: ActiveActor, repo?: string) {
       return db
@@ -421,8 +553,9 @@ export function createSkills(db: Database) {
             .update(skill)
             .set({
               ...patch,
-              // An installed skill the owner changed is theirs now: an update from GitHub asks before overwriting it.
-              ...(current.source === "github" ? { sourceState: "edited" as const } : {}),
+              // An installed skill the owner changed is theirs now: an update from GitHub asks before overwriting it. A learned skill
+              // the owner changed is theirs too: its bot stops revising it.
+              ...(current.source !== "manual" ? { sourceState: "edited" as const } : {}),
               version: sql`${skill.version} + 1`,
               updatedAt: new Date(),
             })

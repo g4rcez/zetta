@@ -1,3 +1,4 @@
+import type { SkillReviewService } from "../memory/skill-review";
 import type { Database } from "@zetta/db";
 import { Elysia } from "elysia";
 import { z } from "zod";
@@ -18,6 +19,8 @@ export type SkillServices = {
   skills: Skills;
   market: Market;
   claude: BotClaude;
+  /** Autolearn (memory/skill-review.ts): saving a suggested skill and undoing a learned change from the chat. */
+  review?: Pick<SkillReviewService, "applySuggested" | "undo">;
 };
 const uuid = z.string().uuid();
 const STATUS: Record<SkillError["code"], [number, string]> = {
@@ -76,7 +79,7 @@ const listQuery = z.strictObject({
 
 /** The Skills page API. Typed as a bare Elysia on purpose: app.ts chains every module and TypeScript gives up on the combined route type. */
 export function createSkillRoutes(
-  { access, db, skills, market, claude }: SkillServices,
+  { access, db, skills, market, claude, review }: SkillServices,
   trustedOrigins: readonly string[],
 ): Elysia<"/api"> {
   type Ctx = {
@@ -282,6 +285,21 @@ export function createSkillRoutes(
       g(async (c) => ({
         revision: await skills.revision(c.actor, id(c), uuid.parse(c.params.revisionId)),
       })),
+    )
+    .post(
+      "/skills/:id/undo-learned",
+      g(async (c) => {
+        if (!review) throw new SkillError("NOT_FOUND");
+        return await review.undo(c.actor.userId, id(c));
+      }),
+    )
+    .post(
+      "/skill-reviews/:id/apply",
+      g(async (c) => {
+        const skill = review ? await review.applySuggested(c.actor.userId, id(c)) : undefined;
+        if (!skill) throw new SkillError("NOT_FOUND");
+        return { skill: { id: skill.id, name: skill.name } };
+      }),
     )
     .post(
       "/skills/:id/revert",

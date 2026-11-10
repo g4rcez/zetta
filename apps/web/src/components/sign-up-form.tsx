@@ -3,7 +3,7 @@ import { Button } from "@/components/ui";
 import { useEffect, useRef, useState } from "react";
 import z from "zod";
 
-import { Logo } from "@/components/logo";
+import { AuthCard, AuthError } from "@/features/identity/auth-card";
 import { AuthField } from "@/features/identity/auth-field";
 import { getIdentityError, identityClient } from "@/lib/identity-client";
 
@@ -40,23 +40,12 @@ export default function SignUpForm({
     },
   });
   return (
-    <section className="mx-auto mt-16 w-full max-w-md space-y-6 rounded-xl border bg-card p-8 shadow-sm">
-      <div className="space-y-3">
-        <Logo size={72} className="mx-auto" />
-        <h1
-          ref={heading}
-          tabIndex={-1}
-          className="text-center text-3xl font-semibold tracking-tight outline-none"
-        >
-          Create account
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          An invitation from the installation operator is required. Use the email address your
-          invitation was issued for.
-        </p>
-      </div>
+    <AuthCard
+      title="Create account"
+      description="An invitation from the installation operator is required. Use the email address your invitation was issued for."
+      headingRef={heading}
+    >
       <form
-        className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
           void form.handleSubmit();
@@ -64,7 +53,7 @@ export default function SignUpForm({
       >
         <form.Subscribe selector={(state) => state.isSubmitting}>
           {(pending) => (
-            <fieldset disabled={pending} className="space-y-4" aria-busy={pending}>
+            <fieldset disabled={pending} className="flex flex-col gap-5" aria-busy={pending}>
               <form.Field name="name">
                 {(field) => (
                   <AuthField
@@ -130,29 +119,28 @@ export default function SignUpForm({
                   />
                 )}
               </form.Field>
-              {error && (
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
-              )}
+              {error && <AuthError>{error}</AuthError>}
               <Button type="submit" className="w-full" disabled={pending}>
                 {pending ? "Creating account…" : "Create account with invitation"}
               </Button>
               <p role="status" className="sr-only">
                 {pending ? "Creating your account and checking membership." : ""}
               </p>
-              <Button
-                type="button"
-                variant="link"
-                className="h-auto w-full whitespace-normal"
-                onClick={onSwitchToSignIn}
-              >
-                Already have an account? Sign in
-              </Button>
             </fieldset>
           )}
         </form.Subscribe>
       </form>
-    </section>
+      <p className="border-t pt-6 text-center text-sm text-muted-foreground">
+        Already have an account?{" "}
+        <Button
+          type="button"
+          variant="link"
+          className="inline-flex h-auto min-h-0 !p-0 align-baseline"
+          onClick={onSwitchToSignIn}
+        >
+          Sign in
+        </Button>
+      </p>
+    </AuthCard>
   );
 }

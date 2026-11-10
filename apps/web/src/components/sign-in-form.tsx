@@ -4,7 +4,7 @@ import { Button } from "@/components/ui";
 import { useEffect, useRef, useState } from "react";
 import z from "zod";
 
-import { Logo } from "@/components/logo";
+import { AuthCard, AuthError } from "@/features/identity/auth-card";
 import { AuthField } from "@/features/identity/auth-field";
 import { isAppUrl, signedOAuthQuery } from "@/features/identity/oauth";
 import { authClient } from "@/lib/auth-client";
@@ -58,17 +58,12 @@ export default function SignInForm({
     },
   });
   return (
-    <section className="mx-auto mt-16 w-full max-w-md space-y-6 rounded-xl border bg-card p-8 shadow-sm">
-      <Logo size={72} className="mx-auto" />
-      <h1
-        ref={heading}
-        tabIndex={-1}
-        className="text-center text-3xl font-semibold tracking-tight outline-none"
-      >
-        Welcome back
-      </h1>
+    <AuthCard
+      title="Welcome back"
+      description="Sign in to your Zetta account."
+      headingRef={heading}
+    >
       <form
-        className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
           void form.handleSubmit();
@@ -76,7 +71,7 @@ export default function SignInForm({
       >
         <form.Subscribe selector={(state) => state.isSubmitting}>
           {(pending) => (
-            <fieldset disabled={pending} className="space-y-4" aria-busy={pending}>
+            <fieldset disabled={pending} className="flex flex-col gap-5" aria-busy={pending}>
               <form.Field name="email">
                 {(field) => (
                   <AuthField
@@ -109,29 +104,28 @@ export default function SignInForm({
                   />
                 )}
               </form.Field>
-              {error && (
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
-              )}
+              {error && <AuthError>{error}</AuthError>}
               <Button type="submit" className="w-full" disabled={pending}>
                 {pending ? "Signing in…" : "Sign in"}
               </Button>
               <p role="status" className="sr-only">
                 {pending ? "Signing in and checking membership." : ""}
               </p>
-              <Button
-                type="button"
-                variant="link"
-                className="h-auto w-full whitespace-normal"
-                onClick={onSwitchToSignUp}
-              >
-                Have an invitation? Create an account
-              </Button>
             </fieldset>
           )}
         </form.Subscribe>
       </form>
-    </section>
+      <p className="border-t pt-6 text-center text-sm text-muted-foreground">
+        Have an invitation?{" "}
+        <Button
+          type="button"
+          variant="link"
+          className="inline-flex h-auto min-h-0 !p-0 align-baseline"
+          onClick={onSwitchToSignUp}
+        >
+          Create an account
+        </Button>
+      </p>
+    </AuthCard>
   );
 }

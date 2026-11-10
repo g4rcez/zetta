@@ -26,6 +26,7 @@ import { createCuaDriver } from "./drivers/cua";
 import { createAgentDesktopDriver } from "./drivers/agent-desktop";
 import { hasBrowser, osOptions, type OsId } from "./os";
 import { instanceId, recoverable } from "../runtime/instance";
+import { envNumber } from "../env-number";
 import {
   DRIVERS,
   Passthrough,
@@ -164,7 +165,7 @@ export function dockerVmConfig(env: NodeJS.ProcessEnv = process.env): VmDocker |
     images: { ubuntu: env.ZETTA_VM_IMAGE_UBUNTU || "zetta-desktop-ubuntu:latest" },
     memory: env.ZETTA_VM_MEMORY ?? "2g",
     cpus: env.ZETTA_VM_CPUS ?? "2",
-    pids: Number(env.ZETTA_VM_PIDS ?? 1024),
+    pids: envNumber(env.ZETTA_VM_PIDS, 1024),
     shm: env.ZETTA_VM_SHM ?? "1g",
     runtime: env.ZETTA_VM_RUNTIME || undefined,
     network: env.ZETTA_VM_NETWORK || undefined,

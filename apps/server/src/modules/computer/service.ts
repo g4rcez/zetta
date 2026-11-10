@@ -20,6 +20,7 @@ import {
 } from "./agent-browser";
 import { createEgressProxy } from "./egress";
 import { FOCUSED_JS, type FocusedInput } from "./page-scripts";
+import { envNumber } from "../env-number";
 
 export class ComputerError extends Error {
   constructor(
@@ -195,7 +196,7 @@ export function dockerBrowserConfig(
     image: env.ZETTA_BROWSER_IMAGE ?? "zetta-browser:latest",
     memory: env.ZETTA_BROWSER_MEMORY ?? "1g",
     cpus: env.ZETTA_BROWSER_CPUS ?? "1",
-    pids: Number(env.ZETTA_BROWSER_PIDS ?? 512),
+    pids: envNumber(env.ZETTA_BROWSER_PIDS, 512),
   };
 }
 /**

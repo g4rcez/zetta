@@ -5,6 +5,7 @@ import { containerUser, engineOf, tmpfsOwner, type Engine } from "../container-u
 import { LANGUAGES, PLAYGROUND_LIMITS, type Cli } from "./languages";
 import { collectOutputs, emptyResult, GRACE_MS, readResult, tail, writeFolder } from "./run-folder";
 import { PlaygroundError, type Runner } from "./types";
+import { envNumber } from "../env-number";
 
 export type ContainerConfig = {
   bin: string;
@@ -42,7 +43,7 @@ export function containerConfig(env: NodeJS.ProcessEnv = process.env): Container
     prefix: "zetta-playground-",
     memory: env.ZETTA_PLAYGROUND_MEMORY ?? "1g",
     cpus: env.ZETTA_PLAYGROUND_CPUS ?? "2",
-    pids: Number(env.ZETTA_PLAYGROUND_PIDS ?? 256),
+    pids: envNumber(env.ZETTA_PLAYGROUND_PIDS, 256),
     network: env.ZETTA_PLAYGROUND_NETWORK || undefined,
     images,
   };

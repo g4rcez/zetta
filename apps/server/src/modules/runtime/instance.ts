@@ -6,17 +6,18 @@ import { and, eq, inArray, ne, sql, type SQL, type SQLWrapper } from "@zetta/db/
 import { serverInstance } from "@zetta/db/schema/runtime";
 
 import type { Role } from "../../role";
+import { envNumber } from "../env-number";
 
 /**
  * The identity of this server process. Each process has a row in `server_instance` and refreshes its heartbeat from the database
  * clock. Rows that record work in progress carry the id of the instance running them (`owner_instance`), so recovery can tell work of
  * a dead process (to recover) from work of a live peer (to leave alone).
  */
-const HEARTBEAT_MS = Number(process.env.ZETTA_HEARTBEAT_MS) || 10_000;
+const HEARTBEAT_MS = envNumber(process.env.ZETTA_HEARTBEAT_MS, 10_000);
 /** An instance with no heartbeat for this long is dead. */
-export const DEAD_AFTER_MS = Number(process.env.ZETTA_INSTANCE_DEAD_AFTER_MS) || 90_000;
+export const DEAD_AFTER_MS = envNumber(process.env.ZETTA_INSTANCE_DEAD_AFTER_MS, 90_000);
 /** A worker that cannot write its heartbeat for this long stops itself, before its peers start recovering its work. */
-const FENCE_AFTER_MS = Number(process.env.ZETTA_FENCE_AFTER_MS) || 60_000;
+const FENCE_AFTER_MS = envNumber(process.env.ZETTA_FENCE_AFTER_MS, 60_000);
 
 export type RecoveryScope = {
   /** Also take rows with no owner (written before owners were recorded). Only when no other worker is alive. */

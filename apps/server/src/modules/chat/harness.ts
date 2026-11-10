@@ -22,6 +22,7 @@ import {
   type LiveRun,
 } from "./step-output";
 import { dirname, join, resolve as resolvePath, sep } from "node:path";
+import { envNumber } from "../env-number";
 
 export type NativeHarness =
   | "pi"
@@ -605,7 +606,7 @@ export function dockerConfig(env: NodeJS.ProcessEnv = process.env): DockerConfig
     network: env.ZETTA_HARNESS_NETWORK ?? "bridge",
     memory: env.ZETTA_HARNESS_MEMORY ?? "1g",
     cpus: env.ZETTA_HARNESS_CPUS ?? "1",
-    pids: Number(env.ZETTA_HARNESS_PIDS ?? 256),
+    pids: envNumber(env.ZETTA_HARNESS_PIDS, 256),
     bin,
     engine: engineOf(bin, env),
   };
@@ -795,9 +796,9 @@ export function createLimiter({ global = 4, perUser = 2, waitMs = 15_000 } = {})
 }
 /** Parallel threads share these slots: a thread over the cap queues for a free one (up to five minutes) instead of failing. */
 export const defaultLimiter = createLimiter({
-  global: Number(process.env.ZETTA_HARNESS_MAX ?? 8),
-  perUser: Number(process.env.ZETTA_HARNESS_MAX_PER_USER ?? 4),
-  waitMs: Number(process.env.ZETTA_HARNESS_WAIT_MS ?? 300_000),
+  global: envNumber(process.env.ZETTA_HARNESS_MAX, 8),
+  perUser: envNumber(process.env.ZETTA_HARNESS_MAX_PER_USER, 4),
+  waitMs: envNumber(process.env.ZETTA_HARNESS_WAIT_MS, 300_000, 0),
 });
 
 /** Kills the whole process tree: a process group on POSIX, `taskkill /T` on Windows (there are no negative pids there). */
@@ -1029,7 +1030,7 @@ export const streamCli: StreamCli = async function* ({
         onStop(new HarnessError("timeout"));
       }, timeoutMs);
     // The slot only limits how many runs start at once; a run that goes on for hours must not make every other chat "busy".
-    slot = setTimeout(release, Number(process.env.ZETTA_HARNESS_SLOT_MS ?? 120_000));
+    slot = setTimeout(release, envNumber(process.env.ZETTA_HARNESS_SLOT_MS, 120_000, 0));
     slot.unref?.();
     const onAbort = () => {
       cancelled = true;

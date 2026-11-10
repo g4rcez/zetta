@@ -5,6 +5,7 @@ import { issueBackgroundActor, type MembershipLookup } from "../identity/access"
 import { instanceId } from "../runtime/instance";
 import type { ChatService } from "../chat/service";
 import type { Claimed, DiscussionStore } from "./store";
+import { envNumber } from "../env-number";
 import {
   GRACE_MS,
   STUCK_MS,
@@ -16,7 +17,7 @@ import {
 } from "./watchdog";
 
 /** At most this many room turns run at once (one per room); the harness allows the same number of runs per person. */
-const concurrency = () => Number(process.env.ZETTA_ROOM_CONCURRENCY ?? 4);
+const concurrency = () => envNumber(process.env.ZETTA_ROOM_CONCURRENCY, 4);
 
 /**
  * Runs queued discussion turns in the background: on the server's 30s tick and right after something is queued (`kick`). At most

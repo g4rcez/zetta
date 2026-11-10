@@ -1,5 +1,6 @@
 import { lastOutputAt } from "../chat/step-output";
 import { runsOf } from "../chat/processes";
+import { envNumber } from "../env-number";
 
 /**
  * Finds room turns that stopped without ending, so the worker can take them back. A bot's run has no deadline (it may work for days),
@@ -29,7 +30,7 @@ export function liveTurns(): Map<string, LiveTurn> {
   return (g.zettaRoomTurns ??= new Map());
 }
 
-export const STUCK_MS = () => Number(process.env.ZETTA_ROOM_STUCK_MS ?? 10 * 60_000);
+export const STUCK_MS = () => envNumber(process.env.ZETTA_ROOM_STUCK_MS, 10 * 60_000);
 /** A claim, or a run whose process just ended, is not judged until this long has passed. */
 export const GRACE_MS = 60_000;
 

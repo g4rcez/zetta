@@ -27,6 +27,7 @@ import { FileAccessError, type FileStore } from "./files";
 import { createUIMessageStreamResponse } from "ai";
 import { toUIMessageStream } from "./ui-stream";
 import { accessFail, createGuardedRoute, fail, out, rejectUntrustedOrigin } from "../http-response";
+import { envNumber } from "../env-number";
 
 export type ChatServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -223,7 +224,7 @@ export function createChatRoutes(
                 /* closed */
               }
             },
-            Number(process.env.ZETTA_SSE_HEARTBEAT_MS ?? 30_000),
+            envNumber(process.env.ZETTA_SSE_HEARTBEAT_MS, 30_000),
           );
           try {
             for await (const { n, event } of follow)

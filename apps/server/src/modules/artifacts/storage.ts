@@ -6,6 +6,8 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { ARTIFACT_KINDS, type ArtifactKind } from "@zetta/db/schema/artifacts";
+import { safeUser } from "../safe-user";
+import { envNumber } from "../env-number";
 
 export class ArtifactFileError extends Error {
   constructor(readonly code: "NOT_FOUND" | "TOO_LARGE" | "INVALID" | "QUOTA") {
@@ -15,7 +17,7 @@ export class ArtifactFileError extends Error {
 
 export const MAX_ARTIFACT_BYTES = 500 * 1024 * 1024;
 /** Total bytes one user may keep (`ZETTA_ARTIFACTS_QUOTA`, default 5 GB). Nothing is deleted to make room: a publish over it is refused. */
-export const artifactsQuota = () => Number(process.env.ZETTA_ARTIFACTS_QUOTA) || 5 * 1024 ** 3;
+export const artifactsQuota = () => envNumber(process.env.ZETTA_ARTIFACTS_QUOTA, 5 * 1024 ** 3);
 /** Inline `content` travels in a chat reply, so it stays small. */
 export const MAX_INLINE_BYTES = 256 * 1024;
 
@@ -23,7 +25,6 @@ export const MAX_INLINE_BYTES = 256 * 1024;
 export const artifactsRoot = () =>
   process.env.ZETTA_ARTIFACTS_ROOT || join(homedir(), ".zetta", "artifacts");
 
-const safeUser = (userId: string) => userId.replace(/[^A-Za-z0-9_-]/g, "_");
 /** Absolute path of a stored artifact. Content-addressed per user: the same bytes are stored once. */
 export const artifactPath = (userId: string, sha256: string, root = artifactsRoot()) =>
   join(root, safeUser(userId), sha256);

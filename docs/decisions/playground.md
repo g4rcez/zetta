@@ -123,7 +123,7 @@ One constant, `language → { exts, runners, host: { bin, args(entry) }, image, 
 
 ## Risks
 
-- Host runner = arbitrary code as the server user, with access to server files (accepted: same as bot Bash). Not safe for the hosted SaaS mode. The SaaS runner is later work, per `docs/decisions/execution-isolation.md`.
+- Host runner = arbitrary code as the server user, with access to server files. It follows the same switch as bot Bash: with `ZETTA_CODE_ACCESS=off` (set by the operator, or automatically when the install is open to the network without the Docker runtime) a host run is refused and only the container and browser runners work. Not safe for the hosted SaaS mode. The SaaS runner is later work, per `docs/decisions/execution-isolation.md`.
 - Shared language containers: runs can see each other's `/runs` dirs and processes. Network is on.
 - In-process cancel map: a cancel that reaches another API instance cannot abort the run (horizontal scaling). It returns `CONFLICT`, and the boot interrupt covers crashes.
 - Container images must be pulled once; the first run is slow, or `UNAVAILABLE` with no engine.

@@ -128,7 +128,7 @@ test("on the right the frame is reversed, the panel keeps its gap, and the resiz
 });
 
 const popup = () => win.document.querySelector('[role="tooltip"]');
-const openHint = async (button: Element) => {
+const openHint = async (button: unknown) => {
   await act(async () => (button as unknown as HTMLElement).focus());
   const text = popup()?.textContent;
   await act(async () => {

@@ -46,6 +46,12 @@ bun run dev
 Open [https://localhost:3000](https://localhost:3000) in your browser to see the web application (accept the self-signed certificate once).  
 The API runs at `http://127.0.0.1:6000`. The web dev server forwards `/api` to it, so use the web address only.
 
+## Testing
+
+- `bun run verify` runs the linter, the typecheck and the unit suites of `apps/web`, `apps/cli`, `packages/*`, `tools` and `scripts`.
+- Web tests must run from `apps/web` (`cd apps/web && bun test`): its `bunfig.toml` preloads the test environment.
+- Server tests run from `apps/server` (`bun test`). Suites that need a database skip unless `ZETTA_CHAT_TEST_DATABASE_URL` points at a migrated scratch database. Suites that need Docker or a VM skip unless `ZETTA_DOCKER_TEST=1` or `ZETTA_VM_TEST=1` is set.
+
 ## UI Customization
 
 React web apps in this stack use the [https://github.com/g4rcez/components](https://github.com/g4rcez/components) and shadcn/ui primitives through `packages/ui`.
@@ -144,7 +150,8 @@ zetta/
 - `bun run db:generate`: Generate database client/types
 - `bun run db:migrate`: Run database migrations
 - `bun run db:studio`: Open database studio UI
-- `bun run check`: Run Vite+ format/lint checks and workspace TypeScript checks
+- `bun run check`: Lint, then rewrite formatting in place (`oxlint && oxfmt --write`). It changes files and does not typecheck.
+- `bun run verify`: Lint, typecheck every package and run every unit suite that needs no database (the same steps as the `checks` job in CI)
 - `bun run lint`: Run Vite+ lint checks
 - `bun run format`: Run Vite+ formatting
 - `bun run staged`: Run Vite+ checks against staged files

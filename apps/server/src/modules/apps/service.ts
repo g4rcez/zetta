@@ -21,6 +21,7 @@ import { events } from "../events/bus";
 import { audit, auditToolDetail } from "../features/audit";
 import type { ActiveActor } from "../identity/access";
 import { LANGUAGES } from "../playground/languages";
+import { pickRunner, refusal } from "../playground/host-gate";
 import { hostRunner } from "../playground/runner-host";
 import type { RunResult, Runner } from "../playground/types";
 import { checkManifest, diffManifests, freeSlug, ManifestError, slugify } from "./manifest";
@@ -116,6 +117,8 @@ type Deps = {
   /** `host` is always there. Pass `container` when the engine is set up. */
   runners?: Partial<Record<"host" | "container", Runner>>;
   limits?: { global: number; perUser: number };
+  /** False turns the host runner off (see host-gate.ts). Left out, the host runner is allowed: services.ts passes the real switch. */
+  hostCode?: () => boolean;
 };
 type AppRow = typeof app.$inferSelect;
 const { files: _files, ui: _ui, ...versionColumns } = getTableColumns(appVersion);
@@ -142,6 +145,7 @@ export function createApps(db: Database, deps: Deps = {}) {
     host: hostRunner,
     ...deps.runners,
   };
+  const hostCode = deps.hostCode ?? (() => true);
   const limiter = createLimiter({ ...(deps.limits ?? { global: 4, perUser: 2 }), waitMs: 5000 });
   const tell = (...ids: string[]) => events.publish([...new Set(ids)], topics.apps);
 
@@ -197,9 +201,9 @@ export function createApps(db: Database, deps: Deps = {}) {
     timeoutMs: number,
   ): Promise<Outcome> {
     const runnerName = a.settings.runner ?? "host";
-    const runner = runners[runnerName];
-    if (!runner)
-      throw new AppError("UNAVAILABLE", `The ${runnerName} runner is not set up on this server.`);
+    const picked = pickRunner(runners, runnerName, hostCode);
+    if ("refused" in picked) throw new AppError("UNAVAILABLE", refusal(picked.refused, runnerName));
+    const runner = picked.runner;
     let release: () => void;
     try {
       release = await limiter.acquire(actor.userId);

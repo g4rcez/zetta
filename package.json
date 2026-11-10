@@ -26,6 +26,8 @@
     "check-types": "vp run -r check-types",
     "check": "oxlint && oxfmt --write",
     "lint": "vp lint",
+    "verify": "bash scripts/verify.sh",
+    "test": "bash scripts/verify.sh",
     "format": "vp fmt",
     "staged": "vp staged",
     "zetta": "bash scripts/zetta.sh",

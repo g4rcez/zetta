@@ -305,6 +305,8 @@ export function createFeaturesService(
           and(eq(delegation.conversationId, conversationId), eq(delegation.ownerUserId, a.userId)),
         )
         .orderBy(asc(delegation.createdAt)),
+    /** Arms the job of every active routine and the overdue sweep. Safe to call again: it disarms what is gone and re-arms the rest. */
+    armRoutines: () => routines.start(),
     /**
      * Reconcile what a dead process left running (see runtime/instance.ts for what "dead" means). At boot it also arms the routine jobs;
      * on the periodic run (`boot` false) it re-runs the routines it just found interrupted.

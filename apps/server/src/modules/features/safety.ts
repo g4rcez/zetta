@@ -69,20 +69,43 @@ function inWorker(
     ensureWorker().postMessage({ id, op, pattern, text: text.slice(0, MAX_INPUT), replacement });
   });
 }
+/**
+ * Cuts text into pieces of at most `max` characters; joined, the pieces are the text. A piece ends at the last line break inside the
+ * limit, or else the last space, or else exactly at the limit. A match that runs across a cut is not found, so cuts go where a secret
+ * is least likely to span: between lines, then between words.
+ */
+export function pieces(text: string, max = MAX_INPUT): string[] {
+  const out: string[] = [];
+  let from = 0;
+  while (text.length - from > max) {
+    const window = text.slice(from, from + max);
+    const lineBreak = window.lastIndexOf("\n");
+    const space = window.lastIndexOf(" ");
+    const cut = lineBreak >= 0 ? lineBreak + 1 : space >= 0 ? space + 1 : max;
+    out.push(text.slice(from, from + cut));
+    from += cut;
+  }
+  out.push(text.slice(from));
+  return out;
+}
 export async function applyRedaction(text: string, pattern: string, replacement: string) {
   if (!safeRegex(pattern)) return { text, ok: false as const };
-  const r = await inWorker("replace", pattern, text, replacement);
-  return r.ok
-    ? {
-        text: (r.value as string) + (text.length > MAX_INPUT ? text.slice(MAX_INPUT) : ""),
-        ok: true as const,
-      }
-    : { text, ok: false as const };
+  const out: string[] = [];
+  // One piece at a time: each has its own time limit, and a failed piece fails the whole redaction (never a half-redacted text).
+  for (const piece of pieces(text)) {
+    const r = await inWorker("replace", pattern, piece, replacement);
+    if (!r.ok) return { text, ok: false as const };
+    out.push(r.value as string);
+  }
+  return { text: out.join(""), ok: true as const };
 }
 export async function matches(text: string, pattern: string) {
   if (!safeRegex(pattern)) return false;
-  const r = await inWorker("test", pattern, text);
-  return r.ok && r.value === true;
+  for (const piece of pieces(text)) {
+    const r = await inWorker("test", pattern, piece);
+    if (r.ok && r.value === true) return true;
+  }
+  return false;
 }
 
 export { looksSecret } from "@zetta/core/secrets";

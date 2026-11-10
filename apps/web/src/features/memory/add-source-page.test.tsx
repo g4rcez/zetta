@@ -90,7 +90,7 @@ const mount = async (from: "url" | "text" | "file") => {
   });
   const host = win.document.createElement("div");
   win.document.body.appendChild(host);
-  const root_ = createRoot(host);
+  const root_ = createRoot(host as unknown as Element);
   await act(async () => {
     root_.render(
       <QueryClientProvider

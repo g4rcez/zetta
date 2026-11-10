@@ -127,7 +127,10 @@ const chooseKind = async (kind: string) => {
   const radio = win.document.querySelector(
     `input[name="machine-kind"][value="${kind}"]`,
   ) as unknown as HTMLInputElement;
-  await act(async () => void radio.dispatchEvent(new win.MouseEvent("click", { bubbles: true })));
+  await act(
+    async () =>
+      void radio.dispatchEvent(new win.MouseEvent("click", { bubbles: true }) as unknown as Event),
+  );
   await settle();
 };
 /** Ticks or unticks a bot in a picker. */
@@ -135,7 +138,10 @@ const toggleBot = async (name: string, nth = 0) => {
   const box = [...win.document.querySelectorAll(`input[aria-label="${name}"]`)][
     nth
   ] as unknown as HTMLInputElement;
-  await act(async () => void box.dispatchEvent(new win.MouseEvent("click", { bubbles: true })));
+  await act(
+    async () =>
+      void box.dispatchEvent(new win.MouseEvent("click", { bubbles: true }) as unknown as Event),
+  );
   await settle();
 };
 const submit = async () => {

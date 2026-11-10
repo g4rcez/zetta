@@ -64,9 +64,11 @@ const render = async (working: boolean, withUrl = true) => {
   const buttons = () => [...host.querySelectorAll("button[aria-expanded]")];
   return { host, buttons, unmount: () => act(async () => root.unmount()) };
 };
-const click = (el: Element) =>
+const click = (el: unknown) =>
   act(async () => {
-    el.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    (el as EventTarget).dispatchEvent(
+      new win.MouseEvent("click", { bubbles: true }) as unknown as Event,
+    );
   });
 
 test("only the commands of a running turn are buttons", async () => {

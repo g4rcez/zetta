@@ -318,12 +318,14 @@ test("choosing Nord saves it on the account and puts it on the page", async () =
   const checked = [...win.document.querySelectorAll('input[name="theme"]')].filter(
     (r) => (r as unknown as HTMLInputElement).checked,
   );
-  expect(checked.map(themeName)).toEqual(["Nord"]);
+  expect((checked as unknown as Element[]).map(themeName)).toEqual(["Nord"]);
 });
 
 test("the picker offers the nine themes, grouped by light and dark", async () => {
   await mount();
-  const names = [...win.document.querySelectorAll('input[name="theme"]')].map(themeName);
+  const names = (
+    [...win.document.querySelectorAll('input[name="theme"]')] as unknown as Element[]
+  ).map(themeName);
   expect(names).toEqual([
     "Same as my device",
     "Light",

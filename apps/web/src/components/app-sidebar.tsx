@@ -524,7 +524,6 @@ export function AppSidebar({
                 type="button"
                 onClick={() => set({ railMode: collapsed ? "expanded" : "collapsed" })}
                 aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-                aria-expanded={!collapsed}
                 className={cn(railRow, !collapsed && "h-7 w-7 min-w-7")}
               >
                 <SidebarSimpleIcon

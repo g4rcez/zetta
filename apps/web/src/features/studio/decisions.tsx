@@ -7,6 +7,7 @@ import { call } from "../chat/chat-client";
 import { Badge } from "../shared/ui";
 import { LayaSwitch } from "./laya-switch";
 import { DECISIONS_STATUS, decisionsQueries } from "./studio-queries";
+import { formText } from "../shared/form-data";
 
 export function Decisions({ onError }: { onError: (m: string) => void }) {
   const qc = useQueryClient();
@@ -25,7 +26,7 @@ export function Decisions({ onError }: { onError: (m: string) => void }) {
   async function decide(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    const options = String(f.get("options"))
+    const options = formText(f, "options")
       .split(",")
       .map((o) => o.trim())
       .filter(Boolean);
@@ -35,11 +36,11 @@ export function Decisions({ onError }: { onError: (m: string) => void }) {
       const r = await call<{
         answers: { pick: { choice: string; probabilities: Record<string, number> } };
       }>("/api/decisions", "POST", {
-        subject: String(f.get("subject")),
+        subject: formText(f, "subject"),
         questions: {
           pick: {
             type: "choice",
-            instructions: String(f.get("question")),
+            instructions: formText(f, "question"),
             criteria: Object.fromEntries(options.map((o) => [o, o])),
           },
         },

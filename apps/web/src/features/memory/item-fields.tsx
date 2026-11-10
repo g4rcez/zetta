@@ -4,6 +4,7 @@ import { EditorField } from "@/components/editor/editor";
 import { Input, Select } from "@/components/ui";
 
 import { MemoryLinkTextarea } from "./memory-link-textarea";
+import { formText } from "../shared/form-data";
 import {
   BOT_ACCESS,
   TYPE,
@@ -150,10 +151,10 @@ export function Fields({
 }
 /** What a version holds; also what a suggestion sends. */
 export const contentFields = (f: FormData) => ({
-  title: String(f.get("title")).trim(),
-  howto: String(f.get("howto") ?? "").trim(),
-  content: String(f.get("content")).trim(),
-  tags: String(f.get("tags") ?? "")
+  title: formText(f, "title").trim(),
+  howto: formText(f, "howto").trim(),
+  content: formText(f, "content").trim(),
+  tags: formText(f, "tags")
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean),
@@ -169,7 +170,7 @@ export const metaFields = (f: FormData) => {
     ...(type && {
       type: String(type),
       teams: f.getAll("teams").map(String),
-      ...(f.get("authorBotId") && { authorBotId: String(f.get("authorBotId")) }),
+      ...(f.get("authorBotId") && { authorBotId: formText(f, "authorBotId") }),
     }),
   };
 };

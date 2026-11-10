@@ -5,6 +5,7 @@ import { Button, Input, Select } from "@/components/ui";
 import { call, errorMessage, sendSealed } from "../chat/chat-client";
 import { Empty, list, listItem, Panel, useList } from "../shared/ui";
 import { connectionsQueries } from "./studio-queries";
+import { formText } from "../shared/form-data";
 
 type Source = {
   id: string;
@@ -65,10 +66,10 @@ export function Sources({ onError }: { onError: (m: string) => void }) {
       if (kind === "email" || kind === "x") {
         // The secret goes straight into the sealed connections store; the source keeps only a reference to it.
         const provider = kind;
-        const label = String(f.get("label"));
+        const label = formText(f, "label");
         const { connection } = await sendSealed(
           `connection.create:${provider}`,
-          { secret: String(f.get("secret")) },
+          { secret: formText(f, "secret") },
           (sealed) =>
             call<{ connection: { id: string } }>("/api/connections", "POST", {
               provider,
@@ -82,8 +83,8 @@ export function Sources({ onError }: { onError: (m: string) => void }) {
             kind,
             label,
             connectionId: connection.id,
-            host: preset === "custom" ? String(f.get("host")) : mail.host,
-            user: String(f.get("user")),
+            host: preset === "custom" ? formText(f, "host") : mail.host,
+            user: formText(f, "user"),
             mailbox: String(f.get("mailbox") || "INBOX"),
           });
         else
@@ -91,8 +92,8 @@ export function Sources({ onError }: { onError: (m: string) => void }) {
             kind,
             label,
             connectionId: connection.id,
-            mode: String(f.get("mode")),
-            value: String(f.get("value")),
+            mode: formText(f, "mode"),
+            value: formText(f, "value"),
           });
       } else await call("/api/sources", "POST", { kind, url: f.get("url"), label: f.get("label") });
       form.reset();

@@ -13,6 +13,7 @@ import {
 import { Badge, ConfirmButton, Empty, list, listItem } from "../shared/ui";
 import { Alert } from "@g4rcez/components/alert";
 import { connectionsQueries, harnessQueries, useLoadError, type Harness } from "./studio-queries";
+import { formText } from "../shared/form-data";
 
 const PROVIDER_NAME: Record<Provider, string> = {
   anthropic: "Anthropic",
@@ -121,15 +122,14 @@ function Connections({ onError }: { onError: (m: string) => void }) {
     setError(undefined);
     setStatus(undefined);
     try {
-      const provider = String(f.get("provider"));
+      const provider = formText(f, "provider");
       await sendSealed(
         `connection.create:${provider}`,
-        { secret: String(f.get("secret")) },
+        { secret: formText(f, "secret") },
         (sealed) =>
           call("/api/connections", "POST", {
             provider,
-            label:
-              String(f.get("label")).trim() || (PROVIDER_NAME[provider as Provider] ?? provider),
+            label: formText(f, "label").trim() || (PROVIDER_NAME[provider as Provider] ?? provider),
             sealed,
           }),
       );

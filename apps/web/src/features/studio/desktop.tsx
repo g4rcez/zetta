@@ -13,6 +13,7 @@ import {
   type Vm,
 } from "./studio-queries";
 import { VmDialog, vmError } from "./vm-viewer";
+import { formText } from "../shared/form-data";
 
 /** Your persistent computers: the default one plus any a bot asked for and you approved. Sign-ins made here stay until you delete it. */
 export function VmPanel({ onError }: { onError: (m: string) => void }) {
@@ -240,12 +241,12 @@ export function VmPanel({ onError }: { onError: (m: string) => void }) {
                 // The token is sealed to the server's key before it leaves the page; it is never in a request body.
                 await sendSealed(
                   "computer.create:cua",
-                  { secret: String(f.get("token")) },
+                  { secret: formText(f, "token") },
                   (sealed) =>
                     call("/api/computer/vms", "POST", {
                       name,
                       target: "cua",
-                      endpoint: String(f.get("endpoint")).trim(),
+                      endpoint: formText(f, "endpoint").trim(),
                       sealed,
                     }),
                 );

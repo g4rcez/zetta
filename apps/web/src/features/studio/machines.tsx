@@ -25,6 +25,7 @@ import { call, errorMessage, sendSealed, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { ConfirmButton } from "../shared/ui";
 import { BotPicker } from "../skills/bot-picker";
+import { formText } from "../shared/form-data";
 import {
   computerQueries,
   useLoadError,
@@ -277,8 +278,8 @@ export function MachinesPanel({ onError }: { onError: (m: string) => void }) {
   const values = () => {
     const f = new FormData(form.current!);
     return {
-      host: String(f.get("host") ?? "").trim(),
-      port: String(f.get("port") ?? "").trim(),
+      host: formText(f, "host").trim(),
+      port: formText(f, "port").trim(),
     };
   };
   async function scan() {
@@ -307,18 +308,18 @@ export function MachinesPanel({ onError }: { onError: (m: string) => void }) {
     setBusy("create");
     setNotice(undefined);
     try {
-      const secret = String(f.get("secret"));
-      const port = String(f.get("port") ?? "").trim();
+      const secret = formText(f, "secret");
+      const port = formText(f, "port").trim();
       const r = await sendSealed(`machine.create:${kind}`, { secret }, (sealed) =>
         call<{ machine: Machine & { publicKey: string | null } }>(
           "/api/computer/machines",
           "POST",
           {
-            name: String(f.get("name")).trim(),
+            name: formText(f, "name").trim(),
             kind,
-            host: String(f.get("host")).trim(),
+            host: formText(f, "host").trim(),
             ...(port ? { port: Number(port) } : {}),
-            username: String(f.get("username")).trim(),
+            username: formText(f, "username").trim(),
             ...(usesKey(kind) ? { hostKey } : {}),
             botIds: shareWith,
             sealed,
@@ -343,7 +344,7 @@ export function MachinesPanel({ onError }: { onError: (m: string) => void }) {
   }
   async function replace(m: Machine, e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const secret = String(new FormData(e.currentTarget).get("secret"));
+    const secret = formText(new FormData(e.currentTarget), "secret");
     setBusy(m.id);
     try {
       const r = await sendSealed(`machine.secret:${m.id}`, { secret }, (sealed) =>

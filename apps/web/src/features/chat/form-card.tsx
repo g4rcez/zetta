@@ -17,6 +17,7 @@ import { MAIL_PRESETS } from "../studio/sources";
 import { call, sendSealed } from "./chat-client";
 import { errorMessage } from "./chat-client";
 import type { FormCardData } from "./form-card-data";
+import { formText } from "../shared/form-data";
 
 type Phase = "ready" | "busy" | "done" | "dismissed";
 
@@ -252,10 +253,10 @@ function SourceLoginForm({ data, busy, setBusy, onDone, onCancel }: Props) {
     setBusy(true);
     setError(undefined);
     try {
-      const label = String(f.get("label")).trim();
+      const label = formText(f, "label").trim();
       const { connection } = await sendSealed(
         `connection.create:${kind}`,
-        { secret: String(f.get("secret")) },
+        { secret: formText(f, "secret") },
         (sealed) =>
           call<{ connection: { id: string } }>("/api/connections", "POST", {
             provider: kind,
@@ -272,16 +273,16 @@ function SourceLoginForm({ data, busy, setBusy, onDone, onCancel }: Props) {
               kind,
               label,
               connectionId: connection.id,
-              host: preset === "custom" ? String(f.get("host")) : mail.host,
-              user: String(f.get("user")),
+              host: preset === "custom" ? formText(f, "host") : mail.host,
+              user: formText(f, "user"),
               mailbox: String(f.get("mailbox") || "INBOX"),
             }
           : {
               kind,
               label,
               connectionId: connection.id,
-              mode: String(f.get("mode")),
-              value: String(f.get("value")),
+              mode: formText(f, "mode"),
+              value: formText(f, "value"),
             },
       );
       onDone();

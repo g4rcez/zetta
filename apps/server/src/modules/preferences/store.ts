@@ -22,6 +22,7 @@ export type Preferences = {
   theme: Theme | null;
   primaryColor: string | null;
   botOrder: string[];
+  roomOrder: string[];
   /** Read-only here: it changes only through `PUT /api/agents/state`, which also stops the running turns. */
   agentsState: AgentsState;
 };
@@ -38,6 +39,7 @@ export function createPreferenceStore(db: Database) {
     theme: r.theme,
     primaryColor: r.primaryColor,
     botOrder: r.botOrder,
+    roomOrder: r.roomOrder,
     agentsState: r.agentsState,
   });
   return {
@@ -59,6 +61,7 @@ export function createPreferenceStore(db: Database) {
             theme: null,
             primaryColor: null,
             botOrder: [],
+            roomOrder: [],
             agentsState: "running",
           };
     },

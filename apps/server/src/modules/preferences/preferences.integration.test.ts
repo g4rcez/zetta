@@ -80,6 +80,7 @@ suite("layout preferences against compose postgres", () => {
       theme: null,
       primaryColor: null,
       botOrder: [],
+      roomOrder: [],
       agentsState: "running",
     });
   });
@@ -97,6 +98,7 @@ suite("layout preferences against compose postgres", () => {
       theme: null,
       primaryColor: null,
       botOrder: [],
+      roomOrder: [],
       agentsState: "running",
     });
     expect(await read(ids[1]!)).toEqual({
@@ -109,8 +111,16 @@ suite("layout preferences against compose postgres", () => {
       theme: null,
       primaryColor: null,
       botOrder: [],
+      roomOrder: [],
       agentsState: "running",
     });
+  });
+  test("a room order is kept for that person only, and must be room ids", async () => {
+    const order = ["00000000-0000-7000-8000-000000000002", "00000000-0000-7000-8000-000000000001"];
+    expect((await call(ids[0]!, "PATCH", { roomOrder: order })).status).toBe(200);
+    expect(await read(ids[0]!)).toMatchObject({ roomOrder: order });
+    expect(await read(ids[1]!)).toMatchObject({ roomOrder: [] });
+    expect((await call(ids[0]!, "PATCH", { roomOrder: ["not-a-room"] })).status).toBe(400);
   });
   test("the agents state is shown with the preferences but cannot be set through them", async () => {
     const refused = await call(ids[0]!, "PATCH", { agentsState: "paused" });

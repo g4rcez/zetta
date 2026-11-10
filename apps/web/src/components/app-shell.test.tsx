@@ -23,6 +23,31 @@ Object.assign(win, {
 let sidebarSide: "left" | "right" = "left";
 let railMode: "expanded" | "collapsed" = "expanded";
 let agentsState: "running" | "paused" = "running";
+let roomOrder: string[] = [];
+const room = (id: string, title: string) => ({
+  id,
+  conversationId: `c-${id}`,
+  title,
+  goal: "",
+  context: "",
+  contextVersion: 1,
+  status: "open",
+  kind: "room",
+  tainted: false,
+  turnsUsed: 0,
+  summary: "",
+  version: 1,
+  createdByBotId: null,
+  teamId: null,
+  originConversationId: null,
+  originInbound: null,
+  createdAt: "2026-11-01T10:00:00Z",
+  updatedAt: "2026-11-01T10:00:00Z",
+  members: [],
+  queued: 0,
+  running: false,
+  awaitingApproval: false,
+});
 const blockedBot = {
   id: "bot-blocked",
   kind: "specialist",
@@ -51,8 +76,11 @@ const fake = (async (input: URL | Request | string, init?: RequestInit) => {
         theme: null,
         primaryColor: null,
         botOrder: [],
+        roomOrder,
       },
     });
+  if (url.pathname === "/api/discussions")
+    return Response.json({ discussions: [room("r-a", "Alpha"), room("r-b", "Beta")] });
   if (url.pathname === "/api/bots") return Response.json({ bots: [blockedBot] });
   return Response.json({ error: { code: "TEST", message: "offline" } }, { status: 500 });
 }) as typeof fetch;
@@ -232,4 +260,21 @@ test("the theme button opens a menu of radio items; the current theme is the onl
   await press(trigger);
   expect(checked()).toEqual([name]);
   await unmount();
+});
+
+test("the sidebar lists rooms in the saved order, and each room has a menu like a bot does", async () => {
+  roomOrder = ["r-b", "r-a"];
+  try {
+    const { host, unmount } = await mountShell("left");
+    const rows = [...host.querySelectorAll('aside section[aria-label="Rooms"] li')];
+    const labels = rows
+      .map((li) => li.querySelector("a[title]")?.getAttribute("title"))
+      .filter(Boolean);
+    expect(labels).toEqual(["Beta", "Alpha"]);
+    for (const name of ["Beta", "Alpha"])
+      expect(host.querySelector(`button[aria-label="Actions for ${name}"]`)).not.toBeNull();
+    await unmount();
+  } finally {
+    roomOrder = [];
+  }
 });

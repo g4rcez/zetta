@@ -1,24 +1,38 @@
 import { ActionHint } from "@/components/action-hint";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   CaretRightIcon,
   CircleNotchIcon,
+  DotsThreeIcon,
   HashIcon,
+  HourglassIcon,
   LifebuoyIcon,
   ListBulletsIcon,
   LockKeyIcon,
   PauseIcon,
+  PlayIcon,
   PlusIcon,
+  TrashIcon,
+  XCircleIcon,
 } from "@phosphor-icons/react";
-import { useMemo, useState, type ReactNode } from "react";
+import { Reorder, useDragControls, useReducedMotion } from "motion/react";
+import { useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { cn } from "@zetta/ui/lib/utils";
 
-import { useRooms } from "../chat/sidebar-data";
-import { TeamRoomRows } from "../teams/team-chats";
-import type { DiscussionListItem } from "./discussions-api";
-import { groupRooms, roomLabel, roomSignal, type RoomSignal } from "./rooms";
+import { MENU_DANGER, Menu, MenuItem, MenuSeparator, Modal } from "@/components/ui";
 import { saveLocal } from "@/lib/local-storage";
+import { toast } from "@/lib/notify";
+import { refreshAttention } from "../attention/summary";
+import { moveInGroup, placeGroup } from "../chat/bot-order";
+import { errorMessage } from "../chat/chat-client";
+import { useRooms } from "../chat/sidebar-data";
+import { usePreferences } from "../preferences/preferences";
+import { TeamRoomRows } from "../teams/team-chats";
+import { discussionsApi, type DiscussionListItem } from "./discussions-api";
+import { groupRooms, orderRooms, roomLabel, roomSignal, type RoomSignal } from "./rooms";
 
 const OPEN_KEY = "zetta.sidebar-sections";
 type Sections = { rooms: boolean; issues: boolean };
@@ -57,6 +71,14 @@ function Signal({ signal }: { signal: RoomSignal }) {
         role="img"
         aria-label="A bot is working"
         className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin"
+      />
+    );
+  if (signal === "queued")
+    return (
+      <HourglassIcon
+        role="img"
+        aria-label="Waiting for a turn"
+        className="size-3.5 shrink-0 text-muted-foreground"
       />
     );
   if (signal === "paused")
@@ -106,26 +128,56 @@ function Head({
   );
 }
 
+/** What the row menu does to a room. */
+type RoomAction = "pause" | "resume" | "cancel" | "delete";
+
+type Reordering = {
+  ids: string[];
+  dragging: RefObject<boolean>;
+  /** Moves this room one place up (-1) or down (+1) inside the list. */
+  onMove: (delta: -1 | 1) => void;
+};
+
+/** A room row: opens the room, and its menu pauses, cancels or deletes it. With `reordering` it also drags and moves like a bot row. */
 function RoomRow({
   d,
   current,
   icon,
   label,
+  reordering,
+  onAction,
 }: {
   d: DiscussionListItem;
   current: boolean;
   icon: ReactNode;
   label: string;
+  reordering?: Reordering | undefined;
+  onAction: (d: DiscussionListItem, action: RoomAction) => void;
 }) {
   const signal = roomSignal(d);
-  return (
-    <li>
+  const controls = useDragControls();
+  const reduce = useReducedMotion();
+  const at = reordering ? reordering.ids.indexOf(d.id) : -1;
+  const body = (
+    <div
+      className="group/room relative"
+      onPointerDown={reordering ? (e) => controls.start(e) : undefined}
+      onKeyDown={(e) => {
+        if (!reordering || !e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+        e.preventDefault();
+        reordering.onMove(e.key === "ArrowUp" ? -1 : 1);
+      }}
+    >
       <Link
         to="/rooms"
         search={{ id: d.id }}
         data-chat-row
         aria-current={current ? "page" : undefined}
         title={label}
+        onClick={(e) => {
+          // A drag that ends over the row is not a click.
+          if (reordering?.dragging.current) e.preventDefault();
+        }}
         className={cn(ROW, current ? "bg-sidebar-accent text-primary!" : IDLE)}
       >
         {icon}
@@ -137,9 +189,135 @@ function RoomRow({
         >
           {label}
         </span>
-        <Signal signal={signal} />
+        <span className="flex shrink-0 items-center group-focus-within/room:opacity-0 group-hover/room:opacity-0">
+          <Signal signal={signal} />
+        </span>
       </Link>
-    </li>
+      <Menu
+        asChild
+        hover={false}
+        restoreFocus
+        title=""
+        floatingClassName="w-48"
+        label={
+          <ActionHint label={`Actions for ${label}`}>
+            <button
+              type="button"
+              aria-label={`Actions for ${label}`}
+              className="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring group-hover/room:opacity-100 data-open:opacity-100"
+            >
+              <DotsThreeIcon aria-hidden="true" className="size-4" />
+            </button>
+          </ActionHint>
+        }
+      >
+        {reordering && (
+          <>
+            <MenuItem title="Move up" disabled={at <= 0} onClick={() => reordering.onMove(-1)}>
+              <ArrowUpIcon />
+              Move up
+            </MenuItem>
+            <MenuItem
+              title="Move down"
+              disabled={at < 0 || at >= reordering.ids.length - 1}
+              onClick={() => reordering.onMove(1)}
+            >
+              <ArrowDownIcon />
+              Move down
+            </MenuItem>
+            <MenuSeparator />
+          </>
+        )}
+        {d.status === "open" ? (
+          <MenuItem title="Pause room" onClick={() => onAction(d, "pause")}>
+            <PauseIcon />
+            Pause room
+          </MenuItem>
+        ) : (
+          <MenuItem title="Resume room" onClick={() => onAction(d, "resume")}>
+            <PlayIcon />
+            Resume room
+          </MenuItem>
+        )}
+        <MenuSeparator />
+        <MenuItem title="Cancel room" className={MENU_DANGER} onClick={() => onAction(d, "cancel")}>
+          <XCircleIcon />
+          Cancel room
+        </MenuItem>
+        <MenuItem title="Delete room" className={MENU_DANGER} onClick={() => onAction(d, "delete")}>
+          <TrashIcon />
+          Delete room
+        </MenuItem>
+      </Menu>
+    </div>
+  );
+  if (!reordering) return <li>{body}</li>;
+  return (
+    <Reorder.Item
+      as="li"
+      value={d.id}
+      dragListener={false}
+      dragControls={controls}
+      // "position" only: the default layout animation also scales the box and its text.
+      layout="position"
+      transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 600, damping: 40 }}
+      tabIndex={-1}
+      whileDrag={{ boxShadow: "0 4px 12px rgb(0 0 0 / 0.24)", zIndex: 1 }}
+      onDragStart={() => {
+        reordering.dragging.current = true;
+      }}
+      onDragEnd={() => {
+        setTimeout(() => {
+          reordering.dragging.current = false;
+        }, 0);
+      }}
+      className="cursor-grab rounded-md bg-sidebar active:cursor-grabbing"
+    >
+      {body}
+    </Reorder.Item>
+  );
+}
+
+const CONFIRM: Record<"cancel" | "delete", { title: string; description: string; text: string }> = {
+  cancel: {
+    title: "Cancel this room?",
+    description: "Queued bot turns are dropped.",
+    text: "Cancel room",
+  },
+  delete: {
+    title: "Delete this room?",
+    description: "It stops and leaves your lists. Its history is kept.",
+    text: "Delete room",
+  },
+};
+
+/** The sidebar menu's actions on a room. Cancel and delete ask first, as in the room's own menu; the open room is left when it goes. */
+function useRoomActions(selected: string | undefined, reload: () => Promise<void>) {
+  const navigate = useNavigate();
+  return useCallback(
+    async (d: DiscussionListItem, action: RoomAction) => {
+      try {
+        if (action === "cancel" || action === "delete") {
+          const ok = await Modal.confirm<boolean>({
+            title: CONFIRM[action].title,
+            description: CONFIRM[action].description,
+            confirm: { text: CONFIRM[action].text, theme: "danger" },
+          });
+          if (!ok) return;
+        }
+        if (action === "delete") {
+          await discussionsApi.remove(d.id);
+          toast.success("Room deleted.");
+        } else await discussionsApi.act(d.id, action);
+        await reload();
+        void refreshAttention();
+        if (d.id === selected && (action === "cancel" || action === "delete"))
+          void navigate({ to: "/rooms", search: {} });
+      } catch (e) {
+        toast.error(errorMessage(e));
+      }
+    },
+    [navigate, reload, selected],
   );
 }
 
@@ -150,7 +328,10 @@ const icon = "size-4 shrink-0 text-muted-foreground";
  * solve a bot's issue) kept apart under "Bot issues", closed by default.
  */
 export function RoomsSection({ query }: { query: string }) {
-  const { rooms } = useRooms();
+  const { rooms, reload } = useRooms();
+  const { preferences, set: setPreferences } = usePreferences();
+  const dragging = useRef(false);
+  const [announcement, setAnnouncement] = useState("");
   const [sections, setSections] = useState(readSections);
   const selected = useRouterState({
     select: (s) =>
@@ -161,7 +342,11 @@ export function RoomsSection({ query }: { query: string }) {
   });
   const { rooms: live, issues } = useMemo(() => groupRooms(rooms ?? []), [rooms]);
   const matches = (d: DiscussionListItem) => roomLabel(d).toLowerCase().includes(query);
-  const shownRooms = live.filter(matches);
+  const ordered = useMemo(
+    () => orderRooms(live, preferences.roomOrder),
+    [live, preferences.roomOrder],
+  );
+  const shownRooms = ordered.filter(matches);
   const shownIssues = issues.filter(matches);
   const teamsWithRoom = useMemo(() => new Set(live.map((d) => d.teamId)), [live]);
   const toggle = (key: keyof Sections) =>
@@ -173,6 +358,19 @@ export function RoomsSection({ query }: { query: string }) {
   // A search opens everything, so a match is never hidden inside a closed section.
   const roomsOpen = query ? true : sections.rooms;
   const issuesOpen = query ? true : sections.issues;
+  const onAction = useRoomActions(selected, reload);
+  const ids = ordered.map((d) => d.id);
+  const saveGroup = (next: string[]) =>
+    setPreferences({ roomOrder: placeGroup(preferences.roomOrder, next) });
+  const move = (id: string, delta: -1 | 1) => {
+    const moved = moveInGroup(ids, id, delta);
+    if (!moved) return;
+    saveGroup(moved.group);
+    const title = ordered.find((d) => d.id === id)?.title ?? "Room";
+    setAnnouncement(`${title} moved to position ${moved.position} of ${ids.length}`);
+  };
+  // A search lists a part of the rooms, so dragging would place the wrong neighbours: it waits for the full list, like the bots.
+  const canReorder = !query && ids.length > 1;
   const waiting = issues.filter((d) => roomSignal(d) === "needs-you").length;
   return (
     <>
@@ -187,7 +385,6 @@ export function RoomsSection({ query }: { query: string }) {
                 to="/rooms"
                 search={{ new: true }}
                 aria-label="New room"
-
                 className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
               >
                 <PlusIcon aria-hidden="true" className="size-4" />
@@ -196,35 +393,65 @@ export function RoomsSection({ query }: { query: string }) {
           }
         />
         {roomsOpen && (
-          <ul className="space-y-0.5">
-            {shownRooms.map((d) => (
-              <RoomRow
-                key={d.id}
-                d={d}
-                current={d.id === selected}
-                icon={<HashIcon aria-hidden="true" className={icon} />}
-                label={d.title}
-              />
-            ))}
-            <TeamRoomRows hasRoom={(id) => teamsWithRoom.has(id)} query={query} rowClass={ROW} />
-            {rooms && !query && live.length === 0 && (
-              <li className="px-2 py-1 text-xs text-muted-foreground">
-                No rooms yet. Start one with +.
-              </li>
-            )}
-            <li>
-              <Link
-                to="/rooms"
-                search={{}}
-                aria-current={onList ? "page" : undefined}
-                className={cn(ROW, onList ? "bg-sidebar-accent font-medium text-primary!" : IDLE)}
+          <>
+            {canReorder ? (
+              <Reorder.Group
+                axis="y"
+                as="ul"
+                values={ids}
+                onReorder={saveGroup}
+                className="space-y-0.5"
               >
-                <ListBulletsIcon aria-hidden="true" className={icon} />
-                <span className="min-w-0 flex-1 truncate">All rooms</span>
-              </Link>
-            </li>
-          </ul>
+                {shownRooms.map((d) => (
+                  <RoomRow
+                    key={d.id}
+                    d={d}
+                    current={d.id === selected}
+                    icon={<HashIcon aria-hidden="true" className={icon} />}
+                    label={d.title}
+                    reordering={{ ids, dragging, onMove: (delta) => move(d.id, delta) }}
+                    onAction={onAction}
+                  />
+                ))}
+              </Reorder.Group>
+            ) : (
+              <ul className="space-y-0.5">
+                {shownRooms.map((d) => (
+                  <RoomRow
+                    key={d.id}
+                    d={d}
+                    current={d.id === selected}
+                    icon={<HashIcon aria-hidden="true" className={icon} />}
+                    label={d.title}
+                    onAction={onAction}
+                  />
+                ))}
+              </ul>
+            )}
+            <ul className="space-y-0.5">
+              <TeamRoomRows hasRoom={(id) => teamsWithRoom.has(id)} query={query} rowClass={ROW} />
+              {rooms && !query && live.length === 0 && (
+                <li className="px-2 py-1 text-xs text-muted-foreground">
+                  No rooms yet. Start one with +.
+                </li>
+              )}
+              <li>
+                <Link
+                  to="/rooms"
+                  search={{}}
+                  aria-current={onList ? "page" : undefined}
+                  className={cn(ROW, onList ? "bg-sidebar-accent font-medium text-primary!" : IDLE)}
+                >
+                  <ListBulletsIcon aria-hidden="true" className={icon} />
+                  <span className="min-w-0 flex-1 truncate">All rooms</span>
+                </Link>
+              </li>
+            </ul>
+          </>
         )}
+        <p role="status" aria-live="polite" className="sr-only">
+          {announcement}
+        </p>
       </section>
       {issues.length > 0 && (!query || shownIssues.length > 0) && (
         <section aria-label="Bot issues">
@@ -252,6 +479,7 @@ export function RoomsSection({ query }: { query: string }) {
                     )
                   }
                   label={roomLabel(d)}
+                  onAction={onAction}
                 />
               ))}
             </ul>

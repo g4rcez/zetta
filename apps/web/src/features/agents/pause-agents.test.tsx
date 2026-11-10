@@ -37,6 +37,7 @@ const fake = (async (input: URL | Request | string, init?: RequestInit) => {
         theme: null,
         primaryColor: null,
         botOrder: [],
+        roomOrder: [],
         agentsState: serverState,
       },
     });

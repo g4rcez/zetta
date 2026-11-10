@@ -33,6 +33,7 @@ const patch = z.strictObject({
     .optional(),
   // Ids only, never names: a stale or foreign id is harmless because only this person reads the list.
   botOrder: z.array(z.uuid()).max(500).optional(),
+  roomOrder: z.array(z.uuid()).max(500).optional(),
 });
 
 export function createPreferenceRoutes(

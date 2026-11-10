@@ -66,6 +66,7 @@ const api = (path: string, method: string, body: unknown): Answer => {
           theme: null,
           primaryColor: null,
           botOrder: [],
+          roomOrder: [],
         },
       },
     };

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DiscussionListItem } from "./discussions-api";
-import { groupRooms, roomLabel, roomSignal, roomStatus } from "./rooms";
+import { groupRooms, orderRooms, roomLabel, roomSignal, roomStatus } from "./rooms";
 
 const item = (v: Partial<DiscussionListItem> & { id: string; title: string }): DiscussionListItem =>
   ({
@@ -79,9 +79,13 @@ describe("roomSignal", () => {
     expect(roomSignal(item({ id: "1", title: "a", status: "stalled" }))).toBe("needs-you");
   });
 
-  test("a running or queued turn means a bot is working", () => {
+  test("a running turn means a bot is working", () => {
     expect(roomSignal(item({ id: "1", title: "a", running: true }))).toBe("working");
-    expect(roomSignal(item({ id: "1", title: "a", queued: 2 }))).toBe("working");
+    expect(roomSignal(item({ id: "1", title: "a", running: true, queued: 2 }))).toBe("working");
+  });
+
+  test("queued turns alone mean the room waits for a turn, not that a bot works", () => {
+    expect(roomSignal(item({ id: "1", title: "a", queued: 2 }))).toBe("queued");
   });
 
   test("a paused room says so; a quiet room has no signal", () => {
@@ -102,6 +106,10 @@ describe("roomStatus", () => {
     expect(roomStatus(item({ id: "1", title: "a", status: "cancelled" }))).toBe("Cancelled");
   });
 
+  test("queued turns with nothing running say the room waits", () => {
+    expect(roomStatus(item({ id: "1", title: "a", queued: 1 }))).toBe("Waiting for a turn");
+  });
+
   test("a quiet open room has no status", () => {
     expect(roomStatus(item({ id: "1", title: "a" }))).toBe("");
   });
@@ -119,5 +127,16 @@ describe("roomLabel", () => {
       "Help: a user's own title",
     );
     expect(roomLabel({ kind: "permissions", title: "Permissions" })).toBe("Permissions");
+  });
+});
+
+describe("orderRooms", () => {
+  const rooms = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+  test("placed rooms come first in the saved order, the rest keep their place", () => {
+    expect(orderRooms(rooms, ["c", "a"]).map((r) => r.id)).toEqual(["c", "a", "b", "d"]);
+  });
+  test("an id that is no longer a room is ignored, and an empty order changes nothing", () => {
+    expect(orderRooms(rooms, ["gone", "d"]).map((r) => r.id)).toEqual(["d", "a", "b", "c"]);
+    expect(orderRooms(rooms, []).map((r) => r.id)).toEqual(["a", "b", "c", "d"]);
   });
 });

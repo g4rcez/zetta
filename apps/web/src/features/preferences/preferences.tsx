@@ -46,6 +46,8 @@ export type Preferences = {
   /** `#rrggbb`. Null = the theme's own main color. */
   primaryColor: string | null;
   botOrder: string[];
+  /** The same for rooms (`#` rows): ids, first on top; a room never placed sorts after, by name. */
+  roomOrder: string[];
   /** Read-only here: it changes only through `setAgentsState`, which also stops the turns running now. */
   agentsState: AgentsState;
 };
@@ -68,6 +70,7 @@ const DEFAULTS: Preferences = {
   theme: null,
   primaryColor: null,
   botOrder: [],
+  roomOrder: [],
   agentsState: "running",
 };
 // The server is the source of truth. This copy only stops the layout from jumping while the first request is in flight.

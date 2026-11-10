@@ -36,6 +36,8 @@ import { GroupIcon, openOnClick, TaskList, TaskTitleLink } from "./task-list";
 import { TaskPeek } from "./task-peek";
 import { stepCounts, type StepCount } from "./task-steps";
 import { TASK_COLUMNS, tasksApi, tasksQueries, type Task, type TaskStatus } from "./tasks-api";
+import { useTimeFormat } from "../preferences/preferences";
+import { formatDateTime } from "../preferences/time-format";
 
 const NO_TASKS: Task[] = [];
 const NO_COUNTS = new Map<string, StepCount>();
@@ -329,6 +331,7 @@ function TaskCard({
   onMove: (to: TaskStatus) => void;
   onDelete: () => void;
 }) {
+  const tf = useTimeFormat();
   return (
     <li
       draggable={draggable}
@@ -398,10 +401,10 @@ function TaskCard({
         </div>
       )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <span title={new Date(task.createdAt).toLocaleString()}>
+        <span title={formatDateTime(task.createdAt, tf)}>
           Created {relativeTime(task.createdAt, now)}
         </span>
-        <span title={new Date(task.updatedAt).toLocaleString()}>
+        <span title={formatDateTime(task.updatedAt, tf)}>
           Updated {relativeTime(task.updatedAt, now)}
         </span>
         {task.conversationId && (

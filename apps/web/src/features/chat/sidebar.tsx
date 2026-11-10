@@ -39,7 +39,8 @@ import { ActionHint } from "@/components/action-hint";
 import { Button, Input, MENU_DANGER, Menu, MenuItem, MenuSeparator, Select } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotStatusDot } from "@/components/bot-status";
-import { usePreferences } from "../preferences/preferences";
+import { usePreferences, useTimeFormat } from "../preferences/preferences";
+import { formatDateTime } from "../preferences/time-format";
 import { useBotAttention, type BotAttention } from "../attention/summary";
 
 import type { Bot, Conversation, Folder } from "./chat-client";
@@ -142,8 +143,6 @@ function Hint({
   );
 }
 
-const fullDate = (iso: string) => new Date(iso).toLocaleString();
-
 /** ArrowUp/ArrowDown walk the visible conversation rows, so the list works without the mouse. */
 function walkRows(e: KeyboardEvent<HTMLElement>) {
   if (e.altKey || e.metaKey || e.ctrlKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
@@ -222,6 +221,7 @@ function ChatRow({
 }) {
   const [editing, setEditing] = useState(false);
   const reduce = useReducedMotion();
+  const tf = useTimeFormat();
   const commit = (value: string) => {
     setEditing(false);
     const title = value.trim();
@@ -293,7 +293,7 @@ function ChatRow({
         {c.favorite && <StarIcon aria-label="Favorite" className="size-3 shrink-0" />}
         {/* Nested rows give the title the whole width; the bot row carries the latest time. */}
         {bot && (
-          <Hint title="Last activity" description={fullDate(c.updatedAt)}>
+          <Hint title="Last activity" description={formatDateTime(c.updatedAt, tf)}>
             <time
               dateTime={c.updatedAt}
               className="min-w-8 shrink-0 text-right text-xs text-muted-foreground tabular-nums group-focus-within/chat:opacity-0 group-hover/chat:opacity-0"
@@ -417,6 +417,7 @@ function BotSection({
 }) {
   const controls = useDragControls();
   const reduce = useReducedMotion();
+  const tf = useTimeFormat();
   const navigate = useNavigate();
   const listId = useId();
   // The open page is one row: the chat when one is open, the bot only on its empty draft.
@@ -580,7 +581,7 @@ function BotSection({
         ) : (
           latest &&
           !setup && (
-            <Hint title="Last activity" description={fullDate(latest.updatedAt)}>
+            <Hint title="Last activity" description={formatDateTime(latest.updatedAt, tf)}>
               <time
                 dateTime={latest.updatedAt}
                 className="pl-1 text-xs text-muted-foreground tabular-nums"

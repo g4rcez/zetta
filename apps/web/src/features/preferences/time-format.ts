@@ -19,9 +19,29 @@ export const formatTime = (
   },
 ) => new Date(value).toLocaleTimeString(undefined, { ...options, ...cycle(f) });
 
+// `toLocaleString` with options builds a new Intl.DateTimeFormat on every call (about 15 µs), and tooltips format once per rendered row.
+// These are the fields `toLocaleString` shows by default, so the result is the same.
+const dateTimeFormats: Partial<Record<TimeFormat, Intl.DateTimeFormat>> = {};
+const defaultDateTime = (f: TimeFormat) =>
+  (dateTimeFormats[f] ??= new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    ...cycle(f),
+  }));
+
 /** Date and hour, in the person's chosen format. */
 export const formatDateTime = (
   value: Input,
   f: TimeFormat,
-  options: Intl.DateTimeFormatOptions = {},
-) => new Date(value).toLocaleString(undefined, { ...options, ...cycle(f) });
+  options?: Intl.DateTimeFormatOptions,
+) => {
+  const date = new Date(value);
+  // `Intl.DateTimeFormat.format` throws on an invalid date; `toLocaleString` returns "Invalid Date".
+  return options || Number.isNaN(date.getTime())
+    ? date.toLocaleString(undefined, { ...options, ...cycle(f) })
+    : defaultDateTime(f).format(date);
+};

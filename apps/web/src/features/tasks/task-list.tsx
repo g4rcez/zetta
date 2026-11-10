@@ -8,6 +8,8 @@ import { FollowUpChip, LabelChips, PriorityIcon, StatusIcon, StepChip } from "./
 import type { StepCount } from "./task-steps";
 import { NO_BOT, type GroupBy, type TaskGroup } from "./task-filters";
 import type { Task, TaskStatus } from "./tasks-api";
+import { useTimeFormat } from "../preferences/preferences";
+import { formatDateTime } from "../preferences/time-format";
 
 /** The title of a task. It opens the task in the side panel; ctrl or cmd click still opens a new tab. */
 export function TaskTitleLink({ task, className }: { task: Task; className?: string }) {
@@ -62,6 +64,7 @@ export function TaskList({
   openId: string | undefined;
   onOpen: (id: string) => void;
 }) {
+  const tf = useTimeFormat();
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
       {groups.map((group) => (
@@ -105,7 +108,7 @@ export function TaskList({
                     </span>
                   )}
                   <span
-                    title={new Date(task.updatedAt).toLocaleString()}
+                    title={formatDateTime(task.updatedAt, tf)}
                     className="w-20 shrink-0 text-right text-xs text-muted-foreground"
                   >
                     {relativeTime(task.updatedAt, now)}

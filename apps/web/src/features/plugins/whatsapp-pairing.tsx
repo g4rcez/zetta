@@ -1,3 +1,4 @@
+import { ZoomImage } from "@/components/zoom-image";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -89,7 +90,7 @@ export function WhatsappPairing({
           </p>
         )}
         {qr && (
-          <img
+          <ZoomImage
             src={qr}
             alt="WhatsApp pairing QR code"
             className="mx-auto size-64 rounded-md border bg-white p-2"

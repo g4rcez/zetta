@@ -92,6 +92,7 @@ export function PluginIcon({
 }) {
   if (id === "google") return <GoogleLogo className={className} />;
   const logo = id ? LOGOS[id] : undefined;
+  // No zoom: a decorative logo (alt="").
   if (logo)
     return (
       <img

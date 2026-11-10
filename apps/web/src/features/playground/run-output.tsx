@@ -1,3 +1,4 @@
+import { ZoomImage } from "@/components/zoom-image";
 import { ActionHint } from "@/components/action-hint";
 import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -76,7 +77,7 @@ function OutputFile({ runId, file }: { runId: string; file: RunOutput }) {
     file.mimeType === "text/html" ? (
       <HtmlOutput runId={runId} file={file} />
     ) : file.mimeType.startsWith("image/") ? (
-      <img
+      <ZoomImage
         src={outputUrl(runId, file.path)}
         alt={file.path}
         className="max-h-96 rounded-lg border"

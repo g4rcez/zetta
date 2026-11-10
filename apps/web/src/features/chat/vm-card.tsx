@@ -42,6 +42,7 @@ function LivePreview({
         aria-label="Open the computer to watch live"
         className="relative block aspect-[16/10] w-full overflow-hidden rounded-md border bg-muted sm:w-72"
       >
+        {/* No zoom: the card is a button that opens the live computer. */}
         {png ? (
           <img
             alt="Live view of the computer"

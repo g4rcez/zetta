@@ -1,3 +1,4 @@
+import { ZoomImage } from "@/components/zoom-image";
 import { unzipSync } from "fflate";
 import { DownloadSimpleIcon, FileIcon, FolderIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -168,7 +169,7 @@ function ImageViewer({ a }: { a: Artifact }) {
   if (src === undefined) return <Loading />;
   if (src === null) return <Gone />;
   return (
-    <img
+    <ZoomImage
       src={src}
       alt={a.title}
       className="mx-auto max-h-[75vh] max-w-full rounded-lg border bg-muted/30"
@@ -279,7 +280,9 @@ function ZipEntry({ data, entry }: { data: Uint8Array; entry: Entry }) {
   useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
   if (!bytes) return <Empty>This file is too large to preview. Download the zip to open it.</Empty>;
   if (url)
-    return <img src={url} alt={entry.name} className="max-h-[75vh] max-w-full rounded-lg border" />;
+    return (
+      <ZoomImage src={url} alt={entry.name} className="max-h-[75vh] max-w-full rounded-lg border" />
+    );
   if (ENTRY_CODE.test(entry.name))
     return (
       <HighlightedCode text={new TextDecoder().decode(bytes)} language={languageOf(entry.name)} />

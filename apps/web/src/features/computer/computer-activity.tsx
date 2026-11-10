@@ -1,3 +1,4 @@
+import { ZoomImage } from "@/components/zoom-image";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui";
@@ -91,7 +92,7 @@ export function ComputerActivity({
         </Button>
       </div>
       {live && png && (
-        <img
+        <ZoomImage
           alt={`Live ${what} view`}
           src={`data:image/png;base64,${png}`}
           className="h-auto w-full max-w-[1024px] rounded border"

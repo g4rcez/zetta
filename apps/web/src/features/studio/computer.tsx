@@ -273,6 +273,7 @@ export function Computer({ onError }: { onError: (m: string) => void }) {
                 Close browser
               </Button>
             </div>
+            {/* No zoom: a click on the picture is sent to the remote browser. */}
             {png && (
               <img
                 alt="Remote browser screen"

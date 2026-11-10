@@ -1,13 +1,8 @@
 import { ActionHint } from "@/components/action-hint";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import {
-  CaretLeftIcon,
-  CaretRightIcon,
-  DownloadSimpleIcon,
-  ImageBrokenIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+import { ImageBrokenIcon } from "@phosphor-icons/react";
+import { ImageLightbox } from "@/components/zoom-image";
 
 import { Skeleton } from "@g4rcez/components";
 import { cn } from "@zetta/ui/lib/utils";
@@ -97,6 +92,7 @@ export function AttachmentImage({
         aria-label={`Open ${pic.name}`}
         className="block max-w-full cursor-zoom-in overflow-hidden rounded-lg border bg-muted/30 outline-offset-2 focus-visible:outline-2"
       >
+        {/* No zoom: the tile is a button that opens `ImageViewer`, which zooms. */}
         <img
           src={src}
           alt={pic.name}
@@ -139,7 +135,7 @@ export function PictureStrip({ pics }: { pics: Pic[] }) {
   );
 }
 
-/** Full-size viewer in a native dialog. Arrow keys move between the message's pictures, Escape or a click outside closes it. */
+/** Fullscreen viewer with zoom (`ImageLightbox`). Arrow keys move between the message's pictures, Escape closes it. */
 export function ImageViewer({
   pics,
   start,
@@ -149,98 +145,17 @@ export function ImageViewer({
   start: number;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
   const [index, setIndex] = useState(start);
   const pic = pics[index]!;
   const src = useAttachmentSrc(pic.id);
-  useEffect(() => {
-    const d = ref.current;
-    if (d && !d.open) d.showModal();
-  }, []);
-  const step = (d: number) => setIndex((i) => (i + d + pics.length) % pics.length);
   return (
-    <dialog
-      ref={ref}
-      aria-label={pic.name}
+    <ImageLightbox
+      name={pic.name}
+      src={src}
+      index={index}
+      count={pics.length}
+      onStep={(d) => setIndex((i) => (i + d + pics.length) % pics.length)}
       onClose={onClose}
-      onClick={(e) => {
-        if (e.target === ref.current) ref.current?.close();
-      }}
-      onKeyDown={(e) => {
-        if (pics.length > 1 && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
-          e.preventDefault();
-          step(e.key === "ArrowRight" ? 1 : -1);
-        }
-      }}
-      className="m-auto max-h-[94vh] w-[min(1200px,96vw)] max-w-none overflow-hidden rounded-2xl border bg-background p-0 text-foreground shadow-2xl backdrop:bg-black/70"
-    >
-      <div className="flex items-center gap-2 border-b px-4 py-2 text-sm">
-        <span className="min-w-0 flex-1 truncate font-medium">{pic.name}</span>
-        {pics.length > 1 && (
-          <span className="text-xs text-muted-foreground">
-            {index + 1} / {pics.length}
-          </span>
-        )}
-        {src && (
-          <ActionHint label="Download">
-            <a
-              href={src}
-              download={pic.name}
-              aria-label="Download"
-              className="rounded p-1.5 hover:bg-muted"
-            >
-              <DownloadSimpleIcon className="size-4" />
-            </a>
-          </ActionHint>
-        )}
-        <ActionHint label="Close">
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={() => ref.current?.close()}
-            className="rounded p-1.5 hover:bg-muted"
-          >
-            <XIcon className="size-4" />
-          </button>
-        </ActionHint>
-      </div>
-      <div className="relative flex max-h-[calc(94vh-3rem)] min-h-48 items-center justify-center bg-black/80 p-2">
-        {src ? (
-          <img
-            src={src}
-            alt={pic.name}
-            className="max-h-[calc(94vh-4rem)] max-w-full object-contain"
-          />
-        ) : src === null ? (
-          <span className="text-sm text-white/70">Image unavailable</span>
-        ) : (
-          <Skeleton as="div" decorative className="size-64!" />
-        )}
-        {pics.length > 1 && (
-          <>
-            <ActionHint label="Previous image">
-              <button
-                type="button"
-                aria-label="Previous image"
-                onClick={() => step(-1)}
-                className="absolute left-3 rounded-full bg-background/80 p-2 hover:bg-background"
-              >
-                <CaretLeftIcon className="size-5" />
-              </button>
-            </ActionHint>
-            <ActionHint label="Next image">
-              <button
-                type="button"
-                aria-label="Next image"
-                onClick={() => step(1)}
-                className="absolute right-3 rounded-full bg-background/80 p-2 hover:bg-background"
-              >
-                <CaretRightIcon className="size-5" />
-              </button>
-            </ActionHint>
-          </>
-        )}
-      </div>
-    </dialog>
+    />
   );
 }

@@ -613,6 +613,7 @@ export function Composer({
                       onClick={() => setViewing(pictures.findIndex((p) => p.key === x.key))}
                       className="block size-16 cursor-zoom-in overflow-hidden rounded-lg border bg-muted outline-offset-2 focus-visible:outline-2 disabled:cursor-progress"
                     >
+                      {/* No zoom: the thumbnail is a button that opens `ImageViewer`, which zooms. */}
                       <img
                         src={x.preview}
                         alt={x.name}

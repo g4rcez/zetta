@@ -22,6 +22,7 @@ export function UserAvatar({
   const value = parseAvatar(avatar);
   if (value)
     return <BotAvatar bot={{ id: name, avatar: value }} size={size} className={className} />;
+  // No zoom: a decorative avatar (alt="") that sits inside links and buttons.
   if (image && !failed)
     return (
       <img

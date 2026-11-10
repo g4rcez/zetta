@@ -630,6 +630,7 @@ function BotPicture({
 }) {
   const gradient = useId();
   const a = bot.avatar;
+  // No zoom: a decorative avatar (alt="") that sits inside links and buttons.
   if (a?.kind === "image")
     return (
       <img

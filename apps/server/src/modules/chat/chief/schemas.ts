@@ -29,6 +29,10 @@ const connectionKey = z.strictObject({
 });
 const schedule = {
   dailyAt: hhmm.optional(),
+  /** Days a dailyAt routine runs on: 0 = Sunday … 6 = Saturday. Empty or left out = every day. */
+  weekdays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+  /** The schedule in words or a cron ("Monday to Friday at 8:30", "every 15 minutes", "0 9 * * 1-5"), read instead of the fields. */
+  when: bounded(200).optional(),
   everyMinutes: z.number().int().min(5).max(10080).optional(),
   onceAt: z.string().datetime({ offset: true }).optional(),
 };

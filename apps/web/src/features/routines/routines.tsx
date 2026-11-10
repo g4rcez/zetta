@@ -14,7 +14,12 @@ import { Badge, ConfirmButton, Empty, Modal, list, listItem, useList, when } fro
 import { relativeTime } from "../shared/relative-time";
 import { summarize } from "../studio/routine-format";
 import { refreshAttention, useRoutineUnreadChats } from "../attention/summary";
-import { buildSchedule, describeSchedule, type ScheduleMode } from "../studio/routine-schedule";
+import {
+  buildSchedule,
+  describeSchedule,
+  scheduleText,
+  type ScheduleMode,
+} from "../studio/routine-schedule";
 import { Alert } from "@g4rcez/components/alert";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
@@ -26,6 +31,8 @@ type Routine = {
   prompt: string;
   timezone: string;
   dailyAt: string | null;
+  /** The days a daily routine runs on (0 = Sunday); null = every day. */
+  weekdays?: number[] | null;
   everyMinutes: number | null;
   kind?: "recurring" | "once";
   /** The routine's one chat (every run adds to it); null before the first run. */
@@ -278,7 +285,7 @@ function History({ routineId }: { routineId: string }) {
   );
 }
 
-function EditForm({
+export function EditForm({
   routine,
   bots,
   onSaved,
@@ -301,7 +308,10 @@ function EditForm({
       prompt: f.get("prompt"),
       timezone: f.get("timezone"),
     };
-    if (routine.dailyAt) body.dailyAt = f.get("dailyAt");
+    // A schedule written in words replaces the time fields; the server reads it in the timezone sent with it.
+    const when = String(f.get("when") ?? "").trim();
+    if (when) body.when = when;
+    else if (routine.dailyAt) body.dailyAt = f.get("dailyAt");
     else if (routine.everyMinutes) body.everyMinutes = Number(f.get("everyMinutes"));
     try {
       await call(`/api/routines/${routine.id}`, "PATCH", body);
@@ -357,6 +367,16 @@ function EditForm({
           required
         />
       )}
+      {routine.kind !== "once" && (
+        <Input
+          title="Or describe a new schedule (optional)"
+          name="when"
+          autoComplete="off"
+          placeholder={scheduleText(routine) || WHEN_EXAMPLES}
+          container="sm:col-span-2"
+          required={false}
+        />
+      )}
       <Input title="Timezone" name="timezone" defaultValue={routine.timezone} required />
       {routine.kind === "once" && (
         <p className="text-xs text-muted-foreground sm:col-span-2">
@@ -382,10 +402,12 @@ function EditForm({
 
 const NEEDS_ATTENTION: RoutineStatus[] = ["failed", "interrupted", "blocked"];
 type View = "history" | "triggers" | "edit" | "activate";
+const WHEN_EXAMPLES = "Monday to Friday at 8:30 · every 15 minutes · tomorrow at 5pm · 0 9 * * 1-5";
+
 const statusOf = (r: Routine): RoutineStatus => r.status ?? (r.paused ? "paused" : "scheduled");
 
 /** Creating a routine is one focused task, so it gets its own dialog instead of sitting above the list. */
-function NewRoutineForm({
+export function NewRoutineForm({
   bots,
   flows,
   onCreated,
@@ -396,8 +418,10 @@ function NewRoutineForm({
   onCreated: (r: Routine) => void;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<ScheduleMode>("daily");
+  const [mode, setMode] = useState<ScheduleMode>("text");
   const [nextRuns, setNextRuns] = useState<string[]>();
+  // What the server understood the written schedule as, and anything it had to assume, shown next to the next runs.
+  const [understood, setUnderstood] = useState<{ text: string; assumed: string | null }>();
   const [formError, setFormError] = useState<string>();
   const schedule = (f: FormData) =>
     buildSchedule({
@@ -406,16 +430,22 @@ function NewRoutineForm({
       dailyAt: String(f.get("dailyAt") ?? ""),
       everyMinutes: String(f.get("everyMinutes") ?? ""),
       onceLocal: String(f.get("onceLocal") ?? ""),
+      text: String(f.get("scheduleText") ?? ""),
     });
   async function preview(form: HTMLFormElement) {
     setFormError(undefined);
     setNextRuns(undefined);
+    setUnderstood(undefined);
     const s = schedule(new FormData(form));
     if (!s.ok) return setFormError(s.problem);
     try {
-      setNextRuns(
-        (await call<{ nextRuns: string[] }>("/api/routines/preview", "POST", s.value)).nextRuns,
+      const r = await call<{ nextRuns: string[]; understood?: string; assumed?: string | null }>(
+        "/api/routines/preview",
+        "POST",
+        s.value,
       );
+      setNextRuns(r.nextRuns);
+      if (r.understood) setUnderstood({ text: r.understood, assumed: r.assumed ?? null });
     } catch (e) {
       setFormError(errorMessage(e));
     }
@@ -466,6 +496,7 @@ function NewRoutineForm({
         <div className="flex flex-wrap gap-3 text-sm">
           {(
             [
+              ["text", "Describe it"],
               ["daily", "Every day"],
               ["interval", "Every few minutes"],
               ["once", "Once"],
@@ -478,6 +509,7 @@ function NewRoutineForm({
               onChange={() => {
                 setMode(v);
                 setNextRuns(undefined);
+                setUnderstood(undefined);
               }}
             >
               {l}
@@ -485,6 +517,21 @@ function NewRoutineForm({
           ))}
         </div>
       </fieldset>
+      {mode === "text" && (
+        <div className="sm:col-span-2">
+          <Input
+            title="When should it run?"
+            name="scheduleText"
+            autoComplete="off"
+            required
+            maxLength={200}
+            placeholder="Monday to Friday at 8:30"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Say it in words or write a cron. For example: {WHEN_EXAMPLES}
+          </p>
+        </div>
+      )}
       {mode === "daily" && <Input title="Time of day" name="dailyAt" type="time" required />}
       {mode === "interval" && (
         <Input
@@ -512,6 +559,14 @@ function NewRoutineForm({
       />
       {nextRuns && (
         <div className="sm:col-span-2" role="status">
+          {understood && (
+            <p className="mb-1 text-sm">
+              Understood as <span className="font-medium">{understood.text}</span>
+              {understood.assumed && (
+                <span className="block text-xs text-muted-foreground">{understood.assumed}</span>
+              )}
+            </p>
+          )}
           <p className="text-xs font-medium">Next runs</p>
           <NextRuns runs={nextRuns} />
         </div>

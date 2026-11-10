@@ -18,6 +18,7 @@ import { audit } from "./audit";
 import {
   computeNextRun,
   describeSchedule,
+  normalizeWeekdays,
   previewRuns,
   validTimezone,
   type Recurrence,
@@ -40,6 +41,8 @@ export type RoutineInput = {
   prompt: string;
   timezone: string;
   dailyAt?: string;
+  /** Days a daily routine runs on (0 = Sunday … 6 = Saturday). Omitted or empty = every day. Only meaningful with `dailyAt`. */
+  weekdays?: number[];
   everyMinutes?: number;
   onceAt?: string;
   conversationMode?: "new" | "continue";
@@ -105,6 +108,7 @@ export function createRoutines(
   const rec = (r: Routine): Recurrence => ({
     timezone: r.timezone,
     dailyAt: r.dailyAt,
+    weekdays: r.weekdays,
     everyMinutes: r.everyMinutes,
     kind: r.kind,
     onceAt: r.onceAt,
@@ -604,6 +608,8 @@ export function createRoutines(
             prompt: await normalizeMentionText(db, a.userId, v.prompt),
             timezone: v.timezone,
             dailyAt: v.dailyAt ?? null,
+            // Days only mean something for a daily time; an interval or one-time routine never stores them.
+            weekdays: v.dailyAt && kind === "recurring" ? normalizeWeekdays(v.weekdays) : null,
             everyMinutes: v.everyMinutes ?? null,
             kind,
             onceAt: v.onceAt ? new Date(v.onceAt) : null,
@@ -649,6 +655,9 @@ export function createRoutines(
         if (v.dailyAt) merged.everyMinutes = null;
         else merged.dailyAt = null;
       }
+      // Days follow the daily time: an interval or one-time routine has none, and an empty or full list is stored as "every day".
+      merged.weekdays =
+        merged.dailyAt && merged.kind === "recurring" ? normalizeWeekdays(merged.weekdays) : null;
       const nextRunAt =
         r.paused || merged.archived ? null : computeNextRun(new Date(), rec(merged));
       const [row] = await db
@@ -657,6 +666,7 @@ export function createRoutines(
           ...Object.fromEntries(Object.entries(next).filter(([, x]) => x !== undefined)),
           kind: merged.kind,
           dailyAt: merged.dailyAt,
+          weekdays: merged.weekdays,
           everyMinutes: merged.everyMinutes,
           onceAt: merged.onceAt,
           paused: merged.archived ? true : r.paused,
@@ -835,7 +845,13 @@ export function createRoutines(
     },
     preview(
       _a: ActiveActor,
-      v: { timezone: string; dailyAt?: string; everyMinutes?: number; onceAt?: string },
+      v: {
+        timezone: string;
+        dailyAt?: string;
+        weekdays?: number[];
+        everyMinutes?: number;
+        onceAt?: string;
+      },
       count = 3,
     ) {
       if (!validTimezone(v.timezone)) throw new RoutineError("INVALID");
@@ -844,6 +860,7 @@ export function createRoutines(
         {
           timezone: v.timezone,
           dailyAt: v.dailyAt ?? null,
+          weekdays: v.weekdays ?? null,
           everyMinutes: v.everyMinutes ?? null,
           kind: v.onceAt ? "once" : "recurring",
           onceAt: v.onceAt ? new Date(v.onceAt) : null,

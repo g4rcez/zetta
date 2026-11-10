@@ -3,7 +3,8 @@ import { and, eq } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
 
 import { RoutineError, type RoutineInput } from "../../features/routines";
-import { validTimezone } from "../../features/schedule";
+import { describeSchedule, normalizeWeekdays, validTimezone } from "../../features/schedule";
+import { parseScheduleText } from "../../features/schedule-text";
 import { pick, short } from "./resolve";
 import type { ChiefArgs } from "./schemas";
 import type { Applied, ApplyCtx, ChiefCtx, DiffLine, Outcome } from "./types";
@@ -11,15 +12,49 @@ import type { Applied, ApplyCtx, ChiefCtx, DiffLine, Outcome } from "./types";
 const when = (r: {
   kind: string;
   dailyAt: string | null;
+  weekdays?: number[] | null;
   everyMinutes: number | null;
   onceAt: Date | string | null;
   timezone: string;
 }) =>
-  r.kind === "once"
-    ? `once at ${r.onceAt ? new Date(r.onceAt).toISOString() : "?"}`
-    : r.dailyAt
-      ? `every day at ${r.dailyAt} (${r.timezone})`
-      : `every ${r.everyMinutes} minutes`;
+  describeSchedule({
+    timezone: r.timezone,
+    dailyAt: r.dailyAt,
+    weekdays: r.weekdays,
+    everyMinutes: r.everyMinutes,
+    kind: r.kind === "once" ? "once" : "recurring",
+    onceAt: r.onceAt ? new Date(r.onceAt) : null,
+  });
+
+type Scheduled = {
+  when?: string | undefined;
+  dailyAt?: string | undefined;
+  weekdays?: number[] | undefined;
+  everyMinutes?: number | undefined;
+  onceAt?: string | undefined;
+};
+/**
+ * `when` is the schedule in words ("Monday to Friday at 8:30", "every 15 minutes", a cron). It is read into the same fields the rest of
+ * the tool works with, so the card shows the schedule the way every routine is shown. On an update a daily schedule sets `weekdays`
+ * (an empty list is every day), so "every day at 8" does not keep the weekday limit the routine had.
+ */
+function readWhen<A extends Scheduled>(
+  a: A,
+  timezone: string,
+  update: boolean,
+): { error: string } | { args: A; assumed: string | null } {
+  if (a.when === undefined) return { args: a, assumed: null };
+  if (a.dailyAt || a.weekdays || a.everyMinutes || a.onceAt)
+    return {
+      error:
+        "send the schedule either as `when` or as dailyAt, weekdays, everyMinutes or onceAt, not both.",
+    };
+  const read = parseScheduleText(a.when, { timezone });
+  if (!read.ok) return { error: read.problem };
+  const { when: _words, ...rest } = a;
+  const days = read.schedule.dailyAt && update ? { weekdays: read.schedule.weekdays ?? [] } : {};
+  return { args: { ...rest, ...read.schedule, ...days } as unknown as A, assumed: read.assumed };
+}
 
 export async function runRoutine(ctx: ChiefCtx, a: ChiefArgs<"routine">): Promise<Outcome> {
   const { routines, db } = ctx.deps;
@@ -37,6 +72,9 @@ export async function runRoutine(ctx: ChiefCtx, a: ChiefArgs<"routine">): Promis
   if (a.action === "create") {
     const b = pick(bots, a.bot, (x) => x.name, "bot");
     if ("error" in b) return b;
+    const read = readWhen(a, a.timezone, false);
+    if ("error" in read) return read;
+    a = read.args;
     if (!a.dailyAt && !a.everyMinutes && !a.onceAt)
       return { error: "give a schedule: dailyAt, everyMinutes or onceAt." };
     if (!validTimezone(a.timezone))
@@ -49,6 +87,7 @@ export async function runRoutine(ctx: ChiefCtx, a: ChiefArgs<"routine">): Promis
       prompt: a.prompt,
       timezone: a.timezone,
       ...(a.dailyAt ? { dailyAt: a.dailyAt } : {}),
+      ...(a.dailyAt && a.weekdays ? { weekdays: a.weekdays } : {}),
       ...(a.everyMinutes ? { everyMinutes: a.everyMinutes } : {}),
       ...(a.onceAt ? { onceAt: a.onceAt } : {}),
       ...(a.conversationMode ? { conversationMode: a.conversationMode } : {}),
@@ -66,11 +105,13 @@ export async function runRoutine(ctx: ChiefCtx, a: ChiefArgs<"routine">): Promis
             to: when({
               kind: a.onceAt ? "once" : "recurring",
               dailyAt: a.dailyAt ?? null,
+              weekdays: a.dailyAt ? normalizeWeekdays(a.weekdays) : null,
               everyMinutes: a.everyMinutes ?? null,
               onceAt: a.onceAt ?? null,
               timezone: a.timezone,
             }),
           },
+          ...(read.assumed ? [{ field: "note", from: null, to: read.assumed }] : []),
           { field: "prompt", from: null, to: short(a.prompt) },
           { field: "switch on", from: null, to: a.activate ? "yes" : "no, it stays paused" },
         ],
@@ -119,6 +160,9 @@ export async function runRoutine(ctx: ChiefCtx, a: ChiefArgs<"routine">): Promis
       },
     };
   // update
+  const read = readWhen(a, a.timezone ?? target.timezone, true);
+  if ("error" in read) return read;
+  a = read.args;
   const changes: Partial<RoutineInput> = {};
   const diff: DiffLine[] = [{ field: "routine", from: null, to: target.title }];
   if (a.bot) {
@@ -148,7 +192,22 @@ export async function runRoutine(ctx: ChiefCtx, a: ChiefArgs<"routine">): Promis
     (changes as Record<string, unknown>)[k] = to;
     diff.push({ field: k, from: short(from), to: short(to) });
   }
-  if (diff.length === 1) return { error: `"${target.title}" already has those settings.` };
+  // The days are a list, so they are compared as stored (sorted, null = every day), not with `===`.
+  if (a.weekdays !== undefined) {
+    const to = normalizeWeekdays(a.weekdays);
+    const from = normalizeWeekdays(target.weekdays);
+    if (JSON.stringify(to) !== JSON.stringify(from)) {
+      changes.weekdays = to ?? [];
+      diff.push({
+        field: "days",
+        from: from ? when({ ...target, weekdays: from }) : "every day",
+        to: to ? when({ ...target, weekdays: to }) : "every day",
+      });
+    }
+  }
+  if (read.assumed) diff.push({ field: "note", from: null, to: read.assumed });
+  if (diff.length === 1 || (diff.length === 2 && read.assumed))
+    return { error: `"${target.title}" already has those settings.` };
   return {
     plan: {
       title: `Change routine ${target.title}`,

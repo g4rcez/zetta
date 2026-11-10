@@ -5,6 +5,7 @@ import { HookError, isReactionEmoji, type FeaturesService } from "./service";
 import { RoutineError } from "./routines";
 import { AgentsPausedError } from "../preferences/agents-state";
 import { TriggerError } from "./routine-triggers";
+import { parseScheduleText } from "./schedule-text";
 import { SnapshotError } from "./snapshots";
 import { WorkflowError } from "./workflows";
 import { accessFail, createGuardedRoute, fail } from "../http-response";
@@ -17,11 +18,16 @@ const uuid = z.string().uuid();
 const text = (n: number) => z.string().trim().min(1).max(n);
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const counter = z.number().int().positive();
+// Days a daily routine runs on: 0 = Sunday … 6 = Saturday. An empty list means every day.
+const weekdays = z.array(z.number().int().min(0).max(6)).max(7);
 const schedule = {
   timezone: text(64),
   dailyAt: hhmm.optional(),
+  weekdays: weekdays.optional(),
   everyMinutes: z.number().int().min(5).max(10080).optional(),
   onceAt: z.string().datetime().optional(),
+  /** The schedule as a person writes it ("Monday to Friday at 8:30", "every 15 minutes", a cron): read by the server instead of the fields above. */
+  when: text(200).optional(),
 };
 const MAX_HOOK_BYTES = 64_000;
 const schemas = {
@@ -61,8 +67,10 @@ const schemas = {
     prompt: text(8000).optional(),
     timezone: text(64).optional(),
     dailyAt: hhmm.optional(),
+    weekdays: weekdays.optional(),
     everyMinutes: schedule.everyMinutes,
     onceAt: z.string().datetime().optional(),
+    when: schedule.when,
     workflowId: uuid.optional(),
     conversationMode: z.enum(["new", "continue"]).optional(),
   }),
@@ -104,6 +112,37 @@ const schemas = {
   reaction: z.strictObject({ emoji: z.string().refine(isReactionEmoji, "Not an emoji") }),
 };
 
+/** The text of a schedule could not be read: the message says what to write instead, so it goes to the person as it is. */
+class ScheduleTextError extends Error {}
+
+type WithWhen = {
+  when?: string | undefined;
+  timezone?: string | undefined;
+  dailyAt?: string | undefined;
+  weekdays?: number[] | undefined;
+  everyMinutes?: number | undefined;
+  onceAt?: string | undefined;
+};
+/**
+ * A body that carries `when` has it read into the schedule fields; the rest of the body goes on unchanged. `when` and the fields are two
+ * ways to say the same thing, so sending both is refused. On an update, a daily schedule always sets `weekdays` (an empty list means every
+ * day), so "every day at 8" does not keep the weekday limit the routine had before.
+ */
+function readWhen<T extends WithWhen>(v: T, update: boolean) {
+  const { when, ...rest } = v;
+  if (when === undefined) return { value: rest as Omit<T, "when">, read: undefined };
+  if (rest.dailyAt || rest.weekdays || rest.everyMinutes || rest.onceAt)
+    throw new ScheduleTextError("Send the schedule either as text or as fields, not both.");
+  if (!rest.timezone)
+    throw new ScheduleTextError("Send the timezone together with the schedule text.");
+  const read = parseScheduleText(when, { timezone: rest.timezone });
+  if (!read.ok) throw new ScheduleTextError(read.problem);
+  const days = read.schedule.dailyAt
+    ? { weekdays: read.schedule.weekdays ?? (update ? [] : undefined) }
+    : {};
+  return { value: { ...rest, ...read.schedule, ...days } as Omit<T, "when">, read };
+}
+
 export function createFeatureRoutes(
   { access, features: f }: FeatureServices,
   trustedOrigins: readonly string[],
@@ -116,6 +155,7 @@ export function createFeatureRoutes(
   };
   function mapError(e: unknown) {
     if (e instanceof AccessError) return accessFail(e);
+    if (e instanceof ScheduleTextError) return fail(400, "SCHEDULE_TEXT", e.message);
     if (e instanceof AgentsPausedError)
       return fail(409, "AGENTS_PAUSED", "Your agents are paused. Resume them to start new work.");
     if (e instanceof RoutineError)
@@ -211,7 +251,10 @@ export function createFeatureRoutes(
         "/routines",
         g(
           async (c) => ({
-            routine: await f.routines.create(c.actor, schemas.routine.parse(c.body)),
+            routine: await f.routines.create(
+              c.actor,
+              readWhen(schemas.routine.parse(c.body), false).value as never,
+            ),
           }),
           201,
         ),
@@ -318,16 +361,27 @@ export function createFeatureRoutes(
       .post(
         "/routines/preview",
         g(async (c) => {
-          const v = schemas.routinePreview.parse(c.body);
-          const { count, ...rest } = v;
-          return { nextRuns: f.routines.preview(c.actor, rest, count) };
+          const { count, ...body } = schemas.routinePreview.parse(c.body);
+          const { value, read } = readWhen(body, false);
+          return {
+            nextRuns: f.routines.preview(c.actor, value as never, count),
+            // What the text was understood as, so the form can show it before anything is saved.
+            ...(read?.ok ? { understood: read.understood, assumed: read.assumed } : {}),
+          };
         }),
       )
       .patch(
         "/routines/:id",
         g(async (c) => {
-          const { expectedVersion, ...v } = schemas.routineUpdate.parse(c.body);
-          return { routine: await f.routines.update(c.actor, id(c), expectedVersion, v) };
+          const { expectedVersion, ...body } = schemas.routineUpdate.parse(c.body);
+          return {
+            routine: await f.routines.update(
+              c.actor,
+              id(c),
+              expectedVersion,
+              readWhen(body, true).value as never,
+            ),
+          };
         }),
       )
       .get(

@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { eq, sql } from "@zetta/db/query";
 import { user, verification } from "@zetta/db/schema/auth";
@@ -10,14 +10,21 @@ const email = `pair-${crypto.randomUUID()}@example.invalid`;
 
 suite("pairing a phone by QR code", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
-  const auth = createAuth(
-    {
-      BETTER_AUTH_URL: "https://auth.example.test",
-      BETTER_AUTH_SECRET: "synthetic-only-not-a-production-secret",
-      CORS_ORIGIN: "https://web.example.test",
-    },
-    db,
-  );
+  // describe.skip still runs this body, and createAuth() queries the database in the background when it is created. Without a database
+  // that query fails after the suite is skipped and breaks whichever test is running then (ECONNREFUSED), so it is made in beforeAll.
+  const makeAuth = () =>
+    createAuth(
+      {
+        BETTER_AUTH_URL: "https://auth.example.test",
+        BETTER_AUTH_SECRET: "synthetic-only-not-a-production-secret",
+        CORS_ORIGIN: "https://web.example.test",
+      },
+      db,
+    );
+  let auth: ReturnType<typeof makeAuth>;
+  beforeAll(() => {
+    auth = makeAuth();
+  });
   const cookieOf = (h: Headers) =>
     new Headers({
       cookie: h

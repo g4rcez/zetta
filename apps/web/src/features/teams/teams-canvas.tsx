@@ -13,7 +13,7 @@ import {
   useReactFlow,
   type NodeProps,
 } from "@xyflow/react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link as RouterLink, useNavigate } from "@tanstack/react-router";
 import { CrownIcon, PlusIcon, SlidersHorizontalIcon } from "@phosphor-icons/react";
 import {
   createContext,
@@ -133,6 +133,13 @@ function TeamGroup({ id, data, selected }: NodeProps<TeamNode>) {
               </select>
             </label>
           )}
+          <RouterLink
+            to="/teams/$teamId"
+            params={{ teamId: data.teamId }}
+            className="nodrag shrink-0 text-xs underline hover:text-foreground"
+          >
+            Open
+          </RouterLink>
           <Tip tip="Configure this team: name, goal and rooms" className="nodrag">
             <ActionHint label={`Configure ${data.name}`}>
               <Button
@@ -179,7 +186,7 @@ function BotCard({ data, selected }: NodeProps<BotNode>) {
         sub={sub}
         trailing={
           data.kind === "chief" ? (
-            <IconHint label="Chief">
+            <IconHint label="Lead">
               <CrownIcon className="size-3 shrink-0 text-warn" />
             </IconHint>
           ) : undefined

@@ -36,6 +36,10 @@ export type AgentsState = "running" | "paused";
 export type Preferences = {
   railMode: RailMode;
   sidebarSide: SidebarSide;
+  /** "simple" hides the Advanced group of the sidebar. */
+  navMode: "simple" | "full";
+  /** A message sent while a bot works: waits for the reply ("park") or interrupts it ("interrupt"). */
+  steerMode: "park" | "interrupt";
   railWidth: number;
   listWidth: number;
   /** How hours show everywhere in the app. */
@@ -62,6 +66,8 @@ export const SIDEBAR_LIMITS = {
 
 const DEFAULTS: Preferences = {
   railMode: "expanded",
+  navMode: "full",
+  steerMode: "park",
   sidebarSide: DEFAULT_SIDEBAR_SIDE,
   railWidth: SIDEBAR_LIMITS.railWidth.fallback,
   listWidth: SIDEBAR_LIMITS.listWidth.fallback,

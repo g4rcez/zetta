@@ -126,7 +126,7 @@ export function createTeamStore(
   const roleText = (r: { name: string; description: string } | null) =>
     r ? (r.description ? `${r.name}: ${r.description}` : r.name).slice(0, 200) : "";
 
-  return {
+  const api = {
     /** The user's roles. A user with none gets the suggested ones first. */
     async roles(a: ActiveActor) {
       const found = await listRoles(a);
@@ -462,6 +462,40 @@ export function createTeamStore(
      */
     async openChat(a: ActiveActor, id: string) {
       const t = await loadOwned(a, id);
+      // The team's standing conversation: the same room every time, reopened when it was closed.
+      if (t.homeDiscussionId) {
+        const [home] = await db
+          .select({ id: discussion.id, status: discussion.status })
+          .from(discussion)
+          .where(and(eq(discussion.id, t.homeDiscussionId), eq(discussion.ownerUserId, a.userId)));
+        if (home && home.status !== "resolved" && home.status !== "cancelled")
+          return { discussionId: home.id };
+        if (home) {
+          const [reopened] = await db
+            .update(discussion)
+            .set({
+              status: "open",
+              resolvedAt: null,
+              updatedAt: new Date(),
+              version: sql`${discussion.version} + 1`,
+            })
+            .where(eq(discussion.id, home.id))
+            .returning({ id: discussion.id });
+          if (reopened) return { discussionId: reopened.id };
+        }
+      }
+      const found = await findChat(a, t);
+      await db.update(team).set({ homeDiscussionId: found.discussionId }).where(eq(team.id, t.id));
+      return found;
+    },
+  };
+  return api;
+  async function findChat(
+    a: ActiveActor,
+    t: typeof team.$inferSelect,
+  ): Promise<{ discussionId: string }> {
+    {
+      const id = t.id;
       const [live] = await db
         .select({ id: discussion.id })
         .from(discussion)
@@ -508,8 +542,8 @@ export function createTeamStore(
           .returning({ id: discussion.id });
         if (closed) return { discussionId: closed.id };
       }
-      return this.startRoom(a, id, { title: name, goal: "" });
-    },
-  };
+      return api.startRoom(a, id, { title: name, goal: "" });
+    }
+  }
 }
 export type TeamStore = ReturnType<typeof createTeamStore>;

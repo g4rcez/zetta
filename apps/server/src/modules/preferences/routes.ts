@@ -5,6 +5,8 @@ import {
   RAIL_MODES,
   SIDEBAR_LIMITS,
   SIDEBAR_SIDES,
+  NAV_MODES,
+  STEER_MODES,
   THEMES,
   TIME_FORMATS,
 } from "@zetta/db/schema/preferences";
@@ -20,6 +22,8 @@ const width = (l: { min: number; max: number }) => z.number().int().min(l.min).m
 const patch = z.strictObject({
   railMode: z.enum(RAIL_MODES).optional(),
   sidebarSide: z.enum(SIDEBAR_SIDES).optional(),
+  navMode: z.enum(NAV_MODES).optional(),
+  steerMode: z.enum(STEER_MODES).optional(),
   railWidth: width(SIDEBAR_LIMITS.railWidth).optional(),
   listWidth: width(SIDEBAR_LIMITS.listWidth).optional(),
   timeFormat: z.enum(TIME_FORMATS).optional(),

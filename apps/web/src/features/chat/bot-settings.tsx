@@ -14,6 +14,8 @@ import {
 
 import { BotAvatarPicker } from "./bot-avatar-picker";
 import { BotAccounts } from "./bot-accounts";
+import { BotApprovalRules } from "./bot-approval-rules";
+import { BotRoutines } from "./bot-routines";
 import { BotOriginSection } from "../bots/bot-origin";
 import { BotDecision } from "./bot-decision";
 import { BotHooks } from "./bot-hooks";
@@ -274,6 +276,47 @@ function PersonalityForm({ bot, bots, onBotChange, notify }: Common) {
   );
 }
 
+const LEARN_OPTIONS = [
+  { value: "auto", label: "Save what it learns as its own skills" },
+  { value: "suggest", label: "Suggest skills; I save them" },
+  { value: "off", label: "Off" },
+];
+
+/** Autolearn: after a correction or a method that worked, the bot keeps the lesson as a skill of its own. */
+function LearningForm({ bot, onBotChange, notify }: Common) {
+  const { error, saving, save } = useSave(bot, onBotChange, notify);
+  const saved = bot.autoLearn ?? "auto";
+  const [mode, setMode] = useState(saved);
+  const canLoad = bot.harness === "claude-code" || bot.harness === "hermes";
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void save({ autoLearn: mode });
+  }
+  return (
+    <form key={`${bot.id}-${bot.version}`} onSubmit={submit} className="space-y-4">
+      <Select
+        title="Learning"
+        name="autoLearn"
+        required={false}
+        value={mode}
+        onChange={(e) => setMode(e.target.value as typeof mode)}
+        options={LEARN_OPTIONS}
+      />
+      <p className="text-xs text-muted-foreground">
+        {canLoad
+          ? "When you correct the bot, or it finishes a long piece of work, it may save the lesson as a skill of its own. The chat shows each one with View and Undo. It never changes skills you wrote or installed, or one you edited."
+          : "This bot's engine cannot load skills, so it does not learn any. Claude Code and Hermes bots can."}
+      </p>
+      <div className={saveRow}>
+        <Failure error={error} />
+        <Button type="submit" size="sm" disabled={saving || mode === saved}>
+          Save learning
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 function OutputStyleForm({ bot, onBotChange, notify }: Common) {
   const { error, saving, save } = useSave(bot, onBotChange, notify);
   const saved: StyleChoice = {
@@ -350,13 +393,35 @@ type Entry = {
 };
 
 /** Order and grouping of the page. A registered section missing here lands in "More", so a new one still shows up. */
-const GROUPS: { label: string; ids: string[] }[] = [
-  { label: "Profile", ids: ["general", "picture", "personality", "output-style", "origin"] },
-  { label: "Behavior", ids: ["claude", "hooks", "decision"] },
-  { label: "Capabilities", ids: ["code", "computer", "plugins", "database"] },
-  { label: "Connections", ids: ["accounts", "inbound", "teams", "peers"] },
-  { label: "Danger zone", ids: ["delete"] },
-];
+/** The bot page's tabs (the `tab` search param), each a set of sections. A section not listed here shows under Setup. */
+export const BOT_TABS = [
+  {
+    id: "setup",
+    label: "Setup",
+    ids: [
+      "general",
+      "picture",
+      "personality",
+      "output-style",
+      "origin",
+      "teams",
+      "peers",
+      "delete",
+    ],
+  },
+  { id: "skills", label: "Skills and learning", ids: ["claude", "learning", "hooks", "decision"] },
+  { id: "plugins", label: "Plugins", ids: ["plugins", "accounts", "inbound", "database"] },
+  { id: "routines", label: "Routines", ids: ["routines"] },
+  { id: "computer", label: "Computer", ids: ["code", "computer"] },
+  { id: "approvals", label: "Approvals", ids: ["approvals"] },
+] as const;
+export type BotTab = (typeof BOT_TABS)[number]["id"];
+export const parseBotTab = (v: unknown): BotTab | undefined =>
+  BOT_TABS.some((t) => t.id === v && t.id !== "setup") ? (v as BotTab) : undefined;
+const GROUPS: { label: string; ids: readonly string[] }[] = BOT_TABS.map((t) => ({
+  label: t.label,
+  ids: t.ids,
+}));
 
 function useActiveSection(root: React.RefObject<HTMLElement | null>, ids: string[]) {
   const [active, setActive] = useState(ids[0]);
@@ -389,7 +454,13 @@ function SettingsBody({
   onBotChange,
   notify,
   setBots,
-}: Common & { setBots: (f: (l: Bot[]) => Bot[]) => void }) {
+  tab,
+  onTab,
+}: Common & {
+  setBots: (f: (l: Bot[]) => Bot[]) => void;
+  tab: BotTab;
+  onTab: (t: BotTab) => void;
+}) {
   const scroller = useRef<HTMLDivElement>(null);
   const common = { bot, bots, spaces, onBotChange, notify };
   const entries: Entry[] = [
@@ -435,6 +506,33 @@ function SettingsBody({
     },
     { id: "hooks", title: "Hooks", bare: true, node: <BotHooks bot={bot} /> },
     {
+      id: "learning",
+      title: "Learning",
+      description: "Lessons the bot keeps as its own skills.",
+      node: (
+        <LearningForm
+          bot={bot}
+          bots={bots}
+          spaces={spaces}
+          onBotChange={onBotChange}
+          notify={notify}
+        />
+      ),
+    },
+    {
+      id: "routines",
+      title: "Routines",
+      description: "The scheduled work this bot does for you.",
+      node: <BotRoutines bot={bot} />,
+    },
+    {
+      id: "approvals",
+      title: "Always allowed",
+      description:
+        "Changes this bot makes without asking, because you chose “Always allow” on a card.",
+      node: <BotApprovalRules bot={bot} notify={notify} />,
+    },
+    {
       id: "decision",
       title: "Decision routing",
       bare: true,
@@ -459,14 +557,17 @@ function SettingsBody({
   ];
   const byId = new Map(entries.map((e) => [e.id, e]));
   const grouped = new Set(GROUPS.flatMap((g) => g.ids));
-  const groups = [
-    ...GROUPS.map((g) => ({
-      label: g.label,
-      items: g.ids.flatMap((id) => byId.get(id) ?? []),
-    })),
-    { label: "More", items: entries.filter((e) => !grouped.has(e.id)) },
-  ].filter((g) => g.items.length > 0);
-  const ids = groups.flatMap((g) => g.items.map((e) => e.id));
+  const groups = GROUPS.map((g) => ({
+    label: g.label,
+    items: g.ids.flatMap((id) => byId.get(id) ?? []),
+  })).filter((g) => g.items.length > 0);
+  // Sections no tab names (a new registered one) show under Setup.
+  const extra = entries.filter((e) => !grouped.has(e.id));
+  if (extra.length && groups[0])
+    groups[0] = { ...groups[0], items: [...groups[0].items, ...extra] };
+  const current = BOT_TABS.find((t) => t.id === tab) ?? BOT_TABS[0];
+  const shown = groups.filter((g) => g.label === current.label);
+  const ids = shown.flatMap((g) => g.items.map((e) => e.id));
   const [active, setActive] = useActiveSection(scroller, ids);
   const jump = (id: string) => (event: React.MouseEvent) => {
     event.preventDefault();
@@ -490,10 +591,27 @@ function SettingsBody({
           >
             <ArrowLeftIcon aria-hidden className="size-4" /> Back to chat
           </Link>
-          <div className="flex gap-1 overflow-x-auto [scrollbar-width:none] md:flex-col md:overflow-visible">
-            {groups.map((g) => (
-              <div key={g.label} className="flex shrink-0 gap-1 md:mt-3 md:block md:space-y-0.5">
-                <p className="label-mono hidden px-3 pb-1 md:block">{g.label}</p>
+          <div
+            role="tablist"
+            aria-label="Bot settings"
+            className="flex gap-1 overflow-x-auto [scrollbar-width:none] md:flex-col md:overflow-visible"
+          >
+            {BOT_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={t.id === current.id}
+                onClick={() => onTab(t.id)}
+                className={`flex shrink-0 touch-manipulation items-center whitespace-nowrap rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${t.id === current.id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 hidden gap-1 md:block md:space-y-0.5">
+            {shown.map((g) => (
+              <div key={g.label}>
                 {g.items.map((e) => (
                   <a
                     key={e.id}
@@ -537,8 +655,8 @@ function SettingsBody({
               </div>
             </div>
           </header>
-          {groups.map((g) => (
-            <div key={g.label} className="space-y-4">
+          {shown.map((g) => (
+            <div key={g.label} className="space-y-4" role="tabpanel" aria-label={g.label}>
               <h2 className="label-mono">{g.label}</h2>
               {g.items.map((e) => (
                 <div key={e.id} id={e.id} className="scroll-mt-16 md:scroll-mt-8">
@@ -563,7 +681,15 @@ function SettingsBody({
 }
 
 /** Full page for one bot's settings. Non-owners only see the accounts they need to connect. */
-export function BotSettingsPage({ botId }: { botId: string }) {
+export function BotSettingsPage({
+  botId,
+  tab = "setup",
+  onTab = () => {},
+}: {
+  botId: string;
+  tab?: BotTab;
+  onTab?: (t: BotTab) => void;
+}) {
   const { bots, setBots, spaces } = useSidebarData();
   const bot = bots.find((b) => b.id === botId);
   const onBotChange = (next: Bot) =>
@@ -608,6 +734,8 @@ export function BotSettingsPage({ botId }: { botId: string }) {
     );
   return (
     <SettingsBody
+      tab={tab}
+      onTab={onTab}
       bot={bot}
       bots={bots}
       spaces={spaces}

@@ -7,6 +7,8 @@ import {
   type ApprovalMode,
   type RailMode,
   type SidebarSide,
+  type NavMode,
+  type SteerMode,
   type Theme,
   type TimeFormat,
 } from "@zetta/db/schema/preferences";
@@ -15,6 +17,8 @@ import type { ActiveActor } from "../identity/access";
 export type Preferences = {
   railMode: RailMode;
   sidebarSide: SidebarSide;
+  navMode: NavMode;
+  steerMode: SteerMode;
   railWidth: number;
   listWidth: number;
   timeFormat: TimeFormat;
@@ -32,6 +36,8 @@ export function createPreferenceStore(db: Database) {
   const pick = (r: typeof userPreference.$inferSelect): Preferences => ({
     railMode: r.railMode,
     sidebarSide: r.sidebarSide,
+    navMode: r.navMode,
+    steerMode: r.steerMode,
     railWidth: r.railWidth,
     listWidth: r.listWidth,
     timeFormat: r.timeFormat,
@@ -54,6 +60,8 @@ export function createPreferenceStore(db: Database) {
         : {
             railMode: "expanded",
             sidebarSide: "left",
+            navMode: "full",
+            steerMode: "park",
             railWidth: SIDEBAR_LIMITS.railWidth.fallback,
             listWidth: SIDEBAR_LIMITS.listWidth.fallback,
             timeFormat: "24h",

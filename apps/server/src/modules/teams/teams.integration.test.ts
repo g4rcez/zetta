@@ -488,6 +488,15 @@ suite("teams against compose postgres", () => {
       status: "open",
     });
   });
+  test("the team's Chat is one standing conversation: a newer side room of the team does not replace it", async () => {
+    const id = await teamOf("Home team", ["Home Lead", "Home Dev"]);
+    const home = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
+    await worker.drain();
+    const side = await call("POST", `/api/teams/${id}/rooms`, { title: "Side topic", goal: "" });
+    expect(side.status).toBeLessThan(300);
+    await worker.drain();
+    expect((await call("POST", `/api/teams/${id}/chat`)).json.discussionId).toBe(home);
+  });
   test("Chat with team after the room was cancelled reopens it under the team name, with no time suffix", async () => {
     const id = await teamOf("Cancel chat team", ["Cancel Lead", "Cancel Dev"]);
     const first = await call("POST", `/api/teams/${id}/chat`);

@@ -98,6 +98,44 @@ export function DisplaySection() {
           </div>
         </fieldset>
         <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Messages sent while a bot works</legend>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            <Radiobox
+              name="steer-mode"
+              checked={preferences.steerMode !== "interrupt"}
+              onChange={() => set({ steerMode: "park" })}
+            >
+              Wait: the bot reads them when its reply ends
+            </Radiobox>
+            <Radiobox
+              name="steer-mode"
+              checked={preferences.steerMode === "interrupt"}
+              onChange={() => set({ steerMode: "interrupt" })}
+            >
+              Interrupt: the bot reads them at once and goes on
+            </Radiobox>
+          </div>
+        </fieldset>
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Navigation</legend>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            <Radiobox
+              name="nav-mode"
+              checked={preferences.navMode === "simple"}
+              onChange={() => set({ navMode: "simple" })}
+            >
+              Simple: chats, tasks, routines and your library
+            </Radiobox>
+            <Radiobox
+              name="nav-mode"
+              checked={preferences.navMode !== "simple"}
+              onChange={() => set({ navMode: "full" })}
+            >
+              Full: also Studio, Agenda, Playground and Computer
+            </Radiobox>
+          </div>
+        </fieldset>
+        <fieldset className="space-y-2">
           <legend className="text-sm font-medium">Time format</legend>
           <div className="flex flex-wrap gap-x-6 gap-y-2">
             {TIME_FORMATS.map((f) => (

@@ -114,7 +114,7 @@ export const RolesContext = createContext<TeamRole[]>([]);
 /** The subtitle of a bot card: its role, or its place in the team. */
 export function useRoleLabel(roleId: string | null, chief: boolean) {
   const roles = useContext(RolesContext);
-  return roles.find((r) => r.id === roleId)?.name ?? (chief ? "Chief" : "Member");
+  return roles.find((r) => r.id === roleId)?.name ?? (chief ? "Lead" : "Member");
 }
 
 export function RoleBadge({

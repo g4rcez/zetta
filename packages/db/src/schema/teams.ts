@@ -76,6 +76,8 @@ export const team = zetta.table(
     /** Shared by every room of the team; each room adds its own context. */
     context: text("context").default("").notNull(),
     canvas: jsonb("canvas").$type<TeamBox>().default({ x: 0, y: 0, w: 360, h: 280 }).notNull(),
+    /** The team's one standing conversation (its Chat tab). Other rooms of the team are side topics. */
+    homeDiscussionId: uuid("home_discussion_id"),
     version: integer("version").default(1).notNull(),
     status: text("status", { enum: TEAM_STATUSES }).default("active").notNull(),
     createdAt: created(),

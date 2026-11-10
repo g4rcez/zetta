@@ -46,21 +46,22 @@ import UserMenu from "./user-menu";
 
 type AppLink = (typeof appLinks)[number];
 const linkOf = (label: AppLink["label"]) => appLinks.find((l) => l.label === label)!;
-/** DESIGN.md "Sidebar structure": the daily destinations stay fixed on top; building and oversight sit under More. */
-const FIXED = [linkOf("Inbox"), linkOf("Tasks"), linkOf("Routines"), linkOf("Memory")];
-const MORE = [
-  linkOf("Agenda"),
-  linkOf("Studio"),
-  linkOf("Plugins"),
-  linkOf("Skills"),
-  linkOf("Apps"),
-  linkOf("Playground"),
-  linkOf("Computer"),
-  linkOf("Dashboard"),
+/**
+ * DESIGN.md "Sidebar structure": the daily destinations stay fixed on top; what bots know and can use sits in Library; building and
+ * oversight tools sit in Advanced, which "Simple" navigation hides (Preferences > Display). Home is the Zetta row at the top.
+ */
+const FIXED = [linkOf("Inbox"), linkOf("Tasks"), linkOf("Routines")];
+const LIBRARY = [
   linkOf("Teams"),
+  linkOf("Memory"),
+  linkOf("Skills"),
+  linkOf("Plugins"),
+  linkOf("Apps"),
   linkOf("Artifacts"),
 ];
-const MORE_KEY = "zetta.sidebar-more";
+const ADVANCED = [linkOf("Studio"), linkOf("Agenda"), linkOf("Playground"), linkOf("Computer")];
+const MORE = [...LIBRARY, ...ADVANCED];
+const GROUP_KEY = (label: string) => `zetta.sidebar-${label.toLowerCase()}`;
 const RAIL_WIDTH = 56;
 
 function isActive(link: AppLink, pathname: string) {
@@ -290,19 +291,28 @@ function RailRooms() {
   );
 }
 
-function readMore() {
+function readGroup(label: string, fallback: boolean) {
   try {
-    return localStorage.getItem(MORE_KEY) === "open";
+    const v = localStorage.getItem(GROUP_KEY(label));
+    return v === null ? fallback : v === "open";
   } catch {
-    return false;
+    return fallback;
   }
 }
 
-/** Studio, Dashboard and the other building and oversight pages: closed by default, open while one of them is shown. */
-function MoreGroup() {
+/** A labelled group of destinations that opens and closes, and opens by itself while one of its pages is shown. */
+function NavGroup({
+  label,
+  links,
+  defaultOpen,
+}: {
+  label: string;
+  links: readonly AppLink[];
+  defaultOpen: boolean;
+}) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const here = MORE.some((l) => isActive(l, pathname));
-  const [open, setOpen] = useState(() => readMore() || here);
+  const here = links.some((l) => isActive(l, pathname));
+  const [open, setOpen] = useState(() => readGroup(label, defaultOpen) || here);
   // Arriving on a page of the group opens it; a click on the button can still close it.
   useEffect(() => {
     if (here) setOpen(true);
@@ -311,14 +321,14 @@ function MoreGroup() {
   const reduce = useReducedMotion();
   const toggle = () => {
     try {
-      localStorage.setItem(MORE_KEY, shown ? "closed" : "open");
+      localStorage.setItem(GROUP_KEY(label), shown ? "closed" : "open");
     } catch {
       // Storage unavailable: the choice lasts for this session.
     }
     setOpen(!shown);
   };
   return (
-    <section aria-label="More">
+    <section aria-label={label}>
       <div className="pt-3 pb-1 pl-1">
         <button
           type="button"
@@ -333,7 +343,7 @@ function MoreGroup() {
               shown && "rotate-90",
             )}
           />
-          More
+          {label}
         </button>
       </div>
       <AnimatePresence initial={false}>
@@ -346,7 +356,7 @@ function MoreGroup() {
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="space-y-px overflow-hidden"
           >
-            {MORE.map((l) => (
+            {links.map((l) => (
               <li key={l.label}>
                 <NavRow link={l} collapsed={false} />
               </li>
@@ -471,7 +481,7 @@ export function AppSidebar({
             <RailBots />
             <span aria-hidden="true" className="h-px w-6 shrink-0 bg-sidebar-border" />
             <nav aria-label="More" className="flex flex-col items-center gap-px">
-              {MORE.map((l) => (
+              {(preferences.navMode === "simple" ? LIBRARY : MORE).map((l) => (
                 <NavRow key={l.label} link={l} collapsed />
               ))}
             </nav>
@@ -479,7 +489,10 @@ export function AppSidebar({
         </>
       ) : (
         <SidebarTree>
-          <MoreGroup />
+          <NavGroup label="Library" links={LIBRARY} defaultOpen />
+          {preferences.navMode !== "simple" && (
+            <NavGroup label="Advanced" links={ADVANCED} defaultOpen={false} />
+          )}
         </SidebarTree>
       )}
       <div

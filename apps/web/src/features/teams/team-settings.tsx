@@ -234,7 +234,7 @@ export function TeamSettingsPage({
                     {m.kind === "chief" && (
                       <Badge tone="warning">
                         <CrownIcon className="mr-1 size-3" aria-hidden="true" />
-                        Chief
+                        Lead
                       </Badge>
                     )}
                   </div>
@@ -245,15 +245,15 @@ export function TeamSettingsPage({
                   />
                   <div className="md:pt-6">
                     {m.kind === "chief" ? null : (
-                      // No hint: it shows the text Make chief.
+                      // No hint: it shows the text Make lead.
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        aria-label={`Make ${m.name} the chief`}
+                        aria-label={`Make ${m.name} the lead`}
                         onClick={() => makeChief(m.botId)}
                       >
-                        Make chief
+                        Make lead
                       </Button>
                     )}
                   </div>

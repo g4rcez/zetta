@@ -21,7 +21,7 @@ import { LayaSwitch } from "../studio/laya-switch";
 import { Plugins } from "../studio/plugins";
 import { reviewInstructions } from "../bots/instruction-review";
 import { FRESH_INTERVIEW, type InterviewState } from "../bots/interview-flow";
-import { chatClient, errorMessage, type Bot } from "../chat/chat-client";
+import { call, chatClient, errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { type AvatarValue } from "@/components/bot-avatar";
 import { installationApi, installationQueries, type NetworkMode } from "./installation-api";
@@ -294,6 +294,8 @@ export function InstallOnboarding() {
   const finish = () =>
     run(async () => {
       await installationApi.patch({ onboarding: "done" });
+      // A new installation starts with the simple sidebar; Preferences > Display shows everything.
+      await call("/api/preferences", "PATCH", { navMode: "simple" }).catch(() => undefined);
       await navigate({ to: "/chat/{-$chatId}", search: chief ? { bot: chief.id } : {} });
     });
 

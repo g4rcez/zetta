@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."user_preference" ADD COLUMN "steer_mode" text DEFAULT 'park' NOT NULL;

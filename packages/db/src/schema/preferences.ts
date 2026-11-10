@@ -7,6 +7,12 @@ export const RAIL_MODES = ["expanded", "collapsed"] as const;
 export type RailMode = (typeof RAIL_MODES)[number];
 
 /** Which edge of the window the app sidebar sits on. */
+/** "simple": the sidebar hides the Advanced group (Studio, Playground, Computer, Agenda). "full": everything. */
+export const NAV_MODES = ["simple", "full"] as const;
+export type NavMode = (typeof NAV_MODES)[number];
+/** A message sent while a bot works: waits for the reply to end ("park"), or interrupts it and is read at once ("interrupt"). */
+export const STEER_MODES = ["park", "interrupt"] as const;
+export type SteerMode = (typeof STEER_MODES)[number];
 export const SIDEBAR_SIDES = ["left", "right"] as const;
 export type SidebarSide = (typeof SIDEBAR_SIDES)[number];
 
@@ -51,6 +57,8 @@ export const userPreference = zetta.table("user_preference", {
   railMode: text("rail_mode", { enum: RAIL_MODES }).default("expanded").notNull(),
   /** The edge of the window the sidebar sits on. */
   sidebarSide: text("sidebar_side", { enum: SIDEBAR_SIDES }).default("left").notNull(),
+  navMode: text("nav_mode", { enum: NAV_MODES }).default("full").notNull(),
+  steerMode: text("steer_mode", { enum: STEER_MODES }).default("park").notNull(),
   railWidth: integer("rail_width").default(SIDEBAR_LIMITS.railWidth.fallback).notNull(),
   listWidth: integer("list_width").default(SIDEBAR_LIMITS.listWidth.fallback).notNull(),
   /** How the web app shows the hour of day. */

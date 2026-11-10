@@ -20,13 +20,15 @@ suite("sign-up with an email that already has an account", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
   // describe.skip still runs this body, and betterAuth() queries the database in the background when it is created.
   // Without a database that query fails after the suite is skipped and breaks whichever test is running then.
-  let auth: ReturnType<typeof betterAuth>;
-  beforeAll(() => {
-    auth = betterAuth({
+  const makeAuth = () =>
+    betterAuth({
       ...createAuthOptions(config, db, [], { invitationSignupVerifier: async () => true }),
       logger: { disabled: true },
       telemetry: { enabled: false, debug: false },
     });
+  let auth: ReturnType<typeof makeAuth>;
+  beforeAll(() => {
+    auth = makeAuth();
   });
   const signUp = (email: string) =>
     auth.handler(

@@ -54,6 +54,7 @@ export const WARNING_TEXT: Record<SkillWarning, string> = {
   invalid_name: "Its folder name is not a valid skill name.",
 };
 export type Trust = "official" | "trusted";
+export const TRUST_LABEL: Record<Trust, string> = { official: "Official", trusted: "Trusted" };
 export type Suggestion = { repo: string; blurb: string; trust: Trust };
 /** A skill found in a repository or by search; `repo` and `trust` are set for search results. */
 export type MarketSkill = {

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui";
 import { Badge } from "../shared/ui";
 import { SkillPicker, type PickerItem } from "./skill-picker";
-import { WARNING_TEXT, type SkillWarning, type Trust } from "./skills-api";
+import { TRUST_LABEL, WARNING_TEXT, type SkillWarning, type Trust } from "./skills-api";
 
 /** What a bot offered with zetta:skills (apps/server/src/modules/chat/service.ts, proposal kind install_skills). */
 export type SkillsOffer = {
@@ -22,8 +22,6 @@ export type SkillsOffer = {
   forBots?: { id: string; name: string }[];
 };
 export type SkillsChoice = { paths: string[]; target: "bot" | "all" | "picked" };
-
-const TRUST_LABEL: Record<Trust, string> = { official: "Official", trusted: "Trusted" };
 
 /**
  * The card where a bot asks to install skills: the person chooses which ones and who gets them. Nothing is installed until they press

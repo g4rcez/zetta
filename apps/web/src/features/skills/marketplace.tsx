@@ -9,6 +9,7 @@ import { BotPicker } from "./bot-picker";
 import { looksLikeSource } from "./source";
 import { SkillPicker, type PickerItem } from "./skill-picker";
 import {
+  TRUST_LABEL,
   FAILURE_TEXT,
   skillsApi,
   skillsQueries,
@@ -19,7 +20,6 @@ import {
   type Trust,
 } from "./skills-api";
 
-export const TRUST_LABEL: Record<Trust, string> = { official: "Official", trusted: "Trusted" };
 /** A skill as one row: the key holds the repository too, so skills of several repositories can be chosen together. */
 const keyOf = (repo: string, path: string) => `${repo}::${path}`;
 

@@ -254,7 +254,9 @@ export function WorkTimeline({
           const el = e.currentTarget;
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
         }}
-        className="max-h-60 overflow-y-auto overscroll-contain border-t border-dashed px-3 py-2 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+        // `relative` makes the list the containing block of the `sr-only` (absolute) step icons. Without it they escape the list's
+        // overflow clip and stretch the chat log by the height of every step, a giant empty scroll while a task runs.
+        className="relative max-h-60 overflow-y-auto overscroll-contain border-t border-dashed px-3 py-2 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
       >
         {items.map((it, i) => (
           <li key={it.key} className="flex gap-2">

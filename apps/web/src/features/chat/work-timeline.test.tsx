@@ -50,6 +50,14 @@ test("the list has a fixed maximum height and scrolls inside it", async () => {
   await unmount();
 });
 
+// The step icons carry an `sr-only` (position: absolute) label. A list that is not positioned does not clip them, so each step added
+// to the chat log's scroll height (31,716px for a long task) and the log scrolled into empty space.
+test("the list is positioned so it clips its sr-only step labels", async () => {
+  const { list, unmount } = await render(30, true);
+  expect(list.className).toMatch(/(^|\s)relative(\s|$)/);
+  await unmount();
+});
+
 test("a list that fits has no Tab stop", async () => {
   layout(120, 120);
   const { list, unmount } = await render(3, true);

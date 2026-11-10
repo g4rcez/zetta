@@ -24,7 +24,7 @@ import opencode from "./assets/logos/agents/opencode.svg";
 import omp from "./assets/logos/agents/omp.svg";
 import pi from "./assets/logos/agents/pi.svg";
 
-// The bots are drawn as the app's geometric avatars: a shape filled with a gradient of one color, with a small white face.
+// The bots are drawn as the app's geometric avatars: a shape filled with a gradient of one color, with a face of two rounded-square eyes, black or white by contrast.
 // Ported from AVATAR_SHAPES in apps/web/src/components/bot-avatar.tsx (same paths, same face positions, same gradient: the color
 // mixed 35% toward white at the top left and 25% toward black at the bottom right). Change the art in the app first, then here.
 export type ArtId = "blob" | "hexagon" | "drop" | "bell" | "pill" | "square" | "circle" | "diamond";
@@ -78,16 +78,32 @@ const shade = (hex: string, amount: number) => {
   return `#${ch(16)}${ch(8)}${ch(0)}`;
 };
 
+/** Black or white, whichever has more contrast with `hex` (WCAG luminance), as `inkOn` does in the app. */
+const inkOn = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [16, 8, 0].map((shift) => {
+    const c = ((n >> shift) & 255) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b! > 0.179 ? "#000" : "#fff";
+};
+
 let counter = 0;
 /** The SVG body (64x64 viewBox) of a bot's avatar. Every call gets its own gradient id, so two copies on a page never share one. */
 export const artOf = (id: ArtId, color: string) => {
   const shape = SHAPES[id];
   const gradient = `bot-art-${++counter}`;
   const [fx, fy] = shape.face;
+  const ink = inkOn(shade(color, 0.35 - 0.6 * ((fx + fy) / 128)));
   return (
     `<defs><linearGradient id="${gradient}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${shade(color, 0.35)}"/><stop offset="1" stop-color="${shade(color, -0.25)}"/></linearGradient></defs>` +
     shape.draw(`url(#${gradient})`) +
-    `<g stroke="#fff" stroke-opacity="0.92" stroke-linecap="round" stroke-width="2.6"><path d="M${fx - 7} ${fy - 3}v3M${fx + 5} ${fy - 3}v3"/><path d="M${fx - 3} ${fy + 5}h5" stroke-width="2"/></g>`
+    [-1, 1]
+      .map(
+        (side) =>
+          `<rect x="${fx + side * 8.3 - 3.2}" y="${fy - 5.1}" width="6.4" height="10.2" rx="2.4" fill="${ink}" fill-opacity="0.8"/>`,
+      )
+      .join("")
   );
 };
 

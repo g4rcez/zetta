@@ -330,8 +330,8 @@ function MouseArt({ colors: [bg, body, accent] }: { colors: string[] }) {
       <circle cx="15" cy="17" r="6" fill={accent} />
       <circle cx="49" cy="17" r="6" fill={accent} />
       <ellipse cx="32" cy="38" rx="20" ry="18" fill={body} />
-      <circle cx="24" cy="34" r="3" fill={DARK} />
-      <circle cx="40" cy="34" r="3" fill={DARK} />
+      <circle cx="24" cy="34" r="3" fill={inkOn(body)} />
+      <circle cx="40" cy="34" r="3" fill={inkOn(body)} />
       <ellipse cx="32" cy="43" rx="3.5" ry="2.8" fill={accent} />
       <path
         d="M10 40h9M10 46l9-3M54 40h-9M54 46l-9-3"
@@ -364,8 +364,8 @@ function CatArt({ colors: [bg, body, accent] }: { colors: string[] }) {
       <path d="M10 28 12 6l16 12zM54 28 52 6 36 18z" fill={body} />
       <circle cx="32" cy="36" r="22" fill={body} />
       <ellipse cx="32" cy="44" rx="10" ry="7" fill={accent} />
-      <ellipse cx="23" cy="33" rx="2.5" ry="3.5" fill={DARK} />
-      <ellipse cx="41" cy="33" rx="2.5" ry="3.5" fill={DARK} />
+      <ellipse cx="23" cy="33" rx="2.5" ry="3.5" fill={inkOn(body)} />
+      <ellipse cx="41" cy="33" rx="2.5" ry="3.5" fill={inkOn(body)} />
       <path d="M29 41h6l-3 3z" fill={DARK} />
       <path
         d="M6 36h10M6 42l10-2M58 36H48M58 42l-10-2"
@@ -414,8 +414,8 @@ function GhostArt({ colors: [bg, body, accent] }: { colors: string[] }) {
         d="M15 56V30C15 18 22 9 32 9S49 18 49 30V56L43 50L37.5 56L32 50L26.5 56L21 50Z"
         fill={body}
       />
-      <ellipse cx="26" cy="29" rx="3" ry="4" fill={DARK} />
-      <ellipse cx="38" cy="29" rx="3" ry="4" fill={DARK} />
+      <ellipse cx="26" cy="29" rx="3" ry="4" fill={inkOn(body)} />
+      <ellipse cx="38" cy="29" rx="3" ry="4" fill={inkOn(body)} />
       <circle cx="20.5" cy="37" r="3" fill={accent} />
       <circle cx="43.5" cy="37" r="3" fill={accent} />
       <ellipse cx="32" cy="38" rx="3" ry="4" fill={DARK} />
@@ -568,6 +568,26 @@ const hash = (s: string) => {
   for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return h;
 };
+/**
+ * The face every shape wears, on the 64x64 canvas: two rounded-square eyes (the Grok Bot face), the same proportions as the
+ * generated avatar below (10% wide, 16% tall, centres 26% apart). `spread` is half the distance between the centres.
+ */
+const EYE = { w: 6.4, h: 10.2, r: 2.4, spread: 8.3 };
+
+/** WCAG relative luminance of a `#rrggbb` color. */
+const luminance = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [16, 8, 0].map((shift) => {
+    const c = ((n >> shift) & 255) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+};
+/** Black or white, whichever has more contrast with `hex`: black wins when the color is brighter than about 0.18 luminance. */
+export const inkOn = (hex: string) => (luminance(hex) > 0.179 ? "#000" : "#fff");
+/** The eye color for a shape: the gradient's tone under the face (the gradient runs 35% toward white to 25% toward black, corner to corner). */
+export const eyeInk = (base: string, [fx, fy]: [number, number]) =>
+  inkOn(shade(base, 0.35 - 0.6 * ((fx + fy) / 128)));
 const SHAPES = [
   "50% 50% 50% 50% / 60% 60% 40% 40%",
   "42% 58% 55% 45% / 50% 45% 55% 50%",
@@ -625,7 +645,8 @@ function BotPicture({
   const shape = a?.kind === "preset" ? shapeOf(a.preset) : undefined;
   if (a?.kind === "preset" && shape) {
     const base = a.colors[0] ?? AVATAR_SWATCHES[0]!,
-      [fx, fy] = shape.face;
+      [fx, fy] = shape.face,
+      ink = eyeInk(base, shape.face);
     return (
       <svg
         aria-hidden="true"
@@ -641,10 +662,18 @@ function BotPicture({
           </linearGradient>
         </defs>
         <shape.Draw fill={`url(#${gradient})`} />
-        <g stroke="#fff" strokeOpacity="0.92" strokeLinecap="round" strokeWidth="2.6">
-          <path d={`M${fx - 7} ${fy - 3}v3M${fx + 5} ${fy - 3}v3`} />
-          <path d={`M${fx - 3} ${fy + 5}h5`} strokeWidth="2" />
-        </g>
+        {[-1, 1].map((side) => (
+          <rect
+            key={side}
+            x={fx + side * EYE.spread - EYE.w / 2}
+            y={fy - EYE.h / 2}
+            width={EYE.w}
+            height={EYE.h}
+            rx={EYE.r}
+            fill={ink}
+            fillOpacity="0.8"
+          />
+        ))}
       </svg>
     );
   }
@@ -680,12 +709,12 @@ function BotPicture({
     >
       <span className="flex" style={{ gap: size * 0.16 }}>
         <i
-          className="block rounded-full bg-black/70"
-          style={{ width: size * 0.1, height: size * 0.16 }}
+          className="block bg-black/70"
+          style={{ width: size * 0.1, height: size * 0.16, borderRadius: size * 0.04 }}
         />
         <i
-          className="block rounded-full bg-black/70"
-          style={{ width: size * 0.1, height: size * 0.16 }}
+          className="block bg-black/70"
+          style={{ width: size * 0.1, height: size * 0.16, borderRadius: size * 0.04 }}
         />
       </span>
     </span>

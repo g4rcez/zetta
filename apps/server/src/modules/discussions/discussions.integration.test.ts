@@ -17,6 +17,7 @@ import { createChatService } from "../chat/service";
 import { createFeaturesService } from "../features/service";
 import { createDiscussionStore } from "./store";
 import { createDiscussionWorker } from "./worker";
+import { liveTurns } from "./watchdog";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -75,9 +76,14 @@ suite("group discussions against compose postgres", () => {
   /** A bot with a gate here does not answer until the gate opens: it stands for a long task. */
   const gates: Record<string, Promise<void>> = {};
   const fakeRun = Object.assign(async (t: never) => ({ text: reply(t), stopped: false }), {
-    stream: async function* (t: { bot: { name: string } }) {
+    stream: async function* (t: { bot: { name: string }; signal?: AbortSignal }) {
       const text = reply(t as never);
-      await gates[t.bot.name];
+      // A gate holds the run like a long command would; aborting the turn (the watchdog does) ends it.
+      const aborted = new Promise<void>((done) =>
+        t.signal?.addEventListener("abort", () => done(), { once: true }),
+      );
+      await Promise.race([gates[t.bot.name], aborted]);
+      if (t.signal?.aborted) return;
       yield text;
     },
   });
@@ -1090,7 +1096,7 @@ suite("group discussions against compose postgres", () => {
     await until(async () => (await turnOf(chief.id)).at(-1) === "done");
     expect(runs.map((r) => r.bot)).toEqual(["Lead"]);
     expect((await turnOf(worker1.id)).at(-1)).toBe("running");
-    // The Chief woke Helper, but a bot's turn waits while the person's bots are busy.
+    // The Chief woke Helper, but a bot's turn waits while another bot of this room is busy.
     await Bun.sleep(100);
     expect((await turnOf(helper.id)).at(-1)).toBe("queued");
 
@@ -1692,6 +1698,173 @@ suite("group discussions against compose postgres", () => {
         `[@Treinador3](bot:${coach.id}) first question`,
         `[@Treinador3](bot:${coach.id}) second question`,
       ]);
+    });
+  });
+
+  describe("room turns: one at a time per room, and a stuck turn is taken back", () => {
+    const queueTurn = (ownerId: string, roomId: string, botId: string) =>
+      db.insert(discussionTurn).values({
+        ownerUserId: ownerId,
+        discussionId: roomId,
+        botId,
+        kind: "reply",
+        status: "queued",
+      });
+    const statusOf = async (roomId: string, botId: string) =>
+      (
+        await db
+          .select()
+          .from(discussionTurn)
+          .where(and(eq(discussionTurn.discussionId, roomId), eq(discussionTurn.botId, botId)))
+          .orderBy(desc(discussionTurn.createdAt))
+      )[0];
+    const until = async (check: () => Promise<boolean>) => {
+      for (let i = 0; i < 400 && !(await check()); i++) await Bun.sleep(25);
+      expect(await check()).toBe(true);
+    };
+    const room = async (as: string, title: string, bots: { id: string }[]) => {
+      const made = await call(as, "POST", "/api/discussions", {
+        title,
+        goal: "",
+        members: bots.map((b) => ({ bot: b.id })),
+        firstMessage: "Hello all",
+      });
+      await worker.drain();
+      const d = made.json.discussion as { id: string; conversationId: string };
+      return { id: d.id, conv: d.conversationId };
+    };
+    const eventsOf = async (conv: string, event: string) =>
+      (
+        await db
+          .select()
+          .from(message)
+          .where(and(eq(message.conversationId, conv), eq(message.role, "system")))
+      ).filter((m) => (m.meta as { discussionEvent?: string } | null)?.discussionEvent === event);
+
+    test("bots in different rooms of one person run at the same time; inside a room they take turns", async () => {
+      const [g1, g1b, g2] = [
+        await makeBot(E, "RoomOneA"),
+        await makeBot(E, "RoomOneB"),
+        await makeBot(E, "RoomTwoA"),
+      ];
+      const one = await room(E, "Parallel one", [g1, g1b]);
+      const two = await room(E, "Parallel two", [g2]);
+      let freeOne!: () => void, freeTwo!: () => void;
+      gates.RoomOneA = new Promise<void>((r) => (freeOne = r));
+      gates.RoomTwoA = new Promise<void>((r) => (freeTwo = r));
+      await queueTurn(E, one.id, g1.id);
+      await queueTurn(E, one.id, g1b.id);
+      await queueTurn(E, two.id, g2.id);
+      worker.kick();
+      await until(
+        async () =>
+          (await statusOf(one.id, g1.id))?.status === "running" &&
+          (await statusOf(two.id, g2.id))?.status === "running",
+      );
+      // The second bot of the first room waits for the first; the other room did not have to wait for either.
+      await Bun.sleep(100);
+      expect((await statusOf(one.id, g1b.id))?.status).toBe("queued");
+      freeOne();
+      await until(async () => (await statusOf(one.id, g1b.id))?.status === "done");
+      freeTwo();
+      await worker.drain();
+    });
+
+    test("a silent turn is restarted once with a room line; stuck again it fails with a line and a card", async () => {
+      const sticky = await makeBot(E, "Sticky");
+      const r = await room(E, "Stuck once", [sticky]);
+      // This gate never opens: only an abort ends the run.
+      gates.Sticky = new Promise<void>(() => {});
+      await queueTurn(E, r.id, sticky.id);
+      worker.kick();
+      const live = async () => {
+        const t = await statusOf(r.id, sticky.id);
+        return t?.status === "running" && !!liveTurns().get(t.id)?.rec;
+      };
+      await until(live);
+      const first = (await statusOf(r.id, sticky.id))!;
+
+      const later = () => new Date(Date.now() + 11 * 60_000);
+      await worker.checkStuck(later());
+      // Taken back and started again: the marker stays, and the aborted run did not end the turn as cancelled.
+      await until(async () => {
+        const t = await statusOf(r.id, sticky.id);
+        return (
+          t?.status === "running" &&
+          t.reasonCode === "stuck_resumed" &&
+          !!liveTurns().get(t.id)?.rec
+        );
+      });
+      expect((await statusOf(r.id, sticky.id))!.id).toBe(first.id);
+      const resumed = await eventsOf(r.conv, "turn_resumed");
+      expect(resumed).toHaveLength(1);
+      expect(resumed[0]!.content).toContain("Sticky showed no progress for 10 minutes");
+
+      await worker.checkStuck(later());
+      await until(async () => (await statusOf(r.id, sticky.id))?.status === "failed");
+      expect((await statusOf(r.id, sticky.id))!.reasonCode).toBe("stuck");
+      expect(await eventsOf(r.conv, "turn_stuck")).toHaveLength(1);
+      const cards = await db
+        .select()
+        .from(attentionItem)
+        .where(eq(attentionItem.sourceKey, `discussion:${r.id}:stuck:${sticky.id}`));
+      expect(cards).toHaveLength(1);
+      expect(cards[0]!.title).toContain("Sticky got stuck");
+      await worker.drain();
+    });
+
+    test("a running turn with no live run on this server goes back to the queue", async () => {
+      const orphan = await makeBot(E, "Orphan");
+      const r = await room(E, "No run", [orphan]);
+      await db.insert(discussionTurn).values({
+        ownerUserId: E,
+        discussionId: r.id,
+        botId: orphan.id,
+        kind: "reply",
+        status: "running",
+        attempts: 1,
+        claimedAt: new Date(Date.now() - 2 * 60_000),
+      });
+      await worker.checkStuck();
+      await worker.drain();
+      const lines = await eventsOf(r.conv, "turn_resumed");
+      expect(lines).toHaveLength(1);
+      expect((lines[0]!.meta as { reason?: string }).reason).toBe("gone");
+      expect((await statusOf(r.id, orphan.id))?.status).toBe("done");
+    });
+
+    test("a run that ends after its turn was taken back does not overwrite it", async () => {
+      const late = await makeBot(E, "Late");
+      const r = await room(E, "Late finish", [late]);
+      const [row] = await db
+        .insert(discussionTurn)
+        .values({
+          ownerUserId: E,
+          discussionId: r.id,
+          botId: late.id,
+          kind: "reply",
+          status: "queued",
+          attempts: 2,
+          reasonCode: "stuck_resumed",
+        })
+        .returning();
+      // The old run held claim 1 (or 2, already ended): its finish changes nothing while the turn is queued or claimed again.
+      expect(await store.finishTurn(row!.id, "done", { attempt: 1 })).toBeUndefined();
+      expect(await store.finishTurn(row!.id, "cancelled", { attempt: 2 })).toBeUndefined();
+      const [after] = await db.select().from(discussionTurn).where(eq(discussionTurn.id, row!.id));
+      expect(after!.status).toBe("queued");
+      // A re-queue without a new reason keeps the old one (stuck once must survive a busy re-queue).
+      await db
+        .update(discussionTurn)
+        .set({ status: "running" })
+        .where(eq(discussionTurn.id, row!.id));
+      await store.finishTurn(row!.id, "queued", { attempt: 2 });
+      const [kept] = await db.select().from(discussionTurn).where(eq(discussionTurn.id, row!.id));
+      expect(kept!.reasonCode).toBe("stuck_resumed");
+      await db
+        .update(discussionTurn)
+        .set({ status: "cancelled", finishedAt: new Date() })
+        .where(eq(discussionTurn.id, row!.id));
     });
   });
 });

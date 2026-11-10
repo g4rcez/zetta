@@ -136,6 +136,26 @@ export function findStep(
   return undefined;
 }
 
+/**
+ * When a command of the turn last printed (ms since epoch), or undefined when nothing was recorded. The wrapper appends to a `.out`
+ * file as the command prints, so its mtime is the last sign of life of a long command; the `.cmd` file marks when one started.
+ * Past `LIVE_FILE_CAP` a stream stops being copied, so a command that prints for a very long time looks silent after that.
+ */
+export async function lastOutputAt(signal: AbortSignal): Promise<number | undefined> {
+  let newest: number | undefined;
+  for (const run of runs.get(signal) ?? []) {
+    if (run.closed) continue;
+    const names = (await readdir(run.dir).catch(() => [] as string[])).filter(
+      (n) => n.endsWith(".out") || n.endsWith(".cmd"),
+    );
+    for (const name of names) {
+      const info = await stat(join(run.dir, name)).catch(() => undefined);
+      if (info && (newest === undefined || info.mtimeMs > newest)) newest = info.mtimeMs;
+    }
+  }
+  return newest;
+}
+
 /** Quotes, backslashes and whitespace differ between the tool's command and the shell string that embeds it. */
 const plain = (s: string) => s.replace(/['"\\\s]/g, "");
 

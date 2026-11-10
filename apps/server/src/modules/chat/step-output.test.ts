@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,7 @@ import {
   findStep,
   followStep,
   LIVE_SHELL,
+  lastOutputAt,
   openLiveRun,
   scrub,
   secretValues,
@@ -187,5 +188,25 @@ describe.skipIf(process.platform === "win32")("the wrapper", () => {
     expect(r.out.length).toBe(3_000_000);
     const [name] = await files(dir, "out");
     expect((await Bun.file(join(dir, name!)).text()).length).toBe(1_048_576);
+  });
+});
+
+describe("lastOutputAt", () => {
+  test("is the newest time a command of the turn printed or started, and nothing for an unknown turn", async () => {
+    const signal = new AbortController().signal;
+    expect(await lastOutputAt(signal)).toBeUndefined();
+    const dir = await createLiveDir(await root());
+    const run = openLiveRun(signal, dir, []);
+    expect(await lastOutputAt(signal)).toBeUndefined();
+    await writeFile(join(dir, "1.cmd"), "sleep 1");
+    await writeFile(join(dir, "1.out"), "first\n");
+    const old = new Date(Date.now() - 60_000);
+    await utimes(join(dir, "1.cmd"), old, old);
+    await utimes(join(dir, "1.out"), old, old);
+    await writeFile(join(dir, "2.out"), "still printing\n");
+    expect(await lastOutputAt(signal)).toBe((await stat(join(dir, "2.out"))).mtimeMs);
+    // A finished run says nothing: its folder is about to be removed.
+    closeLiveRun(run);
+    expect(await lastOutputAt(signal)).toBeUndefined();
   });
 });

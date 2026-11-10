@@ -104,7 +104,7 @@ import { createLiveBots, loadBotStatus, phaseAfterRound, type RunPhase } from ".
 import { listProcesses, redactCommand, runsOf } from "./processes";
 import { denyLiveOutput, findStep, followStep } from "./step-output";
 import { answersOf, slowDetail, type SlowAnswer } from "./turn-snapshot";
-import { createTurnRegistry, TurnBusyError } from "./turns";
+import { createTurnRegistry, TurnBusyError, type TurnRecord } from "./turns";
 import {
   AgentsPausedError,
   agentsPaused,
@@ -7294,14 +7294,21 @@ export function createChatService(
     async runDiscussionTurn(
       actor: ActiveActor,
       c: Claimed,
+      /** `started` gets the turn's record once its run exists, so the worker's watchdog can watch and stop it. */
+      hooks?: { started?: (rec: TurnRecord<ChatEvent>) => void },
     ): Promise<"done" | "failed" | "skipped" | "busy" | "cancelled"> {
       const store = deps.discussions;
       if (!store) return "skipped";
       const d = c.discussion,
         t = c.turn;
+      // Only the run that holds this claim may end the turn: when the watchdog took it back (or it was claimed again), this changes nothing.
+      const finish = (
+        status: Parameters<typeof store.finishTurn>[1],
+        v: Parameters<typeof store.finishTurn>[2] = {},
+      ) => store.finishTurn(t.id, status, { ...v, attempt: t.attempts });
       // The worker never claims a paused owner's turn (see claimNext); this covers a pause that came right after the claim.
       if (await agentsPaused(db, actor.userId)) {
-        await store.finishTurn(t.id, "queued");
+        await finish("queued");
         return "busy";
       }
       const [who] = await db
@@ -7310,7 +7317,7 @@ export function createChatService(
         .where(and(eq(bot.id, t.botId), visibleBot(actor), eq(bot.archived, false)));
       // The owner may use their own bot before its setup is done (as in a chat); only another person's bot must be ready.
       if (!who || (!who.onboarded && who.ownerUserId !== actor.userId)) {
-        await store.finishTurn(t.id, "skipped", {
+        await finish("skipped", {
           reasonCode: "bot_unavailable",
         });
         return "skipped";
@@ -7548,11 +7555,12 @@ export function createChatService(
         });
       } catch (e) {
         if (e instanceof TurnBusyError) {
-          await store.finishTurn(t.id, "queued");
+          await finish("queued");
           return "busy";
         }
         throw e;
       }
+      hooks?.started?.(rec);
       // The room drawer shows what each bot did: steps are saved in order, and a failed write never fails the turn.
       let writes: Promise<unknown> = store.startSteps(t).catch(() => undefined);
       let lastLabel = "";
@@ -7591,7 +7599,7 @@ export function createChatService(
       }
       await writes;
       if (!result) {
-        await store.finishTurn(t.id, "failed", { reasonCode: "error" });
+        await finish("failed", { reasonCode: "error" });
         return "failed";
       }
       let saved = result.saved;
@@ -7615,13 +7623,13 @@ export function createChatService(
         });
       }
       if (result.status === "cancelled") {
-        await store.finishTurn(t.id, "cancelled", {
+        await finish("cancelled", {
           resultMessageId: saved.id,
         });
         return "cancelled";
       }
       if (result.status === "failed") {
-        await store.finishTurn(t.id, "failed", {
+        await finish("failed", {
           resultMessageId: saved.id,
           reasonCode: "bot_failed",
         });
@@ -7643,7 +7651,7 @@ export function createChatService(
           .delete(message)
           .where(eq(message.id, saved.id))
           .catch(() => undefined);
-        await store.finishTurn(t.id, "done", { reasonCode: "silent" });
+        await finish("done", { reasonCode: "silent" });
         return "done";
       }
       // The reply only says the bot waits for the user, has nothing to say or is finished (Laya, in the configured languages): the post
@@ -7653,9 +7661,11 @@ export function createChatService(
           ? await waiting.stopReason(saved.content, actor.userId)
           : undefined;
       if (stop) {
-        await store.finishTurn(t.id, "done", { resultMessageId: saved.id, reasonCode: stop });
+        await finish("done", { resultMessageId: saved.id, reasonCode: stop });
         return "done";
       }
+      // The watchdog took this turn back while the reply was being written: it will run again, so this one wakes nobody.
+      if (!(await store.stillRunning(t.id, t.attempts))) return "cancelled";
       if (t.kind === "reply") {
         // A member's progress report in its own loop wakes the facilitator only by mention; its goal_done wakes it as any reply does.
         const stillGoing =
@@ -7666,7 +7676,7 @@ export function createChatService(
           mentionsOnly: Boolean(stillGoing),
         });
       }
-      await store.finishTurn(t.id, "done", { resultMessageId: saved.id });
+      await finish("done", { resultMessageId: saved.id });
       return "done";
     },
     async sendMessage(
@@ -7701,6 +7711,7 @@ export function createChatService(
     tasks: deps.tasks,
     mcp,
     skills: deps.skills?.skills,
+    botImport: deps.botImport,
     features: deps.features,
     botClaude: deps.botClaude,
     discussions: deps.discussions,
@@ -7711,7 +7722,6 @@ export function createChatService(
     vms,
     connections,
     agenda,
-    botImport: deps.botImport,
     memory: deps.memory,
     computer,
     routing,

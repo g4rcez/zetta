@@ -31,6 +31,7 @@ import { HELP_PREFIX, isIdleChatter, mentionKey, wakeTargets } from "./prompt";
 import { topics } from "@zetta/core/live-topics";
 import { events } from "../events/bus";
 import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
+import { STUCK_MS, type StuckReason } from "./watchdog";
 
 type Bot = typeof bot.$inferSelect;
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -1817,7 +1818,8 @@ export function createDiscussionStore(
     },
     /**
      * Claims the oldest runnable turn: its discussion is open (or it is a wrap-up). Gated turns go to the owner for approval; a spent
-     * budget stalls the discussion. Lane "any": the owner has no other turn running (members share the owner's code directory).
+     * budget stalls the discussion. Lane "any": the room has no other turn running (the members of a room take turns; different rooms
+     * run side by side).
      * Lane "user": only turns woken by the person's own post, and they start at once beside running turns, so the person is never
      * kept waiting for a busy bot (the harness limiter still caps the processes).
      */
@@ -1827,7 +1829,7 @@ export function createDiscussionStore(
     ): Promise<Claimed | undefined> {
       for (let i = 0; i < 10; i++) {
         const out = await transaction(db, async (tx): Promise<Claimed | "again" | undefined> => {
-          // One claim at a time across instances: the "one running turn per owner" check below reads rows that a parallel claim could
+          // One claim at a time across instances: the "one running turn per room" check below reads rows that a parallel claim could
           // still be changing. Claims are short, so the wait is not noticed.
           await tx.execute(sql`select pg_advisory_xact_lock(hashtext('zetta:discussion-claim'))`);
           const picked = await tx.execute<{
@@ -1839,7 +1841,7 @@ export function createDiscussionStore(
               and ${
                 lane === "user"
                   ? sql`t.kind = 'reply' and exists (select 1 from message m where m.id = t.trigger_message_id and m.role = 'user')`
-                  : sql`not exists (select 1 from discussion_turn r where r.owner_user_id = t.owner_user_id and r.status = 'running')`
+                  : sql`not exists (select 1 from discussion_turn r where r.discussion_id = t.discussion_id and r.status = 'running')`
               }
             order by t.created_at limit 1 for update of t skip locked`);
           const id =
@@ -1915,20 +1917,34 @@ export function createDiscussionStore(
         ) > 0
       );
     },
+    /**
+     * Ends (or re-queues) a turn. With `attempt`, only the run that holds that claim can end it: a run the watchdog already took back, or
+     * one that was claimed again since, changes nothing and gets undefined. A re-queue keeps the reason it had (`stuck_resumed` must
+     * survive a "busy" re-queue) unless a new one is given.
+     */
     async finishTurn(
       turnId: string,
       status: "done" | "failed" | "skipped" | "cancelled" | "queued",
-      v: { resultMessageId?: string | null; reasonCode?: string | null } = {},
+      v: { resultMessageId?: string | null; reasonCode?: string | null; attempt?: number } = {},
     ) {
       const [t] = await db
         .update(discussionTurn)
         .set({
           status,
           resultMessageId: v.resultMessageId ?? null,
-          reasonCode: v.reasonCode ?? null,
+          ...(status === "queued" && v.reasonCode === undefined
+            ? {}
+            : { reasonCode: v.reasonCode ?? null }),
           finishedAt: status === "queued" ? null : new Date(),
         })
-        .where(eq(discussionTurn.id, turnId))
+        .where(
+          and(
+            eq(discussionTurn.id, turnId),
+            ...(v.attempt === undefined
+              ? []
+              : [eq(discussionTurn.status, "running"), eq(discussionTurn.attempts, v.attempt)]),
+          ),
+        )
         .returning();
       if (t && status === "done")
         await db
@@ -1946,6 +1962,112 @@ export function createDiscussionStore(
           .set({ updatedAt: new Date() })
           .where(eq(discussion.id, t.discussionId));
       return t;
+    },
+    /** Whether the run that holds `attempt` still owns the turn (the watchdog may have taken it back meanwhile). */
+    async stillRunning(turnId: string, attempt: number) {
+      const [row] = await db
+        .select({ id: discussionTurn.id })
+        .from(discussionTurn)
+        .where(
+          and(
+            eq(discussionTurn.id, turnId),
+            eq(discussionTurn.status, "running"),
+            eq(discussionTurn.attempts, attempt),
+          ),
+        );
+      return !!row;
+    },
+    /** The turns this server instance is running now, for the watchdog. */
+    async runningOn(instance: string | undefined) {
+      return db
+        .select({
+          id: discussionTurn.id,
+          attempts: discussionTurn.attempts,
+          claimedAt: discussionTurn.claimedAt,
+          botName: bot.name,
+        })
+        .from(discussionTurn)
+        .innerJoin(bot, eq(bot.id, discussionTurn.botId))
+        .where(
+          and(
+            eq(discussionTurn.status, "running"),
+            instance
+              ? eq(discussionTurn.ownerInstance, instance)
+              : sql`${discussionTurn.ownerInstance} is null`,
+          ),
+        );
+    },
+    /**
+     * A running turn stopped making progress. The first time it goes back to the queue with a line in the room, and runs again; stuck
+     * again, it ends as failed with a line and a card for the owner (the room keeps going). The claim's `attempts` must still match: a
+     * turn that ended or was claimed again meanwhile is left alone. `reasonCode` carries "resumed once" over the re-claim.
+     */
+    async settleStuck(
+      turn: { id: string; attempts: number },
+      reason: StuckReason,
+      botName: string,
+    ) {
+      const settled = await transaction(db, async (tx) => {
+        const [t] = await tx
+          .select()
+          .from(discussionTurn)
+          .where(eq(discussionTurn.id, turn.id))
+          .for("update");
+        if (!t || t.status !== "running" || t.attempts !== turn.attempts) return undefined;
+        const [d] = await tx.select().from(discussion).where(eq(discussion.id, t.discussionId));
+        if (!d) return undefined;
+        const again = t.reasonCode === "stuck_resumed";
+        const line = (discussionEvent: string, content: string) =>
+          insertMessage(tx, d.conversationId, {
+            ownerUserId: d.ownerUserId,
+            role: "system",
+            content,
+            meta: { discussionEvent, botId: t.botId, turnId: t.id, reason },
+          });
+        if (!again) {
+          await tx
+            .update(discussionTurn)
+            .set({
+              status: "queued",
+              reasonCode: "stuck_resumed",
+              claimedAt: null,
+              ownerInstance: null,
+              finishedAt: null,
+            })
+            .where(eq(discussionTurn.id, t.id));
+          await line(
+            "turn_resumed",
+            reason === "silent"
+              ? `⏱ ${botName} showed no progress for ${Math.round(STUCK_MS() / 60_000)} minutes, so Zetta restarted its turn.`
+              : reason === "gone"
+                ? `⏱ ${botName}'s run stopped unexpectedly, so Zetta restarted its turn.`
+                : `⏱ ${botName}'s turn never started, so Zetta restarted it.`,
+          );
+        } else {
+          await tx
+            .update(discussionTurn)
+            .set({ status: "failed", reasonCode: "stuck", finishedAt: new Date() })
+            .where(eq(discussionTurn.id, t.id));
+          await line(
+            "turn_stuck",
+            `⚠️ ${botName} got stuck again, so Zetta stopped its turn. Mention ${botName} in a post to try again.`,
+          );
+        }
+        return { outcome: again ? ("failed" as const) : ("requeued" as const), turn: t, d };
+      });
+      if (!settled) return undefined;
+      if (settled.outcome === "requeued") onEnqueue?.();
+      else
+        await raiseAttention(db, settled.d.ownerUserId, {
+          title: `${botName} got stuck in "${settled.d.title}"`,
+          detail: "Its turn was restarted once and stopped responding again.",
+          nextAction: "Open the room and post a nudge mentioning the bot, or resolve it.",
+          resultLink: `/rooms?id=${settled.d.id}`,
+          source: "bot",
+          botId: settled.turn.botId,
+          sourceKey: `discussion:${settled.d.id}:stuck:${settled.turn.botId}`,
+        }).catch(() => {});
+      return settled;
     },
     /**
      * Approved brief: approved once for this bot in this room. Every turn of the bot that waited behind the card runs, and the gate is
@@ -2159,6 +2281,9 @@ export function createDiscussionStore(
   });
   after("finishTurn", (_args, turn) => {
     if (turn) return roomChanged((turn as DiscussionTurn).discussionId);
+  });
+  after("settleStuck", (_args, settled) => {
+    if (settled) return roomChanged((settled as { turn: DiscussionTurn }).turn.discussionId);
   });
   for (const name of ["approveBrief", "declineBrief"])
     after(name, (_args, turn) => roomChanged((turn as DiscussionTurn).discussionId));

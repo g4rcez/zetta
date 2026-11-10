@@ -6,11 +6,18 @@ import { useState } from "react";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { Routines } from "./routines";
+import type { RoutinesSearch } from "./routines-search";
 
 const NO_BOTS: Bot[] = [];
 
 /** Routines are a main destination: every routine with its status, its one chat and its run history. */
-export function RoutinesPage({ focusId }: { focusId?: string | undefined }) {
+export function RoutinesPage({
+  search,
+  setSearch,
+}: {
+  search: RoutinesSearch;
+  setSearch: (next: Partial<RoutinesSearch>, history?: "push" | "replace") => void;
+}) {
   const botsQuery = useQuery(chatQueries.bots());
   const bots = botsQuery.data ?? NO_BOTS;
   const [actionError, setError] = useState<string>();
@@ -33,7 +40,7 @@ export function RoutinesPage({ focusId }: { focusId?: string | undefined }) {
           </div>
         </header>
         {error && <Alert theme="danger">{error}</Alert>}
-        <Routines bots={bots} onError={setError} focusId={focusId} />
+        <Routines bots={bots} onError={setError} search={search} setSearch={setSearch} />
       </div>
     </div>
   );

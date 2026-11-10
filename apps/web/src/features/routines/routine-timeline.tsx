@@ -40,9 +40,16 @@ function ChatLink({ run }: { run: TimelineRun }) {
 }
 
 /** Live timeline of routine runs: running ones pulse up to now and link to their chat. Refreshes every few seconds. */
-export function RoutineTimeline() {
+export function RoutineTimeline({
+  hours,
+  onHours,
+}: {
+  /** The window in hours, from the address. */
+  hours: (typeof WINDOWS)[number];
+  onHours: (h: (typeof WINDOWS)[number]) => void;
+}) {
   const tf = useTimeFormat();
-  const [hours, setHours] = useState<(typeof WINDOWS)[number]>(3);
+  const setHours = onHours;
   // The window ends "now" when the request runs, so the key holds the window size only; `at` is that moment.
   const query = useQuery({
     queryKey: ["routines", "timeline", { hours }],

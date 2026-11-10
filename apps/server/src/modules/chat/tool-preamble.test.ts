@@ -240,7 +240,8 @@ describe("chief creation tools", () => {
     // Raised from 31_700 to 31_800 on purpose: how a bot points at an app with a zetta:app.linkto card (~120 characters) is read by every bot.
     // Raised from 31_800 to 31_900 on purpose: the bot access flags ([suggest only], [read only], ~100 characters) are read by every bot.
     // Raised from 31_900 to 32_400 on purpose: the zetta:import_bot line (~380 characters) and the weekdays option of zetta:routine (~75) are read by every Chief turn.
-    expect(chief.length).toBeLessThan(32_400);
+    // Raised to 32_950 on purpose (2026-11-10): zetta:my_routine (~480) lets every bot, not only the Chief, control its own routines.
+    expect(chief.length).toBeLessThan(32_950);
     expect(toolPreamble("off", false, false)).not.toContain("next_wave");
   });
   test("every bot is told that [suggest only] items change by suggestion and [read only] items not at all", () => {

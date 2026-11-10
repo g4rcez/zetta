@@ -73,6 +73,9 @@ export const TOOL_PREAMBLE = `You can use Zetta tools by writing fenced blocks i
 \`\`\`zetta:create_routine
 {"botId":"<id of the bot that runs it, usually yours>","title":"Morning Reddit digest","prompt":"complete instructions for one run","timezone":"America/Sao_Paulo","dailyAt":"08:00"}
 \`\`\`   (a recurring task; only a proposal: the user approves it, then activates it in Studio > Routines. dailyAt "HH:MM" in that IANA timezone, or everyMinutes (5 to 10080) instead; several times a day = one routine per time. Each run is a new chat turn with your tools, so the prompt must stand on its own. After you read outside content (a page, a repository, a plugin or MCP result), changes you ask for wait for the user's approval on a card: keep working and do not say they are done.)
+\`\`\`zetta:my_routine
+{"action":"list"}
+\`\`\`   (your own routines, the scheduled work you do for the user. actions: list; create {title, prompt, when, timezone} where when is plain text such as "weekdays at 8:30" or "every 2 hours" and the routine starts at once; update {id, title?, prompt?, when?}; pause, resume, run (now), skip_next, stop_skip {id}. Use it when the user asks to schedule, pause, skip or change recurring work. A run is a new turn with your tools, so the prompt must stand on its own.)
 \`\`\`zetta:plan
 {"steps":[{"id":"1","title":"Read the sheet","status":"active"},{"id":"2","title":"Draw the chart"},{"id":"3","title":"Write the summary"}]}
 \`\`\`   (not a tool: nothing runs. It shows the user your steps as a checklist while you work. Use it only for work of 3 or more steps, in the reply where you start. status is pending (default), active or done. Each block replaces the whole list, so send the full list again with the new statuses in the reply that starts or finishes a step, together with that step's tool blocks. At most 12 steps, titles under 120 characters.)
@@ -488,6 +491,29 @@ export const toolSchemas = {
     everyMinutes: z.number().int().min(5).max(10080).optional(),
   }),
   create_workflow: z.strictObject({ name: bounded(120), graph: z.unknown() }),
+  /** Any bot: its own routines only (see my-routine.ts). */
+  my_routine: z.discriminatedUnion("action", [
+    z.strictObject({ action: z.literal("list") }),
+    z.strictObject({
+      action: z.literal("create"),
+      title: bounded(120),
+      prompt: bounded(8000),
+      when: bounded(200),
+      timezone: bounded(64),
+    }),
+    z.strictObject({
+      action: z.literal("update"),
+      id: z.string().uuid(),
+      title: bounded(120).optional(),
+      prompt: bounded(8000).optional(),
+      when: bounded(200).optional(),
+      timezone: bounded(64).optional(),
+    }),
+    z.strictObject({
+      action: z.enum(["pause", "resume", "run", "skip_next", "stop_skip"]),
+      id: z.string().uuid(),
+    }),
+  ]),
   discussion: z.discriminatedUnion("action", [
     z.strictObject({
       action: z.literal("open"),
@@ -655,7 +681,7 @@ export function parseTools(reply: string): {
   let plan: PlanStep[] | undefined;
   const text = reply
     .replace(
-      /```zetta:(memory|wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|create_workflow|create_vm|mcp|plugin|desktop|machine|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal_stop|next_wave|goal|team_goals|assign|artifact|playground|app|setup|inbound|skills|bot|folder|routine|team|output_style|artifacts|plugins|mcp_server|skill_library|hook|claude|room|preferences|conversation|attention|workflow|computer|snapshot|source|company_docs|connection|agenda_sync|memory_admin|wiki_admin|browser_profile|decision|inbound_route|admin|import_bot)\s*\n([\s\S]*?)```/g,
+      /```zetta:(memory|wiki|config|browser|handoff|create_bot|create_team|add_to_team|create_routine|my_routine|create_workflow|create_vm|mcp|plugin|desktop|machine|credential|agenda|task|discussion|bot_claude|permission|escalate|goal_progress|goal_done|goal_stop|next_wave|goal|team_goals|assign|artifact|playground|app|setup|inbound|skills|bot|folder|routine|team|output_style|artifacts|plugins|mcp_server|skill_library|hook|claude|room|preferences|conversation|attention|workflow|computer|snapshot|source|company_docs|connection|agenda_sync|memory_admin|wiki_admin|browser_profile|decision|inbound_route|admin|import_bot)\s*\n([\s\S]*?)```/g,
       (_, fence: string, body: string) => {
         const kind = (FENCE_ALIAS[fence] ?? fence) as keyof typeof toolSchemas;
         let json: unknown;

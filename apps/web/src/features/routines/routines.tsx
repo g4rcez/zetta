@@ -1,8 +1,9 @@
 import { uuidv7 } from "@zetta/core/uuid";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { CaretRightIcon, ChatIcon, PlusIcon, WarningIcon } from "@phosphor-icons/react";
 import { RoutineCalendar } from "./routine-calendar";
 import { RoutineTimeline } from "./routine-timeline";
+import type { RoutinesSearch } from "./routines-search";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button, Input, Radiobox, Select } from "@/components/ui";
@@ -24,7 +25,7 @@ import { Alert } from "@g4rcez/components/alert";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
 
-type Routine = {
+export type Routine = {
   id: string;
   botId: string;
   title: string;
@@ -46,6 +47,14 @@ type Routine = {
   nextRunAt: string | null;
   lastRunAt?: string | null;
   statusAt?: string;
+  /** When an occurrence comes while the previous run still works. */
+  overlapPolicy?: "skip" | "queue";
+  /** After downtime: run once for what was missed, or skip to the next. */
+  catchUp?: "run_once" | "skip";
+  /** "Skip next" is on until this instant. */
+  skipUntil?: string | null;
+  failures?: number;
+  maxFailures?: number;
 };
 type RoutineStatus =
   | "paused"
@@ -68,9 +77,17 @@ type Summary = {
   missing: unknown[];
   version: number;
 };
-type Run = {
+export type Run = {
   id: string;
-  status: "running" | "succeeded" | "failed" | "skipped" | "blocked" | "interrupted";
+  status:
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "skipped"
+    | "blocked"
+    | "interrupted"
+    | "cancelled"
+    | "following";
   reasonCode: string | null;
   output: string;
   conversationId: string | null;
@@ -83,15 +100,17 @@ type Run = {
 type Flow = { id: string; name: string };
 const NO_RUNS: Run[] = [];
 
-const RUN_STATUS: Record<Run["status"], string> = {
+export const RUN_STATUS: Record<Run["status"], string> = {
   running: "Running",
   succeeded: "Done",
   failed: "Failed",
   skipped: "Skipped",
   blocked: "Blocked",
   interrupted: "Interrupted",
+  cancelled: "Stopped",
+  following: "Working on its tasks",
 };
-const ROUTINE_STATUS: Record<
+export const ROUTINE_STATUS: Record<
   RoutineStatus,
   { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }
 > = {
@@ -106,7 +125,7 @@ const ROUTINE_STATUS: Record<
 const human = (s: string) => s.replace(/_/g, " ");
 const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-function NextRuns({ runs }: { runs: string[] }) {
+export function NextRuns({ runs }: { runs: string[] }) {
   const tf = useTimeFormat();
   return runs.length ? (
     <ul className="list-disc pl-5 text-xs">
@@ -213,8 +232,24 @@ function ActivationCard({
   );
 }
 
-function History({ routineId }: { routineId: string }) {
+/** How long a run took, or has been going: "4m", "1h 12m", "35s". */
+export function duration(startedAt: string, finishedAt: string | null, now = Date.now()) {
+  const ms = Math.max(0, (finishedAt ? Date.parse(finishedAt) : now) - Date.parse(startedAt));
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m`;
+  return `${Math.floor(min / 60)}h ${min % 60}m`;
+}
+
+export function History({ routineId }: { routineId: string }) {
   const tf = useTimeFormat();
+  const qc = useQueryClient();
+  const [stopError, setStopError] = useState<string>();
+  const stop = (runId: string) =>
+    call(`/api/routine-runs/${runId}/stop`, "POST")
+      .then(() => qc.invalidateQueries({ queryKey: ["routines"] }))
+      .catch((e) => setStopError(errorMessage(e)));
   const query = useInfiniteQuery({
     queryKey: ["routines", routineId, "runs"],
     initialPageParam: undefined as string | undefined,
@@ -235,13 +270,25 @@ function History({ routineId }: { routineId: string }) {
         </p>
       )}
       {loaded && runs.length === 0 && <Empty>No runs yet.</Empty>}
+      {stopError && (
+        <p role="alert" className="text-destructive">
+          {stopError}
+        </p>
+      )}
       <ul className="space-y-1">
         {runs.map((r) => (
           <li key={r.id} className="min-w-0 rounded-md border bg-card p-3">
-            <p>
-              <strong>{RUN_STATUS[r.status]}</strong>
-              {r.reasonCode ? ` (${human(r.reasonCode)})` : ""} · {runOrigin(r)} ·{" "}
-              {when(r.startedAt, tf)}
+            <p className="flex flex-wrap items-center gap-x-2">
+              <span>
+                <strong>{RUN_STATUS[r.status]}</strong>
+                {r.reasonCode ? ` (${human(r.reasonCode)})` : ""} · {runOrigin(r)} ·{" "}
+                {when(r.startedAt, tf)} · {duration(r.startedAt, r.finishedAt)}
+              </span>
+              {(r.status === "running" || r.status === "following") && (
+                <Button size="xs" variant="outline" onClick={() => void stop(r.id)}>
+                  Stop
+                </Button>
+              )}
             </p>
             {r.event != null && (
               <details>
@@ -404,7 +451,8 @@ const NEEDS_ATTENTION: RoutineStatus[] = ["failed", "interrupted", "blocked"];
 type View = "history" | "triggers" | "edit" | "activate";
 const WHEN_EXAMPLES = "Monday to Friday at 8:30 · every 15 minutes · tomorrow at 5pm · 0 9 * * 1-5";
 
-const statusOf = (r: Routine): RoutineStatus => r.status ?? (r.paused ? "paused" : "scheduled");
+export const statusOf = (r: Routine): RoutineStatus =>
+  r.status ?? (r.paused ? "paused" : "scheduled");
 
 /** Creating a routine is one focused task, so it gets its own dialog instead of sitting above the list. */
 export function NewRoutineForm({
@@ -464,6 +512,8 @@ export function NewRoutineForm({
         prompt: f.get("prompt"),
         ...s.value,
         ...(workflowId ? { workflowId } : {}),
+        // Switched on at once: a routine left paused runs only when "Run now" is pressed, which reads as "it ran once and stopped".
+        activate: "on",
       });
       onCreated(r.routine);
     } catch (x) {
@@ -577,7 +627,7 @@ export function NewRoutineForm({
         </p>
       )}
       <p className="text-xs text-muted-foreground sm:col-span-2">
-        New routines start paused. You review them, then activate.
+        The routine is switched on when you create it. You can pause it at any time.
       </p>
       <div className="flex flex-wrap justify-end gap-2 sm:col-span-2">
         <Button type="button" size="sm" variant="outline" onClick={onClose}>
@@ -716,6 +766,13 @@ function RoutineRow({
         </div>
         <div className="col-start-2 row-start-1 flex flex-wrap items-center justify-end gap-3 @3xl:col-start-4">
           <RoutineChatLink conversationId={r.conversationId} unread={unread} />
+          <Link
+            to="/routines/$routineId"
+            params={{ routineId: r.id }}
+            className="text-sm underline hover:text-foreground"
+          >
+            Open
+          </Link>
           {r.paused ? (
             <Button size="sm" variant="outline" onClick={() => onOpen("activate")}>
               Activate…
@@ -806,14 +863,18 @@ function RoutineRow({
 export function Routines({
   bots,
   onError,
-  focusId,
+  search,
+  setSearch,
 }: {
   bots: Bot[];
   onError: (m: string) => void;
-  /** A routine to show open and scrolled into view (from a link such as `/routines?routine=<id>`). */
-  focusId?: string | undefined;
+  /** The page's view from the address (see routines-search.ts). */
+  search: RoutinesSearch;
+  setSearch: (next: Partial<RoutinesSearch>, history?: "push" | "replace") => void;
 }) {
+  const focusId = search.routine;
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const rowsQuery = useQuery({
     queryKey: ["routines", { state: "all" }],
     queryFn: () => call<{ routines: Routine[] }>("/api/routines").then((r) => r.routines),
@@ -838,7 +899,9 @@ export function Routines({
   const unreadChats = useRoutineUnreadChats();
   const focused = useRef(false);
   const [busy, setBusy] = useState<string>();
-  const [tab, setTab] = useState<"overview" | "calendar">("overview");
+  const tab = search.view === "calendar" ? "calendar" : "overview";
+  const setTab = (v: "overview" | "calendar") =>
+    setSearch({ view: v === "calendar" ? "calendar" : undefined });
   const [now, setNow] = useState(() => Date.now());
   // Relative times ("5m ago") move on with every answer.
   useEffect(() => {
@@ -868,8 +931,9 @@ export function Routines({
   const run = async (id: string) => {
     setBusy(id);
     await act(
-      () => call(`/api/routines/${id}/run`, "POST", { requestKey: uuidv7() }),
-      "Run finished. Open History to see the result.",
+      // "start": the answer comes when the run is claimed, not when the bot is done (a run can take minutes).
+      () => call(`/api/routines/${id}/run`, "POST", { requestKey: uuidv7(), wait: "start" }),
+      "Run started. Open History to follow it.",
     );
     setBusy(undefined);
   };
@@ -974,7 +1038,10 @@ export function Routines({
           <RoutineCalendar />
         ) : (
           <>
-            <RoutineTimeline />
+            <RoutineTimeline
+              hours={search.hours ?? 3}
+              onHours={(h) => setSearch({ hours: h === 3 ? undefined : h }, "replace")}
+            />
             <div className="space-y-2">
               <h3 className="text-base font-semibold tracking-tight">
                 All routines
@@ -1035,9 +1102,16 @@ export function Routines({
             onClose={() => setCreating(false)}
             onCreated={(created) => {
               setCreating(false);
+              // The new routine opens on its own page: its controls, what runs next and its runs.
+              void navigate({ to: "/routines/$routineId", params: { routineId: created.id } });
               setTab("overview");
-              setView(created.id, "activate");
-              setStatus("Routine created, but it is paused. Review it below, then activate it.");
+              // A routine is switched on when it is created; one whose bot is not ready stays paused and shows what is missing.
+              setView(created.id, created.paused ? "activate" : "history");
+              setStatus(
+                created.paused
+                  ? "Routine created, but it is paused: something is missing. See below, then activate it."
+                  : "Routine created and switched on.",
+              );
               void reload();
             }}
           />

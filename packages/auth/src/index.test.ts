@@ -108,8 +108,13 @@ test("createAuthOptions preserves the legacy config and existing createAuth invo
   expect((legacy.advanced.database.generateId as () => string)()).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
   );
-  // The OAuth server for MCP clients only (see the mcp test below); no other plugin.
-  expect(legacy.plugins.map((plugin) => plugin.id)).toEqual(["jwt", "oauth-provider", "cimd"]);
+  // The OAuth server for MCP clients (see the mcp test below) plus phone pairing.
+  expect(legacy.plugins.map((plugin) => plugin.id)).toEqual([
+    "jwt",
+    "oauth-provider",
+    "cimd",
+    "pair-phone",
+  ]);
   expect(legacy.advanced.ipAddress.ipAddressHeaders).toEqual(["x-zetta-client-ip"]);
   expect(legacy.rateLimit.customRules["/sign-in/email"]).toEqual({ window: 900, max: 20 });
   expect(legacy.rateLimit.customRules["/change-password"]).toEqual({ window: 900, max: 10 });
@@ -169,7 +174,12 @@ test("createAuthOptions installs only the accepted invitation create-before dele
   expect((options.advanced.database.generateId as () => string)()).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
   );
-  expect(options.plugins.map((plugin) => plugin.id)).toEqual(["jwt", "oauth-provider", "cimd"]);
+  expect(options.plugins.map((plugin) => plugin.id)).toEqual([
+    "jwt",
+    "oauth-provider",
+    "cimd",
+    "pair-phone",
+  ]);
 });
 
 test("MCP access tokens are bound to the API's /api/mcp resource", () => {

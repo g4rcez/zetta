@@ -9,7 +9,7 @@ import { createAppHost, type Prompt } from "./app-host";
 import { appsApi, appsQueries, type AppPage } from "./apps-api";
 
 /** Flags of the frame: scripts only. No same-origin (the page has no cookies and no API), no popups, no forms, no top navigation. */
-export const APP_FRAME_SANDBOX = "allow-scripts allow-forms";
+export const APP_FRAME_SANDBOX = "allow-scripts";
 
 /**
  * Draws the page of an app and is the only way it reaches the server. The page runs in a sandboxed frame and can only post messages; the

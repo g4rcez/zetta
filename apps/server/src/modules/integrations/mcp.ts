@@ -21,6 +21,13 @@ import "./plugins/google"; // importing registers the plugin
 import "./plugins/telegram"; // importing registers the plugin
 import "./plugins/reddit"; // importing registers the plugin
 import "./plugins/composio"; // importing registers the plugin
+import "./plugins/trello"; // importing registers the plugin
+import "./plugins/elevenlabs"; // importing registers the plugin
+import "./plugins/vercel"; // importing registers the plugin
+import "./plugins/supabase"; // importing registers the plugin
+import "./plugins/obsidian"; // importing registers the plugin (local installs)
+import "./plugins/apple"; // importing registers the plugin (local installs on macOS)
+import "./plugins/canva"; // importing registers the plugin
 import "./plugins/apps"; // importing registers the plugin
 import { configureVault } from "./plugins/vault"; // importing registers 1Password and Bitwarden
 import {

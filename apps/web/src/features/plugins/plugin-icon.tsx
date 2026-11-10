@@ -15,6 +15,11 @@ import {
   NotebookIcon,
   PlugIcon,
   PlugsConnectedIcon,
+  KanbanIcon,
+  WaveformIcon,
+  TriangleIcon,
+  AppleLogoIcon,
+  PaletteIcon,
 } from "@phosphor-icons/react";
 import type { ComponentType } from "react";
 
@@ -57,6 +62,11 @@ const ICONS: Record<string, ComponentType<IconProps>> = {
   composio: PlugsConnectedIcon,
   "key-round": KeyIcon,
   database: DatabaseIcon,
+  kanban: KanbanIcon,
+  waveform: WaveformIcon,
+  triangle: TriangleIcon,
+  "apple-logo": AppleLogoIcon,
+  palette: PaletteIcon,
   home: HouseIcon,
 };
 

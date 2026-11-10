@@ -37,6 +37,7 @@ import { createOutputStyles } from "./modules/output-styles/service";
 import { createMarket } from "./modules/skills/market";
 import { createSkills } from "./modules/skills/service";
 import { createPlayground } from "./modules/playground/service";
+import { hostCodeFromEnv } from "./modules/playground/host-gate";
 import { createAppAuthor } from "./modules/apps/author";
 import { createApps } from "./modules/apps/service";
 import { configureApps } from "./modules/integrations/plugins/apps";
@@ -271,10 +272,12 @@ const playgroundContainers = containerConfigPlayground
   ? createContainerRunner(containerConfigPlayground)
   : undefined;
 const playgrounds = createPlayground(db, {
+  hostCode: hostCodeFromEnv,
   runners: playgroundContainers ? { container: playgroundContainers.run } : {},
 });
 // Zetta Apps: published code whose tools bots call through the built-in `apps` plugin (docs/decisions/apps.md).
 export const apps = createApps(db, {
+  hostCode: hostCodeFromEnv,
   runners: playgroundContainers ? { container: playgroundContainers.run } : {},
 });
 const appAuthor = createAppAuthor({ apps, playgrounds });

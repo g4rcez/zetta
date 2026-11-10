@@ -17,6 +17,7 @@ import { audit } from "../features/audit";
 import type { ActiveActor } from "../identity/access";
 import type { PlaygroundFields, PlaygroundPatch } from "./fields";
 import { hostVersion, LANGUAGES, PLAYGROUND_LIMITS } from "./languages";
+import { pickRunner, refusal } from "./host-gate";
 import { hostRunner } from "./runner-host";
 import { buildBrowser } from "./build-browser";
 import { PlaygroundError, type Runner, type RunResult } from "./types";
@@ -102,6 +103,8 @@ export type PlaygroundDeps = {
   runners?: Partial<Record<"host" | "container", Runner>>;
   /** At most this many runs at once, in all and per person. A run over the limit is refused, never queued. */
   limits?: { global: number; perUser: number };
+  /** False turns the host runner off (see host-gate.ts). Left out, the host runner is allowed: services.ts passes the real switch. */
+  hostCode?: () => boolean;
 };
 /** Where a bot made the playground or the run. */
 export type Origin = { botId?: string | null; conversationId?: string | null };
@@ -136,6 +139,7 @@ export function createPlayground(db: Database, deps: PlaygroundDeps = {}) {
     host: hostRunner,
     ...deps.runners,
   };
+  const hostCode = deps.hostCode ?? (() => true);
   const limiter = createLimiter({ ...(deps.limits ?? { global: 4, perUser: 2 }), waitMs: 0 });
   /** The runs of this process that can still be cancelled. */
   const live = new Map<string, AbortController>();
@@ -416,12 +420,10 @@ export function createPlayground(db: Database, deps: PlaygroundDeps = {}) {
           "INVALID",
           "This playground runs in the page. Open it and press Run there.",
         );
-      const runner = runners[p.runner];
-      if (!runner)
-        throw new PlaygroundError(
-          "UNAVAILABLE",
-          `The ${p.runner} runner is not set up on this server.`,
-        );
+      const picked = pickRunner(runners, p.runner, hostCode);
+      if ("refused" in picked)
+        throw new PlaygroundError("UNAVAILABLE", refusal(picked.refused, p.runner));
+      const runner = picked.runner;
       const files = (await filesOf(id)).map(({ path, content }) => ({ path, content }));
       const inputs = resolveInputs(p.inputs, opts.inputs);
       const timeoutMs = Math.min(

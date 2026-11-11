@@ -306,20 +306,24 @@ export async function pageLinks(port: number, timeoutMs = 5000): Promise<PageLin
 /** The browser refused the address (no DNS answer, connection refused, certificate error...): the message is Chromium's `net::ERR_*` code. */
 export class NavigationError extends Error {}
 
-export type NavigateResult = { url: string; loaded: boolean };
+export type NavigateResult = {
+  url: string;
+  loaded: boolean;
+  /** The page's text stopped growing before `contentMs` ran out. False: it may still be drawing (a single-page app that fetches after load). */
+  settled?: boolean;
+};
+
+type Send = (method: string, params?: object) => Promise<any>;
+type OpenPage = { send: Send; onLoad: (fn: () => void) => void; close: () => void };
 
 /**
- * Opens `url` in the most recently active tab of a VM's Chromium over its DevTools port and waits for the load event, so the caller knows
- * the tab left about:blank. Unlike `connectCdp` it only attaches to the tab (no request interception, no viewport override): the window
- * is the one the user sees. A page that is still loading after `loadMs` answers `loaded: false` with the address it is on.
+ * Attaches to the most recently active page of a VM's Chromium over its DevTools port. Right after a cold start Chromium may not listen
+ * yet or may not have its first tab: waits for a page target, up to `timeoutMs`. The caller closes it.
  */
-export async function navigatePage(
+async function openPage(
   port: number,
-  url: string,
-  o: { timeoutMs?: number; loadMs?: number; signal?: AbortSignal } = {},
-): Promise<NavigateResult> {
-  const { timeoutMs = 10_000, loadMs = 15_000, signal } = o;
-  // Right after a cold start Chromium may not listen yet or may not have its first tab: wait for a page target, up to timeoutMs.
+  { timeoutMs, signal }: { timeoutMs: number; signal?: AbortSignal },
+): Promise<OpenPage> {
   const deadline = Date.now() + timeoutMs;
   let target: { type: string; webSocketDebuggerUrl?: string } | undefined;
   for (let last: unknown; !target; await Bun.sleep(250)) {
@@ -340,7 +344,7 @@ export async function navigatePage(
   );
   const pending = new Map<number, { resolve: (r: any) => void; reject: (e: Error) => void }>();
   let nextId = 1;
-  let onLoad: () => void = () => {};
+  let loadListener: () => void = () => {};
   const closeAll = (why: string) => {
     for (const p of pending.values()) p.reject(new Error(why));
     pending.clear();
@@ -352,10 +356,10 @@ export async function navigatePage(
       pending.delete(m.id);
       if (m.error) p.reject(new Error(m.error.message ?? "cdp error"));
       else p.resolve(m.result);
-    } else if (m.method === "Page.loadEventFired") onLoad();
+    } else if (m.method === "Page.loadEventFired") loadListener();
   };
   ws.onclose = () => closeAll("cdp closed");
-  const send = (method: string, params: object = {}) =>
+  const send: Send = (method, params = {}) =>
     new Promise<any>((resolve, reject) => {
       const id = nextId++;
       const t = setTimeout(() => {
@@ -367,37 +371,104 @@ export async function navigatePage(
       });
       ws.send(JSON.stringify({ id, method, params }));
     });
-  signal?.addEventListener("abort", () => ws.close(), { once: true });
+  const close = () => {
+    try {
+      ws.close();
+    } catch {
+      /* closed */
+    }
+  };
+  signal?.addEventListener("abort", close, { once: true });
   try {
     await new Promise<void>((resolve, reject) => {
       const t = setTimeout(() => reject(new Error("cdp connect timeout")), timeoutMs);
       ws.onopen = () => (clearTimeout(t), resolve());
       ws.onerror = () => (clearTimeout(t), reject(new Error("cdp connect failed")));
     });
-    await send("Page.enable");
+  } catch (e) {
+    close();
+    throw e;
+  }
+  return { send, onLoad: (fn) => (loadListener = fn), close };
+}
+
+/** Page script for `waitForContent`: how much text the page shows and whether the document finished loading. */
+export const CONTENT_JS = `(() => ({ ready: document.readyState, len: document.body ? document.body.innerText.length : 0 }))()`;
+
+/**
+ * Waits until the page's text stops changing. The load event fires on a single-page app's empty shell (X, for one): the content is drawn
+ * after it, and a read taken right then holds a header and no posts. Polls every 300 ms; settled = the document is complete, has text, and
+ * the text length was the same on two polls in a row. A page that never settles (an endless feed) returns false when `maxMs` ends.
+ */
+async function waitForContent(send: Send, maxMs: number): Promise<boolean> {
+  const end = Date.now() + maxMs;
+  let last = -1,
+    same = 0;
+  while (Date.now() < end) {
+    const r = await send("Runtime.evaluate", { expression: CONTENT_JS, returnByValue: true }).catch(
+      () => undefined,
+    );
+    const v = r?.result?.value as { ready?: string; len?: number } | undefined;
+    if (v && typeof v.len === "number") {
+      same = v.len === last ? same + 1 : 0;
+      last = v.len;
+      if (v.ready === "complete" && v.len > 0 && same >= 2) return true;
+    }
+    await Bun.sleep(300);
+  }
+  return false;
+}
+
+/**
+ * Opens `url` in the most recently active tab of a VM's Chromium over its DevTools port and waits for the load event, so the caller knows
+ * the tab left about:blank, then for the page's text to stop growing (`settled`). Unlike `connectCdp` it only attaches to the tab (no request
+ * interception, no viewport override): the window is the one the user sees. A page that is still loading after `loadMs` answers
+ * `loaded: false` with the address it is on.
+ */
+export async function navigatePage(
+  port: number,
+  url: string,
+  o: { timeoutMs?: number; loadMs?: number; contentMs?: number; signal?: AbortSignal } = {},
+): Promise<NavigateResult> {
+  const { timeoutMs = 10_000, loadMs = 15_000, contentMs = 6000, signal } = o;
+  const page = await openPage(port, { timeoutMs, signal });
+  let loadTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await page.send("Page.enable");
     // Listen before navigating: the load event may arrive right behind the answer to Page.navigate.
-    let loadTimer: ReturnType<typeof setTimeout> | undefined;
     const loaded = new Promise<boolean>((resolve) => {
-      onLoad = () => resolve(true);
+      page.onLoad(() => resolve(true));
       loadTimer = setTimeout(() => resolve(false), loadMs);
     });
-    try {
-      const r = await send("Page.navigate", { url });
-      if (r?.errorText) throw new NavigationError(String(r.errorText));
-      const done = await loaded;
-      const at = await send("Runtime.evaluate", {
-        expression: "location.href",
-        returnByValue: true,
-      });
-      return { url: String(at?.result?.value ?? url), loaded: done };
-    } finally {
-      clearTimeout(loadTimer);
-    }
+    const r = await page.send("Page.navigate", { url });
+    if (r?.errorText) throw new NavigationError(String(r.errorText));
+    const done = await loaded;
+    const settled = done ? await waitForContent(page.send, contentMs) : false;
+    const at = await page.send("Runtime.evaluate", {
+      expression: "location.href",
+      returnByValue: true,
+    });
+    return { url: String(at?.result?.value ?? url), loaded: done, settled };
   } finally {
-    try {
-      ws.close();
-    } catch {
-      /* closed */
-    }
+    clearTimeout(loadTimer);
+    page.close();
+  }
+}
+
+/**
+ * Waits for the page the VM's Chromium shows to finish drawing, without navigating or touching it: one short attach to the active tab,
+ * then the socket closes. A read right after a navigate, a click or a scroll gets the content instead of the shell. Resolves false when
+ * the page was still changing after `maxMs`.
+ */
+export async function settlePage(
+  port: number,
+  o: { maxMs?: number; signal?: AbortSignal } = {},
+): Promise<boolean> {
+  const { maxMs = 3000, signal } = o;
+  const page = await openPage(port, { timeoutMs: 2000, signal });
+  try {
+    return await waitForContent(page.send, maxMs);
+  } finally {
+    page.close();
   }
 }

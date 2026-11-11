@@ -9,6 +9,7 @@ import {
   compactTree,
   createVmService,
   formatRead,
+  STILL_LOADING,
   vmDockerArgs,
   vmDriversFrom,
   vmOsFrom,
@@ -198,6 +199,7 @@ async function setup(opts: Partial<Parameters<typeof createVmService>[0]> = {}) 
     navigate: async () => {
       throw new Error("no DevTools in this test");
     },
+    settle: async () => true,
     ...opts,
   });
   return { vm, store, d, m, tokenRoot };
@@ -722,6 +724,42 @@ describe("page address and links in a read", () => {
     const screen = await vm.read("u", id, { settle: true });
     expect(screen).toContain("URL: https://www.reddit.com/r/neovim/top/?t=day");
     expect(screen).not.toContain("Links on the page");
+    await vm.closeAll();
+  });
+  test("a read waits for the page to finish drawing before it looks at the screen", async () => {
+    const order: string[] = [];
+    const { vm } = await setup({
+      connect,
+      links: async () => page,
+      settle: async (port, o) => {
+        order.push(`settle ${port} ${o?.maxMs}`);
+        return true;
+      },
+    });
+    const { id } = await vm.start("u");
+    const text = await vm.read("u", id);
+    expect(order).toEqual(["settle 41234 4000"]);
+    expect(text).not.toContain(STILL_LOADING);
+    await vm.read("u", id, { settle: true });
+    expect(order.at(-1)).toBe("settle 41234 2500");
+    await vm.closeAll();
+  });
+  test("a page still changing after the wait says so, so the bot reads again instead of blaming something else", async () => {
+    const { vm } = await setup({ connect, links: async () => page, settle: async () => false });
+    const { id } = await vm.start("u");
+    expect(await vm.read("u", id)).toEndWith(`\n${STILL_LOADING}`);
+    await vm.closeAll();
+  });
+  test("DevTools that fails while settling does not fail the read", async () => {
+    const { vm } = await setup({
+      connect,
+      links: async () => page,
+      settle: async () => {
+        throw new Error("cdp closed");
+      },
+    });
+    const { id } = await vm.start("u");
+    expect(await vm.read("u", id)).not.toContain(STILL_LOADING);
     await vm.closeAll();
   });
   test("a VM without DevTools still reads its screen, without an address", async () => {

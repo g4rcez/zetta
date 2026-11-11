@@ -11,6 +11,7 @@ import {
   NavigationError,
   navigatePage,
   pageLinks,
+  settlePage,
   type NavigateResult,
   type PageLinks,
 } from "./cdp";
@@ -120,6 +121,8 @@ type VSession = {
   cdp?: number | null;
   row?: VmRow;
 };
+/** Added to a read of a page that was still changing, so an empty-looking read says what to do instead of leaving the bot to guess a cause. */
+export const STILL_LOADING = "(The page was still loading when read: read again for the rest.)";
 const BLANK_TAB = "The browser shows an empty tab (about:blank): navigate again.";
 /**
  * A read as the bot gets it: the window title, the page address, the numbered screen and, for an explicit read, where each link goes
@@ -329,6 +332,8 @@ export type VmOptions = {
   links?: (port: number) => Promise<PageLinks>;
   /** Opens an address over the DevTools port and waits for the load; injectable so tests do not need Chromium. */
   navigate?: (port: number, url: string, o?: { signal?: AbortSignal }) => Promise<NavigateResult>;
+  /** Waits for the page on screen to finish drawing before a read (false: it was still changing). Tests replace it. */
+  settle?: (port: number, o?: { maxMs?: number; signal?: AbortSignal }) => Promise<boolean>;
   /** Where the bearer token of a remote Cua computer is kept (sealed in the connections store). Without it, remote computers are off. */
   secrets?: VmSecrets;
   connectRemote?: RemoteConnect;
@@ -358,6 +363,7 @@ export function createVmService({
   secrets,
   links = pageLinks,
   navigate = navigatePage,
+  settle = settlePage,
   tokenRoot,
   maxPerUser = 4,
   maxRunningPerUser = 2,
@@ -985,12 +991,20 @@ export function createVmService({
     async read(userId: string, id: string, opts: { settle?: boolean; signal?: AbortSignal } = {}) {
       const s = live(userId, id);
       return guard(s, async () => {
+        // A VM from an older image publishes no DevTools port, and a page may not answer: the read goes on without it.
+        const port = await devtools(s);
+        // A single-page app draws after the load event: reading at once returns its header and no content (a bot reported X "blocked").
+        const settled =
+          port === null
+            ? true
+            : await settle(port, { maxMs: opts.settle ? 2500 : 4000, signal: opts.signal }).catch(
+                () => true,
+              );
         const r = await s.driver.read(opts);
         if (r.kind === "plain") return r.text;
-        // A VM from an older image publishes no DevTools port, and a page may not answer: the read goes on without the address.
-        const port = await devtools(s);
         const page = port === null ? undefined : await links(port).catch(() => undefined);
-        return formatRead(r.title, r.body, page, Boolean(opts.settle));
+        const text = formatRead(r.title, r.body, page, Boolean(opts.settle));
+        return settled ? text : `${text}\n${STILL_LOADING}`;
       });
     },
     takeover(userId: string, id: string, human: boolean, expected?: "agent" | "human") {

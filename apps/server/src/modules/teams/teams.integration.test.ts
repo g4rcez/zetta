@@ -656,31 +656,32 @@ suite("teams against compose postgres", () => {
     expect(devRuns[0]!.prompt).toContain("Done when: it is shipped");
   });
 
-  test("a member's write after it read the board waits for a card; Approve runs it and wakes the member again", async () => {
+  test("a member's write to a task it does not own, after it read the board, waits for a card; Approve runs it and wakes the member again", async () => {
     const id = await teamOf("Member held team", ["Mheld Lead", "Mheld Dev"]);
     runs.length = 0;
     const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
     const d = (await call("GET", `/api/discussions/${room}`)).json;
     const conversationId = d.discussion.conversationId as string;
-    const dev = d.members.find((m: { name: string }) => m.name === "Mheld Dev");
-    replies["Mheld Lead"] = ["@MheldDev please plan the release"];
+    // A task the user made on the board: no bot owns it.
+    const [theirs] = await db
+      .insert(task)
+      .values({ ownerUserId: A, title: "Release checklist", conversationId })
+      .returning();
+    replies["Mheld Lead"] = ["@MheldDev please close the checklist"];
     replies["Mheld Dev"] = [
       'Looking at the board.\n```zetta:task\n{"action":"list"}\n```',
-      'Planning.\n```zetta:task\n{"action":"add","title":"Plan the release"}\n```',
-      "Plan saved, moving on.",
+      `Closing.\n\`\`\`zetta:task\n{"action":"update","id":"${theirs!.id}","status":"done"}\n\`\`\``,
+      "Checklist closed, moving on.",
     ];
-    await call("POST", `/api/discussions/${room}/messages`, { content: "Plan the release" });
+    await call("POST", `/api/discussions/${room}/messages`, { content: "Close the checklist" });
     await worker.drain();
-    const mine = () =>
-      db
-        .select()
-        .from(task)
-        .where(and(eq(task.conversationId, conversationId), eq(task.botId, dev.botId)));
-    // Held: nothing on the board yet, and one card holds the write.
-    expect(await mine()).toEqual([]);
+    const status = async () =>
+      (await db.select().from(task).where(eq(task.id, theirs!.id)))[0]!.status;
+    // Held: the task did not move, and one card holds the write.
+    expect(await status()).toBe("backlog");
     const card = (await call("GET", "/api/proposals")).json.proposals.find(
       (p: { kind: string; diff: { to: string }[] }) =>
-        p.kind === "bot_action" && p.diff.some((x) => x.to.startsWith("task add")),
+        p.kind === "bot_action" && p.diff.some((x) => x.to.startsWith("task update")),
     );
     expect(card).toBeDefined();
     const before = runs.filter((r) => r.bot === "Mheld Dev").length;
@@ -688,9 +689,30 @@ suite("teams against compose postgres", () => {
     const decided = await call("POST", `/api/proposals/${card.id}/decision`, { approve: true });
     expect(decided.json).toMatchObject({ status: "approved" });
     await worker.drain();
-    expect((await mine()).map((t) => t.title)).toEqual(["Plan the release"]);
+    expect(await status()).toBe("done");
     // Nothing was handed to another member, so the proposer itself goes on.
     expect(runs.filter((r) => r.bot === "Mheld Dev").length).toBe(before + 1);
+  });
+
+  test("a member's own task add after it read the board applies at once", async () => {
+    const id = await teamOf("Member own team", ["Mown Lead", "Mown Dev"]);
+    const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
+    const d = (await call("GET", `/api/discussions/${room}`)).json;
+    const conversationId = d.discussion.conversationId as string;
+    const dev = d.members.find((m: { name: string }) => m.name === "Mown Dev");
+    replies["Mown Lead"] = ["@MownDev please plan the release"];
+    replies["Mown Dev"] = [
+      'Looking at the board.\n```zetta:task\n{"action":"list"}\n```',
+      'Planning.\n```zetta:task\n{"action":"add","title":"Plan the release"}\n```',
+      "Plan saved, moving on.",
+    ];
+    await call("POST", `/api/discussions/${room}/messages`, { content: "Plan the release" });
+    await worker.drain();
+    const mine = await db
+      .select()
+      .from(task)
+      .where(and(eq(task.conversationId, conversationId), eq(task.botId, dev.botId)));
+    expect(mine.map((t) => t.title)).toEqual(["Plan the release"]);
   });
 
   test("zetta:assign to someone who is not another member of the room adds nothing and tells the chief", async () => {

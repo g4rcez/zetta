@@ -15,6 +15,7 @@ import { rehypeMentionLinks } from "./mention-tags";
 import { tagPatches } from "./code-fence";
 import { codePlugins } from "./highlighted-code";
 import { FormCard } from "./form-card";
+import { LinkSafetyModal } from "./link-safety-modal";
 import { parseFormCard } from "./form-card-data";
 import { AppLinkCard } from "./app-link-card";
 import { parseAppLink } from "./app-link-data";
@@ -47,6 +48,9 @@ const withMentionProtocols = {
     },
   ] as unknown as typeof defaultRehypePlugins.sanitize,
 };
+
+/** Streamdown asks before a link leaves the app; the dialog is ours (library Modal), not its built-in one. */
+const LINK_SAFETY = { enabled: true, renderModal: LinkSafetyModal };
 
 const BODY = "chat-response min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
 
@@ -166,6 +170,7 @@ const Markdown = memo(function Markdown({
       className={cn(BODY, className)}
       components={components}
       plugins={codePlugins}
+      linkSafety={LINK_SAFETY}
     >
       {tagPatches(text)}
     </Streamdown>

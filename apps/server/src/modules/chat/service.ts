@@ -907,6 +907,25 @@ export function createChatService(
     // The screen or page is read once, after the last computer action of the reply: actions in between are blind steps the bot planned.
     const lastDesktop = calls.findLastIndex((c) => c.kind === "desktop"),
       lastBrowser = calls.findLastIndex((c) => c.kind === "browser");
+    /** The bot's own plan: a task it adds, or moves a task (or step) that carries its id. Those apply at once after outside content too, so a
+     * bot can keep moving its steps without a card per move. A task for another person, or one the bot does not own, still waits. */
+    const ownTaskCall = async (c: ToolCall) => {
+      if (c.kind !== "task") return false;
+      const a = c.args;
+      const owns = async (id: string) => {
+        try {
+          return (await deps.tasks?.get(actor, id))?.botId === who.id;
+        } catch {
+          // Unknown id: the call runs and the bot is told "not found", instead of a card that could never apply.
+          return true;
+        }
+      };
+      if (a.action === "add") {
+        if (a.assignee && a.assignee !== "user") return false;
+        return a.parentId ? owns(a.parentId) : true;
+      }
+      return a.action === "update" ? owns(a.id) : false;
+    };
     for (const [i, c] of calls.entries()) {
       if (signal?.aborted) break; // the user pressed Stop: do not start another action
       // Outside people are on the other end: only reads, the reply to their own chat, a hand-off or a discussion are allowed.
@@ -932,7 +951,8 @@ export function createChatService(
         scope?.tainted &&
         defersWrite(c, who) &&
         who.kind !== "chief" &&
-        scope.teamRole !== "chief"
+        scope.teamRole !== "chief" &&
+        !(await ownTaskCall(c))
       ) {
         deferred.push(c);
         continue;

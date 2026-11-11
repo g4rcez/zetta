@@ -224,6 +224,56 @@ suite("a bot plans its work as a task with subtasks", () => {
     });
   });
 
+  const pendingCards = async () =>
+    Number(
+      (
+        await db.$client.query(
+          "select count(*)::int as n from config_proposal where owner_user_id = $1 and kind = 'bot_action' and status = 'pending'",
+          [A],
+        )
+      ).rows[0].n,
+    );
+  test("after outside content a bot still adds and moves its own tasks at once, without a card", async () => {
+    const { say } = await setup();
+    const before = await pendingCards();
+    await say(
+      "Plan after reading the board",
+      // task list returns text other people wrote: the turn is tainted from here on
+      fence("task", { action: "list" }),
+      fence("task", { action: "add", title: "Tainted plan", subtasks: ["First", "Second"] }),
+      async () => {
+        const { parent, steps } = await stepsOf("Tainted plan");
+        return [
+          fence("task", { action: "update", id: steps[0]!.id, status: "done" }),
+          fence("task", { action: "update", id: parent.id, status: "in_progress" }),
+          fence("task", { action: "add", title: "Extra step", parentId: parent.id }),
+        ].join("\n");
+      },
+      "Moved.",
+    );
+    const { parent, steps } = await stepsOf("Tainted plan");
+    expect(parent.status).toBe("in_progress");
+    expect(steps.map((s) => s.title)).toEqual(["First", "Second", "Extra step"]);
+    expect(steps[0]!.status).toBe("done");
+    expect(await pendingCards()).toBe(before);
+  });
+
+  test("after outside content a task the bot does not own still waits for a card", async () => {
+    const { say } = await setup();
+    const made = await call("POST", "/api/tasks", { title: "Made on the board" });
+    const boardId = made.json.task.id as string;
+    const before = await pendingCards();
+    await say(
+      "Touch the board task",
+      fence("task", { action: "list" }),
+      fence("task", { action: "update", id: boardId, status: "done" }),
+      "Asked.",
+    );
+    const row = (await board()).find((t) => t.id === boardId)!;
+    expect(row.status).toBe("backlog");
+    expect(await pendingCards()).toBe(before + 1);
+  });
+
   test("a task with an open step cannot be closed, and the bot is told which", async () => {
     const { say } = await setup();
     await say(

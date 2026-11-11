@@ -23,7 +23,7 @@ A bot that takes on work of several steps writes **one task with subtasks** (`ze
 
 ## Trust
 
-The result of a bot's own `task add` or `update` is a line the server wrote (ids, or why a rule refused), so a round with only those calls does not mark the turn as having read outside content. Without this, every step update after the first would turn into an Approve card. `task list` and `task get` still do: they return text other bots and people wrote. After outside content, a task add still waits for a card, and the task is followed only after the user approves it. The progress note and the titles come back to the bot as data (fences defused), like a loop's lessons.
+The result of a bot's own `task add` or `update` is a line the server wrote (ids, or why a rule refused), so a round with only those calls does not mark the turn as having read outside content. Without this, every step update after the first would turn into an Approve card. `task list` and `task get` still do: they return text other bots and people wrote. After outside content a bot's own task writes still apply at once: a task add, a step added under its own task, and an update of a task whose `bot_id` is the bot's (its tasks, its steps, and what `zetta:assign` gave it). One card per step move was noise, and the held moves stalled the follow-up. Only a task for another person (`assignee` other than `user`) and an update of a task the bot does not own (made on the board, or by another bot) wait for the user's card. The progress note and the titles come back to the bot as data (fences defused), like a loop's lessons.
 
 ## Not done
 

@@ -56,7 +56,7 @@ function type(el: Element | null, text: string) {
   const set = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value")!.set!;
   act(() => {
     set.call(input, text);
-    input.dispatchEvent(new win.Event("input", { bubbles: true }));
+    input.dispatchEvent(new win.Event("input", { bubbles: true }) as unknown as Event);
   });
 }
 

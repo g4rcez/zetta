@@ -13,7 +13,7 @@ import { rehypeBotTags } from "./bot-tags";
 import { rehypeGithubRefs } from "./github-refs";
 import { rehypeMentionLinks } from "./mention-tags";
 import { tagPatches } from "./code-fence";
-import { codePlugins } from "./highlighted-code";
+import { codePlugins, diagramPlugins } from "./highlighted-code";
 import { FormCard } from "./form-card";
 import { LinkSafetyModal } from "./link-safety-modal";
 import { parseFormCard } from "./form-card-data";
@@ -169,7 +169,7 @@ const Markdown = memo(function Markdown({
       parseIncompleteMarkdown={streaming}
       className={cn(BODY, className)}
       components={components}
-      plugins={codePlugins}
+      plugins={streaming ? codePlugins : diagramPlugins}
       linkSafety={LINK_SAFETY}
     >
       {tagPatches(text)}

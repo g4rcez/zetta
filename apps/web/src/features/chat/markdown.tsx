@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 
 import { codeLanguage } from "./code-fence";
+import { PeleDiagram } from "./diagram";
 import { HighlightedCode } from "./highlighted-code";
 
 /** Safe Markdown subset rendered as React elements (no HTML injection): fenced code, headings, bullet and numbered lists, bold, italic, inline code, links. */
@@ -81,6 +82,8 @@ function inline(text: string): ReactNode[] {
 
 export function Markdown({ source }: { source: string }) {
   const blocks = parseBlocks(source).map((b, k) => {
+    if (b.type === "code" && b.lang.toLowerCase() === "mermaid")
+      return <PeleDiagram key={k} code={b.text} isIncomplete={false} language="mermaid" />;
     if (b.type === "code")
       return <HighlightedCode key={k} text={b.text} language={codeLanguage(b.lang, b.text)} />;
     if (b.type === "heading")

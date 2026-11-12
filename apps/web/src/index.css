@@ -339,6 +339,18 @@ html.dark {
   height: 0.875rem;
 }
 
+/* Mermaid diagrams drawn by Pele (features/chat/diagram.tsx): its variables follow the theme, so light and dark need no second set. */
+.pele {
+  --pele-bg: transparent;
+  --pele-fg: var(--foreground);
+  --pele-muted: var(--muted-foreground);
+  --pele-line: var(--muted-foreground);
+  --pele-surface: var(--card);
+  --pele-surface-alt: var(--muted);
+  --pele-border: var(--border);
+  --pele-error: var(--destructive);
+}
+
 /* Chat message body (Response -> Streamdown). Unlayered, so these beat Streamdown's utility classes (list-inside, space-y-4, mt-6). */
 .chat-response {
   font-size: 0.875rem;

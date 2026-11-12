@@ -70,6 +70,7 @@ import { MentionTextarea, mentionedBots, withoutMention } from "../chat/mention"
 import { MessageList, pinAuthorOf } from "../chat/message-list";
 import { PinsBar } from "../chat/pins-bar";
 import { usePins } from "../chat/use-pins";
+import { usePollActions } from "../chat/use-poll-actions";
 import { useZettaChat } from "../chat/use-zetta-chat";
 import type { Author } from "../chat/message-row";
 import { ProposalsPanel } from "../chat/proposals-panel";
@@ -567,6 +568,7 @@ function RoomView({
   );
   const rows = useMemo(() => transcriptRows(messages, liveRows), [messages, liveRows]);
   const { pins, pinnedIds, setPinned } = usePins(detail?.discussion.conversationId, fail);
+  const polls = usePollActions(detail?.discussion.conversationId, fail);
 
   // The message the next post replies to. It belongs to one room, so it goes when the room changes.
   const [quoting, setQuoting] = useState<Row>();
@@ -987,6 +989,9 @@ function RoomView({
                 pinnedIds={pinnedIds}
                 actions={{
                   onPin: (row, pin) => setPinned(row.id, pin),
+                  onVote: polls.vote,
+                  // A person who only reads the room (a team member) votes, but the poll is not theirs to close.
+                  ...(readOnly ? {} : { onClosePoll: polls.close }),
                   onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
                   onReply: () => {},
                   onQuote: setQuoting,
@@ -1059,6 +1064,7 @@ function RoomView({
                   busy={busy}
                   conversationId={d.conversationId}
                   memory
+                  polls
                   skillBots={detail.members.map((m) => m.botId)}
                   replyTo={
                     quoting && {

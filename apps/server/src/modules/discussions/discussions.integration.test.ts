@@ -16,7 +16,7 @@ import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
 import { createChatService } from "../chat/service";
 import { insertMessage } from "../chat/messages";
 import { MAX_PINS } from "../chat/pins";
-import { messagePin } from "@zetta/db/schema/features";
+import { messagePin, pollVote } from "@zetta/db/schema/features";
 import { createFeaturesService } from "../features/service";
 import { createDiscussionStore } from "./store";
 import { createDiscussionWorker } from "./worker";
@@ -57,6 +57,7 @@ suite("group discussions against compose postgres", () => {
     noCode?: boolean;
     referenced?: { title: string; body: string }[];
     skills?: string[];
+    history?: { content: string }[];
   }[] = [];
   const reply = (t: {
     bot: { name: string };
@@ -65,6 +66,7 @@ suite("group discussions against compose postgres", () => {
     noCode?: boolean;
     referenced?: { title: string; body: string }[];
     skills?: string[];
+    history?: { content: string }[];
   }) => {
     runs.push({
       bot: t.bot.name,
@@ -73,6 +75,7 @@ suite("group discussions against compose postgres", () => {
       noCode: t.noCode,
       referenced: t.referenced,
       skills: t.skills,
+      history: t.history,
     });
     return replies[t.bot.name]?.shift() ?? "ok";
   };
@@ -2292,6 +2295,224 @@ suite("group discussions against compose postgres", () => {
       const post = (await messagesOf(A, conv)).find((m) => m.role === "assistant")!;
       await call(A, "POST", `/api/conversations/${conv}/pins`, { messageId: post.id });
       expect((await pinsOf(A, conv)).map((p) => p.messageId)).toEqual([post.id]);
+    });
+  });
+
+  // Polls: people and bots make them and vote on them. A poll lives in `meta.poll`; the votes are rows.
+  describe("polls", () => {
+    type Opt = { id: string; label: string };
+    type PollRow = {
+      id: string;
+      role: string;
+      content: string;
+      botId: string | null;
+      meta: { poll?: { question: string; mode: string; status: string; options: Opt[] } };
+      pollVotes?: Record<string, { count: number; mine: boolean; botIds: string[] }>;
+    };
+    const pollsOf = async (conv: string) =>
+      ((await messagesOf(A, conv)) as unknown as PollRow[]).filter((m) => m.meta?.poll);
+    const makePoll = async (
+      conv: string,
+      question: string,
+      options: string[],
+      mode?: "single" | "multiple",
+    ) =>
+      call(A, "POST", `/api/conversations/${conv}/messages`, {
+        content: question,
+        poll: { options, ...(mode ? { mode } : {}) },
+      });
+    const vote = (conv: string, id: string, options: string[], as = A) =>
+      call(as, "PUT", `/api/conversations/${conv}/messages/${id}/poll/vote`, { options });
+
+    test("a person's poll: the message reads as the question, the bot is told how to vote, votes are replaced or taken back", async () => {
+      const b = await makeBot(A, "PollBot1");
+      replies.PollBot1 = ["I see the poll."];
+      const { c } = await chatWith(A, b.id);
+      const made = await makePoll(c, "Lunch?", ["Pizza", "Sushi", "Salad"]);
+      expect(made.status).toBe(201);
+      const [poll] = await pollsOf(c);
+      expect(poll!.content).toBe("📊 Lunch?");
+      expect(poll!.meta.poll).toMatchObject({ question: "Lunch?", mode: "single", status: "open" });
+      expect(poll!.pollVotes).toEqual({});
+      // The bot that was asked read the message id, the options with their ids and the counts.
+      const prompt = runs.findLast((r) => r.bot === "PollBot1")!.prompt;
+      expect(prompt).toContain(`message id ${poll!.id}`);
+      for (const o of poll!.meta.poll!.options) expect(prompt).toContain(`${o.label} [id ${o.id}]`);
+      const [pizza, sushi] = poll!.meta.poll!.options as [Opt, Opt];
+      expect((await vote(c, poll!.id, [pizza.id])).status).toBe(200);
+      // Labels work too, and a single-choice vote replaces the earlier one.
+      expect((await vote(c, poll!.id, ["sushi"])).status).toBe(200);
+      let now = (await pollsOf(c))[0]!.pollVotes!;
+      expect(now[pizza.id]).toBeUndefined();
+      expect(now[sushi.id]).toMatchObject({ count: 1, mine: true, botIds: [] });
+      // Two picks on a single-choice poll, an unknown option and a message that is no poll are refused.
+      const two = await vote(c, poll!.id, [pizza.id, sushi.id]);
+      expect([two.status, two.json.error?.code ?? two.json.code]).toEqual([
+        400,
+        "POLL_SINGLE_CHOICE",
+      ]);
+      expect((await vote(c, poll!.id, ["Tacos"])).status).toBe(400);
+      const notPoll = (await messagesOf(A, c)).find((m) => m.role === "assistant")!;
+      expect((await vote(c, notPoll.id, [pizza.id])).status).toBe(400);
+      // An empty choice takes the vote back.
+      expect((await vote(c, poll!.id, [])).status).toBe(200);
+      now = (await pollsOf(c))[0]!.pollVotes!;
+      expect(Object.values(now).reduce((n, t) => n + t.count, 0)).toBe(0);
+      // Another person cannot see or vote.
+      expect((await vote(c, poll!.id, [pizza.id], B)).status).toBe(404);
+    });
+
+    test("a poll needs a question and two different options", async () => {
+      const b = await makeBot(A, "PollBot2");
+      const { c } = await chatWith(A, b.id);
+      expect((await makePoll(c, "Only one?", ["a"])).status).toBe(400);
+      expect((await makePoll(c, "Same?", ["a", "A"])).status).toBe(400);
+      expect(await pollsOf(c)).toHaveLength(0);
+    });
+
+    test("a multiple-choice poll keeps every pick of a voter, and closing ends the voting", async () => {
+      const b = await makeBot(A, "PollBot3");
+      const { c } = await chatWith(A, b.id);
+      await makePoll(c, "Toppings?", ["Cheese", "Ham", "Olives"], "multiple");
+      const poll = (await pollsOf(c))[0]!;
+      const [cheese, ham] = poll.meta.poll!.options as [Opt, Opt];
+      await vote(c, poll.id, [cheese.id, "ham"]);
+      let now = (await pollsOf(c))[0]!.pollVotes!;
+      expect([now[cheese.id]?.count, now[ham.id]?.count]).toEqual([1, 1]);
+      const closed = await call(
+        A,
+        "POST",
+        `/api/conversations/${c}/messages/${poll.id}/poll/close`,
+      );
+      expect(closed.status).toBe(200);
+      expect(closed.json.poll.status).toBe("closed");
+      const late = await vote(c, poll.id, [cheese.id]);
+      expect([late.status, late.json.error?.code ?? late.json.code]).toEqual([409, "POLL_CLOSED"]);
+      // The results stay, and closing again is fine.
+      now = (await pollsOf(c))[0]!.pollVotes!;
+      expect(now[ham.id]?.count).toBe(1);
+      expect((await pollsOf(c))[0]!.meta.poll!.status).toBe("closed");
+      expect(
+        (await call(A, "POST", `/api/conversations/${c}/messages/${poll.id}/poll/close`)).status,
+      ).toBe(200);
+    });
+
+    test("a bot makes a poll with a block, votes on a person's poll, and sees the votes afterwards", async () => {
+      const b = await makeBot(A, "PollBot4");
+      replies.PollBot4 = [
+        'Let me ask.\n```zetta:poll\n{"question":"Tea or coffee?","options":["Tea","Coffee"]}\n```',
+        "noted",
+      ];
+      const { c, say } = await chatWith(A, b.id);
+      await say("please ask the room");
+      // Its own poll rides on its reply, with the text it wrote.
+      let polls = await pollsOf(c);
+      expect(polls).toHaveLength(1);
+      expect(polls[0]).toMatchObject({ role: "assistant", botId: b.id });
+      expect(polls[0]!.content).toContain("Let me ask.");
+      expect(polls[0]!.content).not.toContain("zetta:poll");
+      expect(polls[0]!.meta.poll!.options.map((o) => o.label)).toEqual(["Tea", "Coffee"]);
+      // A person's poll next; the bot votes on it by label in its next reply.
+      await makePoll(c, "Which day?", ["Monday", "Friday"]);
+      polls = await pollsOf(c);
+      const mine = polls.find((m) => m.role === "user")!;
+      replies.PollBot4 = [
+        `I vote.\n\`\`\`zetta:poll\n{"action":"vote","poll":"${mine.id}","options":["friday"]}\n\`\`\``,
+        "thanks",
+      ];
+      await say("please vote");
+      const friday = mine.meta.poll!.options.find((o) => o.label === "Friday")!;
+      const after = (await pollsOf(c)).find((m) => m.id === mine.id)!;
+      expect(after.pollVotes![friday.id]).toMatchObject({ count: 1, botIds: [b.id] });
+      // The next turn reads who voted.
+      await say("what do you see?");
+      expect(
+        runs
+          .findLast((r) => r.bot === "PollBot4")!
+          .history!.map((h) => h.content)
+          .join("\n"),
+      ).toContain("(bots: PollBot4)");
+      // The bot that made a poll closes it; a poll of a person is not its to close.
+      const own = polls.find((m) => m.role === "assistant")!;
+      replies.PollBot4 = [
+        `closing\n\`\`\`zetta:poll\n{"action":"close","poll":"${own.id}"}\n\`\`\`\n\`\`\`zetta:poll\n{"action":"close","poll":"${mine.id}"}\n\`\`\``,
+      ];
+      await say("close them");
+      const closed = await pollsOf(c);
+      expect(closed.find((m) => m.id === own.id)!.meta.poll!.status).toBe("closed");
+      expect(closed.find((m) => m.id === mine.id)!.meta.poll!.status).toBe("open");
+      // Deleting the conversation takes the votes with it.
+      expect((await db.select().from(pollVote).where(eq(pollVote.messageId, mine.id))).length).toBe(
+        1,
+      );
+      expect((await call(A, "DELETE", `/api/conversations/${c}`)).status).toBe(200);
+      expect((await db.select().from(pollVote).where(eq(pollVote.messageId, mine.id))).length).toBe(
+        0,
+      );
+    });
+
+    test("a bot cannot vote on a poll of another conversation", async () => {
+      const other = await makeBot(A, "PollBot5a");
+      const { c: elsewhere } = await chatWith(A, other.id);
+      await makePoll(elsewhere, "Elsewhere?", ["Yes", "No"]);
+      const foreign = (await pollsOf(elsewhere))[0]!;
+      const b = await makeBot(A, "PollBot5b");
+      replies.PollBot5b = [
+        `\`\`\`zetta:poll\n{"action":"vote","poll":"${foreign.id}","options":["Yes"]}\n\`\`\``,
+        "it did not work",
+      ];
+      const { say } = await chatWith(A, b.id);
+      await say("vote there");
+      const votes = (await pollsOf(elsewhere))[0]!.pollVotes!;
+      expect(Object.keys(votes)).toHaveLength(0);
+      // The bot was told why.
+      expect(runs.findLast((r) => r.bot === "PollBot5b")!.prompt).toContain(
+        "not in this conversation",
+      );
+    });
+
+    test("in a room a person's poll reaches the bots, which vote on it", async () => {
+      const x = await makeBot(A, "PollRoomBot");
+      replies.PollRoomBot = ["ready"];
+      const created = await call(A, "POST", "/api/discussions", {
+        title: "Poll room",
+        goal: "x",
+        members: [{ bot: x.id }],
+        firstMessage: `[@PollRoomBot](bot:${x.id}) hello`,
+      });
+      await worker.drain();
+      const id = created.json.discussion.id as string;
+      const conv = created.json.discussion.conversationId as string;
+      replies.PollRoomBot = ["ok"];
+      const posted = await call(A, "POST", `/api/discussions/${id}/messages`, {
+        content: `[@PollRoomBot](bot:${x.id}) which one?`,
+        poll: { options: ["Red", "Blue"] },
+      });
+      expect(posted.status).toBe(201);
+      await worker.drain();
+      const poll = (await pollsOf(conv)).find((m) => m.role === "user")!;
+      expect(poll.content).toContain("📊");
+      // The woken bot read the poll with its id.
+      expect(runs.findLast((r) => r.bot === "PollRoomBot")!.prompt).toContain(
+        `message id ${poll.id}`,
+      );
+      // It votes in its next turn.
+      replies.PollRoomBot = [
+        `Blue.\n\`\`\`zetta:poll\n{"action":"vote","poll":"${poll.id}","options":["Blue"]}\n\`\`\``,
+      ];
+      await call(A, "POST", `/api/discussions/${id}/messages`, {
+        content: `[@PollRoomBot](bot:${x.id}) please vote`,
+      });
+      await worker.drain();
+      const blue = poll.meta.poll!.options.find((o) => o.label === "Blue")!;
+      const after = (await pollsOf(conv)).find((m) => m.id === poll.id)!;
+      expect(after.pollVotes![blue.id]).toMatchObject({ count: 1, botIds: [x.id] });
+      // A bad poll in a room is a 400, not a post.
+      const bad = await call(A, "POST", `/api/discussions/${id}/messages`, {
+        content: "x",
+        poll: { options: ["only"] },
+      });
+      expect(bad.status).toBe(400);
     });
   });
 });

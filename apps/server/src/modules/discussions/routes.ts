@@ -5,6 +5,7 @@ import { AccessError, type ActiveActor, type createIdentityAccess } from "../ide
 import { DiscussionError, publicRoom, type DiscussionStore } from "./store";
 import type { DiscussionWorker } from "./worker";
 import { accessFail, createGuardedRoute, fail } from "../http-response";
+import { MAX_LABEL, MAX_OPTIONS, MIN_OPTIONS, POLL_MODES, PollError } from "../chat/polls";
 
 export type DiscussionServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -46,6 +47,16 @@ const schemas = {
         .max(5)
         .optional(),
       quotedMessageId: uuid.optional(),
+      /** A poll this post makes: `content` is the question, these are the options. */
+      poll: z
+        .strictObject({
+          options: z
+            .array(z.string().trim().min(1).max(MAX_LABEL))
+            .min(MIN_OPTIONS)
+            .max(MAX_OPTIONS),
+          mode: z.enum(POLL_MODES).optional(),
+        })
+        .optional(),
     })
     .refine((v) => v.content || v.attachmentIds?.length || v.fileRefs?.length)
     .transform(({ wikiIds, ...v }) => ({
@@ -83,6 +94,7 @@ export function createDiscussionRoutes(
   function mapError(e: unknown) {
     if (e instanceof AccessError) return accessFail(e);
     if (e instanceof DiscussionError) return fail(STATUS[e.code], e.code, e.safe);
+    if (e instanceof PollError) return fail(400, `POLL_${e.code}`, e.safe);
     if (e instanceof z.ZodError)
       return fail(400, "INVALID_REQUEST", "Check the details and try again.");
     return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");

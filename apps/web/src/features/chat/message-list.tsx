@@ -29,6 +29,10 @@ export type RowActions = {
   onSaveToMemory: (row: Row) => void;
   /** Pin or unpin the message. Without it the toolbar has no Pin button. */
   onPin?: (row: Row, pin: boolean) => void;
+  /** Sets the viewer's whole choice on the message's poll (empty takes the vote back). Without it a poll shows its results only. */
+  onVote?: (row: Row, options: string[]) => void;
+  /** Closes the message's poll. Only for someone who may; without it the poll has no Close. */
+  onClosePoll?: (row: Row) => void;
   onQueue?: (row: Row, action: QueueAction) => void;
   /** Open a published file beside the chat. Without it, an artifact receipt is a plain link to the artifact page. */
   onOpenArtifact?: (id: string) => void;

@@ -224,7 +224,19 @@ export type Receipt = {
 };
 /** The checklist a bot announced with zetta:plan; each update carries the whole list. */
 export type PlanStep = { id: string; title: string; status: "pending" | "active" | "done" };
+/** A poll, kept on its message: what is asked, how many options a voter may pick, and whether it still takes votes. */
+export type PollView = {
+  question: string;
+  mode: "single" | "multiple";
+  status: "open" | "closed";
+  options: { id: string; label: string }[];
+  closedAt?: string;
+};
+/** What each option has so far: how many picked it, whether the viewer did, and which bots did. */
+export type PollVotes = Record<string, { count: number; mine: boolean; botIds: string[] }>;
+
 export type MessageMeta = {
+  poll?: PollView;
   used?: {
     notes?: string[];
     instructions?: string[];
@@ -290,6 +302,8 @@ export type Message = {
   replyCount?: number;
   /** On a person's message: the bots that have picked it up (see the server's `seen.ts`). Empty until one has. */
   seenBy?: string[];
+  /** On a poll: the votes so far. */
+  pollVotes?: PollVotes;
   /**
    * Sent while the chat was busy. `pending`: waits. `running`: being answered. `merged`: being answered together with the messages
    * sent after it. `held`: the person stopped the bot before it was read; it is sent or removed by hand. `failed`: not answered.
@@ -509,6 +523,7 @@ export const chatClient = {
       content: string;
       parentMessageId?: string;
       quotedMessageId?: string;
+      poll?: { options: string[]; mode: "single" | "multiple" };
       attachmentIds?: string[];
       fileRefs?: string[];
       memoryIds?: string[];
@@ -580,6 +595,13 @@ export const chatClient = {
       previewHash,
       requestKey: uuidv7(),
     }),
+  /** Sets the viewer's whole choice on a poll (the option ids; empty takes the vote back). */
+  votePoll: (conversationId: string, messageId: string, options: string[]) =>
+    call(`/api/conversations/${conversationId}/messages/${messageId}/poll/vote`, "PUT", {
+      options,
+    }),
+  closePoll: (conversationId: string, messageId: string) =>
+    call(`/api/conversations/${conversationId}/messages/${messageId}/poll/close`, "POST", {}),
   /** The pinned messages of a conversation (a chat or a room), newest first. */
   pins: (conversationId: string) =>
     call<{ pins: Pin[] }>(`/api/conversations/${conversationId}/pins`).then((r) => r.pins),

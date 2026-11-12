@@ -28,6 +28,7 @@ import { createBotClaude, skillsOf } from "../bot-claude/store";
 import { visibleTo } from "../memory/service";
 import { legacyMentions, mentionIds, mentionToken } from "@zetta/core/mentions";
 import { HELP_PREFIX, isIdleChatter, isRoomLead, mentionKey, wakeTargets } from "./prompt";
+import { newPoll, pollBody, type PollMode } from "../chat/polls";
 import { topics } from "@zetta/core/live-topics";
 import { events } from "../events/bus";
 import { hasUniqueViolation } from "../pg-error";
@@ -94,6 +95,8 @@ export type PostFiles = {
   skills?: { botId: string; name: string }[] | undefined;
   /** A message of this room the post replies to: saved as `meta.quote`, and the bot that wrote it is woken. */
   quotedMessageId?: string | undefined;
+  /** A poll this post makes: the text is its question. Saved as `meta.poll`; the post then reads "📊 question". */
+  poll?: { options: string[]; mode?: PollMode | undefined } | undefined;
 };
 const FILE_CLIP = 12_000;
 
@@ -1087,6 +1090,8 @@ export function createDiscussionStore(
       const addressed = [
         ...new Set([...skillOwners, ...(quotedMember ? [quotedMember.botId] : [])]),
       ];
+      // A poll is checked before anything is written, like the files and skills above.
+      const madePoll = attached.poll ? newPoll({ question: text, ...attached.poll }) : undefined;
       const res = await transaction(db, async (tx) => {
         const cur =
           d.status === "stalled"
@@ -1104,11 +1109,17 @@ export function createDiscussionStore(
         const row = await insertMessage(tx, d.conversationId, {
           ownerUserId: a.userId,
           role: "user",
-          content: text,
+          content: madePoll ? pollBody(madePoll) : text,
           meta:
-            carried.length || images.length || memoryIds.length || skills.length || quote
+            carried.length ||
+            images.length ||
+            memoryIds.length ||
+            skills.length ||
+            quote ||
+            madePoll
               ? {
                   ...(quote ? { quote } : {}),
+                  ...(madePoll ? { poll: madePoll } : {}),
                   ...(memoryIds.length ? { memoryIds } : {}),
                   ...(skills.length ? { skills } : {}),
                   ...(carried.length ? { files: carried } : {}),
@@ -1833,6 +1844,7 @@ export function createDiscussionStore(
     async transcript(d: Discussion, limit = 80) {
       const rows = await db
         .select({
+          id: message.id,
           role: message.role,
           content: message.content,
           botId: message.botId,

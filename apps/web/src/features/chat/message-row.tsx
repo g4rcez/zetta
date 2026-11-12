@@ -42,6 +42,8 @@ import { computersOf, type Row } from "./chat-rows";
 import { elapsed, friendly, isGeneric, useNow, WorkTimeline } from "./work-timeline";
 import { VmCard } from "./vm-card";
 import { SeenMark } from "./seen-mark";
+import { PollCard } from "./poll-card";
+import { pollBody } from "./poll-votes";
 import { Response } from "./response";
 import { splitActionNotes } from "./action-notes";
 import { stripToolFences } from "./tool-fences";
@@ -509,6 +511,8 @@ export const MessageRow = memo(function MessageRow({
   onSaveToMemory,
   onPin,
   pinned = false,
+  onVote,
+  onClosePoll,
   onQueue,
   onOpenArtifact,
   stepOutputUrl,
@@ -531,6 +535,10 @@ export const MessageRow = memo(function MessageRow({
   onPin?: (row: Row, pin: boolean) => void;
   /** This message is pinned in its conversation. */
   pinned?: boolean;
+  /** Sets the viewer's whole choice on this message's poll. Without it the poll shows its results only. */
+  onVote?: (row: Row, options: string[]) => void;
+  /** Closes this message's poll. Only for someone who may. */
+  onClosePoll?: (row: Row) => void;
   /** A queued message: drop it before it is answered, or put a failed one back in line. */
   onQueue?: (row: Row, action: QueueAction) => void;
   /** Open a published file beside the chat instead of leaving it. */
@@ -563,6 +571,7 @@ export const MessageRow = memo(function MessageRow({
   const made = all.filter((r) => r.kind === "bot" || r.kind === "team");
   const computers = computersOf(row);
   const replies = row.replyCount ?? 0;
+  const poll = row.meta?.poll;
   return (
     <Message
       id={`message-${row.id}`}
@@ -663,7 +672,17 @@ export const MessageRow = memo(function MessageRow({
           />
         ) : (
           <>
-            <Response text={body} streaming={working} repo={repo} />
+            {poll && body === pollBody(poll) ? null : (
+              <Response text={body} streaming={working} repo={repo} />
+            )}
+            {poll && (
+              <PollCard
+                poll={poll}
+                votes={row.pollVotes ?? {}}
+                onVote={onVote && ((options) => onVote(row, options))}
+                onClose={onClosePoll && (() => onClosePoll(row))}
+              />
+            )}
             {notes.length > 0 && (
               // DESIGN.md "Bot work": the run's actions fold into one summary line under the reply.
               <details className="group/notes text-xs text-muted-foreground">

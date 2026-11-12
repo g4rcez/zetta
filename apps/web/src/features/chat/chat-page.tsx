@@ -59,6 +59,7 @@ import { DraftComposer, type DraftHandle } from "./draft-composer";
 import { MessageList, pinAuthorOf, type RowActions } from "./message-list";
 import { PinsBar } from "./pins-bar";
 import { usePins } from "./use-pins";
+import { usePollActions } from "./use-poll-actions";
 import { SetupActionsContext, type SetupActions } from "./setup-actions";
 import type { Author } from "./message-row";
 import { ProposalsPanel } from "./proposals-panel";
@@ -344,12 +345,14 @@ export function ChatPage() {
     fileRefs,
     memoryIds,
     skills,
+    poll,
   }: {
     text: string;
     attachmentIds: string[];
     fileRefs: string[];
     memoryIds?: string[] | undefined;
     skills?: { botId: string; name: string }[] | undefined;
+    poll?: { options: string[]; mode: "single" | "multiple" } | undefined;
   }) {
     if (!botId) return false;
     setError(undefined);
@@ -383,6 +386,7 @@ export function ChatPage() {
         .send(text, {
           conversationId: id,
           ...(quotedMessageId ? { quotedMessageId } : {}),
+          ...(poll ? { poll } : {}),
           attachmentIds,
           fileRefs,
           memoryIds,
@@ -426,6 +430,7 @@ export function ChatPage() {
     }
   }
   const { pins, pinnedIds, setPinned } = usePins(chatId, fail);
+  const polls = usePollActions(chatId, fail);
   // Stable identity: memoized rows must not re-render because the page did. Handlers read the latest closure through a ref.
   const latestActions = useRef<RowActions>(null as never);
   latestActions.current = {
@@ -433,6 +438,8 @@ export function ChatPage() {
     onReply: (row) => setThread(row.id),
     onQuote: (row) => setQuoting(row),
     onPin: (row, pin) => setPinned(row.id, pin),
+    onVote: (row, options) => polls.vote(row, options),
+    onClosePoll: (row) => polls.close(row),
     onOpenArtifact: (id) => setArtifact(id),
     stepOutputUrl: (stepId) => (chatId ? stepOutputUrl(chatId, stepId) : undefined),
     onSaveToMemory: (row) =>
@@ -466,6 +473,8 @@ export function ChatPage() {
       onReply: (row) => latestActions.current.onReply(row),
       onQuote: (row) => latestActions.current.onQuote?.(row),
       onPin: (row, pin) => latestActions.current.onPin?.(row, pin),
+      onVote: (row, options) => latestActions.current.onVote?.(row, options),
+      onClosePoll: (row) => latestActions.current.onClosePoll?.(row),
       onSaveToMemory: (row) => latestActions.current.onSaveToMemory(row),
       onQueue: (row, action) => latestActions.current.onQueue?.(row, action),
       onOpenArtifact: (id) => latestActions.current.onOpenArtifact?.(id),
@@ -899,6 +908,7 @@ export function ChatPage() {
               ) : (
                 <DraftComposer
                   memory
+                  polls
                   skillBots={botId ? [botId] : []}
                   replyTo={
                     quoting && {

@@ -11,6 +11,8 @@ import { liveRows, reuseRows, summaryOf, type Row, type ZettaUIMessage } from ".
 type Extras = {
   parentMessageId?: string;
   quotedMessageId?: string;
+  /** The message is a poll: `content` is its question. */
+  poll?: { options: string[]; mode: "single" | "multiple" };
   attachmentIds?: string[];
   fileRefs?: string[];
   memoryIds?: string[];
@@ -74,6 +76,7 @@ export function useZettaChat({
               content,
               ...(extras.parentMessageId ? { parentMessageId: extras.parentMessageId } : {}),
               ...(extras.quotedMessageId ? { quotedMessageId: extras.quotedMessageId } : {}),
+              ...(extras.poll ? { poll: extras.poll } : {}),
               ...(extras.attachmentIds?.length ? { attachmentIds: extras.attachmentIds } : {}),
               ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
               ...(extras.memoryIds?.length ? { memoryIds: extras.memoryIds } : {}),
@@ -208,6 +211,7 @@ export function useZettaChat({
             ? { parentMessageId: extras.parentMessageId ?? parentMessageId }
             : {}),
           ...(extras.quotedMessageId ? { quotedMessageId: extras.quotedMessageId } : {}),
+          ...(extras.poll ? { poll: extras.poll } : {}),
           ...(extras.attachmentIds?.length ? { attachmentIds: extras.attachmentIds } : {}),
           ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
           ...(extras.memoryIds?.length ? { memoryIds: extras.memoryIds } : {}),

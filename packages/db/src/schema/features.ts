@@ -388,6 +388,49 @@ export const messagePin = zetta.table(
   ],
 );
 
+/**
+ * A vote on a poll (`message.meta.poll`). The voter is a person or a bot, exactly one of the two. A voter has at most one row per
+ * option; a single-choice poll keeps one row per voter, a multiple-choice poll one per chosen option. A vote goes with its message,
+ * with the person's account and with the bot.
+ */
+export const pollVote = zetta.table(
+  "poll_vote",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => message.id, { onDelete: "cascade", onUpdate: "restrict" }),
+    /** The option's id inside `message.meta.poll.options`. */
+    optionId: text("option_id").notNull(),
+    voter: text("voter", { enum: ["user", "bot"] }).notNull(),
+    voterUserId: text("voter_user_id").references(() => user.id, {
+      onDelete: "cascade",
+      onUpdate: "restrict",
+    }),
+    voterBotId: uuid("voter_bot_id").references(() => bot.id, {
+      onDelete: "cascade",
+      onUpdate: "restrict",
+    }),
+    createdAt: created(),
+  },
+  (t) => [
+    uniqueIndex("poll_vote_user_unique")
+      .on(t.messageId, t.optionId, t.voterUserId)
+      .where(sql`${t.voterUserId} is not null`),
+    uniqueIndex("poll_vote_bot_unique")
+      .on(t.messageId, t.optionId, t.voterBotId)
+      .where(sql`${t.voterBotId} is not null`),
+    index("poll_vote_voter_user_id_idx").on(t.voterUserId),
+    index("poll_vote_voter_bot_id_idx").on(t.voterBotId),
+    check(
+      "poll_vote_voter_check",
+      sql`(${t.voter} = 'user' and ${t.voterUserId} is not null and ${t.voterBotId} is null) or (${t.voter} = 'bot' and ${t.voterBotId} is not null and ${t.voterUserId} is null)`,
+    ),
+  ],
+);
+
 /** Attachments owned by one user; linked to a message when sent. Text (<=256KB) lives in `content`; images (<=10MB) live on disk under `path` (relative to the attachments root) and are never deleted. */
 export const attachment = zetta.table(
   "attachment",

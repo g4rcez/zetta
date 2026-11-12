@@ -18,6 +18,7 @@ import {
   AtIcon,
   TextBIcon,
   BrainIcon,
+  ChartBarHorizontalIcon,
   CodeIcon,
   EyeIcon,
   FolderOpenIcon,
@@ -41,6 +42,14 @@ import {
 } from "@zetta/ui/components/attachment";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@zetta/ui/components/input-group";
 import { ActionHint } from "@/components/action-hint";
+import {
+  NEW_POLL,
+  PollDraftEditor,
+  pollDraftReady,
+  pollOptionsOf,
+  type PollDraft,
+  type PollMode,
+} from "./poll-draft";
 import { Button, Dropdown, Separator } from "@/components/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@zetta/ui/lib/utils";
@@ -70,6 +79,8 @@ export type Outgoing = {
   memoryIds?: string[];
   /** Skills picked with `/`; `botId` is the bot that owns the skill (in a room, the one that uses it). */
   skills?: { botId: string; name: string }[];
+  /** The message is a poll: `text` is its question. */
+  poll?: { options: string[]; mode: PollMode };
 };
 /** A skill of a bot that the person can pick with `/`: the bot uses it for this message. */
 type SkillItem = { botId: string; name: string; description: string };
@@ -138,6 +149,7 @@ export function Composer({
   memory,
   skillBots = [],
   replyTo,
+  polls = false,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -157,6 +169,8 @@ export function Composer({
   /** Text only: no attachments, server files or @mentions (the setup interview). */ minimal?: boolean;
   /** The message the next send replies to in this channel (not a thread): shown as a chip, and the cursor moves into the box when it changes. */
   replyTo?: { id: string; name: string; excerpt: string; onCancel: () => void } | undefined;
+  /** Offer the poll tool: the box's text becomes the question and the person writes the options. Only for screens whose submit forwards `poll`. */
+  polls?: boolean;
 }) {
   const qc = useQueryClient();
   const input = useRef<EditorView>(null);
@@ -175,6 +189,7 @@ export function Composer({
     if (replyId) input.current?.focus();
   }, [replyId]);
   const [fileRefs, setFileRefs] = useState<string[]>([]);
+  const [poll, setPoll] = useState<PollDraft>();
   const [picker, setPicker] = useState<{
     path: string;
     entries: { name: string; kind: "file" | "dir" }[];
@@ -214,7 +229,10 @@ export function Composer({
   const pictures = staged.filter((x) => x.id);
   const total = attached.length + staged.length;
   const canSend =
-    (!!value.trim() || attached.length > 0 || pictures.length > 0) &&
+    // A poll needs its question (the text) and 2 or more different options.
+    (poll
+      ? !!value.trim() && pollDraftReady(poll)
+      : !!value.trim() || attached.length > 0 || pictures.length > 0) &&
     !staged.some((x) => x.uploading) &&
     !disabled;
 
@@ -378,8 +396,10 @@ export function Composer({
       ...(skillPicks.length
         ? { skills: skillPicks.map((c) => ({ botId: c.botId, name: c.name })) }
         : {}),
+      ...(poll ? { poll: { options: pollOptionsOf(poll), mode: poll.mode } } : {}),
     });
     if (ok) {
+      setPoll(undefined);
       setChosen([]);
       setAttached([]);
       setFileRefs([]);
@@ -556,6 +576,11 @@ export function Composer({
       )}
       <MentionPopup mention={mention} placement="above" />
       <InputGroup className="h-auto rounded-xl border-border bg-card focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
+        {poll && (
+          <InputGroupAddon align="block-start" className="border-b px-3 py-2">
+            <PollDraftEditor draft={poll} onChange={setPoll} onClose={() => setPoll(undefined)} />
+          </InputGroupAddon>
+        )}
         {replyTo && (
           <InputGroupAddon align="block-start" className="border-b px-2 py-1.5">
             <div className="flex w-full min-w-0 items-center gap-2 text-xs">
@@ -841,6 +866,15 @@ export function Composer({
               >
                 <AtIcon />
               </Tool>
+              {polls && (
+                <Tool
+                  label={poll ? "Remove the poll" : "Add a poll"}
+                  pressed={Boolean(poll)}
+                  onClick={() => setPoll((p) => (p ? undefined : NEW_POLL))}
+                >
+                  <ChartBarHorizontalIcon />
+                </Tool>
+              )}
             </>
           )}
           <span className="flex-1" />

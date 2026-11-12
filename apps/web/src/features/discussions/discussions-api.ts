@@ -132,6 +132,8 @@ export const discussionsApi = {
       skills?: { botId: string; name: string }[];
       /** A message of this room the post replies to. */
       quotedMessageId?: string;
+      /** The post is a poll: `content` is its question. */
+      poll?: { options: string[]; mode: "single" | "multiple" };
     } = {},
   ) =>
     call(`/api/discussions/${id}/messages`, "POST", {
@@ -141,6 +143,7 @@ export const discussionsApi = {
       ...(files.memoryIds?.length ? { memoryIds: files.memoryIds } : {}),
       ...(files.skills?.length ? { skills: files.skills } : {}),
       ...(files.quotedMessageId ? { quotedMessageId: files.quotedMessageId } : {}),
+      ...(files.poll ? { poll: files.poll } : {}),
     }),
   act: (id: string, action: "pause" | "resume" | "cancel") =>
     call<{ discussion: Discussion }>(`/api/discussions/${id}/${action}`, "POST", {}).then(

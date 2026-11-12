@@ -134,6 +134,58 @@ test("the toolbar offers Pin where the page can pin, and Unpin on a pinned messa
   expect(host.querySelector('[aria-label="Pinned"]')).toBeNull();
 });
 
+const pollRow = (over: object = {}) => ({
+  id: "p1",
+  role: "user",
+  content: "📊 Lunch?",
+  status: "done",
+  createdAt: "2026-11-03T12:00:00.000Z",
+  meta: {
+    poll: {
+      question: "Lunch?",
+      mode: "single",
+      status: "open",
+      options: [
+        { id: "a", label: "Pizza" },
+        { id: "b", label: "Sushi" },
+      ],
+    },
+  },
+  pollVotes: { a: { count: 2, mine: false, botIds: [] } },
+  ...over,
+});
+
+test("a poll-only message shows the card and does not repeat its question as text", () => {
+  const host = mount({ row: pollRow() });
+  const card = host.querySelector('section[aria-label="Poll"]')!;
+  expect(card.textContent).toContain("Lunch?");
+  expect(card.textContent).toContain("Pizza");
+  expect(host.textContent).not.toContain("📊");
+});
+
+test("a message that has text and a poll shows both", () => {
+  const host = mount({
+    row: pollRow({ role: "assistant", content: "Let me ask the room." }),
+  });
+  expect(host.textContent).toContain("Let me ask the room.");
+  expect(host.querySelector('section[aria-label="Poll"]')).not.toBeNull();
+});
+
+test("a click on an option hands the row and the choice to the page; without a handler the poll only shows results", () => {
+  const votes: [string, string[]][] = [];
+  const host = mount({
+    row: pollRow(),
+    onVote: (r: { id: string }, options: string[]) => votes.push([r.id, options]),
+  });
+  const sushi = [...host.querySelectorAll("li button")].find((b) =>
+    b.textContent?.includes("Sushi"),
+  )!;
+  act(() => (sushi as unknown as HTMLElement).click());
+  expect(votes).toEqual([["p1", ["b"]]]);
+  const readOnly = mount({ row: pollRow() });
+  expect(readOnly.querySelector("li button")!.hasAttribute("disabled")).toBe(true);
+});
+
 /** Tabbing to the row's one tab stop swaps in the real toolbar. */
 const openToolbar = (host: HTMLElement) =>
   act(() => {

@@ -22,6 +22,7 @@ import {
 } from "./service";
 import { IMAGE_TYPES } from "./images";
 import { MAX_PINS, PinLimitError } from "./pins";
+import { MAX_LABEL, MAX_OPTIONS, MIN_OPTIONS, POLL_MODES, PollError } from "./polls";
 import { interviewInput, interviewTurn } from "./bot-interview";
 import { decisionConfigSchema } from "./routing";
 import { FileAccessError, type FileStore } from "./files";
@@ -151,6 +152,13 @@ const sendBody = z.strictObject({
   content: z.string().trim().max(32768),
   parentMessageId: uuid.optional(),
   quotedMessageId: uuid.optional(),
+  /** A poll this message makes: `content` is the question, these are the options. */
+  poll: z
+    .strictObject({
+      options: z.array(z.string().trim().min(1).max(MAX_LABEL)).min(MIN_OPTIONS).max(MAX_OPTIONS),
+      mode: z.enum(POLL_MODES).optional(),
+    })
+    .optional(),
   attachmentIds: z.array(uuid).max(5).optional(),
   fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
   memoryIds: z.array(uuid).max(5).optional(),
@@ -430,6 +438,12 @@ export function createChatRoutes(
         409,
         "BOT_NOT_READY",
         "This bot is not ready yet. Its owner has to finish setting it up first.",
+      );
+    if (error instanceof PollError)
+      return fail(
+        error.code === "CLOSED" ? 409 : error.code === "NOT_ALLOWED" ? 403 : 400,
+        `POLL_${error.code}`,
+        error.safe,
       );
     if (error instanceof PinLimitError)
       return fail(
@@ -908,6 +922,28 @@ export function createChatRoutes(
         }),
       })),
     )
+    .put(
+      "/conversations/:id/messages/:messageId/poll/vote",
+      guarded(async ({ actor, body, params }) =>
+        chat.votePoll(
+          actor,
+          parse(uuid, params.id),
+          parse(uuid, params.messageId),
+          parse(
+            z.strictObject({
+              options: z.array(z.string().trim().min(1).max(MAX_LABEL)).max(MAX_OPTIONS),
+            }),
+            body,
+          ).options,
+        ),
+      ),
+    )
+    .post(
+      "/conversations/:id/messages/:messageId/poll/close",
+      guarded(async ({ actor, params }) =>
+        chat.endPoll(actor, parse(uuid, params.id), parse(uuid, params.messageId)),
+      ),
+    )
     .get(
       "/conversations/:id/pins",
       guarded(async ({ actor, params }) => ({
@@ -939,6 +975,7 @@ export function createChatRoutes(
         const v = parse(send, body);
         return chat.sendMessage(actor, parse(uuid, params.id), v.content, v.parentMessageId, {
           quotedMessageId: v.quotedMessageId,
+          poll: v.poll,
           attachmentIds: v.attachmentIds,
           fileRefs: v.fileRefs,
           memoryIds: v.memoryIds,

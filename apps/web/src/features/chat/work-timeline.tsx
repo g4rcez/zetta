@@ -1,4 +1,10 @@
-import { CheckIcon, CircleIcon, CircleNotchIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import {
+  CaretRightIcon,
+  CheckIcon,
+  CircleIcon,
+  CircleNotchIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@zetta/ui/lib/utils";
 
@@ -149,8 +155,9 @@ function StepToggle({
 }
 
 /**
- * Status layout, not a message: what the bot did while it worked, as a rail of steps with a status icon. Open while the bot still works,
- * with a live clock; once the answer is saved it folds into a one-line summary that stays in the chat. When the bot announced a plan
+ * Status layout, not a message: what the bot did while it worked, as a rail of steps with a status icon. It is one quiet line that
+ * opens on click: while the bot works the line names what it is doing now, with a live clock; once the answer is saved it says
+ * "Worked · 6 steps · 42s" and stays in the chat. When the bot announced a plan
  * (zetta:plan) the rail is that checklist, with the live activity under the running step; otherwise it is the steps it reported, with
  * the time since the first one.
  */
@@ -223,27 +230,41 @@ export function WorkTimeline({
       ? planProgress(plan)
       : `${plan.length} steps`
     : `${steps.length} steps`;
+  // One quiet line. While the bot works it names what it is doing now; when done it says how much work there was. The rail opens on click.
+  const doing = live ?? (plan ? undefined : friendly(steps.at(-1)?.label)) ?? "Working";
   return (
     <details
-      open={working}
       onToggle={measure}
-      className="group/timeline w-full max-w-prose rounded-md border border-dashed bg-muted/30 text-xs text-muted-foreground"
+      className="group/timeline w-full max-w-prose text-xs text-muted-foreground"
     >
-      <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-1.5">
+      <summary className="flex w-fit max-w-full cursor-pointer list-none items-center gap-1.5 rounded-md py-0.5 select-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+        <CaretRightIcon
+          aria-hidden="true"
+          className="size-3 shrink-0 transition-transform group-open/timeline:rotate-90 motion-reduce:transition-none"
+        />
         <span
           aria-hidden="true"
           className={cn(
-            "size-1.5 rounded-full bg-muted-foreground/50",
+            "size-1.5 shrink-0 rounded-full bg-muted-foreground/50",
             working && "animate-pulse bg-primary motion-reduce:animate-none",
           )}
         />
-        {working ? "Working" : "Worked"} · {count}
-        {total !== undefined && (
-          <>
-            {" "}
-            · <span className="tabular-nums">{elapsed(total)}</span>
-          </>
-        )}
+        <span className="min-w-0 truncate">
+          {working ? (
+            <>
+              {doing}
+              {plan ? ` · ${count}` : ""}
+            </>
+          ) : (
+            <>Worked · {count}</>
+          )}
+          {total !== undefined && (
+            <>
+              {" "}
+              · <span className="tabular-nums">{elapsed(total)}</span>
+            </>
+          )}
+        </span>
       </summary>
       <ol
         ref={list}
@@ -256,7 +277,7 @@ export function WorkTimeline({
         }}
         // `relative` makes the list the containing block of the `sr-only` (absolute) step icons. Without it they escape the list's
         // overflow clip and stretch the chat log by the height of every step, a giant empty scroll while a task runs.
-        className="relative max-h-60 overflow-y-auto overscroll-contain border-t border-dashed px-3 py-2 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+        className="relative mt-1 max-h-60 overflow-y-auto overscroll-contain rounded-md border bg-muted/30 px-3 py-2 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
       >
         {items.map((it, i) => (
           <li key={it.key} className="flex gap-2">

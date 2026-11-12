@@ -275,8 +275,8 @@ const stampOf = (iso: string) => {
   return s;
 };
 
-/** Slack grouping: a row continues the previous one when the same author wrote it within 5 minutes on the same day; a day change starts a divider. */
-export function groupMessages<T extends Pick<Row, "role" | "botId" | "createdAt">>(
+/** Slack grouping: a row continues the previous one when the same author wrote it within 5 minutes on the same day; a day change starts a divider. A reply that quotes a message never continues: its header carries the reference line. */
+export function groupMessages<T extends Pick<Row, "role" | "botId" | "createdAt" | "meta">>(
   rows: T[],
   fallbackBotId?: string,
   now = new Date(),
@@ -288,6 +288,7 @@ export function groupMessages<T extends Pick<Row, "role" | "botId" | "createdAt"
     const newDay = !before || at.day !== before.day;
     const continued =
       !newDay &&
+      !row.meta?.quote &&
       !!prev &&
       authorOf(prev, fallbackBotId) === authorOf(row, fallbackBotId) &&
       at.ms - before!.ms < GROUP_GAP_MS;

@@ -77,6 +77,30 @@ test("a channel reply shows who and what it quotes, and a click goes to the orig
   expect(scrolled).toBe(1);
 });
 
+test("the reference comes before the author line, on one line", () => {
+  const host = mount({});
+  const html = host.innerHTML;
+  const at = (needle: string) => html.indexOf(needle);
+  expect(at("the deploy runs at noon")).toBeGreaterThan(-1);
+  expect(at("the deploy runs at noon")).toBeLessThan(at(">Ana</span>"));
+  const excerpt = [...host.querySelectorAll("span")].find((e) =>
+    e.textContent?.includes("the deploy runs at noon"),
+  )!;
+  expect(excerpt.className).toContain("truncate");
+});
+
+test("a quote with line breaks is shown on one line", () => {
+  const host = mount({
+    row: {
+      ...(row as object),
+      meta: {
+        quote: { id: "m1", role: "assistant", botId: "b1", excerpt: "line one\n\nline two" },
+      },
+    },
+  });
+  expect(host.textContent).toContain("line one line two");
+});
+
 /** Tabbing to the row's one tab stop swaps in the real toolbar. */
 const openToolbar = (host: HTMLElement) =>
   act(() => {

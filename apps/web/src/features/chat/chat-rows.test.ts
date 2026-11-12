@@ -41,6 +41,19 @@ describe("groupMessages", () => {
     );
     expect(g[1]!.continued).toBe(false);
   });
+  test("a reply that quotes a message never continues, so its header carries the reference", () => {
+    const quote = { id: "m1", role: "user" as const, botId: null, excerpt: "x" };
+    const g = groupMessages(
+      [
+        { role: "user", ...at("2026-10-26T10:00:00") },
+        { role: "user", ...at("2026-10-26T10:01:00"), meta: { quote } },
+        { role: "user", ...at("2026-10-26T10:02:00") },
+      ],
+      undefined,
+      now,
+    );
+    expect(g.map((x) => x.continued)).toEqual([false, false, true]);
+  });
   test("a new day adds a divider and breaks the group", () => {
     const g = groupMessages(
       [

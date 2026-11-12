@@ -318,8 +318,11 @@ function HandoffReceipt({ r }: { r: Receipt }) {
   );
 }
 
-/** The message a channel reply answers: author and the first lines of it. Click goes to the original. */
-function QuoteBlock({
+/**
+ * The message a channel reply answers, as one line above the author line (Discord's reference): a curved connector that leaves the
+ * avatar column, the quoted author's small avatar and name, and the first words of the message on one line. Click goes to the original.
+ */
+function QuoteReference({
   quote,
   author,
 }: {
@@ -328,18 +331,27 @@ function QuoteBlock({
 }) {
   const name = author?.name ?? "Message";
   return (
-    // No hint: it shows the quoted text.
-    <button
-      type="button"
-      aria-label={`Go to the message from ${name}`}
-      onClick={() => showMessage(quote.id)}
-      className="flex w-fit max-w-full flex-col items-start gap-0.5 rounded-r-md border-l-2 border-primary/60 py-0.5 pr-2 pl-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-    >
-      <span className="font-semibold text-foreground">{name}</span>
-      <span className="line-clamp-2 break-words whitespace-pre-line text-muted-foreground">
-        {quote.excerpt}
-      </span>
-    </button>
+    <div className="relative -mb-0.5 flex h-5 min-w-0 basis-full items-center pl-11">
+      <span
+        aria-hidden="true"
+        className="absolute top-1/2 left-4 h-[calc(50%+0.25rem)] w-6 rounded-tl-md border-t-2 border-l-2 border-muted-foreground/40"
+      />
+      {/* No hint: it shows the quoted text. */}
+      <button
+        type="button"
+        aria-label={`Go to the message from ${name}`}
+        onClick={() => showMessage(quote.id)}
+        className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md pr-2 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        {author?.bot ? (
+          <BotAvatar bot={author.bot} size={16} square />
+        ) : author ? (
+          <UserAvatar name={author.name} avatar={author.avatar} image={author.image} size={16} />
+        ) : null}
+        <span className="shrink-0 font-semibold text-foreground">{name}</span>
+        <span className="truncate">{quote.excerpt.replace(/\s+/g, " ")}</span>
+      </button>
+    </div>
   );
 }
 
@@ -531,7 +543,7 @@ export const MessageRow = memo(function MessageRow({
       id={`message-${row.id}`}
       aria-label={`${author.name} at ${time(row.createdAt, tf)}`}
       className={cn(
-        "gap-3 px-4 py-0.5 text-sm hover:bg-accent/60 has-aria-expanded:bg-accent/60",
+        "flex-wrap gap-x-3 gap-y-0 px-4 py-0.5 text-sm hover:bg-accent/60 has-aria-expanded:bg-accent/60",
         !continued && "mt-3 pt-1.5",
       )}
       onPointerEnter={
@@ -563,6 +575,7 @@ export const MessageRow = memo(function MessageRow({
             onSaveToMemory={() => onSaveToMemory(row)}
           />
         ))}
+      {row.meta?.quote && <QuoteReference quote={row.meta.quote} author={quoteAuthor} />}
       {continued ? (
         <time
           dateTime={row.createdAt}
@@ -594,7 +607,6 @@ export const MessageRow = memo(function MessageRow({
             </time>
           </MessageHeader>
         )}
-        {row.meta?.quote && <QuoteBlock quote={row.meta.quote} author={quoteAuthor} />}
         <PictureStrip pics={(row.attachments ?? []).filter(isImage)} />
         {row.attachments?.some((a) => !isImage(a)) ? (
           <ul className="flex flex-wrap gap-1.5" aria-label="Attachments">

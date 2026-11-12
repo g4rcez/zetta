@@ -21,6 +21,7 @@ const render = async (count: number, working: boolean) => {
     act(async () => root.render(<WorkTimeline row={row(n) as never} working={w} />));
   await show(count, working);
   return {
+    host,
     list: host.querySelector("ol")!,
     rerender: show,
     scroll: (top: number) =>
@@ -104,5 +105,32 @@ test("a new step still follows when the reader is within 8px of the bottom", asy
   await scroll(755);
   await rerender(31, true);
   expect(list.scrollTop).toBe(1000);
+  await unmount();
+});
+
+// The timeline is one quiet line that opens on click, not a box that is open while the bot works.
+test("the rail starts closed, also while the bot works", async () => {
+  const { host, unmount } = await render(5, true);
+  expect(host.querySelector("details")!.hasAttribute("open")).toBe(false);
+  await unmount();
+});
+
+test("while the bot works the line names the newest step", async () => {
+  const { host, unmount } = await render(5, true);
+  const line = host.querySelector("summary")!.textContent ?? "";
+  expect(line).toContain("Step 5");
+  expect(line).not.toContain("Step 4");
+  await unmount();
+});
+
+test("a finished turn says how many steps it took", async () => {
+  const { host, unmount } = await render(6, false);
+  expect(host.querySelector("summary")!.textContent).toMatch(/^Worked · 6 steps · \d+s$/);
+  await unmount();
+});
+
+test("the line has no dashed box around it", async () => {
+  const { host, unmount } = await render(6, false);
+  expect(host.querySelector("details")!.className).not.toContain("border-dashed");
   await unmount();
 });

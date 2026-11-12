@@ -278,6 +278,8 @@ export type Message = {
   meta?: MessageMeta;
   createdAt?: string;
   replyCount?: number;
+  /** On a person's message: the bots that have picked it up (see the server's `seen.ts`). Empty until one has. */
+  seenBy?: string[];
   /**
    * Sent while the chat was busy. `pending`: waits. `running`: being answered. `merged`: being answered together with the messages
    * sent after it. `held`: the person stopped the bot before it was read; it is sent or removed by hand. `failed`: not answered.

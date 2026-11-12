@@ -39,6 +39,7 @@ import { EmojiPicker } from "./emoji-picker";
 import { computersOf, type Row } from "./chat-rows";
 import { elapsed, friendly, isGeneric, useNow, WorkTimeline } from "./work-timeline";
 import { VmCard } from "./vm-card";
+import { SeenMark } from "./seen-mark";
 import { Response } from "./response";
 import { splitActionNotes } from "./action-notes";
 import { stripToolFences } from "./tool-fences";
@@ -887,6 +888,7 @@ export const MessageRow = memo(function MessageRow({
             <span className="text-muted-foreground">View thread</span>
           </button>
         )}
+        {row.role === "user" && row.seenBy?.length ? <SeenMark botIds={row.seenBy} /> : null}
       </MessageContent>
     </Message>
   );

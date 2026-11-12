@@ -101,6 +101,15 @@ test("a quote with line breaks is shown on one line", () => {
   expect(host.textContent).toContain("line one line two");
 });
 
+test("a person's message shows who has read it, and a bot's reply never does", () => {
+  const read = mount({ row: { ...(row as object), seenBy: ["b1"] } });
+  expect(read.querySelector('[aria-label="Read by A bot"]')).not.toBeNull();
+  const unread = mount({ row: { ...(row as object), seenBy: [] } });
+  expect(unread.querySelector('[aria-label^="Read by"]')).toBeNull();
+  const reply = mount({ row: { ...(row as object), role: "assistant", seenBy: ["b1"] } });
+  expect(reply.querySelector('[aria-label^="Read by"]')).toBeNull();
+});
+
 /** Tabbing to the row's one tab stop swaps in the real toolbar. */
 const openToolbar = (host: HTMLElement) =>
   act(() => {

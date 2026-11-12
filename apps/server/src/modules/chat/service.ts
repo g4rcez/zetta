@@ -154,8 +154,10 @@ import { DiscussionError, type Claimed, type DiscussionStore } from "../discussi
 import {
   botPeer,
   discussion as discussionTable,
+  discussionTurn,
   type TurnStep,
 } from "@zetta/db/schema/discussions";
+import { seenInChat, seenInRoom } from "./seen";
 import { insertWithSlug, isUniqueViolation } from "../bots/slug";
 import { user } from "@zetta/db/schema/auth";
 import type { TeamStore } from "../teams/store";
@@ -6616,7 +6618,7 @@ export function createChatService(
       conversationId: string,
       opts: { beforeSeq?: number; limit?: number } = {},
     ) {
-      await this.getConversation(actor, conversationId);
+      const conv = await this.getConversation(actor, conversationId);
       const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
       const page = await db
         .select()
@@ -6662,6 +6664,25 @@ export function createChatService(
           : []
         ).map((q) => [q.messageId, q.status]),
       );
+      // Read receipts: which bots have picked up each of the person's messages (see seen.ts). Nothing is stored for them.
+      const personIds = rows.filter((m) => m.role === "user").map((m) => m.id);
+      const seen =
+        conv.kind === "discussion"
+          ? seenInRoom(
+              rows,
+              personIds.length
+                ? await db
+                    .select({
+                      triggerMessageId: discussionTurn.triggerMessageId,
+                      botId: discussionTurn.botId,
+                      status: discussionTurn.status,
+                      reasonCode: discussionTurn.reasonCode,
+                    })
+                    .from(discussionTurn)
+                    .where(inArray(discussionTurn.triggerMessageId, personIds))
+                : [],
+            )
+          : seenInChat(rows, conv.botId, queued);
       return rows.map((m) => {
         const counts = new Map<string, { emoji: string; count: number; mine: boolean }>();
         for (const r of reacts.filter((x) => x.messageId === m.id)) {
@@ -6680,6 +6701,7 @@ export function createChatService(
           reactions: [...counts.values()],
           replyCount: rows.filter((x) => x.parentMessageId === m.id && x.role !== "system").length,
           queue: queued.get(m.id),
+          ...(seen.has(m.id) ? { seenBy: seen.get(m.id)! } : {}),
           hasMore,
         };
       });

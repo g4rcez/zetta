@@ -2134,4 +2134,48 @@ suite("group discussions against compose postgres", () => {
       expect(ok).toMatchObject({ progressPercent: 20, progressBotId: chief.id });
     });
   });
+
+  // Read receipts: which bots picked up a person's message. Nothing is stored; the rows that answers leave are enough.
+  describe("read receipts", () => {
+    const seenOf = async (conv: string, content: string) =>
+      (await messagesOf(A, conv)).find((m) => m.role === "user" && m.content.includes(content)) as
+        | { seenBy?: string[] }
+        | undefined;
+
+    test("in a room, the bots whose turn started have read the post; one that was not woken has not", async () => {
+      const x = await makeBot(A, "SeenOne"),
+        y = await makeBot(A, "SeenTwo");
+      replies.SeenOne = ["one", "two"];
+      replies.SeenTwo = ["three"];
+      const created = await call(A, "POST", "/api/discussions", {
+        title: "Seen room",
+        goal: "x",
+        members: [{ bot: x.id }, { bot: y.id }],
+        firstMessage: `[@SeenOne](bot:${x.id}) start`,
+      });
+      await worker.drain();
+      const conv = created.json.discussion.conversationId as string;
+      // The opening post named only SeenOne.
+      expect((await seenOf(conv, "start"))?.seenBy).toEqual([x.id]);
+      await call(A, "POST", `/api/discussions/${created.json.discussion.id}/messages`, {
+        content: `[@SeenTwo](bot:${y.id}) are you there?`,
+      });
+      await worker.drain();
+      // Only SeenTwo was named, so SeenOne never read it.
+      expect((await seenOf(conv, "are you there?"))?.seenBy).toEqual([y.id]);
+      // Only a person's posts carry the mark.
+      const bots = (await messagesOf(A, conv)).filter((m) => m.role === "assistant");
+      expect(bots.every((m) => !("seenBy" in m))).toBe(true);
+    });
+
+    test("in a chat with a bot, the message is read once the bot has started its reply", async () => {
+      const b = await makeBot(A, "SeenChat");
+      replies.SeenChat = ["hi there"];
+      const { c, say } = await chatWith(A, b.id);
+      await say("hello bot");
+      expect((await seenOf(c, "hello bot"))?.seenBy).toEqual([b.id]);
+      const reply = (await messagesOf(A, c)).find((m) => m.role === "assistant")!;
+      expect("seenBy" in reply).toBe(false);
+    });
+  });
 });

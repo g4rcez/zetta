@@ -29,6 +29,7 @@
     "verify": "bash scripts/verify.sh",
     "test": "bash scripts/verify.sh",
     "format": "vp fmt",
+    "changelog": "bun scripts/changelog.ts",
     "staged": "vp staged",
     "zetta": "bash scripts/zetta.sh",
     "certs": "bash scripts/dev-certs.sh",

@@ -1,0 +1,798 @@
+[
+  {
+    "day": "2026-11-12",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "chat",
+        "subject": "polls that people and bots make and vote on",
+        "sha": "bffe149"
+      },
+      {
+        "type": "feat",
+        "scope": "chat",
+        "subject": "pinned messages, with a bar above the log",
+        "sha": "1b3e36b"
+      },
+      {
+        "type": "feat",
+        "scope": "chat",
+        "subject": "read receipts, a check and the faces of the bots that picked a message up",
+        "sha": "9144361"
+      },
+      {
+        "type": "feat",
+        "scope": "rooms",
+        "subject": "a progress bar for the room, reported by its lead",
+        "sha": "923129b"
+      },
+      {
+        "type": "feat",
+        "scope": "rooms",
+        "subject": "the first answer to a post without a mention quotes it",
+        "sha": "0061816"
+      },
+      {
+        "type": "fix",
+        "scope": "web",
+        "subject": "reply reference above the author line, one-line work timeline",
+        "sha": "0bbea9a"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "draw Mermaid diagrams in replies with Pele",
+        "sha": "a34eee8"
+      }
+    ]
+  },
+  {
+    "day": "2026-11-11",
+    "entries": [
+      {
+        "type": "fix",
+        "scope": "chat",
+        "subject": "apply a bot's own task moves after outside content",
+        "sha": "54121d6"
+      },
+      {
+        "type": "fix",
+        "scope": "computer",
+        "subject": "wait for a page to finish drawing before reading it",
+        "sha": "383c648"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "confirm before opening external links in chat replies",
+        "sha": "7548926"
+      }
+    ]
+  },
+  {
+    "day": "2026-11-10",
+    "entries": [
+      {
+        "type": "fix",
+        "scope": "web",
+        "subject": "the busy flag is reset in finally",
+        "sha": "ee9cd2e"
+      },
+      {
+        "type": "fix",
+        "scope": "web",
+        "subject": "date tooltips follow the 12h/24h choice",
+        "sha": "b868537"
+      },
+      {
+        "type": "fix",
+        "scope": "web",
+        "subject": "the memory copy button says when the copy fails and clears its check mark",
+        "sha": "a6c4b49"
+      },
+      {
+        "type": "fix",
+        "scope": "web",
+        "subject": "a form field that is missing reads as an empty string, not the text \"null\"",
+        "sha": "98c8cf0"
+      },
+      {
+        "type": "fix",
+        "scope": "server",
+        "subject": "computer, events, preferences and installation answer identity errors through accessFail",
+        "sha": "aaa59b9"
+      },
+      {
+        "type": "fix",
+        "scope": "server",
+        "subject": "Gmail text extraction keeps an escaped entity as text",
+        "sha": "be7b49e"
+      },
+      {
+        "type": "fix",
+        "scope": "server",
+        "subject": "an empty numeric env variable means the default, not 0",
+        "sha": "42c14ea"
+      },
+      {
+        "type": "feat",
+        "scope": "db",
+        "subject": "Postgres ships inside Zetta: an empty DATABASE_URL starts and migrates an embedded Postgres 18 with pgvector",
+        "sha": "4a2b3e3"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "replace overlap for routines, room posts reach a working bot, one-step teams, this computer through Cua",
+        "sha": "833f479"
+      },
+      {
+        "type": "feat",
+        "scope": "computer",
+        "subject": "bots can use your own browser on a local install, in a tab of their own",
+        "sha": "7dbd052"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "standing-goal routines, run steps on the routine page, one OAuth connect panel, plainer new-bot wizard",
+        "sha": "44e3169"
+      },
+      {
+        "type": "fix",
+        "scope": "computer",
+        "subject": "this computer works on Linux too: xdotool keys, typing without the focused surface, screenshots from the real field",
+        "sha": "54f8cc7"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "wire the new chat, approval, routine, learning and computer pieces into the services",
+        "sha": "54f7784"
+      },
+      {
+        "type": "fix",
+        "scope": "",
+        "subject": "playground cancel during setup, web test setup, app frame allows forms",
+        "sha": "b40f7cf"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "simple navigation, a page per team, bot settings as tabs",
+        "sha": "ed36b4f"
+      },
+      {
+        "type": "feat",
+        "scope": "plugins",
+        "subject": "Trello, ElevenLabs, Vercel, Supabase, Obsidian, Apple apps and Canva",
+        "sha": "7f88527"
+      },
+      {
+        "type": "feat",
+        "scope": "computer",
+        "subject": "placement rule, this computer on macOS, Linux and Windows, computer tools inside the run",
+        "sha": "07f474c"
+      },
+      {
+        "type": "feat",
+        "scope": "routines",
+        "subject": "a page per routine with its runs, filters in the address, zetta:my_routine for every bot",
+        "sha": "2434d12"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "autolearn, bots keep what they learn as their own skills",
+        "sha": "7953953"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "interrupt and continue, one turn per bot in a room, routine controls",
+        "sha": "ff796bc"
+      },
+      {
+        "type": "feat",
+        "scope": "chat",
+        "subject": "fewer approval cards, Always allow and Allow in this chat, Undo on memory receipts",
+        "sha": "bf0a214"
+      },
+      {
+        "type": "feat",
+        "scope": "chat",
+        "subject": "answer waiting messages together, stop in words, routines stay on",
+        "sha": "83cdcde"
+      },
+      {
+        "type": "fix",
+        "scope": "chat",
+        "subject": "clip the sr-only step labels inside the work timeline",
+        "sha": "39638c9"
+      },
+      {
+        "type": "fix",
+        "scope": "chat",
+        "subject": "show one receipt per thing a bot touched",
+        "sha": "205e437"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "sign-in and create-account share one centered card",
+        "sha": "3de6c46"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "click an image to zoom it",
+        "sha": "270df37"
+      },
+      {
+        "type": "feat",
+        "scope": "avatars",
+        "subject": "every bot wears the two rounded-square eyes, black or white by contrast",
+        "sha": "3bdc672"
+      },
+      {
+        "type": "feat",
+        "scope": "desktop",
+        "subject": "a launcher of Zetta servers, one window per server, in the tray",
+        "sha": "c6e132d"
+      },
+      {
+        "type": "feat",
+        "scope": "rooms",
+        "subject": "reorder rooms in the sidebar, give each a menu, and show a queued room",
+        "sha": "69d0241"
+      },
+      {
+        "type": "fix",
+        "scope": "rooms",
+        "subject": "take back a turn that stopped making progress, and let rooms run side by side",
+        "sha": "e02c78c"
+      },
+      {
+        "type": "feat",
+        "scope": "bots",
+        "subject": "import a bot from the Grok Bot marketplace",
+        "sha": "17ef885"
+      },
+      {
+        "type": "feat",
+        "scope": "routines",
+        "subject": "say a schedule in words or cron, and run a daily routine on some days",
+        "sha": "a7b14d7"
+      },
+      {
+        "type": "feat",
+        "scope": "db",
+        "subject": "columns for bot origin, routine weekdays and room order",
+        "sha": "0da725d"
+      },
+      {
+        "type": "fix",
+        "scope": "",
+        "subject": "green unit suites, CI checks job, host runner gate, background failures, whole-text hooks, room cancel (#28)",
+        "sha": "9829f2c"
+      }
+    ]
+  },
+  {
+    "day": "2026-11-09",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "ActionHint and aria-label on the header theme toggle (#24)",
+        "sha": "0c2f665"
+      },
+      {
+        "type": "fix",
+        "scope": "chat",
+        "subject": "skip the live-output shell wrapper on Windows",
+        "sha": "da74ef2"
+      },
+      {
+        "type": "feat",
+        "scope": "chat",
+        "subject": "stream the output of a bot's running commands",
+        "sha": "6337c28"
+      },
+      {
+        "type": "fix",
+        "scope": "playground",
+        "subject": "accept Windows absolute entry paths in the build confine plugin",
+        "sha": "6b9db05"
+      },
+      {
+        "type": "fix",
+        "scope": "deps",
+        "subject": "sync bun.lock with packages/render/package.json (main CI is red on frozen-lockfile)",
+        "sha": "2f716d3"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "Apps screens, app link cards, tool cards and publish from the playground",
+        "sha": "d44ada9"
+      },
+      {
+        "type": "feat",
+        "scope": "chat",
+        "subject": "tool cards that pause for the person, the zetta:app tool, Chief writes skip the card",
+        "sha": "80159d2"
+      },
+      {
+        "type": "feat",
+        "scope": "apps",
+        "subject": "Zetta Apps core: manifest, storage, policy, SDK, plugin and bridge",
+        "sha": "b522722"
+      },
+      {
+        "type": "feat",
+        "scope": "playground",
+        "subject": "a run can take standard input and return a result file",
+        "sha": "896ed12"
+      },
+      {
+        "type": "feat",
+        "scope": "bots",
+        "subject": "ten built-in templates in the new-bot wizard",
+        "sha": "b62eb31"
+      },
+      {
+        "type": "feat",
+        "scope": "memory",
+        "subject": "bot access per item, convention page and source ingest with screening",
+        "sha": "563c99c"
+      },
+      {
+        "type": "feat",
+        "scope": "skills",
+        "subject": "manage the skill library: usage, history, restore, folders, zip",
+        "sha": "9f6561b"
+      },
+      {
+        "type": "feat",
+        "scope": "render",
+        "subject": "typed builder for zetta:ui, plain-text export and a Chart component",
+        "sha": "6492021"
+      },
+      {
+        "type": "feat",
+        "scope": "events",
+        "subject": "live events keep a bounded set of listeners per user",
+        "sha": "99decba"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "keep the screen awake per device",
+        "sha": "9ba84b2"
+      }
+    ]
+  },
+  {
+    "day": "2026-11-07",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "tasks",
+        "subject": "keep bots working on followed tasks until they are done",
+        "sha": "987a0f1"
+      },
+      {
+        "type": "fix",
+        "scope": "web",
+        "subject": "show the name of a blocked bot on hover in the collapsed sidebar (#13)",
+        "sha": "9d02261"
+      }
+    ]
+  },
+  {
+    "day": "2026-11-06",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "ui",
+        "subject": "ActionHint for icon-only buttons, RailHint on the expanded sidebar (#8)",
+        "sha": "99cb352"
+      },
+      {
+        "type": "feat",
+        "scope": "landing",
+        "subject": "simpler copy, Zetta as the chief, share image, shorter page",
+        "sha": "c23f1ad"
+      },
+      {
+        "type": "feat",
+        "scope": "landing",
+        "subject": "rebuild the page around real clips, the chief and the agent engines",
+        "sha": "99babe8"
+      },
+      {
+        "type": "fix",
+        "scope": "web",
+        "subject": "rooms stream every running turn on their own, chats show the person's avatar",
+        "sha": "b66a1ca"
+      },
+      {
+        "type": "feat",
+        "scope": "home-assistant",
+        "subject": "rule-based home commands in English and Portuguese",
+        "sha": "7dec8ba"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "pair a phone by QR code and install the app",
+        "sha": "ebc87f1"
+      },
+      {
+        "type": "feat",
+        "scope": "playground",
+        "subject": "saved code that bots and people run",
+        "sha": "f6ae5d2"
+      },
+      {
+        "type": "feat",
+        "scope": "routines",
+        "subject": "start a routine from a webhook, a new mail or a state change",
+        "sha": "74f074b"
+      },
+      {
+        "type": "feat",
+        "scope": "agents",
+        "subject": "pause everything",
+        "sha": "b981256"
+      },
+      {
+        "type": "feat",
+        "scope": "approvals",
+        "subject": "hold to approve, cards expire, writes after outside text wait for a card",
+        "sha": "5413305"
+      },
+      {
+        "type": "feat",
+        "scope": "preferences",
+        "subject": "put the sidebar on the left or on the right",
+        "sha": "dd625a6"
+      },
+      {
+        "type": "feat",
+        "scope": "memory",
+        "subject": "bots list and append, and search reads a stored vector",
+        "sha": "fce2b1b"
+      },
+      {
+        "type": "feat",
+        "scope": "skills",
+        "subject": "keep the whole skill folder, not only SKILL.md",
+        "sha": "50821d1"
+      },
+      {
+        "type": "perf",
+        "scope": "chat",
+        "subject": "send the stable half of the prompt as the system prompt",
+        "sha": "91e3809"
+      },
+      {
+        "type": "fix",
+        "scope": "landing",
+        "subject": "build only the landing app on Vercel (#6)",
+        "sha": "94c067a"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "limit the height of the work timeline in chat (#4)",
+        "sha": "e84702f"
+      },
+      {
+        "type": "feat",
+        "scope": "ui",
+        "subject": "add IconHint for icons with no visible title (#5)",
+        "sha": "00d0161"
+      },
+      {
+        "type": "fix",
+        "scope": "server",
+        "subject": "fix stale server tests and Windows path handling that turned main CI red (#1)",
+        "sha": "420291e"
+      }
+    ]
+  },
+  {
+    "day": "2026-11-05",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "add install.sh and show the install command in the landing hero",
+        "sha": "40c2200"
+      },
+      {
+        "type": "feat",
+        "scope": "landing",
+        "subject": "redesign the landing page around real product screens",
+        "sha": "8b3d456"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "theme picker lists all themes, sidebar rail is 56px with a compact footer",
+        "sha": "e6fd13b"
+      },
+      {
+        "type": "feat",
+        "scope": "preferences",
+        "subject": "color themes and main color as account preferences",
+        "sha": "96a1238"
+      },
+      {
+        "type": "feat",
+        "scope": "db",
+        "subject": "rename wiki tables to memory",
+        "sha": "7065103"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "add Preferences page and rename wiki to memory",
+        "sha": "4417870"
+      },
+      {
+        "type": "feat",
+        "scope": "chief",
+        "subject": "build a whole team like a manager, in steps",
+        "sha": "bbf08c1"
+      }
+    ]
+  },
+  {
+    "day": "2026-11-04",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "studio",
+        "subject": "Invites tab to invite, revoke and manage team people",
+        "sha": "c055370"
+      },
+      {
+        "type": "feat",
+        "scope": "computer",
+        "subject": "record README demos from the dashboard",
+        "sha": "84f5b60"
+      },
+      {
+        "type": "fix",
+        "scope": "computer",
+        "subject": "navigate the VM browser through DevTools and say where it landed",
+        "sha": "da4d1bf"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "Studio overview, react-query migration, machine access, scaling roles and pending work",
+        "sha": "2b8a25f"
+      },
+      {
+        "type": "fix",
+        "scope": "discussions",
+        "subject": "take the room lock back out of enqueueWakes",
+        "sha": "e444177"
+      },
+      {
+        "type": "fix",
+        "scope": "discussions",
+        "subject": "retry a deadlocked transaction, and keep a deleted room's turns from being queued",
+        "sha": "c06becb"
+      },
+      {
+        "type": "fix",
+        "scope": "",
+        "subject": "never convert the line endings of the pinned proof fixtures",
+        "sha": "bc61caf"
+      },
+      {
+        "type": "fix",
+        "scope": "chat",
+        "subject": "compare an inbound route's filter by field, not by JSON text",
+        "sha": "4e5f9b6"
+      },
+      {
+        "type": "fix",
+        "scope": "db",
+        "subject": "pin the proof migrations' real hashes, and keep the formatter off them",
+        "sha": "79ffaf4"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "choose a computer's driver and system in Studio",
+        "sha": "2124a0c"
+      },
+      {
+        "type": "feat",
+        "scope": "computer",
+        "subject": "pick a driver and a system per computer",
+        "sha": "920e394"
+      }
+    ]
+  },
+  {
+    "day": "2026-11-03",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "teams",
+        "subject": "add human team members who can read a team's rooms",
+        "sha": "23c65ed"
+      },
+      {
+        "type": "feat",
+        "scope": "web",
+        "subject": "CodeMirror editor for every free-text box",
+        "sha": "c6c9f7e"
+      },
+      {
+        "type": "feat",
+        "scope": "discussions",
+        "subject": "rooms run bots in parallel and wait for answers",
+        "sha": "b0c63c5"
+      },
+      {
+        "type": "feat",
+        "scope": "chat",
+        "subject": "follow slow turns, quote replies and run turns by id",
+        "sha": "9b0eec7"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "store mentions by id so a rename never breaks stored text",
+        "sha": "9b4cc2c"
+      },
+      {
+        "type": "feat",
+        "scope": "db",
+        "subject": "free a closed room's name and allow parallel room turns",
+        "sha": "3815bf7"
+      },
+      {
+        "type": "fix",
+        "scope": "chat",
+        "subject": "keep the log following the bottom after a wheel or key at the bottom",
+        "sha": "b7c76e4"
+      }
+    ]
+  },
+  {
+    "day": "2026-11-02",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "add skills library, host skills, inbound card and landing refresh",
+        "sha": "ef3b661"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "name interrupted routine in inbox, mark it in sidebar, and ship pending work",
+        "sha": "c3a97bf"
+      }
+    ]
+  },
+  {
+    "day": "2026-10-29",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "artifacts, teams, installation setup key and chat loop updates",
+        "sha": "1ff76a5"
+      }
+    ]
+  },
+  {
+    "day": "2026-10-28",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "move ids to UUIDv7, add foreign keys and refresh chat UI",
+        "sha": "72d188f"
+      }
+    ]
+  },
+  {
+    "day": "2026-10-27",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "improving to version 0.0.6",
+        "sha": "4318f6a"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "goal loops replace per-turn limits; faster, sturdier computer use",
+        "sha": "d2d42ad"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "ask to double the Computer action limit when a turn hits it",
+        "sha": "ec99c57"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "give group discussions the same chat experience",
+        "sha": "2a5e9a6"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "chief runs any command and edits other bots' permissions; fix discussions overflow",
+        "sha": "08da018"
+      },
+      {
+        "type": "fix",
+        "scope": "",
+        "subject": "keep VMs alive across reloads, live computer preview, routines with tools",
+        "sha": "977fde2"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "telegram",
+        "sha": "9eaae57"
+      }
+    ]
+  },
+  {
+    "day": "2026-10-26",
+    "entries": [
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "private Postgres database per bot",
+        "sha": "edf3add"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "bot group discussions, inbound channels, Agenda and VM console",
+        "sha": "eed52c4"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "Reddit plugin, password-manager logins, VNC desktops, per-user Google OAuth",
+        "sha": "4920d78"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "explain tool failures to users and bots; Telegram @username resolution",
+        "sha": "3596ff4"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "Telegram plugin, plugins/MCP catalog, VM desktop and chat UI rework",
+        "sha": "3b71818"
+      },
+      {
+        "type": "feat",
+        "scope": "",
+        "subject": "v1 claude iteration through the weekend",
+        "sha": "238236f"
+      }
+    ]
+  }
+]

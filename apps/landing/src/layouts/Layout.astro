@@ -39,6 +39,8 @@ const imageUrl = `${SITE}${image}`;
     <link rel="alternate" hreflang="en" href="/" />
     <link rel="alternate" hreflang="pt-BR" href="/pt-br/" />
     <link rel="alternate" hreflang="x-default" href="/" />
+    <link rel="alternate" type="text/markdown" href={lang === "pt-br" ? "/pt-br/index.md" : "/index.md"} />
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

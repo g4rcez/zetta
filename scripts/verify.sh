@@ -33,7 +33,7 @@ for dir in apps/server apps/web packages/db packages/auth packages/core packages
 done
 
 step "unit tests"
-for dir in apps/web apps/cli packages/auth packages/core packages/render packages/laya packages/ui; do
+for dir in apps/web apps/cli apps/landing packages/auth packages/core packages/render packages/laya packages/ui; do
   echo "-- $dir"
   if [ "$dir" = "apps/web" ]; then
     retry bash -c 'cd apps/web && bun test'

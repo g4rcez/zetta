@@ -1937,4 +1937,110 @@ suite("group discussions against compose postgres", () => {
         .where(eq(discussionTurn.id, row!.id));
     });
   });
+
+  // A person's post that names nobody wakes the room's fallback. The first complete answer says which post it answers (meta.quote),
+  // on the main line, never in a thread; later answers to the same post stay plain.
+  describe("the first answer to a post without a mention quotes it", () => {
+    const quoted = (posts: { role: string; meta: any }[]) =>
+      posts.filter((m) => m.role === "assistant" && m.meta?.quote);
+
+    test("two bots wake on the opening post: exactly one answer carries the quote", async () => {
+      const x = await makeBot(A, "QuoteOne"),
+        y = await makeBot(A, "QuoteTwo");
+      replies.QuoteOne = ["I can take the first part."];
+      replies.QuoteTwo = ["I can take the second part."];
+      const created = await call(A, "POST", "/api/discussions", {
+        title: "Quote first",
+        goal: "answer the person",
+        members: [{ bot: x.id }, { bot: y.id }],
+        firstMessage: "Who can start on the release notes?",
+      });
+      expect(created.status).toBe(201);
+      await worker.drain();
+      const posts = await messagesOf(A, created.json.discussion.conversationId);
+      const mine = posts.find((m) => m.role === "user")!;
+      const answers = posts.filter((m) => m.role === "assistant");
+      // The owner's Chief may be a member too (it is added to a room the person opens), so there can be more than two answers.
+      expect(answers.length).toBeGreaterThanOrEqual(2);
+      const withQuote = quoted(posts);
+      expect(withQuote).toHaveLength(1);
+      expect(withQuote[0]!.meta.quote).toMatchObject({
+        id: mine.id,
+        role: "user",
+        botId: null,
+        excerpt: "Who can start on the release notes?",
+      });
+      // The answers stay on the main line: no thread.
+      expect(posts.every((m) => !(m as { parentMessageId?: string }).parentMessageId)).toBe(true);
+    });
+
+    test("a post that mentions a bot is answered without a quote", async () => {
+      const x = await makeBot(A, "QuoteMention"),
+        y = await makeBot(A, "QuoteOther");
+      replies.QuoteMention = ["first", "Yes, I am on it."];
+      replies.QuoteOther = ["hello"];
+      const created = await call(A, "POST", "/api/discussions", {
+        title: "Quote mention",
+        goal: "answer the person",
+        members: [{ bot: x.id }, { bot: y.id }],
+        firstMessage: `[@QuoteMention](bot:${x.id}) start`,
+      });
+      await worker.drain();
+      await call(A, "POST", `/api/discussions/${created.json.discussion.id}/messages`, {
+        content: `[@QuoteMention](bot:${x.id}) are you on it?`,
+      });
+      await worker.drain();
+      const posts = await messagesOf(A, created.json.discussion.conversationId);
+      expect(posts.filter((m) => m.role === "assistant").length).toBeGreaterThanOrEqual(2);
+      expect(quoted(posts)).toHaveLength(0);
+    });
+
+    test("a silent reply does not take the quote: an answer that is posted does", async () => {
+      const x = await makeBot(A, "QuoteSilent"),
+        y = await makeBot(A, "QuoteVoice");
+      replies.QuoteSilent = ["NO_REPLY"];
+      replies.QuoteVoice = ["Here is my answer."];
+      const created = await call(A, "POST", "/api/discussions", {
+        title: "Quote silent",
+        goal: "answer the person",
+        members: [{ bot: x.id }, { bot: y.id }],
+        firstMessage: "Anything to add?",
+      });
+      await worker.drain();
+      const posts = await messagesOf(A, created.json.discussion.conversationId);
+      // The silent reply is not posted, so it cannot hold the quote; one posted answer does (the owner's Chief may be a member too).
+      expect(posts.some((m) => m.botId === x.id)).toBe(false);
+      const withQuote = quoted(posts);
+      expect(withQuote).toHaveLength(1);
+      expect(withQuote[0]!.botId).not.toBe(x.id);
+      expect(posts.some((m) => m.botId === y.id)).toBe(true);
+    });
+
+    test("each later post quotes its own first answer, and the bots never read the quote as the user's", async () => {
+      const x = await makeBot(A, "QuoteLoop");
+      replies.QuoteLoop = ["one", "two"];
+      const created = await call(A, "POST", "/api/discussions", {
+        title: "Quote loop",
+        goal: "answer the person",
+        members: [{ bot: x.id }],
+        firstMessage: "First question?",
+      });
+      await worker.drain();
+      const second = await call(
+        A,
+        "POST",
+        `/api/discussions/${created.json.discussion.id}/messages`,
+        { content: "Second question?" },
+      );
+      expect(second.status).toBe(201);
+      await worker.drain();
+      const posts = await messagesOf(A, created.json.discussion.conversationId);
+      const users = posts.filter((m) => m.role === "user");
+      expect(quoted(posts).map((m) => m.meta.quote.id)).toEqual(users.map((m) => m.id));
+      // The second turn read the first answer, which carries a quote for the page only.
+      expect(runs.findLast((r) => r.bot === "QuoteLoop")!.prompt).not.toContain(
+        "The user replies to",
+      );
+    });
+  });
 });

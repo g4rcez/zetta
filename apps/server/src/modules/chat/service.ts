@@ -190,6 +190,7 @@ import {
   isSilent,
   mentionKey,
   openToolText,
+  wakeTargets,
 } from "../discussions/prompt";
 import { createWaiting } from "../discussions/waiting";
 import { createTaskWake } from "./task-wake";
@@ -4163,6 +4164,8 @@ export function createChatService(
     skills?: Turn["skills"];
     /** Hands the bot the messages sent while it works, at its next tool round (see `claimNotes`); `replyId` is the row this answer saves into. */
     takeNotes?: (replyId: string) => Promise<{ id: string; content: string }[]>;
+    /** The post this room turn answers. The first complete answer to it keeps it as `meta.quote`, so the room shows what it replies to. */
+    quoteFirst?: Quote | undefined;
   };
   /**
    * One bot's answer in a conversation: a running row first (flushed while streaming so a disconnect or crash never loses output), the
@@ -4567,11 +4570,37 @@ export function createChatService(
           }
         : null;
     // The reply streamed as typed; what is stored names bots by id (see mention-text.ts).
-    const [saved] = await db
-      .update(message)
-      .set({ content: await normalizeMentionText(db, actor.userId, reply), status, meta })
-      .where(eq(message.id, row.id))
-      .returning();
+    const content = await normalizeMentionText(db, actor.userId, reply);
+    const [saved] = await db.transaction(async (tx) => {
+      let finalMeta: Record<string, unknown> | null = meta;
+      // The first complete answer to a room post that named nobody quotes the post. The post's row is locked while the check and the
+      // update run, so two bots finishing together cannot both be first: the second one waits, then sees the quote of the first.
+      if (a.quoteFirst && status === "complete" && !isSilent(reply)) {
+        await tx
+          .select({ id: message.id })
+          .from(message)
+          .where(eq(message.id, a.quoteFirst.id))
+          .for("update");
+        const [taken] = await tx
+          .select({ id: message.id })
+          .from(message)
+          .where(
+            and(
+              eq(message.conversationId, a.convId),
+              eq(message.role, "assistant"),
+              ne(message.id, row.id),
+              sql`${message.meta}->'quote'->>'id' = ${a.quoteFirst.id}`,
+            ),
+          )
+          .limit(1);
+        if (!taken) finalMeta = { ...meta, quote: a.quoteFirst };
+      }
+      return tx
+        .update(message)
+        .set({ content, status, meta: finalMeta })
+        .where(eq(message.id, row.id))
+        .returning();
+    });
     events.publish([actor.userId], topics.conversation(a.convId));
     // Cards the reply left waiting: a turn nobody follows (a team-build step) has no stream to carry them to the open page.
     if (a.proposals.length) events.publish([actor.userId], topics.proposals, topics.attention);
@@ -7866,7 +7895,8 @@ export function createChatService(
           : [];
       });
       const transcript = rawTranscript.map((m) => {
-        const quote = savedQuote(m.meta);
+        // Only a person's reply carries a quote the bots read as "the user replies to ..."; a bot's own answer keeps its reference for the page alone.
+        const quote = m.role === "user" ? savedQuote(m.meta) : null;
         return {
           author:
             m.role === "user"
@@ -7891,10 +7921,33 @@ export function createChatService(
       });
       const [trigger] = t.triggerMessageId
         ? await db
-            .select({ botId: message.botId, role: message.role })
+            .select({
+              id: message.id,
+              botId: message.botId,
+              role: message.role,
+              content: message.content,
+              meta: message.meta,
+            })
             .from(message)
             .where(eq(message.id, t.triggerMessageId))
         : [];
+      // A person's post that names nobody is answered by the room's fallback (see `wakeTargets`). The first answer to it says in the room
+      // which message it answers, as a reply on the main line; later answers to the same post stay plain (see `runAnswer`).
+      const quoteFirst =
+        t.kind === "reply" &&
+        trigger?.role === "user" &&
+        !savedQuote(trigger.meta) &&
+        !(trigger.meta as { skills?: unknown[] } | null)?.skills?.length &&
+        wakeTargets(
+          members.map((m) => ({ botId: m.m.botId, name: m.name })),
+          null,
+          null,
+          trigger.content,
+          false,
+          false,
+        ).length === 0
+          ? quoteOf(trigger)
+          : undefined;
       const from = !trigger
         ? "the room"
         : trigger.role === "user"
@@ -8052,6 +8105,7 @@ export function createChatService(
             prompt,
             takeNotes: () => roomNotes(),
             parentMessageId: null,
+            ...(quoteFirst && !runningLoop ? { quoteFirst } : {}),
             untrusted: d.tainted,
             images: discussionImages,
             referenced,

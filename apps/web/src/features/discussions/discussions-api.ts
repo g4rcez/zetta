@@ -17,6 +17,11 @@ export type Discussion = {
   tainted: boolean;
   turnsUsed: number;
   summary: string;
+  /** How far the work is, as the room's lead last reported it (0-100); null until the first report. */
+  progressPercent: number | null;
+  progressNote: string;
+  progressBotId: string | null;
+  progressAt: string | null;
   version: number;
   createdByBotId: string | null;
   /** Set for a team room: `createdByBotId` is the team's chief. */

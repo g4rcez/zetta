@@ -188,8 +188,10 @@ import {
   MEMBER_TOOLS,
   defuse,
   isSilent,
+  isRoomLead,
   mentionKey,
   openToolText,
+  PROGRESS_TOOL,
   wakeTargets,
 } from "../discussions/prompt";
 import { createWaiting } from "../discussions/waiting";
@@ -2996,6 +2998,15 @@ export function createChatService(
           );
         const d = await store.updateContextAsBot(actor, id, who, a.text);
         return say(`👥 Updated the shared context of "${d.title}".`);
+      }
+      if (a.action === "progress") {
+        if (looksSecret(a.note))
+          return say("⚠️ The progress note was not saved: it looked like it contained a secret.");
+        const d = await store.reportProgress(actor, id, who, { percent: a.percent, note: a.note });
+        return say(
+          `📊 Progress of "${d.title}": ${d.progressPercent}%.`,
+          `discussion.progress ok: the room now shows ${d.progressPercent}%.`,
+        );
       }
       const help = await store.helpRequestOf(actor, id).catch(() => undefined);
       const d = await store.resolveAsBot(actor, id, who, a.summary);
@@ -8115,6 +8126,7 @@ export function createChatService(
             scope,
             extraTools: [
               MEMBER_TOOLS,
+              isRoomLead(d, who) && d.kind === "room" ? PROGRESS_TOOL : "",
               d.kind === "help" && who.id === d.createdByBotId ? HELP_CHIEF_TOOLS : "",
               runningLoop
                 ? isMemberLoop

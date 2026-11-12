@@ -4,8 +4,10 @@ import {
   discussionPrompt,
   fitTranscript,
   isIdleChatter,
+  isRoomLead,
   isSilent,
   MEMBER_TOOLS,
+  PROGRESS_TOOL,
   wakeTargets,
 } from "./prompt";
 
@@ -258,6 +260,36 @@ describe("discussion tool blocks", () => {
       "post",
     ]);
     expect(r.calls[0]!.args).toMatchObject({ context: "" });
+  });
+});
+
+describe("room progress", () => {
+  const block = (json: string) => `\`\`\`zetta:discussion\n${json}\n\`\`\``;
+  test("a progress report parses, with the note optional and the percent between 0 and 100", () => {
+    const r = parseTools(
+      [
+        block('{"action":"progress","percent":40,"note":"Tests written"}'),
+        block('{"action":"progress","percent":100}'),
+        block('{"action":"progress","percent":101}'),
+        block('{"action":"progress","percent":-1}'),
+        block('{"action":"progress","percent":"half"}'),
+        block(`{"action":"progress","percent":50,"note":"${"x".repeat(121)}"}`),
+      ].join("\n"),
+    );
+    expect(r.calls.map((c) => c.kind === "discussion" && c.args)).toEqual([
+      { action: "progress", percent: 40, note: "Tests written" },
+      { action: "progress", percent: 100, note: "" },
+    ]);
+  });
+  test("the lead is the bot that opened the room, or the Chief of a room the person opened", () => {
+    expect(isRoomLead({ createdByBotId: "a" }, { id: "a", kind: "specialist" })).toBe(true);
+    expect(isRoomLead({ createdByBotId: "a" }, { id: "b", kind: "chief" })).toBe(false);
+    expect(isRoomLead({ createdByBotId: null }, { id: "c", kind: "chief" })).toBe(true);
+    expect(isRoomLead({ createdByBotId: null }, { id: "d", kind: "specialist" })).toBe(false);
+  });
+  test("only the lead is told about the bar", () => {
+    expect(PROGRESS_TOOL).toContain('"action":"progress"');
+    expect(MEMBER_TOOLS).not.toContain("progress");
   });
 });
 

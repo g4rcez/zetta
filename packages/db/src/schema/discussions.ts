@@ -98,6 +98,13 @@ export const discussion = zetta.table(
     /** Turns run so far: a statistic, not a limit. */
     turnsUsed: integer("turns_used").default(0).notNull(),
     summary: text("summary").default("").notNull(),
+    /** How far the room's work is, as its lead last reported it (0-100). Null until the first report. */
+    progressPercent: integer("progress_percent"),
+    /** The lead's short label for that report ("Tests written, review next"). */
+    progressNote: text("progress_note").default("").notNull(),
+    /** Which bot reported it, and when. */
+    progressBotId: uuid("progress_bot_id").references(() => bot.id, setNull),
+    progressAt: timestamp("progress_at", { withTimezone: true }),
     /** Same creator + origin + title while open = the same discussion (a bot repeating its open block gets the existing one). */
     openKey: text("open_key").notNull(),
     version: integer("version").default(1).notNull(),
@@ -122,6 +129,11 @@ export const discussion = zetta.table(
       .on(t.ownerUserId, t.openKey)
       .where(sql`${t.status} in ('open', 'paused', 'stalled')`),
     check("discussion_title_check", sql`length(btrim(${t.title})) between 1 and 120`),
+    check(
+      "discussion_progress_check",
+      sql`(${t.progressPercent} is null or ${t.progressPercent} between 0 and 100) and length(${t.progressNote}) <= 120`,
+    ),
+    index("discussion_progress_bot_id_idx").on(t.progressBotId),
     check(
       "discussion_context_check",
       sql`length(${t.context}) <= 8000 and length(${t.goal}) <= 1000`,

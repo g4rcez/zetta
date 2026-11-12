@@ -31,7 +31,7 @@ import { chiefSchemas } from "./chief/schemas";
  *   ```zetta:bot_claude  {"bot": "<name or id>", "allow": ["Bash(gh pr create:*)"], "deny": [...], "revoke": [...], "preset": "git"} -> chief only: edits another bot's Claude Code permissions (answering a bot's request in the Permissions room shows the user Approve / Deny buttons first)
  *   ```zetta:permission  {"rule": "Bash(pnpm:*)", "reason": "run the tests"}                -> any other bot: asks the chief, in the Permissions room, for a rule
  *   ```zetta:escalate    {"problem": "...", "tried": "..."}                              -> any other bot: asks the chief to solve a blocker in a help room; the answer resumes the bot, the user is asked only if the chief cannot
- *   ```zetta:discussion  {"action": "open", "title", "goal", "context", "members": [{"bot": "Dev"}], "firstMessage"} | post | update_context | resolve | delete -> group of bots (modules/discussions)
+ *   ```zetta:discussion  {"action": "open", "title", "goal", "context", "members": [{"bot": "Dev"}], "firstMessage"} | post | update_context | progress | resolve | delete -> group of bots (modules/discussions)
  *   ```zetta:skills      {"action": "search", "query"} | install {"source": "owner/repo", "names"?} -> search reads the trusted list; install only asks: a card lets the user choose which skills to install and for which bots (modules/skills)
  *   ```zetta:inbound     {"action": "status", "plugin"} | propose {"plugin", "incoming": "on"|"off", "who"?, "only"?, "settings"?} -> status reads; propose only shows the user a card with the exact change (incoming messages of a channel plugin, and the plugin settings it lets a bot propose); the user presses Apply
  *   ```zetta:bot / folder / routine / team / output_style / artifacts / plugins / mcp_server / skill_library / hook / claude / room / preferences / conversation / attention / workflow / computer / snapshot / source / company_docs / connection / agenda_sync / memory_admin / browser_profile / decision / inbound_route / admin  {"action": "list" | "update" | ...} -> chief only: changes the user's setup; reads answer at once, every change is a card the user approves (modules/chat/chief)
@@ -534,6 +534,13 @@ export const toolSchemas = {
       action: z.literal("update_context"),
       discussionId: z.string().uuid().optional(),
       text: z.string().max(8000),
+    }),
+    // The lead says how far the room's work is (0-100) with a short note; the room shows it as a bar.
+    z.strictObject({
+      action: z.literal("progress"),
+      discussionId: z.string().uuid().optional(),
+      percent: z.number().min(0).max(100),
+      note: z.string().trim().max(120).default(""),
     }),
     z.strictObject({
       action: z.literal("resolve"),

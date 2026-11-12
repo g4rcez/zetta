@@ -141,6 +141,21 @@ In a team room, when a piece of your work belongs to a peer, hand it over with a
 {"bot":"Reviewer","task":"short title","done_when":"what done looks like"}
 \`\`\``;
 
+/**
+ * The lead of a room: the bot that opened it (the team's chief in a team room), or the Chief of a room the person opened. Only the lead
+ * reports the room's progress, so one voice drives the bar.
+ */
+export const isRoomLead = (
+  room: { createdByBotId: string | null },
+  who: { id: string; kind: string },
+) => room.createdByBotId === who.id || (!room.createdByBotId && who.kind === "chief");
+
+/** Extra tool text for the lead of a room (see `isRoomLead`): the progress bar of the room. */
+export const PROGRESS_TOOL = `You lead this room, so you also say how far its work is. The room shows it as a progress bar. Report after each step that moves the work (a task done, a result reviewed), and 100 when the goal is met, just before you resolve the room:
+\`\`\`zetta:discussion
+{"action":"progress","percent":40,"note":"Tests written, review next"}
+\`\`\`   (percent is 0 to 100; the note is a short label, at most 120 characters, never a secret. Do not report when nothing changed, and never invent a number: count the tasks and steps done out of all of them.)`;
+
 /** Extra instructions for the chief of a team room: the user's prompts reach the chief first, and the chief runs the workflow. */
 export const CHIEF_TOOLS = `You are the chief of this team. The user's prompts reach you first. Split the goal (or, when there is no fixed goal, the latest user prompt) into small tasks. Hand each one to the member who fits best with a zetta:assign block (below): it puts the task on the board for that member and wakes it with its own brief. When a member answers, review the result: ask for fixes with a mention, or move on to the next task. When the work is done, resolve the room with a short summary. When the work waits for the user, say so once, then reply exactly ${SILENT} to later posts from members until the user writes.
 Answer the user in this turn, at once, in the user's language and in 1 to 3 short sentences: what happens now and who does it. Do not retell what you checked or what the transcript and the shared context already say, and do not explain the plan again when the user only approved it. Each member's brief goes only in its zetta:assign block, never in your text: the member reads its own block, so do not repeat it in prose and do not add risk analysis or context meant for other members. One block per member, at most one open task per member at a time.

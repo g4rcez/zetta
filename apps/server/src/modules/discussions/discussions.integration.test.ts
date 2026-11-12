@@ -1941,7 +1941,7 @@ suite("group discussions against compose postgres", () => {
   // A person's post that names nobody wakes the room's fallback. The first complete answer says which post it answers (meta.quote),
   // on the main line, never in a thread; later answers to the same post stay plain.
   describe("the first answer to a post without a mention quotes it", () => {
-    const quoted = (posts: { role: string; meta: any }[]) =>
+    const quoted = <T extends { role: string; meta: any }>(posts: T[]) =>
       posts.filter((m) => m.role === "assistant" && m.meta?.quote);
 
     test("two bots wake on the opening post: exactly one answer carries the quote", async () => {
@@ -2041,6 +2041,97 @@ suite("group discussions against compose postgres", () => {
       expect(runs.findLast((r) => r.bot === "QuoteLoop")!.prompt).not.toContain(
         "The user replies to",
       );
+    });
+  });
+
+  // The lead of a room (the bot that opened it) says how far the work is; the room shows a bar. Members do not report.
+  describe("room progress", () => {
+    const progress = (percent: number, note: string) =>
+      `\n\`\`\`zetta:discussion\n${JSON.stringify({ action: "progress", percent, note })}\n\`\`\``;
+    const roomOf = async (id: string) =>
+      (await call(A, "GET", `/api/discussions/${id}`)).json.discussion as {
+        status: string;
+        progressPercent: number | null;
+        progressNote: string;
+        progressBotId: string | null;
+        progressAt: string | null;
+      };
+
+    test("the lead's report is saved and shown; a member's is refused; a closed room takes none", async () => {
+      const lead = await makeBot(A, "ProgLead"),
+        member = await makeBot(A, "ProgMember");
+      await call(A, "PUT", `/api/bots/${lead.id}/peers`, { peerBotIds: [member.id] });
+      const { say } = await chatWith(A, lead.id);
+      replies.ProgLead = [
+        open("Progress room", ["ProgMember"], "@ProgMember start"),
+        `Good.${progress(55, "Fix written, tests next")}`,
+      ];
+      replies.ProgMember = [`Halfway. @ProgLead FYI${progress(90, "I am almost done")}`];
+      await say("go");
+      await worker.drain();
+      const list = (await call(A, "GET", "/api/discussions")).json.discussions as {
+        id: string;
+        title: string;
+      }[];
+      const d = list.find((x) => x.title === "Progress room")!;
+      const shown = await roomOf(d.id);
+      // The member's 90 was refused; the lead's 55 stands, with who said it and when.
+      expect(shown).toMatchObject({
+        progressPercent: 55,
+        progressNote: "Fix written, tests next",
+        progressBotId: lead.id,
+      });
+      expect(shown.progressAt).not.toBeNull();
+      // The same through the store: a member is refused and nothing changes.
+      const actor = (await issueBackgroundActor(lookup, A))!;
+      const memberRow = (await db.select().from(bot).where(eq(bot.id, member.id)))[0]!;
+      await expect(
+        store.reportProgress(actor, d.id, memberRow, { percent: 99, note: "x" }),
+      ).rejects.toMatchObject({ code: "NOT_ALLOWED" });
+      expect((await roomOf(d.id)).progressPercent).toBe(55);
+      // Out-of-range values are clamped, and the note is trimmed to its limit.
+      const leadRow = (await db.select().from(bot).where(eq(bot.id, lead.id)))[0]!;
+      const clamped = await store.reportProgress(actor, d.id, leadRow, {
+        percent: 130,
+        note: `  ${"n".repeat(200)}  `,
+      });
+      expect(clamped.progressPercent).toBe(100);
+      expect(clamped.progressNote).toHaveLength(120);
+      // A resolved room takes no more reports.
+      await store.resolve(actor, d.id, leadRow, "done");
+      await expect(
+        store.reportProgress(actor, d.id, leadRow, { percent: 10, note: "late" }),
+      ).rejects.toMatchObject({ code: "CLOSED" });
+    });
+
+    test("in a room the person opened, the Chief leads and a specialist does not", async () => {
+      // A person has one Chief: use theirs, or make it (it must be private).
+      const [existing] = await db
+        .select()
+        .from(bot)
+        .where(and(eq(bot.ownerUserId, A), eq(bot.kind, "chief")));
+      const chief =
+        existing ?? (await makeBot(A, "ProgChief", { kind: "chief", visibility: "private" }));
+      const helper = await makeBot(A, "ProgHelper");
+      const created = await call(A, "POST", "/api/discussions", {
+        title: "Person room",
+        goal: "x",
+        members: [{ bot: chief.id }, { bot: helper.id }],
+        firstMessage: "hello",
+      });
+      await worker.drain();
+      const id = created.json.discussion.id as string;
+      const actor = (await issueBackgroundActor(lookup, A))!;
+      const row = async (botId: string) =>
+        (await db.select().from(bot).where(eq(bot.id, botId)))[0]!;
+      await expect(
+        store.reportProgress(actor, id, await row(helper.id), { percent: 20, note: "" }),
+      ).rejects.toMatchObject({ code: "NOT_ALLOWED" });
+      const ok = await store.reportProgress(actor, id, await row(chief.id), {
+        percent: 20,
+        note: "Started",
+      });
+      expect(ok).toMatchObject({ progressPercent: 20, progressBotId: chief.id });
     });
   });
 });

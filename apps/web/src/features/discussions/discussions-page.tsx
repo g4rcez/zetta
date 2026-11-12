@@ -57,6 +57,7 @@ import type { Outgoing } from "../chat/composer";
 import { DraftComposer, type DraftHandle } from "../chat/draft-composer";
 import { draftKey } from "../chat/use-draft";
 import { LoopBanner, useGoalLoop } from "../chat/loop-banner";
+import { RoomProgress } from "./room-progress";
 import { pollEvery } from "@/lib/query-policy";
 import { chatQueries } from "../chat/chat-queries";
 import { useRooms, useSidebarData, useTeams } from "../chat/sidebar-data";
@@ -857,6 +858,7 @@ function RoomView({
             />
           ),
         )}
+        <RoomProgress room={d} botName={d.progressBotId ? names.get(d.progressBotId) : undefined} />
         {teamGoal !== undefined && (
           <Drawer
             open

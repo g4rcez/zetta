@@ -27,7 +27,7 @@ import type { LoopStore } from "../chat/loops";
 import { createBotClaude, skillsOf } from "../bot-claude/store";
 import { visibleTo } from "../memory/service";
 import { legacyMentions, mentionIds, mentionToken } from "@zetta/core/mentions";
-import { HELP_PREFIX, isIdleChatter, mentionKey, wakeTargets } from "./prompt";
+import { HELP_PREFIX, isIdleChatter, isRoomLead, mentionKey, wakeTargets } from "./prompt";
 import { topics } from "@zetta/core/live-topics";
 import { events } from "../events/bus";
 import { hasUniqueViolation } from "../pg-error";
@@ -1209,6 +1209,38 @@ export function createDiscussionStore(
       return row!;
     },
     /**
+     * The room's lead says how far the work is: a percent and a short note. The lead is the bot that opened the room (the team's chief
+     * in a team room), or the Chief of a room the person opened. Other members do not report, so one voice drives the bar.
+     */
+    async reportProgress(
+      a: ActiveActor,
+      id: string,
+      who: Bot,
+      v: { percent: number; note: string },
+    ) {
+      const d = await this.forMember(a, id, who.id);
+      if (d.status === "resolved" || d.status === "cancelled")
+        throw new DiscussionError("CLOSED", `That room is ${d.status}.`);
+      if (!isRoomLead(d, who))
+        throw new DiscussionError(
+          "NOT_ALLOWED",
+          "Only the lead of a room reports its progress; tell the lead instead.",
+        );
+      const [row] = await db
+        .update(discussion)
+        .set({
+          progressPercent: Math.min(100, Math.max(0, Math.round(v.percent))),
+          progressNote: v.note.trim().slice(0, 120),
+          progressBotId: who.id,
+          progressAt: new Date(),
+          updatedAt: new Date(),
+          version: sql`${discussion.version} + 1`,
+        })
+        .where(eq(discussion.id, d.id))
+        .returning();
+      return row!;
+    },
+    /**
      * Resolves: queued turns are cancelled, the facilitator gets one wrap-up turn (when someone else resolved it), and the origin chat
      * gets the summary. The discussion's notifications close: a solved discussion needs nothing from the owner.
      */
@@ -2280,6 +2312,7 @@ export function createDiscussionStore(
     "postAsOwner",
     "updateContext",
     "updateContextAsBot",
+    "reportProgress",
     "resolve",
     "resolveAsBot",
     "setStatus",

@@ -33,6 +33,7 @@ import { usePreferences } from "../preferences/preferences";
 import { TeamRoomRows } from "../teams/team-chats";
 import { discussionsApi, type DiscussionListItem } from "./discussions-api";
 import { groupRooms, orderRooms, roomLabel, roomSignal, type RoomSignal } from "./rooms";
+import { shownProgress } from "./room-progress";
 
 const OPEN_KEY = "zetta.sidebar-sections";
 type Sections = { rooms: boolean; issues: boolean };
@@ -155,6 +156,8 @@ function RoomRow({
   onAction: (d: DiscussionListItem, action: RoomAction) => void;
 }) {
   const signal = roomSignal(d);
+  // A room the lead reported on shows a thin line at the foot of its row; the page has the full bar and the note.
+  const progress = d.status === "open" || d.status === "paused" ? shownProgress(d) : null;
   const controls = useDragControls();
   const reduce = useReducedMotion();
   const at = reordering ? reordering.ids.indexOf(d.id) : -1;
@@ -173,7 +176,7 @@ function RoomRow({
         search={{ id: d.id }}
         data-chat-row
         aria-current={current ? "page" : undefined}
-        title={label}
+        title={progress === null ? label : `${label} · ${progress}%`}
         onClick={(e) => {
           // A drag that ends over the row is not a click.
           if (reordering?.dragging.current) e.preventDefault();
@@ -193,6 +196,14 @@ function RoomRow({
           <Signal signal={signal} />
         </span>
       </Link>
+      {progress !== null && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-2 bottom-0 h-0.5 overflow-hidden rounded-full bg-border/60"
+        >
+          <span className="block h-full bg-primary/70" style={{ width: `${progress}%` }} />
+        </span>
+      )}
       <Menu
         asChild
         hover={false}

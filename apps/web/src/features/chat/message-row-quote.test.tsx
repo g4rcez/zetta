@@ -110,6 +110,30 @@ test("a person's message shows who has read it, and a bot's reply never does", (
   expect(reply.querySelector('[aria-label^="Read by"]')).toBeNull();
 });
 
+test("the toolbar offers Pin where the page can pin, and Unpin on a pinned message", () => {
+  const picked: [string, boolean][] = [];
+  const plain = mount({});
+  openToolbar(plain);
+  expect(plain.querySelector('button[aria-label="Pin"]')).toBeNull();
+  const host = mount({ onPin: (r: { id: string }, pin: boolean) => picked.push([r.id, pin]) });
+  openToolbar(host);
+  act(() => (host.querySelector('button[aria-label="Pin"]') as unknown as HTMLElement).click());
+  const pinned = mount({
+    pinned: true,
+    onPin: (r: { id: string }, pin: boolean) => picked.push([r.id, pin]),
+  });
+  openToolbar(pinned);
+  expect(pinned.querySelector('button[aria-label="Pin"]')).toBeNull();
+  act(() => (pinned.querySelector('button[aria-label="Unpin"]') as unknown as HTMLElement).click());
+  expect(picked).toEqual([
+    ["m2", true],
+    ["m2", false],
+  ]);
+  // A pinned message says so beside its time.
+  expect(pinned.querySelector('[aria-label="Pinned"]')).not.toBeNull();
+  expect(host.querySelector('[aria-label="Pinned"]')).toBeNull();
+});
+
 /** Tabbing to the row's one tab stop swaps in the real toolbar. */
 const openToolbar = (host: HTMLElement) =>
   act(() => {

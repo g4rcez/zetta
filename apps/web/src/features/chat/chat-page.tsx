@@ -56,7 +56,9 @@ import {
 } from "./chat-client";
 import { asRow, shouldAutoOpen, transcriptRows, type Row } from "./chat-rows";
 import { DraftComposer, type DraftHandle } from "./draft-composer";
-import { MessageList, type RowActions } from "./message-list";
+import { MessageList, pinAuthorOf, type RowActions } from "./message-list";
+import { PinsBar } from "./pins-bar";
+import { usePins } from "./use-pins";
 import { SetupActionsContext, type SetupActions } from "./setup-actions";
 import type { Author } from "./message-row";
 import { ProposalsPanel } from "./proposals-panel";
@@ -423,12 +425,14 @@ export function ChatPage() {
       fail(e);
     }
   }
+  const { pins, pinnedIds, setPinned } = usePins(chatId, fail);
   // Stable identity: memoized rows must not re-render because the page did. Handlers read the latest closure through a ref.
   const latestActions = useRef<RowActions>(null as never);
   latestActions.current = {
     onReact: (row, emoji) => void toggleReact(row, emoji),
     onReply: (row) => setThread(row.id),
     onQuote: (row) => setQuoting(row),
+    onPin: (row, pin) => setPinned(row.id, pin),
     onOpenArtifact: (id) => setArtifact(id),
     stepOutputUrl: (stepId) => (chatId ? stepOutputUrl(chatId, stepId) : undefined),
     onSaveToMemory: (row) =>
@@ -461,6 +465,7 @@ export function ChatPage() {
       onReact: (row, emoji) => latestActions.current.onReact(row, emoji),
       onReply: (row) => latestActions.current.onReply(row),
       onQuote: (row) => latestActions.current.onQuote?.(row),
+      onPin: (row, pin) => latestActions.current.onPin?.(row, pin),
       onSaveToMemory: (row) => latestActions.current.onSaveToMemory(row),
       onQueue: (row, action) => latestActions.current.onQueue?.(row, action),
       onOpenArtifact: (id) => latestActions.current.onOpenArtifact?.(id),
@@ -746,6 +751,11 @@ export function ChatPage() {
                 </Button>
               </div>
             )}
+            <PinsBar
+              pins={pins}
+              authorOfPin={(pin) => pinAuthorOf(pin, authorOf)}
+              onUnpin={(id) => setPinned(id, false)}
+            />
             <SetupActionsContext.Provider value={setupActions}>
               <MessageList
                 key={chatId ?? `new:${botId}`}
@@ -757,6 +767,7 @@ export function ChatPage() {
                 busy={main.busy || loadingMessages}
                 label="Conversation"
                 actions={actions}
+                pinnedIds={pinnedIds}
                 intro={
                   <>
                     {loadingMessages && saved.length === 0 && (

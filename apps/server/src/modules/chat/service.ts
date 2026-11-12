@@ -158,6 +158,7 @@ import {
   type TurnStep,
 } from "@zetta/db/schema/discussions";
 import { seenInChat, seenInRoom } from "./seen";
+import { addPin, listPins, removePin } from "./pins";
 import { insertWithSlug, isUniqueViolation } from "../bots/slug";
 import { user } from "@zetta/db/schema/auth";
 import type { TeamStore } from "../teams/store";
@@ -6705,6 +6706,34 @@ export function createChatService(
           hasMore,
         };
       });
+    },
+    /** The people who see a conversation change: its owner, and the people of the team when it is a team room. */
+    async conversationReaders(conv: { id: string; kind: string; ownerUserId: string }) {
+      if (conv.kind !== "discussion") return [conv.ownerUserId];
+      const [d] = await db
+        .select({ teamId: discussionTable.teamId })
+        .from(discussionTable)
+        .where(eq(discussionTable.conversationId, conv.id));
+      const people = d?.teamId ? await teamPeople.list(d.teamId) : [];
+      return [...new Set([conv.ownerUserId, ...people.map((p) => p.userId)])];
+    },
+    /** The pinned messages of a conversation, newest first. Anyone who can read the conversation sees them. */
+    async listPins(actor: ActiveActor, conversationId: string) {
+      await this.getConversation(actor, conversationId);
+      return listPins(db, conversationId);
+    },
+    /** Pins a message to the top of the conversation. Anyone who can read the conversation may. */
+    async pinMessage(actor: ActiveActor, conversationId: string, messageId: string) {
+      const conv = await this.getConversation(actor, conversationId);
+      await addPin(db, conv.id, messageId, actor.userId);
+      events.publish(await this.conversationReaders(conv), topics.conversation(conv.id));
+      return listPins(db, conv.id);
+    },
+    async unpinMessage(actor: ActiveActor, conversationId: string, messageId: string) {
+      const conv = await this.getConversation(actor, conversationId);
+      await removePin(db, conv.id, messageId);
+      events.publish(await this.conversationReaders(conv), topics.conversation(conv.id));
+      return listPins(db, conv.id);
     },
     /** Uploads a text attachment (<=256KB). Binary content is rejected. */
     async addAttachment(

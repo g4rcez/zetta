@@ -21,6 +21,7 @@ import {
   type ChatService,
 } from "./service";
 import { IMAGE_TYPES } from "./images";
+import { MAX_PINS, PinLimitError } from "./pins";
 import { interviewInput, interviewTurn } from "./bot-interview";
 import { decisionConfigSchema } from "./routing";
 import { FileAccessError, type FileStore } from "./files";
@@ -429,6 +430,12 @@ export function createChatRoutes(
         409,
         "BOT_NOT_READY",
         "This bot is not ready yet. Its owner has to finish setting it up first.",
+      );
+    if (error instanceof PinLimitError)
+      return fail(
+        409,
+        "PIN_LIMIT",
+        `A conversation holds at most ${MAX_PINS} pins. Unpin one first.`,
       );
     if (error instanceof AgentsPausedError)
       return fail(409, "AGENTS_PAUSED", "Your agents are paused. Resume them to start new work.");
@@ -899,6 +906,31 @@ export function createChatRoutes(
             ? parse(z.coerce.number().int().min(1).max(500), query.limit)
             : undefined,
         }),
+      })),
+    )
+    .get(
+      "/conversations/:id/pins",
+      guarded(async ({ actor, params }) => ({
+        pins: await chat.listPins(actor, parse(uuid, params.id)),
+      })),
+    )
+    .post(
+      "/conversations/:id/pins",
+      guarded(
+        async ({ actor, body, params }) => ({
+          pins: await chat.pinMessage(
+            actor,
+            parse(uuid, params.id),
+            parse(z.strictObject({ messageId: uuid }), body).messageId,
+          ),
+        }),
+        201,
+      ),
+    )
+    .delete(
+      "/conversations/:id/pins/:messageId",
+      guarded(async ({ actor, params }) => ({
+        pins: await chat.unpinMessage(actor, parse(uuid, params.id), parse(uuid, params.messageId)),
       })),
     )
     .post(

@@ -19,6 +19,7 @@ import type { Bot } from "./chat-client";
 import { groupMessages, type Row } from "./chat-rows";
 import { repoByRow } from "./github-refs";
 import { MessageRow, type Author } from "./message-row";
+import type { Pin } from "./chat-client";
 
 export type RowActions = {
   onReact: (row: Row, emoji: string) => void;
@@ -26,6 +27,8 @@ export type RowActions = {
   /** Reply in the channel: the next message quotes this one. Without it the toolbar has no Reply button (threads, rooms). */
   onQuote?: (row: Row) => void;
   onSaveToMemory: (row: Row) => void;
+  /** Pin or unpin the message. Without it the toolbar has no Pin button. */
+  onPin?: (row: Row, pin: boolean) => void;
   onQueue?: (row: Row, action: QueueAction) => void;
   /** Open a published file beside the chat. Without it, an artifact receipt is a plain link to the artifact page. */
   onOpenArtifact?: (id: string) => void;
@@ -37,6 +40,14 @@ export type RowActions = {
 export function quoteAuthorOf(row: Row, authorOf: (row: Row) => Author): Author | undefined {
   const q = row.meta?.quote;
   return q ? authorOf({ ...row, role: q.role, botId: q.botId } as Row) : undefined;
+}
+
+/** Who wrote the message a pin points at, found the same way as the author of a row. */
+export function pinAuthorOf(
+  pin: Pick<Pin, "role" | "botId">,
+  authorOf: (row: Row) => Author,
+): Author {
+  return authorOf({ role: pin.role, botId: pin.botId } as Row);
 }
 
 /** Sending always brings you back to the newest message, even after reading history. */
@@ -103,6 +114,7 @@ type LineProps = {
   threads: boolean;
   readOnly: boolean;
   recent: boolean;
+  pinned: boolean;
   actions: RowActions;
 };
 
@@ -118,6 +130,7 @@ const Line = memo(function Line({
   threads,
   readOnly,
   recent,
+  pinned,
   actions,
 }: LineProps) {
   return (
@@ -149,6 +162,7 @@ const Line = memo(function Line({
             repo={repo}
             inThread={inThread || !threads}
             readOnly={readOnly}
+            pinned={pinned}
             {...actions}
           />
         )}
@@ -175,6 +189,7 @@ export function MessageList({
   intro,
   footer,
   actions,
+  pinnedIds,
   followToken = 0,
 }: {
   rows: Row[];
@@ -190,6 +205,8 @@ export function MessageList({
   intro?: ReactNode;
   footer?: ReactNode;
   actions: RowActions;
+  /** The ids of the pinned messages of this conversation: their rows show it and offer Unpin. */
+  pinnedIds?: ReadonlySet<string> | undefined;
   followToken?: number;
 }) {
   const grouped = useMemo(() => groupMessages(rows, fallbackBotId), [rows, fallbackBotId]);
@@ -220,6 +237,7 @@ export function MessageList({
                   threads={threads}
                   readOnly={readOnly}
                   recent={i >= grouped.length - RENDERED_TAIL}
+                  pinned={pinnedIds?.has(row.id) ?? false}
                   actions={actions}
                 />
               ))}

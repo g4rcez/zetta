@@ -360,6 +360,34 @@ export const reaction = zetta.table(
   ],
 );
 
+/**
+ * A message pinned to the top of its conversation (a chat, a thread's chat or a room). One pin per message; whoever can read the
+ * conversation may pin. The pin goes with the message: deleting a message deletes its pin.
+ */
+export const messagePin = zetta.table(
+  "message_pin",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversation.id, restrict),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => message.id, { onDelete: "cascade", onUpdate: "restrict" }),
+    pinnedByUserId: text("pinned_by_user_id")
+      .notNull()
+      .references(() => user.id, restrict),
+    createdAt: created(),
+  },
+  (t) => [
+    unique("message_pin_message_unique").on(t.messageId),
+    index("message_pin_conversation_idx").on(t.conversationId, t.createdAt),
+    index("message_pin_pinned_by_user_id_idx").on(t.pinnedByUserId),
+  ],
+);
+
 /** Attachments owned by one user; linked to a message when sent. Text (<=256KB) lives in `content`; images (<=10MB) live on disk under `path` (relative to the attachments root) and are never deleted. */
 export const attachment = zetta.table(
   "attachment",

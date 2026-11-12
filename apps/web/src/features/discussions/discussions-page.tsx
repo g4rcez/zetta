@@ -67,7 +67,9 @@ import { Drawer } from "@/components/drawer";
 import { ComputerActivity } from "../computer/computer-activity";
 import { refreshAttention } from "../attention/summary";
 import { MentionTextarea, mentionedBots, withoutMention } from "../chat/mention";
-import { MessageList } from "../chat/message-list";
+import { MessageList, pinAuthorOf } from "../chat/message-list";
+import { PinsBar } from "../chat/pins-bar";
+import { usePins } from "../chat/use-pins";
 import { useZettaChat } from "../chat/use-zetta-chat";
 import type { Author } from "../chat/message-row";
 import { ProposalsPanel } from "../chat/proposals-panel";
@@ -564,6 +566,7 @@ function RoomView({
     [bots, session?.user.name, session?.user.image, meAvatar, readOnly, detail?.owner.name],
   );
   const rows = useMemo(() => transcriptRows(messages, liveRows), [messages, liveRows]);
+  const { pins, pinnedIds, setPinned } = usePins(detail?.discussion.conversationId, fail);
 
   // The message the next post replies to. It belongs to one room, so it goes when the room changes.
   const [quoting, setQuoting] = useState<Row>();
@@ -967,6 +970,11 @@ function RoomView({
         ) : (
           <>
             <BotsContext.Provider value={botsById}>
+              <PinsBar
+                pins={pins}
+                authorOfPin={(pin) => pinAuthorOf(pin, authorOf)}
+                onUnpin={(id) => setPinned(id, false)}
+              />
               <MessageList
                 key={d.conversationId}
                 followToken={sent}
@@ -976,7 +984,9 @@ function RoomView({
                 busy={turnsOpen(detail) > 0 || streamBusy}
                 label="Room transcript"
                 threads={false}
+                pinnedIds={pinnedIds}
                 actions={{
+                  onPin: (row, pin) => setPinned(row.id, pin),
                   onReact: (row, emoji) => void chatClient.react(row.id, emoji).then(load, fail),
                   onReply: () => {},
                   onQuote: setQuoting,

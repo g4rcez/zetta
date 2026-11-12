@@ -15,10 +15,12 @@ import {
   ChatTextIcon,
   DotsThreeIcon,
   PaperclipIcon,
+  PushPinIcon,
   SmileyIcon,
 } from "@phosphor-icons/react";
 
 import { ActionHint } from "@/components/action-hint";
+import { IconHint } from "@/components/icon-hint";
 import { Button, Dropdown, Menu, MenuItem } from "@/components/ui";
 import {
   Message,
@@ -212,6 +214,8 @@ function HoverBar({
   onReact,
   onReply,
   onQuote,
+  pinned,
+  onPin,
   onSaveToMemory,
 }: {
   row: Row;
@@ -221,6 +225,8 @@ function HoverBar({
   onReact: (emoji: string) => void;
   onReply: () => void;
   onQuote: (() => void) | undefined;
+  pinned: boolean;
+  onPin: (() => void) | undefined;
   onSaveToMemory: () => void;
 }) {
   const bar = useRef<HTMLDivElement>(null);
@@ -261,6 +267,18 @@ function HoverBar({
           </Button>
         </ActionHint>
       )}
+      {onPin && (
+        <ActionHint label={pinned ? "Unpin" : "Pin"}>
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label={pinned ? "Unpin" : "Pin"}
+            onClick={onPin}
+          >
+            <PushPinIcon weight={pinned ? "fill" : "regular"} />
+          </Button>
+        </ActionHint>
+      )}
       <CopyButton text={row.content} label="Copy message" className="!size-7 [&_svg]:!size-3.5" />
       {row.role === "assistant" && (
         <Menu
@@ -287,7 +305,7 @@ function HoverBar({
 }
 
 /** Brings the quoted message into view and flashes it. Nothing happens when it is not loaded in this list. */
-function showMessage(id: string) {
+export function showMessage(id: string) {
   const el = document.getElementById(`message-${id}`);
   if (!el) return;
   const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -489,6 +507,8 @@ export const MessageRow = memo(function MessageRow({
   onReply,
   onQuote,
   onSaveToMemory,
+  onPin,
+  pinned = false,
   onQueue,
   onOpenArtifact,
   stepOutputUrl,
@@ -507,6 +527,10 @@ export const MessageRow = memo(function MessageRow({
   /** Reply in the channel. Without it the toolbar has no Reply button. */
   onQuote?: (row: Row) => void;
   onSaveToMemory: (row: Row) => void;
+  /** Pin or unpin the message. Without it the toolbar has no Pin button. */
+  onPin?: (row: Row, pin: boolean) => void;
+  /** This message is pinned in its conversation. */
+  pinned?: boolean;
   /** A queued message: drop it before it is answered, or put a failed one back in line. */
   onQueue?: (row: Row, action: QueueAction) => void;
   /** Open a published file beside the chat instead of leaving it. */
@@ -573,6 +597,8 @@ export const MessageRow = memo(function MessageRow({
             onReact={(e) => onReact(row, e)}
             onReply={() => onReply(row)}
             onQuote={onQuote && (() => onQuote(row))}
+            pinned={pinned}
+            onPin={onPin && (() => onPin(row, !pinned))}
             onSaveToMemory={() => onSaveToMemory(row)}
           />
         ))}
@@ -606,6 +632,11 @@ export const MessageRow = memo(function MessageRow({
             >
               {time(row.createdAt, tf)}
             </time>
+            {pinned && (
+              <IconHint label="Pinned">
+                <PushPinIcon weight="fill" className="size-3 text-primary" />
+              </IconHint>
+            )}
           </MessageHeader>
         )}
         <PictureStrip pics={(row.attachments ?? []).filter(isImage)} />

@@ -14,6 +14,9 @@ import { createBotClaude } from "../bot-claude/store";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
 import { createChatService } from "../chat/service";
+import { insertMessage } from "../chat/messages";
+import { MAX_PINS } from "../chat/pins";
+import { messagePin } from "@zetta/db/schema/features";
 import { createFeaturesService } from "../features/service";
 import { createDiscussionStore } from "./store";
 import { createDiscussionWorker } from "./worker";
@@ -2176,6 +2179,119 @@ suite("group discussions against compose postgres", () => {
       expect((await seenOf(c, "hello bot"))?.seenBy).toEqual([b.id]);
       const reply = (await messagesOf(A, c)).find((m) => m.role === "assistant")!;
       expect("seenBy" in reply).toBe(false);
+    });
+  });
+
+  // Pinned messages: a bar of what matters at the top of a chat or a room. Whoever can read the conversation may pin.
+  describe("pinned messages", () => {
+    const pinsOf = async (as: string, conv: string) =>
+      (await call(as, "GET", `/api/conversations/${conv}/pins`)).json.pins as {
+        messageId: string;
+        role: string;
+        excerpt: string;
+        pinnedByUserId: string;
+      }[];
+    const talk = async (botName: string, lines: string[]) => {
+      const b = await makeBot(A, botName);
+      replies[botName] = lines.map((l) => `reply to ${l}`);
+      const { c, say } = await chatWith(A, b.id);
+      for (const l of lines) await say(l);
+      return { c, messages: await messagesOf(A, c) };
+    };
+
+    test("pins are listed newest first with a one-line excerpt; pinning twice changes nothing; unpinning removes", async () => {
+      const { c, messages } = await talk("PinBot", ["first thing", "second\n\n   thing"]);
+      const first = messages.find((m) => m.content === "first thing")!;
+      const second = messages.find((m) => m.content.startsWith("second"))!;
+      expect(
+        (await call(A, "POST", `/api/conversations/${c}/pins`, { messageId: first.id })).status,
+      ).toBe(201);
+      await call(A, "POST", `/api/conversations/${c}/pins`, { messageId: second.id });
+      // The same message again: still two pins.
+      await call(A, "POST", `/api/conversations/${c}/pins`, { messageId: second.id });
+      const pins = await pinsOf(A, c);
+      expect(pins.map((p) => p.messageId)).toEqual([second.id, first.id]);
+      expect(pins[0]).toMatchObject({ role: "user", excerpt: "second thing", pinnedByUserId: A });
+      const after = await call(A, "DELETE", `/api/conversations/${c}/pins/${second.id}`);
+      expect(after.status).toBe(200);
+      expect(after.json.pins.map((p: { messageId: string }) => p.messageId)).toEqual([first.id]);
+      // Unpinning what is not pinned is fine.
+      expect((await call(A, "DELETE", `/api/conversations/${c}/pins/${second.id}`)).status).toBe(
+        200,
+      );
+    });
+
+    test("a system line or a message of another chat cannot be pinned; another person sees nothing", async () => {
+      const { c, messages } = await talk("PinBot2", ["hello"]);
+      const other = await talk("PinBot3", ["elsewhere"]);
+      const system = await insertMessage(db, c, {
+        ownerUserId: A,
+        role: "system",
+        content: "notice",
+      });
+      const post = (messageId: string) =>
+        call(A, "POST", `/api/conversations/${c}/pins`, { messageId });
+      expect((await post(system.id)).status).toBe(404);
+      expect((await post(other.messages[0]!.id)).status).toBe(404);
+      expect((await post("not-an-id")).status).toBe(400);
+      await post(messages[0]!.id);
+      expect((await call(B, "GET", `/api/conversations/${c}/pins`)).status).toBe(404);
+      expect(
+        (await call(B, "POST", `/api/conversations/${c}/pins`, { messageId: messages[0]!.id }))
+          .status,
+      ).toBe(404);
+    });
+
+    test(`a conversation holds at most ${MAX_PINS} pins`, async () => {
+      const b = await makeBot(A, "PinMany");
+      const { c } = await chatWith(A, b.id);
+      const ids: string[] = [];
+      for (let i = 0; i <= MAX_PINS; i++)
+        ids.push(
+          (await insertMessage(db, c, { ownerUserId: A, role: "user", content: `m${i}` })).id,
+        );
+      for (const id of ids.slice(0, MAX_PINS))
+        expect(
+          (await call(A, "POST", `/api/conversations/${c}/pins`, { messageId: id })).status,
+        ).toBe(201);
+      const over = await call(A, "POST", `/api/conversations/${c}/pins`, {
+        messageId: ids[MAX_PINS],
+      });
+      expect(over.status).toBe(409);
+      expect(over.json.error?.code ?? over.json.code).toBe("PIN_LIMIT");
+      expect(await pinsOf(A, c)).toHaveLength(MAX_PINS);
+      // A message that is already pinned is not "one more".
+      expect(
+        (await call(A, "POST", `/api/conversations/${c}/pins`, { messageId: ids[0] })).status,
+      ).toBe(201);
+    });
+
+    test("deleting a conversation takes its pins with it", async () => {
+      const { c, messages } = await talk("PinBot4", ["keep this"]);
+      await call(A, "POST", `/api/conversations/${c}/pins`, { messageId: messages[0]!.id });
+      expect(
+        await db.select().from(messagePin).where(eq(messagePin.conversationId, c)),
+      ).toHaveLength(1);
+      expect((await call(A, "DELETE", `/api/conversations/${c}`)).status).toBe(200);
+      expect(
+        await db.select().from(messagePin).where(eq(messagePin.conversationId, c)),
+      ).toHaveLength(0);
+    });
+
+    test("a room has pins too", async () => {
+      const x = await makeBot(A, "PinRoomBot");
+      replies.PinRoomBot = ["noted"];
+      const created = await call(A, "POST", "/api/discussions", {
+        title: "Pin room",
+        goal: "x",
+        members: [{ bot: x.id }],
+        firstMessage: `[@PinRoomBot](bot:${x.id}) remember the date`,
+      });
+      await worker.drain();
+      const conv = created.json.discussion.conversationId as string;
+      const post = (await messagesOf(A, conv)).find((m) => m.role === "assistant")!;
+      await call(A, "POST", `/api/conversations/${conv}/pins`, { messageId: post.id });
+      expect((await pinsOf(A, conv)).map((p) => p.messageId)).toEqual([post.id]);
     });
   });
 });

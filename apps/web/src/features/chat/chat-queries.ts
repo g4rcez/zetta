@@ -24,6 +24,12 @@ export const chatQueries = {
       queryKey: ["conversations", conversationId, "messages"],
       queryFn: () => chatClient.messages(conversationId),
     }),
+  /** Under the conversation's key, so the live "conversation changed" signal refreshes it with the messages. */
+  pins: (conversationId: string) =>
+    queryOptions({
+      queryKey: ["conversations", conversationId, "pins"],
+      queryFn: () => chatClient.pins(conversationId),
+    }),
   loops: (conversationId: string) =>
     queryOptions({
       queryKey: ["conversations", conversationId, "loops"],

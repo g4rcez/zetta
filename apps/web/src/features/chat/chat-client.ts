@@ -265,6 +265,16 @@ export type MessageMeta = {
     status: string;
   };
 } | null;
+/** A message pinned to the top of its conversation: who wrote it, its first words, and who pinned it and when. */
+export type Pin = {
+  messageId: string;
+  role: "user" | "assistant";
+  botId: string | null;
+  excerpt: string;
+  pinnedByUserId: string;
+  pinnedAt: string;
+};
+
 export type Message = {
   attachments?: Attachment[];
   botId?: string | null;
@@ -570,6 +580,17 @@ export const chatClient = {
       previewHash,
       requestKey: uuidv7(),
     }),
+  /** The pinned messages of a conversation (a chat or a room), newest first. */
+  pins: (conversationId: string) =>
+    call<{ pins: Pin[] }>(`/api/conversations/${conversationId}/pins`).then((r) => r.pins),
+  pin: (conversationId: string, messageId: string) =>
+    call<{ pins: Pin[] }>(`/api/conversations/${conversationId}/pins`, "POST", {
+      messageId,
+    }).then((r) => r.pins),
+  unpin: (conversationId: string, messageId: string) =>
+    call<{ pins: Pin[] }>(`/api/conversations/${conversationId}/pins/${messageId}`, "DELETE").then(
+      (r) => r.pins,
+    ),
   react: (messageId: string, emoji: string) =>
     call(`/api/messages/${messageId}/reactions`, "POST", { emoji }),
   unreact: (messageId: string, emoji: string) =>

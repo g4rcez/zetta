@@ -112,7 +112,6 @@ export function ModeToggle({
     <Menu
       asChild
       hover={false}
-      restoreFocus
       title=""
       floatingClassName="w-56 [--var-menu-surface-max-block-size:min(32rem,90dvh)]"
       label={trigger}

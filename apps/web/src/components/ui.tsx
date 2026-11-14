@@ -99,7 +99,7 @@ export const Radiobox = LibRadiobox;
 
 /**
  * Action menus and panels. `Menu` opens at the bottom-start of its trigger (flipping when there is no room) and has no `align`/`side`.
- * Pass `hover={false}` (a menu opens on click, not on hover) and `restoreFocus` (focus goes back to the trigger). Width goes in
+ * Pass `hover={false}` (a menu opens on click, not on hover); the focus goes back to the trigger by default. Width goes in
  * `floatingClassName`; the max height is the token `[--var-menu-surface-max-block-size:…]`, because a Tailwind class loses to the library CSS.
  * A trigger with its own `aria-label` passes `title=""`: `title` is required for an element label and would show a native tooltip.
  */

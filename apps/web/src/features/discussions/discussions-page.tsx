@@ -730,7 +730,6 @@ function RoomView({
             <Menu
               asChild
               hover={false}
-              restoreFocus
               title="Room actions"
               floatingClassName="w-52"
               label={

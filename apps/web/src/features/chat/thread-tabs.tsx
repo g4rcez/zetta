@@ -239,7 +239,6 @@ export function ThreadTabs({
         <Menu
           asChild
           hover={false}
-          restoreFocus
           title=""
           floatingClassName="w-44"
           label={

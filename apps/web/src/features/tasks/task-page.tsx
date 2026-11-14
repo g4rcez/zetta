@@ -397,7 +397,6 @@ export function TaskDetail({
                 <Menu
                   asChild
                   hover={false}
-                  restoreFocus
                   title=""
                   floatingClassName="w-44"
                   label={
@@ -429,7 +428,6 @@ export function TaskDetail({
                   <Menu
                     asChild
                     hover={false}
-                    restoreFocus
                     title=""
                     floatingClassName="w-44"
                     label={

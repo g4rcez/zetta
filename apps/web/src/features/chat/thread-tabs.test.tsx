@@ -111,5 +111,6 @@ test("the title opens the chat switcher with the search field focused, and a pic
   ]);
   await press(options[1]!);
   expect(onOpen).toHaveBeenCalledWith("c2");
-  expect(win.document.querySelector('[role="dialog"][aria-label="Switch chat"]')).toBeNull();
+  // The panel fades out (library exit animation) and happy-dom does not finish that, so check the trigger, not the node.
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
 });

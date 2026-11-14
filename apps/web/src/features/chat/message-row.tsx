@@ -265,7 +265,6 @@ function HoverBar({
         <Menu
           asChild
           hover={false}
-          restoreFocus
           title=""
           floatingClassName="min-w-44"
           label={

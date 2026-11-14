@@ -134,3 +134,31 @@ test("the line has no dashed box around it", async () => {
   expect(host.querySelector("details")!.className).not.toContain("border-dashed");
   await unmount();
 });
+
+// A room turn that no live stream follows (past the cap, a read-only viewer, a reload) is read from the saved row. It used to be an empty
+// row, so the page said "Thinking" for as long as the bot worked; now the row keeps its steps and what it does now in `meta`.
+test("a running reply read from the saved row shows its steps and what the bot does now", async () => {
+  const { WorkTimeline } = await import("./work-timeline");
+  const host = win.document.createElement("div");
+  win.document.body.append(host);
+  const root = createRoot(host as unknown as Element);
+  const saved = {
+    id: "r2",
+    status: "running",
+    createdAt: "2026-11-06T10:00:00.000Z",
+    meta: {
+      activity: "Running bun test",
+      timeline: [
+        { at: 1_000, label: "Reading apps/web/package.json" },
+        { at: 5_000, label: "Editing apps/web/src/app.tsx" },
+        { at: 9_000, label: "Running bun test" },
+      ],
+    },
+  };
+  await act(async () => root.render(<WorkTimeline row={saved as never} working />));
+  const text = host.textContent ?? "";
+  expect(text).toContain("Reading apps/web/package.json");
+  expect(text).toContain("Editing apps/web/src/app.tsx");
+  expect(text).toContain("Running bun test");
+  await act(async () => root.unmount());
+});

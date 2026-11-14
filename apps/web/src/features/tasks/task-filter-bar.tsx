@@ -5,6 +5,7 @@ import {
   CheckIcon,
   FunnelIcon,
   MagnifyingGlassIcon,
+  RobotIcon,
   TagIcon,
   UserCircleDashedIcon,
   UserCircleIcon,
@@ -18,10 +19,12 @@ import type { Bot } from "../chat/chat-client";
 import { LabelChip, PriorityIcon, StatusIcon } from "./task-badges";
 import {
   activeCount,
+  ANY_BOT,
   DEFAULT_STATE,
   FOR_ME,
   NO_BOT,
   SORT_OPTIONS,
+  STAGE_OPTIONS,
   THREAD_OPTIONS,
   WINDOW_OPTIONS,
   type GroupBy,
@@ -198,7 +201,7 @@ function AssigneeAvatar({
   );
 }
 
-/** The avatar row filters by bot, by the tasks nobody owns, and by the tasks a bot asked of the viewer. */
+/** The avatar row filters by any bot, by one bot, by the tasks nobody owns, and by the tasks a bot asked of the viewer. */
 function AssigneeRow({
   bots,
   selected,
@@ -215,6 +218,14 @@ function AssigneeRow({
         name="For me"
         detail="Tasks a bot asked of you"
         face={<UserCircleIcon aria-hidden className="size-6 text-foreground" />}
+        selected={selected}
+        onChange={onChange}
+      />
+      <AssigneeAvatar
+        id={ANY_BOT}
+        name="All bots"
+        detail="Tasks any bot works on"
+        face={<RobotIcon aria-hidden className="size-6 text-foreground" />}
         selected={selected}
         onChange={onChange}
       />
@@ -262,6 +273,12 @@ export function TaskFilterBar({
 
   return (
     <div role="search" aria-label="Filter tasks" className="flex flex-wrap items-center gap-2">
+      <Segmented
+        label="Stage"
+        value={state.stage}
+        options={STAGE_OPTIONS}
+        onChange={(stage) => set({ stage })}
+      />
       <AssigneeRow bots={bots} selected={state.botIds} onChange={(botIds) => set({ botIds })} />
       <ChipPanel
         icon={<TagIcon aria-hidden className="size-4" />}

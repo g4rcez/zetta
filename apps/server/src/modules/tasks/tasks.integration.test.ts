@@ -407,6 +407,47 @@ suite("tasks kanban against compose postgres", () => {
     const off = await store.update(owner, row.id, { followUp: "off" });
     expect(off).toMatchObject({ followUp: "off", nextCheckAt: null });
   });
+  test("a step that starts or ends takes its task out of the backlog, and a held task stays held", async () => {
+    const owner = await actorOf(ids[0]!);
+    const parent = await store.create(owner, { title: "Plan in backlog" });
+    const first = await store.create(owner, { title: "step 1", parentTaskId: parent.id });
+    const second = await store.create(owner, { title: "step 2", parentTaskId: parent.id });
+    expect((await store.get(owner, parent.id)).status).toBe("backlog");
+    await store.update(owner, first.id, { status: "in_progress" });
+    expect((await store.get(owner, parent.id)).status).toBe("in_progress");
+    // Moving the parent on by hand is not undone by the next step.
+    await store.update(owner, parent.id, { status: "review" });
+    await store.update(owner, second.id, { status: "done" });
+    expect((await store.get(owner, parent.id)).status).toBe("review");
+    // A step that only changes its title does not start anything.
+    const quiet = await store.create(owner, { title: "Quiet plan" });
+    const step = await store.create(owner, { title: "step", parentTaskId: quiet.id });
+    await store.update(owner, step.id, { title: "renamed" });
+    expect((await store.get(owner, quiet.id)).status).toBe("backlog");
+  });
+  test("a task write tells the live channel who to refresh, and a failing listener breaks nothing", async () => {
+    const owner = await actorOf(ids[0]!);
+    const told: string[][] = [];
+    store.onChange = (u) => void told.push(u);
+    try {
+      const row = await store.create(owner, { title: "Watched" });
+      await store.update(owner, row.id, { priority: "high" });
+      await store.start(row.id);
+      expect((await store.get(owner, row.id)).status).toBe("in_progress");
+      const asked = await ask(ids[2]!, "Watched ask");
+      await store.remove(owner, row.id);
+      expect(told.length).toBe(5);
+      expect(told.slice(0, 3).every((u) => u.length === 1 && u[0] === ids[0]!)).toBe(true);
+      // A task asked of a person refreshes the asker and that person.
+      expect([...told[3]!].sort()).toEqual([ids[0]!, ids[2]!].sort());
+      store.onChange = () => {
+        throw new Error("listener down");
+      };
+      await expect(store.update(owner, asked.id, { priority: "low" })).resolves.toBeDefined();
+    } finally {
+      store.onChange = undefined;
+    }
+  });
   test("the routes add a subtask, refuse to close a parent early and resume a follow-up", async () => {
     const parent = (await (
       await call(ids[0]!, "POST", "/api/tasks", { title: "Route parent" })

@@ -3,6 +3,7 @@ import { mentionsAsText } from "@zetta/core/mentions";
 import { Link } from "@tanstack/react-router";
 import {
   ChatIcon,
+  CircleNotchIcon,
   DotsThreeIcon,
   KanbanIcon,
   ListIcon,
@@ -15,9 +16,12 @@ import { useEffect, useState, type DragEvent } from "react";
 import { toast } from "@/lib/notify";
 import { Button, Input, MENU_DANGER, Menu, MenuItem } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
+import { BOT_STATUS, BotStatusDot } from "@/components/bot-status";
+import { cn } from "@zetta/ui/lib/utils";
 import { authClient } from "@/lib/auth-client";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
+import { useBotStatus } from "../bots/status";
 import { relativeTime } from "../shared/relative-time";
 import { FollowUpChip, LabelChips, PriorityIcon, StepChip } from "./task-badges";
 import { GROUP_OPTIONS, Segmented, TaskFilterBar } from "./task-filter-bar";
@@ -26,8 +30,10 @@ import {
   applyFilters,
   DEFAULT_STATE,
   groupTasks,
+  isWorkInProgress,
   parseTaskSearch,
   toTaskSearch,
+  WORK_IN_PROGRESS,
   type TaskLayout,
   type TaskSearch,
   type TaskState,
@@ -73,8 +79,9 @@ export function TasksPage({
   const setState = (next: TaskState) => onSearch(toTaskSearch(next));
   const now = Date.now();
   const visible = applyFilters(tasks, state, now, viewerId);
-  const groups = groupTasks(visible, state.groupBy, bots, state.statuses);
+  const groups = groupTasks(visible, state.groupBy, bots, state.statuses, state.stage);
   const byStatus = state.groupBy === "status";
+  const wip = isWorkInProgress(state);
   const knownLabels = [...new Set(tasks.flatMap((t) => t.labels))].sort();
   const fail = (e: unknown) => toast.error(errorMessage(e));
 
@@ -138,6 +145,24 @@ export function TasksPage({
             options={LAYOUTS}
             onChange={(view) => setState({ ...state, view })}
           />
+          {/* No hint: it shows the text Work in progress. */}
+          <Button
+            type="button"
+            size="sm"
+            variant={wip ? "secondary" : "outline"}
+            aria-pressed={wip}
+            // Pressed again, it goes back to the plain board: the filters it set are the ones it clears.
+            onClick={() =>
+              setState(
+                wip
+                  ? { ...DEFAULT_STATE, view: state.view, task: state.task }
+                  : { ...state, ...WORK_IN_PROGRESS },
+              )
+            }
+          >
+            <CircleNotchIcon aria-hidden className="size-4" />
+            Work in progress
+          </Button>
           <div className="ml-auto flex flex-wrap items-center gap-3">
             <p aria-live="polite" className="text-sm tabular-nums text-muted-foreground">
               {visible.length} of {tasks.length} {tasks.length === 1 ? "task" : "tasks"}
@@ -306,6 +331,20 @@ export function TasksPage({
   );
 }
 
+/** "Working" or "Planning" while the bot's live run is on this very task. Nothing otherwise, so an idle task adds no noise. */
+function TaskWorking({ task }: { task: Task }) {
+  const entry = useBotStatus(task.botId ?? undefined);
+  if (entry?.task?.id !== task.id) return null;
+  if (entry.status !== "working" && entry.status !== "planning") return null;
+  const { text, Icon, label } = BOT_STATUS[entry.status];
+  return (
+    <span title={entry.reason} className={cn("label-mono inline-flex items-center gap-1", text)}>
+      <Icon aria-hidden="true" className="size-3.5" weight="bold" />
+      {label}
+    </span>
+  );
+}
+
 function TaskCard({
   task,
   now,
@@ -332,6 +371,8 @@ function TaskCard({
   onDelete: () => void;
 }) {
   const tf = useTimeFormat();
+  /** A task a bot owns for itself and has not finished: the card says what the bot is doing with it. */
+  const botWork = task.assignee === "bot" && task.botId !== null && task.status !== "done";
   return (
     <li
       draggable={draggable}
@@ -354,7 +395,12 @@ function TaskCard({
         )}
         {bot && (
           <span title={bot.name} className="shrink-0">
-            <BotAvatar bot={bot} size={20} square />
+            <BotAvatar
+              bot={bot}
+              size={20}
+              square
+              badge={<BotStatusDot botId={bot.id} className="size-2 border-background" />}
+            />
           </span>
         )}
         <Menu
@@ -391,8 +437,19 @@ function TaskCard({
           {mentionsAsText(task.description)}
         </p>
       )}
-      {(task.priority !== "none" || task.labels.length > 0 || steps || task.followUp !== "off") && (
+      {botWork && task.progress.trim() !== "" && (
+        // The bot's own note on where it stopped: the first line is enough on a card, the task page has the rest.
+        <p title={task.progress} className="line-clamp-1 break-words text-xs text-muted-foreground">
+          {task.progress.trim().split("\n")[0]}
+        </p>
+      )}
+      {(task.priority !== "none" ||
+        task.labels.length > 0 ||
+        steps ||
+        task.followUp !== "off" ||
+        botWork) && (
         <div className="flex flex-wrap items-center gap-1.5">
+          {botWork && <TaskWorking task={task} />}
           {task.priority !== "none" && <PriorityIcon priority={task.priority} />}
           {steps && <StepChip count={steps} />}
           <FollowUpChip task={task} />

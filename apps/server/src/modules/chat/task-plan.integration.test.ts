@@ -7,7 +7,7 @@ import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
 import { createTaskStore } from "../tasks/store";
-import { attentionItem } from "@zetta/db/schema/features";
+import { attentionItem, configProposal } from "@zetta/db/schema/features";
 import { and, eq } from "@zetta/db/query";
 import { QUIET_MS } from "../tasks/follow-up";
 import { createLoopStore } from "./loops";
@@ -258,7 +258,7 @@ suite("a bot plans its work as a task with subtasks", () => {
     expect(await pendingCards()).toBe(before);
   });
 
-  test("after outside content a task the bot does not own still waits for a card", async () => {
+  test("after outside content a bot also moves a task it does not own at once, without a card", async () => {
     const { say } = await setup();
     const made = await call("POST", "/api/tasks", { title: "Made on the board" });
     const boardId = made.json.task.id as string;
@@ -267,11 +267,37 @@ suite("a bot plans its work as a task with subtasks", () => {
       "Touch the board task",
       fence("task", { action: "list" }),
       fence("task", { action: "update", id: boardId, status: "done" }),
-      "Asked.",
+      "Done.",
     );
     const row = (await board()).find((t) => t.id === boardId)!;
-    expect(row.status).toBe("backlog");
-    expect(await pendingCards()).toBe(before + 1);
+    expect(row.status).toBe("done");
+    expect(await pendingCards()).toBe(before);
+  });
+
+  test("a card raised before tasks stopped waiting still runs its task call when it is approved", async () => {
+    const { bot, c } = await setup();
+    const made = await call("POST", "/api/tasks", { title: "Held by an old card" });
+    const boardId = made.json.task.id as string;
+    const [card] = await db
+      .insert(configProposal)
+      .values({
+        ownerUserId: A,
+        botId: bot.id,
+        proposedByBotId: bot.id,
+        kind: "bot_action",
+        baseVersion: 0,
+        patch: {
+          botId: bot.id,
+          conversationId: c,
+          scope: { policy: "default" },
+          calls: [{ kind: "task", args: { action: "update", id: boardId, status: "done" } }],
+        },
+        diff: [{ field: "task", from: null, to: "task update" }],
+      })
+      .returning();
+    const decided = await call("POST", `/api/proposals/${card!.id}/decision`, { approve: true });
+    expect(decided.json).toMatchObject({ status: "approved" });
+    expect((await board()).find((t) => t.id === boardId)!.status).toBe("done");
   });
 
   test("a task with an open step cannot be closed, and the bot is told which", async () => {

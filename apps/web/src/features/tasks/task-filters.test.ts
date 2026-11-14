@@ -1,14 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import {
   activeCount,
+  ANY_BOT,
   applyFilters,
   DEFAULT_FILTERS,
   DEFAULT_STATE,
   FOR_ME,
   groupTasks,
+  isWorkInProgress,
   NO_BOT,
   parseTaskSearch,
   toTaskSearch,
+  WORK_IN_PROGRESS,
   type TaskFilters,
 } from "./task-filters";
 import type { Task } from "./tasks-api";
@@ -94,6 +97,33 @@ describe("applyFilters", () => {
     expect(ids({ botIds: ["writer"] })).toEqual(["a", "d"]);
     expect(ids({ botIds: [NO_BOT] })).toEqual(["c"]);
     expect(ids({ botIds: ["reviewer", NO_BOT] })).toEqual(["b", "c"]);
+  });
+
+  test("the any-bot choice keeps every task a bot owns, and nothing for nobody or for a person", () => {
+    expect(ids({ botIds: [ANY_BOT] })).toEqual(["a", "b", "d"]);
+    const withPerson = [
+      ...tasks,
+      task({
+        id: "p",
+        title: "Sign in",
+        botId: "writer",
+        assignee: "person",
+        assigneeUserId: "u1",
+      }),
+    ];
+    expect(
+      applyFilters(withPerson, { ...DEFAULT_FILTERS, botIds: [ANY_BOT] }, now, "u1").map(
+        (t) => t.id,
+      ),
+    ).toEqual(["a", "b", "d"]);
+  });
+
+  test("the stage keeps what is not done yet, or only what is", () => {
+    expect(ids({ stage: "open" })).toEqual(["a", "b", "d"]);
+    expect(ids({ stage: "done" })).toEqual(["c"]);
+    expect(ids({ stage: "open", botIds: ["writer"] })).toEqual(["a", "d"]);
+    // Together with a status the two must both hold.
+    expect(ids({ stage: "open", statuses: ["done"] })).toEqual([]);
   });
 
   test("status filter keeps only the chosen columns", () => {
@@ -230,6 +260,10 @@ describe("activeCount", () => {
     ).toBe(2);
   });
 
+  test("a stage counts as one filter", () => {
+    expect(activeCount({ ...DEFAULT_FILTERS, stage: "open" })).toBe(1);
+  });
+
   test("a query of only spaces is not a filter", () => {
     expect(activeCount({ ...DEFAULT_FILTERS, query: "   " })).toBe(0);
   });
@@ -252,6 +286,16 @@ describe("groupTasks", () => {
       ["review", ["b"]],
       ["done", ["c"]],
     ]);
+  });
+
+  test("the stage takes its columns off the board: no Done column while open, only Done when done", () => {
+    expect(groupTasks(tasks, "status", bots, [], "open").map((g) => g.key)).toEqual([
+      "backlog",
+      "in_progress",
+      "blocked",
+      "review",
+    ]);
+    expect(groupTasks(tasks, "status", bots, [], "done").map((g) => g.key)).toEqual(["done"]);
   });
 
   test("by status keeps only the chosen columns", () => {
@@ -283,6 +327,23 @@ describe("groupTasks", () => {
 describe("parseTaskSearch", () => {
   test("an empty URL gives no search params", () => {
     expect(parseTaskSearch({})).toEqual({});
+  });
+
+  test("the work in progress link round-trips and an unknown stage falls back to any", () => {
+    const url = parseTaskSearch({ stage: "open", botIds: ANY_BOT, groupBy: "assignee" });
+    expect(url).toEqual(toTaskSearch({ ...DEFAULT_STATE, ...WORK_IN_PROGRESS }));
+    expect(url).toEqual({ stage: "open", botIds: [ANY_BOT], groupBy: "assignee" });
+    expect(isWorkInProgress({ ...DEFAULT_STATE, ...url })).toBe(true);
+    expect(parseTaskSearch({ stage: "later" })).toEqual({});
+    expect(parseTaskSearch({ stage: "any" })).toEqual({});
+  });
+
+  test("the view only counts as work in progress when nothing else is in the way", () => {
+    const wip = { ...DEFAULT_STATE, ...WORK_IN_PROGRESS };
+    expect(isWorkInProgress(wip)).toBe(true);
+    expect(isWorkInProgress({ ...wip, botIds: [ANY_BOT, "writer"] })).toBe(false);
+    expect(isWorkInProgress({ ...wip, stage: "any" })).toBe(false);
+    expect(isWorkInProgress({ ...wip, groupBy: "status" })).toBe(false);
   });
 
   test("keeps valid values", () => {

@@ -75,7 +75,7 @@ export type HeartbeatDeps = {
   db: Pick<Database, "insert" | "update">;
   tasks: Pick<
     TaskStore,
-    "due" | "plan" | "claim" | "release" | "postpone" | "finishCheck" | "pauseFollowUp"
+    "due" | "plan" | "claim" | "release" | "postpone" | "finishCheck" | "pauseFollowUp" | "start"
   >;
   /** One follow-up turn: a chat turn as the owner, or a wake-up of the member in a room. */
   runTurn: FollowUpTurn;
@@ -100,6 +100,8 @@ export function createTaskHeartbeat(d: HeartbeatDeps) {
     const row = await d.tasks.pauseFollowUp(task.id, reason);
     if (!row || !card) return;
     await raiseAttention(d.db, row.ownerUserId, {
+      kind: "task_follow",
+      subjectId: row.id,
       botId: row.botId,
       title: "A bot stopped before finishing a task",
       detail: `${row.title.slice(0, 200)}: ${reason}`,
@@ -143,7 +145,14 @@ export function createTaskHeartbeat(d: HeartbeatDeps) {
         await d.tasks.postpone(id, COVERED_WAIT_MS);
         return;
       }
-      const snapshot = planSnapshot(task, before.steps);
+      // The bot is about to work on it: the board shows it in progress, not in the backlog.
+      // The move is not progress: the snapshot already reads the task as started, or the first check would never count as a stall.
+      const started = task.status === "backlog";
+      if (started) await d.tasks.start(id);
+      const snapshot = planSnapshot(
+        started ? { ...task, status: "in_progress" } : task,
+        before.steps,
+      );
       const note = task.followUpReason?.startsWith("Retrying")
         ? `Your previous follow-up did not run (${task.followUpReason.slice(10)}). Continue where you stopped.`
         : task.stalls >= 1

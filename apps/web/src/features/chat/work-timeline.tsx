@@ -210,7 +210,9 @@ export function WorkTimeline({
       : working
         ? now - new Date(row.createdAt).getTime()
         : undefined;
-  const live = isGeneric(row.activity) ? undefined : friendly(row.activity);
+  // A reply read from the saved row (no live stream attached) keeps its current activity in `meta.activity`.
+  const activity = row.activity ?? row.meta?.activity;
+  const live = isGeneric(activity) ? undefined : friendly(activity);
   const items: Item[] = plan
     ? planStates(plan, working, row.status).map((state, i) => ({
         key: plan[i]!.id,

@@ -161,6 +161,8 @@ export function createTaskStore(db: Database) {
   const store = {
     /** Set by the chat service: tells the bot that asked. A failing listener never breaks the write that raised it. */
     onPersonTask: undefined as ((e: PersonTaskEvent) => void) | undefined,
+    /** Set by the services: the people whose task list changed (the owner, and the assignee of a task for a person), for the live channel. */
+    onChange: undefined as ((userIds: string[]) => void) | undefined,
     list: (a: ActiveActor): Promise<Task[]> =>
       withName().where(visible(a)).orderBy(desc(task.updatedAt)),
     get,
@@ -179,6 +181,7 @@ export function createTaskStore(db: Database) {
           .insert(task)
           .values({ ownerUserId: a.userId, ...cleanFields(fields), ...origin })
           .returning();
+        changed(row!);
         return row!;
       }
       const parent = await subtaskParent(a, parentTaskId, 1);
@@ -196,6 +199,7 @@ export function createTaskStore(db: Database) {
         })
         .returning();
       await db.update(task).set({ updatedAt: new Date() }).where(eq(task.id, parentTaskId));
+      changed(row!);
       return row!;
     },
     /** A task and its plan in one write: the parent first, then one subtask per title, all in the parent's chat. */
@@ -210,7 +214,7 @@ export function createTaskStore(db: Database) {
           "TOO_MANY_SUBTASKS",
           `At most ${MAX_SUBTASKS_PER_ADD} subtasks in one add; group the rest into bigger steps.`,
         );
-      return db.transaction(async (tx) => {
+      const saved = await db.transaction(async (tx) => {
         const [parent] = await tx
           .insert(task)
           .values({ ownerUserId: a.userId, ...cleanFields(v), ...origin })
@@ -233,6 +237,8 @@ export function createTaskStore(db: Database) {
           : [];
         return { task: parent!, subtasks: children };
       });
+      changed(saved.task);
+      return saved;
     },
     /**
      * A bot needs something from a person, so the person gets a task and a card that links to it. Asking again for the same
@@ -276,8 +282,11 @@ export function createTaskStore(db: Database) {
               conversationId,
             })
             .returning();
+      changed(row!);
       if (attention === "raise")
         await raiseAttention(db, assigneeUserId, {
+          kind: "task_ask",
+          subjectId: row!.id,
           botId,
           title: row!.title,
           detail: row!.description,
@@ -347,8 +356,21 @@ export function createTaskStore(db: Database) {
         .where(and(eq(task.id, id), visible(a)))
         .returning();
       if (!row) throw new AccessError("NOT_FOUND");
-      if (row.parentTaskId)
-        await db.update(task).set({ updatedAt: new Date() }).where(eq(task.id, row.parentTaskId));
+      if (row.parentTaskId) {
+        // A step that starts or ends is work in progress: the task above it leaves the backlog (a blocked or review task stays where it is).
+        const started = v.status === "in_progress" || v.status === "done";
+        await db
+          .update(task)
+          .set({
+            updatedAt: new Date(),
+            ...(started
+              ? {
+                  status: sql`case when ${task.status} = 'backlog' then 'in_progress' else ${task.status} end`,
+                }
+              : {}),
+          })
+          .where(eq(task.id, row.parentTaskId));
+      }
       if (v.status === "done" && row.assigneeUserId)
         await closeAttentionKey(db, row.assigneeUserId, cardKey(id), "resolved");
       // "A bot stopped before finishing a task" is answered once the follow-up goes on, is turned off or the task is done.
@@ -362,6 +384,7 @@ export function createTaskStore(db: Database) {
         opts.by !== "bot"
       )
         notify({ kind: "status", task: saved, from: current.status, to: v.status, by: a.userId });
+      changed(saved);
       return saved;
     },
     /** The subtasks of a task, oldest first. */
@@ -423,6 +446,15 @@ export function createTaskStore(db: Database) {
         .where(eq(task.parentTaskId, id))
         .orderBy(asc(task.createdAt), asc(task.id));
       return { task: row, steps };
+    },
+    /** A check is about to work on a task that still sits in the backlog: it is work in progress now. */
+    async start(id: string) {
+      const [row] = await db
+        .update(task)
+        .set({ status: "in_progress", updatedAt: new Date() })
+        .where(and(eq(task.id, id), eq(task.status, "backlog")))
+        .returning();
+      if (row) changed(row);
     },
     /**
      * Takes the lease of a followed task: the one instance that checks it. It succeeds when nobody holds it, this instance holds it or the
@@ -487,6 +519,7 @@ export function createTaskStore(db: Database) {
         })
         .where(and(eq(task.id, id), eq(task.followUp, "auto")))
         .returning();
+      if (row) changed(row);
       return row;
     },
     /** The user pressed Stop in a chat: everything its bot follows there pauses. */
@@ -496,7 +529,7 @@ export function createTaskStore(db: Database) {
       conversationId: string,
       reason: string,
     ) {
-      return db
+      const rows = await db
         .update(task)
         .set({
           followUp: "paused",
@@ -514,6 +547,8 @@ export function createTaskStore(db: Database) {
           ),
         )
         .returning({ id: task.id });
+      if (rows.length) changed({ ownerUserId, assigneeUserId: null });
+      return rows;
     },
     /** A turn of this bot in this chat just ended: its followed tasks wait for the chat to be quiet before the next check. */
     async quiet(ownerUserId: string, botId: string, conversationId: string) {
@@ -540,9 +575,17 @@ export function createTaskStore(db: Database) {
         await closeAttentionKey(db, row.assigneeUserId, cardKey(id), "cancelled");
       if (row.assignee === "person")
         notify({ kind: "removed", task: { ...row, assigneeName: null }, by: a.userId });
+      changed(row);
       return row;
     },
   };
+  function changed(row: { ownerUserId: string; assigneeUserId: string | null }) {
+    try {
+      store.onChange?.([...new Set([row.ownerUserId, row.assigneeUserId ?? row.ownerUserId])]);
+    } catch {
+      // The write already happened: refreshing the pages is best effort.
+    }
+  }
   function notify(e: PersonTaskEvent) {
     try {
       store.onPersonTask?.(e);

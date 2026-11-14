@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { createLiveBots, deriveBotStatus, isResearchCall, phaseAfterRound } from "./bot-status";
+import {
+  createLiveBots,
+  currentTasks,
+  deriveBotStatus,
+  isResearchCall,
+  phaseAfterRound,
+  taskLine,
+} from "./bot-status";
 
 const idle = { pending: 0, runningElsewhere: false };
 
@@ -21,6 +28,49 @@ describe("deriveBotStatus", () => {
         live: { phase: "working", label: "browser open https://a.test" },
       }),
     ).toEqual({ status: "working", reason: "browser open https://a.test" });
+  });
+  test("a working bot says which task it is on, with its steps", () => {
+    const task = {
+      id: "t1",
+      title: "Write the report",
+      status: "in_progress",
+      stepsDone: 2,
+      stepsTotal: 5,
+    };
+    expect(deriveBotStatus({ ...idle, task, live: { phase: "working", label: "bash" } })).toEqual({
+      status: "working",
+      reason: "Working on “Write the report” · 2 of 5 steps done",
+    });
+    expect(
+      deriveBotStatus({
+        ...idle,
+        task: { ...task, stepsTotal: 0 },
+        live: { phase: "planning", label: "" },
+      }).reason,
+    ).toBe("Working on “Write the report”");
+    expect(deriveBotStatus({ ...idle, task, runningElsewhere: true }).reason).toBe(
+      "Working on “Write the report” · 2 of 5 steps done",
+    );
+  });
+  test("an idle bot with open tasks says so, and a followed one says it will continue", () => {
+    const task = { id: "t1", title: "Deploy", status: "backlog", stepsDone: 0, stepsTotal: 0 };
+    expect(deriveBotStatus({ ...idle, task, openTasks: 1 }).reason).toBe("Online, 1 open task");
+    expect(deriveBotStatus({ ...idle, task, openTasks: 3 }).reason).toBe("Online, 3 open tasks");
+    expect(deriveBotStatus({ ...idle, task: { ...task, followed: true }, openTasks: 1 })).toEqual({
+      status: "available",
+      reason: "Continues “Deploy” soon",
+    });
+  });
+  test("a long title is cut in the line", () => {
+    const line = taskLine({
+      id: "t",
+      title: "x".repeat(200),
+      status: "backlog",
+      stepsDone: 0,
+      stepsTotal: 0,
+    });
+    expect(line.length).toBeLessThan(90);
+    expect(line).toContain("…");
   });
   test("a room turn or routine in progress is working", () => {
     expect(deriveBotStatus({ ...idle, runningElsewhere: true }).status).toBe("working");
@@ -142,5 +192,34 @@ describe("live bots", () => {
     live.begin("m2", "bot1", "user1");
     live.update("m2", { phase: "working" });
     expect(live.of("user1", "bot1")?.phase).toBe("working");
+  });
+});
+
+describe("currentTasks", () => {
+  const row = (id: string, status: string, followUp = "off", minutes = 0) => ({
+    id,
+    botId: "bot1",
+    title: id,
+    status,
+    followUp,
+    updatedAt: new Date(Date.UTC(2026, 10, 13, 12, minutes)),
+  });
+  const pick = (rows: ReturnType<typeof row>[]) => currentTasks(rows).get("bot1")?.id;
+  test("started work beats a followed backlog task, which beats a plain one, which beats a task held for a person", () => {
+    expect(pick([row("held", "review", "off", 9), row("plain", "backlog", "off", 8)])).toBe(
+      "plain",
+    );
+    expect(pick([row("plain", "backlog", "off", 8), row("followed", "backlog", "auto", 1)])).toBe(
+      "followed",
+    );
+    expect(
+      pick([row("followed", "backlog", "auto", 9), row("started", "in_progress", "off", 1)]),
+    ).toBe("started");
+  });
+  test("among equals the most recently touched wins, and a task without a bot is skipped", () => {
+    expect(pick([row("old", "in_progress", "off", 1), row("new", "in_progress", "off", 5)])).toBe(
+      "new",
+    );
+    expect(currentTasks([{ ...row("lost", "in_progress"), botId: null }]).size).toBe(0);
   });
 });

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import {
   CheckCircleIcon,
   CircleNotchIcon,
@@ -76,5 +77,28 @@ export function BotStatusLabel({ botId, className }: { botId: string; className?
       <Icon aria-hidden="true" className="size-3.5" weight="bold" />
       {label}
     </span>
+  );
+}
+
+/**
+ * The task the bot is on, as a link to it: its title and how many steps are done. Nothing is drawn for a bot without an open task.
+ */
+export function BotCurrentTask({ botId, className }: { botId: string; className?: string }) {
+  const task = useBotStatus(botId)?.task;
+  if (!task) return null;
+  const steps = task.stepsTotal > 0 ? `${task.stepsDone}/${task.stepsTotal} steps` : undefined;
+  return (
+    <Link
+      to="/tasks/$taskId"
+      params={{ taskId: task.id }}
+      title={steps ? `${task.title} (${steps})` : task.title}
+      className={cn(
+        "inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
+        className,
+      )}
+    >
+      <span className="truncate">{task.title}</span>
+      {steps && <span className="shrink-0 tabular-nums">{steps}</span>}
+    </Link>
   );
 }

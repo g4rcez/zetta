@@ -47,6 +47,15 @@ describe("groupRooms", () => {
     expect(issues.map((r) => r.id)).toEqual(["2", "3"]);
   });
 
+  test("a room a bot opened for the bots stays out of the sidebar, in rooms and in issues", () => {
+    const { rooms, issues } = groupRooms([
+      item({ id: "1", title: "devs", teamId: "t" }),
+      item({ id: "2", title: "zetta#27: bump components", kind: "bots", createdByBotId: "b" }),
+    ]);
+    expect(rooms.map((r) => r.id)).toEqual(["1"]);
+    expect(issues).toEqual([]);
+  });
+
   test("closed rooms leave the sidebar; paused and stalled stay", () => {
     const { rooms, issues } = groupRooms([
       item({ id: "1", title: "a", status: "resolved" }),

@@ -90,8 +90,11 @@ export const discussion = zetta.table(
     status: text("status", { enum: ["open", "paused", "stalled", "resolved", "cancelled"] })
       .default("open")
       .notNull(),
-    /** `room`: a user or team room. `help` and `permissions`: made by the Chief to solve a bot's issue; the UI keeps them out of the room list. */
-    kind: text("kind", { enum: ["room", "help", "permissions"] })
+    /**
+     * `room`: a user or team room. `help` and `permissions`: made by the Chief to solve a bot's issue; the UI keeps them out of the room list.
+     * `bots`: a hidden room a bot opened for the bots to talk, for a rare important matter; it is not in the sidebar.
+     */
+    kind: text("kind", { enum: ["room", "help", "permissions", "bots"] })
       .default("room")
       .notNull(),
     tainted: boolean("tainted").default(false).notNull(),

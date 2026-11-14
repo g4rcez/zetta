@@ -4,7 +4,8 @@ import { call } from "../chat/chat-client";
 
 export type DiscussionStatus = "open" | "paused" | "stalled" | "resolved" | "cancelled";
 /** `room`: a team or user room. `help` and `permissions`: made by the Chief to solve a bot's issue. */
-export type RoomKind = "room" | "help" | "permissions";
+/** `bots`: a hidden room a bot opened for the bots to talk; it is not in the sidebar, only in All rooms > Bot issues and from the chat that opened it. */
+export type RoomKind = "room" | "help" | "permissions" | "bots";
 export type Discussion = {
   id: string;
   conversationId: string;

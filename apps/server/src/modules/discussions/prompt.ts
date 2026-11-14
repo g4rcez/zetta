@@ -102,7 +102,7 @@ export function openToolText(peers: readonly { name: string }[], inbound: boolea
   const others = inbound
     ? "You are answering outside people: only those pre-approved bots can be invited."
     : "Inviting any other bot asks the user to approve first.";
-  return `Rooms: when a task needs other bots (for example a developer bot to fix a reported bug), open a room with them and the full task context instead of answering alone:
+  return `Rooms belong to the user: they make the rooms the Rooms list shows. Do not open a room to work with other bots. Keep the contact in this chat, mention the bots here, or post in a room that already has them. Open a room yourself only for something very specific and important that cannot be done here (a blocker that needs several bots at once). Such a room is hidden from the Rooms list, and you may have only a few open: resolve it when it is done. When the user asks you for a room, open it; that one is a normal room.
 \`\`\`zetta:discussion
 {"action":"open","title":"short task name","goal":"what done looks like","context":"everything the others need: who asked, what happened, ids, links","members":[{"bot":"Dev","role":"fixes the bug and opens a PR"}],"firstMessage":"@Dev please ..."}
 \`\`\`   (${who} ${others} You join as facilitator. The room runs in the background; you are woken when someone mentions you, and you can post to it later with {"action":"post","discussionId":"<id>","text":"..."}. Never put passwords or tokens in a room.)

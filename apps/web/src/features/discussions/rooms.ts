@@ -2,7 +2,7 @@ import { STATUS_LABEL, type DiscussionListItem, type DiscussionStatus } from "./
 
 const ACTIVE: readonly DiscussionStatus[] = ["open", "paused", "stalled"];
 
-/** The sidebar's two lists: rooms people work in, and the Chief's help and permission rooms that solve a bot's issue. Closed rooms are not listed. */
+/** The sidebar's two lists: rooms people work in, and the Chief's help and permission rooms that solve a bot's issue. Closed rooms and bot rooms are not listed. */
 export function groupRooms(list: readonly DiscussionListItem[]) {
   const active = list.filter((d) => ACTIVE.includes(d.status));
   return {
@@ -10,8 +10,9 @@ export function groupRooms(list: readonly DiscussionListItem[]) {
     rooms: active
       .filter((d) => d.kind === "room")
       .sort((a, z) => a.title.localeCompare(z.title, undefined, { sensitivity: "base" })),
+    // A bot room is hidden from the sidebar: the person made the rooms in it, and a bot opens one only for something rare.
     issues: active
-      .filter((d) => d.kind !== "room")
+      .filter((d) => d.kind === "help" || d.kind === "permissions")
       .sort((a, z) => z.updatedAt.localeCompare(a.updatedAt)),
   };
 }

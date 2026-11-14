@@ -34,6 +34,7 @@ import { events } from "../events/bus";
 import { hasUniqueViolation } from "../pg-error";
 import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
 import { STUCK_MS, type StuckReason } from "./watchdog";
+import { insertProposal } from "../chat/proposals";
 
 type Bot = typeof bot.$inferSelect;
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -47,6 +48,9 @@ export const publicRoom = (d: Discussion) => ({ ...d, openKey: undefined });
 /** Where a blocked bot stopped, kept on its help request so the answer can resume it (a loop, or the chat turn). */
 export type HelpStop = { conversationId: string; messageId: string | null; loopId?: string };
 export const MAX_PENDING_PROPOSALS = 3,
+  /** Bot-to-bot rooms a bot may have open at once, and all of a person's bots together. They are for rare, important matters. */
+  MAX_BOT_ROOMS_PER_BOT = 2,
+  MAX_BOT_ROOMS = 6,
   MAX_PEERS = 20,
   STEP_LIMIT = 200;
 const ACTIVE = ["open", "paused", "stalled"] as const;
@@ -465,33 +469,21 @@ export function createDiscussionStore(
       botId: c.turn.botId,
       contextVersion: c.discussion.contextVersion,
     };
-    const [p] = await tx
-      .insert(configProposal)
-      .values({
-        ownerUserId: c.discussion.ownerUserId,
-        kind: "discussion_brief",
-        botId: c.turn.botId,
-        proposedByBotId: c.discussion.createdByBotId,
-        baseVersion: c.discussion.contextVersion,
-        patch,
-        diff: [
-          { field: "bot", from: null, to: botName },
-          { field: "discussion", from: null, to: c.discussion.title },
-          { field: "goal", from: null, to: c.discussion.goal.slice(0, 400) },
-          { field: "context", from: null, to: c.discussion.context.slice(0, 1200) },
-          { field: "request", from: null, to: (trigger?.content ?? "").slice(0, 600) },
-        ],
-      })
-      .returning();
-    await raiseAttention(tx, c.discussion.ownerUserId, {
-      botId: c.turn.botId,
-      title: `Approve ${botName} acting in "${c.discussion.title}"`,
-      detail:
-        "This room includes outside content (for example a customer's message) and the bot can change code.",
-      nextAction: "Review the brief and approve or reject it.",
+    await insertProposal(tx, {
       resultLink: `/rooms?id=${c.discussion.id}`,
-      source: "bot",
-      sourceKey: `proposal:${p!.id}`,
+      ownerUserId: c.discussion.ownerUserId,
+      kind: "discussion_brief",
+      botId: c.turn.botId,
+      proposedByBotId: c.discussion.createdByBotId,
+      baseVersion: c.discussion.contextVersion,
+      patch,
+      diff: [
+        { field: "bot", from: null, to: botName },
+        { field: "discussion", from: null, to: c.discussion.title },
+        { field: "goal", from: null, to: c.discussion.goal.slice(0, 400) },
+        { field: "context", from: null, to: c.discussion.context.slice(0, 1200) },
+        { field: "request", from: null, to: (trigger?.content ?? "").slice(0, 600) },
+      ],
     });
   }
 
@@ -596,6 +588,8 @@ export function createDiscussionStore(
           .set({ meta: { permissionRequest: { rule, ...stoppedAt } } })
           .where(eq(message.id, row.id));
       await raiseAttention(db, a.userId, {
+        kind: "permission_request",
+        subjectId: d.id,
         botId: requester.id,
         title: `${requester.name} asks for permission: ${rule}`,
         detail: reason.slice(0, 400),
@@ -711,15 +705,69 @@ export function createDiscussionStore(
       }
       return taken;
     },
-    /** A bot asked to open a discussion: allowlisted peers open it now; others become a proposal (never for outside people). */
-    async request(a: ActiveActor, input: OpenInput & { createdBy: Bot }, inbound: boolean) {
+    /**
+     * A bot asked to open a discussion. Rooms are the person's: a bot never adds one to their Rooms list by itself. With pre-approved
+     * peers it opens a hidden bot room (`kind: "bots"`, not listed in the sidebar), only when no room of the person already has those bots
+     * and within a small limit; the exception is a room the person's own message asked for (`visible`), which is a plain room. Other
+     * bots become a proposal the person approves (and that room is then a plain room). Never for outside people.
+     */
+    async request(
+      a: ActiveActor,
+      input: OpenInput & { createdBy: Bot },
+      inbound: boolean,
+      { visible = false }: { visible?: boolean } = {},
+    ) {
       const bots = await resolveBots(
         a,
         input.members.map((m) => m.bot),
       );
       const allowed = new Set(await peerIds(a, input.createdBy.id));
       const outside = bots.filter((b) => b.id !== input.createdBy.id && !allowed.has(b.id));
-      if (!outside.length) return { kind: "opened" as const, ...(await open(a, input)) };
+      if (!outside.length) {
+        if (visible) return { kind: "opened" as const, ...(await open(a, input)) };
+        // Keep the contact inside the rooms the person made: when one already holds these bots, the bot posts there.
+        const ids = [...new Set([input.createdBy.id, ...bots.map((b) => b.id)])];
+        const [official] = await db
+          .select({ id: discussion.id, title: discussion.title })
+          .from(discussion)
+          .innerJoin(discussionMember, eq(discussionMember.discussionId, discussion.id))
+          .where(
+            and(
+              eq(discussion.ownerUserId, a.userId),
+              eq(discussion.kind, "room"),
+              eq(discussion.status, "open"),
+              inArray(discussionMember.botId, ids),
+            ),
+          )
+          .groupBy(discussion.id, discussion.title)
+          .having(sql`count(distinct ${discussionMember.botId}) = ${ids.length}`)
+          .orderBy(desc(discussion.updatedAt))
+          .limit(1);
+        if (official)
+          throw new DiscussionError(
+            "NOT_ALLOWED",
+            `The room "${official.title}" already has these bots: post there ({"action":"post","discussionId":"${official.id}","text":"..."}) or mention them in this chat. Do not open another room.`,
+          );
+        const open_ = await db
+          .select({ by: discussion.createdByBotId })
+          .from(discussion)
+          .where(
+            and(
+              eq(discussion.ownerUserId, a.userId),
+              eq(discussion.kind, "bots"),
+              inArray(discussion.status, [...ACTIVE]),
+            ),
+          );
+        if (
+          open_.length >= MAX_BOT_ROOMS ||
+          open_.filter((r) => r.by === input.createdBy.id).length >= MAX_BOT_ROOMS_PER_BOT
+        )
+          throw new DiscussionError(
+            "LIMIT",
+            "You already have bot rooms open. Finish one (resolve it) or keep the talk in this chat; bot rooms are only for rare, important matters.",
+          );
+        return { kind: "opened" as const, ...(await open(a, { ...input, kind: "bots" })) };
+      }
       if (inbound)
         throw new DiscussionError(
           "NOT_ALLOWED",
@@ -751,36 +799,24 @@ export function createDiscussionStore(
         originInbound: input.originInbound ?? null,
         tainted: input.tainted,
       };
-      const [p] = await db
-        .insert(configProposal)
-        .values({
-          ownerUserId: a.userId,
-          kind: "open_discussion",
-          botId: null,
-          proposedByBotId: input.createdBy.id,
-          baseVersion: 0,
-          patch,
-          diff: [
-            { field: "discussion", from: null, to: input.title },
-            { field: "goal", from: null, to: input.goal.slice(0, 400) },
-            {
-              field: "members",
-              from: null,
-              to: [input.createdBy.name, ...bots.map((b) => b.name)].join(", "),
-            },
-            { field: "context", from: null, to: input.context.slice(0, 1200) },
-          ],
-        })
-        .returning();
-      await raiseAttention(db, a.userId, {
-        botId: input.createdBy.id,
-        title: `${input.createdBy.name} wants to open a room with ${outside.map((b) => b.name).join(", ")}`,
-        detail: input.title,
-        nextAction: "Open Chat and approve or reject the proposal.",
-        // The asking bot's own chat, where the card is shown.
+      const p = await insertProposal(db, {
         resultLink: `/chat/${input.origin?.conversationId ?? `new?bot=${input.createdBy.id}`}`,
-        source: "bot",
-        sourceKey: `proposal:${p!.id}`,
+        ownerUserId: a.userId,
+        kind: "open_discussion",
+        botId: null,
+        proposedByBotId: input.createdBy.id,
+        baseVersion: 0,
+        patch,
+        diff: [
+          { field: "discussion", from: null, to: input.title },
+          { field: "goal", from: null, to: input.goal.slice(0, 400) },
+          {
+            field: "members",
+            from: null,
+            to: [input.createdBy.name, ...bots.map((b) => b.name)].join(", "),
+          },
+          { field: "context", from: null, to: input.context.slice(0, 1200) },
+        ],
       });
       return { kind: "proposed" as const, proposalId: p!.id };
     },
@@ -2118,6 +2154,8 @@ export function createDiscussionStore(
       if (settled.outcome === "requeued") onEnqueue?.();
       else
         await raiseAttention(db, settled.d.ownerUserId, {
+          kind: "room_stuck",
+          subjectId: settled.d.id,
           title: `${botName} got stuck in "${settled.d.title}"`,
           detail: "Its turn was restarted once and stopped responding again.",
           nextAction: "Open the room and post a nudge mentioning the bot, or resolve it.",
@@ -2210,6 +2248,8 @@ export function createDiscussionStore(
           .returning();
         if (d)
           await raiseAttention(db, d.ownerUserId, {
+            kind: "room_interrupted",
+            subjectId: d.id,
             title: `Room "${d.title}" was interrupted`,
             detail: "The server restarted while a bot was working on it.",
             nextAction: "Check what was done, then resume or cancel it.",
@@ -2252,6 +2292,8 @@ export function createDiscussionStore(
             .set({ status: "stalled", updatedAt: now })
             .where(eq(discussion.id, d.id));
         await raiseAttention(db, d.ownerUserId, {
+          kind: "room_idle",
+          subjectId: d.id,
           title: `Room "${d.title}" is waiting`,
           detail: "No bot is working on it and it is not resolved.",
           nextAction: "Post a nudge mentioning a bot, or resolve or cancel it.",

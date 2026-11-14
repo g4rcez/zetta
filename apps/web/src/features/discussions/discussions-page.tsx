@@ -9,6 +9,7 @@ import {
   InfoIcon,
   LifebuoyIcon,
   LockKeyIcon,
+  RobotIcon,
   MagnifyingGlassIcon,
   PauseIcon,
   PlayIcon,
@@ -149,7 +150,14 @@ const NO_STEPS: { turns: RoomTurn[]; tasks: RoomTask[] } = { turns: [], tasks: [
 
 /** `#` is a room; the Chief's help and permission rooms get their own mark. */
 function KindIcon({ kind, className }: { kind: RoomKind; className?: string }) {
-  const Icon = kind === "help" ? LifebuoyIcon : kind === "permissions" ? LockKeyIcon : HashIcon;
+  const Icon =
+    kind === "help"
+      ? LifebuoyIcon
+      : kind === "permissions"
+        ? LockKeyIcon
+        : kind === "bots"
+          ? RobotIcon
+          : HashIcon;
   return (
     <Icon aria-hidden="true" className={cn("size-4 shrink-0 text-muted-foreground", className)} />
   );
@@ -463,19 +471,18 @@ function RoomView({
     refetchInterval: every,
   });
   const messages = (conversationId && messagesQuery.data) || NO_MESSAGES;
-  const proposalsQuery = useQuery({ ...chatQueries.proposals(), refetchInterval: every });
+  // Only the approvals raised in this room: a member bot's request from its own chat or another room is approved there.
+  const proposalsQuery = useQuery({
+    ...chatQueries.proposals(undefined, { roomId: id }),
+    refetchInterval: every,
+  });
   // Same panel as a chat: the briefs that gate this discussion and whatever its bots proposed (config changes, and so on).
   // Rows of the transcript (a handed-over task shows its member) look bots up by id.
   const botsById = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
-  const briefs = useMemo(() => {
-    const memberIds = new Set(detail?.members.map((m) => m.botId));
-    return (proposalsQuery.data ?? []).filter((p) =>
-      p.kind === "discussion_brief" || p.kind === "team_goals"
-        ? p.patch?.discussionId === id
-        : p.kind !== "open_discussion" &&
-          Boolean((p.proposedByBotId ?? p.botId) && memberIds.has((p.proposedByBotId ?? p.botId)!)),
-    );
-  }, [proposalsQuery.data, detail?.members, id]);
+  const briefs = useMemo(
+    () => (proposalsQuery.data ?? []).filter((p) => p.kind !== "open_discussion"),
+    [proposalsQuery.data],
+  );
   const stepsQuery = useQuery({
     ...discussionsQueries.steps(id),
     enabled: !!detail?.discussion.teamId && view === "canvas",

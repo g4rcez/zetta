@@ -228,6 +228,8 @@ suite("group discussions against compose postgres", () => {
       summary: "Fixed in PR #12",
       tainted: false,
       turnsUsed: 2,
+      // The person did not ask for a room: it is a hidden bot room, not one of their rooms.
+      kind: "bots",
     });
     expect(d.members.map((m: { name: string }) => m.name).sort()).toEqual(["Dev", "Support"]);
     // Dev saw the shared context and who said what; its turn got the member tools.
@@ -286,6 +288,60 @@ suite("group discussions against compose postgres", () => {
 
   // The owner's own bot asking for a room is applied at once (only rm, sudo and mail wait for the user); the room still opens
   // exactly once, and a room can never open another room.
+  test("a room the person's own message asks for is a normal room, even when the bot opens it", async () => {
+    const lead = await makeBot(A, "Askr"),
+      dev = await makeBot(A, "Askd");
+    await call(A, "PUT", `/api/bots/${lead.id}/peers`, { peerBotIds: [dev.id] });
+    const { say } = await chatWith(A, lead.id);
+    replies.Askr = [open("Asked room", ["Askd"], "@Askd hello"), "Opened."];
+    replies.Askd = ["Hi."];
+    const r = await say("Open a room with Askd to plan the release");
+    expect(r.json.assistant.content).toContain('Opened the room "Asked room"');
+    await worker.drain();
+    const d = (await call(A, "GET", "/api/discussions")).json.discussions.find(
+      (x: { title: string }) => x.title === "Asked room",
+    );
+    expect(d.kind).toBe("room");
+  });
+
+  test("a bot does not open a room when one of the person's rooms already has those bots", async () => {
+    const lead = await makeBot(A, "Offl"),
+      dev = await makeBot(A, "Offd");
+    await call(A, "PUT", `/api/bots/${lead.id}/peers`, { peerBotIds: [dev.id] });
+    replies.Offl = ["ok"];
+    replies.Offd = ["ok"];
+    const official = await call(A, "POST", "/api/discussions", {
+      title: "Official room",
+      goal: "x",
+      members: [{ bot: lead.id }, { bot: dev.id }],
+      firstMessage: `[@Offd](bot:${dev.id}) start`,
+    });
+    expect(official.status).toBe(201);
+    await worker.drain();
+    const { say } = await chatWith(A, lead.id);
+    replies.Offl = [open("Side room", ["Offd"], "@Offd hi"), "Understood."];
+    const r = await say("Check the build");
+    expect(r.json.assistant.content).toContain('The room "Official room" already has these bots');
+    const list = (await call(A, "GET", "/api/discussions")).json.discussions;
+    expect(list.some((x: { title: string }) => x.title === "Side room")).toBe(false);
+  });
+
+  test("a bot has only a few hidden bot rooms open at once", async () => {
+    const lead = await makeBot(A, "Capl");
+    const devs = [await makeBot(A, "Cap1"), await makeBot(A, "Cap2"), await makeBot(A, "Cap3")];
+    await call(A, "PUT", `/api/bots/${lead.id}/peers`, { peerBotIds: devs.map((d) => d.id) });
+    for (const n of ["Cap1", "Cap2", "Cap3"]) replies[n] = ["ok"];
+    const { say } = await chatWith(A, lead.id);
+    const contents: string[] = [];
+    for (const n of ["Cap1", "Cap2", "Cap3"]) {
+      replies.Capl = [open(`Room ${n}`, [n], `@${n} hi`), "Noted."];
+      contents.push((await say(`Look at ${n}`)).json.assistant.content);
+    }
+    expect(contents[0]).toContain('Opened the room "Room Cap1"');
+    expect(contents[1]).toContain('Opened the room "Room Cap2"');
+    expect(contents[2]).toContain("already have bot rooms open");
+  });
+
   test("a bot outside the allowlist opens the room at once (exactly once); duplicates and nesting are refused", async () => {
     const lead = await makeBot(A, "Lead");
     await makeBot(A, "Qa");

@@ -85,11 +85,10 @@ if (!trusted)
 run("server", ["vp", "run", "--filter", "server", "dev:server"], root, {
   PORT: API_PORT,
   ZETTA_HOST: "127.0.0.1",
-  BETTER_AUTH_URL: ORIGIN,
-  CORS_ORIGIN: ORIGIN,
+  ZETTA_SERVER_URL: ORIGIN,
 });
 run("web", ["vp", "run", "--filter", "web", "dev"], root, {
-  VITE_SERVER_URL: ORIGIN,
+  ZETTA_SERVER_URL: ORIGIN,
   ...(trusted ? { ZETTA_TLS_CERT: certs[0], ZETTA_TLS_KEY: certs[1] } : {}),
 });
 

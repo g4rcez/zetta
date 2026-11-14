@@ -4,7 +4,7 @@ import { buildWellKnown, normalizeOrigin } from "@zetta/core/server-meta";
 const PATH = "/.well-known/zetta.json";
 
 /**
- * Publishes `/.well-known/zetta.json` with the API origin this build was made for (VITE_SERVER_URL), in the build and in the dev server.
+ * Publishes `/.well-known/zetta.json` with the API origin this build was made for (ZETTA_SERVER_URL), in the build and in the dev server.
  * The desktop app reads it when it is given the address of the web UI instead of the API.
  */
 export function zettaWellKnown(serverUrl: string | undefined): Plugin {

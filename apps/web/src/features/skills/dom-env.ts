@@ -59,7 +59,7 @@ export function setupDom() {
   })) as never;
   process.env.__VARLOCK_ENV = JSON.stringify({
     settings: {},
-    config: { NODE_ENV: { value: "test" }, VITE_SERVER_URL: { value: "http://api.test" } },
+    config: { NODE_ENV: { value: "test" }, ZETTA_SERVER_URL: { value: "http://api.test" } },
   });
   afterAll(() => {
     for (const [key, descriptor] of saved) {

@@ -1,3 +1,8 @@
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    "" close;
+}
+
 server {
     listen 80;
     server_name _;
@@ -43,6 +48,24 @@ server {
         add_header X-Frame-Options "SAMEORIGIN" always;
         add_header Content-Security-Policy "frame-ancestors 'self'" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    }
+
+    # One public address for the web app and the API (ZETTA_SERVER_URL): /api goes to the API, whatever its container is called. The image
+    # fills ${ZETTA_API_UPSTREAM} at start (envsubst touches only variables that are set). Events and the VM viewer use SSE and WebSocket:
+    # no buffering, no short read timeout, and the upgrade headers.
+    location /api/ {
+        proxy_pass http://${ZETTA_API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+        client_max_body_size 0;
     }
 
     # SPA fallback

@@ -25,7 +25,7 @@ step "typecheck"
 # The web typecheck needs the generated route tree (gitignored); a fresh checkout has none, and without it tsc reports about 70 route errors.
 if [ ! -f apps/web/src/routeTree.gen.ts ]; then
   echo "-- generating apps/web/src/routeTree.gen.ts"
-  (cd apps/web && VITE_SERVER_URL="${VITE_SERVER_URL:-http://localhost:3000}" bunx vp build >/dev/null)
+  (cd apps/web && ZETTA_SERVER_URL="${ZETTA_SERVER_URL:-http://localhost:3000}" bunx vp build >/dev/null)
 fi
 for dir in apps/server apps/web packages/db packages/auth packages/core packages/render packages/laya; do
   echo "-- $dir"

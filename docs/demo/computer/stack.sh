@@ -112,7 +112,7 @@ up() {
     nohup env -i \
       HOME="$HOME" USER="${USER:-demo}" PATH="$KIT/bin:$PATH" \
       NODE_ENV=development PORT="$API_PORT" \
-      BETTER_AUTH_SECRET="$auth_secret" BETTER_AUTH_URL="$ORIGIN" CORS_ORIGIN="$ORIGIN" \
+      BETTER_AUTH_SECRET="$auth_secret" ZETTA_SERVER_URL="$ORIGIN" \
       DATABASE_URL="$DB_URL" ZETTA_CONNECTION_KEY="$connection_key" ZETTA_SETUP_KEY="$setup_key" \
       ZETTA_DB_POOL_MAX=10 ZETTA_EMBEDDING=off \
       ZETTA_FILES_ROOT="$DEMO/state/files" ZETTA_VM_TOKEN_ROOT="$DEMO/state/vm" ZETTA_BROWSER_ROOT="$DEMO/state/browser" \
@@ -131,7 +131,7 @@ up() {
     cd "$REPO/apps/web"
     nohup env -i \
       HOME="$HOME" USER="${USER:-demo}" PATH="$PATH" NODE_ENV=development \
-      VITE_SERVER_URL="$ORIGIN" ZETTA_DEMO_WEB_PORT="$WEB_PORT" ZETTA_DEMO_API_URL="http://127.0.0.1:$API_PORT" \
+      ZETTA_SERVER_URL="$ORIGIN" ZETTA_DEMO_WEB_PORT="$WEB_PORT" ZETTA_DEMO_API_URL="http://127.0.0.1:$API_PORT" \
       ZETTA_DEMO_VITE_CACHE="$DEMO/vite-cache" \
       bun run vp dev --config "$KIT/vite.demo.config.ts" --port "$WEB_PORT" --strictPort >"$DEMO/web.log" 2>&1 </dev/null &
     echo $! >"$DEMO/web.pid"

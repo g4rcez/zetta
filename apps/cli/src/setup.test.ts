@@ -7,9 +7,8 @@ describe("planSetup lan", () => {
   const plan = planSetup({ mode: "lan", address: "192.168.1.10", server: "", web: "", secret });
 
   test("points every URL at the LAN address over https", () => {
-    expect(plan.server).toContain("BETTER_AUTH_URL=https://192.168.1.10:3000\n");
-    expect(plan.server).toContain("CORS_ORIGIN=https://192.168.1.10:3001\n");
-    expect(plan.web).toContain("VITE_SERVER_URL=https://192.168.1.10:3000\n");
+    expect(plan.server).toContain("ZETTA_SERVER_URL=https://192.168.1.10:3001\n");
+    expect(plan.web).toContain("ZETTA_SERVER_URL=https://192.168.1.10:3001\n");
     expect(plan.url).toBe("https://192.168.1.10:3001");
   });
   test("opens the listeners and sets the certificate", () => {
@@ -45,14 +44,13 @@ describe("planSetup local", () => {
         "DATABASE_URL=keep",
         "ZETTA_HOST=",
         "ZETTA_TLS_CERT=",
-        "BETTER_AUTH_URL=http://localhost:3000",
-        "CORS_ORIGIN=http://localhost:3001",
+        "ZETTA_SERVER_URL=http://localhost:3001",
         "ZETTA_TLS_KEY=",
         "NODE_EXTRA_CA_CERTS=",
         "",
       ].join("\n"),
     );
-    expect(plan.web).toContain("VITE_SERVER_URL=http://localhost:3000\n");
+    expect(plan.web).toContain("ZETTA_SERVER_URL=http://localhost:3001\n");
     expect(plan.web).toContain("ZETTA_HOST=\n");
     expect(plan.setupKey).toBeUndefined();
   });

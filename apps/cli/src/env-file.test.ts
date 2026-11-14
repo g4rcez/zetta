@@ -3,9 +3,9 @@ import { readEnv, upsertEnv } from "./env-file";
 
 describe("upsertEnv", () => {
   test("replaces a key in place and keeps comments and unknown lines", () => {
-    const before = "# server\nCORS_ORIGIN=http://localhost:3001\nOTHER=1\n";
-    expect(upsertEnv(before, { CORS_ORIGIN: "https://192.168.1.10:3001" })).toBe(
-      "# server\nCORS_ORIGIN=https://192.168.1.10:3001\nOTHER=1\n",
+    const before = "# server\nZETTA_SERVER_URL=http://localhost:3001\nOTHER=1\n";
+    expect(upsertEnv(before, { ZETTA_SERVER_URL: "https://192.168.1.10:3001" })).toBe(
+      "# server\nZETTA_SERVER_URL=https://192.168.1.10:3001\nOTHER=1\n",
     );
   });
   test("appends a missing key after a file without a final newline", () => {

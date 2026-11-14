@@ -29,6 +29,6 @@ const customFetchImpl: typeof authFetch = async (input, init) => {
 };
 
 export const authClient = createAuthClient({
-  baseURL: new URL("/api/auth", getServerUrl(ENV.VITE_SERVER_URL)).toString(),
+  baseURL: new URL("/api/auth", getServerUrl(ENV.ZETTA_SERVER_URL)).toString(),
   fetchOptions: { customFetchImpl, retry: 0 },
 });

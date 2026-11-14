@@ -177,7 +177,7 @@ function configuredClient() {
   const serverUrl =
     typeof window === "undefined" && processEnv?.SERVER_URL
       ? processEnv.SERVER_URL
-      : ENV.VITE_SERVER_URL;
+      : ENV.ZETTA_SERVER_URL;
   // A write (sign-up, accepting an invitation, setup) changes what the `_auth` guard should answer: drop its cache.
   return createIdentityClient(serverUrl, async (input, init) => {
     if (init.method !== "GET") invalidateAuthGuard();

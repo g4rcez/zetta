@@ -49,15 +49,14 @@ export function planSetup(input: SetupInput): SetupResult {
   // DATABASE_URL is left alone: empty means the Postgres that ships inside Zetta.
 
   Object.assign(serverValues, {
-    BETTER_AUTH_URL: `${scheme}://${host}:3000`,
-    CORS_ORIGIN: `${scheme}://${host}:3001`,
+    ZETTA_SERVER_URL: `${scheme}://${host}:3001`,
     ZETTA_HOST: lan ? "0.0.0.0" : "",
     ZETTA_TLS_CERT: lan ? CERT : "",
     ZETTA_TLS_KEY: lan ? KEY : "",
     NODE_EXTRA_CA_CERTS: lan ? ROOT : "",
   });
   const webValues: Record<string, string> = {
-    VITE_SERVER_URL: `${scheme}://${host}:3000`,
+    ZETTA_SERVER_URL: `${scheme}://${host}:3001`,
     ZETTA_HOST: lan ? "0.0.0.0" : "",
     ZETTA_TLS_CERT: lan ? CERT : "",
     ZETTA_TLS_KEY: lan ? KEY : "",

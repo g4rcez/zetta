@@ -48,7 +48,7 @@ jobs:
         working-directory: apps/web
         run: bun run build
         # The build validates its environment (varlock), and the server address has no default.
-        env: { VITE_SERVER_URL: "http://localhost:3000" }
+        env: { ZETTA_SERVER_URL: "http://localhost:3000" }
 
   # Everything that needs no database or Docker: lint, typecheck and the unit suites of the web app, the packages and the tools.
   # Same steps as `bun run verify`. Formatting is checked only for what the pre-commit hook formats.
@@ -59,7 +59,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bash scripts/verify.sh
-        env: { VITE_SERVER_URL: "http://localhost:3000" }
+        env: { ZETTA_SERVER_URL: "http://localhost:3000" }
 
   # Public repo: hooks can be skipped locally, so CI enforces the same rules.
   public-hygiene:

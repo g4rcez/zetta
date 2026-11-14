@@ -9,7 +9,8 @@ services:
         - web_env
         - server_env
       args:
-        VITE_SERVER_URL: http://localhost:3000
+        # The one public address: the web container serves the app and forwards /api to the server container.
+        ZETTA_SERVER_URL: http://localhost:3001
     init: true
     ports:
       - "3001:80"
@@ -41,7 +42,7 @@ services:
       - path: apps/server/.env
         required: false
     environment:
-      CORS_ORIGIN: http://localhost:3001
+      ZETTA_SERVER_URL: http://localhost:3001
       ZETTA_HOST: 0.0.0.0
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/zetta
     healthcheck:

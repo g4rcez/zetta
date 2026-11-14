@@ -32,6 +32,7 @@
     "changelog": "bun scripts/changelog.ts",
     "staged": "vp staged",
     "zetta": "bash scripts/zetta.sh",
+    "dev:portless": "bash scripts/dev-portless.sh",
     "certs": "bash scripts/dev-certs.sh",
     "setup": "bun apps/cli/src/index.ts setup",
     "dev:web": "vp run --filter web dev",

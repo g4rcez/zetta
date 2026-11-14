@@ -15,18 +15,23 @@ export default defineConfig(({ mode }) => {
     ZETTA_TLS_CERT: cert,
     ZETTA_TLS_KEY: key,
     ZETTA_HOST: host,
-    VITE_SERVER_URL: serverUrl,
-  } = loadEnv(mode, process.cwd(), ["ZETTA_", "VITE_SERVER_URL"]);
+    ZETTA_SERVER_URL: serverUrl,
+  } = loadEnv(mode, process.cwd(), ["ZETTA_"]);
   if (!cert !== !key)
     throw new Error("Set both ZETTA_TLS_CERT and ZETTA_TLS_KEY in apps/web/.env, or neither.");
+  // Behind portless (`bun run dev:portless`) the proxy terminates HTTPS on https://zetta.local and passes this server a port and PORTLESS_URL, so
+  // Vite speaks plain HTTP and must accept that host name.
+  const portless = process.env.PORTLESS_URL;
+  const tls = !portless;
   return {
     server: {
       port: 3000,
       strictPort: true,
+      allowedHosts: portless ? [new URL(portless).hostname] : undefined,
       // ZETTA_HOST=0.0.0.0 (written by `bun run setup --mode lan`) lets other devices on the network open the dev server.
       host: host || undefined,
-      https: cert && key ? { cert: readFileSync(cert), key: readFileSync(key) } : undefined,
-      // No changeOrigin: Host and Origin stay localhost:3000, which is what Better Auth checks against BETTER_AUTH_URL.
+      https: tls && cert && key ? { cert: readFileSync(cert), key: readFileSync(key) } : undefined,
+      // No changeOrigin: Host and Origin stay localhost:3000, which is what Better Auth checks against ZETTA_SERVER_URL.
       proxy: { "/api": { target: "http://127.0.0.1:6000", ws: true } },
     },
     resolve: {
@@ -46,7 +51,7 @@ export default defineConfig(({ mode }) => {
       }),
       react(),
       zettaWellKnown(serverUrl),
-      ...(cert && key ? [] : [basicSsl()]),
+      ...(tls && !(cert && key) ? [basicSsl()] : []),
     ],
   };
 });

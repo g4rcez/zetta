@@ -3,7 +3,7 @@
 // for every file after it. `setupDom()` sets the same value.
 process.env.__VARLOCK_ENV ??= JSON.stringify({
   settings: {},
-  config: { NODE_ENV: { value: "test" }, VITE_SERVER_URL: { value: "http://api.test" } },
+  config: { NODE_ENV: { value: "test" }, ZETTA_SERVER_URL: { value: "http://api.test" } },
 });
 
 // Work that a DOM test leaves behind can run after that test has removed `window`, and the run then ends with an unhandled error that is

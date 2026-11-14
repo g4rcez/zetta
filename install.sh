@@ -60,7 +60,7 @@ main() {
       umask 077
       cat >"$server_env" <<EOF
 BETTER_AUTH_SECRET=$(secret)
-BETTER_AUTH_URL=http://localhost:3000
+ZETTA_SERVER_URL=http://localhost:3001
 ZETTA_CONNECTION_KEY=$(secret)
 ZETTA_SETUP_KEY=$(secret)
 EOF
@@ -68,7 +68,7 @@ EOF
   fi
   if [ ! -f "$web_env" ]; then
     echo "▶ Writing apps/web/.env"
-    echo "VITE_SERVER_URL=http://localhost:3000" >"$web_env"
+    echo "ZETTA_SERVER_URL=http://localhost:3001" >"$web_env"
   fi
 
   echo "▶ Building and starting the containers"

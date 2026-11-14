@@ -18,5 +18,5 @@ Optional: without these lines the web dev server uses a self-signed certificate 
 Add to apps/web/.env (paths are relative to apps/web) to use the trusted pair instead:
   ZETTA_TLS_CERT=../../.certs/localhost.pem
   ZETTA_TLS_KEY=../../.certs/localhost-key.pem
-Use https://localhost:3000 in BETTER_AUTH_URL and CORS_ORIGIN (apps/server/.env) and in VITE_SERVER_URL (apps/web/.env), then restart `bun dev`.
+Use https://localhost:3000 as ZETTA_SERVER_URL (apps/server/.env and apps/web/.env), then restart `bun dev`.
 MSG

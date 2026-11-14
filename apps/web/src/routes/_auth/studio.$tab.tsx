@@ -22,6 +22,8 @@ export const Route = createFileRoute("/_auth/studio/$tab")({
         search: typeof search.routine === "string" ? { routine: search.routine } : {},
         replace: true,
       });
+    // The Studio Inbox tab moved to the Inbox page. Links saved in old cards and notifications still point here.
+    if (params.tab === "attention") throw redirect({ to: "/catch-up", replace: true });
     if (!isStudioTab(params.tab))
       throw redirect({
         to: "/studio/$tab",

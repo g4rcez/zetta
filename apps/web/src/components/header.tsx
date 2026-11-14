@@ -5,29 +5,6 @@ import { Logo } from "./logo";
 import { ModeToggle } from "./mode-toggle";
 import UserMenu from "./user-menu";
 
-export const APP_PREFIXES = [
-  "/chat",
-  "/bots",
-  "/rooms",
-  "/agenda",
-  "/apps",
-  "/tasks",
-  "/studio",
-  "/routines",
-  "/plugins",
-  "/dashboard",
-  "/teams",
-  "/team-roles",
-  "/artifacts",
-  "/memory",
-  "/skills",
-  "/playground",
-  "/search",
-  "/preferences",
-];
-export const inApp = (pathname: string) =>
-  APP_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-
 const Brand = ({ small = false }: { small?: boolean }) => (
   <ActionHint label="Zetta home">
     <Link to="/" aria-label="Zetta home" className="grid shrink-0 place-items-center">

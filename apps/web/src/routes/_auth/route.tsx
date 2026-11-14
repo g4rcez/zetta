@@ -1,17 +1,10 @@
-import {
-  Link,
-  Outlet,
-  createFileRoute,
-  redirect,
-  useRouter,
-  useRouterState,
-} from "@tanstack/react-router";
+import { Link, Outlet, createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { WarningIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
 
 import { AppShell } from "@/components/app-shell";
-import { inApp } from "@/components/header";
+import { useRouteChrome } from "@/components/shell-routes";
 import { Logo } from "@/components/logo";
 import { authClient } from "@/lib/auth-client";
 import { cachedAuthGuard } from "@/lib/auth-guard";
@@ -120,11 +113,11 @@ function AccessError({ error, reset }: { error: unknown; reset: () => void }) {
 }
 
 function AuthLayout() {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { shell } = useRouteChrome();
   useLiveEvents();
   return (
     <SidebarDataProvider>
-      {inApp(pathname) ? (
+      {shell ? (
         <AppShell>
           <Outlet />
         </AppShell>

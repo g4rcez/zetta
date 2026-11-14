@@ -22,13 +22,7 @@ export const appLinks = [
   { to: "/chat/{-$chatId}", group: "Work", label: "Chat", icon: ChatsIcon },
   { to: "/rooms", group: "Work", label: "Rooms", icon: HashIcon },
   { to: "/agenda", group: "Work", label: "Agenda", icon: CalendarIcon },
-  {
-    to: "/studio/$tab",
-    params: { tab: "attention" },
-    group: "Work",
-    label: "Inbox",
-    icon: BellIcon,
-  },
+  { to: "/catch-up", group: "Work", label: "Inbox", icon: BellIcon },
   { to: "/studio", group: "Build", label: "Studio", icon: SquaresFourIcon },
   {
     to: "/routines",

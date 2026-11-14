@@ -2,7 +2,6 @@ import { ActionHint } from "@/components/action-hint";
 import {
   BellIcon,
   CalendarDotsIcon,
-  CheckCircleIcon,
   HashIcon,
   KanbanIcon,
   RobotIcon,
@@ -20,8 +19,7 @@ import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";
 import { useAttentionSummary, useRunningDiscussions } from "../attention/summary";
-import { chatClient, errorMessage, type Proposal } from "../chat/chat-client";
-import { chatQueries } from "../chat/chat-queries";
+import { chatClient, errorMessage } from "../chat/chat-client";
 import { Composer, type Outgoing } from "../chat/composer";
 import { useSidebarData } from "../chat/sidebar-data";
 import { useDraft } from "../chat/use-draft";
@@ -29,7 +27,6 @@ import { relativeTime } from "../shared/relative-time";
 import { tasksQueries } from "../tasks/tasks-api";
 import { greeting } from "./greeting";
 
-const NO_PROPOSALS: Proposal[] = [];
 const EXAMPLES_KEY = "zetta:home-examples";
 const EXAMPLES: { icon: Icon; title: string; hint: string; prompt: string }[] = [
   {
@@ -71,7 +68,6 @@ export function DashboardPage() {
   const [sending, setSending] = useState(false);
   const [showExamples, setShowExamples] = useState(() => !examplesHidden());
   // A failed read leaves the stat out; the page still works.
-  const proposals = useQuery(chatQueries.proposals()).data ?? NO_PROPOSALS;
   const tasks = useQuery(tasksQueries.list()).data;
   const openTasks = tasks?.filter((t) => t.status !== "done").length;
   const composer = useRef<HTMLDivElement>(null);
@@ -116,13 +112,10 @@ export function DashboardPage() {
     }
   };
 
-  const approvalsChat = chats.find(
-    (c) => c.botId === (proposals[0]?.proposedByBotId ?? proposals[0]?.botId),
-  )?.id;
   const pill =
     "flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-sm transition-colors hover:bg-muted";
   const unread = attention?.unread ?? 0;
-  const hasStats = proposals.length > 0 || unread > 0 || !!openTasks || running > 0;
+  const hasStats = unread > 0 || !!openTasks || running > 0;
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-6 p-4 md:p-8">
@@ -137,17 +130,10 @@ export function DashboardPage() {
 
         {hasStats && (
           <ul className="flex flex-wrap justify-center gap-2" aria-label="Needs your attention">
-            {proposals.length > 0 && (
-              <li>
-                <Link to="/chat/{-$chatId}" params={{ chatId: approvalsChat }} className={pill}>
-                  <CheckCircleIcon aria-hidden /> {proposals.length} waiting for approval
-                </Link>
-              </li>
-            )}
             {unread > 0 && (
               <li>
-                <Link to="/studio/$tab" params={{ tab: "attention" }} className={pill}>
-                  <BellIcon aria-hidden /> {unread} unread in inbox
+                <Link to="/catch-up" className={pill}>
+                  <BellIcon aria-hidden /> {unread} in your inbox
                 </Link>
               </li>
             )}

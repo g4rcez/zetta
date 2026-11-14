@@ -197,7 +197,7 @@ function CountBadge({
 }
 
 /** Inbox count: amber, because it means a person is needed. */
-function InboxBadge({ collapsed }: { collapsed: boolean }) {
+function CatchUpBadge({ collapsed }: { collapsed: boolean }) {
   const attention = useAttentionSummary();
   return <CountBadge collapsed={collapsed} count={attention?.unread ?? 0} tone="attention" />;
 }
@@ -464,7 +464,7 @@ export function AppSidebar({
             collapsed={collapsed}
             badge={
               l.label === "Inbox" ? (
-                <InboxBadge collapsed={collapsed} />
+                <CatchUpBadge collapsed={collapsed} />
               ) : l.label === "Routines" ? (
                 <RoutinesBadge collapsed={collapsed} />
               ) : undefined

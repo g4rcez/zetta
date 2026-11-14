@@ -4,7 +4,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { CommandPalette, type CommandItemTypes } from "@g4rcez/components";
 import {
   PulseIcon,
-  BellIcon,
   CameraIcon,
   KeyIcon,
   ChatIcon,
@@ -56,7 +55,6 @@ function PaletteIcon({ icon: Icon }: { icon: PhosphorIcon }) {
 }
 
 const STUDIO_ICONS: Partial<Record<StudioTab, PhosphorIcon>> = {
-  attention: BellIcon,
   workflows: FlowArrowIcon,
   decisions: ScalesIcon,
   accounts: KeyIcon,

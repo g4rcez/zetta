@@ -191,6 +191,7 @@ export function HoldButton({
   disabled,
   variant = "default",
   size = "sm",
+  catchUp,
 }: {
   children: ReactNode;
   onHold: () => void;
@@ -198,6 +199,8 @@ export function HoldButton({
   disabled?: boolean;
   variant?: ComponentProps<typeof Button>["variant"];
   size?: ComponentProps<typeof Button>["size"];
+  /** Marks the button as the card's main action, so Inbox's keyboard shortcut can focus it (see `data-catch-up`). */
+  catchUp?: "act";
 }) {
   const [holding, setHolding] = useState(false);
   const [early, setEarly] = useState(false);
@@ -229,6 +232,7 @@ export function HoldButton({
         size={size}
         variant={variant}
         disabled={disabled}
+        data-catch-up={catchUp}
         className="relative select-none overflow-hidden [-webkit-touch-callout:none]"
         onPointerDown={start}
         onPointerUp={stop}

@@ -1,14 +1,10 @@
-import {
-  HeadContent,
-  Outlet,
-  createRootRouteWithContext,
-  useRouterState,
-} from "@tanstack/react-router";
+import { HeadContent, Outlet, createRootRouteWithContext } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 
-import Header, { inApp } from "@/components/header";
+import Header from "@/components/header";
 import { KeyboardHints } from "@/components/keyboard-hints";
+import { useRouteChrome } from "@/components/shell-routes";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ModalConfirmProvider } from "@/components/ui";
 import { PreferencesProvider } from "@/features/preferences/preferences";
@@ -53,11 +49,8 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
   }),
 });
 
-const REGEX_COMPUTER = /^\/computer\/[^/]+$/;
-
 function RootComponent() {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const app = inApp(pathname);
+  const { signedIn, shell } = useRouteChrome();
   return (
     <Fragment>
       <HeadContent />
@@ -69,11 +62,11 @@ function RootComponent() {
       >
         <ModalConfirmProvider>
           <NotificationsProvider>
-            {REGEX_COMPUTER.test(pathname) ? (
+            {signedIn && !shell ? (
               <main className="h-svh overflow-hidden">
                 <Outlet />
               </main>
-            ) : app ? (
+            ) : signedIn ? (
               // The signed-in layout (routes/_auth) draws the app shell around these pages.
               <PreferencesProvider>
                 <Outlet />

@@ -493,7 +493,7 @@ function CallsSection({ appRef }: { appRef: string }) {
         ))}
       </ul>
       <p className="text-xs text-muted-foreground">
-        A call that waits for you has its card in the chat or in your Inbox.
+        A call that waits for you appears in the chat and under Inbox.
       </p>
     </>
   );

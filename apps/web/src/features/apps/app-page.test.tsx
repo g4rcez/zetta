@@ -394,7 +394,7 @@ test("the calls tab shows what happened to each call, and where a waiting one is
   expect(text()).toContain("Failed");
   expect(text()).toContain("TOOL_ERROR: it broke");
   expect(text()).toContain("41 ms");
-  expect(text()).toContain("card in the chat or in your Inbox");
+  expect(text()).toContain("appears in the chat and under Inbox");
   await unmount();
 });
 

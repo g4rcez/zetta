@@ -58,5 +58,5 @@ export const exportUrl = (target: { id: string } | { builtin: string }) =>
     "builtin" in target
       ? `/api/output-styles/builtin/${target.builtin}/export`
       : `/api/output-styles/${target.id}/export`,
-    ENV.VITE_SERVER_URL,
+    ENV.ZETTA_SERVER_URL,
   ).href;

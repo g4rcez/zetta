@@ -29,6 +29,7 @@ import { createSearchRoutes, type SearchServices } from "./modules/search/routes
 import { createPreferenceRoutes, type PreferenceServices } from "./modules/preferences/routes";
 import { createProfileRoutes, type ProfileServices } from "./modules/profile/routes";
 import { createTaskRoutes, type TaskServices } from "./modules/tasks/routes";
+import { createCatchUpRoutes, type CatchUpServices } from "./modules/catch-up/routes";
 import { createArtifactRoutes, type ArtifactServices } from "./modules/artifacts/routes";
 import { createDiscussionRoutes, type DiscussionServices } from "./modules/discussions/routes";
 import { createTeamRoutes, type TeamServices } from "./modules/teams/routes";
@@ -55,6 +56,7 @@ export type CreateAppOptions = {
   integrations?: IntegrationServices;
   agenda?: AgendaServices;
   tasks?: TaskServices;
+  catchUp?: CatchUpServices;
   preferences?: PreferenceServices;
   profile?: ProfileServices;
   search?: SearchServices;
@@ -98,6 +100,7 @@ export function createApp({
   integrations,
   agenda,
   tasks,
+  catchUp,
   preferences,
   profile,
   search,
@@ -208,6 +211,12 @@ export function createApp({
       )
       .use(agenda ? createAgendaRoutes(agenda, [webOrigin, ...desktopOrigins]) : new Elysia())
       .use(tasks ? createTaskRoutes(tasks, [webOrigin, ...desktopOrigins]) : new Elysia())
+      // Typed as a plain Elysia: one more fully typed `.use` makes this chain too complex for the compiler.
+      .use(
+        catchUp
+          ? (createCatchUpRoutes(catchUp, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
       .use(
         preferences
           ? createPreferenceRoutes(preferences, [webOrigin, ...desktopOrigins])

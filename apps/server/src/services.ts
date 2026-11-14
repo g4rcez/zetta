@@ -35,6 +35,7 @@ import {
 import { createFeaturesService } from "./modules/features/service";
 import { createRoutinePollers } from "./modules/features/routine-pollers";
 import { PluginError } from "./modules/integrations/plugins/registry";
+import { configureGoogleLoopback } from "./modules/integrations/plugins/google/loopback";
 import { createAgenda } from "./modules/agenda/service";
 import { createLocalEmbedder } from "./modules/knowledge/embed";
 import { createKnowledge as createCompanyKnowledge } from "./modules/knowledge/service";
@@ -61,6 +62,7 @@ import { createSearch } from "./modules/search/service";
 import { createPreferenceStore } from "./modules/preferences/store";
 import { createProfileStore } from "./modules/profile/store";
 import { createTaskStore } from "./modules/tasks/store";
+import { createCatchUpActions } from "./modules/catch-up/act";
 import { createArtifactStore } from "./modules/artifacts/store";
 import { createAgendaScheduler } from "./modules/agenda/scheduler";
 import { createDiscussionStore } from "./modules/discussions/store";
@@ -81,6 +83,7 @@ import { TurnBusyError } from "./modules/chat/turns";
 import { createFirstAccountSetup, createSetupState } from "./modules/identity/first-account";
 import { matchesConnectionKey } from "./modules/identity/setup-key";
 import { createInstallationService } from "./modules/installation/service";
+import { topics } from "@zetta/core/live-topics";
 import { events } from "./modules/events/bus";
 import { work } from "./modules/events/work";
 import { runsWork } from "./role";
@@ -137,8 +140,14 @@ export const databaseReady = async () => {
   await db.execute(sql`select 1`);
   return true;
 };
+/** One public address: the API and the web app share the origin, so Better Auth's base URL and its trusted origin are the same. */
+const authConfig = {
+  BETTER_AUTH_URL: ENV.ZETTA_SERVER_URL,
+  BETTER_AUTH_SECRET: ENV.BETTER_AUTH_SECRET,
+  CORS_ORIGIN: ENV.ZETTA_SERVER_URL,
+};
 export const auth = memoizeSession(
-  createAuth(ENV, db, trustedExtraOrigins, {
+  createAuth(authConfig, db, trustedExtraOrigins, {
     invitationSignupVerifier: createInvitationSignupPreflight(db),
     firstAccount: createFirstAccountSetup(db, setupKey),
   }),
@@ -363,6 +372,14 @@ const memoryJobs = createMemoryJobs(db, {
   readPage: (owner, url) => computer.read(owner, "memory", url),
 });
 const agendaScheduler = createAgendaScheduler(db, mcp.plugins, membershipLookup);
+// "Agenda cannot sync" and "Company knowledge cannot read your Drive" cards stay until the next sync works: after Google is connected, sync now.
+mcp.plugins.onConnected(async (actor, id) => {
+  if (id !== "google") return;
+  await Promise.allSettled([
+    agendaScheduler.syncIfEnabled(actor),
+    companyKnowledge.syncUser(actor), // refuses by itself when company knowledge is not turned on
+  ]);
+});
 const skillsLibrary = createSkills(db);
 // Autolearn: after a correction or a method that worked, a review may save what the bot learned as one of its own skills.
 export const skillReview = createSkillReview(db, skillsLibrary);
@@ -448,6 +465,17 @@ features.routineTriggers.usePollers(
     return mcp.plugins.contextFor(actor, pluginId);
   }),
 );
+// A Google "Desktop app" sign-in ends on 127.0.0.1: when the browser is on this computer the plugin's loopback listener finishes it, as the
+// person who started it, with a fresh plugin context (never one kept from the start of the sign-in).
+configureGoogleLoopback({
+  webOrigin: ENV.ZETTA_SERVER_URL,
+  complete: async (userId, params) => {
+    const actor = await issueBackgroundActor(membershipLookup, userId);
+    if (!actor)
+      throw new PluginError("OWNER_INACTIVE", "This account no longer has an active membership.");
+    await mcp.plugins.callback(actor, "google", params);
+  },
+});
 // Stopping a routine run is the chat's Stop on that run's conversation: the reply, its followed tasks and the rooms it opened.
 features.routines.useStop(async (userId, conversationId) => {
   const actor = await issueBackgroundActor(membershipLookup, userId);
@@ -661,6 +689,8 @@ loops.onStart = (id) => work.kick("loop", id);
 if (runsWork) work.on("loop", (id) => id && loopDriver.kick(id));
 // A person moved, or deleted, a task a bot asked for: tell the bot with a turn in its chat. Best effort, after the change is saved.
 tasks.onPersonTask = (e) => void chatServices.chat.notifyTask(e).catch(() => {});
+// Any task write, by a person or a bot, refreshes the board and the "working on" line of the bots on every open page of the owner.
+tasks.onChange = (userIds) => events.publish(userIds, topics.tasks, topics.botStatus);
 /** Boot: continue the Claude Code runs a restart cut off, in their own sessions. A conversation with an active goal loop is left to the loop driver. */
 export async function resumeInterruptedRuns() {
   for (const r of chatServices.chat.takeResumable()) {
@@ -716,6 +746,20 @@ export const decisionServices = { access: identity.access, decisions };
 export const computerServices = { access: identity.access, computer, vms, machines };
 export const integrationServices = { access: identity.access, mcp, sources };
 export const taskServices = { access: identity.access, tasks };
+export const catchUpServices = {
+  access: identity.access,
+  catchUp: { db, listProposals: chatServices.chat.listProposals },
+  actions: createCatchUpActions({
+    db,
+    tasks,
+    loops,
+    discussions,
+    memory,
+    chat: chatServices.chat,
+    features,
+    inbound: inboundServices.inbound,
+  }),
+};
 export const preferenceServices = {
   access: identity.access,
   preferences,
@@ -768,7 +812,7 @@ export const playgroundServices = {
 export const appsServices = { access: identity.access, apps };
 export const zettaMcpServices = {
   auth,
-  resource: mcpResource(ENV),
+  resource: mcpResource(authConfig),
   actorFor: (userId: string) => issueBackgroundActor(membershipLookup, userId),
   chat: chatServices.chat,
   mcp,

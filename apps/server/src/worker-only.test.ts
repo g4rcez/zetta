@@ -133,6 +133,7 @@ describe("docker/scale/Caddyfile", () => {
     ["PUT", "/api/plugins/telegram/config"],
     ["POST", "/api/plugins/telegram/connect"],
     ["GET", "/api/plugins/google/callback"],
+    ["POST", "/api/plugins/google/complete"],
     ["GET", "/api/plugins/catalog"],
     ["GET", "/api/plugins"],
     ["GET", "/api/connections"],

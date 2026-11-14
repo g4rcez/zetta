@@ -15,7 +15,7 @@ x-server: &server
     - path: apps/server/.env
       required: false
   environment: &server-env
-    CORS_ORIGIN: http://localhost:3001
+    ZETTA_SERVER_URL: http://localhost:3001
     ZETTA_HOST: 0.0.0.0
     DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/zetta
     # Events and worker kicks cross instances over Postgres NOTIFY.
@@ -94,8 +94,10 @@ services:
         - web_env
         - server_env
       args:
-        # The browser talks to the balancer, never to one instance.
-        VITE_SERVER_URL: http://localhost:3000
+        ZETTA_SERVER_URL: http://localhost:3001
+    environment:
+      # The browser talks to the web container, which forwards /api to the balancer, never to one instance.
+      ZETTA_API_UPSTREAM: lb:3000
     init: true
     ports:
       - "3001:80"

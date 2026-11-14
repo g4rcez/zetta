@@ -16,7 +16,7 @@ export const WORKER_ONLY: readonly Rule[] = [
   { methods: ["POST"], path: /^\/api\/routines\/hook\/[^/]+$/ },
   { path: /^\/api\/decisions(\/|$)/ },
   // Sealed credentials: the key a browser seals to lives in one process's memory, and so do the single-use OAuth callback guards.
-  { path: /^\/api\/plugins\/[^/]+\/(test|connect|disconnect|callback)$/ },
+  { path: /^\/api\/plugins\/[^/]+\/(test|connect|disconnect|callback|complete)$/ },
   { methods: ["GET"], path: /^\/api\/connections\/transport-key$/ },
   { methods: ["POST"], path: /^\/api\/(connections|plugins)$/ },
   { methods: ["PUT"], path: /^\/api\/plugins\/[^/]+\/config$/ },

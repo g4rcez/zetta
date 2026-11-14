@@ -298,7 +298,7 @@ export function KeyboardHints(): ReactElement | null {
           key={hint.code}
           style={{ left: hint.left, top: hint.top, width: LABEL_WIDTH, height: LABEL_HEIGHT }}
           className={cn(
-            "fixed flex items-center justify-center rounded-md border border-border bg-popover font-mono text-xs leading-none text-popover-foreground shadow-sm",
+            "fixed flex items-center justify-center rounded-md border border-input bg-popover font-mono text-xs leading-none text-popover-foreground shadow-sm",
             typed !== "" && hint.code.startsWith(typed) && "border-primary ring-2 ring-primary/60",
           )}
         >

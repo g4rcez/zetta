@@ -115,7 +115,7 @@ html.dark {
   --var-menu-surface-background: var(--popover);
   --var-tooltip-surface-background: var(--popover);
   --var-tooltip-surface-foreground: var(--popover-foreground);
-  --var-tooltip-surface-border: var(--border);
+  --var-tooltip-surface-border: var(--input);
   --var-modal-overlay-background: oklch(0 0 0 / 60%);
 }
 
@@ -228,9 +228,9 @@ html.dark {
   --var-free-text-placeholder-foreground: var(--muted-foreground);
   --var-free-text-error-placeholder-foreground: var(--var-color-danger);
 
-  --var-dropdown-surface-border: var(--border);
+  --var-dropdown-surface-border: var(--input);
   --var-dropdown-surface-foreground: var(--popover-foreground);
-  --var-menu-surface-border: var(--border);
+  --var-menu-surface-border: var(--input);
   --var-menu-surface-foreground: var(--popover-foreground);
   --var-menu-item-active-background: var(--accent);
   --var-menu-item-active-foreground: var(--foreground);

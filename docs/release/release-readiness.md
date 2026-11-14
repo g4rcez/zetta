@@ -40,7 +40,7 @@ Date: 2026-10-23. Verdict: **NO-GO against RFC-068's own rule** ("real compatibi
 
 ## 4. Required configuration
 
-`DATABASE_URL`, `BETTER_AUTH_SECRET`, `CORS_ORIGIN` (existing). Required: `ZETTA_CONNECTION_KEY` (`openssl rand -base64 32`; the server will not start without it; it is also the proof of ownership asked at first-run onboarding; enables Accounts; losing it makes stored keys unreadable), `ZETTA_FILES_ROOT`, `ZETTA_BROWSER_ROOT`, `ZETTA_CHROMIUM_PATH`, `ZETTA_HARNESS_RUNTIME=docker` (+ `ZETTA_HARNESS_IMAGE`, `ZETTA_HARNESS_NETWORK`, `ZETTA_HARNESS_MEMORY`, `ZETTA_DOCKER_BIN`), `ZETTA_BROWSER_RUNTIME=docker` (+ `ZETTA_BROWSER_IMAGE`), `ZETTA_HARNESS_HOME_ROOT`, `ZETTA_HARNESS_MAX(_PER_USER)`, `ZETTA_MCP_ALLOWLIST`, `ZETTA_LAYA_PRELOAD=0`, `ZETTA_DESKTOP_RUNTIME=cua` (desktop control through Cua Spaces; needs the `cua` CLI). Run `drizzle-kit migrate` before starting.
+`DATABASE_URL`, `BETTER_AUTH_SECRET`, `ZETTA_SERVER_URL` (replaces `BETTER_AUTH_URL`, `CORS_ORIGIN` and `VITE_SERVER_URL`). Required: `ZETTA_CONNECTION_KEY` (`openssl rand -base64 32`; the server will not start without it; it is also the proof of ownership asked at first-run onboarding; enables Accounts; losing it makes stored keys unreadable), `ZETTA_FILES_ROOT`, `ZETTA_BROWSER_ROOT`, `ZETTA_CHROMIUM_PATH`, `ZETTA_HARNESS_RUNTIME=docker` (+ `ZETTA_HARNESS_IMAGE`, `ZETTA_HARNESS_NETWORK`, `ZETTA_HARNESS_MEMORY`, `ZETTA_DOCKER_BIN`), `ZETTA_BROWSER_RUNTIME=docker` (+ `ZETTA_BROWSER_IMAGE`), `ZETTA_HARNESS_HOME_ROOT`, `ZETTA_HARNESS_MAX(_PER_USER)`, `ZETTA_MCP_ALLOWLIST`, `ZETTA_LAYA_PRELOAD=0`, `ZETTA_DESKTOP_RUNTIME=cua` (desktop control through Cua Spaces; needs the `cua` CLI). Run `drizzle-kit migrate` before starting.
 
 ## 5. What would turn this into a full GO
 

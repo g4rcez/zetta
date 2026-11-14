@@ -43,6 +43,12 @@ bun run dev
 Open [https://localhost:3000](https://localhost:3000) in your browser to see the web application (accept the self-signed certificate once).  
 The API runs at `http://127.0.0.1:6000`. The web dev server forwards `/api` to it, so use the web address only.
 
+### HTTPS on `zetta.local` with portless
+
+`bun run dev:portless` runs the API and the web app behind [portless](https://portless.sh) (`npm install -g portless`, Node.js 24+). portless terminates HTTPS with a locally trusted certificate, so the app is at [https://zetta.local](https://zetta.local) without a port or a browser warning. The first run asks for `sudo` once (port 443, the `zetta.local` line in `/etc/hosts`, trusting the portless CA). `ZETTA_SERVER_URL` (the one public address, `https://zetta.local` by default; set it to use another host) is exported by the script, so `.env` does not change. Google refuses `.local` and LAN-IP redirect URIs for a "Web application" client, so create the Google OAuth client as **Desktop app** and set the plugin's Client type to Desktop app: when the browser runs on the same computer as the server, Zetta catches Google's redirect itself; on any other device the page ends on `127.0.0.1` and does not load, so you copy its address back into the box Zetta shows (it stays there across reloads).
+
+portless keeps the proxy's settings between runs. If it already runs with another TLD, stop it first (`portless proxy stop`); the script then starts it with `.local`. portless recommends `.test` because `.local` can clash with mDNS/Bonjour on some networks.
+
 ## Testing
 
 - `bun run verify` runs the linter, the typecheck and the unit suites of `apps/web`, `apps/cli`, `packages/*`, `tools` and `scripts`.

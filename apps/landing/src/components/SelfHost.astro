@@ -9,18 +9,18 @@ interface Props {
 const t = getCopy(Astro.props.locale).install;
 
 // The by-hand commands come from docker-compose.yml, apps/server/.env.schema, apps/web/.env.schema and the docker:up script in package.json.
-// The secrets are made with `openssl rand -base64 32`, as the schema comments say. DATABASE_URL and CORS_ORIGIN are set by docker-compose.yml.
+// The secrets are made with `openssl rand -base64 32`, as the schema comments say. DATABASE_URL is set by docker-compose.yml.
 // The one-line installer (install.sh) does the same steps; it needs git, openssl and a running docker or podman, on macOS, Linux or WSL.
 const manual = [
   `git clone ${REPO}.git\ncd zetta`,
   [
     "cat > apps/server/.env <<EOF",
     "BETTER_AUTH_SECRET=$(openssl rand -base64 32)",
-    "BETTER_AUTH_URL=http://localhost:3000",
+    "ZETTA_SERVER_URL=http://localhost:3001",
     "ZETTA_CONNECTION_KEY=$(openssl rand -base64 32)",
     "ZETTA_SETUP_KEY=$(openssl rand -base64 32)",
     "EOF",
-    'echo "VITE_SERVER_URL=http://localhost:3000" > apps/web/.env',
+    'echo "ZETTA_SERVER_URL=http://localhost:3001" > apps/web/.env',
   ].join("\n"),
   "docker compose up -d --build",
 ];

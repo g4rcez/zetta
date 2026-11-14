@@ -77,9 +77,16 @@ export function useBackgroundNotifications() {
         for (const r of routines) {
           const before = runs.get(r.id);
           runs.set(r.id, r.lastRunAt);
-          if (notify && r.lastRunAt && before !== undefined && before !== r.lastRunAt)
+          // A failed run raised a decision card in Inbox, and that card notifies: a second alert would say it twice.
+          if (
+            notify &&
+            r.status !== "failed" &&
+            r.lastRunAt &&
+            before !== undefined &&
+            before !== r.lastRunAt
+          )
             showNative(
-              r.status === "failed" ? `Routine failed: ${r.title}` : `Routine ran: ${r.title}`,
+              `Routine ran: ${r.title}`,
               "",
               `routine-${r.id}-${r.lastRunAt}`,
               "/routines",

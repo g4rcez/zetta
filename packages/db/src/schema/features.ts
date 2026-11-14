@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { ATTENTION_KINDS } from "@zetta/core/attention-kinds";
 import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
@@ -233,6 +234,10 @@ export const attentionItem = zetta.table(
     source: text("source", { enum: ["routine", "workflow", "manual", "bot"] })
       .default("manual")
       .notNull(),
+    /** What the card is about. A decision waits in Inbox; an fyi only shows in Activity > Updates (see `categoryOf`). */
+    kind: text("kind", { enum: ATTENTION_KINDS }).default("other").notNull(),
+    /** The routine, loop, task, room, memory page or inbound channel the card is about, so nothing parses `sourceKey`. */
+    subjectId: text("subject_id"),
     status: text("status", { enum: ["open", "acknowledged", "resolved", "cancelled"] })
       .default("open")
       .notNull(),
@@ -507,6 +512,8 @@ export const configProposal = zetta.table(
       .notNull(),
     /** Who decided: the person, the end-of-turn auto-apply, or an "Always allow" rule they saved (`approval_rule`). Null before. */
     decidedBy: text("decided_by", { enum: PROPOSAL_DECIDERS }),
+    /** Where the card was raised (a chat or a room), so Inbox can offer "Open in chat" without a second record. */
+    resultLink: text("result_link"),
   },
   (t) => [
     index("config_proposal_pending_expiry_idx")

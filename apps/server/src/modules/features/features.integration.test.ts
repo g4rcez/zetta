@@ -2,6 +2,7 @@ import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
+import { attentionItem } from "@zetta/db/schema/features";
 import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
@@ -142,6 +143,40 @@ suite("features against compose postgres", () => {
     expect(
       (await call(B, "POST", `/api/bots/${bot.id}/hooks`, { kind: "stop", pattern: "x" })).status,
     ).toBe(404);
+  });
+
+  test("the card list can keep decisions or updates, only the live ones, and page backwards", async () => {
+    const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000);
+    const mk = async (
+      title: string,
+      kind: (typeof attentionItem.$inferInsert)["kind"],
+      minutesAgo: number,
+      status: "open" | "resolved" = "open",
+    ) =>
+      db.insert(attentionItem).values({
+        ownerUserId: A,
+        title,
+        kind,
+        status,
+        updatedAt: at(minutesAgo),
+      });
+    await mk("Idle room 1", "room_idle", 1);
+    await mk("Idle room 2", "room_idle", 2);
+    await mk("Idle room 3", "room_idle", 3, "resolved");
+    await mk("Loop paused", "loop_paused", 4);
+    const titles = async (query: string) =>
+      ((await call(A, "GET", `/api/attention${query}`)).json.items as { title: string }[]).map(
+        (i) => i.title,
+      );
+    expect(await titles("?category=fyi&state=live")).toEqual(["Idle room 1", "Idle room 2"]);
+    expect(await titles("?category=decision&state=live")).toEqual(["Loop paused"]);
+    expect(await titles("?category=fyi")).toContain("Idle room 3");
+    // Paging: ask for one, then for what is older than it.
+    expect(await titles("?category=fyi&state=live&limit=1")).toEqual(["Idle room 1"]);
+    expect(await titles(`?category=fyi&state=live&before=${at(1.5).toISOString()}`)).toEqual([
+      "Idle room 2",
+    ]);
+    expect((await call(A, "GET", "/api/attention?category=nope")).status).toBe(400);
   });
 
   test("routines need a ready bot, run when due, and failures reach attention", async () => {

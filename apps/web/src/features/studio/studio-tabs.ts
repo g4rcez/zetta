@@ -6,11 +6,6 @@ export const studioTabs = [
     blurb: "Your bots' engines, accounts and rules at a glance.",
   },
   {
-    slug: "attention",
-    label: "Inbox",
-    blurb: "Things that need you, with the actions to deal with them.",
-  },
-  {
     slug: "output-styles",
     label: "Output styles",
     blurb: "How your bots write. Tone templates you can share.",
@@ -52,5 +47,5 @@ export const isStudioTab = (value: string): value is StudioTab =>
   studioTabs.some((t) => t.slug === value);
 
 /** Studio sections promoted to the main app rail; the Studio side nav lists the rest. */
-export const railTabs: readonly StudioTab[] = ["attention", "plugins", "computer"];
+export const railTabs: readonly StudioTab[] = ["plugins", "computer"];
 export const isRailTab = (slug: string) => railTabs.includes(slug as StudioTab);

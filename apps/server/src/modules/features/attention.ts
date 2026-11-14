@@ -1,6 +1,7 @@
 import type { Database } from "@zetta/db";
 import { and, eq, inArray, sql } from "@zetta/db/query";
 import { attentionItem } from "@zetta/db/schema/features";
+import type { AttentionKind } from "@zetta/core/attention-kinds";
 import { topics } from "@zetta/core/live-topics";
 import { events } from "../events/bus";
 
@@ -9,6 +10,10 @@ const changed = (ownerUserId: string) =>
   events.publish([ownerUserId], topics.attention, topics.botStatus);
 
 export type AttentionInput = {
+  /** What the card is about. Required, so every producer says whether it is a decision (Inbox) or an update (Activity). */
+  kind: AttentionKind;
+  /** The routine, loop, task, room, memory page or inbound channel the card is about. */
+  subjectId?: string | null;
   title: string;
   detail?: string;
   nextAction?: string;
@@ -38,6 +43,8 @@ export async function raiseAttention(
     botId: v.botId ?? null,
     resultLink: v.resultLink ?? null,
     source: v.source ?? "manual",
+    kind: v.kind,
+    subjectId: v.subjectId ?? null,
     completed: (v.completed ?? "").slice(0, 1000),
     remaining: (v.remaining ?? "").slice(0, 1000),
     sourceKey: v.sourceKey ?? null,
@@ -55,6 +62,8 @@ export async function raiseAttention(
       targetWhere: sql`${attentionItem.sourceKey} is not null and ${attentionItem.status} in ('open', 'acknowledged')`,
       set: {
         title: values.title,
+        kind: values.kind,
+        subjectId: values.subjectId,
         occurrences: sql`${attentionItem.occurrences} + 1`,
         detail: values.detail,
         updatedAt: new Date(),
@@ -101,6 +110,27 @@ export async function closeAttentionKey(
       and(
         eq(attentionItem.ownerUserId, ownerUserId),
         eq(attentionItem.sourceKey, sourceKey),
+        inArray(attentionItem.status, ["open", "acknowledged"]),
+      ),
+    );
+  changed(ownerUserId);
+}
+
+/** Closes several cards at once by id (one live event for the whole batch). Used when the thing they were about no longer needs the person. */
+export async function closeAttentionIds(
+  db: Pick<Database, "update">,
+  ownerUserId: string,
+  ids: readonly string[],
+  status: "resolved" | "cancelled",
+) {
+  if (ids.length === 0) return;
+  await db
+    .update(attentionItem)
+    .set({ status, updatedAt: new Date() })
+    .where(
+      and(
+        eq(attentionItem.ownerUserId, ownerUserId),
+        inArray(attentionItem.id, [...ids]),
         inArray(attentionItem.status, ["open", "acknowledged"]),
       ),
     );

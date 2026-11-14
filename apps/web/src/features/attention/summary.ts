@@ -1,24 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
-import { useRouterState } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
 
-import { ApiError, call, chatClient, type AttentionSummary } from "../chat/chat-client";
+import { categoryOf, isAttentionKind, notifyOf } from "@zetta/core/attention-kinds";
+import { ApiError, call, chatClient, type AttentionSummary, type Bot } from "../chat/chat-client";
+import type { CatchUpEntry } from "../catch-up/catch-up-api";
 import { queryClient } from "@/lib/query-client";
 import { pollEvery } from "@/lib/query-policy";
 import { discussionsApi } from "../discussions/discussions-api";
 
 /** What one bot needs from the user: open items, and how many of those the user has not seen yet. */
 export type BotAttention = { open: number; unread: number };
+/** An attention card that is an update, not a decision (`GET /api/attention`). Only the few that raise a desktop alert are read. */
 type Item = {
   id: string;
+  kind: string;
   title: string;
   detail: string;
   resultLink: string | null;
-  botId: string | null;
   status: string;
   readAt: string | null;
-  source: string;
-  sourceKey: string | null;
 };
 
 /** Runs of the user's routines not opened yet (a running one counts), and the chats they live in. */
@@ -50,9 +49,9 @@ export async function enableNativeNotifications() {
 }
 
 /** One native notification; clicking it focuses the window and opens `link` (an in-app path). */
-export function showNative(title: string, body: string, tag: string, link = "/studio/attention") {
+export function showNative(title: string, body: string, tag: string, link = "/catch-up") {
   if (nativeNotificationState() !== "granted") return;
-  const path = /^\/(?!\/)/.test(link) ? link : "/studio/attention";
+  const path = /^\/(?!\/)/.test(link) ? link : "/catch-up";
   const options = { body: body.slice(0, 200), tag, data: { url: path } };
   const direct = () => {
     try {
@@ -75,16 +74,58 @@ export function showNative(title: string, body: string, tag: string, link = "/st
     .catch(direct);
 }
 
-/** Shows one native notification per new unread open item. The first run only records the backlog. */
-function notifyNew(items: Item[]) {
-  const open = items.filter((i) => i.status === "open" && !i.readAt);
+/** One desktop alert: what it says, and the page it opens. `key` says whether it was already shown. */
+type Notice = { key: string; title: string; body: string; link: string };
+
+const catchUpLink = (key: string) => `/catch-up?item=${key}`;
+
+/** A decision or an approval, as an alert that opens its own card in Inbox. */
+function noticeOf(e: CatchUpEntry): Notice {
+  if (e.source === "card")
+    return {
+      key: e.key,
+      title: e.title,
+      body: e.detail || e.context.subject || "",
+      link: catchUpLink(e.key),
+    };
+  // An approval carries no title of its own: say who asks and show its first change.
+  const asker = queryClient.getQueryData<Bot[]>(["bots"])?.find((b) => b.id === e.botId)?.name;
+  const first = e.proposal.diff[0];
+  const to = first && (typeof first.to === "string" ? first.to : JSON.stringify(first.to));
+  return {
+    key: e.key,
+    title: `${asker ?? "A bot"} needs your approval`,
+    body: first ? `${first.field}: ${to}` : "",
+    link: catchUpLink(e.key),
+  };
+}
+
+/** Updates (not decisions) that still raise an alert, such as an agenda reminder. */
+const updateNotices = (items: Item[]): Notice[] =>
+  items
+    .filter(
+      (i) =>
+        i.status === "open" &&
+        !i.readAt &&
+        isAttentionKind(i.kind) &&
+        categoryOf(i.kind) === "fyi" &&
+        notifyOf(i.kind) === "native",
+    )
+    .map((i) => ({
+      key: i.id,
+      title: i.title,
+      body: i.detail,
+      link: i.resultLink ?? "/catch-up",
+    }));
+
+/** Shows one desktop alert per notice not shown before. The first run only records the backlog. */
+function notifyNew(notices: Notice[]) {
   const seen = readNotified();
   const all = new Set(seen ?? []);
-  for (const i of open) all.add(i.id);
+  for (const n of notices) all.add(n.key);
   if (seen && nativeNotificationState() === "granted") {
-    for (const i of open.filter((x) => !seen.has(x.id))) {
-      showNative(i.title, i.detail, i.id, i.resultLink ?? undefined);
-    }
+    for (const n of notices.filter((x) => !seen.has(x.key)))
+      showNative(n.title, n.body, n.key, n.link);
   }
   writeNotified(all);
 }
@@ -112,63 +153,41 @@ const EMPTY: Snapshot = {
 };
 const KEY = ["attention"] as const;
 
+const ROUTINE_KINDS = ["routine_failed", "routine_blocked", "routine_interrupted"];
+
 async function fetchSnapshot(): Promise<Snapshot> {
   const last = queryClient.getQueryData<Snapshot>(KEY) ?? EMPTY;
   try {
-    const [summary, discussions, firstRoutines] = await Promise.all([
+    const [queue, updates, discussions, firstRoutines] = await Promise.all([
+      // The queue is built on the server in one pass, so it is the only list asked for on every poll.
+      call<{ items: CatchUpEntry[] }>("/api/catch-up").then((r) => r.items),
       chatClient.attentionSummary(),
       // A failed count keeps the last one, so it never blocks the attention counts.
       discussionsApi.running().catch(() => last.running),
       call<RoutineUnread>("/api/routines/unread").catch(() => undefined),
     ]);
     const here = window.location.pathname;
-    const key = `${summary.open}:${summary.unread}:${summary.acknowledged}`;
-    // The item list is the large payload. Fetch it when the counts moved, on a chat (its cards are marked read), or when alerts are on.
-    const needItems =
-      last === EMPTY ||
-      last.key !== key ||
-      here.startsWith("/chat/") ||
-      nativeNotificationState() === "granted";
-    const list = needItems ? await call<{ items: Item[] }>("/api/attention") : undefined;
-    // Cards that point at the chat on screen are seen: mark them read now, so no badge or native alert says it is new.
-    const onScreen =
-      document.hidden || !list
-        ? []
-        : list.items.filter(
-            (i) =>
-              i.status === "open" &&
-              !i.readAt &&
-              i.resultLink === here &&
-              here.startsWith("/chat/"),
-          );
-    await Promise.all(
-      onScreen.map((i) =>
-        call(`/api/attention/${i.id}/action`, "POST", { action: "read" }).catch(() => {}),
-      ),
-    );
-    const readNow = new Date().toISOString();
-    const items = list?.items.map((i) => (onScreen.includes(i) ? { ...i, readAt: readNow } : i));
-    let byBot = last.byBot;
-    let routineAttention = last.routineAttention;
-    if (items) {
-      const bots = new Map<string, BotAttention>();
-      for (const i of items) {
-        if (i.botId === null || i.status !== "open") continue;
-        const n = bots.get(i.botId) ?? { open: 0, unread: 0 };
-        bots.set(i.botId, { open: n.open + 1, unread: n.unread + (i.readAt ? 0 : 1) });
-      }
-      byBot = bots;
-      notifyNew(items);
-      // A routine with an open or seen-but-not-fixed card still needs the user, whatever its run status is now.
-      const needing = new Set<string>();
-      for (const i of items) {
-        if (i.source !== "routine" || (i.status !== "open" && i.status !== "acknowledged"))
-          continue;
-        const id = /^routine:([^:]+):/.exec(i.sourceKey ?? "")?.[1];
-        if (id) needing.add(id);
-      }
-      routineAttention = needing;
+    const key = `${updates.open}:${updates.unread}:${updates.acknowledged}`;
+    // The update cards are read only for their desktop alerts: when their counts moved, or when alerts are on.
+    const needUpdates =
+      last === EMPTY || last.key !== key || nativeNotificationState() === "granted";
+    const updateList = needUpdates
+      ? await call<{ items: Item[] }>("/api/attention")
+          .then((r) => r.items)
+          .catch(() => [] as Item[])
+      : [];
+    notifyNew([...queue.map(noticeOf), ...(updateList.length ? updateNotices(updateList) : [])]);
+    const byBot = new Map<string, BotAttention>();
+    for (const e of queue) {
+      if (!e.botId) continue;
+      const n = byBot.get(e.botId)?.open ?? 0;
+      byBot.set(e.botId, { open: n + 1, unread: n + 1 });
     }
+    // A routine with a decision waiting still needs the person, whatever its run status is now.
+    const routineAttention = new Set<string>();
+    for (const e of queue)
+      if (e.source === "card" && ROUTINE_KINDS.includes(e.kind) && e.subjectId)
+        routineAttention.add(e.subjectId);
     // The routine chat on screen is seen: mark its runs read now, so the badge does not count what the user is looking at.
     let routines = firstRoutines;
     const seen =
@@ -181,7 +200,8 @@ async function fetchSnapshot(): Promise<Snapshot> {
     }
     return {
       key,
-      summary: { ...summary, unread: Math.max(0, summary.unread - onScreen.length) },
+      // What waits for a decision. `unread` is the same number: a decision is either waiting or done.
+      summary: { open: queue.length, unread: queue.length, acknowledged: 0 },
       byBot,
       running: discussions,
       routineUnread: routines?.count ?? last.routineUnread,
@@ -213,22 +233,12 @@ export function refreshAttention(force = false) {
   return queryClient.invalidateQueries({ queryKey: KEY }, { cancelRefetch: false });
 }
 
-/** Number of unread open items (undefined until known or when signed out). */
+/** How many decisions wait for the person (undefined until known or when signed out). */
 export function useAttentionSummary(): AttentionSummary | undefined {
-  const value = useSnapshot((s) => s.summary);
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const lastPath = useRef(pathname);
-  // Opening a chat clears its badge at once; the first render already fetches, so only a later route change to a chat asks again.
-  // Other pages that change attention (a room opened, a routine run) call `refreshAttention` themselves.
-  useEffect(() => {
-    if (lastPath.current === pathname) return;
-    lastPath.current = pathname;
-    if (pathname.startsWith("/chat/")) void refreshAttention(true);
-  }, [pathname]);
-  return value;
+  return useSnapshot((s) => s.summary);
 }
 export const attentionLabel = (s?: AttentionSummary) =>
-  s && s.unread > 0 ? `${s.unread} unread` : "";
+  s && s.unread > 0 ? `${s.unread} waiting` : "";
 
 /** Discussions the bots are working on now, from the same poll. */
 export function useRunningDiscussions(): number {
@@ -247,7 +257,7 @@ export function useRoutineUnread(): number {
   return useSnapshot((s) => s.routineUnread) ?? 0;
 }
 
-/** Ids of the routines that have an open Inbox card (failed, blocked or interrupted and not yet resolved). */
+/** Ids of the routines that have a decision waiting in Inbox (failed, blocked or interrupted and not yet decided). */
 export function useRoutineAttention(): ReadonlySet<string> {
   useAttentionSummary();
   return useSnapshot((s) => s.routineAttention) ?? EMPTY.routineAttention;

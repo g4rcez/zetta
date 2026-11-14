@@ -150,33 +150,45 @@ function BotNames({ names, bots }: { names: string[]; bots: Bot[] }) {
 const STALE =
   "This proposal is out of date because the bot changed after it was made. Nothing was applied; ask the bot for a new proposal.";
 
-export function ProposalsPanel({
-  proposals,
-  bots,
+/** Sends one decision. `remember` makes the answer stand for this chat or for the bot. */
+export type ProposalDecide = (
+  p: Proposal,
+  approve: boolean,
+  choice?: SkillsChoice,
+  answer?: FormAnswer,
+  remember?: "bot" | "chat",
+) => Promise<void>;
+
+export type UseProposalDecisionOptions = {
+  /** The chat the card sits in: cards then offer "Allow in this chat". */
+  conversationId?: string | undefined;
+  /** Called once a card is closed: decided, or past its deadline. */
+  onResolved: (id: string) => void;
+  /** Called after a change that touches the bot list (a created bot, a changed setting). */
+  onBotsChanged: () => void;
+  /** Shows the outcome to the person. */
+  notify: (m: ReactNode) => void;
+};
+
+export type ProposalDecision = {
+  /** The id of the proposal being decided right now. */
+  busy: string | undefined;
+  /** The last failure of each proposal, by proposal id. */
+  errors: Record<string, string>;
+  decide: ProposalDecide;
+};
+
+/** The decide / busy / errors state of approval cards. State and callbacks only; `ProposalCard` renders it. */
+export function useProposalDecision({
+  conversationId,
   onResolved,
   onBotsChanged,
   notify,
-  conversationId,
-}: {
-  /** The chat the panel sits in: cards then offer "Allow in this chat". */
-  conversationId?: string | undefined;
-  proposals: Proposal[];
-  bots: Bot[];
-  onResolved: (id: string) => void;
-  onBotsChanged: () => void;
-  notify: (m: ReactNode) => void;
-}) {
+}: UseProposalDecisionOptions): ProposalDecision {
   const qc = useQueryClient();
-  const approvalMode = useApprovalMode();
   const [busy, setBusy] = useState<string>();
   const [errors, setErrors] = useState<Record<string, string>>({});
-  async function decide(
-    p: Proposal,
-    approve: boolean,
-    choice?: SkillsChoice,
-    answer?: FormAnswer,
-    remember?: "bot" | "chat",
-  ) {
+  const decide: ProposalDecide = async (p, approve, choice, answer, remember) => {
     setBusy(p.id);
     setErrors((m) => Object.fromEntries(Object.entries(m).filter(([id]) => id !== p.id)));
     try {
@@ -238,186 +250,249 @@ export function ProposalsPanel({
     } finally {
       setBusy(undefined);
     }
-  }
-  // AI Elements Confirmation pattern: what the bot wants to do, then Approve / Reject.
-  return (
-    <>
-      {proposals.map((p) => {
-        const askerId = p.proposedByBotId ?? p.botId;
-        const asker =
-          bots.find((b) => b.id === askerId) ??
-          (askerId ? { id: askerId, name: "A bot" } : undefined);
-        const target = bots.find((b) => b.id === p.botId);
-        if (p.kind === "install_skills" && p.patch)
-          return (
-            <div key={p.id} className="space-y-2">
-              {asker && <BotIdentity bot={asker} size={24} sub="asks to install skills" />}
-              <SkillsInstallCard
-                offer={p.patch as unknown as SkillsOffer}
-                busy={busy === p.id}
-                error={errors[p.id]}
-                onDecide={(approve, choice) => void decide(p, approve, choice)}
-              />
-            </div>
-          );
-        if (p.kind === "tool_resume" && p.patch)
-          return (
-            <ToolPauseCard
-              key={p.id}
-              asker={asker}
-              patch={p.patch as unknown as PausedCallPatch}
-              expiresAt={p.expiresAt}
-              busy={busy === p.id}
-              error={errors[p.id]}
-              onDecide={(approve, answer) => void decide(p, approve, undefined, answer)}
-            />
-          );
-        const creating = p.kind && p.kind !== "config";
-        const draft = p.kind === "create_memory_item" ? draftFromProposal(p.patch) : undefined;
-        const approveLabel =
-          p.kind === "team_goals"
-            ? "Start goals"
-            : p.kind === "start_loop"
-              ? "Start loop"
-              : p.kind === "discussion_brief"
-                ? "Approve this brief"
-                : p.kind === "chief_action"
+  };
+  return { busy, errors, decide };
+}
+
+export type ProposalCardProps = {
+  proposal: Proposal;
+  bots: Bot[];
+  /** The chat the card sits in: the card then offers "Allow in this chat". */
+  conversationId?: string | undefined;
+  /** True while this proposal is being decided. */
+  busy: boolean;
+  /** Why the last decision on this proposal failed. */
+  error?: string | undefined;
+  /** Extra controls at the start of the action row (Inbox puts "Skip for now" there). */
+  leading?: ReactNode;
+  /** From `useProposalDecision`. */
+  decide: ProposalDecide;
+};
+
+// AI Elements Confirmation pattern: what the bot wants to do, then Approve / Reject.
+/** One pending approval: what the bot wants to do, then the buttons that answer it. */
+export function ProposalCard({
+  proposal: p,
+  bots,
+  conversationId,
+  busy,
+  error,
+  decide,
+  leading,
+}: ProposalCardProps) {
+  const approvalMode = useApprovalMode();
+  const askerId = p.proposedByBotId ?? p.botId;
+  const asker =
+    bots.find((b) => b.id === askerId) ?? (askerId ? { id: askerId, name: "A bot" } : undefined);
+  const target = bots.find((b) => b.id === p.botId);
+  if (p.kind === "install_skills" && p.patch)
+    return (
+      <div className="space-y-2">
+        {asker && <BotIdentity bot={asker} size={24} sub="asks to install skills" />}
+        <SkillsInstallCard
+          offer={p.patch as unknown as SkillsOffer}
+          busy={busy}
+          error={error}
+          onDecide={(approve, choice) => void decide(p, approve, choice)}
+        />
+      </div>
+    );
+  if (p.kind === "tool_resume" && p.patch)
+    return (
+      <ToolPauseCard
+        asker={asker}
+        patch={p.patch as unknown as PausedCallPatch}
+        expiresAt={p.expiresAt}
+        busy={busy}
+        error={error}
+        onDecide={(approve, answer) => void decide(p, approve, undefined, answer)}
+      />
+    );
+  const creating = p.kind && p.kind !== "config";
+  const draft = p.kind === "create_memory_item" ? draftFromProposal(p.patch) : undefined;
+  const approveLabel =
+    p.kind === "team_goals"
+      ? "Start goals"
+      : p.kind === "start_loop"
+        ? "Start loop"
+        : p.kind === "discussion_brief"
+          ? "Approve this brief"
+          : p.kind === "chief_action"
+            ? "Approve"
+            : p.kind === "create_memory_item"
+              ? "Save it"
+              : p.kind === "open_discussion"
+                ? "Approve and open"
+                : p.kind === "bot_permission" || p.kind === "bot_action"
                   ? "Approve"
-                  : p.kind === "create_memory_item"
-                    ? "Save it"
-                    : p.kind === "open_discussion"
-                      ? "Approve and open"
-                      : p.kind === "bot_permission" || p.kind === "bot_action"
-                        ? "Approve"
-                        : creating
-                          ? "Approve and create"
-                          : "Approve";
-        const left = p.expiresAt ? relativeTime(p.expiresAt) : "";
-        return (
-          <Item
-            key={p.id}
-            variant="outline"
-            size="sm"
-            role="group"
-            aria-label={creating ? summarize(p) : "Proposed change"}
-            className="rounded-lg border-warn/40 bg-warn/5 text-sm"
-          >
-            <ItemMedia variant="icon">
-              <ShieldWarningIcon className="text-warn" />
-            </ItemMedia>
-            <ItemContent className="min-w-0">
-              <ItemTitle className="flex-wrap gap-x-2 text-sm">
-                {asker && <BotIdentity bot={asker} size={24} className="w-auto flex-none" />}
-                {creating ? (
-                  <span>suggests: {summarize(p)}</span>
-                ) : (
-                  <>
-                    <span>proposed a change to</span>
-                    {target ? (
-                      <BotIdentity bot={target} size={20} className="w-auto flex-none" />
-                    ) : (
-                      <span>a bot</span>
-                    )}
-                  </>
-                )}
-              </ItemTitle>
-              <ul className="space-y-0.5 text-xs text-muted-foreground">
-                {p.diff.map((d, i) => (
-                  <li key={`${d.field}-${i}`} className="break-words">
-                    <span className="font-medium text-foreground">{fieldLabel(d.field)}</span>:{" "}
-                    {creating &&
-                    (d.field === "bot" || d.field === "members") &&
-                    typeof d.to === "string" ? (
-                      <BotNames names={d.to.split(", ")} bots={bots} />
-                    ) : creating && !(p.kind === "chief_action" && d.from != null) ? (
-                      <span>{showValue(d.to)}</span>
-                    ) : (
-                      <>
-                        <del className="opacity-60">{showValue(d.from, 120)}</del> →{" "}
-                        <ins className="no-underline">{showValue(d.to)}</ins>
-                      </>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {left && (
-                <p className="text-xs text-muted-foreground">
-                  Expires {left === "now" ? "any moment" : left}
-                </p>
+                  : creating
+                    ? "Approve and create"
+                    : "Approve";
+  const left = p.expiresAt ? relativeTime(p.expiresAt) : "";
+  return (
+    <Item
+      variant="outline"
+      size="sm"
+      role="group"
+      aria-label={creating ? summarize(p) : "Proposed change"}
+      className="rounded-lg border-warn/40 bg-warn/5 text-sm"
+    >
+      <ItemMedia variant="icon">
+        <ShieldWarningIcon className="text-warn" />
+      </ItemMedia>
+      <ItemContent className="min-w-0">
+        <ItemTitle className="flex-wrap gap-x-2 text-sm">
+          {asker && <BotIdentity bot={asker} size={24} className="w-auto flex-none" />}
+          {creating ? (
+            <span>suggests: {summarize(p)}</span>
+          ) : (
+            <>
+              <span>proposed a change to</span>
+              {target ? (
+                <BotIdentity bot={target} size={20} className="w-auto flex-none" />
+              ) : (
+                <span>a bot</span>
               )}
-              {draft && (
-                <Link
-                  to="/memory-draft"
-                  search={{ d: draft }}
-                  className="text-xs underline underline-offset-2"
-                >
-                  Preview the change (nothing is saved)
-                </Link>
-              )}
-              {errors[p.id] && (
-                <p role="alert" className="text-xs text-destructive">
-                  {errors[p.id]}
-                </p>
-              )}
-            </ItemContent>
-            <ItemActions>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={busy === p.id}
-                onClick={() => void decide(p, false)}
-              >
-                {p.kind === "start_loop" || p.kind === "team_goals"
-                  ? "Not now"
-                  : p.kind === "bot_permission"
-                    ? "Deny"
-                    : "Reject"}
-              </Button>
-              {p.confirm === "hold" && approvalMode === "hold" ? (
-                <HoldButton
-                  size="sm"
-                  variant="success"
-                  disabled={busy === p.id}
-                  onHold={() => void decide(p, true)}
-                >
-                  Hold to approve
-                </HoldButton>
+            </>
+          )}
+        </ItemTitle>
+        <ul className="space-y-0.5 text-xs text-muted-foreground">
+          {p.diff.map((d, i) => (
+            <li key={`${d.field}-${i}`} className="break-words">
+              <span className="font-medium text-foreground">{fieldLabel(d.field)}</span>:{" "}
+              {creating &&
+              (d.field === "bot" || d.field === "members") &&
+              typeof d.to === "string" ? (
+                <BotNames names={d.to.split(", ")} bots={bots} />
+              ) : creating && !(p.kind === "chief_action" && d.from != null) ? (
+                <span>{showValue(d.to)}</span>
               ) : (
                 <>
-                  {p.kind && REMEMBERABLE.includes(p.kind) && conversationId && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy === p.id}
-                      onClick={() => void decide(p, true, undefined, undefined, "chat")}
-                    >
-                      Allow in this chat
-                    </Button>
-                  )}
-                  {p.kind && REMEMBERABLE.includes(p.kind) && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy === p.id}
-                      onClick={() => void decide(p, true, undefined, undefined, "bot")}
-                    >
-                      Always allow
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="success"
-                    disabled={busy === p.id}
-                    onClick={() => void decide(p, true)}
-                  >
-                    {approveLabel}
-                  </Button>
+                  <del className="opacity-60">{showValue(d.from, 120)}</del> →{" "}
+                  <ins className="no-underline">{showValue(d.to)}</ins>
                 </>
               )}
-            </ItemActions>
-          </Item>
-        );
-      })}
+            </li>
+          ))}
+        </ul>
+        {left && (
+          <p className="text-xs text-muted-foreground">
+            Expires {left === "now" ? "any moment" : left}
+          </p>
+        )}
+        {draft && (
+          <Link
+            to="/memory-draft"
+            search={{ d: draft }}
+            className="text-xs underline underline-offset-2"
+          >
+            Preview the change (nothing is saved)
+          </Link>
+        )}
+        {error && (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        )}
+      </ItemContent>
+      <ItemActions>
+        {leading}
+        <Button
+          size="sm"
+          variant="destructive"
+          disabled={busy}
+          data-catch-up="deny"
+          onClick={() => void decide(p, false)}
+        >
+          {p.kind === "start_loop" || p.kind === "team_goals"
+            ? "Not now"
+            : p.kind === "bot_permission"
+              ? "Deny"
+              : "Reject"}
+        </Button>
+        {p.confirm === "hold" && approvalMode === "hold" ? (
+          <HoldButton
+            size="sm"
+            variant="success"
+            disabled={busy}
+            catchUp="act"
+            onHold={() => void decide(p, true)}
+          >
+            Hold to approve
+          </HoldButton>
+        ) : (
+          <>
+            {p.kind && REMEMBERABLE.includes(p.kind) && conversationId && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void decide(p, true, undefined, undefined, "chat")}
+              >
+                Allow in this chat
+              </Button>
+            )}
+            {p.kind && REMEMBERABLE.includes(p.kind) && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void decide(p, true, undefined, undefined, "bot")}
+              >
+                Always allow
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="success"
+              disabled={busy}
+              data-catch-up="act"
+              onClick={() => void decide(p, true)}
+            >
+              {approveLabel}
+            </Button>
+          </>
+        )}
+      </ItemActions>
+    </Item>
+  );
+}
+
+export function ProposalsPanel({
+  proposals,
+  bots,
+  onResolved,
+  onBotsChanged,
+  notify,
+  conversationId,
+}: {
+  /** The chat the panel sits in: cards then offer "Allow in this chat". */
+  conversationId?: string | undefined;
+  proposals: Proposal[];
+  bots: Bot[];
+  onResolved: (id: string) => void;
+  onBotsChanged: () => void;
+  notify: (m: ReactNode) => void;
+}) {
+  const { busy, errors, decide } = useProposalDecision({
+    conversationId,
+    onResolved,
+    onBotsChanged,
+    notify,
+  });
+  return (
+    <>
+      {proposals.map((p) => (
+        <ProposalCard
+          key={p.id}
+          proposal={p}
+          bots={bots}
+          conversationId={conversationId}
+          busy={busy === p.id}
+          error={errors[p.id]}
+          decide={decide}
+        />
+      ))}
     </>
   );
 }

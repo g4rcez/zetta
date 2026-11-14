@@ -195,3 +195,43 @@ test("a person who chose to just click gets an Approve button on a card that ask
   globalThis.fetch = realFetch;
   await act(async () => root.unmount());
 });
+
+test("ProposalCard alone shows one card, disables its buttons while busy and reports the decision", async () => {
+  const { ProposalCard } = await import("./proposals-panel");
+  const decided: unknown[][] = [];
+  const host = win.document.createElement("div");
+  win.document.body.append(host);
+  const root = createRoot(host as unknown as Element);
+  const proposal = {
+    id: "p7",
+    kind: "create_routine",
+    botId: ASKER,
+    proposedByBotId: ASKER,
+    diff: [{ field: "name", from: null, to: "Morning digest" }],
+  } as never;
+  const card = (busy: boolean) =>
+    withQuery(
+      <ProposalCard
+        proposal={proposal}
+        bots={bots as never}
+        conversationId="chat-1"
+        busy={busy}
+        error="It failed"
+        decide={async (...args) => void decided.push(args)}
+      />,
+    );
+  await act(async () => root.render(card(false)));
+  const buttons = () => [...(host as unknown as HTMLElement).querySelectorAll("button")];
+  expect(buttons().map((b) => b.textContent)).toEqual([
+    "Reject",
+    "Allow in this chat",
+    "Always allow",
+    "Approve and create",
+  ]);
+  expect(host.textContent).toContain("It failed");
+  await act(async () => buttons()[1]!.click());
+  expect(decided).toEqual([[proposal, true, undefined, undefined, "chat"]]);
+  await act(async () => root.render(card(true)));
+  expect(buttons().every((b) => b.disabled)).toBe(true);
+  await act(async () => root.unmount());
+});

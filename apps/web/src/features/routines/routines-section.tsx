@@ -62,7 +62,7 @@ function useRoutineRows() {
 
 /** The routine's current status as a mark. Each has a text name; colour never carries it alone. Amber is only for "a person is needed". */
 function StatusMark({ status, needsYou }: { status: Status; needsYou: boolean }) {
-  // An open Inbox card outlives the run status (a recovery run resets it), so it keeps the warning, except while the run spins.
+  // A decision waiting in Inbox outlives the run status (a recovery run resets it), so it keeps the warning, except while the run spins.
   if (needsYou && status !== "running" && !NEEDS_YOU.includes(status))
     return <WarningIcon role="img" aria-label="Needs you" className={cn(mark, "text-attention")} />;
   switch (status) {

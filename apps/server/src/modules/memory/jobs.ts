@@ -392,6 +392,7 @@ export function createMemoryJobs(
     );
     if (notes.length)
       await raiseAttention(db, j.ownerUserId, {
+        kind: "memory_updated",
         botId: b.id,
         title: `${b.name} updated your memory after finished work`,
         detail: notes.join("\n"),

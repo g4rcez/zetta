@@ -156,6 +156,8 @@ export function createRoutineTriggers(db: Database, fire: FireEvent) {
       if (failing) {
         const [r] = await db.select().from(routine).where(eq(routine.id, t.routineId));
         await raiseAttention(db, t.ownerUserId, {
+          kind: "trigger_failing",
+          subjectId: t.id,
           botId: r?.botId ?? null,
           title: `A trigger of routine "${r?.title ?? "?"}" stopped`,
           detail: reason,

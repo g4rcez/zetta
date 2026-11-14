@@ -2,12 +2,15 @@ import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
+import { attentionItem } from "@zetta/db/schema/features";
 import { membership } from "@zetta/db/schema/identity";
 import { createApp } from "../app";
 import { createDiscussionStore } from "./discussions/store";
 import { createInbound } from "./inbound/service";
 import { cleanupTestUsers } from "../test-support/db-cleanup";
 import { createChatService } from "./chat/service";
+import { createCatchUpActions } from "./catch-up/act";
+import { createTaskStore } from "./tasks/store";
 import { createFeaturesService } from "./features/service";
 import { createIdentityAccess } from "./identity/access";
 import { createMcp } from "./integrations/mcp";
@@ -82,6 +85,20 @@ suite("cross-user isolation matrix", () => {
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: { access: realAccess, chat },
     features: { access: realAccess, features },
+    catchUp: {
+      access: realAccess,
+      catchUp: { db, listProposals: chat.listProposals },
+      actions: createCatchUpActions({
+        db,
+        tasks: createTaskStore(db),
+        loops: {} as never,
+        discussions,
+        memory,
+        chat,
+        features,
+        inbound,
+      }),
+    },
     integrations: { access: realAccess, mcp, sources },
     discussions: {
       access: realAccess,
@@ -183,6 +200,13 @@ suite("cross-user isolation matrix", () => {
     owned.attn = (
       await call(A, "POST", "/api/attention", { title: `attn ${SECRET}` })
     ).json.item.id;
+    // A decision card waiting in Inbox (the manual card above is an update, which Inbox never lists).
+    owned.card = (
+      await db
+        .insert(attentionItem)
+        .values({ ownerUserId: A, title: `card ${SECRET}`, kind: "sign_in", source: "bot" })
+        .returning()
+    )[0]!.id;
     owned.mcp = (
       await call(A, "POST", "/api/mcp/servers", {
         name: "iso",
@@ -246,6 +270,7 @@ suite("cross-user isolation matrix", () => {
         "/api/routines",
         "/api/workflows",
         "/api/attention",
+        "/api/catch-up",
         "/api/proposals",
         "/api/mcp/servers",
         "/api/sources",
@@ -320,6 +345,8 @@ suite("cross-user isolation matrix", () => {
           },
         ],
         ["POST", `/api/attention/${o.attn}/action`, { action: "resolve" }],
+        ["POST", `/api/catch-up/${o.card}/act`, {}],
+        ["POST", `/api/catch-up/${o.card}/deny`],
         ["POST", `/api/proposals/${o.prop}/decision`, { approve: true }],
         ["GET", `/api/mcp/servers/${o.mcp}/tools`],
         ["DELETE", `/api/mcp/servers/${o.mcp}`],

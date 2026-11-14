@@ -154,6 +154,8 @@ export function createWorkflows(
     if (result.status === "failed") {
       const failedStep = result.trace.findLast((t) => t.error);
       await raiseAttention(db, userId, {
+        kind: "workflow_failed",
+        subjectId: wf.id,
         title: `Workflow "${wf.name}" failed`,
         detail: failedStep
           ? `Step "${failedStep.node}" (${failedStep.type}) could not finish.`
@@ -262,6 +264,8 @@ export function createWorkflows(
         .returning();
       for (const r of rows)
         await raiseAttention(db, r.ownerUserId, {
+          kind: "workflow_interrupted",
+          subjectId: r.workflowId,
           title: "A workflow run was interrupted by a restart",
           detail: "The server stopped while it was running; completed steps are in the trace.",
           nextAction: "Open the run and run the workflow again if needed.",

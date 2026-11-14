@@ -42,6 +42,8 @@ export function createAgendaScheduler(
         ? r.startAt.toISOString().slice(0, 10)
         : `${r.startAt.toISOString().slice(0, 16).replace("T", " ")} UTC`;
       await raiseAttention(db, r.ownerUserId, {
+        kind: "agenda_reminder",
+        subjectId: r.id,
         title: `${r.kind === "task" ? "Task due" : r.kind === "event" ? "Coming up" : "Reminder"}: ${r.title}`,
         detail: [when, r.location, r.description].filter(Boolean).join("\n"),
         nextAction: "Open the Agenda to mark it done or move it.",
@@ -86,6 +88,7 @@ export function createAgendaScheduler(
         failed.some((r) => ["NEEDS_AUTH", "NOT_CONNECTED", "SCOPE_MISSING"].includes(r.error.code))
       )
         await raiseAttention(db, a.userId, {
+          kind: "connection_lost",
           title: "Agenda cannot sync with Google Calendar",
           detail: lines.join("\n"),
           nextAction: "Reconnect Google in Studio > Plugins with Calendar access.",
@@ -111,6 +114,7 @@ export function createAgendaScheduler(
         .where(eq(agendaSync.ownerUserId, a.userId));
       if (p.code === "NEEDS_AUTH" || p.code === "NOT_CONNECTED" || p.code === "SCOPE_MISSING")
         await raiseAttention(db, a.userId, {
+          kind: "connection_lost",
           title: "Agenda cannot sync with Google Calendar",
           detail: p.safe,
           nextAction: "Reconnect Google in Studio > Plugins with Calendar access.",
@@ -140,8 +144,19 @@ export function createAgendaScheduler(
         .where(eq(agendaSync.ownerUserId, ownerUserId));
   }
 
+  /** After Google was (re)connected: look again now when this user syncs their agenda, so a "cannot sync" card does not wait for the next round. */
+  async function syncIfEnabled(a: ActiveActor) {
+    const [row] = await db
+      .select({ id: agendaSync.id })
+      .from(agendaSync)
+      .where(and(eq(agendaSync.ownerUserId, a.userId), eq(agendaSync.enabled, true)))
+      .limit(1);
+    return row ? syncUser(a) : undefined;
+  }
+
   return {
     syncUser,
+    syncIfEnabled,
     async tick(now = new Date()) {
       if (busy) return;
       busy = true; // a slow Google round must not overlap the next tick

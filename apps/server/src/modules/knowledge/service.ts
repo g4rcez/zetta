@@ -570,6 +570,7 @@ export function createKnowledge(
         .where(eq(knowledgeSource.id, s.id));
       if (auth)
         await raiseAttention(db, a.userId, {
+          kind: "connection_lost",
           title: "Company knowledge cannot read your Drive",
           detail: e instanceof PluginError ? e.safe : "Google access is missing.",
           nextAction: "Reconnect Google in Studio > Plugins with Drive read access.",

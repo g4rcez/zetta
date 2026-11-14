@@ -656,7 +656,7 @@ suite("teams against compose postgres", () => {
     expect(devRuns[0]!.prompt).toContain("Done when: it is shipped");
   });
 
-  test("a member's write to a task it does not own, after it read the board, waits for a card; Approve runs it and wakes the member again", async () => {
+  test("a member's write to a task it does not own, after it read the board, applies at once, with no card", async () => {
     const id = await teamOf("Member held team", ["Mheld Lead", "Mheld Dev"]);
     runs.length = 0;
     const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
@@ -677,21 +677,39 @@ suite("teams against compose postgres", () => {
     await worker.drain();
     const status = async () =>
       (await db.select().from(task).where(eq(task.id, theirs!.id)))[0]!.status;
-    // Held: the task did not move, and one card holds the write.
-    expect(await status()).toBe("backlog");
-    const card = (await call("GET", "/api/proposals")).json.proposals.find(
+    // The bot read outside text first and still closed it: tasks never wait for a card.
+    expect(await status()).toBe("done");
+    const cards = (await call("GET", "/api/proposals")).json.proposals.filter(
       (p: { kind: string; diff: { to: string }[] }) =>
         p.kind === "bot_action" && p.diff.some((x) => x.to.startsWith("task update")),
     );
-    expect(card).toBeDefined();
-    const before = runs.filter((r) => r.bot === "Mheld Dev").length;
+    expect(cards).toEqual([]);
+  });
 
-    const decided = await call("POST", `/api/proposals/${card.id}/decision`, { approve: true });
-    expect(decided.json).toMatchObject({ status: "approved" });
+  test("a member's zetta:assign after it read the board applies at once, with no card", async () => {
+    const id = await teamOf("Member assign team", ["Massign Lead", "Massign Dev"]);
+    runs.length = 0;
+    const room = (await call("POST", `/api/teams/${id}/chat`)).json.discussionId as string;
+    const d = (await call("GET", `/api/discussions/${room}`)).json;
+    const conversationId = d.discussion.conversationId as string;
+    const lead = d.members.find((m: { name: string }) => m.name === "Massign Lead");
+    replies["Massign Lead"] = ["@MassignDev please hand the review to me", "On the review."];
+    replies["Massign Dev"] = [
+      'Looking at the board.\n```zetta:task\n{"action":"list"}\n```',
+      'Handing it back.\n```zetta:assign\n{"bot":"MassignLead","task":"Review the PR","done_when":"review is posted"}\n```',
+      "Handed over.",
+    ];
+    await call("POST", `/api/discussions/${room}/messages`, { content: "Review the PR" });
     await worker.drain();
-    expect(await status()).toBe("done");
-    // Nothing was handed to another member, so the proposer itself goes on.
-    expect(runs.filter((r) => r.bot === "Mheld Dev").length).toBe(before + 1);
+    const board = await db.select().from(task).where(eq(task.conversationId, conversationId));
+    expect(board.map((t) => ({ title: t.title, botId: t.botId }))).toEqual([
+      { title: "Review the PR", botId: lead.botId },
+    ]);
+    const cards = (await call("GET", "/api/proposals")).json.proposals.filter(
+      (p: { kind: string; diff: { to: string }[] }) =>
+        p.kind === "bot_action" && p.diff.some((x) => x.to.startsWith("assign ")),
+    );
+    expect(cards).toEqual([]);
   });
 
   test("a member's own task add after it read the board applies at once", async () => {

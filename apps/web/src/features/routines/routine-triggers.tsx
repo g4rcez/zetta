@@ -56,7 +56,7 @@ export function runOrigin(r: { trigger: string; event?: unknown }): string {
 }
 
 const webhookUrl = (id: string) =>
-  new URL(`/api/routines/hook/${id}`, ENV.VITE_SERVER_URL).toString();
+  new URL(`/api/routines/hook/${id}`, ENV.ZETTA_SERVER_URL).toString();
 const curlExample = (id: string, secret: string) =>
   `curl -X POST '${webhookUrl(id)}' \\\n  -H 'Authorization: Bearer ${secret}' \\\n  -H 'Content-Type: application/json' \\\n  -d '{"hello":"world"}'`;
 

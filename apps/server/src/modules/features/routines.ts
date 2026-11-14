@@ -333,6 +333,8 @@ export function createRoutines(
       await db.update(routine).set({ paused: true, nextRunAt: null }).where(eq(routine.id, r.id));
       await finish("blocked", text, code);
       await raiseAttention(db, r.ownerUserId, {
+        kind: "routine_blocked",
+        subjectId: r.id,
         botId: r.botId,
         title: `Routine "${r.title}" paused`,
         detail: text,
@@ -456,6 +458,8 @@ export function createRoutines(
       // Too many occurrences in a row failed: the routine pauses itself with one card, instead of failing on every occurrence.
       if (await countFailure(r, "add")) return;
       await raiseAttention(db, r.ownerUserId, {
+        kind: "routine_failed",
+        subjectId: r.id,
         botId: b!.id,
         title: `Routine "${r.title}" failed`,
         detail: attempt ? `${output}\n(after ${attempt + 1} attempts)` : output,
@@ -503,6 +507,8 @@ export function createRoutines(
     await db.update(routine).set({ paused: true, nextRunAt: null }).where(eq(routine.id, r.id));
     await mark(r.id, "blocked", "too_many_failures");
     await raiseAttention(db, r.ownerUserId, {
+      kind: "routine_failed",
+      subjectId: r.id,
       botId: r.botId,
       title: `Routine "${r.title}" paused after ${row.failures} failures in a row`,
       detail: "Each of its last runs failed, so it stopped trying.",
@@ -1385,6 +1391,8 @@ export function createRoutines(
       );
       for (const x of rows)
         await raiseAttention(db, x.ownerUserId, {
+          kind: "routine_interrupted",
+          subjectId: x.routineId,
           title: `Routine "${titles.get(x.routineId) ?? "unnamed"}" was interrupted by a restart`,
           detail: "The server stopped while it was running; the result is uncertain.",
           nextAction: "Open the routine history and run it again if needed.",

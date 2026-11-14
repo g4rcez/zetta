@@ -661,6 +661,8 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
   async function announceSuggestion(owner: string, page: MemoryItem, botId: string) {
     const [b] = await db.select({ name: bot.name }).from(bot).where(eq(bot.id, botId));
     await raiseAttention(db, owner, {
+      kind: "memory_suggestion",
+      subjectId: page.id,
       title: `${b?.name ?? "A bot"} suggests a change to the memory item “${page.title}”`,
       detail: "This item takes suggestions from bots. Read the new text, then accept or reject it.",
       nextAction: "Accept or reject it in Memory.",
@@ -1632,6 +1634,8 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
     if (ownItem && author.by === "bot") await announceSuggestion(p.ownerUserId, p, author.botId);
     else
       await raiseAttention(db, p.ownerUserId, {
+        kind: "memory_suggestion",
+        subjectId: p.id,
         title: `Suggested change to the memory item “${p.title}”`,
         detail: reason || "Another member suggested a new text for a page you shared.",
         nextAction: "Accept or reject it in Memory.",
@@ -1937,6 +1941,8 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
         if (d.status === "current")
           await setStatus(d.s.ownerUserId, d.slug, "stale", { by: "system" }).catch(() => {});
         await raiseAttention(db, d.s.ownerUserId, {
+          kind: "memory_stale",
+          subjectId: d.s.pageId,
           title: `The memory item “${d.title}” may be out of date`,
           detail: `Its source “${d.s.label}” (${d.s.kind}) ${status === "gone" ? "is gone" : "changed"} since the page was saved.`,
           nextAction: "Check the page, then save it or ask a bot to update it.",

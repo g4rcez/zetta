@@ -107,6 +107,12 @@ const schemas = {
   attentionAction: z.strictObject({
     action: z.enum(["read", "acknowledge", "resolve", "cancel", "reopen"]),
   }),
+  attentionList: z.object({
+    category: z.enum(["decision", "fyi"]).optional(),
+    state: z.enum(["live", "all"]).optional(),
+    before: z.coerce.date().optional(),
+    limit: z.coerce.number().int().min(1).max(200).optional(),
+  }),
   attentionStatus: z.strictObject({ status: z.enum(["open", "acknowledged", "resolved"]) }),
   workflow: z.strictObject({
     id: uuid.optional(),
@@ -454,7 +460,9 @@ export function createFeatureRoutes(
       )
       .get(
         "/attention",
-        g(async ({ actor }) => ({ items: await f.listAttention(actor) })),
+        g(async ({ actor, query }) => ({
+          items: await f.listAttention(actor, schemas.attentionList.parse(query)),
+        })),
       )
       .get(
         "/attention/summary",

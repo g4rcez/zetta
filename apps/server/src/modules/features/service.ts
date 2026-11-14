@@ -1,5 +1,6 @@
 import type { Database } from "@zetta/db";
-import { and, asc, desc, eq, inArray, or, sql } from "@zetta/db/query";
+import { DECISION_KINDS, FYI_KINDS } from "@zetta/core/attention-kinds";
+import { and, asc, desc, eq, inArray, lt, or, sql } from "@zetta/db/query";
 import { bot, message } from "@zetta/db/schema/chat";
 import { memoryItem } from "@zetta/db/schema/memory";
 import { attentionItem, delegation, hook, reaction } from "@zetta/db/schema/features";
@@ -216,20 +217,50 @@ export function createFeaturesService(
           .returning(),
       ),
     // --- attention ---
-    listAttention: (a: ActiveActor) =>
+    /**
+     * The person's cards, newest change first. With no options: the 200 newest of every kind and status (older clients). `category` keeps
+     * decisions or updates only, `state: "live"` drops what is resolved or dismissed, and `before` (the `updatedAt` of the last card seen)
+     * pages backwards, so a long history never pushes a live card out of the window.
+     */
+    listAttention: (
+      a: ActiveActor,
+      opts: {
+        category?: "decision" | "fyi" | undefined;
+        state?: "live" | "all" | undefined;
+        before?: Date | undefined;
+        limit?: number | undefined;
+      } = {},
+    ) =>
       db
         .select()
         .from(attentionItem)
-        .where(eq(attentionItem.ownerUserId, a.userId))
+        .where(
+          and(
+            eq(attentionItem.ownerUserId, a.userId),
+            opts.category
+              ? inArray(attentionItem.kind, [
+                  ...(opts.category === "decision" ? DECISION_KINDS : FYI_KINDS),
+                ])
+              : undefined,
+            opts.state === "live"
+              ? inArray(attentionItem.status, ["open", "acknowledged"])
+              : undefined,
+            opts.before ? lt(attentionItem.updatedAt, opts.before) : undefined,
+          ),
+        )
         .orderBy(desc(attentionItem.updatedAt))
-        .limit(200),
+        .limit(Math.min(Math.max(opts.limit ?? 200, 1), 200)),
     attentionSummary: (a: ActiveActor) => attentionSummary(db, a.userId),
     addAttention: async (
       a: ActiveActor,
       v: { title: string; detail?: string; nextAction?: string; botId?: string },
     ) => {
       if (v.botId) await usableBot(a, v.botId);
-      return raiseAttention(db, a.userId, { ...v, source: "manual" });
+      return raiseAttention(db, a.userId, {
+        kind: "manual",
+        ...v,
+        source: "manual",
+      });
     },
     /** Moves the card only; it never changes any run or approves any change. */
     attentionAction: async (a: ActiveActor, id: string, action: AttentionAction) =>

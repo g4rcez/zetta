@@ -6,13 +6,14 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ARTIFACT_HTML_CSP, ARTIFACT_HTML_SANDBOX } from "@zetta/core/artifact-csp";
 import { Skeleton } from "@g4rcez/components";
-import { CodeBlock } from "../chat/chat-copy";
+import { CodeBlock, CopyButton } from "../chat/chat-copy";
 import { languageOf } from "../chat/code-fence";
 import { HighlightedCode } from "../chat/highlighted-code";
 import { Response } from "../chat/response";
 import { Empty } from "../shared/ui";
 import { contentUrl, fetchContent, formatSize, type Artifact } from "./artifacts-api";
 import { parseCsv } from "./csv";
+import { splitFrontmatter, type FrontmatterField } from "./frontmatter";
 
 /** Text previews stop here; a bigger file offers the download instead of freezing the tab. */
 const MAX_TEXT = 2 * 1024 * 1024;
@@ -64,6 +65,20 @@ function useObjectUrl(a: Artifact) {
   return url;
 }
 
+/** Kinds whose file is text a person can paste elsewhere; HTML, images, media, PDF and zip are not. */
+const TEXT_KINDS: readonly Artifact["kind"][] = ["markdown", "text", "code", "json", "csv"];
+const isTextArtifact = (a: Artifact) => TEXT_KINDS.includes(a.kind) && a.size <= MAX_TEXT;
+
+function CopyText({ a }: { a: Artifact }) {
+  const text = useText(a);
+  return text ? <CopyButton text={text} label="Copy content" /> : null;
+}
+
+/** Copies the raw file text. It shares the viewer's cached download, and shows nothing for a file that is not plain text. */
+export function CopyContentButton({ a }: { a: Artifact }) {
+  return isTextArtifact(a) ? <CopyText a={a} /> : null;
+}
+
 const Loading = () => <Skeleton as="div" className="h-64! w-full!" />;
 const Gone = () => <Empty>This file is not available any more.</Empty>;
 
@@ -83,6 +98,30 @@ function HtmlViewer({ a }: { a: Artifact }) {
   );
 }
 
+/** The frontmatter of a Markdown file as a small properties list, so it reads as metadata and not as the first heading. */
+function FrontmatterPanel({ fields }: { fields: FrontmatterField[] }) {
+  return (
+    <dl className="mb-5 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-md border bg-muted/40 px-4 py-3 text-sm">
+      {fields.map((f) => (
+        <div key={f.key} className="col-span-2 grid grid-cols-subgrid">
+          <dt className="font-mono text-xs leading-5 text-muted-foreground">{f.key}</dt>
+          <dd className="min-w-0 whitespace-pre-line break-words">{f.value || "—"}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function MarkdownViewer({ text }: { text: string }) {
+  const { fields, body } = useMemo(() => splitFrontmatter(text), [text]);
+  return (
+    <div className="rounded-lg border bg-card p-5">
+      {fields.length > 0 && <FrontmatterPanel fields={fields} />}
+      <Response text={body} />
+    </div>
+  );
+}
+
 function TextViewer({ a }: { a: Artifact }) {
   const text = useText(a);
   const body = useMemo(() => {
@@ -96,9 +135,7 @@ function TextViewer({ a }: { a: Artifact }) {
   if (body === undefined) return <Loading />;
   if (body === null) return <Gone />;
   return a.kind === "markdown" ? (
-    <div className="rounded-lg border bg-card p-5">
-      <Response text={body} />
-    </div>
+    <MarkdownViewer text={body} />
   ) : a.kind === "code" || a.kind === "json" ? (
     <HighlightedCode text={body} language={a.kind === "json" ? "json" : languageOf(a.fileName)} />
   ) : (

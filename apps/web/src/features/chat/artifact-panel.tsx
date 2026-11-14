@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui";
 
 import { artifactsApi, contentUrl, kindLabel, type Artifact } from "../artifacts/artifacts-api";
-import { ArtifactViewer } from "../artifacts/viewers";
+import { ArtifactViewer, CopyContentButton } from "../artifacts/viewers";
 import { Badge, Empty } from "../shared/ui";
 
 const iconButton =
@@ -30,6 +30,7 @@ export function ArtifactPanel({ id, onClose }: { id: string; onClose: () => void
           </h2>
           {artifact && <Badge>{kindLabel(artifact.kind)}</Badge>}
         </div>
+        {artifact && <CopyContentButton a={artifact} />}
         {artifact && (
           <ActionHint label="Download">
             <a

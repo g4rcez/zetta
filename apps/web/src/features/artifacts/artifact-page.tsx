@@ -22,7 +22,7 @@ import {
   type Artifact,
 } from "./artifacts-api";
 import { relativeTime } from "../shared/relative-time";
-import { ArtifactViewer } from "./viewers";
+import { ArtifactViewer, CopyContentButton } from "./viewers";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
 
@@ -110,6 +110,7 @@ export function ArtifactPage({ id }: { id: string }) {
                 Open in a new tab
               </a>
               <CopyButton text={window.location.href} label="Copy link" />
+              <CopyContentButton a={artifact} />
               {artifact.conversationId && (
                 <Link
                   to="/chat/{-$chatId}"

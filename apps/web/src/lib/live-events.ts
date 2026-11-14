@@ -38,11 +38,24 @@ export function keysFor(topic: string): { queryKey: Key; exact?: boolean }[] {
   }
   if (topic === topics.botStatus) return [{ queryKey: ["bots", "status"], exact: true }];
   if (topic === topics.bots) return [{ queryKey: ["bots"], exact: true }];
-  if (topic === topics.attention) return [{ queryKey: ["attention"], exact: true }];
+  // The badge reads ["attention"] and the page ["catch-up"]: a decision card or an approval changes both.
+  if (topic === topics.attention)
+    return [
+      { queryKey: ["attention"], exact: true },
+      { queryKey: ["catch-up"] },
+      { queryKey: ["attention-updates"] },
+    ];
   // Paused or resumed here or on another device: the preferences carry the state.
   if (topic === topics.agents) return [{ queryKey: ["preferences"], exact: true }];
   if (topic === topics.routines) return [{ queryKey: ["routines"] }];
-  if (topic === topics.proposals) return [{ queryKey: ["proposals"] }];
+  // The board and a task page both live under ["tasks"]; the bots' "working on" line comes with the bot-status topic.
+  if (topic === topics.tasks) return [{ queryKey: ["tasks"] }];
+  if (topic === topics.proposals)
+    return [
+      { queryKey: ["proposals"] },
+      { queryKey: ["attention"], exact: true },
+      { queryKey: ["catch-up"] },
+    ];
   // An app was published, changed or rolled back, or one of its calls started, waited for approval or finished.
   if (topic === topics.apps) return [{ queryKey: ["apps"] }];
   // A run started or ended, or the playground changed: refetch the ones on screen (detail, runs, the run).
@@ -126,7 +139,7 @@ export function connectLiveEvents() {
   };
   const open = () => {
     if (source || disposed || shuttingDown || !leader) return;
-    const next = new EventSource(new URL("/api/events", ENV.VITE_SERVER_URL), {
+    const next = new EventSource(new URL("/api/events", ENV.ZETTA_SERVER_URL), {
       withCredentials: true,
     });
     source = next;

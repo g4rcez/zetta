@@ -13,6 +13,9 @@ describe("keysFor", () => {
   test("a playground topic refreshes what is on screen of the playground: the list, the files, the runs and the run", () => {
     expect(keysFor("playground:p1")).toEqual([{ queryKey: ["playground"] }]);
   });
+  test("a tasks topic refreshes the board and an open task page together", () => {
+    expect(keysFor("tasks")).toEqual([{ queryKey: ["tasks"] }]);
+  });
   test("an apps topic refreshes everything on screen about apps: the list, an app, its calls and the tools", () => {
     expect(keysFor("apps")).toEqual([{ queryKey: ["apps"] }]);
   });
@@ -28,6 +31,20 @@ describe("keysFor", () => {
       { queryKey: ["proposals"] },
     ]);
     queryClient.clear();
+  });
+  test("a change in the decision cards refreshes the badge and the Inbox queue", () => {
+    expect(keysFor("attention")).toEqual([
+      { queryKey: ["attention"], exact: true },
+      { queryKey: ["catch-up"] },
+      { queryKey: ["attention-updates"] },
+    ]);
+  });
+  test("a change in the approvals refreshes the chat footer, the badge and the Inbox queue", () => {
+    expect(keysFor("proposals")).toEqual([
+      { queryKey: ["proposals"] },
+      { queryKey: ["attention"], exact: true },
+      { queryKey: ["catch-up"] },
+    ]);
   });
   test("list topics refresh only the list entries", () => {
     expect(keysFor("conversations")).toEqual([

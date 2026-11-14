@@ -11,6 +11,8 @@ export const topics = {
   bots: "bots",
   attention: "attention",
   routines: "routines",
+  /** A task was added, changed, moved, paused or removed (also by a bot): the board, a task page and the bots' current task refetch. */
+  tasks: "tasks",
   proposals: "proposals",
   /** The person paused or resumed all their agents. */
   agents: "agents",

@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { chatClient, loopsOf } from "./chat-client";
+import { chatClient, loopsOf, type ProposalPlace } from "./chat-client";
 import { STATIC } from "@/lib/query-policy";
 
 /**
@@ -37,11 +37,19 @@ export const chatQueries = {
     }),
   folders: () =>
     queryOptions({ queryKey: ["folders"], queryFn: () => chatClient.folders(), ...STATIC }),
-  /** With `botId`, only what that bot asked (a chat); without it, every proposal (a room). */
-  proposals: (botId?: string) =>
+  /** With `place`, only the cards raised in that chat or room; without it, every proposal. `botId` narrows it to one bot. */
+  proposals: (botId?: string, place: ProposalPlace = {}) =>
     queryOptions({
-      queryKey: ["proposals", { botId: botId ?? null }],
-      queryFn: () => chatClient.proposals(botId),
+      queryKey: [
+        "proposals",
+        {
+          botId: botId ?? null,
+          chatId: place.chatId ?? null,
+          roomId: place.roomId ?? null,
+          newChat: place.newChat ?? false,
+        },
+      ],
+      queryFn: () => chatClient.proposals(botId, place),
     }),
   /** Chats a bot archived, for the thread tabs. Under `["conversations"]`, so a chat write refreshes it. */
   archived: (botId: string) =>

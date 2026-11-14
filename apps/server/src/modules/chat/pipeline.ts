@@ -348,6 +348,8 @@ export function createTurnRunner(
     const ev = await evaluateHooks(active, prompt, scoped.messages);
     if (ev.problems.length)
       await raiseAttention(db, b.ownerUserId, {
+        kind: "hook_invalid",
+        subjectId: b.id,
         botId: b.id,
         title: `A hook on ${b.name} is invalid and was skipped`,
         detail: "A hook pattern is too complex or malformed.",
@@ -535,6 +537,7 @@ export function createTurnRunner(
       void call(b, task, [], userId)
         .then((out) =>
           raiseAttention(db, userId, {
+            kind: "background_done",
             botId: b.id,
             title: `Background task from ${b.name}`,
             detail: out.slice(0, 4000),
@@ -543,6 +546,8 @@ export function createTurnRunner(
         )
         .catch(() =>
           raiseAttention(db, userId, {
+            kind: "background_failed",
+            subjectId: b.id,
             botId: b.id,
             title: `Background task from ${b.name} failed`,
             detail: "The task could not finish.",

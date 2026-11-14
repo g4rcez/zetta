@@ -87,7 +87,7 @@ import {
 } from "./harness";
 import { imagePath, isImageType, MAX_IMAGE_BYTES, saveImage, sniffImage } from "./images";
 import { CONTEXT_BYTES, HISTORY_ROWS } from "./context";
-import { asksToKeep } from "./intent";
+import { asksForRoom, asksToKeep } from "./intent";
 import { touchedRepos } from "./repos";
 import {
   codeEnabled,
@@ -218,6 +218,7 @@ import {
   teamGoalsBlock,
   type LoopStore,
 } from "./loops";
+import { insertProposal } from "./proposals";
 import { QUIET_MS, TaskRuleError } from "../tasks/follow-up";
 import { nestTasks, type PersonTaskEvent, type TaskStore } from "../tasks/store";
 import type { Memory } from "../memory/service";
@@ -478,6 +479,8 @@ export type ToolScope = {
    * they asked for (see approval-policy.ts). Absent or "server": Zetta started the turn (a routine run, a notice, a resumed run).
    */
   startedBy?: "user_message" | "server";
+  /** Chat turn only: the person's own message asked for a room, so a room a bot opens in this turn is a visible one (see `asksForRoom`). */
+  askedForRoom?: boolean;
 };
 /** Group discussions are driven by their own queue; chatting into one directly is refused. */
 export class DiscussionConversationError extends Error {
@@ -755,6 +758,21 @@ export function createChatService(
     scope?.discussionId
       ? `/rooms?id=${scope.discussionId}`
       : `/chat/${scope?.origin?.conversationId ?? `new?bot=${who.id}`}`;
+  /**
+   * The `resultLink`s a place shows (see `listProposals`), the inverse of `approvalLink`. Null when no place is asked for: every card.
+   * An empty list is a place nothing was raised in.
+   */
+  const proposalLinks = (
+    botId: string | undefined,
+    place: { chatId?: string; roomId?: string; newChat?: boolean },
+  ) => {
+    const links = [
+      place.chatId ? `/chat/${place.chatId}` : undefined,
+      place.roomId ? `/rooms?id=${place.roomId}` : undefined,
+      place.newChat && botId ? `/chat/new?bot=${botId}` : undefined,
+    ].filter((l): l is string => !!l);
+    return place.chatId || place.roomId || place.newChat ? links : null;
+  };
   async function runTools(
     actor: ActiveActor,
     who: typeof bot.$inferSelect,
@@ -843,21 +861,19 @@ export function createChatService(
       title: string,
       patch: Record<string, unknown>,
     ) => {
-      const [row] = await db
-        .insert(configProposal)
-        .values({
-          ownerUserId: actor.userId,
-          kind,
-          botId: who.id,
-          proposedByBotId: who.id,
-          baseVersion: 0,
-          patch,
-          diff: [
-            { field: "bot", from: null, to: who.name },
-            { field, from: null, to: title.slice(0, 300) },
-          ],
-        })
-        .returning();
+      const row = await insertProposal(db, {
+        resultLink: approvalLink(who, scope),
+        ownerUserId: actor.userId,
+        kind,
+        botId: who.id,
+        proposedByBotId: who.id,
+        baseVersion: 0,
+        patch,
+        diff: [
+          { field: "bot", from: null, to: who.name },
+          { field, from: null, to: title.slice(0, 300) },
+        ],
+      });
       receipts.push({
         kind: "proposal",
         id: row!.id,
@@ -874,36 +890,25 @@ export function createChatService(
     /** Writes the bot asked for after reading outside content: one card holds them all; Approve runs them in order (see `bot_action` in approve). */
     const deferred: ToolCall[] = [];
     const askToRun = async (calls: ToolCall[]) => {
-      const [row] = await db
-        .insert(configProposal)
-        .values({
-          ownerUserId: actor.userId,
-          kind: "bot_action",
-          botId: who.id,
-          proposedByBotId: who.id,
-          baseVersion: 0,
-          patch: {
-            botId: who.id,
-            conversationId: conversationId ?? null,
-            scope: {
-              policy: scope?.policy ?? "default",
-              discussionId: scope?.discussionId,
-              origin: scope?.origin,
-              loopId: scope?.loopId,
-            },
-            calls,
-          },
-          diff: calls.map((c) => ({ field: c.kind, from: null, to: describeCall(c) })),
-        })
-        .returning();
-      await raiseAttention(db, actor.userId, {
-        botId: who.id,
-        title: `${who.name} asks to make ${calls.length} change${calls.length === 1 ? "" : "s"}`,
-        detail: calls.map(describeCall).join("; ").slice(0, 300),
-        nextAction: "Open Chat and approve or reject the changes.",
+      const row = await insertProposal(db, {
         resultLink: approvalLink(who, scope),
-        source: "bot",
-        sourceKey: `proposal:${row!.id}`,
+        ownerUserId: actor.userId,
+        kind: "bot_action",
+        botId: who.id,
+        proposedByBotId: who.id,
+        baseVersion: 0,
+        patch: {
+          botId: who.id,
+          conversationId: conversationId ?? null,
+          scope: {
+            policy: scope?.policy ?? "default",
+            discussionId: scope?.discussionId,
+            origin: scope?.origin,
+            loopId: scope?.loopId,
+          },
+          calls,
+        },
+        diff: calls.map((c) => ({ field: c.kind, from: null, to: describeCall(c) })),
       });
       receipts.push({
         kind: "proposal",
@@ -929,25 +934,6 @@ export function createChatService(
     // The screen or page is read once, after the last computer action of the reply: actions in between are blind steps the bot planned.
     const lastDesktop = calls.findLastIndex((c) => c.kind === "desktop"),
       lastBrowser = calls.findLastIndex((c) => c.kind === "browser");
-    /** The bot's own plan: a task it adds, or moves a task (or step) that carries its id. Those apply at once after outside content too, so a
-     * bot can keep moving its steps without a card per move. A task for another person, or one the bot does not own, still waits. */
-    const ownTaskCall = async (c: ToolCall) => {
-      if (c.kind !== "task") return false;
-      const a = c.args;
-      const owns = async (id: string) => {
-        try {
-          return (await deps.tasks?.get(actor, id))?.botId === who.id;
-        } catch {
-          // Unknown id: the call runs and the bot is told "not found", instead of a card that could never apply.
-          return true;
-        }
-      };
-      if (a.action === "add") {
-        if (a.assignee && a.assignee !== "user") return false;
-        return a.parentId ? owns(a.parentId) : true;
-      }
-      return a.action === "update" ? owns(a.id) : false;
-    };
     for (const [i, c] of calls.entries()) {
       if (signal?.aborted) break; // the user pressed Stop: do not start another action
       // Outside people are on the other end: only reads, the reply to their own chat, a hand-off or a discussion are allowed.
@@ -968,13 +954,15 @@ export function createChatService(
       }
       // After outside content these writes would apply at once: they wait for one card instead (see askToRun).
       // The Chief and a team room's lead run the work the user asked for: their writes apply, they are not held for a card.
+      // Tasks and hand-offs never wait, for any bot: the board is the user's own, and a card per task blocked the work.
       if (
         writes === "ask" &&
         scope?.tainted &&
         defersWrite(c, who) &&
         who.kind !== "chief" &&
         scope.teamRole !== "chief" &&
-        !(await ownTaskCall(c))
+        c.kind !== "task" &&
+        c.kind !== "assign"
       ) {
         deferred.push(c);
         continue;
@@ -1031,26 +1019,15 @@ export function createChatService(
             notes.push(`🔎 Read ${c.kind.replace("_", " ")} (${action}).`);
           } else {
             const { title, diff, patch, baseVersion } = out.plan;
-            const [row] = await db
-              .insert(configProposal)
-              .values({
-                ownerUserId: actor.userId,
-                kind: CHIEF_PROPOSAL,
-                botId: null,
-                proposedByBotId: who.id,
-                baseVersion: baseVersion ?? 0,
-                patch: { ...patch, title },
-                diff,
-              })
-              .returning();
-            await raiseAttention(db, actor.userId, {
-              botId: who.id,
-              title: `Review: ${title}`.slice(0, 160),
-              detail: title,
-              nextAction: "Open Chat and approve or reject the change.",
+            const row = await insertProposal(db, {
               resultLink: approvalLink(who, scope),
-              source: "bot",
-              sourceKey: `proposal:${row!.id}`,
+              ownerUserId: actor.userId,
+              kind: CHIEF_PROPOSAL,
+              botId: null,
+              proposedByBotId: who.id,
+              baseVersion: baseVersion ?? 0,
+              patch: { ...patch, title },
+              diff,
             });
             receipts.push({ kind: "proposal", id: row!.id, text: title.slice(0, 120) });
             proposals.push(row!.id);
@@ -1088,26 +1065,15 @@ export function createChatService(
           to: patch[f] ?? null,
         }));
         if (!diff.length) continue;
-        const [row] = await db
-          .insert(configProposal)
-          .values({
-            ownerUserId: actor.userId,
-            botId: target.id,
-            proposedByBotId: who.id,
-            baseVersion: target.version,
-            baseHash: configHash(snapshotConfig(target)),
-            patch,
-            diff,
-          })
-          .returning();
-        await raiseAttention(db, actor.userId, {
-          botId: target.id,
-          title: `Review a proposed change to ${target.name}`,
-          detail: diff.map((d) => d.field).join(", "),
-          nextAction: "Open Chat and approve or reject the proposal.",
+        const row = await insertProposal(db, {
           resultLink: approvalLink(who, scope),
-          source: "bot",
-          sourceKey: `proposal:${row!.id}`,
+          ownerUserId: actor.userId,
+          botId: target.id,
+          proposedByBotId: who.id,
+          baseVersion: target.version,
+          baseHash: configHash(snapshotConfig(target)),
+          patch,
+          diff,
         });
         receipts.push({ kind: "proposal", id: row!.id, text: target.name });
         proposals.push(row!.id);
@@ -1196,41 +1162,30 @@ export function createChatService(
           }
           forBots = picked.flatMap((r) => ("hit" in r ? [r.hit] : []));
         }
-        const [row] = await db
-          .insert(configProposal)
-          .values({
-            ownerUserId: actor.userId,
-            kind: "install_skills",
-            botId: who.id,
-            proposedByBotId: who.id,
-            baseVersion: 0,
-            patch: {
-              repo: found.repo,
-              ref: found.ref,
-              trust: lib.market.trust(found.repo),
-              skills: offered,
-              preselected: offered
-                .filter((k) => wanted.has(k.name) && !k.installed && !k.warnings.length)
-                .map((k) => k.path),
-              ...(forBots.length ? { forBots } : {}),
-            },
-            diff: [
-              { field: "bot", from: null, to: who.name },
-              { field: "repo", from: null, to: found.repo },
-              ...(forBots.length
-                ? [{ field: "for bots", from: null, to: forBots.map((b) => b.name).join(", ") }]
-                : []),
-            ],
-          })
-          .returning();
-        await raiseAttention(db, actor.userId, {
-          botId: who.id,
-          title: `Choose skills to install from ${found.repo}`,
-          detail: `${who.name} asks to install skills`,
-          nextAction: "Open Chat and choose the skills to install.",
+        const row = await insertProposal(db, {
           resultLink: approvalLink(who, scope),
-          source: "bot",
-          sourceKey: `proposal:${row!.id}`,
+          ownerUserId: actor.userId,
+          kind: "install_skills",
+          botId: who.id,
+          proposedByBotId: who.id,
+          baseVersion: 0,
+          patch: {
+            repo: found.repo,
+            ref: found.ref,
+            trust: lib.market.trust(found.repo),
+            skills: offered,
+            preselected: offered
+              .filter((k) => wanted.has(k.name) && !k.installed && !k.warnings.length)
+              .map((k) => k.path),
+            ...(forBots.length ? { forBots } : {}),
+          },
+          diff: [
+            { field: "bot", from: null, to: who.name },
+            { field: "repo", from: null, to: found.repo },
+            ...(forBots.length
+              ? [{ field: "for bots", from: null, to: forBots.map((b) => b.name).join(", ") }]
+              : []),
+          ],
         });
         receipts.push({ kind: "proposal", id: row!.id, text: found.repo });
         proposals.push(row!.id);
@@ -1376,58 +1331,47 @@ export function createChatService(
         }
         if (needsApproval) {
           const { target, next } = plan;
-          const [row] = await db
-            .insert(configProposal)
-            .values({
-              ownerUserId: actor.userId,
-              kind: "bot_permission",
-              botId: target.id,
-              proposedByBotId: who.id,
-              baseVersion: 0,
-              patch: c.args,
-              diff: [
-                { field: "bot", from: null, to: target.name },
-                ...(c.args.preset
-                  ? [
-                      {
-                        field: "preset",
-                        from: plan.cur.preset,
-                        to: next.preset,
-                      },
-                    ]
-                  : []),
-                ...(c.args.allow?.length
-                  ? [
-                      {
-                        field: "allow",
-                        from: null,
-                        to: c.args.allow.join(", "),
-                      },
-                    ]
-                  : []),
-                ...(c.args.deny?.length
-                  ? [{ field: "deny", from: null, to: c.args.deny.join(", ") }]
-                  : []),
-                ...(c.args.revoke?.length
-                  ? [
-                      {
-                        field: "revoke",
-                        from: null,
-                        to: c.args.revoke.join(", "),
-                      },
-                    ]
-                  : []),
-              ],
-            })
-            .returning();
-          await raiseAttention(db, actor.userId, {
-            botId: who.id,
-            title: `${who.name} asks to change what ${target.name} may do`,
-            detail: (c.args.allow ?? []).join(", ") || "permission change",
-            nextAction: "Approve or deny the permission change.",
+          const row = await insertProposal(db, {
             resultLink: approvalLink(who, scope),
-            source: "bot",
-            sourceKey: `proposal:${row!.id}`,
+            ownerUserId: actor.userId,
+            kind: "bot_permission",
+            botId: target.id,
+            proposedByBotId: who.id,
+            baseVersion: 0,
+            patch: c.args,
+            diff: [
+              { field: "bot", from: null, to: target.name },
+              ...(c.args.preset
+                ? [
+                    {
+                      field: "preset",
+                      from: plan.cur.preset,
+                      to: next.preset,
+                    },
+                  ]
+                : []),
+              ...(c.args.allow?.length
+                ? [
+                    {
+                      field: "allow",
+                      from: null,
+                      to: c.args.allow.join(", "),
+                    },
+                  ]
+                : []),
+              ...(c.args.deny?.length
+                ? [{ field: "deny", from: null, to: c.args.deny.join(", ") }]
+                : []),
+              ...(c.args.revoke?.length
+                ? [
+                    {
+                      field: "revoke",
+                      from: null,
+                      to: c.args.revoke.join(", "),
+                    },
+                  ]
+                : []),
+            ],
           });
           receipts.push({ kind: "proposal", id: row!.id, text: target.name });
           proposals.push(row!.id);
@@ -1447,29 +1391,18 @@ export function createChatService(
           notes.push("🖥 Extra computers are not available on this server.");
           continue;
         }
-        const [row] = await db
-          .insert(configProposal)
-          .values({
-            ownerUserId: actor.userId,
-            kind: "create_vm",
-            botId: null,
-            proposedByBotId: who.id,
-            baseVersion: 0,
-            patch: c.args,
-            diff: [
-              { field: "name", from: null, to: c.args.name },
-              { field: "purpose", from: null, to: c.args.purpose },
-            ],
-          })
-          .returning();
-        await raiseAttention(db, actor.userId, {
-          botId: who.id,
-          title: `${who.name} asks for another computer`,
-          detail: `${c.args.name}: ${c.args.purpose}`,
-          nextAction: "Open Chat and approve or reject the proposal.",
+        const row = await insertProposal(db, {
           resultLink: approvalLink(who, scope),
-          source: "bot",
-          sourceKey: `proposal:${row!.id}`,
+          ownerUserId: actor.userId,
+          kind: "create_vm",
+          botId: null,
+          proposedByBotId: who.id,
+          baseVersion: 0,
+          patch: c.args,
+          diff: [
+            { field: "name", from: null, to: c.args.name },
+            { field: "purpose", from: null, to: c.args.purpose },
+          ],
         });
         receipts.push({ kind: "proposal", id: row!.id, text: c.args.name });
         proposals.push(row!.id);
@@ -1688,30 +1621,19 @@ export function createChatService(
               ? [{ field: "steps", from: null, to: nodeList as never }]
               : [],
           );
-        const [row] = await db
-          .insert(configProposal)
-          .values({
-            ownerUserId: actor.userId,
-            kind,
-            botId: null,
-            proposedByBotId: who.id,
-            baseVersion: 0,
-            // A routine proposed inside a room remembers the room, so the room is not "waiting" while the routine runs.
-            patch:
-              kind === "create_routine" && scope?.discussionId
-                ? { ...args, originDiscussionId: scope.discussionId }
-                : args,
-            diff,
-          })
-          .returning();
-        await raiseAttention(db, actor.userId, {
-          botId: who.id,
-          title: `Review a proposed ${kind.replace("create_", "")}`,
-          detail: String(args.name ?? args.title ?? ""),
-          nextAction: "Open Chat and approve or reject the proposal.",
+        const row = await insertProposal(db, {
           resultLink: approvalLink(who, scope),
-          source: "bot",
-          sourceKey: `proposal:${row!.id}`,
+          ownerUserId: actor.userId,
+          kind,
+          botId: null,
+          proposedByBotId: who.id,
+          baseVersion: 0,
+          // A routine proposed inside a room remembers the room, so the room is not "waiting" while the routine runs.
+          patch:
+            kind === "create_routine" && scope?.discussionId
+              ? { ...args, originDiscussionId: scope.discussionId }
+              : args,
+          diff,
         });
         receipts.push({
           kind: "proposal",
@@ -2435,29 +2357,18 @@ export function createChatService(
           doneWhen: c.args.done_when,
           request: await userRequest(actor, scope),
         };
-        const [row] = await db
-          .insert(configProposal)
-          .values({
-            ownerUserId: actor.userId,
-            kind: "start_loop",
-            botId: null,
-            proposedByBotId: who.id,
-            baseVersion: 0,
-            patch,
-            diff: [
-              { field: "goal", from: null, to: c.args.goal },
-              { field: "doneWhen", from: null, to: c.args.done_when },
-            ],
-          })
-          .returning();
-        await raiseAttention(db, actor.userId, {
-          botId: who.id,
-          title: `${who.name} wants to start a loop`,
-          detail: c.args.goal,
-          nextAction: "Open the chat and start the loop, or say not now.",
+        const row = await insertProposal(db, {
           resultLink: `/chat/${conversationId}`,
-          source: "bot",
-          sourceKey: `proposal:${row!.id}`,
+          ownerUserId: actor.userId,
+          kind: "start_loop",
+          botId: null,
+          proposedByBotId: who.id,
+          baseVersion: 0,
+          patch,
+          diff: [
+            { field: "goal", from: null, to: c.args.goal },
+            { field: "doneWhen", from: null, to: c.args.done_when },
+          ],
         });
         receipts.push({
           kind: "proposal",
@@ -2525,26 +2436,15 @@ export function createChatService(
           .filter(Boolean)
           .join("\n\n")
           .slice(0, 4000);
-        const [row] = await db
-          .insert(configProposal)
-          .values({
-            ownerUserId: actor.userId,
-            kind: "team_goals",
-            botId: null,
-            proposedByBotId: who.id,
-            baseVersion: 0,
-            patch: { discussionId: room.discussion.id, request, goals },
-            diff: goals.map((g) => ({ field: g.name, from: null, to: g.goal })),
-          })
-          .returning();
-        await raiseAttention(db, actor.userId, {
-          botId: who.id,
-          title: `${who.name} wants to give the team goals`,
-          detail: goals.map((g) => `${g.name}: ${g.goal}`).join("\n"),
-          nextAction: "Open the room and approve the goals, or say not now.",
+        const row = await insertProposal(db, {
           resultLink: `/rooms?id=${room.discussion.id}`,
-          source: "bot",
-          sourceKey: `proposal:${row!.id}`,
+          ownerUserId: actor.userId,
+          kind: "team_goals",
+          botId: null,
+          proposedByBotId: who.id,
+          baseVersion: 0,
+          patch: { discussionId: room.discussion.id, request, goals },
+          diff: goals.map((g) => ({ field: g.name, from: null, to: g.goal })),
         });
         receipts.push({
           kind: "proposal",
@@ -2655,6 +2555,8 @@ export function createChatService(
             // A loop that waits for the user already has its own card.
             attention: loopId ? "none" : "raise",
             legacy: {
+              kind: "bot_ask",
+              subjectId: subject.id,
               botId: subject.id,
               title,
               detail: c.args.reason,
@@ -2744,6 +2646,8 @@ export function createChatService(
             else if ((res as { loginRequired?: boolean }).loginRequired) {
               handoff = true;
               await raiseAttention(db, actor.userId, {
+                kind: "sign_in",
+                subjectId: who.id,
                 botId: who.id,
                 title: `${who.name} reached a sign-in page`,
                 detail: "A page asked for a password. Zetta never types passwords for a bot.",
@@ -2853,7 +2757,7 @@ export function createChatService(
         browserResults.push(`${text}: done, it is already applied.`);
       }
     }
-    return { notes, handoff, browserResults, views };
+    return { notes, handoff, browserResults, views, polls };
   }
   /**
    * Inbound policy. The text came from a stranger, so the turn may only touch the chat it came from: the origin plugin's reply tool and
@@ -2978,6 +2882,7 @@ export function createChatService(
             tainted: Boolean(scope?.tainted),
           },
           scope?.policy === "inbound",
+          { visible: scope?.askedForRoom === true && !scope.loopId },
         );
         if (r.kind === "proposed") {
           receipts.push({
@@ -3557,30 +3462,19 @@ export function createChatService(
         text: `${r.app.name} · v${r.version}`.slice(0, 120),
       });
     if (r.status === "needs_approval") {
-      const [row] = await db
-        .insert(configProposal)
-        .values({
-          ownerUserId: actor.userId,
-          kind: "publish_app",
-          botId: who.id,
-          proposedByBotId: who.id,
-          baseVersion: 0,
-          patch: { botId: who.id, conversationId: conversationId ?? null, args: a },
-          diff: [
-            { field: "app", from: null, to: `${a.action} “${r.title}”` },
-            { field: "files", from: null, to: r.files.join(", ").slice(0, 300) },
-            { field: "runs", from: null, to: r.reason },
-          ],
-        })
-        .returning();
-      await raiseAttention(db, actor.userId, {
-        botId: who.id,
-        title: `${who.name} wants to publish the app “${r.title}”`,
-        detail: r.reason,
-        nextAction: "Open Chat and approve or reject the app.",
+      const row = await insertProposal(db, {
         resultLink: approvalLink(who, scope),
-        source: "bot",
-        sourceKey: `proposal:${row!.id}`,
+        ownerUserId: actor.userId,
+        kind: "publish_app",
+        botId: who.id,
+        proposedByBotId: who.id,
+        baseVersion: 0,
+        patch: { botId: who.id, conversationId: conversationId ?? null, args: a },
+        diff: [
+          { field: "app", from: null, to: `${a.action} “${r.title}”` },
+          { field: "files", from: null, to: r.files.join(", ").slice(0, 300) },
+          { field: "runs", from: null, to: r.reason },
+        ],
       });
       receipts.push({
         kind: "proposal",
@@ -4131,6 +4025,8 @@ export function createChatService(
           ctx.scope && {
             ...ctx.scope,
             tainted: ctx.scope.tainted || untrusted,
+            // Only the person's own words count, so reading outside content first does not hide a room they asked for.
+            askedForRoom: ctx.scope.startedBy === "user_message" && asksForRoom(ctx.prompt),
           },
           // The person's own chat message is consent for the writes it asks for; outside content the server saw, loops, rooms and
           // turns Zetta started itself ask (see approval-policy.ts).
@@ -4216,6 +4112,8 @@ export function createChatService(
   const FLUSH_MS = 5000;
   /** Most steps kept in a reply's work timeline; the oldest go first. */
   const TIMELINE_MAX = 100;
+  /** How often the steps so far are saved on the running row, for a reader that has no live stream (a room page, a reload, another device). */
+  const LIVE_SAVE_MS = 3000;
   type AnswerArgs = {
     convId: string;
     who: typeof bot.$inferSelect;
@@ -4345,6 +4243,31 @@ export function createChatService(
     ]);
     const retrieval: TurnRetrieval = {};
     const timeline: { at: number; label: string; stepId?: string }[] = [];
+    let liveSavedAt = 0;
+    /**
+     * The steps so far and the current activity go onto the running row, at most every few seconds. A client that follows the live stream
+     * does not need them; one that reads the saved row (the page was opened mid-turn, the stream is not attached, too many turns run)
+     * would otherwise see "Thinking" until the end. A room page is told to read again; a chat follows its stream.
+     */
+    const saveLive = (activity: string, force = false) => {
+      const now = Date.now();
+      if (!force && now - liveSavedAt < LIVE_SAVE_MS) return;
+      liveSavedAt = now;
+      void db
+        .update(message)
+        .set({
+          meta: {
+            ...(harnessSession ? { harnessSession } : {}),
+            timeline: timeline.map(({ at, label }) => ({ at, label })),
+            activity,
+          },
+        })
+        .where(and(eq(message.id, row.id), eq(message.status, "running")))
+        .then(() => {
+          if (a.scope?.discussionId) events.publish([actor.userId], topics.conversation(a.convId));
+        })
+        .catch(() => {});
+    };
     /** One step of the bot (from the first CLI run, a later round, or a silence heartbeat) as the event the chat shows, and in the saved timeline. */
     const activityEvent = (label: string, phase?: RunPhase, givenStepId?: string): ChatEvent => {
       const at = Date.now();
@@ -4360,6 +4283,7 @@ export function createChatService(
         timeline.push({ at, label, ...(stepId ? { stepId } : {}) });
         if (timeline.length > TIMELINE_MAX) timeline.shift();
       }
+      saveLive(label);
       return {
         type: "activity",
         messageId: row.id,
@@ -4457,11 +4381,8 @@ export function createChatService(
               // Recorded on the running row: if the process dies, boot finds the session here and resumes it.
               onSession: (id) => {
                 harnessSession = id;
-                void db
-                  .update(message)
-                  .set({ meta: { harnessSession: id } })
-                  .where(eq(message.id, row.id))
-                  .catch(() => {});
+                // The same write that keeps the steps, so a later save never drops the session (and this one never drops the steps).
+                saveLive(timeline.at(-1)?.label ?? "Thinking", true);
               },
               onUsed: (u) => {
                 used = u;
@@ -4645,6 +4566,7 @@ export function createChatService(
       errCode ||
       timeline.length ||
       plan ||
+      poll ||
       repos.length ||
       keepSession
         ? {
@@ -4657,6 +4579,8 @@ export function createChatService(
               : {}),
             // The checklist as the bot last announced it, kept after the answer.
             ...(plan ? { plan } : {}),
+            // A poll the bot made with this reply: the page draws it under the text and people vote on it.
+            ...(poll ? { poll } : {}),
             ...(a.decision ? { decision: a.decision } : {}),
             ...(repos.length ? { repos } : {}),
             // Loops and routines read this to decide how long to wait before the next try.
@@ -4730,7 +4654,14 @@ export function createChatService(
         conversationId: a.convId,
         title,
         detail,
-        legacy: { botId: who.id, title, detail, resultLink: a.link, source: "bot" },
+        legacy: {
+          kind: "bot_ask",
+          botId: who.id,
+          title,
+          detail,
+          resultLink: a.link,
+          source: "bot",
+        },
       });
     }
     // The blocked main harness is recorded too: its readiness (needs sign-in, limit) must not be hidden by the fallback's success.
@@ -4948,6 +4879,7 @@ export function createChatService(
       | "clientRequestId"
       | "parentMessageId"
       | "quotedMessageId"
+      | "poll"
       | "attachmentIds"
       | "fileRefs"
       | "memoryIds"
@@ -4958,6 +4890,7 @@ export function createChatService(
     if (
       !asksToStop(input.content) ||
       input.quotedMessageId ||
+      input.poll ||
       input.attachmentIds?.length ||
       input.fileRefs?.length ||
       input.memoryIds?.length ||
@@ -5364,39 +5297,28 @@ export function createChatService(
     o: { config: "mine" | "team" | null; conversationId: string | null; link: string },
   ) {
     const pluginName = getPlugin(e.plugin)?.name ?? e.plugin;
-    const [row] = await db
-      .insert(configProposal)
-      .values({
-        ownerUserId: actor.userId,
-        kind: "tool_resume",
-        botId: who.id,
-        proposedByBotId: who.id,
-        baseVersion: 0,
-        patch: {
-          plugin: e.plugin,
-          config: o.config,
-          botId: who.id,
-          conversationId: o.conversationId,
-          title: `${pluginName}: ${e.pause.mode === "input" ? "answer" : "approve"} ${e.pause.tool}`,
-          pluginTool: e.pluginTool ?? "",
-          pause: e.pause,
-        } satisfies PausedCall & { title: string },
-        diff: [
-          { field: "tool", from: null, to: e.pause.tool },
-          ...(e.pause.input ? [{ field: "input", from: null, to: e.pause.input }] : []),
-          ...(e.pause.message ? [{ field: pluginName, from: null, to: e.pause.message }] : []),
-        ],
-        expiresAt: new Date(Math.max(Date.now() + 60_000, e.pause.expiresAt - 5_000)),
-      })
-      .returning();
-    await raiseAttention(db, actor.userId, {
-      botId: who.id,
-      title: `${who.name} needs your answer for ${pluginName}`,
-      detail: e.pause.tool,
-      nextAction: "Open the chat and approve or decline the call.",
+    const row = await insertProposal(db, {
       resultLink: o.link,
-      source: "bot",
-      sourceKey: `proposal:${row!.id}`,
+      ownerUserId: actor.userId,
+      kind: "tool_resume",
+      botId: who.id,
+      proposedByBotId: who.id,
+      baseVersion: 0,
+      patch: {
+        plugin: e.plugin,
+        config: o.config,
+        botId: who.id,
+        conversationId: o.conversationId,
+        title: `${pluginName}: ${e.pause.mode === "input" ? "answer" : "approve"} ${e.pause.tool}`,
+        pluginTool: e.pluginTool ?? "",
+        pause: e.pause,
+      } satisfies PausedCall & { title: string },
+      diff: [
+        { field: "tool", from: null, to: e.pause.tool },
+        ...(e.pause.input ? [{ field: "input", from: null, to: e.pause.input }] : []),
+        ...(e.pause.message ? [{ field: pluginName, from: null, to: e.pause.message }] : []),
+      ],
+      expiresAt: new Date(Math.max(Date.now() + 60_000, e.pause.expiresAt - 5_000)),
     });
     return row!;
   }
@@ -6198,9 +6120,19 @@ export function createChatService(
       if (!row) throw new AccessError("NOT_FOUND");
       return row;
     },
-    /** Pending proposals. With `botId`, only what that bot asked (a proposal with no asking bot belongs to the bot it targets). */
-    listProposals: async (actor: ActiveActor, botId?: string) =>
-      (
+    /**
+     * Pending proposals. With `botId`, only what that bot asked (a proposal with no asking bot belongs to the bot it targets).
+     * With `place`, only the cards raised there (`resultLink` is where each was raised): a chat or a room shows its own cards, so a bot
+     * that works in many places does not flood every other chat with approvals that belong elsewhere. `newChat` is the chat that has no
+     * conversation yet: it holds the cards a bot raised before one existed.
+     */
+    listProposals: async (
+      actor: ActiveActor,
+      botId?: string,
+      place: { chatId?: string; roomId?: string; newChat?: boolean } = {},
+    ) => {
+      const links = proposalLinks(botId, place);
+      return (
         await db
           .select()
           .from(configProposal)
@@ -6213,10 +6145,12 @@ export function createChatService(
               botId
                 ? sql`coalesce(${configProposal.proposedByBotId}, ${configProposal.botId}) = ${botId}`
                 : undefined,
+              links ? inArray(configProposal.resultLink, links) : undefined,
             ),
           )
           .orderBy(asc(configProposal.createdAt))
-      ).map((p) => ({ ...p, confirm: confirmFor(p.kind) })),
+      ).map((p) => ({ ...p, confirm: confirmFor(p.kind) }));
+    },
     /** Applying is one transaction: the pending proposal is claimed, the bot must still match the version AND content hash the diff was
      * computed against (else stale), the revision is recorded, and a concurrent second approval finds nothing pending. */
     async decideProposal(
@@ -7707,6 +7641,7 @@ export function createChatService(
         | "clientRequestId"
         | "parentMessageId"
         | "quotedMessageId"
+        | "poll"
         | "attachmentIds"
         | "fileRefs"
         | "memoryIds"
@@ -7899,6 +7834,7 @@ export function createChatService(
         const answers = await slowAnswers(rec).catch(() => []);
         const resultLink = await turnLink(conversationId).catch(() => `/chat/${conversationId}`);
         await raiseAttention(db, userId, {
+          kind: "turn_slow",
           botId: answers[0]?.botId ?? row?.botId ?? null,
           title: `${answers[0]?.botName ?? row?.name ?? "A bot"} is taking a long time`,
           detail: slowDetail(minutes, answers),
@@ -8466,6 +8402,8 @@ export function createChatService(
           .where(eq(message.id, saved.id))
           .returning()) as [typeof saved];
         await raiseAttention(db, actor.userId, {
+          kind: "room_withheld",
+          subjectId: d.id,
           botId: who.id,
           title: `A reply from ${who.name} in "${d.title}" was withheld`,
           detail: "It looked like it contained a secret (a token or password).",
@@ -8487,6 +8425,8 @@ export function createChatService(
           reasonCode: "bot_failed",
         });
         await raiseAttention(db, actor.userId, {
+          kind: "room_failed",
+          subjectId: d.id,
           botId: who.id,
           title: `${who.name} could not answer in "${d.title}"`,
           detail: saved.content.slice(0, 500),

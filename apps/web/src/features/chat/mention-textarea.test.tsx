@@ -37,7 +37,7 @@ Object.assign(globalThis, {
 // `src/env.ts` reads the app env once a window exists.
 process.env.__VARLOCK_ENV = JSON.stringify({
   settings: {},
-  config: { NODE_ENV: { value: "test" }, VITE_SERVER_URL: { value: "http://api.test" } },
+  config: { NODE_ENV: { value: "test" }, ZETTA_SERVER_URL: { value: "http://api.test" } },
 });
 // Bun runs every test file in one process: leave the globals as they were.
 afterAll(() => {

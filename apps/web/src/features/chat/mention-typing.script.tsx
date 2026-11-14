@@ -15,7 +15,7 @@ Object.assign(globalThis, {
 });
 process.env.__VARLOCK_ENV = JSON.stringify({
   settings: {},
-  config: { NODE_ENV: { value: "test" }, VITE_SERVER_URL: { value: "http://api.test" } },
+  config: { NODE_ENV: { value: "test" }, ZETTA_SERVER_URL: { value: "http://api.test" } },
 });
 // Teams and rooms are only fetched for `#`.
 globalThis.fetch = (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch;

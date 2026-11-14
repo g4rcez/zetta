@@ -1,4 +1,5 @@
 import { owned } from "./bot";
+import { categoryOf } from "@zetta/core/attention-kinds";
 import { pick, plan } from "./resolve";
 import type { ChiefArgs } from "./schemas";
 import type { Applied, ApplyCtx, ChiefCtx, DiffLine, Outcome } from "./types";
@@ -111,11 +112,24 @@ export async function applyConversation(
 export async function runAttention(ctx: ChiefCtx, a: ChiefArgs<"attention">): Promise<Outcome> {
   const f = ctx.deps.features;
   if (!f) return { error: "attention items are not available on this server." };
-  const rows = await f.listAttention(ctx.actor);
-  if (a.action === "list")
+  if (a.action === "list") {
+    // Only what is still live, so old resolved cards never push a waiting one out. A decision waits for the person in Inbox; an
+    // update is information. (Approvals are decided on their own cards: nothing here can approve or reject one.)
+    const live = await f.listAttention(ctx.actor, { state: "live", limit: 50 });
+    const view = (r: (typeof live)[number]) => ({
+      id: r.id,
+      kind: r.kind,
+      title: r.title,
+      status: r.status,
+    });
     return {
-      read: `attention.list:\n${JSON.stringify(rows.slice(0, 50).map((r) => ({ id: r.id, title: r.title, status: r.status })))}`,
+      read: `attention.list:\n${JSON.stringify({
+        decisions: live.filter((r) => categoryOf(r.kind) === "decision").map(view),
+        updates: live.filter((r) => categoryOf(r.kind) === "fyi").map(view),
+      })}`,
     };
+  }
+  const rows = await f.listAttention(ctx.actor);
   const r = rows.find((x) => x.id === a.item);
   if (!r) return { error: "no attention item with that id. Use attention list." };
   return plan(

@@ -139,7 +139,14 @@ suite("bot tools against compose postgres", () => {
     undefined,
     vms,
     undefined,
-    { loops, teams: teamStore, artifacts: fakeArtifacts, memory, routines: features.routines, install: "local" },
+    {
+      loops,
+      teams: teamStore,
+      artifacts: fakeArtifacts,
+      memory,
+      routines: features.routines,
+      install: "local",
+    },
   );
   // Same wiring as services.ts: each loop step is a chat turn as the loop's owner.
   const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKey) => {
@@ -471,7 +478,7 @@ suite("bot tools against compose postgres", () => {
     expect(await titles()).toContain("Fernet note");
   });
 
-  test("deciding a proposal closes its attention card: approved is resolved, rejected is cancelled", async () => {
+  test("a new approval raises no attention card (Inbox reads it from the proposal), and deciding one closes the card an older version raised: approved is resolved, rejected is cancelled", async () => {
     const { bot, say } = await setup(A, "Decider");
     await db.$client.query(
       "update bot set harness = 'claude-code', code_access = true where id = $1",
@@ -495,7 +502,14 @@ suite("bot tools against compose postgres", () => {
         id: string;
         patch: { title?: string };
       }[];
-      return all.find((p) => p.patch.title === title)!.id;
+      const id = all.find((p) => p.patch.title === title)!.id;
+      // Nothing raises a card for it any more. A card an older version raised is what is simulated here.
+      expect(await cardStatus(id)).toEqual([]);
+      await db.$client.query(
+        "insert into attention_item (owner_user_id, title, source, source_key, kind) values ($1, 'Old approval card', 'bot', $2, 'proposal')",
+        [A, `proposal:${id}`],
+      );
+      return id;
     };
     const approved = await pending("Card approved");
     expect(await cardStatus(approved)).toEqual(["open"]);
@@ -529,8 +543,9 @@ suite("bot tools against compose postgres", () => {
       ).map((p) => p.patch.title);
     expect(await titles(asker.bot.id)).toEqual(["Asked here"]);
     expect(await titles(other.bot.id)).toEqual([]);
+    // The link is kept on the proposal itself, so Inbox and the chat footer both know where it was asked.
     const { rows } = await db.$client.query(
-      "select result_link from attention_item where bot_id = $1 and source_key like 'proposal:%'",
+      "select result_link from config_proposal where proposed_by_bot_id = $1",
       [asker.bot.id],
     );
     expect(rows).toEqual([{ result_link: `/chat/${asker.c}` }]);

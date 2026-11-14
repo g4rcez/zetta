@@ -196,6 +196,8 @@ export function createLoopStore(db: Database) {
           .from(discussion)
           .where(eq(discussion.conversationId, row.conversationId));
         await raiseAttention(db, row.ownerUserId, {
+          kind: "loop_paused",
+          subjectId: row.id,
           botId: row.botId,
           title: "A loop paused and needs you",
           detail: `${row.goal.slice(0, 200)}: ${reason}`,

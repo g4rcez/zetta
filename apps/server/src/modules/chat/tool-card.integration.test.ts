@@ -207,6 +207,25 @@ suite("approval cards for paused tool calls, against compose postgres", () => {
     await plugins.uninstall(actor(USER), "pause-fake");
   });
 
+  test("a card shows only in the chat it was raised in, not in the bot's other chats", async () => {
+    reset();
+    const { bot, conv, say } = await setup("Scoped");
+    const other = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation
+      .id as string;
+    script = [fence({ id: "apr_scope" }), "I asked you to approve it."];
+    await say("close issue 7");
+    const list = async (query: string) =>
+      ((await call("GET", `/api/proposals?${query}`)).json.proposals as any[]).filter(
+        (p) => p.kind === "tool_resume",
+      );
+    expect((await list(`botId=${bot.id}&chatId=${conv}`)).length).toBe(1);
+    expect((await list(`botId=${bot.id}&chatId=${other}`)).length).toBe(0);
+    expect((await list(`botId=${bot.id}&newChat=1`)).length).toBe(0);
+    // Unscoped reads (Catch up) still see it.
+    expect((await list(`botId=${bot.id}`)).length).toBe(1);
+    await plugins.uninstall(actor(USER), "pause-fake");
+  });
+
   test("approving continues the call and the bot gets the result in a new message", async () => {
     reset();
     onResume = () => untrustedDoc("Pause fake", {}, "closed 7");

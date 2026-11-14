@@ -102,10 +102,12 @@ test("a task handed to a member is a card with the member, the task and what don
   expect(handoffs.textContent).toContain("Leo");
   expect(handoffs.textContent).toContain("Merge PR 74");
   expect(handoffs.textContent).toContain("Done when: merge SHA on main");
-  expect(handoffs.querySelector("a")?.getAttribute("href")).toBe("/tasks");
+  // The handoff opens its own task, not the whole list.
+  expect(handoffs.querySelector("a")?.getAttribute("href")).toBe("/tasks/t1");
   const chips = host.querySelector('ul[aria-label="What the bot saved"]')!;
   expect(chips.textContent).toContain("A plain task");
   expect(chips.textContent).not.toContain("Merge PR 74");
+  expect(chips.querySelector("a")?.getAttribute("href")).toBe("/tasks/t2");
 });
 
 test("the 📋 note folds into the actions line instead of staying in the text", async () => {

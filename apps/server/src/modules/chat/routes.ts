@@ -691,6 +691,11 @@ export function createChatRoutes(
         proposals: await chat.listProposals(
           actor,
           query.botId ? parse(uuid, query.botId) : undefined,
+          {
+            ...(query.chatId ? { chatId: parse(uuid, query.chatId) } : {}),
+            ...(query.roomId ? { roomId: parse(uuid, query.roomId) } : {}),
+            ...(query.newChat === "1" ? { newChat: true } : {}),
+          },
         ),
       })),
     )

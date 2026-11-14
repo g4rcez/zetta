@@ -58,7 +58,23 @@ export type OutputStyleKey =
 export type CommitIdentity = "git-config" | "bot" | "account" | "custom";
 export type ComputerMode = "off" | "browser" | "desktop";
 export type BotStatus = "available" | "working" | "planning" | "pending" | "error" | "offline";
-export type BotStatusEntry = { botId: string; status: BotStatus; reason: string };
+/** The open task a bot is on (its furthest-along one). `stepsTotal` is 0 for a task without steps. */
+export type BotTask = {
+  id: string;
+  title: string;
+  status: string;
+  stepsDone: number;
+  stepsTotal: number;
+};
+export type BotStatusEntry = {
+  botId: string;
+  status: BotStatus;
+  reason: string;
+  /** Null when the bot has no open task of its own. */
+  task: BotTask | null;
+  /** Open (not done) tasks of this bot, steps not counted. */
+  openTasks: number;
+};
 export type Provider = "anthropic" | "openai" | "google" | "openrouter" | "deepseek" | "github";
 export const PROVIDERS: readonly Provider[] = [
   "anthropic",
@@ -158,6 +174,8 @@ export type Proposal = {
   /** `hold`: the card widens what a bot may do, so Approve is a press-and-hold. Absent on old servers: a click. */
   confirm?: "hold" | "click";
 };
+/** Where a list of approvals is asked for: a chat, a room, or a chat that has no conversation yet. */
+export type ProposalPlace = { chatId?: string; roomId?: string; newChat?: boolean };
 export type DecisionResult = {
   status: "approved" | "rejected" | "stale";
   /** A line for the person when the change worked only in part (for example a routine that stays paused). */
@@ -252,6 +270,8 @@ export type MessageMeta = {
   steer?: { replyId: string; at: number };
   /** The person typed "stop" while work was going on: what the stop did. */
   stop?: { held: number; rooms: number };
+  /** On a reply that is still running: what the bot is doing now, saved every few seconds for a reader without the live stream. */
+  activity?: string;
   /** What the bot did while it worked, oldest first (`at` is epoch ms). */ timeline?: {
     at: number;
     label: string;
@@ -418,7 +438,7 @@ export const errorCode = (e: unknown) => (e instanceof ApiError ? e.code : undef
 const REQUEST_TIMEOUT_MS = 30_000;
 /** Reads that several components share go through the query cache (`lib/query-client.ts`), which sends one request per key. */
 export async function call<T>(path: string, method = "GET", body?: object): Promise<T> {
-  const response = await fetch(new URL(path, ENV.VITE_SERVER_URL), {
+  const response = await fetch(new URL(path, ENV.ZETTA_SERVER_URL), {
     method,
     credentials: "include",
     // The server marks most answers `no-store`, so those are never kept. The polled lists carry an ETag: the browser asks
@@ -463,7 +483,7 @@ export type InterviewResult =
 export const stepOutputUrl = (conversationId: string, stepId: string) =>
   new URL(
     `/api/conversations/${conversationId}/steps/${encodeURIComponent(stepId)}/output`,
-    ENV.VITE_SERVER_URL,
+    ENV.ZETTA_SERVER_URL,
   ).toString();
 
 export const chatClient = {
@@ -546,11 +566,21 @@ export const chatClient = {
       name,
       ...(parentId ? { parentId } : {}),
     }).then((r) => r.folder),
-  /** With `botId`, only what that bot asked: a chat shows the proposals of its own bot. */
-  proposals: (botId?: string) =>
-    call<{ proposals: Proposal[] }>(
-      botId ? `/api/proposals?botId=${encodeURIComponent(botId)}` : "/api/proposals",
-    ).then((r) => r.proposals),
+  /**
+   * With `botId`, only what that bot asked. With `place`, only the cards raised there: a chat (or the not yet started chat of the bot)
+   * and a room show their own approvals, never those of the bot's other chats.
+   */
+  proposals: (botId?: string, place: ProposalPlace = {}) => {
+    const q = new URLSearchParams();
+    if (botId) q.set("botId", botId);
+    if (place.chatId) q.set("chatId", place.chatId);
+    if (place.roomId) q.set("roomId", place.roomId);
+    if (place.newChat) q.set("newChat", "1");
+    const qs = q.toString();
+    return call<{ proposals: Proposal[] }>(`/api/proposals${qs ? `?${qs}` : ""}`).then(
+      (r) => r.proposals,
+    );
+  },
   decide: (
     id: string,
     approve: boolean,

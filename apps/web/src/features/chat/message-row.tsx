@@ -325,7 +325,8 @@ function HandoffReceipt({ r }: { r: Receipt }) {
   return (
     <li>
       <Link
-        to="/tasks"
+        to="/tasks/$taskId"
+        params={{ taskId: r.id }}
         className="block max-w-xl rounded-md px-1 py-0.5 hover:bg-accent"
         title={r.doneWhen ? `Done when: ${r.doneWhen}` : r.text}
       >
@@ -667,8 +668,8 @@ export const MessageRow = memo(function MessageRow({
         <WorkTimeline row={row} working={working} stepOutputUrl={stepOutputUrl} />
         {working && !visible ? (
           <WorkingStatus
-            label={friendly(row.activity) ?? "Thinking"}
-            since={isGeneric(row.activity) ? row.createdAt : undefined}
+            label={friendly(row.activity ?? row.meta?.activity) ?? "Thinking"}
+            since={isGeneric(row.activity ?? row.meta?.activity) ? row.createdAt : undefined}
           />
         ) : (
           <>
@@ -818,7 +819,8 @@ export const MessageRow = memo(function MessageRow({
                   </Link>
                 ) : r.kind === "task" ? (
                   <Link
-                    to="/tasks"
+                    to="/tasks/$taskId"
+                    params={{ taskId: r.id }}
                     className="flex items-center gap-1 hover:text-foreground hover:underline"
                   >
                     <ListChecksIcon aria-hidden="true" className="size-3.5" />

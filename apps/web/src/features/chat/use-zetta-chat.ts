@@ -18,7 +18,7 @@ type Extras = {
   memoryIds?: string[];
   skills?: string[];
 };
-const url = (path: string) => new URL(path, ENV.VITE_SERVER_URL).toString();
+const url = (path: string) => new URL(path, ENV.ZETTA_SERVER_URL).toString();
 
 /**
  * One AI SDK chat bound to a conversation (or a thread inside it). useChat only holds the turn in flight:

@@ -116,6 +116,8 @@ export function createInbound(
       .set({ enabled: false, lastError: why, updatedAt: new Date() })
       .where(eq(inboundRoute.id, r.id));
     await raiseAttention(db, r.ownerUserId, {
+      kind: "inbound_stopped",
+      subjectId: r.id,
       botId: r.botId,
       title: `Incoming ${getPlugin(r.pluginId)?.inbound?.label ?? r.pluginId} messages stopped`,
       detail: why,
@@ -247,6 +249,8 @@ export function createInbound(
         .where(eq(inboundRoute.id, r.id));
       if (["AUTH", "WEBHOOK_ACTIVE", "BAD_TOKEN", "SECRET_UNAVAILABLE"].includes(p.code))
         await raiseAttention(db, r.ownerUserId, {
+          kind: "connection_lost",
+          subjectId: r.id,
           botId: r.botId,
           title: `Incoming ${getPlugin(r.pluginId)?.inbound?.label ?? r.pluginId} messages cannot be read`,
           detail: p.safe,
@@ -303,6 +307,8 @@ export function createInbound(
     ) {
       await db.update(inboundEvent).set({ status: "skipped" }).where(inArray(inboundEvent.id, ids));
       await raiseAttention(db, r.ownerUserId, {
+        kind: "inbound_rate",
+        subjectId: t.id,
         botId: r.botId,
         title: `Too many ${inbound.label} messages from "${t.chatName || t.chatKey}"`,
         detail: `${pending.length} message(s) were not answered by the bot to stay under the hourly limit.`,
@@ -389,6 +395,8 @@ export function createInbound(
           .set({ status: "failed" })
           .where(inArray(inboundEvent.id, failed));
         await raiseAttention(db, r.ownerUserId, {
+          kind: "inbound_unanswered",
+          subjectId: t.id,
           botId: r.botId,
           title: `A ${inbound.label} message from "${t.chatName || t.chatKey}" was not answered`,
           detail: "The bot could not start working on it.",

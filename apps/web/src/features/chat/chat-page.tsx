@@ -34,7 +34,7 @@ import { Button, DRAWER_FLUSH } from "@/components/ui";
 import { Modal } from "@g4rcez/components/modal";
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
-import { BotStatusDot, BotStatusLabel } from "@/components/bot-status";
+import { BotCurrentTask, BotStatusDot, BotStatusLabel } from "@/components/bot-status";
 import { ResizeHandle, toWidth } from "@/components/resize-handle";
 import { authClient } from "@/lib/auth-client";
 import {
@@ -196,10 +196,17 @@ export function ChatPage() {
       replace: true,
     });
 
-  // A chat shows only what its own bot asked: another bot's request is approved in that bot's chat.
+  // A chat shows only the approvals raised in it: another bot's request, or the same bot's request in another chat or room, is
+  // approved where it was asked. A chat not started yet holds the cards its bot raised before it had a conversation.
   // Proposals also come from loops, routines and other chats, which send no stream part, so they are polled.
+  const proposalsPlace = useMemo(
+    () => (chatId ? { chatId, ...(roomId ? { roomId } : {}) } : { newChat: true }),
+    [chatId, roomId],
+  );
+  // In a room any member bot may have asked, so the room's own cards are not narrowed to the bot that owns the chat.
+  const proposalsBot = roomId ? undefined : botId;
   const proposalsQuery = useQuery({
-    ...chatQueries.proposals(botId),
+    ...chatQueries.proposals(proposalsBot, proposalsPlace),
     enabled: !!botId,
     // A stream part (`data-proposal`) and every settled turn already refresh this; the poll only catches loops and routines.
     refetchInterval: pollEvery(15_000, 15_000, false),
@@ -667,6 +674,10 @@ export function ChatPage() {
                   <div className={className}>{content}</div>
                 );
               })()}
+              {/* Beside the settings link, not inside it: it is a link of its own, to the task. */}
+              {current && (
+                <BotCurrentTask botId={current.id} className="max-w-52 shrink-0 max-md:hidden" />
+              )}
               {botId && (
                 <>
                   <CaretRightIcon
@@ -856,8 +867,9 @@ export function ChatPage() {
                 bots={bots}
                 notify={setNotice}
                 onResolved={(id) =>
-                  qc.setQueryData<Proposal[]>(chatQueries.proposals(botId).queryKey, (l) =>
-                    l?.filter((x) => x.id !== id),
+                  qc.setQueryData<Proposal[]>(
+                    chatQueries.proposals(proposalsBot, proposalsPlace).queryKey,
+                    (l) => l?.filter((x) => x.id !== id),
                   )
                 }
                 onBotsChanged={() => void refreshBots()}

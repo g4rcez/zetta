@@ -11,8 +11,8 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui";
-import { errorMessage } from "../chat/chat-client";
+import { Button, Input } from "@/components/ui";
+import { errorCode, errorMessage } from "../chat/chat-client";
 import { usePluginApi, type PluginTest } from "./plugins-api";
 import { Alert } from "@g4rcez/components/alert";
 
@@ -131,6 +131,8 @@ const REASON: Record<string, string> = {
   TOO_MANY_ACCOUNTS:
     "That is the most Google accounts that can be connected. Disconnect one first.",
   NOT_CONFIGURED: "Add your Google OAuth client ID and secret in Settings first.",
+  PASTE_INVALID:
+    "That is not the address Google ended on. Copy the whole address from the browser bar of the page that did not load.",
 };
 
 /** One connected Google account, as the server reports it (never tokens). */
@@ -291,6 +293,53 @@ function AccountCard({
  * Studio > Plugins > Google: the connected Google accounts (each with its own permissions), and a picker to add another one.
  * Sign-in goes through Google's consent screen; tokens never reach the browser.
  */
+/** Google "Desktop app" clients redirect to a loopback address that cannot load: the user copies that address and pastes it here. */
+function GooglePasteStep({
+  busy,
+  onSubmit,
+  onCancel,
+}: {
+  busy: boolean;
+  onSubmit: (address: string) => void;
+  onCancel: () => void;
+}) {
+  const [address, setAddress] = useState("");
+  return (
+    <form
+      className="space-y-2 rounded-md border p-3"
+      aria-label="Finish Google sign-in"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit(address);
+      }}
+    >
+      <p className="text-xs text-muted-foreground">
+        Finish the sign-in on the Google tab. If it ends on a page that says Google is connected,
+        you are done. If it ends on a page that does not load (127.0.0.1), copy that page&apos;s
+        whole address from the browser bar and paste it here.
+      </p>
+      <Input
+        name="address"
+        type="url"
+        value={address}
+        onChange={(e) => setAddress(e.target.value)}
+        placeholder="http://127.0.0.1:53682/?state=…&code=…"
+        autoComplete="off"
+        spellCheck={false}
+        required
+      />
+      <div className="flex gap-2">
+        <Button size="sm" type="submit" loading={busy} disabled={busy || !address.trim()}>
+          Finish
+        </Button>
+        <Button size="sm" type="button" variant="ghost" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export function GoogleConnect({
   probe,
   onChanged,
@@ -307,12 +356,25 @@ export function GoogleConnect({
   newTab?: boolean;
 }) {
   const pluginsApi = usePluginApi();
-  const accounts =
-    (probe?.status.info as { accounts?: GoogleAccountInfo[] } | undefined)?.accounts ?? [];
+  const info = probe?.status.info as
+    | { accounts?: GoogleAccountInfo[]; signIn?: { completion?: string } }
+    | undefined;
+  const accounts = info?.accounts ?? [];
   const [scopes, setScopes] = useState<Set<string>>(new Set(initialScopes));
   const [allowSend, setAllowSend] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
+  // The server knows a Desktop sign-in is waiting (`signIn`), so the paste step survives a reload, Back and a second tab. `dismissed` hides it
+  // until the next Connect.
+  const [step, setStep] = useState<"idle" | "paste" | "dismissed">("idle");
+  const pasting =
+    step === "paste" || (step !== "dismissed" && info?.signIn?.completion === "paste");
+  useEffect(() => {
+    // The listener on the server may finish the sign-in while this page waits: look again until it does.
+    if (!pasting) return;
+    const timer = setInterval(onChanged, 3000);
+    return () => clearInterval(timer);
+  }, [pasting, onChanged]);
   useEffect(() => {
     // result of the redirect from the server callback: only a flag, never a token
     const q = new URLSearchParams(window.location.search);
@@ -335,7 +397,12 @@ export function GoogleConnect({
         ...(account && { account }),
       });
       if (r.authorizeUrl) {
-        if (newTab) {
+        if (r.data?.completion === "paste") {
+          // The redirect cannot load, so the page always stays: the sign-in opens in a tab (the system browser in the desktop app).
+          window.open(r.authorizeUrl, "_blank", "noopener,noreferrer");
+          setStep("paste");
+          setNotice(undefined);
+        } else if (newTab) {
           window.open(r.authorizeUrl, "_blank", "noopener,noreferrer");
           setNotice("Finish signing in on the Google tab. This page updates by itself.");
         } else window.location.assign(r.authorizeUrl);
@@ -345,6 +412,19 @@ export function GoogleConnect({
       onChanged();
     } catch (e) {
       onError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function complete(address: string) {
+    setBusy(true);
+    try {
+      await pluginsApi.complete("google", address);
+      setStep("idle");
+      setNotice("Google connected.");
+      onChanged();
+    } catch (e) {
+      setNotice(REASON[errorCode(e) ?? ""] ?? errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -390,6 +470,13 @@ export function GoogleConnect({
       </p>
       {notice && (
         <Alert theme={notice === "Google connected." ? "success" : "info"}>{notice}</Alert>
+      )}
+      {pasting && (
+        <GooglePasteStep
+          busy={busy}
+          onSubmit={(address) => void complete(address)}
+          onCancel={() => setStep("dismissed")}
+        />
       )}
       {accounts.map((a) => (
         <AccountCard

@@ -146,6 +146,7 @@ export function createPlugins(
   /** Whether the server's gh CLI is logged in for this HOME; a parameter so tests do not depend on the machine. */
   gh: (home: string | undefined) => Promise<boolean> = (home) => ghLoggedIn(home),
 ) {
+  const connectedListeners: ((a: ActiveActor, id: string) => Promise<unknown>)[] = [];
   const need = () => {
     if (!connections?.configured())
       throw new PluginError(
@@ -239,6 +240,7 @@ export function createPlugins(
     let connectionId = s.connectionId;
     return {
       userId: team ? `team:${s.id}` : a.userId,
+      actorUserId: a.userId,
       botId,
       get config() {
         return config;
@@ -537,6 +539,13 @@ export function createPlugins(
       if (!d.connect) throw new PluginError("NOT_SUPPORTED", "This plugin has nothing to connect.");
       return (await withDeadline(d.connect(await ctxFor(a, d, s), options))) ?? {};
     },
+    /**
+     * Runs `listener` after a user finished a plugin's sign-in (never awaited, never throws into the sign-in). Server modules that keep a
+     * "this plugin is not connected" note use it to look again now, instead of at their next scheduled run.
+     */
+    onConnected(listener: (a: ActiveActor, id: string) => Promise<unknown>) {
+      connectedListeners.push(listener);
+    },
     /** OAuth redirect target: completes the flow the signed-in user started. */
     async callback(a: ActiveActor, id: string, params: URLSearchParams) {
       // The provider's redirect carries no scope: the configuration that started the sign-in is the one whose pending state matches.
@@ -549,6 +558,7 @@ export function createPlugins(
           throw new PluginError("NOT_SUPPORTED", "This plugin has no sign-in callback.");
         try {
           await withDeadline(d.callback(await ctxFor(a, d, s), params));
+          for (const listener of connectedListeners) void listener(a, id).catch(() => {});
           return;
         } catch (e) {
           failure = e;

@@ -35,7 +35,7 @@ export const configureComposioForTests = (o: Partial<ComposioSettings>) => {
 };
 export const settings = (): ComposioSettings => ({
   ...defaults,
-  redirectBase: process.env.COMPOSIO_REDIRECT_BASE || process.env.BETTER_AUTH_URL || undefined,
+  redirectBase: process.env.COMPOSIO_REDIRECT_BASE || process.env.ZETTA_SERVER_URL || undefined,
   ...overrides,
 });
 export const redirectUri = (s = settings()) =>
@@ -359,7 +359,7 @@ export async function connect(
       throw new PluginError(
         "NOT_CONFIGURED",
         "The server has no public address for the sign-in callback.",
-        "Set BETTER_AUTH_URL on the server.",
+        "Set ZETTA_SERVER_URL on the server.",
       );
     const toolkit = toolkitSlug(options.toolkit);
     needAllowed(ctx, toolkit);

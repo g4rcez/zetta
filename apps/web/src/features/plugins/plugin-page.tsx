@@ -656,3 +656,96 @@ export function PluginPage({ pluginId, isAdmin }: { pluginId: string; isAdmin: b
     </div>
   );
 }
+
+/**
+ * The part of a plugin's page that fixes it, without the page around it: connect and test, the plugin's settings, or the install form
+ * when it is not set up yet. Inbox shows it inside a card, so a lost connection is repaired where the person is told about it.
+ * `onChanged` runs after a save, an install or a connection, so the caller can look again at what it showed.
+ */
+export function PluginSetup({
+  pluginId,
+  isAdmin,
+  onChanged,
+}: {
+  pluginId: string;
+  isAdmin: boolean;
+  onChanged: () => void;
+}) {
+  const [error, setError] = useState<string>();
+  const bots = useQuery(chatQueries.bots()).data ?? NO_BOTS;
+  const [picked, setPicked] = useState<PluginScope>();
+  const { catalog, installed, reload } = usePlugins(setError);
+  const { probes, probe } = useProbes();
+  const meta = catalog?.find((c) => c.id === pluginId);
+  const mine = installed?.find((i) => i.id === pluginId && i.sharing === "private");
+  const team = installed?.find((i) => i.id === pluginId && i.sharing === "team");
+  const scope: PluginScope = picked ?? (!mine && team ? "team" : "mine");
+  const current = scope === "team" ? team : mine;
+  const canManage = scope === "mine" || isAdmin;
+  // Checked on arrival, as on the page (a local command only when asked: a check starts the process).
+  useEffect(() => {
+    if (current && meta?.transport !== "stdio" && !probes[probeKey(pluginId, scope)])
+      void probe(pluginId, scope);
+  }, [current, meta, probes, pluginId, scope, probe]);
+  const changed = () => {
+    void reload();
+    void probe(pluginId, scope);
+    onChanged();
+  };
+  if (catalog === undefined || installed === undefined) return <Loading />;
+  if (!meta) return <Empty>No plugin named “{pluginId}”.</Empty>;
+  return (
+    <div className="space-y-4">
+      {error && <Alert theme="danger">{error}</Alert>}
+      <PluginScopeProvider value={scope}>
+        <div className="flex items-center gap-3">
+          <PluginIcon id={meta.id} name={meta.icon} className="size-8 shrink-0" />
+          <h3 className="text-base font-semibold">{meta.name}</h3>
+        </div>
+        <ScopeSwitch
+          scope={scope}
+          onChange={setPicked}
+          haveMine={Boolean(mine)}
+          haveTeam={Boolean(team)}
+        />
+        {!current ? (
+          !canManage ? (
+            <Empty>The administrator has not set up {meta.name} for the team yet.</Empty>
+          ) : meta.id === "telegram" ? (
+            <TelegramInstall meta={meta} bots={bots} onClose={changed} onDone={changed} />
+          ) : meta.id === "whatsapp" ? (
+            // Pairing a phone needs the full page.
+            <Link
+              to="/plugins/$pluginId"
+              params={{ pluginId }}
+              className="text-sm underline underline-offset-2"
+            >
+              Set up {meta.name} on its page
+            </Link>
+          ) : (
+            <InstallForm key={scope} meta={meta} bots={bots} onCancel={changed} onDone={changed} />
+          )
+        ) : (
+          <>
+            <ConnectionSection
+              meta={meta}
+              canManage={canManage}
+              probe={probes[probeKey(pluginId, scope)]}
+              onTest={() => void probe(pluginId, scope)}
+              onPair={() => {}}
+              onError={setError}
+            />
+            {canManage && meta.fields.length > 0 && (
+              <SettingsForm
+                key={scope}
+                meta={meta}
+                hasToken={Boolean(current.hasSecret)}
+                onSaved={changed}
+              />
+            )}
+          </>
+        )}
+      </PluginScopeProvider>
+    </div>
+  );
+}

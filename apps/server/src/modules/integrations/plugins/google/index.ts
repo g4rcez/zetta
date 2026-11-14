@@ -73,7 +73,7 @@ export const googlePlugin: PluginDef = {
       kind: "text",
       optional: true,
       placeholder: "1234-abc.apps.googleusercontent.com",
-      help: "Google Cloud Console > APIs & Services > Credentials > Create OAuth client ID (Web application).",
+      help: 'Google Cloud Console > APIs & Services > Credentials > Create OAuth client ID, of type "Desktop app" (or "Web application", see Client type).',
     },
     {
       key: "clientSecret",
@@ -81,7 +81,25 @@ export const googlePlugin: PluginDef = {
       kind: "password",
       secret: true,
       optional: true,
-      help: `Add ${redirectUri()} as an authorised redirect URI of that client.`,
+      help: `For a Web application client, add ${redirectUri()} as an authorised redirect URI of that client. A Desktop app client needs no redirect URI.`,
+    },
+    {
+      key: "clientType",
+      label: "Client type",
+      kind: "select",
+      optional: true,
+      options: [
+        {
+          value: "desktop",
+          label:
+            "Desktop app: works from any address (LAN IP, .local, localhost); you paste the final address back",
+        },
+        {
+          value: "web",
+          label: "Web application: needs a public https domain as the redirect URI",
+        },
+      ],
+      help: "Must match the type of the OAuth client you created. Google refuses a Web application redirect on a LAN IP or .local, so use Desktop app there.",
     },
   ],
   description:
@@ -93,8 +111,9 @@ export const googlePlugin: PluginDef = {
     "Open https://console.cloud.google.com/ and create a project (or pick one).",
     `In APIs & Services > Library, press Enable on each API you want bots to use (a service whose API is off fails with an "API is not enabled" error): ${API_PAGES.map((p) => `${p.name} ${p.url}`).join(", ")}.`,
     "Configure the OAuth consent screen and add your own Google accounts as test users.",
-    `Create an OAuth client ID of type "Web application" and add ${redirectUri()} as an authorised redirect URI.`,
-    "Paste the client ID and client secret in the setup card, tick the permissions you want for the account, then sign in with Google. Repeat for each account. To add a permission later, use Change permissions on that account and sign in again.",
+    `Create an OAuth client ID of type "Desktop app" (works from any address, no redirect URI to register). Only if Zetta has a public https domain, a "Web application" client with ${redirectUri()} as an authorised redirect URI also works.`,
+    "Paste the client ID and client secret in the setup card and choose the matching Client type. With Desktop app, Google ends on a page that does not load: copy that page's address and paste it back in Zetta to finish.",
+    "Tick the permissions you want for the account, then sign in with Google. Repeat for each account. To add a permission later, use Change permissions on that account and sign in again.",
   ],
   tools: [
     ...accountTools,

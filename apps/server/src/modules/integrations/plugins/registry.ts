@@ -64,6 +64,8 @@ export type PluginContext = {
   setConfig(next: Record<string, string>): Promise<void>;
   /** The bot that called the tool (tool calls only). */
   botId?: string;
+  /** The real user the request ran as. `userId` is `team:<id>` for a team configuration; a flow that finishes later needs the person. */
+  actorUserId?: string;
 };
 export type JsonSchema = {
   type: "object";

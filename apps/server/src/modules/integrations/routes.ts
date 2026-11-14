@@ -8,6 +8,7 @@ import {
 } from "../connections/transport";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { McpError, type Mcp } from "./mcp";
+import { pastedParams } from "./plugins/pasted-redirect";
 import { PluginError } from "./plugins/registry";
 import { SourceError, type Sources } from "./sources";
 import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
@@ -279,6 +280,15 @@ export function createIntegrationRoutes(
               .parse(c.body ?? {}).options,
           ),
         ),
+      )
+      // The address the user pastes when the provider's redirect cannot load (Google "Desktop app" client: a loopback redirect). Same effect as the callback below.
+      .post(
+        "/plugins/:id/complete",
+        g(async (c) => {
+          const { url } = z.strictObject({ url: z.string().trim().min(1).max(4000) }).parse(c.body);
+          await mcp.plugins.callback(c.actor, pluginId.parse(c.params.id), pastedParams(url));
+          return { ok: true };
+        }),
       )
       // Browser navigation from the plugin's OAuth provider: no JSON, no token in the URL; always ends in a redirect to the plugin's page with a status flag.
       .get("/plugins/:id/callback", async ({ request, params }) => {

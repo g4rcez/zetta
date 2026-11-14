@@ -101,6 +101,9 @@ export const pluginsApiFor = (scope: PluginScope) => ({
       message?: string;
       data?: Record<string, unknown>;
     }>(at(`/api/plugins/${id}/connect`, scope), "POST", options ? { options } : {}),
+  /** Finishes a sign-in whose redirect could not load (Google "Desktop app" client): `url` is the address the user pasted. */
+  complete: (id: string, url: string) =>
+    call<{ ok: true }>(at(`/api/plugins/${id}/complete`, scope), "POST", { url }),
   /** `options.account` disconnects one account of a plugin that has several (Google); without it everything is disconnected. */
   disconnect: (id: string, options?: Record<string, unknown>) =>
     call(at(`/api/plugins/${id}/disconnect`, scope), "POST", options ? { options } : {}),

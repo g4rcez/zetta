@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { b64u, sha } from "../oauth2";
 import { PluginError, type PluginContext, type PluginStatus } from "../registry";
+import { expectRedirect, resetLoopback } from "./loopback";
 
 /**
  * Google OAuth 2.0 web-server flow (Authorization Code + PKCE + state), used as an INTEGRATION grant for bot tools.
@@ -89,6 +90,8 @@ export type GoogleSettings = {
   clientId?: string;
   clientSecret?: string;
   redirectBase?: string;
+  /** Port of the loopback redirect of a Desktop client (and of the listener that catches it). 0 asks the system for a free one (tests). */
+  loopbackPort: number;
   fetch: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   now: () => number;
 };
@@ -102,6 +105,7 @@ const defaults: GoogleSettings = {
   driveBase: "https://www.googleapis.com/drive/v3",
   docsBase: "https://docs.googleapis.com/v1",
   sheetsBase: "https://sheets.googleapis.com/v4",
+  loopbackPort: 53682,
   fetch: (...a) => fetch(...a),
   now: () => Date.now(),
 };
@@ -111,28 +115,46 @@ export const configureGoogleForTests = (o: Partial<GoogleSettings>) => {
   overrides = o;
   refreshing.clear();
   callbacks.clear();
+  resetLoopback();
 };
 /** The OAuth client comes from the installing user's sealed config, so every user (and the bots they bind) uses their own Google project. */
 export const settings = (config: Readonly<Record<string, string>> = {}): GoogleSettings => ({
   ...defaults,
   clientId: config.clientId || undefined,
   clientSecret: config.clientSecret || undefined,
-  redirectBase: process.env.GOOGLE_OAUTH_REDIRECT_BASE || process.env.BETTER_AUTH_URL || undefined,
+  redirectBase: process.env.GOOGLE_OAUTH_REDIRECT_BASE || process.env.ZETTA_SERVER_URL || undefined,
   ...overrides,
 });
 export const redirectUri = (s = settings()) =>
   `${(s.redirectBase ?? "").replace(/\/+$/, "")}/api/plugins/google/callback`;
-export const KEEP_ON_DISCONNECT = ["clientId", "clientSecret"] as const;
+/**
+ * `desktop`: a Google "Desktop app" client. Google accepts a loopback redirect for it without registering anything, from any server address
+ * (a LAN IP, .local, localhost). Nothing listens there: the browser ends on a page that does not load, and the user pastes its address back
+ * (POST /api/plugins/google/complete). `web`: a "Web application" client, which needs a public https domain as its redirect URI.
+ */
+export type ClientType = "desktop" | "web";
+export const clientType = (config: Readonly<Record<string, string>> = {}): ClientType =>
+  config.clientType === "desktop" ? "desktop" : "web";
+export const LOOPBACK_REDIRECT = "http://127.0.0.1:53682/";
+const loopbackRedirect = (port: number) => `http://127.0.0.1:${port}/`;
+/** The redirect URI of the client type; the same value goes in the authorize request and in the token exchange. */
+const redirectFor = (
+  s: GoogleSettings,
+  config: Readonly<Record<string, string>>,
+  port = s.loopbackPort,
+) => (clientType(config) === "desktop" ? loopbackRedirect(port) : redirectUri(s));
+export const KEEP_ON_DISCONNECT = ["clientId", "clientSecret", "clientType"] as const;
 const NOT_CONFIGURED = () =>
   new PluginError(
     "NOT_CONFIGURED",
     "Google has no OAuth client yet.",
-    `Create an OAuth client (Web application) in Google Cloud Console with ${redirectUri()} as an authorised redirect URI, then enter its client ID and secret in Studio > Plugins > Google > Settings.`,
+    `Create an OAuth client of type "Desktop app" in Google Cloud Console (it works from any address), or a "Web application" client with ${redirectUri()} as an authorised redirect URI (public https domain only). Then choose the client type and enter its client ID and secret in Studio > Plugins > Google > Settings.`,
   );
 const requireConfigured = (config: Readonly<Record<string, string>>) => {
   const s = settings(config);
-  if (!s.clientId || !s.clientSecret || !s.redirectBase) throw NOT_CONFIGURED();
-  return s as GoogleSettings & { clientId: string; clientSecret: string; redirectBase: string };
+  if (!s.clientId || !s.clientSecret || (clientType(config) === "web" && !s.redirectBase))
+    throw NOT_CONFIGURED();
+  return s as GoogleSettings & { clientId: string; clientSecret: string };
 };
 
 const STATE_TTL_MS = 10 * 60_000,
@@ -331,7 +353,7 @@ const post = async (url: string, form: Record<string, string>) => {
 export async function startConnect(
   ctx: PluginContext,
   options: Record<string, unknown> = {},
-): Promise<{ authorizeUrl?: string }> {
+): Promise<{ authorizeUrl?: string; data?: Record<string, unknown> }> {
   const s = requireConfigured(ctx.config);
   const raw = Array.isArray(options.scopes) ? options.scopes : [];
   if (raw.some((x) => typeof x !== "string" || !(x in SCOPES)))
@@ -374,19 +396,33 @@ export async function startConnect(
   }
   const state = b64u(randomBytes(32)),
     verifier = b64u(randomBytes(32));
+  const exp = s.now() + STATE_TTL_MS;
+  // A Desktop client's redirect lands on this computer's 127.0.0.1: when the browser runs here, the listener catches it. Without a listener
+  // (another device, a taken port, Docker) the redirect is the same and the user pastes the address.
+  const bound =
+    clientType(ctx.config) === "desktop"
+      ? await expectRedirect(
+          b64u(sha(state)),
+          ctx.actorUserId ?? ctx.userId,
+          exp,
+          s.loopbackPort,
+          s.now,
+        )
+      : null;
   const pending = {
     s: b64u(sha(state)),
     v: verifier,
-    exp: s.now() + STATE_TTL_MS,
+    exp,
     scopes: want,
     allowSend,
     account: target?.email ?? null,
+    r: redirectFor(s, ctx.config, bound ?? s.loopbackPort),
   };
   await ctx.setConfig({ ...ctx.config, pending: JSON.stringify(pending) });
   const u = new URL(s.authUrl);
   const q: Record<string, string> = {
     client_id: s.clientId,
-    redirect_uri: redirectUri(s),
+    redirect_uri: pending.r,
     response_type: "code",
     scope: [...IDENTITY_SCOPES, ...want.map((w) => SCOPES[w].url)].join(" "),
     access_type: "offline",
@@ -398,7 +434,9 @@ export async function startConnect(
   };
   if (target && target.email !== LEGACY_EMAIL) q.login_hint = target.email;
   for (const [k, v] of Object.entries(q)) u.searchParams.set(k, v);
-  return { authorizeUrl: u.toString() };
+  return clientType(ctx.config) === "desktop"
+    ? { authorizeUrl: u.toString(), data: { completion: "paste" } }
+    : { authorizeUrl: u.toString() };
 }
 
 const callbacks = new Set<string>();
@@ -413,6 +451,8 @@ export async function finishConnect(ctx: PluginContext, params: URLSearchParams)
         scopes: string[];
         allowSend: boolean;
         account?: string | null;
+        /** The redirect URI of the authorize request; absent in a sign-in started before client types existed. */
+        r?: string;
       }
     | undefined;
   try {
@@ -451,7 +491,7 @@ export async function finishConnect(ctx: PluginContext, params: URLSearchParams)
       code,
       code_verifier: pending.v,
       grant_type: "authorization_code",
-      redirect_uri: redirectUri(s),
+      redirect_uri: pending.r ?? redirectFor(s, ctx.config),
     });
     const t = r.body;
     if (!r.ok || typeof t.access_token !== "string")
@@ -651,15 +691,34 @@ export async function disconnect(
   await ctx.setConfig(keep);
 }
 
+/** A Desktop sign-in that is waiting for its redirect: lets a page that was reloaded, or a second tab, still show the paste step. */
+function signInInfo(config: Readonly<Record<string, string>>, now: number) {
+  try {
+    const p = config.pending
+      ? (JSON.parse(config.pending) as { exp?: number; r?: string })
+      : undefined;
+    if (p?.r?.startsWith("http://127.0.0.1:") && typeof p.exp === "number" && p.exp > now)
+      return { completion: "paste", expiresAt: p.exp };
+  } catch {
+    // An unreadable pending value is no sign-in.
+  }
+  return undefined;
+}
+
 export async function status(ctx: PluginContext): Promise<PluginStatus> {
   const s = settings(ctx.config);
-  if (!s.clientId || !s.clientSecret || !s.redirectBase) {
+  const signIn = signInInfo(ctx.config, s.now());
+  if (!s.clientId || !s.clientSecret || (clientType(ctx.config) === "web" && !s.redirectBase)) {
     const e = NOT_CONFIGURED();
     return { state: "error", detail: `${e.safe} ${e.fix}` };
   }
   const before = readAccounts(ctx.config);
   if (!before.some((a) => a.refreshToken))
-    return { state: "needs-auth", detail: "Not connected yet. Choose permissions and connect." };
+    return {
+      state: "needs-auth",
+      detail: "Not connected yet. Choose permissions and connect.",
+      ...(signIn && { info: { signIn } }),
+    };
   const ok = new Set<string>();
   let why = "";
   for (const a of before) {
@@ -675,7 +734,11 @@ export async function status(ctx: PluginContext): Promise<PluginStatus> {
   const accounts = readAccounts(ctx.config);
   const live = accounts.filter((a) => ok.has(a.email));
   if (!live.length)
-    return { state: "needs-auth", detail: why || "Reconnect Google in Studio > Plugins." };
+    return {
+      state: "needs-auth",
+      detail: why || "Reconnect Google in Studio > Plugins.",
+      ...(signIn && { info: { signIn } }),
+    };
   return {
     state: "connected",
     detail: `Connected as ${live.map((a) => accountLabel(a.email)).join(", ")}`,
@@ -690,6 +753,7 @@ export async function status(ctx: PluginContext): Promise<PluginStatus> {
       email: live[0]!.email === LEGACY_EMAIL ? null : live[0]!.email,
       scopes: [...new Set(live.flatMap((a) => [...grantedScopes(a)]))],
       allowSend: live.some((a) => a.allowSend === "true"),
+      ...(signIn && { signIn }),
     },
   };
 }

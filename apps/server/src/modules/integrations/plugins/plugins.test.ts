@@ -415,3 +415,48 @@ describe("setupInfo", () => {
     });
   });
 });
+
+describe("plugin sign-in listeners", () => {
+  const oauth: PluginDef = {
+    id: "fake-oauth",
+    name: "Fake OAuth",
+    description: "Signs in.",
+    icon: "key",
+    category: "other",
+    kind: "native",
+    auth: "oauth",
+    fields: [],
+    tools: [],
+    async callback(_ctx, params) {
+      if (params.get("error")) throw new PluginError("ACCESS_DENIED", "declined");
+    },
+  };
+  registerPlugin(oauth);
+
+  test("a finished sign-in tells the listeners which plugin, and a refused one does not", async () => {
+    const { plugins } = world();
+    const a = actor("u1");
+    await plugins.install(a, "fake-oauth", {});
+    const told: string[] = [];
+    plugins.onConnected(async (_who, id) => void told.push(id));
+    await expect(
+      plugins.callback(a, "fake-oauth", new URLSearchParams({ error: "x" })),
+    ).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+    expect(told).toEqual([]);
+    await plugins.callback(a, "fake-oauth", new URLSearchParams({ code: "c" }));
+    await Bun.sleep(1);
+    expect(told).toEqual(["fake-oauth"]);
+  });
+
+  test("a listener that fails never fails the sign-in", async () => {
+    const { plugins } = world();
+    const a = actor("u1");
+    await plugins.install(a, "fake-oauth", {});
+    plugins.onConnected(async () => {
+      throw new Error("sync exploded");
+    });
+    await expect(
+      plugins.callback(a, "fake-oauth", new URLSearchParams({ code: "c" })),
+    ).resolves.toBeUndefined();
+  });
+});

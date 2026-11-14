@@ -68,7 +68,7 @@ export const settings = (config: Readonly<Record<string, string>> = {}): RedditS
   ...defaults,
   clientId: config.clientId || undefined,
   clientSecret: config.clientSecret || undefined,
-  redirectBase: process.env.REDDIT_OAUTH_REDIRECT_BASE || process.env.BETTER_AUTH_URL || undefined,
+  redirectBase: process.env.REDDIT_OAUTH_REDIRECT_BASE || process.env.ZETTA_SERVER_URL || undefined,
   userAgent: `server:zetta-plugin:1.0${config.username ? ` (by /u/${config.username})` : ""}`,
   ...overrides,
 });

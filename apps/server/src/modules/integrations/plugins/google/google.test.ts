@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { getPlugin, type PluginContext } from "../registry";
 import { createRoutinePollers } from "../../../features/routine-pollers";
 import { newMessages, stripHtml } from "./gmail";
-import { configureGoogleForTests, redirectUri } from "./oauth";
+import { configureGoogleForTests, LOOPBACK_REDIRECT, redirectUri } from "./oauth";
+import { pastedParams } from "../pasted-redirect";
 import "./index";
 
 let calls: { path: string; query: string; method: string; auth?: string; body: string }[] = [];
@@ -295,6 +296,98 @@ describe("google oauth", () => {
         new URLSearchParams({ error: "access_denied", state: u3.searchParams.get("state")! }),
       ),
     ).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  });
+  describe("desktop client (loopback redirect, pasted address)", () => {
+    const desktop = (start: Record<string, string> = {}) =>
+      mkCtx("u1", { clientType: "desktop", ...start });
+    test("works on any server address: no redirect base, loopback redirect_uri, paste step flagged", async () => {
+      delete process.env.GOOGLE_OAUTH_REDIRECT_BASE;
+      delete process.env.ZETTA_SERVER_URL;
+      const c = desktop();
+      const r = (await plugin.connect!(c.ctx, { scopes: ["gmail.readonly"] })) as {
+        authorizeUrl: string;
+        data?: { completion?: string };
+      };
+      expect(new URL(r.authorizeUrl).searchParams.get("redirect_uri")).toBe(LOOPBACK_REDIRECT);
+      expect(r.data).toEqual({ completion: "paste" });
+      expect(JSON.parse(c.get().pending!).r).toBe(LOOPBACK_REDIRECT);
+      expect((await plugin.status!(c.ctx)).state).toBe("needs-auth");
+    });
+    test("web client still needs a redirect base", async () => {
+      delete process.env.GOOGLE_OAUTH_REDIRECT_BASE;
+      delete process.env.ZETTA_SERVER_URL;
+      await expect(
+        plugin.connect!(mkCtx().ctx, { scopes: ["gmail.readonly"] }),
+      ).rejects.toMatchObject({ code: "NOT_CONFIGURED" });
+    });
+    test("the pasted address finishes the sign-in and the token exchange sends the loopback redirect_uri", async () => {
+      const c = desktop();
+      const u = await connect(c, ["gmail.readonly"], READ);
+      const pasted = `${LOOPBACK_REDIRECT}?state=${u.searchParams.get("state")}&code=c1&scope=x`;
+      await plugin.callback!(c.ctx, pastedParams(pasted));
+      expect(accountsOf(c)).toMatchObject([{ email: "me@example.com", scopes: "gmail.readonly" }]);
+      const exchange = calls.find(
+        (x) => x.path === "/token" && x.body.includes("authorization_code"),
+      );
+      expect(new URLSearchParams(exchange!.body).get("redirect_uri")).toBe(LOOPBACK_REDIRECT);
+      expect(c.get().clientType).toBe("desktop");
+    });
+    test("the web redirect_uri is unchanged for a web client", async () => {
+      const c = mkCtx();
+      const u = await connect(c, ["gmail.readonly"], READ);
+      expect(u.searchParams.get("redirect_uri")).toBe(
+        "https://zetta.test/api/plugins/google/callback",
+      );
+      expect(JSON.parse(c.get().pending!).r).toBe("https://zetta.test/api/plugins/google/callback");
+    });
+    test("a sign-in started before client types existed still exchanges with the web redirect", async () => {
+      const c = mkCtx();
+      const u = await connect(c, ["gmail.readonly"], READ);
+      const { r: _r, ...old } = JSON.parse(c.get().pending!);
+      await c.ctx.setConfig({ ...c.get(), pending: JSON.stringify(old) });
+      await plugin.callback!(
+        c.ctx,
+        new URLSearchParams({ code: "c1", state: u.searchParams.get("state")! }),
+      );
+      const exchange = calls.find(
+        (x) => x.path === "/token" && x.body.includes("authorization_code"),
+      );
+      expect(new URLSearchParams(exchange!.body).get("redirect_uri")).toBe(redirectUri());
+    });
+    test("the client type survives a disconnect", async () => {
+      const c = desktop();
+      const u = await connect(c, ["gmail.readonly"], READ);
+      await plugin.callback!(
+        c.ctx,
+        new URLSearchParams({ code: "c1", state: u.searchParams.get("state")! }),
+      );
+      await plugin.disconnect!(c.ctx);
+      expect(c.get()).toMatchObject({ clientType: "desktop", clientId: "cid" });
+    });
+    test("a forged or replayed paste is rejected like a callback", async () => {
+      const c = desktop();
+      const u = await connect(c, ["gmail.readonly"], READ);
+      await expect(
+        plugin.callback!(c.ctx, pastedParams(`${LOOPBACK_REDIRECT}?state=forged&code=c`)),
+      ).rejects.toMatchObject({ code: "INVALID_STATE" });
+      const ok = pastedParams(`${LOOPBACK_REDIRECT}?state=${u.searchParams.get("state")}&code=c1`);
+      await plugin.callback!(c.ctx, ok);
+      await expect(plugin.callback!(c.ctx, ok)).rejects.toMatchObject({ code: "INVALID_STATE" });
+    });
+  });
+  test("pastedParams reads an address, a query, or refuses anything else", () => {
+    expect(
+      pastedParams(" 'http://127.0.0.1:53682/?state=s&code=c&scope=a%20b#x' ").get("code"),
+    ).toBe("c");
+    expect(pastedParams("?state=s&code=c").get("state")).toBe("s");
+    expect(pastedParams("state=s&error=access_denied").get("error")).toBe("access_denied");
+    for (const bad of [
+      "",
+      "hello",
+      "http://127.0.0.1:53682/?code=c",
+      "http://127.0.0.1:53682/?state=s",
+    ])
+      expect(() => pastedParams(bad)).toThrow(expect.objectContaining({ code: "PASTE_INVALID" }));
   });
   test("refresh is single-flight, skewed, and persisted", async () => {
     const c = mkCtx("u1", {

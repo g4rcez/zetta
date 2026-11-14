@@ -25,7 +25,7 @@ export const b64u = (b: Buffer) => b.toString("base64url");
 export const sha = (s: string) => createHash("sha256").update(s).digest();
 
 export const redirectBase = () =>
-  (process.env.ZETTA_OAUTH_REDIRECT_BASE || process.env.BETTER_AUTH_URL || "").replace(/\/+$/, "");
+  (process.env.ZETTA_OAUTH_REDIRECT_BASE || process.env.ZETTA_SERVER_URL || "").replace(/\/+$/, "");
 export const redirectUri = (p: OAuthProvider) => `${redirectBase()}/api/plugins/${p.id}/callback`;
 
 function client(p: OAuthProvider, ctx: PluginContext) {

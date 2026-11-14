@@ -306,7 +306,6 @@ function ChatRow({
       <Menu
         asChild
         hover={false}
-        restoreFocus
         title=""
         floatingClassName="w-44"
         label={
@@ -530,7 +529,6 @@ function BotSection({
         <Menu
           asChild
           hover={false}
-          restoreFocus
           title=""
           floatingClassName="w-48"
           label={
@@ -904,7 +902,6 @@ export function SidebarTree({ children }: { children?: ReactNode }) {
           <Menu
             asChild
             hover={false}
-            restoreFocus
             title=""
             floatingClassName="w-52"
             label={

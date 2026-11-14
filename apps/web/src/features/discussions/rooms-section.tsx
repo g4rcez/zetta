@@ -196,7 +196,6 @@ function RoomRow({
       <Menu
         asChild
         hover={false}
-        restoreFocus
         title=""
         floatingClassName="w-48"
         label={

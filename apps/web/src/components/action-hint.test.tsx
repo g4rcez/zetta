@@ -76,7 +76,9 @@ test("hovering shows the label with aria-describedby, and a click closes it", as
   expect(button.getAttribute("aria-describedby")).toBe(tooltip()!.id);
   expect(button.hasAttribute("aria-haspopup")).toBe(false);
   await press(button);
-  expect(tooltip()).toBeNull();
+  // The library fades the tooltip out (exit animation) and happy-dom does not finish it, so check that the hint is closed
+  // for assistive tech, not that its node is gone.
+  expect(button.hasAttribute("aria-describedby")).toBe(false);
 });
 
 test("closeOnClick={false} keeps the hint, so a label that changes on click can be read", async () => {
@@ -99,7 +101,6 @@ test("a Menu trigger can carry a hint: hover shows it, a click opens the menu an
     <Menu
       asChild
       hover={false}
-      restoreFocus
       title=""
       label={
         <ActionHint label="More actions">
@@ -156,7 +157,6 @@ test("a Menu trigger shows no hint while its menu is open", async () => {
     <Menu
       asChild
       hover={false}
-      restoreFocus
       title=""
       label={
         <ActionHint label="Toggle theme" side="bottom">
@@ -175,4 +175,47 @@ test("a Menu trigger shows no hint while its menu is open", async () => {
   await hover(button);
   await fire(button, ["focusin", "focus"]);
   expect(tooltip()).toBeNull();
+});
+
+const key = (el: unknown, name: string) =>
+  act(async () => {
+    (el as Element).dispatchEvent(
+      new win.KeyboardEvent("keydown", { key: name, bubbles: true }) as unknown as Event,
+    );
+  });
+
+const FocusMenu = () => (
+  <Menu
+    asChild
+    hover={false}
+    title=""
+    label={
+      <button type="button" aria-label="Open actions">
+        ⋯
+      </button>
+    }
+  >
+    <MenuItem title="Save">Save</MenuItem>
+  </Menu>
+);
+
+test("a Menu gives the focus back to its trigger when Escape closes it", async () => {
+  const host = await mount(<FocusMenu />);
+  const button = host.querySelector("button")!;
+  await press(button);
+  expect(win.document.querySelector('[role="menu"]')).not.toBeNull();
+  await key(win.document.querySelector('[role="menu"]'), "Escape");
+  await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+  expect(win.document.querySelector('[role="menu"]')).toBeNull();
+  expect(win.document.activeElement).toBe(button as never);
+});
+
+test("a Menu gives the focus back to its trigger when an item click closes it", async () => {
+  const host = await mount(<FocusMenu />);
+  const button = host.querySelector("button")!;
+  await press(button);
+  await press(win.document.querySelector('[role="menuitem"]')!);
+  await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+  expect(win.document.querySelector('[role="menu"]')).toBeNull();
+  expect(win.document.activeElement).toBe(button as never);
 });

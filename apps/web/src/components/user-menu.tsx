@@ -131,7 +131,6 @@ export default function UserMenu({
     <Menu
       asChild
       hover={false}
-      restoreFocus
       title=""
       floatingClassName="w-64 max-w-[calc(100vw-1rem)]"
       label={trigger}

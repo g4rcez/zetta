@@ -12,6 +12,7 @@ import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
+import { project } from "./projects";
 import { searchVector } from "./search";
 import { team } from "./teams";
 
@@ -67,6 +68,8 @@ export const task = zetta.table(
     messageId: uuid("message_id").references(() => message.id, setNull),
     /** A subtask points at its parent; only one level exists (the store refuses a subtask of a subtask). It goes when its parent goes. */
     parentTaskId: uuid("parent_task_id").references((): AnyPgColumn => task.id, cascade),
+    /** The project this work belongs to (a subtask has its parent's). Archiving a project keeps the link. */
+    projectId: uuid("project_id").references(() => project.id, setNull),
     /** The bot's note on what is done, where it stopped and what comes next. Every follow-up check reads it. */
     progress: text("progress").default("").notNull(),
     followUp: text("follow_up", { enum: TASK_FOLLOW_UPS }).default("off").notNull(),
@@ -91,6 +94,7 @@ export const task = zetta.table(
     index("task_conversation_id_idx").on(t.conversationId),
     index("task_message_id_idx").on(t.messageId),
     index("task_parent_idx").on(t.parentTaskId),
+    index("task_project_idx").on(t.projectId, t.status),
     // The heartbeat polls top-level tasks it follows that are due.
     index("task_follow_up_due_idx")
       .on(t.nextCheckAt)

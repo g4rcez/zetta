@@ -16,6 +16,7 @@ import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
+import { project } from "./projects";
 import { team } from "./teams";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
@@ -69,6 +70,8 @@ export const discussion = zetta.table(
     createdByBotId: uuid("created_by_bot_id").references(() => bot.id, restrict),
     /** Set for a team room: the team's chief is the facilitator (`createdByBotId`). */
     teamId: uuid("team_id").references(() => team.id, restrict),
+    /** The project this room works for: its members get the project brief, and a task made here joins the project. */
+    projectId: uuid("project_id").references(() => project.id, setNull),
     originConversationId: uuid("origin_conversation_id").references(() => conversation.id, {
       onDelete: "set null",
       onUpdate: "restrict",
@@ -119,6 +122,7 @@ export const discussion = zetta.table(
     index("discussion_origin_conversation_id_idx").on(t.originConversationId),
     index("discussion_created_by_bot_id_idx").on(t.createdByBotId),
     index("discussion_team_id_idx").on(t.teamId),
+    index("discussion_project_id_idx").on(t.projectId),
     index("discussion_origin_message_id_idx").on(t.originMessageId),
     index("discussion_owner_idx").on(t.ownerUserId, t.status),
     index("discussion_open_updated_idx")

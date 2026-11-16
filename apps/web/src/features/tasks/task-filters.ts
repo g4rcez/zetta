@@ -13,6 +13,8 @@ export const NO_BOT = "none";
 export const FOR_ME = "me";
 /** Value in `botIds` for the tasks of any bot: every task a bot owns for itself, not the ones it asked of a person. */
 export const ANY_BOT = "bots";
+/** Value of `project` for the tasks that are in no project. */
+export const NO_PROJECT = "none";
 
 export type TimeWindow = "any" | "day" | "week" | "month";
 export type ThreadFilter = "any" | "with" | "without";
@@ -32,6 +34,8 @@ export type TaskFilters = {
   /** A task passes when it has at least one of these labels. Empty means every task. */
   labels: string[];
   thread: ThreadFilter;
+  /** A project id, or `NO_PROJECT`. Empty means every task, in a project or not. */
+  project: string;
   updated: TimeWindow;
   created: TimeWindow;
   sort: TaskSort;
@@ -45,6 +49,7 @@ export const DEFAULT_FILTERS: TaskFilters = {
   priorities: [],
   labels: [],
   thread: "any",
+  project: "",
   updated: "any",
   created: "any",
   sort: "default",
@@ -96,6 +101,7 @@ export function activeCount(f: TaskFilters): number {
     f.priorities.length > 0,
     f.labels.length > 0,
     f.thread !== "any",
+    f.project !== "",
     f.updated !== "any",
     f.created !== "any",
   ].filter(Boolean).length;
@@ -118,6 +124,7 @@ export function applyFilters(tasks: Task[], f: TaskFilters, now: number, viewerI
       (f.priorities.length === 0 || f.priorities.includes(t.priority)) &&
       (f.labels.length === 0 || t.labels.some((l) => f.labels.includes(l))) &&
       (f.thread === "any" || (f.thread === "with") === (t.conversationId !== null)) &&
+      (f.project === "" || (f.project === NO_PROJECT ? !t.projectId : t.projectId === f.project)) &&
       within(t.updatedAt, f.updated, now) &&
       within(t.createdAt, f.created, now),
   );
@@ -231,6 +238,7 @@ export function parseTaskSearch(raw: Record<string, unknown>): TaskSearch {
     priorities: list(raw.priorities).filter((p): p is TaskPriority => PRIORITIES.includes(p)),
     labels: list(raw.labels),
     thread: pick(raw.thread, THREADS, "any"),
+    project: raw.project === NO_PROJECT || isUuid(raw.project) ? raw.project : "",
     updated: pick(raw.updated, WINDOWS, "any"),
     created: pick(raw.created, WINDOWS, "any"),
     sort: pick(raw.sort, SORTS, "default"),

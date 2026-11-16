@@ -99,6 +99,68 @@ type Change = {
   labels?: string[];
 };
 
+/**
+ * "What is in the way?": the person a task is assigned to says why it cannot go on. The task moves to Blocked with that sentence, and
+ * the one who asked for it is told, so they can help.
+ */
+function BlockedReason({
+  bots,
+  onSend,
+  onCancel,
+}: {
+  bots: Bot[];
+  onSend: (reason: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  async function send() {
+    if (!reason.trim() || busy) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await onSend(reason.trim());
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+      <p className="text-sm font-medium">What is in the way?</p>
+      <MentionField
+        aria-label="What is in the way?"
+        bots={bots}
+        rows={2}
+        autoFocus
+        maxLength={2000}
+        disabled={busy}
+        placeholder="For example: I am waiting for the final prices"
+        wrapperClassName="rounded-lg border bg-background px-3 py-2"
+        value={reason}
+        onChange={setReason}
+      />
+      <p className="text-xs text-pretty text-muted-foreground">
+        The task moves to Blocked and the person who asked for it is told, so they can help.
+      </p>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="sm" disabled={busy || !reason.trim()} onClick={() => void send()}>
+          Say I am blocked
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** The task page: a back link and the task. */
 export function TaskPage({ id }: { id: string }) {
   return (
@@ -187,6 +249,7 @@ export function TaskDetail({
   const loadThread = () =>
     qc.invalidateQueries({ queryKey: chatQueries.messages(conversationId ?? "").queryKey });
 
+  const [blocking, setBlocking] = useState(false);
   const patch = (change: Change) => {
     const before = task;
     if (task) setTask({ ...task, ...change });
@@ -413,12 +476,29 @@ export function TaskDetail({
                     <MenuItem
                       key={c.status}
                       title={c.label}
-                      onClick={() => patch({ status: c.status })}
+                      // Someone else's task moved to Blocked comes with a reason: the owner has to know what is in the way.
+                      onClick={() =>
+                        guest && c.status === "blocked"
+                          ? setBlocking(true)
+                          : patch({ status: c.status })
+                      }
                     >
                       {c.label}
                     </MenuItem>
                   ))}
                 </Menu>
+                {blocking && (
+                  <BlockedReason
+                    bots={bots}
+                    onCancel={() => setBlocking(false)}
+                    onSend={async (reason) => {
+                      const saved = await tasksApi.block(id, reason);
+                      setTask(saved);
+                      onChange?.(saved);
+                      setBlocking(false);
+                    }}
+                  />
+                )}
                 {guest ? (
                   <p className="inline-flex items-center gap-1.5">
                     <PriorityIcon priority={task.priority} />

@@ -22,6 +22,7 @@ import { authClient } from "@/lib/auth-client";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { useBotStatus } from "../bots/status";
+import { projectsQueries, type Project } from "../projects/projects-api";
 import { relativeTime } from "../shared/relative-time";
 import { FollowUpChip, LabelChips, PriorityIcon, StepChip } from "./task-badges";
 import { GROUP_OPTIONS, Segmented, TaskFilterBar } from "./task-filter-bar";
@@ -47,6 +48,7 @@ import { formatDateTime } from "../preferences/time-format";
 
 const NO_TASKS: Task[] = [];
 const NO_COUNTS = new Map<string, StepCount>();
+const NO_PROJECTS: Project[] = [];
 const NO_BOTS: Bot[] = [];
 
 const LAYOUTS: { value: TaskLayout; label: string; icon: React.ReactNode }[] = [
@@ -68,6 +70,7 @@ export function TasksPage({
   const counts = useQuery({ ...tasksQueries.list(), select: stepCounts }).data ?? NO_COUNTS;
   const cached = () => qc.getQueryData<Task[]>(tasksQueries.list().queryKey) ?? tasks;
   const bots = botsQuery.data ?? NO_BOTS;
+  const projects = useQuery(projectsQueries.list()).data?.projects ?? NO_PROJECTS;
   const loaded = !tasksQuery.isPending;
   const setTasks = (next: (all: Task[]) => Task[]) =>
     qc.setQueryData<Task[]>(tasksQueries.list().queryKey, (all) => next(all ?? []));
@@ -197,7 +200,13 @@ export function TasksPage({
             </form>
           </div>
         </header>
-        <TaskFilterBar state={state} onChange={setState} bots={bots} labels={knownLabels} />
+        <TaskFilterBar
+          state={state}
+          onChange={setState}
+          bots={bots}
+          labels={knownLabels}
+          projects={projects}
+        />
         {loaded && tasks.length === 0 && (
           <p className="text-sm text-muted-foreground">
             No tasks yet. Add one, or ask a bot to turn a request into a task.

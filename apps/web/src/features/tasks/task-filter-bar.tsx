@@ -29,6 +29,7 @@ import {
   WINDOW_OPTIONS,
   type GroupBy,
   type TaskState,
+  NO_PROJECT,
 } from "./task-filters";
 import { TASK_COLUMNS, TASK_PRIORITIES } from "./tasks-api";
 
@@ -156,6 +157,8 @@ function Choice<T extends string>({
   );
 }
 
+const NO_PROJECTS: { id: string; name: string }[] = [];
+
 export const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
   { value: "status", label: "Status" },
   { value: "assignee", label: "Assignee" },
@@ -257,12 +260,15 @@ export function TaskFilterBar({
   onChange,
   bots,
   labels,
+  projects = NO_PROJECTS,
 }: {
   state: TaskState;
   onChange: (next: TaskState) => void;
   bots: Bot[];
   /** Every label in use, for the label panel. */
   labels: string[];
+  /** The person's projects, for the project choice. */
+  projects?: { id: string; name: string }[];
 }) {
   const set = (patch: Partial<TaskState>) => onChange({ ...state, ...patch });
   const active = activeCount(state);
@@ -339,6 +345,16 @@ export function TaskFilterBar({
           </Button>
         }
       >
+        <Choice
+          label="Project"
+          value={state.project}
+          options={[
+            { value: "", label: "Any project" },
+            { value: NO_PROJECT, label: "Not in a project" },
+            ...projects.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+          onChange={(project) => set({ project })}
+        />
         <Choice
           label="Thread"
           value={state.thread}

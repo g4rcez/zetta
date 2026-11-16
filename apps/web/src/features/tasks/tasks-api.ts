@@ -37,6 +37,8 @@ export type Task = {
   conversationId: string | null;
   /** Set on a step: the task it belongs to. The list holds steps and tasks together (see task-steps.ts). */
   parentTaskId: string | null;
+  /** The project the task is filed under, or null. A step has its task's. */
+  projectId: string | null;
   /** The bot's note on what is done, where it stopped and what comes next. */
   progress: string;
   followUp: TaskFollowUp;
@@ -63,8 +65,18 @@ export const tasksApi = {
       labels?: string[];
       /** "auto" resumes a paused follow-up; "off" stops it. */
       followUp?: "auto" | "off";
+      /** Files the task (and its steps) under this project; null takes it out. */
+      projectId?: string | null;
     },
   ) => call<{ task: Task }>(`/api/tasks/${id}`, "PATCH", patch).then((r) => r.task),
+  /** The person a task is assigned to says it cannot go on, and what is in the way. Their manager is told. */
+  block: (id: string, reason: string) =>
+    call<{ task: Task }>(`/api/tasks/${id}`, "PATCH", { status: "blocked", progress: reason }).then(
+      (r) => r.task,
+    ),
+  /** The owner writes to whoever does the task. The answer says where the words went. */
+  tell: (id: string, text: string) =>
+    call<{ done: string }>(`/api/tasks/${id}/tell`, "POST", { text }),
   remove: (id: string) => call(`/api/tasks/${id}`, "DELETE"),
 };
 

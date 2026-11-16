@@ -27,6 +27,7 @@ import {
 } from "@zetta/db/schema/tasks";
 import { closeAttentionKey, raiseAttention } from "../features/attention";
 import { AccessError, type ActiveActor } from "../identity/access";
+import { ownedProject, projectForTask } from "../projects/auto-join";
 import { instanceId, recoverable } from "../runtime/instance";
 import { createTeamPeople } from "../teams/people";
 import {
@@ -74,6 +75,8 @@ type TaskFields = {
   followUpReason?: string | null;
   /** When the heartbeat calls the bot back. The store clamps it to the next 7 days. */
   nextCheckAt?: Date | null;
+  /** The project the task is filed under; null takes it out. Only the owner sets it, on a top-level task (its steps follow). */
+  projectId?: string | null;
 };
 /** Trusted server values for where a task came from (never request input). */
 export type TaskOrigin = {
@@ -158,9 +161,18 @@ export function createTaskStore(db: Database) {
       );
     return parent;
   }
+  /** The project of a new top-level task: the one named (it must be the owner's), else the one its room or bot points to. */
+  async function projectOf(a: ActiveActor, asked: string | null | undefined, origin: TaskOrigin) {
+    if (asked === null) return null;
+    if (asked === undefined) return projectForTask(db, a.userId, origin);
+    if (!(await ownedProject(db, a.userId, asked))) throw new AccessError("NOT_FOUND");
+    return asked;
+  }
   const store = {
     /** Set by the chat service: tells the bot that asked. A failing listener never breaks the write that raised it. */
     onPersonTask: undefined as ((e: PersonTaskEvent) => void) | undefined,
+    /** Set by the services: whoever does a task (a bot, or a person who is not the owner) moved it to Blocked. */
+    onBlocked: undefined as ((task: Task) => void) | undefined,
     /** Set by the services: the people whose task list changed (the owner, and the assignee of a task for a person), for the live channel. */
     onChange: undefined as ((userIds: string[]) => void) | undefined,
     list: (a: ActiveActor): Promise<Task[]> =>
@@ -177,9 +189,10 @@ export function createTaskStore(db: Database) {
     ) {
       const { parentTaskId, ...fields } = v;
       if (!parentTaskId) {
+        const projectId = await projectOf(a, fields.projectId, origin);
         const [row] = await db
           .insert(task)
-          .values({ ownerUserId: a.userId, ...cleanFields(fields), ...origin })
+          .values({ ownerUserId: a.userId, ...cleanFields(fields), ...origin, projectId })
           .returning();
         changed(row!);
         return row!;
@@ -193,6 +206,7 @@ export function createTaskStore(db: Database) {
           followUp: "off",
           nextCheckAt: null,
           parentTaskId,
+          projectId: parent.projectId,
           botId: origin.botId ?? parent.botId,
           conversationId: origin.conversationId ?? parent.conversationId,
           messageId: origin.messageId ?? parent.messageId,
@@ -214,10 +228,11 @@ export function createTaskStore(db: Database) {
           "TOO_MANY_SUBTASKS",
           `At most ${MAX_SUBTASKS_PER_ADD} subtasks in one add; group the rest into bigger steps.`,
         );
+      const projectId = await projectOf(a, v.projectId, origin);
       const saved = await db.transaction(async (tx) => {
         const [parent] = await tx
           .insert(task)
-          .values({ ownerUserId: a.userId, ...cleanFields(v), ...origin })
+          .values({ ownerUserId: a.userId, ...cleanFields(v), ...origin, projectId })
           .returning();
         const children = subtasks.length
           ? await tx
@@ -228,6 +243,7 @@ export function createTaskStore(db: Database) {
                   title,
                   followUp: "off" as const,
                   parentTaskId: parent!.id,
+                  projectId: parent!.projectId,
                   botId: parent!.botId,
                   conversationId: parent!.conversationId,
                   messageId: parent!.messageId,
@@ -249,6 +265,7 @@ export function createTaskStore(db: Database) {
       const { attention = "raise", teamId: asked = null, ...fields } = rest;
       const teamId = assigneeUserId === owner.userId ? null : asked;
       if (!(await allowed(owner, assigneeUserId, teamId))) throw new AccessError("ACCESS_DENIED");
+      const projectId = await projectOf(owner, fields.projectId, { botId, conversationId });
       const [open] = await db
         .select({ id: task.id })
         .from(task)
@@ -267,7 +284,14 @@ export function createTaskStore(db: Database) {
       const [row] = open
         ? await db
             .update(task)
-            .set({ ...fields, teamId, status: "backlog", updatedAt: new Date() })
+            // Asking again keeps the project the task is already filed under: the owner may have moved it.
+            .set({
+              ...fields,
+              projectId: undefined,
+              teamId,
+              status: "backlog",
+              updatedAt: new Date(),
+            })
             .where(eq(task.id, open.id))
             .returning()
         : await db
@@ -275,6 +299,7 @@ export function createTaskStore(db: Database) {
             .values({
               ownerUserId: owner.userId,
               ...fields,
+              projectId,
               assignee: "person",
               assigneeUserId,
               teamId,
@@ -292,7 +317,8 @@ export function createTaskStore(db: Database) {
           detail: row!.description,
           nextAction,
           resultLink: `/tasks/${row!.id}`,
-          source: "bot",
+          // No bot means the owner asked the person themselves (the project page).
+          source: botId ? "bot" : "manual",
           sourceKey: cardKey(row!.id),
         });
       return row!;
@@ -303,9 +329,12 @@ export function createTaskStore(db: Database) {
      */
     async update(a: ActiveActor, id: string, v: TaskFields, opts: { by?: "bot" } = {}) {
       const current = await get(a, id);
+      // The person a task is assigned to moves it, and may say where it stands in the same change ("blocked: waiting for the text").
       if (
         current.ownerUserId !== a.userId &&
-        Object.entries(v).some(([key, value]) => key !== "status" && value !== undefined)
+        Object.entries(v).some(
+          ([key, value]) => key !== "status" && key !== "progress" && value !== undefined,
+        )
       )
         throw new AccessError("ACCESS_DENIED");
       const patch: Partial<typeof task.$inferInsert> = { ...cleanFields(v), updatedAt: new Date() };
@@ -317,6 +346,15 @@ export function createTaskStore(db: Database) {
           "SUBTASK_FOLLOW_UP",
           "Only the parent task is followed: set followUp or checkAt on the parent.",
         );
+      if (v.projectId !== undefined && v.projectId !== current.projectId) {
+        if (current.parentTaskId)
+          throw new TaskRuleError(
+            "SUBTASK_PROJECT",
+            "A step follows its task: move the task to the project instead.",
+          );
+        if (v.projectId && !(await ownedProject(db, a.userId, v.projectId)))
+          throw new AccessError("NOT_FOUND");
+      }
       if (v.nextCheckAt) {
         if (+v.nextCheckAt > now + MAX_CHECK_AHEAD_MS)
           throw new TaskRuleError("BAD_CHECK_TIME", "checkAt can be at most 7 days from now.");
@@ -356,6 +394,8 @@ export function createTaskStore(db: Database) {
         .where(and(eq(task.id, id), visible(a)))
         .returning();
       if (!row) throw new AccessError("NOT_FOUND");
+      if (v.projectId !== undefined && v.projectId !== current.projectId)
+        await db.update(task).set({ projectId: v.projectId }).where(eq(task.parentTaskId, id));
       if (row.parentTaskId) {
         // A step that starts or ends is work in progress: the task above it leaves the backlog (a blocked or review task stays where it is).
         const started = v.status === "in_progress" || v.status === "done";
@@ -384,7 +424,101 @@ export function createTaskStore(db: Database) {
         opts.by !== "bot"
       )
         notify({ kind: "status", task: saved, from: current.status, to: v.status, by: a.userId });
+      // Whoever does the task said it cannot go on: the owner hears about it. The owner blocking their own task tells nobody.
+      if (
+        v.status === "blocked" &&
+        current.status !== "blocked" &&
+        !saved.parentTaskId &&
+        (opts.by === "bot" || a.userId !== saved.ownerUserId)
+      )
+        try {
+          store.onBlocked?.(saved);
+        } catch {
+          // The write already happened: telling the owner is best effort.
+        }
       changed(saved);
+      return saved;
+    },
+    /**
+     * The owner gives a task to somebody else. To a bot: the task becomes that bot's, in the chat named, and is followed until done. To
+     * a person: it becomes a task for them, with a card in their Inbox. The steps go with the task, and what the old worker was asked
+     * (their card, the bot's follow-up) ends.
+     */
+    async reassign(
+      a: ActiveActor,
+      id: string,
+      to:
+        | { kind: "bot"; botId: string; conversationId: string }
+        | { kind: "person"; userId: string; teamId: string | null },
+    ) {
+      const [current] = await db.select().from(task).where(mine(a, id));
+      if (!current) throw new AccessError("NOT_FOUND");
+      if (current.parentTaskId)
+        throw new TaskRuleError(
+          "SUBTASK_REASSIGN",
+          "A step follows its task: give the task to someone else instead.",
+        );
+      if (to.kind === "person" && !(await allowed(a, to.userId, to.teamId)))
+        throw new AccessError("ACCESS_DENIED");
+      // A task that was waiting (blocked, in review) starts over with its new worker.
+      const status = isOpen(current.status) ? current.status : "backlog";
+      const worker =
+        to.kind === "bot"
+          ? {
+              assignee: "bot" as const,
+              assigneeUserId: null,
+              teamId: null,
+              botId: to.botId,
+              conversationId: to.conversationId,
+              followUp: "auto" as const,
+              nextCheckAt: new Date(Date.now() + QUIET_MS),
+            }
+          : {
+              assignee: "person" as const,
+              assigneeUserId: to.userId,
+              teamId: to.userId === a.userId ? null : to.teamId,
+              botId: null,
+              followUp: "off" as const,
+              nextCheckAt: null,
+            };
+      await db
+        .update(task)
+        .set({
+          ...worker,
+          status,
+          checks: 0,
+          stalls: 0,
+          failures: 0,
+          followUpReason: null,
+          ownerInstance: null,
+          updatedAt: new Date(),
+        })
+        .where(mine(a, id));
+      if (to.kind === "bot")
+        await db
+          .update(task)
+          .set({ botId: to.botId, conversationId: to.conversationId })
+          .where(eq(task.parentTaskId, id));
+      if (
+        current.assigneeUserId &&
+        current.assigneeUserId !== (to.kind === "person" ? to.userId : "")
+      )
+        await closeAttentionKey(db, current.assigneeUserId, cardKey(id), "cancelled");
+      await closeAttentionKey(db, current.ownerUserId, followKey(id), "resolved");
+      const saved = await get(a, id);
+      if (to.kind === "person")
+        await raiseAttention(db, to.userId, {
+          kind: "task_ask",
+          subjectId: id,
+          title: saved.title,
+          detail: saved.description,
+          resultLink: `/tasks/${id}`,
+          source: "manual",
+          sourceKey: cardKey(id),
+        });
+      changed(saved);
+      if (current.assigneeUserId)
+        changed({ ownerUserId: current.assigneeUserId, assigneeUserId: null });
       return saved;
     },
     /** The subtasks of a task, oldest first. */

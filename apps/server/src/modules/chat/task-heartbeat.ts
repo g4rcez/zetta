@@ -80,6 +80,8 @@ export type HeartbeatDeps = {
   /** One follow-up turn: a chat turn as the owner, or a wake-up of the member in a room. */
   runTurn: FollowUpTurn;
   /** The user's words that started the task (the message the task is linked to). */
+  /** Tells the owner that the server stopped calling the bot back for a task (modules/work raises its card). */
+  stopped?: (taskId: string, reason: string) => Promise<void>;
   requestOf: (task: FollowedTask) => Promise<string>;
 
   /** "Pause everything" is on for this user: no check runs, and the tasks stay as they are. */
@@ -99,6 +101,8 @@ export function createTaskHeartbeat(d: HeartbeatDeps) {
   async function pause(task: FollowedTask, reason: string, card = true) {
     const row = await d.tasks.pauseFollowUp(task.id, reason);
     if (!row || !card) return;
+    // With the work cards wired, the manager gets "<bot> stopped on <task>" and its next steps instead of the plain card below.
+    if (d.stopped) return void (await d.stopped(row.id, reason));
     await raiseAttention(d.db, row.ownerUserId, {
       kind: "task_follow",
       subjectId: row.id,

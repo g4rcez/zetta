@@ -9,6 +9,7 @@ import {
   groupTasks,
   isWorkInProgress,
   NO_BOT,
+  NO_PROJECT,
   parseTaskSearch,
   toTaskSearch,
   WORK_IN_PROGRESS,
@@ -30,6 +31,7 @@ const task = (over: Partial<Task> & Pick<Task, "id" | "title">): Task => ({
   botId: null,
   conversationId: null,
   parentTaskId: null,
+  projectId: null,
   progress: "",
   followUp: "off",
   followUpReason: null,
@@ -422,5 +424,27 @@ describe("toTaskSearch", () => {
       view: "list",
       labels: ["docs"],
     });
+  });
+});
+
+describe("the project filter", () => {
+  const P = "00000000-0000-7000-8000-00000000000a";
+  const tasks = [
+    task({ id: "in", title: "In", projectId: P }),
+    task({ id: "other", title: "Other", projectId: "00000000-0000-7000-8000-00000000000b" }),
+    task({ id: "loose", title: "Loose" }),
+  ];
+  const ids = (project: string) =>
+    applyFilters(tasks, { ...DEFAULT_FILTERS, project }, Date.now()).map((t) => t.id);
+  test("keeps one project, or the tasks in no project", () => {
+    expect(ids("")).toEqual(["in", "other", "loose"]);
+    expect(ids(P)).toEqual(["in"]);
+    expect(ids(NO_PROJECT)).toEqual(["loose"]);
+  });
+  test("lives in the address and counts as a filter", () => {
+    expect(parseTaskSearch({ project: "none" })).toEqual({ project: "none" });
+    expect(parseTaskSearch({ project: P })).toEqual({ project: P });
+    expect(parseTaskSearch({ project: "weird" })).toEqual({});
+    expect(activeCount({ ...DEFAULT_FILTERS, project: NO_PROJECT })).toBe(1);
   });
 });

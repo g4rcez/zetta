@@ -14,6 +14,7 @@ const task = (over: Partial<Task> & Pick<Task, "id" | "title">): Task => ({
   botId: null,
   conversationId: null,
   parentTaskId: null,
+  projectId: null,
   progress: "",
   followUp: "off",
   followUpReason: null,

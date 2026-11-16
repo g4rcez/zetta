@@ -23,6 +23,7 @@ const task = (over: Partial<Task> & Pick<Task, "id" | "title">): Task => ({
   botId: "00000000-0000-7000-8000-000000000001",
   conversationId: "00000000-0000-7000-8000-000000000002",
   parentTaskId: null,
+  projectId: null,
   progress: "",
   followUp: "off",
   followUpReason: null,

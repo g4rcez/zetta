@@ -197,6 +197,19 @@ suite("a bot plans its work as a task with subtasks", () => {
     expect(prompts[1]).toContain("task.add ok");
   });
 
+  test("the board a bot reads lists open tasks first, so a long finished history does not hide an old open one", async () => {
+    const { say } = await setup();
+    const old = await call("POST", "/api/tasks", { title: "Old open task zq7" });
+    // 55 finished tasks, all newer than the open one.
+    for (let i = 0; i < 55; i++) {
+      const made = await call("POST", "/api/tasks", { title: `Finished ${i}`, status: "done" });
+      expect(made.status).toBe(201);
+    }
+    await say("Read the board", fence("task", { action: "list" }), "Read.");
+    expect(prompts[1]).toContain(old.json.task.id);
+    expect(prompts[1]).toContain("older tasks are not shown");
+  });
+
   test("moving steps and writing progress applies at once, without a card", async () => {
     const { say } = await setup();
     await say(

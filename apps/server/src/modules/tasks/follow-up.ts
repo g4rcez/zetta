@@ -28,6 +28,8 @@ export class TaskRuleError extends Error {
       | "TOO_MANY_SUBTASKS"
       | "OPEN_SUBTASKS"
       | "SUBTASK_FOLLOW_UP"
+      | "SUBTASK_PROJECT"
+      | "SUBTASK_REASSIGN"
       | "BAD_CHECK_TIME",
     message: string,
   ) {

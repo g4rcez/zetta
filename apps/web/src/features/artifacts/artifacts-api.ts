@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { ENV } from "../../env";
+import { serverOrigin } from "@/lib/server-origin";
 import { call } from "../chat/chat-client";
 
 export const ARTIFACT_KINDS = [
@@ -82,8 +82,7 @@ export const artifactsQueries = {
 
 /** The file itself. `download` makes the server answer with an attachment. */
 export const contentUrl = (id: string, download = false) =>
-  new URL(`/api/artifacts/${id}/content${download ? "?download=1" : ""}`, ENV.ZETTA_SERVER_URL)
-    .href;
+  new URL(`/api/artifacts/${id}/content${download ? "?download=1" : ""}`, serverOrigin()).href;
 export const fetchContent = async (id: string) => {
   const r = await fetch(contentUrl(id), { credentials: "include" });
   if (!r.ok) throw new Error("unavailable");

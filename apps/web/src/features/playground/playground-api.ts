@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { ENV } from "../../env";
+import { serverOrigin } from "@/lib/server-origin";
 import { call } from "../chat/chat-client";
 
 export type PlaygroundLanguage = "typescript" | "javascript" | "python" | "bash" | "html";
@@ -113,7 +113,7 @@ export const playgroundApi = {
 export const outputUrl = (runId: string, path: string, download = false) =>
   new URL(
     `/api/playground-runs/${runId}/outputs/${path.split("/").map(encodeURIComponent).join("/")}${download ? "?download=1" : ""}`,
-    ENV.ZETTA_SERVER_URL,
+    serverOrigin(),
   ).href;
 export const fetchOutput = async (runId: string, path: string) => {
   const r = await fetch(outputUrl(runId, path), { credentials: "include" });

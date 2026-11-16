@@ -30,6 +30,10 @@ import { createPreferenceRoutes, type PreferenceServices } from "./modules/prefe
 import { createProfileRoutes, type ProfileServices } from "./modules/profile/routes";
 import { createTaskRoutes, type TaskServices } from "./modules/tasks/routes";
 import { createCatchUpRoutes, type CatchUpServices } from "./modules/catch-up/routes";
+import { createBotQualityRoutes, type BotQualityServices } from "./modules/bot-quality/routes";
+import { createTranscribeRoutes, type TranscribeServices } from "./modules/transcribe/routes";
+import { createOrgRoutes, type OrgServices } from "./modules/org/routes";
+import { createProjectRoutes, type ProjectServices } from "./modules/projects/routes";
 import { createArtifactRoutes, type ArtifactServices } from "./modules/artifacts/routes";
 import { createDiscussionRoutes, type DiscussionServices } from "./modules/discussions/routes";
 import { createTeamRoutes, type TeamServices } from "./modules/teams/routes";
@@ -57,6 +61,10 @@ export type CreateAppOptions = {
   agenda?: AgendaServices;
   tasks?: TaskServices;
   catchUp?: CatchUpServices;
+  projects?: ProjectServices;
+  org?: OrgServices;
+  botQuality?: BotQualityServices;
+  transcribe?: TranscribeServices;
   preferences?: PreferenceServices;
   profile?: ProfileServices;
   search?: SearchServices;
@@ -101,6 +109,10 @@ export function createApp({
   agenda,
   tasks,
   catchUp,
+  projects,
+  org,
+  botQuality,
+  transcribe,
   preferences,
   profile,
   search,
@@ -215,6 +227,32 @@ export function createApp({
       .use(
         catchUp
           ? (createCatchUpRoutes(catchUp, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
+        projects
+          ? (createProjectRoutes(projects, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
+        org
+          ? (createOrgRoutes(org, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
+        botQuality
+          ? (createBotQualityRoutes(botQuality, [
+              webOrigin,
+              ...desktopOrigins,
+            ]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
+        transcribe
+          ? (createTranscribeRoutes(transcribe, [
+              webOrigin,
+              ...desktopOrigins,
+            ]) as unknown as Elysia)
           : new Elysia(),
       )
       .use(

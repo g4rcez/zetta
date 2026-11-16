@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { ENV } from "../../env";
+import { serverOrigin } from "@/lib/server-origin";
 import { call, type OutputStyleKey } from "../chat/chat-client";
 import { STATIC } from "@/lib/query-policy";
 
@@ -58,5 +58,5 @@ export const exportUrl = (target: { id: string } | { builtin: string }) =>
     "builtin" in target
       ? `/api/output-styles/builtin/${target.builtin}/export`
       : `/api/output-styles/${target.id}/export`,
-    ENV.ZETTA_SERVER_URL,
+    serverOrigin(),
   ).href;

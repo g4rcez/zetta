@@ -50,7 +50,7 @@ export function AppsPage({
             <AppWindowIcon className="size-5" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-2xl text-balance">Apps</h1>
+            <h1 className="flex items-center gap-2 text-2xl text-balance">Apps</h1>
             <p className="text-sm text-pretty text-muted-foreground">
               Code you published so bots, routines and workflows can call its tools. A tool that
               changes something asks you first, unless you say otherwise.

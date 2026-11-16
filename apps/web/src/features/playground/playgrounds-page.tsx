@@ -78,7 +78,7 @@ export function PlaygroundsPage({
       <div className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-8">
         <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <div className="space-y-1">
-            <h1>Playground</h1>
+            <h1 className="flex items-center gap-2">Playground</h1>
             <p className="text-sm text-muted-foreground">
               Code you and your bots write, run and keep: reports and small scripts.
             </p>

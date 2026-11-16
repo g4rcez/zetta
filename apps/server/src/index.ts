@@ -13,6 +13,10 @@ import {
   auth,
   botClaudeServices,
   taskServices,
+  projectServices,
+  orgServices,
+  botQualityServices,
+  transcribeServices,
   catchUpServices,
   preferenceServices,
   profileServices,
@@ -42,12 +46,14 @@ import {
   eventServices,
   loopServices,
   taskFollowUp,
+  workServices,
   networkMode,
   trustedExtraOrigins,
   resumeInterruptedRuns,
   zettaMcpServices,
   apps,
   skillReview,
+  chatSummaries,
 } from "./services";
 
 initLogger({
@@ -88,6 +94,10 @@ createApp({
   integrations: integrationServices,
   agenda: agendaServices,
   tasks: taskServices,
+  projects: projectServices,
+  org: orgServices,
+  botQuality: botQualityServices,
+  transcribe: transcribeServices,
   catchUp: catchUpServices,
   preferences: preferenceServices,
   profile: profileServices,
@@ -194,10 +204,13 @@ if (runsWork) {
     void background.run("memory:sources", () => memoryServices.memory.checkSources());
     void background.run("memory:jobs", () => memoryServices.jobs.tick());
     void background.run("skills:review", () => skillReview.tick());
+    void background.run("workflows:resume", () => featureServices.features.workflows.tick());
+    void background.run("chat:summaries", () => chatSummaries.tick());
     void background.run("rooms", () => discussionServices.worker.tick());
     void background.run("inbound", () => inboundServices.inbound.tick());
     void background.run("loops", () => loopServices.driver.tick());
     void background.run("tasks:heartbeat", () => taskFollowUp.heartbeat.tick());
+    void background.run("work:scan", () => workServices.scan.due());
     void background.run("chat:queues", () => chatServices.chat.drainQueues());
     void background.run("chat:slow-turns", () => chatServices.chat.flagSlowTurns());
     void background.run("chat:proposals", () => chatServices.chat.expireProposals());

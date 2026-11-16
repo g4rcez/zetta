@@ -9,9 +9,9 @@ import { authClient } from "@/lib/auth-client";
 import { isAppUrl, signedOAuthQuery } from "./oauth";
 
 const SCOPES: Record<string, string> = {
-  "mcp:read": "See your bots, chats, integrations, routines, memory and tasks",
+  "mcp:read": "See your bots, chats, integrations, routines, memory, tasks and the company chart",
   "mcp:write":
-    "Create and change bots, chats, integrations, routines, memory items and tasks for you",
+    "Create and change bots, chats, integrations, routines, memory items and tasks for you, and the company chart if you are the administrator",
   openid: "Confirm who you are",
   profile: "See your name",
   email: "See your email address",

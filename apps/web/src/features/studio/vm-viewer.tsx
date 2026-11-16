@@ -11,7 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button, Input, Select } from "@/components/ui";
 
-import { ENV } from "../../env";
+import { serverOrigin } from "@/lib/server-origin";
 import { ApiError, call, errorMessage } from "../chat/chat-client";
 import { computerQueries } from "./studio-queries";
 
@@ -93,7 +93,7 @@ export function VmConsole({
           call<{ ticket: string }>(`${base}/vnc-ticket`, "POST"),
         ]);
         if (cancelled || !screen.current) return;
-        const url = new URL(`${base}/vnc`, ENV.ZETTA_SERVER_URL);
+        const url = new URL(`${base}/vnc`, serverOrigin());
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
         url.searchParams.set("ticket", ticket);
         const r = new RFB(screen.current, url.toString(), { shared: true });

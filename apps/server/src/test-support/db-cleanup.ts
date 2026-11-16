@@ -1,11 +1,35 @@
 import type { Database } from "@zetta/db";
 
+/**
+ * Empties the company chart: seats that nobody reports to first (a seat cannot be deleted while another one reports to it), then the chart.
+ * A chart left behind would add its text to the prompt of every later test, so a test that draws one calls this when it is done.
+ */
+export async function resetOrgChart(db: Database) {
+  for (let i = 0; i < 20; i++) {
+    const r = await db.$client.query(
+      "delete from org_position p where not exists (select 1 from org_position c where c.parent_id = p.id)",
+    );
+    if (!r.rowCount) break;
+  }
+  await db.$client.query("delete from org_chart");
+}
+
 /** Deletes everything owned by the given synthetic test users, in foreign-key-safe order. Test databases only. */
 export async function cleanupTestUsers(db: Database, ids: string[]) {
   const q = (sql: string) => db.$client.query(sql, [ids]);
   await q(
     "delete from memory_suggestion where author_user_id = any($1) or page_owner_user_id = any($1)",
   );
+  // The company chart: a seat held by a test user or bot, or linked to a test team, goes back to open.
+  await q(
+    "update org_position set seat = 'open', user_id = null, bot_id = null where user_id = any($1) or bot_id in (select id from bot where owner_user_id = any($1))",
+  );
+  await q(
+    "update org_position set team_id = null where team_id in (select id from team where owner_user_id = any($1))",
+  );
+  await q("update org_chart set updated_by_user_id = null where updated_by_user_id = any($1)");
+  // Members, and the project links of tasks and rooms, go with the project (cascade / set null).
+  await q("delete from project where owner_user_id = any($1)");
   for (const t of [
     "memory_job",
     "memory_source",

@@ -6,9 +6,11 @@ import { ComputerError } from "./modules/computer/service";
 import { createAuth, mcpResource } from "@zetta/auth";
 import { createDb } from "@zetta/db";
 import { type ResolvedDatabase, resolveDatabase } from "@zetta/db/embedded/resolve";
-import { sql } from "@zetta/db/query";
+import { eq, sql } from "@zetta/db/query";
+import { connection as connectionTable } from "@zetta/db/schema/connections";
 
 import { ENV, desktopOrigins } from "./env.server";
+import { localOrigins } from "./local-origins";
 
 import { layaModelFor } from "@zetta/core/laya-languages";
 import { createAttention } from "./modules/chat/attention";
@@ -34,7 +36,7 @@ import {
 } from "./modules/computer/vm";
 import { createFeaturesService } from "./modules/features/service";
 import { createRoutinePollers } from "./modules/features/routine-pollers";
-import { PluginError } from "./modules/integrations/plugins/registry";
+import { getPlugin, PluginError } from "./modules/integrations/plugins/registry";
 import { configureGoogleLoopback } from "./modules/integrations/plugins/google/loopback";
 import { createAgenda } from "./modules/agenda/service";
 import { createLocalEmbedder } from "./modules/knowledge/embed";
@@ -43,6 +45,11 @@ import { audit } from "./modules/features/audit";
 import { createOutputStyles } from "./modules/output-styles/service";
 import { createMarket } from "./modules/skills/market";
 import { createSkills } from "./modules/skills/service";
+import { createBotQuality } from "./modules/bot-quality/service";
+import { createSummaries } from "./modules/chat/summary";
+import { createTranscribe } from "./modules/transcribe/service";
+import { createConfiguredTranscriber, NO_KEY } from "./modules/transcribe/configured";
+import { createLocalTranscriber } from "./modules/transcribe/transcriber";
 import { createSkillReview } from "./modules/memory/skill-review";
 import { createAnalyzerFor } from "./modules/bots/import/analyze";
 import { createGrokSource } from "./modules/bots/import/grok-source";
@@ -62,6 +69,13 @@ import { createSearch } from "./modules/search/service";
 import { createPreferenceStore } from "./modules/preferences/store";
 import { createProfileStore } from "./modules/profile/store";
 import { createTaskStore } from "./modules/tasks/store";
+import { createOneShot } from "./modules/chat/one-shot";
+import { createOrgStore } from "./modules/org/store";
+import { createProjectDraft } from "./modules/projects/draft";
+import { createProjectStore } from "./modules/projects/store";
+import { createProjectWork } from "./modules/projects/work";
+import { createWorkActions } from "./modules/work/actions";
+import { createWorkScan } from "./modules/work/scan";
 import { createCatchUpActions } from "./modules/catch-up/act";
 import { createArtifactStore } from "./modules/artifacts/store";
 import { createAgendaScheduler } from "./modules/agenda/scheduler";
@@ -124,8 +138,22 @@ if (
     "Code access is off: Zetta is open to the network and ZETTA_HARNESS_RUNTIME is not docker. Set ZETTA_HARNESS_RUNTIME=docker, or ZETTA_CODE_ACCESS=host to accept the risk.",
   );
 }
+/** `ZETTA_EXTRA_ORIGINS`: comma-separated https origins that may also sign in (for example a Tailscale address). Anything else is dropped. */
+const extraOrigins = (process.env.ZETTA_EXTRA_ORIGINS ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .flatMap((o) => {
+    try {
+      const url = new URL(o);
+      return url.protocol === "https:" ? [url.origin] : [];
+    } catch {
+      return [];
+    }
+  });
 export const trustedExtraOrigins = [
   ...desktopOrigins,
+  ...localOrigins(ENV.ZETTA_SERVER_URL),
+  ...extraOrigins,
   ...(installed.networkMode === "network" && installed.publicUrl ? [installed.publicUrl] : []),
 ];
 // The key typed in the browser at first run. A dedicated ZETTA_SETUP_KEY keeps the encryption key (ZETTA_CONNECTION_KEY) out of web forms,
@@ -160,11 +188,6 @@ export const identity = {
   verifySetupKey: (key: string) => matchesConnectionKey(key, setupKey),
 };
 export const eventServices = { access: identity.access, bus: events };
-export const installationServices = {
-  access: identity.access,
-  installation,
-  runningMode: installed.networkMode,
-};
 
 import { createFileStore } from "./modules/chat/files";
 
@@ -322,7 +345,52 @@ const machines = createMachineService({
   runner: createMachineRunner(),
   allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
 });
-export const connectionServices = { access: identity.access, connections };
+/**
+ * The speech-to-text key of the whole installation. An administrator saves it as a connection of their own (sealed like any other); the
+ * installation settings record which one. Voice notes of outside people have no signed-in administrator, so the key is read here by the
+ * connection's owner, at the moment it is used, and never leaves this file as anything but the buffer the caller zeroes.
+ */
+const connectionOwner = async (id: string) =>
+  (
+    await db
+      .select({ owner: connectionTable.ownerUserId })
+      .from(connectionTable)
+      .where(eq(connectionTable.id, id))
+  )[0]?.owner;
+const transcribeKey = {
+  async state(id: string | null): Promise<"none" | "set" | "operator" | "unavailable"> {
+    if (!id) return process.env.ZETTA_TRANSCRIBE_API_KEY ? "operator" : "none";
+    const owner = await connectionOwner(id);
+    const actor = owner ? await issueBackgroundActor(membershipLookup, owner) : null;
+    if (!actor) return "unavailable";
+    const mine = (await connections.list(actor).catch(() => [])).find((c) => c.id === id);
+    return mine?.state === "active" ? "set" : "unavailable";
+  },
+  /** The key as bytes (the caller zeroes them), or undefined when there is none to use. */
+  async secret(id: string | null): Promise<Buffer | undefined> {
+    if (!id) {
+      const operator = process.env.ZETTA_TRANSCRIBE_API_KEY;
+      return operator ? Buffer.from(operator) : undefined;
+    }
+    const owner = await connectionOwner(id);
+    const actor = owner ? await issueBackgroundActor(membershipLookup, owner) : null;
+    return actor ? Buffer.from(await connections.secretFor(actor, id)) : undefined;
+  },
+  /** Points the installation at a new key (or none) and revokes the one it had, whoever saved it. */
+  async set(id: string | null) {
+    const before = (await installation.load()).transcribeConnectionId;
+    await installation.update({ transcribeConnectionId: id });
+    if (!before || before === id) return;
+    const owner = await connectionOwner(before);
+    const actor = owner ? await issueBackgroundActor(membershipLookup, owner) : null;
+    const old = actor
+      ? (await connections.list(actor).catch(() => [])).find((c) => c.id === before)
+      : undefined;
+    if (actor && old?.state === "active")
+      await connections.revoke(actor, before, old.revision).catch(() => undefined);
+  },
+};
+export const connectionServices = { access: identity.access, connections, transcribeKey };
 // Administrator opt-in: lets MCP servers and the WhatsApp (WAHA) plugin reach private/localhost addresses (e.g. a WAHA container). Off by default.
 const mcp = createMcp(db, connections, {
   allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
@@ -337,6 +405,9 @@ const sources = createSources(db, computer, {
 const features = createFeaturesService(db, undefined, decisions, computer, sources as never);
 const agenda = createAgenda(db);
 const tasks = createTaskStore(db);
+const projects = createProjectStore(db);
+const org = createOrgStore(db);
+const profileStore = createProfileStore(db);
 const artifacts = createArtifactStore(db);
 const loops = createLoopStore(db);
 const discussions = createDiscussionStore(db, files, loops);
@@ -383,6 +454,28 @@ mcp.plugins.onConnected(async (actor, id) => {
 const skillsLibrary = createSkills(db);
 // Autolearn: after a correction or a method that worked, a review may save what the bot learned as one of its own skills.
 export const skillReview = createSkillReview(db, skillsLibrary);
+/** Speech to text on this machine (modules/transcribe): the web microphone, and voice notes of outside people (inbound). */
+export const transcriber = createConfiguredTranscriber({
+  settings: () => installation.load(),
+  local: createLocalTranscriber(),
+  key: async (id) => {
+    const secret = await transcribeKey.secret(id);
+    if (!secret && id) throw NO_KEY;
+    return secret;
+  },
+  allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+});
+export const transcribe = createTranscribe(transcriber);
+export const installationServices = {
+  access: identity.access,
+  installation,
+  runningMode: installed.networkMode,
+  transcriber,
+  transcribeKey,
+  allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+};
+/** The rolling summary of long chats (chat/summary.ts); its refresh job runs on the ticker in index.ts. */
+export const chatSummaries = createSummaries(db, createOneShot(db));
 const containerConfigPlayground = containerConfig();
 const playgroundContainers = containerConfigPlayground
   ? createContainerRunner(containerConfigPlayground)
@@ -426,7 +519,8 @@ export const chatServices = {
     vms,
     agenda,
     {
-      afterTurn: (t) => skillReview.afterTurn(t),
+      afterTurn: (t) => Promise.all([skillReview.afterTurn(t), chatSummaries.afterTurn(t)]),
+      summaries: chatSummaries,
       install: installed.networkMode,
       discussions,
       loops,
@@ -439,11 +533,14 @@ export const chatServices = {
       skills: { skills: skillsLibrary, market: skillsMarket },
       botImport: { source: grokSource, analyzer: botImportAnalyzer },
       teams: teamStore,
+      org,
       outputStyles,
       features,
       botClaude,
       machines,
       preferences,
+      profile: profileStore,
+      projects,
       sources: sources as never,
       knowledge: companyKnowledge,
       agendaScheduler,
@@ -480,6 +577,47 @@ configureGoogleLoopback({
 features.routines.useStop(async (userId, conversationId) => {
   const actor = await issueBackgroundActor(membershipLookup, userId);
   if (actor) await chatServices.chat.cancelTurn(actor, conversationId);
+});
+// A workflow's `tool` step calls a plugin, an MCP server or an app with the grants of the bot it names, as the owner. What a tool may
+// change is guarded by the approval step the workflow must have before it (checked when the workflow is saved).
+const appText = (r: Awaited<ReturnType<typeof apps.call>>): string => {
+  if (r.status === "ok") return typeof r.value === "string" ? r.value : JSON.stringify(r.value);
+  if (r.status === "denied") throw new Error("denied");
+  if (r.status === "failed") throw new Error(r.error.code);
+  throw new Error("approval_required");
+};
+features.workflows.useTools({
+  async call(userId, c) {
+    const actor = await issueBackgroundActor(membershipLookup, userId);
+    if (!actor) throw new Error("owner_inactive");
+    if (c.kind === "plugin") return mcp.plugins.callTool(actor, c.botId, c.target, c.tool, c.args);
+    if (c.kind === "mcp") return mcp.callTool(actor, c.botId, c.target, c.tool, c.args);
+    const r = await apps.call(actor, {
+      app: c.target,
+      tool: c.tool,
+      input: c.args,
+      source: "workflow",
+      botId: c.botId,
+    });
+    // The workflow's approval step was the yes; the app's own question for the same call is answered with it.
+    return appText(
+      r.status === "approval_required" ? await apps.answer(actor, r.callId, "accept") : r,
+    );
+  },
+  async effect(userId, c) {
+    if (c.kind === "plugin")
+      return getPlugin(c.target)?.tools?.find((t) => t.name === c.tool)?.effect === "read"
+        ? "read"
+        : "write";
+    if (c.kind === "app") {
+      const actor = await issueBackgroundActor(membershipLookup, userId);
+      const detail = actor ? await apps.get(actor, c.target).catch(() => undefined) : undefined;
+      return detail?.manifest?.tools.find((t) => t.name === c.tool)?.kind === "query"
+        ? "read"
+        : "write";
+    }
+    return "write";
+  },
 });
 // A routine's bot may need the owner's own accounts: only one that is not connected keeps the routine from running.
 features.routines.useAccounts(async (userId, botId) => {
@@ -620,9 +758,14 @@ const loopDriver = createLoopDriver(loops, async (loop, label, prompt, requestKe
 });
 // Task follow-up (chat/task-heartbeat.ts): a bot that took on a task is called back while the task is open. The check is a quiet turn in
 // the task's chat (a `notice`: a short label in the chat, the hidden prompt for the bot), or in a room a wake-up of that one member.
+// Work cards (modules/work): a task that stopped, is blocked or went quiet reaches the right person with next steps to pick from.
+const workActions = createWorkActions({ db, tasks, chat: chatServices.chat, discussions });
+const workScan = createWorkScan({ db, ownerPaused: (userId) => agentsPaused(db, userId) });
+tasks.onBlocked = (t) => void workActions.blocked(t.id).catch(() => {});
 const taskHeartbeat = createTaskHeartbeat({
   db,
   tasks,
+  stopped: (taskId, reason) => workActions.stopped(taskId, reason),
   requestOf: (t) => tasks.requestOf(t),
   ownerPaused: (userId) => agentsPaused(db, userId),
   covered: async (t) => {
@@ -691,6 +834,8 @@ if (runsWork) work.on("loop", (id) => id && loopDriver.kick(id));
 tasks.onPersonTask = (e) => void chatServices.chat.notifyTask(e).catch(() => {});
 // Any task write, by a person or a bot, refreshes the board and the "working on" line of the bots on every open page of the owner.
 tasks.onChange = (userIds) => events.publish(userIds, topics.tasks, topics.botStatus);
+projects.onChange = (userIds) => events.publish(userIds, topics.projects);
+org.onChange = (userIds) => events.publish(userIds, topics.org);
 /** Boot: continue the Claude Code runs a restart cut off, in their own sessions. A conversation with an active goal loop is left to the loop driver. */
 export async function resumeInterruptedRuns() {
   for (const r of chatServices.chat.takeResumable()) {
@@ -721,6 +866,7 @@ export async function resumeInterruptedRuns() {
 }
 export const loopServices = { driver: loopDriver };
 export const taskFollowUp = { heartbeat: taskHeartbeat };
+export const workServices = { scan: workScan };
 const discussionWorker = createDiscussionWorker(
   db,
   discussions,
@@ -738,19 +884,32 @@ export const discussionServices = {
 export const botClaudeServices = { access: identity.access, db, claude: botClaude };
 export const inboundServices = {
   access: identity.access,
-  inbound: createInbound(db, mcp.plugins, chatServices.chat, membershipLookup),
+  inbound: createInbound(db, mcp.plugins, chatServices.chat, membershipLookup, transcribe),
 };
 inboundRef.current = inboundServices.inbound;
 export const featureServices = { access: identity.access, features };
 export const decisionServices = { access: identity.access, decisions };
 export const computerServices = { access: identity.access, computer, vms, machines };
 export const integrationServices = { access: identity.access, mcp, sources };
-export const taskServices = { access: identity.access, tasks };
+export const taskServices = { access: identity.access, tasks, work: workActions };
+export const projectServices = {
+  access: identity.access,
+  projects,
+  work: createProjectWork({ db, tasks, chat: chatServices.chat }),
+  draft: createProjectDraft(createOneShot(db)),
+};
+export const orgServices = { access: identity.access, org };
+export const transcribeServices = { access: identity.access, transcribe };
+export const botQualityServices = {
+  access: identity.access,
+  quality: createBotQuality(db, { chat: chatServices.chat, skillReview }),
+};
 export const catchUpServices = {
   access: identity.access,
-  catchUp: { db, listProposals: chatServices.chat.listProposals },
+  catchUp: { db, listProposals: chatServices.chat.listProposals, work: workActions },
   actions: createCatchUpActions({
     db,
+    work: workActions,
     tasks,
     loops,
     discussions,
@@ -766,7 +925,7 @@ export const preferenceServices = {
 };
 export const profileServices = {
   access: identity.access,
-  profile: createProfileStore(db),
+  profile: profileStore,
   // The session lookup is memoized per request, so this adds no query.
   currentSessionId: async (headers: Headers) =>
     (await auth.api.getSession({ headers }))?.session.id,
@@ -821,6 +980,7 @@ export const zettaMcpServices = {
   memory,
   tasks,
   outputStyles: outputStyleServices.styles,
+  org,
   audit: (ownerUserId: string, event: Parameters<typeof audit>[2]) => audit(db, ownerUserId, event),
 };
 export const agendaServices = {

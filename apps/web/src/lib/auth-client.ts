@@ -1,6 +1,6 @@
 import { createAuthClient } from "better-auth/react";
 
-import { ENV } from "../env";
+import { serverOrigin } from "@/lib/server-origin";
 import { invalidateAuthGuard } from "./auth-guard";
 import { createAuthenticationFetch } from "./auth-transport";
 
@@ -29,6 +29,6 @@ const customFetchImpl: typeof authFetch = async (input, init) => {
 };
 
 export const authClient = createAuthClient({
-  baseURL: new URL("/api/auth", getServerUrl(ENV.ZETTA_SERVER_URL)).toString(),
+  baseURL: new URL("/api/auth", getServerUrl(serverOrigin())).toString(),
   fetchOptions: { customFetchImpl, retry: 0 },
 });

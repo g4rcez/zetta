@@ -17,6 +17,7 @@ import { zetta } from "./pg-schema";
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
 import { EMBEDDING_DIMENSIONS, searchVector, tsvector } from "./search";
+import { project } from "./projects";
 import { team } from "./teams";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
@@ -26,9 +27,10 @@ const cascade = { onDelete: "cascade", onUpdate: "restrict" } as const;
 
 /**
  * Who may read an item. solo: only the bot that wrote it (a bot's own notes). owner: every bot of the owner. teams: only bots in the
- * item's teams (`memory_item_team`). all: also read (never written) by every active member's bots; the owner publishes it explicitly.
+ * item's teams (`memory_item_team`). project: only bots on the item's projects (`memory_item_project`): what a project's bots share.
+ * all: also read (never written) by every active member's bots; the owner publishes it explicitly.
  */
-export const MEMORY_TYPES = ["solo", "owner", "teams", "all"] as const;
+export const MEMORY_TYPES = ["solo", "owner", "teams", "project", "all"] as const;
 export type MemoryType = (typeof MEMORY_TYPES)[number];
 /**
  * What bots may do with an item, whoever created it. edit: they write it. suggest: a bot's change to its text is sent to the owner as a
@@ -128,6 +130,23 @@ export const memoryItemTeam = zetta.table(
   (t) => [
     primaryKey({ columns: [t.pageId, t.teamId] }),
     index("memory_item_team_team_idx").on(t.teamId),
+  ],
+);
+
+/** The projects a `project` item belongs to. It goes with the item; a project is never deleted, only archived. */
+export const memoryItemProject = zetta.table(
+  "memory_item_project",
+  {
+    pageId: uuid("page_id")
+      .notNull()
+      .references(() => memoryItem.id, cascade),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => project.id, cascade),
+  },
+  (t) => [
+    primaryKey({ columns: [t.pageId, t.projectId] }),
+    index("memory_item_project_project_idx").on(t.projectId),
   ],
 );
 

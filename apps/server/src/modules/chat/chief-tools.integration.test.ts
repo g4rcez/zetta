@@ -1045,6 +1045,9 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
       "how is it doing",
     );
     expect(prompts.join("\n")).toContain('"days":30');
+    // The volume of work (routines, calls, messages, tasks) comes with the numbers, without the per-day series.
+    expect(prompts.join("\n")).toContain('"activity30Days":{');
+    expect(prompts.join("\n")).not.toContain('"routineRuns":[');
 
     // Asking for the version it already has, or one that does not exist, never becomes a card.
     prompts.length = 0;

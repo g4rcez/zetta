@@ -76,10 +76,16 @@ export async function runBot(ctx: ChiefCtx, a: ChiefArgs<"bot">): Promise<Outcom
   if (a.action === "stats" || a.action === "history" || a.action === "restore") {
     // Reads and the restore card need only the database and `updateBot`; the saved-test runner (which needs the chat) is not used here.
     const quality = createBotQuality(ctx.deps.db, { chat: ctx.deps.chat as never });
-    if (a.action === "stats")
+    if (a.action === "stats") {
+      const {
+        series: _series,
+        days: _days,
+        ...volume
+      } = await quality.activity(ctx.actor, target.id);
       return {
-        read: `bot.stats:\n${JSON.stringify(await quality.stats(ctx.actor, target.id, a.days ?? 7))}`,
+        read: `bot.stats:\n${JSON.stringify({ ...(await quality.stats(ctx.actor, target.id, a.days ?? 7)), activity30Days: volume })}`,
       };
+    }
     if (a.action === "history") {
       const h = await quality.revisions(ctx.actor, target.id);
       return {

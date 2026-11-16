@@ -120,6 +120,15 @@ export const bot = zetta.table(
     // How many bytes of the chat a turn of this bot reads back (null: the default, CONTEXT_BYTES_DEFAULT in modules/chat/context.ts). Every
     // turn starts a fresh process, so this is all the bot remembers of the chat besides its summary and its memory.
     contextBytes: integer("context_bytes"),
+    // The summary of what fell out of the chat view (modules/chat/summary.ts): who writes it (the owner's chief, this bot's own engine, or
+    // nobody), how long it may be, and how much must fall out of view before it is refreshed. Null: the defaults of summary.ts.
+    summaryMode: text("summary_mode", { enum: ["chief", "bot", "off"] })
+      .default("chief")
+      .notNull(),
+    summaryMaxChars: integer("summary_max_chars"),
+    summaryGapBytes: integer("summary_gap_bytes"),
+    // How many hits `zetta:chats` returns for this bot by default, and at most (null: SEARCH_LIMIT_DEFAULT of modules/search/service.ts).
+    chatSearchLimit: integer("chat_search_limit"),
     // Code access the owner granted this bot: a persistent per-user code directory where it can run git, edit files and push. On by default.
     codeAccess: boolean("code_access").default(true).notNull(),
     // Who a commit of this bot is signed as: the server's git config (default), the bot's own address, the owner's account, or `commit_email`.
@@ -152,6 +161,18 @@ export const bot = zetta.table(
     check(
       "bot_context_bytes_check",
       sql`${table.contextBytes} is null or ${table.contextBytes} between 4000 and 60000`,
+    ),
+    check(
+      "bot_summary_max_chars_check",
+      sql`${table.summaryMaxChars} is null or ${table.summaryMaxChars} between 500 and 6000`,
+    ),
+    check(
+      "bot_summary_gap_bytes_check",
+      sql`${table.summaryGapBytes} is null or ${table.summaryGapBytes} between 500 and 20000`,
+    ),
+    check(
+      "bot_chat_search_limit_check",
+      sql`${table.chatSearchLimit} is null or ${table.chatSearchLimit} between 1 and 10`,
     ),
     index("bot_output_style_id_idx").on(table.outputStyleId),
     check(
@@ -374,7 +395,7 @@ export const conversationSummary = zetta.table(
       sql`coalesce(${table.threadRootId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
     ),
     index("conversation_summary_due_idx").on(table.status, table.updatedAt),
-    check("conversation_summary_body_len", sql`char_length(${table.body}) <= ${SUMMARY_MAX_CHARS}`),
+    check("conversation_summary_body_len", sql`char_length(${table.body}) <= ${SUMMARY_CHARS_MAX}`),
   ],
 );
 

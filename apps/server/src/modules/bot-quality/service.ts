@@ -1,6 +1,6 @@
 import { topics } from "@zetta/core/live-topics";
 import type { Database } from "@zetta/db";
-import { and, asc, desc, eq, gte, inArray, sql } from "@zetta/db/query";
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from "@zetta/db/query";
 import { bot, botRevision, conversation, message } from "@zetta/db/schema/chat";
 import {
   auditEvent,
@@ -11,7 +11,10 @@ import {
   DRIVE_PROMPTS_PER_BOT,
   FEEDBACK_REASON_MAX,
   messageFeedback,
+  routine,
+  routineRun,
 } from "@zetta/db/schema/features";
+import { task } from "@zetta/db/schema/tasks";
 import { z } from "zod";
 import type { ActiveActor } from "../identity/access";
 import { events } from "../events/bus";
@@ -43,6 +46,34 @@ export const drivePromptInput = z.strictObject({
   title: z.string().trim().min(1).max(80),
   prompt: z.string().trim().min(1).max(4000),
 });
+
+/** Days the activity chart covers. */
+export const ACTIVITY_DAYS = 30;
+
+/** A time zone the runtime knows, or UTC. The name is also bound as a SQL parameter, never spliced into the query. */
+export function activityZone(tz: string | undefined): string {
+  if (!tz) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz });
+    return tz;
+  } catch {
+    return "UTC";
+  }
+}
+
+/** The last `count` calendar days in `tz` as YYYY-MM-DD, oldest first, ending with today there. Pure calendar arithmetic, so a DST change cannot repeat or skip a day. */
+export function lastDays(tz: string, count: number, now = new Date()): string[] {
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const [y, m, d] = today.split("-").map(Number) as [number, number, number];
+  return Array.from({ length: count }, (_, i) =>
+    new Date(Date.UTC(y, m - 1, d - (count - 1 - i))).toISOString().slice(0, 10),
+  );
+}
 
 /** The settings a past version can bring back. Anything else in a snapshot (or not in an old one) is left as it is now. */
 const restorable = z
@@ -374,6 +405,181 @@ export function createBotQuality(db: Database, deps: QualityDeps) {
           up: rated.find((r) => r.rating === "up")?.n ?? 0,
           down: rated.find((r) => r.rating === "down")?.n ?? 0,
         },
+      };
+    },
+
+    /** How much a bot works: routines, calls, messages and tasks, with a per-day series of the last 30 days for the chart. */
+    async activity(actor: ActiveActor, botId: string, tzName?: string) {
+      const b = await ownBot(actor, botId);
+      const tz = activityZone(tzName);
+      const days = lastDays(tz, ACTIVITY_DAYS);
+      // Midnight of the first day in `tz`, so the totals and the series cover the same days.
+      const since = sql`(${days[0]}::date)::timestamp at time zone ${tz}`;
+      const dayOf = (col: unknown) => sql<string>`to_char(${col} at time zone ${tz}, 'YYYY-MM-DD')`;
+      const runs = and(
+        eq(auditEvent.ownerUserId, actor.userId),
+        eq(auditEvent.botId, botId),
+        eq(auditEvent.kind, "harness_run"),
+      );
+      const sent = and(
+        eq(message.ownerUserId, actor.userId),
+        eq(message.botId, botId),
+        eq(message.role, "assistant"),
+        gte(message.createdAt, since),
+      );
+      const routineRuns = and(
+        eq(routine.botId, botId),
+        eq(routineRun.ownerUserId, actor.userId),
+        gte(routineRun.startedAt, since),
+      );
+      const [
+        routines,
+        routineRunTotals,
+        callsAll,
+        calls30,
+        toolCalls,
+        tokens,
+        received,
+        taskRows,
+        callDays,
+        sentDays,
+        routineDays,
+      ] = await Promise.all([
+        db
+          .select({ paused: routine.paused, n: sql<number>`count(*)::int` })
+          .from(routine)
+          .where(
+            and(
+              eq(routine.ownerUserId, actor.userId),
+              eq(routine.botId, botId),
+              eq(routine.archived, false),
+            ),
+          )
+          .groupBy(routine.paused),
+        db
+          .select({ status: routineRun.status, n: sql<number>`count(*)::int` })
+          .from(routineRun)
+          .innerJoin(routine, eq(routine.id, routineRun.routineId))
+          .where(routineRuns)
+          .groupBy(routineRun.status),
+        db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(auditEvent)
+          .where(runs),
+        db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(auditEvent)
+          .where(and(runs, gte(auditEvent.createdAt, since))),
+        db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(auditEvent)
+          .where(
+            and(
+              eq(auditEvent.ownerUserId, actor.userId),
+              eq(auditEvent.botId, botId),
+              eq(auditEvent.kind, "tool_call"),
+              gte(auditEvent.createdAt, since),
+            ),
+          ),
+        db
+          .select({
+            input: sql<number>`coalesce(sum(${auditEvent.inputTokens}), 0)::float8`,
+            cacheRead: sql<number>`coalesce(sum(${auditEvent.cacheReadTokens}), 0)::float8`,
+            cacheWrite: sql<number>`coalesce(sum(${auditEvent.cacheWriteTokens}), 0)::float8`,
+            output: sql<number>`coalesce(sum(${auditEvent.outputTokens}), 0)::float8`,
+            // Only some engines report tokens (Claude Code does); the others leave them null, so say how many calls did.
+            reported: sql<number>`count(${auditEvent.outputTokens})::int`,
+          })
+          .from(auditEvent)
+          .where(and(runs, gte(auditEvent.createdAt, since))),
+        db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(message)
+          .innerJoin(conversation, eq(conversation.id, message.conversationId))
+          .where(
+            and(
+              eq(message.ownerUserId, actor.userId),
+              eq(conversation.botId, botId),
+              eq(message.role, "user"),
+              gte(message.createdAt, since),
+            ),
+          ),
+        db
+          .select({ status: task.status, n: sql<number>`count(*)::int` })
+          .from(task)
+          .where(
+            and(
+              eq(task.ownerUserId, actor.userId),
+              eq(task.botId, botId),
+              isNull(task.parentTaskId),
+            ),
+          )
+          .groupBy(task.status),
+        db
+          .select({ day: dayOf(auditEvent.createdAt), n: sql<number>`count(*)::int` })
+          .from(auditEvent)
+          .where(and(runs, gte(auditEvent.createdAt, since)))
+          .groupBy(sql`1`),
+        db
+          .select({ day: dayOf(message.createdAt), n: sql<number>`count(*)::int` })
+          .from(message)
+          .where(sent)
+          .groupBy(sql`1`),
+        db
+          .select({ day: dayOf(routineRun.startedAt), n: sql<number>`count(*)::int` })
+          .from(routineRun)
+          .innerJoin(routine, eq(routine.id, routineRun.routineId))
+          .where(routineRuns)
+          .groupBy(sql`1`),
+      ]);
+      const series = (rows: { day: string; n: number }[]) => {
+        const by = new Map(rows.map((r) => [r.day, r.n]));
+        return days.map((d) => by.get(d) ?? 0);
+      };
+      const taskN = (s: string) => taskRows.find((r) => r.status === s)?.n ?? 0;
+      const tasksTotal = taskRows.reduce((a, r) => a + r.n, 0);
+      const sentSeries = series(sentDays);
+      return {
+        bot: { id: b.id, name: b.name },
+        timezone: tz,
+        days,
+        routines: {
+          active: routines.find((r) => !r.paused)?.n ?? 0,
+          paused: routines.find((r) => r.paused)?.n ?? 0,
+          runs: routineRunTotals.reduce((a, r) => a + r.n, 0),
+          failed: routineRunTotals.find((r) => r.status === "failed")?.n ?? 0,
+        },
+        calls: {
+          last30: calls30[0]?.n ?? 0,
+          allTime: callsAll[0]?.n ?? 0,
+          toolCalls: toolCalls[0]?.n ?? 0,
+        },
+        // Last 30 days, over the calls whose engine reported tokens (`reportedCalls` of `calls.last30`). `input` is the part that
+        // was not served from the cache; `total` adds all four.
+        tokens: {
+          input: Math.round(tokens[0]?.input ?? 0),
+          cacheRead: Math.round(tokens[0]?.cacheRead ?? 0),
+          cacheWrite: Math.round(tokens[0]?.cacheWrite ?? 0),
+          output: Math.round(tokens[0]?.output ?? 0),
+          total: Math.round(
+            (tokens[0]?.input ?? 0) +
+              (tokens[0]?.cacheRead ?? 0) +
+              (tokens[0]?.cacheWrite ?? 0) +
+              (tokens[0]?.output ?? 0),
+          ),
+          reportedCalls: tokens[0]?.reported ?? 0,
+        },
+        messages: {
+          sent: sentSeries.reduce((a, n) => a + n, 0),
+          received: received[0]?.n ?? 0,
+        },
+        tasks: {
+          open: tasksTotal - taskN("done"),
+          blocked: taskN("blocked"),
+          done: taskN("done"),
+          total: tasksTotal,
+        },
+        series: { calls: series(callDays), messages: sentSeries, routineRuns: series(routineDays) },
       };
     },
 

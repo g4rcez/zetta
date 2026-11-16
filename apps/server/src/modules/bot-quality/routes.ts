@@ -72,6 +72,13 @@ export function createBotQualityRoutes(
       }),
     )
     .get(
+      "/bots/:id/activity",
+      g(async (c) => {
+        const tz = z.string().max(64).optional().parse(c.query.tz);
+        return { activity: await quality.activity(c.actor, id(c), tz) };
+      }),
+    )
+    .get(
       "/bots/:id/drive",
       g(async (c) => quality.drive(c.actor, id(c))),
     )

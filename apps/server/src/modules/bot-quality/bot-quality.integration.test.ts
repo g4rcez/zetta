@@ -4,9 +4,10 @@ import { createDb } from "@zetta/db";
 import { eq } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { bot, conversation, message } from "@zetta/db/schema/chat";
-import { auditEvent, messageFeedback } from "@zetta/db/schema/features";
+import { auditEvent, messageFeedback, routine, routineRun } from "@zetta/db/schema/features";
 import { membership } from "@zetta/db/schema/identity";
 import { skillReview } from "@zetta/db/schema/skills";
+import { task } from "@zetta/db/schema/tasks";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createLoopStore } from "../chat/loops";
@@ -16,7 +17,7 @@ import { createIdentityAccess } from "../identity/access";
 import { createSkillReview } from "../memory/skill-review";
 import { createSkills } from "../skills/service";
 import { createTaskStore } from "../tasks/store";
-import { createBotQuality } from "./service";
+import { activityZone, createBotQuality, lastDays } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -461,14 +462,139 @@ suite("bot quality: ratings, numbers, saved tests and version history", () => {
     ).toBe(404);
   });
 
+  test("the activity of a bot counts routines, calls, messages and top-level tasks, with a zero-filled series of 30 days", async () => {
+    const { bot: b } = await botWithAnswer(A);
+    const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
+    const audit = (kind: "harness_run" | "tool_call", at: Date, tokens = {}) =>
+      db.insert(auditEvent).values({
+        ownerUserId: A,
+        kind,
+        outcome: "ok",
+        botId: b.id,
+        createdAt: at,
+        ...tokens,
+      } as never);
+    await audit("harness_run", new Date(), {
+      inputTokens: 100,
+      cacheReadTokens: 50,
+      cacheWriteTokens: 7,
+      outputTokens: 25,
+    });
+    await audit("harness_run", new Date(), { inputTokens: 10, outputTokens: 5 });
+    await audit("harness_run", daysAgo(3));
+    await audit("harness_run", daysAgo(40)); // outside the window: only in the all-time count
+    await audit("tool_call", new Date());
+    await audit("tool_call", daysAgo(2));
+    await audit("tool_call", daysAgo(45));
+    const mkRoutine = async (over: Record<string, unknown>) =>
+      (
+        await db
+          .insert(routine)
+          .values({ ownerUserId: A, botId: b.id, title: "r", prompt: "p", ...over } as never)
+          .returning()
+      )[0]!;
+    const active = await mkRoutine({ paused: false });
+    await mkRoutine({ paused: true });
+    await mkRoutine({ paused: false, archived: true });
+    const run = (status: string, at: Date) =>
+      db.insert(routineRun).values({
+        routineId: active.id,
+        ownerUserId: A,
+        status,
+        output: "",
+        startedAt: at,
+      } as never);
+    await run("succeeded", new Date());
+    await run("failed", daysAgo(1));
+    await run("succeeded", daysAgo(40));
+    const mkTask = async (over: Record<string, unknown>) =>
+      (
+        await db
+          .insert(task)
+          .values({ ownerUserId: A, botId: b.id, title: "t", ...over } as never)
+          .returning()
+      )[0]!;
+    const open = await mkTask({ status: "backlog" });
+    await mkTask({ status: "blocked" });
+    await mkTask({ status: "done" });
+    await mkTask({ status: "in_progress", parentTaskId: open.id }); // a subtask is not counted
+
+    const a = (await call(A, "GET", `/api/bots/${b.id}/activity?tz=UTC`)).json.activity;
+    expect(a.timezone).toBe("UTC");
+    expect(a.days).toEqual(lastDays("UTC", 30));
+    expect(a.routines).toEqual({ active: 1, paused: 1, runs: 2, failed: 1 });
+    expect(a.calls).toEqual({
+      last30: 3,
+      allTime: 4,
+      toolCalls: 2,
+    });
+    // Tokens of the last 30 days, over the two calls that reported them (the third, an engine without usage, is left out).
+    expect(a.tokens).toEqual({
+      input: 110,
+      cacheRead: 50,
+      cacheWrite: 7,
+      output: 30,
+      total: 197,
+      reportedCalls: 2,
+    });
+    // botWithAnswer holds one user message and one answer.
+    expect(a.messages).toEqual({ sent: 1, received: 1 });
+    expect(a.tasks).toEqual({ open: 2, blocked: 1, done: 1, total: 3 });
+    for (const s of Object.values(a.series) as number[][]) expect(s).toHaveLength(30);
+    expect(a.series.calls.reduce((x: number, y: number) => x + y, 0)).toBe(a.calls.last30);
+    expect(a.series.calls.at(-1)).toBe(2);
+    expect(a.series.messages.reduce((x: number, y: number) => x + y, 0)).toBe(a.messages.sent);
+    expect(a.series.routineRuns.reduce((x: number, y: number) => x + y, 0)).toBe(2);
+    expect(a.series.routineRuns.at(-1)).toBe(1);
+    expect(a.series.routineRuns.at(-2)).toBe(1);
+    // Days with nothing are zeros, not gaps.
+    expect(a.series.calls.filter((n: number) => n === 0).length).toBeGreaterThan(20);
+  });
+
+  test("the activity falls back to UTC for a time zone it does not know, and keeps a real one", async () => {
+    const { bot: b } = await botWithAnswer(A);
+    const bad = (
+      await call(
+        A,
+        "GET",
+        `/api/bots/${b.id}/activity?tz=${encodeURIComponent("x'; drop table bot;--")}`,
+      )
+    ).json;
+    expect(bad.activity.timezone).toBe("UTC");
+    const sp = (await call(A, "GET", `/api/bots/${b.id}/activity?tz=America%2FSao_Paulo`)).json;
+    expect(sp.activity.timezone).toBe("America/Sao_Paulo");
+    expect(sp.activity.days).toHaveLength(30);
+    const none = (await call(A, "GET", `/api/bots/${b.id}/activity`)).json;
+    expect(none.activity.timezone).toBe("UTC");
+    expect(await db.select().from(bot).where(eq(bot.id, b.id))).toHaveLength(1);
+  });
+
   test("the numbers and history of a bot that is not yours are not found", async () => {
     const { bot: b } = await botWithAnswer(A);
     for (const path of [
       `/api/bots/${b.id}/drive`,
       `/api/bots/${b.id}/stats`,
+      `/api/bots/${b.id}/activity`,
       `/api/bots/${b.id}/revisions`,
     ])
       expect((await call(B, "GET", path)).status).toBe(404);
     expect(await db.select().from(bot).where(eq(bot.id, b.id))).toHaveLength(1);
   });
+});
+
+test("the activity days are calendar days in the person's zone, with no repeat or skip at a DST change", () => {
+  expect(lastDays("America/New_York", 3, new Date("2026-11-02T12:00:00Z"))).toEqual([
+    "2026-10-31",
+    "2026-11-01",
+    "2026-11-02",
+  ]);
+  // 01:00 UTC is still the evening before in São Paulo (UTC-3).
+  expect(lastDays("America/Sao_Paulo", 2, new Date("2026-11-02T01:00:00Z"))).toEqual([
+    "2026-10-31",
+    "2026-11-01",
+  ]);
+  expect(lastDays("UTC", 30)).toHaveLength(30);
+  expect(activityZone(undefined)).toBe("UTC");
+  expect(activityZone("Not/AZone")).toBe("UTC");
+  expect(activityZone("Europe/Lisbon")).toBe("Europe/Lisbon");
 });

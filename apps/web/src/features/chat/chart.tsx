@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@zetta/ui/lib/utils";
 import { barPath, compact, full, niceTicks, shorten, slicePath } from "./chart-math";
@@ -18,7 +18,7 @@ export type AxisData = {
   yLabel?: string | null | undefined;
 };
 
-const W = 640;
+const DEFAULT_W = 640;
 const H = 260;
 const GAP = 2;
 const MAX_BAR = 24;
@@ -74,8 +74,25 @@ function ValuesTable({ chart }: { chart: AxisData }) {
   );
 }
 
-function AxisChart({ title, chart }: { title: string; chart: AxisData }) {
+/** The width of an element, followed as it resizes, so a chart can draw at 1:1 instead of scaling a fixed box. `fallback` until measured and where ResizeObserver is missing. */
+function useWidth(on: boolean, fallback: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(fallback);
+  useEffect(() => {
+    const el = ref.current;
+    if (!on || !el || typeof ResizeObserver === "undefined") return;
+    const read = () => setWidth(Math.max(320, Math.round(el.getBoundingClientRect().width)));
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [on]);
+  return [ref, on ? width : fallback] as const;
+}
+
+function AxisChart({ title, chart, fill }: { title: string; chart: AxisData; fill: boolean }) {
   const [hover, setHover] = useState<number | null>(null);
+  const [box, W] = useWidth(fill, DEFAULT_W);
   const { type, categories, series } = chart;
   const values = series.flatMap((s) => s.values);
   // Columns and areas grow from zero, so zero is always on the axis; a line may float.
@@ -116,7 +133,7 @@ function AxisChart({ title, chart }: { title: string; chart: AxisData }) {
           ))}
         </ul>
       )}
-      <div className="relative">
+      <div ref={box} className="relative">
         <svg
           role="img"
           aria-label={label}
@@ -319,14 +336,23 @@ function PieChart({ title, chart }: { title: string; chart: PieData }) {
   );
 }
 
-export function ChartView({ title, chart }: { title: string; chart: PieData | AxisData }) {
+/** `fill` draws an axis chart across the whole width of its container; without it the chart stays at most 42rem wide, as in the chat. */
+export function ChartView({
+  title,
+  chart,
+  fill = false,
+}: {
+  title: string;
+  chart: PieData | AxisData;
+  fill?: boolean;
+}) {
   return (
-    <figure className="m-0 flex w-full min-w-0 max-w-2xl flex-col gap-2">
+    <figure className={cn("m-0 flex w-full min-w-0 flex-col gap-2", !fill && "max-w-2xl")}>
       <figcaption className="text-sm font-medium">{title}</figcaption>
       {chart.type === "pie" ? (
         <PieChart title={title} chart={chart} />
       ) : (
-        <AxisChart title={title} chart={chart} />
+        <AxisChart title={title} chart={chart} fill={fill} />
       )}
     </figure>
   );

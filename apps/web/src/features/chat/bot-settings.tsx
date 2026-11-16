@@ -29,6 +29,7 @@ import "../discussions/register";
 import "../inbound/register";
 import "../plugins/register";
 import "../bot-quality/register"; // history, saved tests and the numbers of a bot
+import "../bot-stats/register"; // routines, calls, messages, tasks and a chart of a bot
 import "../org/register"; // the seats a bot holds in the company chart
 import "../teams/register"; // the teams a bot belongs to and leads
 import {
@@ -410,6 +411,7 @@ export const BOT_TABS = [
     id: "setup",
     label: "Setup",
     ids: [
+      "stats", // the first thing on the bot's page; the setup sections follow on scroll
       "general",
       "picture",
       "personality",

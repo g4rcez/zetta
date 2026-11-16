@@ -9,10 +9,18 @@ export const topics = {
   discussion: (id: string) => `discussion:${id}`,
   botStatus: "bot-status",
   bots: "bots",
+  /** A bot's saved tests ran or changed, or a reply of it was rated: its History, Saved tests and Performance sections refetch. */
+  botQuality: (botId: string) => `bot-quality:${botId}`,
   attention: "attention",
   routines: "routines",
+  /** A workflow run paused, woke or ended (also by itself, on a timer or after a card was answered): the run list refetches. */
+  workflows: "workflows",
   /** A task was added, changed, moved, paused or removed (also by a bot): the board, a task page and the bots' current task refetch. */
   tasks: "tasks",
+  /** A project, its members or its rooms changed: the project list and pages refetch. Task changes reach them through `tasks`. */
+  projects: "projects",
+  /** The company chart (seats, holders, who reports to whom) changed: the Organization page refetches. */
+  org: "org",
   proposals: "proposals",
   /** The person paused or resumed all their agents. */
   agents: "agents",

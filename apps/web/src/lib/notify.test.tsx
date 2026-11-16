@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, test } from "bun:test";
+import { afterEach, beforeAll, expect, mock, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -7,6 +7,10 @@ import { setupDom } from "../features/skills/dom-env";
 const win = setupDom();
 
 const { NotificationsProvider, toast } = await import("./notify");
+
+// An earlier test file can leave a debounced preferences save behind (400 ms). Its error toast goes to whichever provider is mounted when
+// it fires, so it is let go before this file mounts one.
+beforeAll(async () => void (await new Promise((r) => setTimeout(r, 450))));
 
 const roots: { unmount: () => void }[] = [];
 afterEach(async () => {

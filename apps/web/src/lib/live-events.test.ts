@@ -13,8 +13,15 @@ describe("keysFor", () => {
   test("a playground topic refreshes what is on screen of the playground: the list, the files, the runs and the run", () => {
     expect(keysFor("playground:p1")).toEqual([{ queryKey: ["playground"] }]);
   });
-  test("a tasks topic refreshes the board and an open task page together", () => {
-    expect(keysFor("tasks")).toEqual([{ queryKey: ["tasks"] }]);
+  test("a workflows topic refreshes the runs on screen", () => {
+    expect(keysFor("workflows")).toEqual([{ queryKey: ["workflows"] }]);
+  });
+  test("a bot-quality topic refreshes the saved tests, the numbers and the history of bots on screen", () => {
+    expect(keysFor("bot-quality:b1")).toEqual([{ queryKey: ["bot-quality"] }]);
+  });
+  test("a tasks topic refreshes the board, an open task page and the projects together", () => {
+    expect(keysFor("tasks")).toEqual([{ queryKey: ["tasks"] }, { queryKey: ["projects"] }]);
+    expect(keysFor("projects")).toEqual([{ queryKey: ["projects"] }]);
   });
   test("an apps topic refreshes everything on screen about apps: the list, an app, its calls and the tools", () => {
     expect(keysFor("apps")).toEqual([{ queryKey: ["apps"] }]);

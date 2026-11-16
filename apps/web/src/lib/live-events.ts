@@ -1,7 +1,7 @@
 import { topics } from "@zetta/core/live-topics";
 import { useEffect } from "react";
 
-import { ENV } from "../env";
+import { serverOrigin } from "@/lib/server-origin";
 import { queryClient } from "./query-client";
 import { setLive } from "./query-policy";
 
@@ -38,6 +38,8 @@ export function keysFor(topic: string): { queryKey: Key; exact?: boolean }[] {
   }
   if (topic === topics.botStatus) return [{ queryKey: ["bots", "status"], exact: true }];
   if (topic === topics.bots) return [{ queryKey: ["bots"], exact: true }];
+  // Saved tests, ratings and the numbers of one bot (the History, Saved tests and Performance sections of its settings).
+  if (kind === "bot-quality" && id) return [{ queryKey: ["bot-quality"] }];
   // The badge reads ["attention"] and the page ["catch-up"]: a decision card or an approval changes both.
   if (topic === topics.attention)
     return [
@@ -48,8 +50,12 @@ export function keysFor(topic: string): { queryKey: Key; exact?: boolean }[] {
   // Paused or resumed here or on another device: the preferences carry the state.
   if (topic === topics.agents) return [{ queryKey: ["preferences"], exact: true }];
   if (topic === topics.routines) return [{ queryKey: ["routines"] }];
+  if (topic === topics.workflows) return [{ queryKey: ["workflows"] }];
   // The board and a task page both live under ["tasks"]; the bots' "working on" line comes with the bot-status topic.
-  if (topic === topics.tasks) return [{ queryKey: ["tasks"] }];
+  // A project page shows its tasks, so a task change refreshes the projects too.
+  if (topic === topics.tasks) return [{ queryKey: ["tasks"] }, { queryKey: ["projects"] }];
+  if (topic === topics.projects) return [{ queryKey: ["projects"] }];
+  if (topic === topics.org) return [{ queryKey: ["org"] }];
   if (topic === topics.proposals)
     return [
       { queryKey: ["proposals"] },
@@ -139,7 +145,7 @@ export function connectLiveEvents() {
   };
   const open = () => {
     if (source || disposed || shuttingDown || !leader) return;
-    const next = new EventSource(new URL("/api/events", ENV.ZETTA_SERVER_URL), {
+    const next = new EventSource(new URL("/api/events", serverOrigin()), {
       withCredentials: true,
     });
     source = next;

@@ -1,4 +1,5 @@
 import type { DecisionActions, DecisionKind } from "./attention-kinds";
+import type { WorkView } from "./work-suggestions";
 
 /**
  * What `GET /api/catch-up` sends. The queue has two sources: approvals (`config_proposal`, decided through
@@ -50,6 +51,8 @@ export type CatchUpCardItem = Base & {
   occurrences: number;
   context: CatchUpContext;
   actions: DecisionActions;
+  /** Set on a work card: the task, who does it and the next steps offered. The buttons come from here, not from `actions`. */
+  work?: WorkView;
 };
 
 export type CatchUpItem<P = unknown> = CatchUpProposalItem<P> | CatchUpCardItem;

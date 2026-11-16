@@ -21,6 +21,8 @@ import { AccessError, type ActiveActor } from "../identity/access";
 import type { InboundService } from "../inbound/service";
 import type { Memory } from "../memory/service";
 import type { TaskStore } from "../tasks/store";
+import type { WorkActions } from "../work/actions";
+import { isWorkCard } from "@zetta/core/work-suggestions";
 import { judge } from "./queue";
 
 export type ActDeps = {
@@ -32,6 +34,8 @@ export type ActDeps = {
   chat: Pick<ChatService, "sendMessage" | "setLoop" | "cancelTurn">;
   features: Pick<FeaturesService, "routines" | "routineTriggers" | "workflows">;
   inbound: Pick<InboundService, "setRoute">;
+  /** The buttons of the work cards (modules/work). */
+  work?: Pick<WorkActions, "run" | "notNow">;
 };
 
 /** The person asked for something this card does not offer (wrong action, missing or unexpected text). */
@@ -53,7 +57,7 @@ const RUN_GRACE_MS = 2000;
  * card's kind names (see `ACTIONS`), and only then closes the card: a refusal from the domain leaves it in the queue.
  */
 export function createCatchUpActions(deps: ActDeps) {
-  const { db, tasks, loops, discussions, memory, chat, features, inbound } = deps;
+  const { db, tasks, loops, discussions, memory, chat, features, inbound, work } = deps;
 
   async function load(actor: ActiveActor, id: string) {
     const [row] = await db
@@ -214,6 +218,13 @@ export function createCatchUpActions(deps: ActDeps) {
       case "inbound_rate":
       case "bot_ask":
         return;
+      // Work cards are answered through their options (see `act` below), never through this table.
+      case "work_stuck":
+      case "work_blocked":
+      case "work_drift":
+      case "work_checkin":
+      case "work_nudge":
+        return;
       case "connection_lost":
         throw new CatchUpError("NOT_AN_ACTION", "Reconnecting happens in the browser, not here.");
       case "proposal":
@@ -280,6 +291,12 @@ export function createCatchUpActions(deps: ActDeps) {
       case "connection_lost":
       case "bot_ask":
       case "proposal":
+      // "Not now" on a work card: `deny` already asked the scan for quiet.
+      case "work_stuck":
+      case "work_blocked":
+      case "work_drift":
+      case "work_checkin":
+      case "work_nudge":
         return;
     }
   }
@@ -301,8 +318,23 @@ export function createCatchUpActions(deps: ActDeps) {
   }
 
   return {
-    async act(actor: ActiveActor, id: string, input: { text?: string | undefined }) {
+    async act(
+      actor: ActiveActor,
+      id: string,
+      input: {
+        text?: string | undefined;
+        /** A work card: which of its options, and for "give it to someone else" who gets it. */
+        option?: string | undefined;
+        target?: string | undefined;
+      },
+    ) {
       const { row, kind } = await load(actor, id);
+      if (isWorkCard(kind)) {
+        if (!work) throw new CatchUpError("UNSUPPORTED", "This card cannot be answered here.");
+        const { done } = await work.run(actor, row, input);
+        await settle(actor, row, kind, "resolved");
+        return { ok: true as const, done };
+      }
       const text = (input.text ?? "").trim().slice(0, TEXT_MAX);
       const mode = ACTIONS[kind].input;
       if (mode === "text" && !text)
@@ -315,6 +347,7 @@ export function createCatchUpActions(deps: ActDeps) {
     },
     async deny(actor: ActiveActor, id: string) {
       const { row, kind } = await load(actor, id);
+      if (isWorkCard(kind)) await work?.notNow(row);
       await runDeny(actor, row, kind);
       await settle(actor, row, kind, "cancelled");
       return { ok: true as const };

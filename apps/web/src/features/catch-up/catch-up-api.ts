@@ -30,5 +30,8 @@ export const catchUpApi = {
   /** Act on a card that is not an approval. `text` is the answer or the nudge, for the kinds that take one. */
   act: (id: string, text?: string) =>
     call<{ ok: true }>(`/api/catch-up/${id}/act`, "POST", text ? { text } : {}),
+  /** One of the next steps of a work card. The answer says what happened, in a sentence to show the person. */
+  choose: (id: string, choice: { option: string; text?: string; target?: string }) =>
+    call<{ ok: true; done: string }>(`/api/catch-up/${id}/act`, "POST", choice),
   deny: (id: string) => call<{ ok: true }>(`/api/catch-up/${id}/deny`, "POST", {}),
 };

@@ -2,6 +2,7 @@ import type { Database } from "@zetta/db";
 import { and, eq, inArray, sql } from "@zetta/db/query";
 import { attentionItem } from "@zetta/db/schema/features";
 import type { AttentionKind } from "@zetta/core/attention-kinds";
+import type { WorkData } from "@zetta/core/work-suggestions";
 import { topics } from "@zetta/core/live-topics";
 import { events } from "../events/bus";
 
@@ -24,6 +25,8 @@ export type AttentionInput = {
   remaining?: string;
   /** Stable key for the situation (e.g. `routine:<id>:failed`). Repeats update the live card instead of adding another. */
   sourceKey?: string;
+  /** A work card's suggested next steps (see core/work-suggestions.ts). */
+  work?: WorkData | null;
 };
 
 /**
@@ -48,6 +51,7 @@ export async function raiseAttention(
     completed: (v.completed ?? "").slice(0, 1000),
     remaining: (v.remaining ?? "").slice(0, 1000),
     sourceKey: v.sourceKey ?? null,
+    ...(v.work !== undefined && { work: v.work }),
   };
   if (!v.sourceKey) {
     const [row] = await db.insert(attentionItem).values(values).returning();
@@ -66,6 +70,10 @@ export async function raiseAttention(
         subjectId: values.subjectId,
         occurrences: sql`${attentionItem.occurrences} + 1`,
         detail: values.detail,
+        // What to do next and where to look follow the newest report, like the text above them.
+        nextAction: values.nextAction,
+        resultLink: values.resultLink,
+        ...(v.work !== undefined && { work: v.work }),
         updatedAt: new Date(),
         status: "open",
         readAt: null,

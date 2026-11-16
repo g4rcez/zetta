@@ -28,6 +28,12 @@ export const DECISION_KINDS = [
   "inbound_rate",
   "memory_suggestion",
   "bot_ask",
+  // Work cards (work-suggestions.ts): a task needs somebody. Their buttons are options, read with the card.
+  "work_stuck",
+  "work_blocked",
+  "work_drift",
+  "work_checkin",
+  "work_nudge",
 ] as const;
 
 export const FYI_KINDS = [
@@ -40,6 +46,10 @@ export const FYI_KINDS = [
   "room_withheld",
   "hook_invalid",
   "agenda_reminder",
+  /** The person a manager wrote to about a task answered. */
+  "work_reply",
+  /** The company chart puts someone under this person, and their task stopped: read-only, the owner of the task decides. */
+  "work_heads_up",
   "manual",
   "other",
 ] as const;
@@ -83,6 +93,8 @@ export const ACT_ACTIONS = [
   "reconnect",
   "accept",
   "open_chat",
+  /** A work card: the person picks one of the card's options (see work-suggestions.ts). */
+  "choose",
 ] as const;
 export type ActAction = (typeof ACT_ACTIONS)[number];
 
@@ -95,6 +107,8 @@ export const DENY_ACTIONS = [
   "leave_off",
   "reject",
   "dismiss",
+  /** A work card: nothing is done and the card comes back tomorrow, or when the task changes. */
+  "not_now",
 ] as const;
 export type DenyAction = (typeof DENY_ACTIONS)[number];
 
@@ -139,4 +153,9 @@ export const ACTIONS: Record<DecisionKind, DecisionActions> = {
   inbound_rate: a("open_chat", "Open chat", "dismiss", "Dismiss"),
   memory_suggestion: a("accept", "Accept", "reject", "Reject"),
   bot_ask: a("open_chat", "Open chat", "dismiss", "Dismiss"),
+  work_stuck: a("choose", "Choose", "not_now", "Not now", "optional_text"),
+  work_blocked: a("choose", "Choose", "not_now", "Not now", "optional_text"),
+  work_drift: a("choose", "Choose", "not_now", "Not now", "optional_text"),
+  work_checkin: a("choose", "Choose", "not_now", "Not now", "optional_text"),
+  work_nudge: a("choose", "Choose", "not_now", "Not now", "optional_text"),
 };

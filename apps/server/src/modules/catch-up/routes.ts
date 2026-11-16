@@ -8,6 +8,7 @@ import { MemoryError } from "../memory/service";
 import { AgentsPausedError } from "../preferences/agents-state";
 import { TaskRuleError } from "../tasks/follow-up";
 import { accessFail, createGuardedRoute, fail } from "../http-response";
+import { WorkError } from "../work/actions";
 import { CatchUpError, type CatchUpActions } from "./act";
 import { buildQueue, summarize, type CatchUpDeps } from "./queue";
 
@@ -18,7 +19,12 @@ export type CatchUpServices = {
 };
 
 const listQuery = z.object({ bot: z.string().uuid().optional() });
-const actBody = z.strictObject({ text: z.string().max(4000).optional() });
+const actBody = z.strictObject({
+  text: z.string().max(4000).optional(),
+  /** A work card: the id of the option picked, and who gets the task when the option gives it to someone else. */
+  option: z.string().max(40).optional(),
+  target: z.string().max(240).optional(),
+});
 const uuid = z.string().uuid();
 
 export function createCatchUpRoutes(
@@ -31,6 +37,12 @@ export function createCatchUpRoutes(
       return fail(400, "INVALID_REQUEST", "Check the details and try again.");
     if (e instanceof CatchUpError)
       return fail(e.code === "NO_SUBJECT" ? 409 : 400, e.code, e.message);
+    if (e instanceof WorkError)
+      return fail(
+        e.code === "INPUT_REQUIRED" || e.code === "NOT_AN_OPTION" ? 400 : 409,
+        e.code,
+        e.message,
+      );
     // The domain said no (a rule, a missing prerequisite, agents paused): the card stays, and the person is told why.
     if (e instanceof TaskRuleError) return fail(409, e.code, e.message);
     if (e instanceof DiscussionError || e instanceof InboundError) return fail(409, e.code, e.safe);

@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Button } from "@/components/ui";
+import { Button, Progress } from "@/components/ui";
 import { toast } from "@/lib/notify";
 import {
   enableNativeNotifications,
@@ -16,6 +16,7 @@ import { useApprovalMode } from "../preferences/preferences";
 import { Loading } from "../shared/ui";
 import { CATCH_UP_KEY, catchUpApi, catchUpQueries, type CatchUpEntry } from "./catch-up-api";
 import { DecisionCard, SkipButton, SwipeShell } from "./catch-up-card";
+import { isWorkCardItem, WorkCard } from "./work-card";
 import type { CatchUpSearch } from "./catch-up-search";
 import { focusKey, mergeOrder, progressOf, skipKey } from "./queue-order";
 
@@ -54,11 +55,32 @@ function pressAct(root: HTMLElement | null, careful: boolean) {
   first?.focus();
 }
 
-function Progress({ position, total }: { position: number; total: number }) {
+/** What is left after the card in front: "Last one" or "3 to go". */
+const leftAfter = (position: number, total: number) =>
+  position >= total ? "Last one" : `${total - position} to go`;
+
+/** A thin bar over this visit's queue, with words: which card is in front, how many are handled and how many are left. */
+function QueueProgress({ position, total }: { position: number; total: number }) {
+  if (total <= 0) return null;
   return (
-    <p aria-live="polite" className="text-sm tabular-nums text-muted-foreground">
-      {total > 0 ? `${position} of ${total}` : ""}
-    </p>
+    <div className="w-48 space-y-1.5 sm:w-60">
+      <p className="flex items-baseline justify-between gap-3 text-xs leading-none tabular-nums">
+        <span className="font-medium text-foreground">
+          Card {position} of {total}
+        </span>
+        <span className="text-muted-foreground">{leftAfter(position, total)}</span>
+      </p>
+      <Progress
+        label={`Card ${position} of ${total}`}
+        value={position}
+        min={1}
+        max={Math.max(total, 2)}
+        size="thin"
+      />
+      <p className="text-[11px] leading-none text-muted-foreground tabular-nums">
+        {position - 1} handled in this visit
+      </p>
+    </div>
   );
 }
 
@@ -192,6 +214,25 @@ export function CatchUpPage({
     }
   }
 
+  /** A next step of a work card. The server answers with what happened, and that sentence is shown. */
+  async function chooseOption(
+    key: string,
+    id: string,
+    choice: { option: string; text?: string; target?: string },
+  ) {
+    setBusy(key);
+    setErrors(({ [key]: _gone, ...rest }) => rest);
+    try {
+      const { done } = await catchUpApi.choose(id, choice);
+      finished(key);
+      if (done) toast.success(done);
+    } catch (e) {
+      setErrors((prev) => ({ ...prev, [key]: errorMessage(e, "That did not work. Try again.") }));
+    } finally {
+      setBusy(undefined);
+    }
+  }
+
   /** After the person fixed something: read the queue again. A card still needed goes to the back with a note, and the next shows. */
   const recheck = useCallback(
     async (key: string) => {
@@ -242,7 +283,12 @@ export function CatchUpPage({
       if (key === "a") pressAct(cardRef.current, careful);
       else if (key === "d") setArming((k) => k ?? currentRef.current);
       else if (key === "j") skip();
-      else return;
+      // A work card numbers its next steps: the number presses that step.
+      else if (/^[1-4]$/.test(key)) {
+        const step = cardRef.current?.querySelector<HTMLElement>(`[data-catch-up-option="${key}"]`);
+        if (!step) return;
+        step.click();
+      } else return;
       e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
@@ -258,7 +304,7 @@ export function CatchUpPage({
       <section aria-label="Inbox" className="mx-auto w-full max-w-7xl min-w-0 space-y-4 p-4 md:p-8">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Inbox</h1>
-          <Progress position={position} total={total} />
+          <QueueProgress position={position} total={total} />
         </header>
         {search.bot && <BotFilter bot={botOf(search.bot)} onClear={() => onSearch({})} />}
         {permission === "default" && (
@@ -293,6 +339,17 @@ export function CatchUpPage({
                   decide={decide.decide}
                   leading={ordered.length > 1 ? <SkipButton onSkip={skip} /> : undefined}
                 />
+              ) : isWorkCardItem(current) ? (
+                <WorkCard
+                  card={current}
+                  bot={botOf(current.botId)}
+                  bots={bots}
+                  busy={busy === current.key}
+                  error={errors[current.key]}
+                  onChoose={(choice) => void chooseOption(current.key, current.id, choice)}
+                  onDeny={() => void runCard(current.key, current.id, "deny")}
+                  onSkip={ordered.length > 1 ? skip : undefined}
+                />
               ) : (
                 <DecisionCard
                   card={current}
@@ -311,7 +368,14 @@ export function CatchUpPage({
             </div>
           </SwipeShell>
         )}
-        {arming && <UndoBar label="Denying this." onUndo={() => setArming(undefined)} />}
+        {arming && (
+          <UndoBar
+            label={
+              current?.source === "card" && current.work ? "Leaving it for now." : "Denying this."
+            }
+            onUndo={() => setArming(undefined)}
+          />
+        )}
       </section>
     </div>
   );

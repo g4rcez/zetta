@@ -25,12 +25,15 @@ import { memoryItem, memorySuggestion } from "@zetta/db/schema/memory";
 import { task } from "@zetta/db/schema/tasks";
 import type { ActiveActor } from "../identity/access";
 import { closeAttentionIds } from "../features/attention";
+import type { WorkActions } from "../work/actions";
 
 export type ProposalRow = typeof configProposal.$inferSelect & { confirm: string };
 export type CatchUpDeps = {
   db: Database;
   /** `chat.listProposals`: pending, unexpired approvals, oldest first. */
   listProposals: (actor: ActiveActor, botId?: string) => Promise<ProposalRow[]>;
+  /** What each work card shows (the task, who does it, the next steps). Without it a work card shows its text only. */
+  work?: Pick<WorkActions, "views">;
 };
 
 type CardRow = typeof attentionItem.$inferSelect;
@@ -61,7 +64,15 @@ const subjects = (rows: readonly CardRow[], kinds: readonly DecisionKind[]) => [
  * needed. A card whose subject is gone, or already moved on, is not a decision any more.
  */
 export async function judge(db: Database, userId: string, rows: readonly CardRow[]) {
-  const taskIds = subjects(rows, ["task_ask", "task_follow"]);
+  const taskIds = subjects(rows, [
+    "task_ask",
+    "task_follow",
+    "work_stuck",
+    "work_blocked",
+    "work_drift",
+    "work_checkin",
+    "work_nudge",
+  ]);
   const loopIds = subjects(rows, ["loop_paused"]);
   const roomIds = subjects(rows, [
     "room_stuck",
@@ -96,6 +107,7 @@ export async function judge(db: Database, userId: string, rows: readonly CardRow
             title: task.title,
             status: task.status,
             followUp: task.followUp,
+            updatedAt: task.updatedAt,
           })
           .from(task)
           .where(
@@ -338,6 +350,30 @@ export async function judge(db: Database, userId: string, rows: readonly CardRow
           ? need({ subject: p.title, pending: w.n, extra: w.reason.slice(0, 300) })
           : GONE;
       }
+      // A stopped or quiet task needs the manager until it moves again: any change after the card answers it.
+      case "work_stuck":
+      case "work_drift": {
+        const t = id ? taskBy.get(id) : undefined;
+        if (!t || t.status === "done") return GONE;
+        return t.followUp === "paused" || +t.updatedAt <= +r.updatedAt
+          ? need({ subject: t.title, status: t.status })
+          : GONE;
+      }
+      case "work_blocked": {
+        const t = id ? taskBy.get(id) : undefined;
+        return t?.status === "blocked" ? need({ subject: t.title, status: t.status }) : GONE;
+      }
+      // "Still working on this?" is answered by any change to the task, too.
+      case "work_checkin": {
+        const t = id ? taskBy.get(id) : undefined;
+        return t && OPEN_TASK.includes(t.status) && +t.updatedAt <= +r.updatedAt
+          ? need({ subject: t.title, status: t.status })
+          : GONE;
+      }
+      case "work_nudge": {
+        const t = id ? taskBy.get(id) : undefined;
+        return t && t.status !== "done" ? need({ subject: t.title, status: t.status }) : GONE;
+      }
       // Nothing to read for these: they stay until the person acts or dismisses them.
       default:
         return NEEDED;
@@ -354,7 +390,7 @@ const time = (d: Date | string) => new Date(d).getTime();
  * waits are closed here (so the badge and the list can never disagree). Approvals that expire soonest come first, then oldest first.
  */
 export async function buildQueue(
-  { db, listProposals }: CatchUpDeps,
+  { db, listProposals, work }: CatchUpDeps,
   actor: ActiveActor,
   opts: { botId?: string } = {},
 ): Promise<CatchUpItem<ProposalRow>[]> {
@@ -377,6 +413,7 @@ export async function buildQueue(
   const verdicts = await judge(db, actor.userId, rows);
   const finished = rows.filter((r) => !verdicts.get(r.id)?.needed).map((r) => r.id);
   await closeAttentionIds(db, actor.userId, finished, "resolved");
+  const views = await work?.views(rows.filter((r) => verdicts.get(r.id)?.needed));
 
   const items: CatchUpItem<ProposalRow>[] = [
     ...proposals.map((p): CatchUpProposalItem<ProposalRow> => ({
@@ -409,6 +446,7 @@ export async function buildQueue(
           createdAt: r.createdAt.toISOString(),
           context: v.context,
           actions: ACTIONS[kind],
+          ...(views?.has(r.id) && { work: views.get(r.id)! }),
         },
       ];
     }),

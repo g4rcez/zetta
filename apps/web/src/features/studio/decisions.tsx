@@ -6,6 +6,7 @@ import { Button, Input } from "@/components/ui";
 import { call } from "../chat/chat-client";
 import { Badge } from "../shared/ui";
 import { LayaSwitch } from "./laya-switch";
+import { TranscribeSettings } from "./transcribe-settings";
 import { DECISIONS_STATUS, decisionsQueries } from "./studio-queries";
 import { formText } from "../shared/form-data";
 
@@ -75,6 +76,9 @@ export function Decisions({ onError }: { onError: (m: string) => void }) {
         // Reset, not invalidate: the badge shows "checking" until the new state arrives.
         onChanged={() => void qc.resetQueries({ queryKey: DECISIONS_STATUS })}
       />
+      <div className="rounded-xl border bg-card p-5 xl:col-span-2">
+        <TranscribeSettings />
+      </div>
       <details className="rounded-xl border bg-card p-5 xl:col-span-2">
         <summary className="cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
           Try it on a sample

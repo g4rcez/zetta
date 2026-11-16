@@ -27,6 +27,8 @@ export async function audit(
     detail?: string;
     /** Token counts of a `harness_run` (see TokenUsage in chat/claude-stream.ts). Absent for harnesses that do not report them. */
     usage?: { input: number; cacheRead: number; cacheWrite: number; output: number };
+    /** How long a `harness_run` took, in ms (the bot's numbers read the median and the slowest 10%). */
+    durationMs?: number;
   },
 ) {
   try {
@@ -41,6 +43,10 @@ export async function audit(
       cacheReadTokens: e.usage?.cacheRead ?? null,
       cacheWriteTokens: e.usage?.cacheWrite ?? null,
       outputTokens: e.usage?.output ?? null,
+      durationMs:
+        e.durationMs !== undefined && Number.isFinite(e.durationMs)
+          ? Math.max(0, Math.min(Math.round(e.durationMs), 2_147_000_000))
+          : null,
     });
     // The last run's outcome is part of the bot's status.
     if (e.kind === "harness_run") events.publish([ownerUserId], topics.botStatus);

@@ -406,8 +406,12 @@ export function createRoutines(
       try {
         if (r.workflowId) {
           const w = await runWorkflow(r.ownerUserId, r.workflowId, prompt);
-          output = w.output;
-          if (w.status !== "succeeded") {
+          // A workflow that paused (a wait, or a card for the person) is on its way: the routine run counts as done.
+          output =
+            w.status === "waiting"
+              ? `${w.output}\n\n(The workflow is waiting: see its run in Studio.)`.trim()
+              : w.output;
+          if (w.status !== "succeeded" && w.status !== "waiting") {
             status = "failed";
             reason = "workflow_failed";
           }

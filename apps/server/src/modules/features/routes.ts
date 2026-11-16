@@ -526,6 +526,10 @@ export function createFeatureRoutes(
           return f.workflows.run(c.actor, id(c), v.input, v.requestKey);
         }),
       )
+      .post(
+        "/workflow-runs/:id/cancel",
+        g(async (c) => ({ run: await f.workflows.cancelRun(c.actor, id(c)) })),
+      )
       .get(
         "/workflows/:id/runs",
         g(async (c) => ({ runs: await f.workflows.runs(c.actor, id(c)) })),

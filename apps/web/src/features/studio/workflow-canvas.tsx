@@ -26,33 +26,50 @@ import {
   freshId,
   graphToFlow,
   handlesOf,
+  hasRetry,
   KIND_LABEL,
   localProblems,
   newNode,
+  parseArgs,
   type FlowNode,
   type NodeData,
   type NodeKind,
   type ServerGraph,
+  type ToolKind,
 } from "./workflow-graph";
 
 const STATE_STYLE: Record<string, string> = {
   done: "border-success",
   failed: "border-destructive",
   skipped: "opacity-50",
+  waiting: "border-dashed",
 };
+/** The names of the outputs of a step on the canvas. */
+const HANDLE_LABEL: Record<string, string> = { body: "each item", next: "then" };
+const summaryOf = (data: NodeData) =>
+  data.kind === "prompt"
+    ? (data.template ?? "").slice(0, 40)
+    : data.kind === "browse"
+      ? data.url
+      : data.kind === "decision"
+        ? data.question
+        : data.kind === "condition"
+          ? `contains "${data.contains}"`
+          : data.kind === "tool"
+            ? `${data.tool || "…"} (${data.toolKind ?? "plugin"} ${data.target || "…"})`
+            : data.kind === "approval"
+              ? data.message
+              : data.kind === "wait"
+                ? data.until
+                  ? `until ${data.until}`
+                  : `${data.seconds ?? 0} s`
+                : data.kind === "for_each"
+                  ? `one pass per ${data.items === "json" ? "list entry" : "line"}`
+                  : "";
 
 function ZettaNode({ data, selected }: NodeProps<FlowNode>) {
   const handles = handlesOf(data);
-  const summary =
-    data.kind === "prompt"
-      ? (data.template ?? "").slice(0, 40)
-      : data.kind === "browse"
-        ? data.url
-        : data.kind === "decision"
-          ? data.question
-          : data.kind === "condition"
-            ? `contains "${data.contains}"`
-            : "";
+  const summary = summaryOf(data);
   return (
     <div
       className={`min-w-40 rounded border bg-card px-3 py-2 text-xs shadow ${selected ? "ring-2 ring-primary" : ""} ${data.state ? STATE_STYLE[data.state] : ""}`}
@@ -67,12 +84,20 @@ function ZettaNode({ data, selected }: NodeProps<FlowNode>) {
       {summary && <p className="max-w-48 truncate text-muted-foreground">{summary}</p>}
       {data.state && (
         <p aria-label={`Run result: ${data.state}`}>
-          {data.state === "done" ? "✓ done" : data.state === "failed" ? "✗ failed" : "– skipped"}
+          {data.state === "done"
+            ? "✓ done"
+            : data.state === "failed"
+              ? "✗ failed"
+              : data.state === "waiting"
+                ? "⏸ waiting"
+                : "– skipped"}
         </p>
       )}
       {handles.map((h, i) => (
         <div key={h} className="relative mt-1 flex justify-end text-xs text-muted-foreground">
-          {handles.length > 1 && <span className="pr-2">{h.replace("choice:", "")}</span>}
+          {handles.length > 1 && (
+            <span className="pr-2">{HANDLE_LABEL[h] ?? h.replace("choice:", "")}</span>
+          )}
           <Handle
             type="source"
             id={h}
@@ -96,7 +121,7 @@ function ZettaNode({ data, selected }: NodeProps<FlowNode>) {
   );
 }
 const nodeTypes = { zetta: ZettaNode };
-type Trace = { node: string; error?: string; skipped?: boolean }[];
+type Trace = { node: string; type?: string; error?: string; skipped?: boolean }[];
 
 function Editor({
   bots,
@@ -166,7 +191,10 @@ function Editor({
 
   async function validate() {
     const g = graph();
-    const local = localProblems(g);
+    const badArgs = nodes
+      .filter((n) => n.data.kind === "tool" && parseArgs(n.data.argsText) === undefined)
+      .map((n) => `"${n.id}": the arguments are not a JSON object.`);
+    const local = [...badArgs, ...localProblems(g)];
     if (local.length) {
       setProblems(local);
       return false;
@@ -218,6 +246,8 @@ function Editor({
         { input: "", requestKey: uuidv7() },
       );
       const byNode = new Map(r.run.trace.map((t) => [t.node, t]));
+      // A run that is waiting stopped at its last step (a wait, or a question for you): that one is drawn as waiting.
+      const last = r.run.status === "waiting" ? r.run.trace.at(-1)?.node : undefined;
       setNodes((ns) =>
         ns.map((n) => {
           const t = byNode.get(n.id);
@@ -225,12 +255,24 @@ function Editor({
             ...n,
             data: {
               ...n.data,
-              state: !t ? undefined : t.error ? "failed" : t.skipped ? "skipped" : "done",
+              state: !t
+                ? undefined
+                : t.error
+                  ? "failed"
+                  : t.skipped
+                    ? "skipped"
+                    : n.id === last
+                      ? "waiting"
+                      : "done",
             },
           };
         }),
       );
-      setInfo(`Run ${r.run.status}. Colours on the canvas show what ran.`);
+      setInfo(
+        r.run.status === "waiting"
+          ? "The run is waiting. It goes on by itself when the time comes or when you answer its card in the Inbox."
+          : `Run ${r.run.status}. Colours on the canvas show what ran.`,
+      );
     } catch (e) {
       onError(errorMessage(e));
     }
@@ -341,6 +383,152 @@ function Editor({
                   );
                 }}
               />
+            </>
+          )}
+          {selected.data.kind === "tool" && (
+            <>
+              <Select
+                title="Bot (its grants are used)"
+                required={false}
+                value={selected.data.botId}
+                onChange={(e) => patch(selected.id, { botId: e.target.value })}
+                options={bots.map((b) => ({ value: b.id, label: b.name }))}
+              />
+              <Select
+                title="Kind of tool"
+                required={false}
+                value={selected.data.toolKind ?? "plugin"}
+                onChange={(e) => patch(selected.id, { toolKind: e.target.value as ToolKind })}
+                options={[
+                  { value: "plugin", label: "Plugin" },
+                  { value: "mcp", label: "MCP server" },
+                  { value: "app", label: "App" },
+                ]}
+              />
+              <Input
+                title="Plugin id, MCP server name or app"
+                value={selected.data.target ?? ""}
+                onChange={(e) => patch(selected.id, { target: e.target.value })}
+              />
+              <Input
+                title="Tool name"
+                value={selected.data.tool ?? ""}
+                onChange={(e) => patch(selected.id, { tool: e.target.value })}
+              />
+              <Input
+                title="Arguments as JSON ({{prev}}, {{input}}, {{item}} and {{steps.id}} are filled in)"
+                container="sm:col-span-2"
+                value={selected.data.argsText ?? "{}"}
+                onChange={(e) => patch(selected.id, { argsText: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                A tool that changes something needs an "Ask me first" step right before it. The
+                server checks this when you save.
+              </p>
+            </>
+          )}
+          {selected.data.kind === "approval" && (
+            <Input
+              title="What to ask you (it arrives as a card in the Inbox)"
+              container="sm:col-span-2"
+              value={selected.data.message ?? ""}
+              maxLength={500}
+              onChange={(e) => patch(selected.id, { message: e.target.value })}
+            />
+          )}
+          {selected.data.kind === "wait" && (
+            <>
+              <Input
+                title="Wait this many seconds (up to 7 days)"
+                type="number"
+                min={1}
+                max={604800}
+                value={selected.data.until ? "" : String(selected.data.seconds ?? "")}
+                onChange={(e) => {
+                  const seconds = Number(e.target.value);
+                  patch(selected.id, {
+                    seconds:
+                      Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : undefined,
+                    until: undefined,
+                  });
+                }}
+              />
+              <Input
+                title="Or wait until this time (for example 2026-12-01T09:00:00Z)"
+                value={selected.data.until ?? ""}
+                onChange={(e) =>
+                  patch(
+                    selected.id,
+                    e.target.value
+                      ? { until: e.target.value, seconds: undefined }
+                      : { until: undefined },
+                  )
+                }
+              />
+            </>
+          )}
+          {selected.data.kind === "for_each" && (
+            <>
+              <Select
+                title="Split the previous answer into"
+                required={false}
+                value={selected.data.items ?? "lines"}
+                onChange={(e) => patch(selected.id, { items: e.target.value as "lines" | "json" })}
+                options={[
+                  { value: "lines", label: "One item per line" },
+                  { value: "json", label: "The entries of a JSON list" },
+                ]}
+              />
+              <Input
+                title="At most this many items (up to 20)"
+                type="number"
+                min={1}
+                max={20}
+                value={String(selected.data.max ?? 20)}
+                onChange={(e) =>
+                  patch(selected.id, {
+                    max: Math.min(20, Math.max(1, Math.round(Number(e.target.value) || 20))),
+                  })
+                }
+              />
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                Connect "each item" to the first step of the loop, and end that chain with "End of
+                item". Use {"{{item}}"} in its steps. "then" goes on after the last item, with the
+                answers numbered.
+              </p>
+            </>
+          )}
+          {hasRetry(selected.data.kind) && (
+            <>
+              <Input
+                title="Try again after a failure (0 to 3 more times)"
+                type="number"
+                min={0}
+                max={3}
+                value={String(selected.data.retryMax ?? 0)}
+                onChange={(e) =>
+                  patch(selected.id, {
+                    retryMax: Math.min(3, Math.max(0, Math.round(Number(e.target.value) || 0))),
+                  })
+                }
+              />
+              {(selected.data.retryMax ?? 0) > 0 && (
+                <Input
+                  title="Wait between tries (milliseconds)"
+                  type="number"
+                  min={0}
+                  max={60000}
+                  value={String(selected.data.retryDelayMs ?? 1000)}
+                  onChange={(e) =>
+                    patch(selected.id, {
+                      retryDelayMs: Math.min(
+                        60000,
+                        Math.max(0, Math.round(Number(e.target.value) || 0)),
+                      ),
+                    })
+                  }
+                />
+              )}
             </>
           )}
           <div className="flex gap-2 sm:col-span-2">

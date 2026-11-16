@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Button, Input } from "@/components/ui";
 
-import { ENV } from "../../env";
+import { serverOrigin } from "@/lib/server-origin";
 import { call, errorMessage } from "../chat/chat-client";
 import { Badge, ConfirmButton, Empty } from "../shared/ui";
 
@@ -55,8 +55,7 @@ export function runOrigin(r: { trigger: string; event?: unknown }): string {
   }
 }
 
-const webhookUrl = (id: string) =>
-  new URL(`/api/routines/hook/${id}`, ENV.ZETTA_SERVER_URL).toString();
+const webhookUrl = (id: string) => new URL(`/api/routines/hook/${id}`, serverOrigin()).toString();
 const curlExample = (id: string, secret: string) =>
   `curl -X POST '${webhookUrl(id)}' \\\n  -H 'Authorization: Bearer ${secret}' \\\n  -H 'Content-Type: application/json' \\\n  -d '{"hello":"world"}'`;
 

@@ -3,6 +3,7 @@ import { and, eq } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
 
 import { RoutineError, type RoutineInput } from "../../features/routines";
+import { MAX_TRIGGERS, type TriggerInput } from "../../features/routine-triggers";
 import { describeSchedule, normalizeWeekdays, validTimezone } from "../../features/schedule";
 import { parseScheduleText } from "../../features/schedule-text";
 import { pick, short } from "./resolve";
@@ -56,6 +57,137 @@ function readWhen<A extends Scheduled>(
   return { args: { ...rest, ...read.schedule, ...days } as unknown as A, assumed: read.assumed };
 }
 
+type TriggerArgs = Extract<
+  ChiefArgs<"routine">,
+  {
+    action:
+      | "get"
+      | "trigger_add"
+      | "trigger_pause"
+      | "trigger_resume"
+      | "trigger_remove"
+      | "trigger_rotate";
+  }
+>;
+
+const TRIGGER_ACTIONS: readonly string[] = [
+  "get",
+  "trigger_add",
+  "trigger_pause",
+  "trigger_resume",
+  "trigger_remove",
+  "trigger_rotate",
+];
+const isTriggerCall = (a: ChiefArgs<"routine">): a is TriggerArgs =>
+  TRIGGER_ACTIONS.includes(a.action);
+
+/** A webhook's secret is shown once, and only to the person: whatever would show it opens a form instead of a card. */
+const triggerForm = (r: { id: string; title: string; paused: boolean }, text: string): Outcome => ({
+  card: {
+    form: "routine_triggers",
+    botId: null,
+    botName: null,
+    prefill: {
+      routineId: r.id,
+      routineTitle: r.title.slice(0, 120),
+      status: r.paused ? "paused" : "active",
+    },
+  },
+  text,
+});
+
+/** One routine with its triggers, and the changes to its triggers. Gmail and Home Assistant triggers are cards; webhook ones are a form. */
+async function runTrigger(
+  ctx: ChiefCtx,
+  a: TriggerArgs,
+  rows: { id: string; title: string; paused: boolean }[],
+): Promise<Outcome> {
+  const triggers = ctx.deps.features?.routineTriggers;
+  if (!triggers) return { error: "routine triggers are not available on this server." };
+  const r = pick(rows, a.routine, (x) => x.title, "routine");
+  if ("error" in r) return r;
+  const have = await triggers.list(ctx.actor, r.hit.id);
+  if (a.action === "get")
+    return {
+      read: `routine.get:\n${JSON.stringify({
+        id: r.hit.id,
+        title: r.hit.title,
+        paused: r.hit.paused,
+        triggers: have.map((t) => ({
+          id: t.id,
+          kind: t.kind,
+          filter: t.filter,
+          status: t.status,
+          reason: t.statusReason,
+        })),
+      })}`,
+    };
+  if (a.action === "trigger_add") {
+    if (a.kind === "webhook")
+      return triggerForm(
+        r.hit,
+        "A form is now shown to the user to add the webhook. Its secret is shown only to them, once; you never see it.",
+      );
+    if (have.length >= MAX_TRIGGERS)
+      return {
+        error: `"${r.hit.title}" already has ${MAX_TRIGGERS} triggers, the most a routine can have.`,
+      };
+    const input =
+      a.kind === "gmail"
+        ? { kind: "gmail" as const, query: a.query! }
+        : { kind: "home_assistant" as const, entityId: a.entityId!, ...(a.to ? { to: a.to } : {}) };
+    return {
+      plan: {
+        title: `Add a trigger to routine ${r.hit.title}`,
+        diff: [
+          { field: "routine", from: null, to: r.hit.title },
+          {
+            field: "starts it when",
+            from: null,
+            to:
+              input.kind === "gmail"
+                ? `a new Gmail message matches "${input.query}"`
+                : `${input.entityId} changes${input.to ? ` to ${input.to}` : ""}`,
+          },
+        ],
+        patch: { tool: "routine", op: "trigger_add", id: r.hit.id, input },
+      },
+    };
+  }
+  const t = have.find((x) => x.id === a.trigger);
+  if (!t) return { error: "no trigger with that id on this routine. Use an id from routine get." };
+  const what =
+    t.kind === "webhook"
+      ? "webhook"
+      : t.kind === "gmail"
+        ? "Gmail trigger"
+        : "Home Assistant trigger";
+  if (a.action === "trigger_rotate") {
+    if (t.kind !== "webhook") return { error: "only a webhook has a secret to replace." };
+    return triggerForm(
+      r.hit,
+      "A form is now shown to the user to replace the webhook secret. The new secret is shown only to them, once; you never see it.",
+    );
+  }
+  if (a.action === "trigger_remove")
+    return {
+      plan: {
+        title: `Remove a trigger from routine ${r.hit.title}`,
+        diff: [{ field: "remove trigger", from: what, to: "the routine no longer starts from it" }],
+        patch: { tool: "routine", op: "trigger_remove", id: r.hit.id, triggerId: t.id },
+      },
+    };
+  const to = a.action === "trigger_pause" ? "paused" : "active";
+  if (t.status === to) return { error: `That ${what} is already ${to}.` };
+  return {
+    plan: {
+      title: `${to === "paused" ? "Pause" : "Resume"} a trigger of routine ${r.hit.title}`,
+      diff: [{ field: what, from: t.status, to }],
+      patch: { tool: "routine", op: "trigger_status", id: r.hit.id, triggerId: t.id, status: to },
+    },
+  };
+}
+
 export async function runRoutine(ctx: ChiefCtx, a: ChiefArgs<"routine">): Promise<Outcome> {
   const { routines, db } = ctx.deps;
   if (!routines) return { error: "routines are not available on this server." };
@@ -69,6 +201,7 @@ export async function runRoutine(ctx: ChiefCtx, a: ChiefArgs<"routine">): Promis
     return {
       read: `routine.list:\n${JSON.stringify(rows.map((r) => ({ id: r.id, title: r.title, bot: botName(r.botId), schedule: when(r), paused: r.paused, version: r.version })))}`,
     };
+  if (isTriggerCall(a)) return runTrigger(ctx, a, rows);
   if (a.action === "create") {
     const b = pick(bots, a.bot, (x) => x.name, "bot");
     if ("error" in b) return b;
@@ -231,13 +364,24 @@ export async function applyRoutine(ctx: ApplyCtx, p: Record<string, unknown>): P
     op: string;
     id: string;
     paused: boolean;
-    input: RoutineInput;
+    input: RoutineInput | TriggerInput;
     activate: boolean;
     changes: Partial<RoutineInput>;
     expectedVersion: number;
+    triggerId: string;
+    status: "active" | "paused";
   };
+  if (v.op === "trigger_add" || v.op === "trigger_status" || v.op === "trigger_remove") {
+    const triggers = ctx.deps.features?.routineTriggers;
+    if (!triggers) throw new Error("triggers unavailable");
+    if (v.op === "trigger_add") await triggers.create(ctx.actor, v.id, v.input as TriggerInput);
+    else if (v.op === "trigger_status")
+      await triggers.setStatus(ctx.actor, v.id, v.triggerId, v.status);
+    else await triggers.remove(ctx.actor, v.id, v.triggerId);
+    return;
+  }
   if (v.op === "create") {
-    const made = (await routines.create(ctx.actor, v.input)) as { id: string };
+    const made = (await routines.create(ctx.actor, v.input as RoutineInput)) as { id: string };
     if (!v.activate) return;
     // The routine exists either way; one that is not ready (the bot needs setup) stays paused and the user is told why.
     try {

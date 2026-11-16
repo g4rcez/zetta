@@ -27,6 +27,10 @@ type TraceItem = {
   error?: string;
   branch?: "then" | "else";
   skipped?: boolean;
+  /** The pass of a loop this step ran in (0 is the first). */
+  item?: number;
+  /** How many tries the step needed, when more than one. */
+  attempts?: number;
 };
 type RunResult = { status: string; trace: TraceItem[] };
 type PastRun = {
@@ -42,6 +46,12 @@ const TYPE_LABEL: Record<string, string> = {
   browse: "Read a web page",
   decision: "Decide",
   condition: "Check the answer",
+  sources: "Read my sources",
+  tool: "Use a tool",
+  approval: "Ask me first",
+  wait: "Wait",
+  for_each: "For each item",
+  item_end: "End of item",
   end: "Finish",
 };
 const STEP_TYPES: { kind: Step["kind"]; label: string }[] = [
@@ -60,6 +70,7 @@ const blankStep = (kind: Step["kind"], botId: string): Step =>
         : { kind, contains: "" };
 const RUN_STATUS: Record<string, string> = {
   running: "Running",
+  waiting: "Waiting",
   succeeded: "Finished",
   failed: "Failed",
   interrupted: "Interrupted",
@@ -74,6 +85,10 @@ function traceState(t: TraceItem): { icon: string; text: string; tone: string } 
       tone: "text-destructive",
     };
   if (t.skipped) return { icon: "–", text: "Skipped", tone: "text-muted-foreground" };
+  if (t.type === "wait") return { icon: "⏸", text: "Waits", tone: "" };
+  if (t.type === "approval") return { icon: "?", text: "Asked you", tone: "" };
+  if (t.attempts && t.attempts > 1)
+    return { icon: "✓", text: `Done after ${t.attempts} tries`, tone: "" };
   if (t.branch)
     return {
       icon: "↳",
@@ -94,7 +109,11 @@ export function TraceView({ run }: { run: RunResult }) {
               <span className={s.tone}>
                 <span aria-hidden>{s.icon} </span>
                 {TYPE_LABEL[t.type] ?? t.type}{" "}
-                <span className="text-muted-foreground">({t.node})</span>: {s.text}
+                <span className="text-muted-foreground">
+                  ({t.node}
+                  {t.item !== undefined ? `, item ${t.item + 1}` : ""})
+                </span>
+                : {s.text}
               </span>
               {t.output && (
                 <details>
@@ -197,6 +216,20 @@ function RunPanel({ flow }: { flow: Flow }) {
                   {r.workflowVersion}
                 </summary>
                 <TraceView run={r} />
+                {r.status === "waiting" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    type="button"
+                    onClick={() => {
+                      call(`/api/workflow-runs/${r.id}/cancel`, "POST")
+                        .then(() => qc.invalidateQueries({ queryKey: runsKey }))
+                        .catch((x) => setError(errorMessage(x)));
+                    }}
+                  >
+                    Stop this run
+                  </Button>
+                )}
               </details>
             </li>
           ))}

@@ -15,6 +15,7 @@ export * from "./skills";
 export * from "./playground";
 export * from "./apps";
 export * from "./projects";
+export * from "./org";
 export * from "./tasks";
 export * from "./work";
 export * from "./artifacts";

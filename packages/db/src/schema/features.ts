@@ -307,8 +307,9 @@ export const workflowRun = zetta.table(
       .references(() => workflow.id, restrict),
     ownerUserId: owner(),
     workflowVersion: integer("workflow_version").notNull(),
+    // "waiting": paused at a wait or an approval step; it keeps `cursor` and wakes at `resumeAt` or when `pendingProposalId` is decided.
     status: text("status", {
-      enum: ["running", "succeeded", "failed", "interrupted", "cancelled"],
+      enum: ["running", "waiting", "succeeded", "failed", "interrupted", "cancelled"],
     }).notNull(),
     trace: jsonb("trace").notNull(),
     requestKey: text("request_key"),
@@ -316,8 +317,21 @@ export const workflowRun = zetta.table(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     /** The server instance running this row (see server_instance). Recovery leaves the rows of a live instance alone. */
     ownerInstance: uuid("owner_instance"),
+    /** What the run was started with: a resumed run fills {{input}} with it again. */
+    input: text("input").default("").notNull(),
+    /** Where a waiting run continues (see `Cursor` in modules/features/workflow.ts). */
+    cursor: jsonb("cursor"),
+    /** A waiting run on a wait step wakes at this time. */
+    resumeAt: timestamp("resume_at", { withTimezone: true }),
+    /** A waiting run on an approval step wakes when this card is decided or expires. */
+    pendingProposalId: uuid("pending_proposal_id"),
+    /** The routine run that started this one, when a routine did. */
+    routineRunId: uuid("routine_run_id"),
   },
   (t) => [
+    index("workflow_run_waiting_idx")
+      .on(t.status, t.resumeAt)
+      .where(sql`${t.status} = 'waiting'`),
     index("workflow_run_owner_user_id_idx").on(t.ownerUserId),
     index("workflow_run_idx").on(t.workflowId, t.createdAt),
     uniqueIndex("workflow_run_request")

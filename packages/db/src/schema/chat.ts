@@ -117,6 +117,9 @@ export const bot = zetta.table(
     autoLearn: text("auto_learn", { enum: ["off", "suggest", "auto"] })
       .default("auto")
       .notNull(),
+    // How many bytes of the chat a turn of this bot reads back (null: the default, CONTEXT_BYTES_DEFAULT in modules/chat/context.ts). Every
+    // turn starts a fresh process, so this is all the bot remembers of the chat besides its summary and its memory.
+    contextBytes: integer("context_bytes"),
     // Code access the owner granted this bot: a persistent per-user code directory where it can run git, edit files and push. On by default.
     codeAccess: boolean("code_access").default(true).notNull(),
     // Who a commit of this bot is signed as: the server's git config (default), the bot's own address, the owner's account, or `commit_email`.
@@ -146,6 +149,10 @@ export const bot = zetta.table(
       sql`${table.kind} <> 'chief' or ${table.visibility} = 'private'`,
     ),
     check("bot_name_check", sql`length(btrim(${table.name})) between 1 and 80`),
+    check(
+      "bot_context_bytes_check",
+      sql`${table.contextBytes} is null or ${table.contextBytes} between 4000 and 60000`,
+    ),
     index("bot_output_style_id_idx").on(table.outputStyleId),
     check(
       "bot_output_style_check",
@@ -317,6 +324,57 @@ export const botRevision = zetta.table(
   (table) => [
     index("bot_revision_changed_by_user_id_idx").on(table.changedByUserId),
     unique("bot_revision_unique").on(table.botId, table.version),
+  ],
+);
+
+export const CONTEXT_BYTES_MIN = 4_000;
+export const CONTEXT_BYTES_MAX = 60_000;
+/** The default length of a summary; a bot can ask for 500 to 6,000 (the column of `bot` and the check below). */
+export const SUMMARY_MAX_CHARS = 2_000;
+export const SUMMARY_CHARS_MIN = 500;
+export const SUMMARY_CHARS_MAX = 6_000;
+export const SUMMARY_GAP_MIN = 500;
+export const SUMMARY_GAP_MAX = 20_000;
+export const CHAT_SEARCH_LIMIT_MAX = 10;
+/**
+ * What a bot knows of the part of a chat that no longer fits what it reads back each turn: a short summary written by the owner's chief
+ * engine from the messages that were cut (see modules/chat/summary.ts). One row per chat, bot and thread. `through_seq` is the last
+ * message the summary covers. It is derived text: the turn frames it as data, never as an instruction.
+ */
+export const conversationSummary = zetta.table(
+  "conversation_summary",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => user.id, restrict),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversation.id, cascade),
+    botId: uuid("bot_id")
+      .notNull()
+      .references(() => bot.id, cascade),
+    /** The thread the summary belongs to; null for the main line. */
+    threadRootId: uuid("thread_root_id").references(() => message.id, cascade),
+    throughSeq: integer("through_seq").notNull(),
+    body: text("body").default("").notNull(),
+    /** A refresh is wanted when the cut part grew past what `through_seq` covers; the job sets this when it starts and clears it when done. */
+    status: text("status", { enum: ["ready", "pending", "running", "failed"] })
+      .default("pending")
+      .notNull(),
+    wantedThroughSeq: integer("wanted_through_seq").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("conversation_summary_unique").on(
+      table.conversationId,
+      table.botId,
+      sql`coalesce(${table.threadRootId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+    ),
+    index("conversation_summary_due_idx").on(table.status, table.updatedAt),
+    check("conversation_summary_body_len", sql`char_length(${table.body}) <= ${SUMMARY_MAX_CHARS}`),
   ],
 );
 

@@ -1,8 +1,8 @@
 import type { Database } from "@zetta/db";
-import { and, asc, eq, notInArray, sql } from "@zetta/db/query";
+import { and, asc, eq, ne, notInArray, sql } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { membership } from "@zetta/db/schema/identity";
-import { teamPerson } from "@zetta/db/schema/teams";
+import { team, teamPerson } from "@zetta/db/schema/teams";
 
 /**
  * A person counts while the installation membership is active under the same revision they joined with. A removed member loses the
@@ -38,6 +38,31 @@ export function createTeamPeople(db: Pick<Database, "select" | "insert" | "delet
         .innerJoin(user, eq(user.id, teamPerson.userId))
         .where(and(eq(teamPerson.teamId, teamId), live))
         .orderBy(sql`${teamPerson.role} = 'owner' desc`, asc(user.name), asc(teamPerson.userId));
+    },
+    /**
+     * The people of every active team this user owns, without the owner: who they can hand work to. One row per person, with the oldest
+     * team that holds them (the team through which they see that work).
+     */
+    async ofOwner(
+      ownerUserId: string,
+    ): Promise<{ userId: string; name: string; teamId: string }[]> {
+      const rows = await db
+        .select({ userId: teamPerson.userId, name: user.name, teamId: teamPerson.teamId })
+        .from(teamPerson)
+        .innerJoin(team, eq(team.id, teamPerson.teamId))
+        .innerJoin(membership, eq(membership.userId, teamPerson.userId))
+        .innerJoin(user, eq(user.id, teamPerson.userId))
+        .where(
+          and(
+            eq(team.ownerUserId, ownerUserId),
+            eq(team.status, "active"),
+            ne(teamPerson.userId, ownerUserId),
+            live,
+          ),
+        )
+        .orderBy(asc(user.name), asc(teamPerson.userId), asc(team.createdAt), asc(team.id));
+      const seen = new Set<string>();
+      return rows.filter((r) => !seen.has(r.userId) && seen.add(r.userId));
     },
     /** Active installation members who are not in the team yet. Name only: no email. */
     async candidates(teamId: string) {

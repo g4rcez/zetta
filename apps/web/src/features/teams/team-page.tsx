@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui";
 import { errorMessage } from "../chat/chat-client";
 import { discussionsApi, type RoomTask, type RoomTurn } from "../discussions/discussions-api";
+import { TeamOrgLine } from "../org/team-org-line";
 import { Badge, Empty, Loading } from "../shared/ui";
 import { TeamPeoplePanel } from "./team-people";
 import { teamsApi, teamsQueries, type Team, type TeamMember } from "./teams-api";
@@ -157,6 +158,7 @@ export function TeamPage({
           <div className="min-w-0">
             <h1 className="text-2xl text-balance">{team.name}</h1>
             {team.goal && <p className="text-sm text-muted-foreground">{team.goal}</p>}
+            <TeamOrgLine teamId={team.id} />
           </div>
           <Link
             to="/teams/$teamId/settings"

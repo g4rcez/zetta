@@ -370,6 +370,93 @@ export const reaction = zetta.table(
   ],
 );
 
+export const FEEDBACK_RATINGS = ["up", "down"] as const;
+export const FEEDBACK_REASON_MAX = 500;
+/**
+ * A person's rating of one bot reply: a thumb up or down, and for a thumb down optionally what went wrong. One per person per reply.
+ * The bot and its version are copied here when the rating is made, so a rating still counts for the version that was rated after the
+ * bot changes. Numbers per bot read this table (modules/bot-quality).
+ */
+export const messageFeedback = zetta.table(
+  "message_feedback",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => message.id, { onDelete: "cascade", onUpdate: "restrict" }),
+    ownerUserId: owner(),
+    botId: uuid("bot_id").references(() => bot.id, setNull),
+    botVersion: integer("bot_version"),
+    rating: text("rating", { enum: FEEDBACK_RATINGS }).notNull(),
+    reason: text("reason").default("").notNull(),
+    createdAt: created(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("message_feedback_unique").on(t.messageId, t.ownerUserId),
+    index("message_feedback_bot_idx").on(t.botId, t.createdAt),
+    check("message_feedback_reason_len", sql`char_length(${t.reason}) <= ${FEEDBACK_REASON_MAX}`),
+  ],
+);
+
+export const DRIVE_PROMPTS_PER_BOT = 10;
+export const DRIVE_RUN_STATUSES = ["running", "done", "failed"] as const;
+/** A question the owner wants to ask a bot again and again ("saved tests"): after changing its instructions, run them and compare. */
+export const botDrivePrompt = zetta.table(
+  "bot_drive_prompt",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    botId: uuid("bot_id")
+      .notNull()
+      .references(() => bot.id, { onDelete: "cascade", onUpdate: "restrict" }),
+    ownerUserId: owner(),
+    title: text("title").notNull(),
+    prompt: text("prompt").notNull(),
+    position: integer("position").default(0).notNull(),
+    createdAt: created(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("bot_drive_prompt_bot_idx").on(t.botId, t.position),
+    check("bot_drive_prompt_title_len", sql`char_length(${t.title}) between 1 and 80`),
+    check("bot_drive_prompt_prompt_len", sql`char_length(${t.prompt}) between 1 and 4000`),
+  ],
+);
+
+/** One run of a saved test on one version of the bot. The chat it ran in is hidden from the person's lists and from search. */
+export const botDriveRun = zetta.table(
+  "bot_drive_run",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    promptId: uuid("prompt_id")
+      .notNull()
+      .references(() => botDrivePrompt.id, { onDelete: "cascade", onUpdate: "restrict" }),
+    botId: uuid("bot_id")
+      .notNull()
+      .references(() => bot.id, { onDelete: "cascade", onUpdate: "restrict" }),
+    ownerUserId: owner(),
+    botVersion: integer("bot_version").notNull(),
+    conversationId: uuid("conversation_id").references(() => conversation.id, setNull),
+    /** The bot's answer. Null while it runs, or when it failed. */
+    messageId: uuid("message_id").references(() => message.id, setNull),
+    status: text("status", { enum: DRIVE_RUN_STATUSES }).default("running").notNull(),
+    /** A closed, person-readable reason when the run failed (never provider text). */
+    error: text("error").default("").notNull(),
+    createdAt: created(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("bot_drive_run_prompt_idx").on(t.promptId, t.createdAt),
+    index("bot_drive_run_conversation_idx").on(t.conversationId),
+  ],
+);
+
 /**
  * A message pinned to the top of its conversation (a chat, a thread's chat or a room). One pin per message; whoever can read the
  * conversation may pin. The pin goes with the message: deleting a message deletes its pin.
@@ -823,6 +910,8 @@ export const auditEvent = zetta.table(
     cacheReadTokens: integer("cache_read_tokens"),
     cacheWriteTokens: integer("cache_write_tokens"),
     outputTokens: integer("output_tokens"),
+    /** How long a harness run took, in milliseconds (reply start to the audit row). Null for other kinds and for rows from before this column. */
+    durationMs: integer("duration_ms"),
     createdAt: created(),
   },
   (t) => [

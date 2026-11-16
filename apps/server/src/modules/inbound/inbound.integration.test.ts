@@ -21,6 +21,8 @@ import {
   unregisterPlugin,
   type InboundEvent,
 } from "../integrations/plugins/registry";
+import "../integrations/plugins/slack";
+import { createHmac } from "node:crypto";
 import { CAPS, createInbound } from "./service";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
@@ -100,6 +102,41 @@ suite("inbound channels against compose postgres", () => {
         o,
       ),
   };
+  // Voice notes: what the fake channel hands over, and what the speech model hears.
+  let heard: string | Error = "please call me back at five";
+  const audioFetched: string[] = [];
+  const voiceHeard: Uint8Array[] = [];
+  (plugins as Record<string, unknown>).fetchInboundAudio = async (
+    _a: unknown,
+    _id: string,
+    ref: string,
+  ) => {
+    audioFetched.push(ref);
+    if (ref.startsWith("broken")) throw new Error("channel down");
+    return { bytes: new Uint8Array([9, 9, ref.length]), mimeType: "audio/ogg" };
+  };
+  const voice = {
+    fromAudio: async (bytes: Uint8Array) => {
+      voiceHeard.push(bytes);
+      if (heard instanceof Error) throw heard;
+      return heard;
+    },
+  };
+  // Slack: a push that carries the messages, read by the real plugin against the person's own secret.
+  const SLACK_SECRET = "slack-signing-secret-for-tests";
+  (plugins as Record<string, unknown>).ingestPush = async (
+    _a: unknown,
+    id: string,
+    headers: Headers,
+    raw: string,
+    filter: never,
+  ) =>
+    getPlugin(id)!.inbound!.ingest!(
+      { userId: "", config: { signingSecret: SLACK_SECRET }, setConfig: async () => {} },
+      headers,
+      raw,
+      { filter },
+    );
   const store = createDiscussionStore(db);
   const chat = createChatService(
     db,
@@ -118,7 +155,7 @@ suite("inbound channels against compose postgres", () => {
   );
   const worker = createDiscussionWorker(db, store, chat, lookup);
   store.onEnqueue = worker.kick;
-  const inbound = createInbound(db, plugins as never, chat, lookup);
+  const inbound = createInbound(db, plugins as never, chat, lookup, voice);
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
     chat: { access, chat },
@@ -459,5 +496,129 @@ suite("inbound channels against compose postgres", () => {
     const [fresh] = await db.select().from(inboundThread).where(eq(inboundThread.chatKey, "c3"));
     expect(fresh!.conversationId).not.toBe(t!.conversationId);
     await settle(fresh!.conversationId);
+  });
+
+  test("a voice note is turned into the words said in it before the bot sees it; when that fails it arrives as a voice note", async () => {
+    const note = (key: string, ref: string) => ({
+      ...ev(key, "(voice note)", "c-voice", "Ana"),
+      audio: { ref },
+    });
+    heard = "please call me back at five";
+    inbox = [note("v1", "ref-1"), { ...ev("v2", "plain words", "c-voice", "Ana") }];
+    await inbound.tick(new Date(Date.now() + 2_400_000));
+    let rows = await db.select().from(inboundEvent).where(eq(inboundEvent.chatKey, "c-voice"));
+    const text = (key: string) => rows.find((r) => r.key === key)?.text;
+    expect(text("v1")).toBe(
+      "(voice note, transcribed automatically and maybe wrong) please call me back at five",
+    );
+    expect(text("v2")).toBe("plain words");
+    expect(audioFetched).toEqual(["ref-1"]);
+    expect(Array.from(voiceHeard[0]!)).toEqual([9, 9, 5]);
+
+    // The channel cannot hand the file over, or the speech model fails: the event still arrives, as it was.
+    heard = new Error("model failed");
+    inbox = [note("v3", "ref-3"), note("v4", "broken-4")];
+    await inbound.tick(new Date(Date.now() + 3_600_000));
+    rows = await db.select().from(inboundEvent).where(eq(inboundEvent.chatKey, "c-voice"));
+    expect(text("v3")).toBe("(voice note)");
+    expect(text("v4")).toBe("(voice note)");
+
+    // A busy chat cannot keep the poller busy: at most five notes a poll are transcribed, the rest arrive as voice notes.
+    heard = "words";
+    audioFetched.length = 0;
+    inbox = Array.from({ length: 7 }, (_, i) => note(`m${i}`, `ref-m${i}`));
+    await inbound.tick(new Date(Date.now() + 4_800_000));
+    rows = await db.select().from(inboundEvent).where(eq(inboundEvent.chatKey, "c-voice"));
+    expect(audioFetched).toHaveLength(5);
+    expect(
+      rows
+        .filter((r) => r.key.startsWith("c-voice:m") || r.key.startsWith("m"))
+        .filter((r) => r.text === "(voice note)"),
+    ).toHaveLength(2);
+    const [t] = await db.select().from(inboundThread).where(eq(inboundThread.chatKey, "c-voice"));
+    await settle(t!.conversationId);
+  });
+
+  test("a Slack push is checked with the person's own secret, answered as Slack wants, and its messages are stored once per message", async () => {
+    const sign = (raw: string) => {
+      const stamp = String(Math.floor(Date.now() / 1000));
+      return new Headers({
+        "x-slack-request-timestamp": stamp,
+        "x-slack-signature": `v0=${createHmac("sha256", SLACK_SECRET).update(`v0:${stamp}:${raw}`).digest("hex")}`,
+      });
+    };
+    const push = (body: unknown, headers?: Headers) => {
+      const raw = JSON.stringify(body);
+      return inbound.push(A, "slack", headers ?? sign(raw), raw);
+    };
+    const dm = {
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel_type: "im",
+        channel: "D0123ABCD",
+        user: "U111",
+        text: "hello from slack",
+        ts: "1700000000.000100",
+      },
+    };
+
+    // Before anybody turned Slack on for a bot, Slack's setup check must still pass, and nothing is kept.
+    expect(await push({ type: "url_verification", challenge: "abc123" })).toEqual({
+      status: 200,
+      body: { challenge: "abc123" },
+    });
+    expect(await push(dm)).toEqual({ status: 200, body: { ok: true } });
+    expect(
+      await db.select().from(inboundEvent).where(eq(inboundEvent.chatKey, "D0123ABCD")),
+    ).toHaveLength(0);
+
+    // A request that is not signed with this person's secret is refused, whatever it says.
+    expect(await push(dm, new Headers())).toBe("invalid");
+    expect(
+      await push(
+        { type: "url_verification", challenge: "x" },
+        new Headers({ "x-slack-request-timestamp": "1", "x-slack-signature": "v0=00" }),
+      ),
+    ).toBe("invalid");
+
+    await db
+      .insert(inboundRoute)
+      .values({
+        ownerUserId: A,
+        botId: support.id,
+        pluginId: "slack",
+        enabled: true,
+        pollEverySeconds: 3600,
+      });
+    expect(await push(dm)).toEqual({ status: 200, body: { ok: true } });
+    // Slack retries what it did not hear back on: the same message is kept once.
+    expect(await push(dm)).toEqual({ status: 200, body: { ok: true } });
+    const rows = await db.select().from(inboundEvent).where(eq(inboundEvent.chatKey, "D0123ABCD"));
+    expect(rows.map((r) => [r.key, r.text, r.fromName])).toEqual([
+      ["D0123ABCD:1700000000.000100", "hello from slack", "Slack user U111"],
+    ]);
+    const [t] = await db.select().from(inboundThread).where(eq(inboundThread.chatKey, "D0123ABCD"));
+    expect(t).toBeDefined();
+    // A message that is not for the bot (a plain channel message) stores nothing.
+    expect(
+      await push({
+        type: "event_callback",
+        event: {
+          type: "message",
+          channel_type: "channel",
+          channel: "C0123ABCD",
+          user: "U1",
+          text: "chatter",
+          ts: "1700000009.000100",
+        },
+      }),
+    ).toEqual({ status: 200, body: { ok: true } });
+    expect(
+      await db
+        .select()
+        .from(inboundEvent)
+        .where(eq(inboundEvent.chatKey, "C0123ABCD:1700000009.000100")),
+    ).toHaveLength(0);
   });
 });

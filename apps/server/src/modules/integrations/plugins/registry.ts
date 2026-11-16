@@ -118,6 +118,8 @@ export type InboundEvent = {
   at: number;
   media?: boolean;
   group?: boolean;
+  /** A voice note the plugin can fetch (see `PluginInbound.fetchAudio`); the platform turns it into text before the event is stored. */
+  audio?: { ref: string; seconds?: number };
 };
 export type InboundFilter = { direct: boolean; groups: boolean; chats: string[] };
 /**
@@ -152,6 +154,23 @@ export type PluginInbound = {
    * body is never used as message data: "wake" only makes the platform poll that user's route now.
    */
   verifyPush?(ctx: PluginContext, headers: Headers, raw: string): "wake" | "ignore" | "invalid";
+  /**
+   * Push that carries the messages (Slack's Events API): the platform calls this with the raw body of a request from the channel's server
+   * and the route's filter. The plugin proves the request is genuine (a signature; "invalid" is answered 401), and returns the answer the
+   * channel wants (a challenge it asks for once, or a plain acknowledgement) and the new messages, already filtered. The platform stores
+   * them like polled ones (once per key, with the same caps and framing) and starts the turn. A plugin with `ingest` is not polled.
+   */
+  ingest?(
+    ctx: PluginContext,
+    headers: Headers,
+    raw: string,
+    o: { filter: InboundFilter },
+  ): { response?: { status: number; body: unknown }; events: InboundEvent[] } | "invalid";
+  /**
+   * The bytes of a voice note an event pointed at with `audio.ref`, at most 10 MB, so the platform can transcribe it on this machine.
+   * Like `poll`, it only reads. The plugin checks size and host itself.
+   */
+  fetchAudio?(ctx: PluginContext, ref: string): Promise<{ bytes: Uint8Array; mimeType: string }>;
   reply: { tool: string; chatArg: string; normalize(chat: string): string };
 };
 export type PluginMcpTarget =

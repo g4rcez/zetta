@@ -3,15 +3,17 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createAuth, mcpResource } from "@zetta/auth";
 import { createDb } from "@zetta/db";
-import { membership } from "@zetta/db/schema/identity";
+import { installationIdentity, membership } from "@zetta/db/schema/identity";
+import { user } from "@zetta/db/schema/auth";
 import { oauthClient, oauthClientResource } from "@zetta/db/schema/auth";
 import { eq } from "@zetta/db/query";
 
 import { createApp } from "../../app";
-import { cleanupTestUsers } from "../../test-support/db-cleanup";
+import { cleanupTestUsers, resetOrgChart } from "../../test-support/db-cleanup";
 import { createChatService } from "../chat/service";
 import { audit } from "../features/audit";
 import { createMembershipLookup, issueBackgroundActor } from "../identity/access";
+import { createOrgStore } from "../org/store";
 import { createOutputStyles } from "../output-styles/service";
 import { createTaskStore } from "../tasks/store";
 
@@ -42,6 +44,8 @@ suite("Zetta MCP server: OAuth 2.1 sign-in and tools against compose postgres", 
   const email = `mcp-${Bun.randomUUIDv7().slice(-12)}@example.invalid`;
   const password = "synthetic-only-password";
   let userId = "";
+  // Another member of the installation: the administrator when the signed-in member must not be.
+  const otherId = `mcp-other-${Bun.randomUUIDv7().slice(-12)}`;
   let cookie = "";
   let clientId = "";
 
@@ -116,6 +120,7 @@ suite("Zetta MCP server: OAuth 2.1 sign-in and tools against compose postgres", 
         // Only the task, bot and output style tools run in this suite; the other services are never reached.
         chat: createChatService(db),
         outputStyles: createOutputStyles(db),
+        org: createOrgStore(db),
         audit: (owner, event) => audit(db, owner, event),
         mcp: {} as never,
         connections: {} as never,
@@ -136,6 +141,17 @@ suite("Zetta MCP server: OAuth 2.1 sign-in and tools against compose postgres", 
     userId = ((await signedUp.json()) as { user: { id: string } }).user.id;
     const now = new Date();
     await db.insert(membership).values({ userId, status: "active", joinedAt: now, updatedAt: now });
+    await db.insert(user).values({
+      id: otherId,
+      name: "Other member",
+      email: `${otherId}@example.invalid`,
+      emailVerified: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db
+      .insert(membership)
+      .values({ userId: otherId, status: "active", joinedAt: now, updatedAt: now });
     await tasks.create((await issueBackgroundActor(lookup, userId))!, {
       title: "Migrate the CRM bot",
     });
@@ -162,7 +178,9 @@ suite("Zetta MCP server: OAuth 2.1 sign-in and tools against compose postgres", 
 
   afterAll(async () => {
     await db.delete(oauthClient).where(eq(oauthClient.clientId, clientId));
-    await cleanupTestUsers(db, [userId]);
+    await resetOrgChart(db);
+    await db.delete(installationIdentity).where(eq(installationIdentity.id, 1));
+    await cleanupTestUsers(db, [userId, otherId]);
     server.stop(true);
     await db.$client.end();
   });
@@ -371,6 +389,178 @@ suite("Zetta MCP server: OAuth 2.1 sign-in and tools against compose postgres", 
       { detail: "mcp:archive_output_style", outcome: "ok" },
     ]);
     await client.close();
+  });
+
+  /** Makes this member the administrator of the installation (the lookup reads it on every request). */
+  const adminIs = (id: string) =>
+    db
+      .insert(installationIdentity)
+      .values({ id: 1, adminUserId: id, bootstrappedAt: new Date() })
+      .onConflictDoUpdate({ target: installationIdentity.id, set: { adminUserId: id } });
+  /** A token that has already consented (the earlier tests recorded it) comes back with the callback at once. */
+  const writeToken = async () => {
+    const first = await authorize("mcp:read mcp:write");
+    return exchange(first.origin + first.pathname === REDIRECT ? first : await consent(first));
+  };
+  const caller =
+    (client: Awaited<ReturnType<typeof connect>>) =>
+    async (name: string, args: Record<string, unknown> = {}) => {
+      const r = await client.callTool({ name, arguments: args });
+      const text = (r.content as { text: string }[])[0]!.text;
+      return { isError: r.isError === true, text, json: r.isError ? undefined : JSON.parse(text) };
+    };
+
+  test("a member who is not the administrator reads the company chart and gets no tool to change it", async () => {
+    await adminIs(otherId);
+    const client = await connect(await writeToken());
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).toContain("get_org_chart");
+    for (const writer of [
+      "add_org_seat",
+      "update_org_seat",
+      "move_org_seat",
+      "set_org_seat_holder",
+      "remove_org_seat",
+      "apply_org_template",
+    ])
+      expect(names).not.toContain(writer);
+    const chart = await caller(client)("get_org_chart");
+    expect(chart.json).toMatchObject({ canEdit: false, chart: { version: 0 }, positions: [] });
+    expect(chart.json.candidates).toBeUndefined();
+    await client.close();
+  });
+
+  test("the administrator's token with the write scope draws the chart, stale edits are turned away, and every change is audited", async () => {
+    await adminIs(userId);
+    await resetOrgChart(db);
+    const client = await connect(await writeToken());
+    const call = caller(client);
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    for (const writer of [
+      "add_org_seat",
+      "update_org_seat",
+      "move_org_seat",
+      "set_org_seat_holder",
+      "remove_org_seat",
+      "apply_org_template",
+    ])
+      expect(names).toContain(writer);
+
+    const empty = await call("get_org_chart");
+    expect(empty.json).toMatchObject({ canEdit: true, chart: { version: 0 } });
+    expect(empty.json.candidates.people.map((p: { userId: string }) => p.userId)).toContain(userId);
+
+    const ceo = await call("add_org_seat", { expectedVersion: 0, templateKey: "ceo" });
+    expect(ceo.json.org.positions).toHaveLength(1);
+    const ceoId = ceo.json.org.positions[0].id as string;
+    const version = () => call("get_org_chart").then((r) => r.json.chart.version as number);
+
+    const cto = await call("add_org_seat", {
+      expectedVersion: await version(),
+      parentId: ceoId,
+      templateKey: "cto",
+      unit: "Tech",
+    });
+    const ctoId = cto.json.org.positions.find((p: { title: string }) => p.title === "CTO")
+      .id as string;
+    const named = await call("update_org_seat", {
+      id: ctoId,
+      expectedVersion: await version(),
+      title: "Head of technology",
+      rank: "lead",
+    });
+    expect(named.json.org.positions.find((p: { id: string }) => p.id === ctoId)).toMatchObject({
+      title: "Head of technology",
+      rank: "lead",
+      unit: "Tech",
+    });
+    const held = await call("set_org_seat_holder", {
+      id: ctoId,
+      expectedVersion: await version(),
+      holder: { kind: "person", userId },
+    });
+    expect(
+      held.json.org.positions.find((p: { id: string }) => p.id === ctoId).holder,
+    ).toMatchObject({
+      kind: "person",
+      userId,
+    });
+    const cfo = await call("add_org_seat", {
+      expectedVersion: await version(),
+      parentId: ceoId,
+      templateKey: "cfo",
+    });
+    const cfoId = cfo.json.org.positions.find((p: { title: string }) => p.title === "CFO")
+      .id as string;
+    const moved = await call("move_org_seat", {
+      id: cfoId,
+      expectedVersion: await version(),
+      parentId: ceoId,
+      index: 0,
+    });
+    const under = (
+      moved.json.org.positions as { parentId: string | null; title: string; sortOrder: number }[]
+    )
+      .filter((p) => p.parentId === ceoId)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((p) => p.title);
+    expect(under).toEqual(["CFO", "Head of technology"]);
+
+    // A loop is refused in words, and a stale version is turned away with the latest chart to read.
+    const loop = await call("move_org_seat", {
+      id: ceoId,
+      expectedVersion: await version(),
+      parentId: ctoId,
+    });
+    expect(loop).toMatchObject({ isError: true });
+    const stale = await call("add_org_seat", {
+      expectedVersion: 0,
+      templateKey: "cmo",
+      parentId: ceoId,
+    });
+    expect(stale).toMatchObject({
+      isError: true,
+      text: "Someone changed the chart. Here is the latest; try again.",
+    });
+    const removed = await call("remove_org_seat", { id: cfoId, expectedVersion: await version() });
+    expect(removed.json.org.positions.find((p: { id: string }) => p.id === cfoId)).toBeUndefined();
+
+    const rows = (
+      await db.$client.query(
+        "select detail, outcome from audit_event where owner_user_id = $1 and detail like 'mcp:%org%' order by id",
+        [userId],
+      )
+    ).rows as { detail: string; outcome: string }[];
+    expect(rows.map((r) => `${r.detail}:${r.outcome}`)).toEqual([
+      "mcp:add_org_seat:ok",
+      "mcp:add_org_seat:ok",
+      "mcp:update_org_seat:ok",
+      "mcp:set_org_seat_holder:ok",
+      "mcp:add_org_seat:ok",
+      "mcp:move_org_seat:ok",
+      "mcp:move_org_seat:failed",
+      "mcp:add_org_seat:failed",
+      "mcp:remove_org_seat:ok",
+    ]);
+    await client.close();
+  });
+
+  test("a read-only token of the administrator can read the chart and cannot change it", async () => {
+    await adminIs(userId);
+    const first = await authorize("mcp:read");
+    const client = await connect(
+      await exchange(first.origin + first.pathname === REDIRECT ? first : await consent(first)),
+    );
+    expect((await caller(client)("get_org_chart")).json).toMatchObject({ canEdit: true });
+    await expect(
+      client.callTool({
+        name: "add_org_seat",
+        arguments: { expectedVersion: 0, templateKey: "ceo" },
+      }),
+    ).rejects.toThrow();
+    await client.close();
+    // The tests that follow remove this member: the administrator cannot be removed, so the role goes back to the other member.
+    await adminIs(otherId);
   });
 
   test("a later sign-in with the same scopes skips the consent page", async () => {

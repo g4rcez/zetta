@@ -39,7 +39,8 @@ const TIMEOUT_MS = 25_000,
   MAX_MSG = 600,
   MAX_SEND = 4000,
   MAX_LIMIT = 20,
-  MAX_CHATS = 50;
+  MAX_CHATS = 50,
+  MAX_AUDIO = 10 * 1024 * 1024;
 const SEND_PER_MIN = 10,
   SEND_PER_HOUR = 60;
 const TOKEN = /^[0-9]{5,15}:[A-Za-z0-9_-]{30,50}$/;
@@ -392,15 +393,30 @@ const inbound: PluginInbound = {
       const text = clean(m.text ?? m.caption, 2000).trim(),
         media = MEDIA.some((k) => k in m);
       if (!text && !media) continue;
+      // A voice note or an audio file: small and short enough to turn into text on this machine (see modules/inbound).
+      const clip = (m.voice ?? m.audio) as
+        | { file_id?: unknown; duration?: unknown; file_size?: unknown }
+        | undefined;
+      const audio =
+        typeof clip?.file_id === "string" &&
+        clip.file_id.length <= 200 &&
+        Number(clip.file_size ?? 0) <= MAX_AUDIO &&
+        Number(clip.duration ?? 0) <= 300
+          ? {
+              ref: clip.file_id,
+              ...(Number(clip.duration) ? { seconds: Number(clip.duration) } : {}),
+            }
+          : undefined;
       events.push({
         key: `${id}:${m.message_id}`,
         chat: id,
         chatName: who(m.chat) || id,
         from: who(m.from) || who(m.chat),
-        text: text || "(sent a file or picture)",
+        text: text || (clip ? "(voice note)" : "(sent a file or picture)"),
         at: m.date * 1000,
         media,
         group,
+        ...(audio ? { audio } : {}),
       });
     }
     return {
@@ -411,6 +427,29 @@ const inbound: PluginInbound = {
       } satisfies TgCursor,
       ...(warning ? { warning } : {}),
     };
+  },
+  async fetchAudio(ctx, ref) {
+    const f = await tg<{ file_path?: string; file_size?: number }>(ctx, "getFile", {
+      file_id: ref,
+    });
+    if (!f.file_path || /[^A-Za-z0-9_./-]/.test(f.file_path) || f.file_path.includes(".."))
+      throw new PluginError("NOT_FOUND", "Telegram has no such file.");
+    if ((f.file_size ?? 0) > MAX_AUDIO)
+      throw new PluginError("TOO_LARGE", "That voice note is too big.");
+    let res: Response;
+    try {
+      res = await fetch(`${apiBase}/file/bot${ctx.config.token ?? ""}/${f.file_path}`, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+    } catch {
+      throw new PluginError("UNREACHABLE", "Telegram could not be reached from the server.");
+    }
+    if (!res.ok)
+      throw new PluginError("TELEGRAM_ERROR", "Telegram would not hand over the voice note.");
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.length > MAX_AUDIO) throw new PluginError("TOO_LARGE", "That voice note is too big.");
+    return { bytes, mimeType: res.headers.get("content-type") || "audio/ogg" };
   },
 };
 

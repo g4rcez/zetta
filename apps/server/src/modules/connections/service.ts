@@ -30,7 +30,16 @@ export const PROVIDER_ENV: Record<string, string> = {
   github: "GITHUB_TOKEN",
 };
 // jev, email and x have no CLI env var: their secrets are only used server-side (decision adapter, mailbox and X source readers).
-export const PROVIDERS = [...Object.keys(PROVIDER_ENV), "jev", "email", "x", "plugin", "machine"];
+// transcribe: the speech-to-text provider key of the installation (see transcribe/configured.ts), saved by an administrator only.
+export const PROVIDERS = [
+  ...Object.keys(PROVIDER_ENV),
+  "jev",
+  "email",
+  "x",
+  "plugin",
+  "machine",
+  "transcribe",
+];
 
 export function createConnectionsService(db: Database, store?: Store) {
   const need = () => {

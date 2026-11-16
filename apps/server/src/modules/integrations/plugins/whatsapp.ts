@@ -118,6 +118,38 @@ async function wahaRaw(
   }
 }
 
+const MAX_AUDIO = 10 * 1024 * 1024;
+/** The bytes of one file WAHA serves (a downloaded voice note), through the same address policy and key as every other call. */
+async function wahaBytes(c: PluginContext, path: string) {
+  const url = base(c) + path;
+  if (!policy.allowPrivate && !ownServer(c))
+    await assertPublicUrl(url).catch(() => {
+      throw new PluginError(
+        "BLOCKED_URL",
+        "That address is not allowed (private addresses must be enabled by the administrator).",
+      );
+    });
+  const headers: Record<string, string> = { Accept: "*/*" };
+  const apiKey = apiKeyOf(c);
+  if (apiKey) headers["X-Api-Key"] = apiKey;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers,
+      redirect: "manual",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch {
+    throw new PluginError("UNREACHABLE", "WAHA could not be reached.");
+  }
+  if (!res.ok) throw new PluginError("WAHA_ERROR", `WAHA answered ${res.status}.`);
+  if (Number(res.headers.get("content-length") ?? 0) > MAX_AUDIO)
+    throw new PluginError("TOO_LARGE", "That voice note is too big.");
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.length > MAX_AUDIO) throw new PluginError("TOO_LARGE", "That voice note is too big.");
+  return { bytes, mimeType: res.headers.get("content-type") || "audio/ogg" };
+}
+
 /**
  * Watchdog. WEBJS sometimes leaves the session in STARTING/STOPPED/FAILED, and WAHA then answers 422 to every chat call. When that happens
  * we restart the session once (at most every RECOVER_COOLDOWN_MS per server+session, never when the user logged out and needs a QR) and retry.
@@ -365,7 +397,8 @@ const inbound: PluginInbound = {
         from?: unknown;
         body?: unknown;
         hasMedia?: unknown;
-        _data?: { notifyName?: unknown };
+        type?: unknown;
+        _data?: { notifyName?: unknown; mimetype?: unknown };
       }[];
       // WAHA lists newest first; reversing keeps same-second messages in the order they were written (the sort is stable).
       const list = (Array.isArray(msgs) ? msgs : [])
@@ -382,15 +415,22 @@ const inbound: PluginInbound = {
         if (m.fromMe || events.length >= o.maxEvents) continue;
         const text = clean(m.body, 2000).trim();
         if (!text && !m.hasMedia) continue;
+        // A voice note (WAHA's "ptt") or audio file: the platform turns it into text on this machine (see modules/inbound).
+        const voice =
+          Boolean(m.hasMedia) &&
+          (m.type === "ptt" ||
+            m.type === "audio" ||
+            String(m._data?.mimetype ?? "").startsWith("audio/"));
         events.push({
           key: `${id}:${key}`,
           chat: id,
           chatName: clean(c.name, 80) || id,
           from: clean(m._data?.notifyName, 60) || clean(c.name, 80) || clean(m.from, 60),
-          text: text || "(sent a file or picture)",
+          text: text || (voice ? "(voice note)" : "(sent a file or picture)"),
           at: at * 1000,
           media: Boolean(m.hasMedia),
           group: id.endsWith("@g.us"),
+          ...(voice && `${id}|${key}`.length <= 300 ? { audio: { ref: `${id}|${key}` } } : {}),
         });
       }
       const top = list.length ? list[list.length - 1]!.at : mark.ts;
@@ -442,6 +482,27 @@ const inbound: PluginInbound = {
     } catch {
       return "ignore";
     }
+  },
+  async fetchAudio(ctx, ref) {
+    const at = ref.indexOf("|");
+    const chat = ref.slice(0, at);
+    const id = ref.slice(at + 1);
+    if (at < 1 || !id) throw new PluginError("NOT_FOUND", "That voice note is not available.");
+    const msg = (await waha(
+      ctx,
+      `/api/${session(ctx)}/chats/${encodeURIComponent(chat)}/messages/${encodeURIComponent(id)}?downloadMedia=true`,
+    )) as { media?: { url?: unknown } };
+    let path: string;
+    try {
+      // Only the path of the file: it is always read from the WAHA server this plugin is set up with, whatever host the answer names.
+      const u = new URL(typeof msg.media?.url === "string" ? msg.media.url : "");
+      path = u.pathname + u.search;
+    } catch {
+      throw new PluginError("NOT_FOUND", "WAHA has no file for that voice note.");
+    }
+    if (!path.startsWith("/api/") || path.includes(".."))
+      throw new PluginError("NOT_FOUND", "WAHA has no file for that voice note.");
+    return wahaBytes(ctx, path);
   },
 };
 

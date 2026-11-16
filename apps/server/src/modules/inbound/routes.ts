@@ -50,8 +50,10 @@ export function createInboundRoutes(
             raw.length > MAX_HOOK_BYTES
               ? "invalid"
               : await inbound.push(params.userId, params.pluginId, request.headers, raw);
-          return verdict === "invalid"
-            ? fail(401, "UNAUTHORIZED", "Not allowed.")
+          if (verdict === "invalid") return fail(401, "UNAUTHORIZED", "Not allowed.");
+          // A channel that wants a particular answer (Slack's challenge) gets it; everybody else gets a plain acknowledgement.
+          return typeof verdict === "object"
+            ? out(verdict.body, verdict.status)
             : out({ ok: true });
         },
         { parse: "none" },

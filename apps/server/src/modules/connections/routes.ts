@@ -3,8 +3,8 @@ import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { ConnectionsUnavailableError, PROVIDERS, type ConnectionsService } from "./service";
 
-/** `plugin` and `machine` connections hold secrets managed by the Plugins tab and the Computer tab; they are neither listed nor user-creatable here. */
-const MANAGED = ["plugin", "machine"];
+/** `plugin`, `machine` and `transcribe` connections hold secrets managed by the Plugins tab, the Computer tab and the installation settings; they are neither listed nor user-creatable here. */
+const MANAGED = ["plugin", "machine", "transcribe"];
 const USER_PROVIDERS = PROVIDERS.filter((p) => !MANAGED.includes(p));
 import { TransportError } from "@zetta/core/sealed-transport";
 import { ConnectionStoreError } from "./store-contract";
@@ -14,12 +14,14 @@ import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
 export type ConnectionServices = {
   access: ReturnType<typeof createIdentityAccess>;
   connections: ConnectionsService;
+  /** The speech-to-text key of the installation: where its connection is recorded (see transcribe/configured.ts). */
+  transcribeKey?: { set(connectionId: string | null): Promise<void> };
 };
 const uuid = z.string().uuid();
 const key = z.string().regex(/^[a-z0-9_-]{1,32}$/);
 
 export function createConnectionRoutes(
-  { access, connections }: ConnectionServices,
+  { access, connections, transcribeKey }: ConnectionServices,
   trustedOrigins: readonly string[],
   keyring: TransportKeyring = transportKeyring,
 ) {
@@ -111,6 +113,36 @@ export function createConnectionRoutes(
           );
           return { connection: await connections.create(c.actor, { provider, label, secret }) };
         }, 201),
+      )
+      // The speech-to-text key of the whole installation (voice notes of outside people use it too): an administrator only. The secret
+      // arrives sealed like any other and is stored as a connection of the administrator; the installation settings point to it.
+      .put(
+        "/connections/transcribe-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !transcribeKey) throw new AccessError("ACCESS_DENIED");
+          const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
+          const { secret } = z.strictObject({ secret: z.string().min(8).max(8000) }).parse(
+            await keyring.open(sealed, {
+              userId: c.userId,
+              purpose: "installation.transcribe-key",
+            }),
+          );
+          const made = await connections.create(c.actor, {
+            provider: "transcribe",
+            label: "Speech to text",
+            secret,
+          });
+          await transcribeKey.set(made.id);
+          return { ok: true };
+        }),
+      )
+      .delete(
+        "/connections/transcribe-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !transcribeKey) throw new AccessError("ACCESS_DENIED");
+          await transcribeKey.set(null);
+          return { ok: true };
+        }),
       )
       .post(
         "/connections/:id/revoke",

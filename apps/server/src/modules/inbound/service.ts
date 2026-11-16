@@ -27,8 +27,20 @@ type Route = typeof inboundRoute.$inferSelect;
 type Event = typeof inboundEvent.$inferSelect;
 export type InboundPlugins = Pick<
   Plugins,
-  "pollInbound" | "bindings" | "list" | "prepareInbound" | "verifyPush"
+  | "pollInbound"
+  | "bindings"
+  | "list"
+  | "prepareInbound"
+  | "verifyPush"
+  | "fetchInboundAudio"
+  | "ingestPush"
 >;
+/** Speech to text for voice notes (modules/transcribe). Without it a voice note arrives as "(voice note)". */
+export type InboundVoice = {
+  fromAudio(bytes: Uint8Array, signal?: AbortSignal): Promise<string>;
+};
+/** Voice notes turned into text in one poll: the rest arrive as "(voice note)", so a busy chat cannot keep the poller busy for minutes. */
+const VOICE_PER_POLL = 5;
 
 const ROUTES_PER_TICK = 10,
   THREADS_PER_TICK = 5,
@@ -83,6 +95,7 @@ export function createInbound(
   plugins: InboundPlugins,
   chat: Pick<ChatService, "startTurn">,
   lookup: MembershipLookup,
+  voice?: InboundVoice,
 ) {
   let busy = false;
   /** A wake arrived while a pass was running: run one more pass when it ends (the due time is also in the database, so nothing is lost). */
@@ -209,6 +222,32 @@ export function createInbound(
     return rows.length;
   }
 
+  /** A voice note becomes the words said in it, on this machine; when it cannot (no decoder, too long, a failure) the event keeps "(voice note)". */
+  async function withTranscripts(a: ActiveActor, r: Route, events: InboundEvent[]) {
+    if (!voice) return events;
+    let spent = 0;
+    const out: InboundEvent[] = [];
+    for (const e of events) {
+      if (!e.audio || spent >= VOICE_PER_POLL) {
+        out.push(e);
+        continue;
+      }
+      spent++;
+      try {
+        const got = await plugins.fetchInboundAudio(a, r.pluginId, e.audio.ref);
+        const said = await voice.fromAudio(got.bytes, AbortSignal.timeout(90_000));
+        out.push(
+          said
+            ? { ...e, text: `(voice note, transcribed automatically and maybe wrong) ${said}` }
+            : e,
+        );
+      } catch {
+        out.push(e);
+      }
+    }
+    return out;
+  }
+
   async function pollRoute(r: Route) {
     const a = await issueBackgroundActor(lookup, r.ownerUserId);
     if (!a) return disable(r, "The owner's account is not active.");
@@ -219,7 +258,7 @@ export function createInbound(
         filter: r.filter as InboundFilter,
         maxEvents: MAX_EVENTS,
       });
-      const added = await store(r, res.events);
+      const added = await store(r, await withTranscripts(a, r, res.events));
       await db
         .update(inboundRoute)
         .set({
@@ -602,9 +641,36 @@ export function createInbound(
      */
     async push(userId: string, pluginId: string, headers: Headers, raw: string) {
       const a = await issueBackgroundActor(lookup, userId).catch(() => null);
-      const verdict = a
-        ? await plugins.verifyPush(a, pluginId, headers, raw).catch(() => "invalid" as const)
-        : ("invalid" as const);
+      if (!a) return "invalid" as const;
+      // A channel whose push carries the messages (Slack): the plugin checks the signature and reads them; they are stored like polled ones.
+      if (getPlugin(pluginId)?.inbound?.ingest) {
+        const [route] = await db
+          .select()
+          .from(inboundRoute)
+          .where(
+            and(
+              eq(inboundRoute.ownerUserId, userId),
+              eq(inboundRoute.pluginId, pluginId),
+              eq(inboundRoute.enabled, true),
+            ),
+          );
+        const filter = (route?.filter as InboundFilter | undefined) ?? {
+          direct: true,
+          groups: false,
+          chats: [],
+        };
+        const got = await plugins
+          .ingestPush(a, pluginId, headers, raw, filter)
+          .catch(() => "invalid" as const);
+        if (got === "invalid") return "invalid" as const;
+        // Without an enabled route nobody asked for these messages: the channel is still answered (its setup check must pass), nothing is kept.
+        if (route && got.events.length && (await store(route, got.events)) > 0)
+          void this.tick().catch(() => {});
+        return got.response ?? ({ status: 200, body: { ok: true } } as const);
+      }
+      const verdict = await plugins
+        .verifyPush(a, pluginId, headers, raw)
+        .catch(() => "invalid" as const);
       if (verdict === "wake") void this.wake(userId, pluginId).catch(() => {});
       return verdict;
     },

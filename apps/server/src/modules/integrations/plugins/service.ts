@@ -655,6 +655,25 @@ export function createPlugins(
         throw new PluginError("NO_INBOUND", "This plugin cannot deliver incoming messages.");
       return withDeadline(d.inbound.poll(readOnly(await ctxFor(a, d, s)), cursor, o));
     },
+    /** Internal (modules/inbound): a push that carries messages, checked and read by the channel plugin against this user's own configuration. */
+    async ingestPush(
+      a: ActiveActor,
+      id: string,
+      headers: Headers,
+      raw: string,
+      filter: InboundFilter,
+    ) {
+      const { d, s } = await installed(a, id).catch(() => ({ d: undefined, s: undefined }));
+      if (!d?.inbound?.ingest || !s) return "invalid" as const;
+      return d.inbound.ingest(readOnly(await ctxFor(a, d, s)), headers, raw, { filter });
+    },
+    /** Internal (modules/inbound): the bytes of a voice note one of the user's channel plugins pointed at. */
+    async fetchInboundAudio(a: ActiveActor, id: string, ref: string) {
+      const { d, s } = await installed(a, id);
+      if (!d.inbound?.fetchAudio)
+        throw new PluginError("NO_AUDIO", "This plugin cannot hand over voice notes.");
+      return withDeadline(d.inbound.fetchAudio(readOnly(await ctxFor(a, d, s)), ref));
+    },
     /** Internal (modules/inbound): the user turned incoming messages on, so the channel plugin may set up push (own configuration only). */
     async prepareInbound(a: ActiveActor, id: string) {
       const { d, s } = await installed(a, id);

@@ -24,6 +24,8 @@ import {
 import type { ComponentType } from "react";
 
 import bitwarden from "./logos/bitwarden.svg";
+import canva from "./logos/canva.svg";
+import elevenlabs from "./logos/elevenlabs.svg";
 import chromeDevtools from "./logos/chrome-devtools.png";
 import cloudflare from "./logos/cloudflare.png";
 import composio from "./logos/composio.png";
@@ -33,11 +35,16 @@ import { GoogleLogo } from "./google-connect";
 import homeassistant from "./logos/homeassistant.svg";
 import linear from "./logos/linear.svg";
 import notion from "./logos/notion.png";
+import obsidian from "./logos/obsidian.svg";
 import onepassword from "./logos/1password.svg";
 import playwright from "./logos/playwright.svg";
 import postgresql from "./logos/postgresql.svg";
 import posthog from "./logos/posthog.svg";
 import sentry from "./logos/sentry.png";
+import slack from "./logos/slack.svg";
+import supabase from "./logos/supabase.svg";
+import trello from "./logos/trello.svg";
+import vercel from "./logos/vercel.svg";
 import { RedditLogo } from "./reddit-connect";
 import { TelegramLogo } from "./telegram-logo";
 import whatsapp from "./logos/whatsapp.svg";
@@ -88,6 +95,13 @@ const LOGOS: Record<string, { src: string; plate?: boolean; corners?: "round" | 
   "1password": { src: onepassword },
   bitwarden: { src: bitwarden },
   postgres: { src: postgresql },
+  slack: { src: slack, corners: "none" },
+  trello: { src: trello, corners: "none" },
+  supabase: { src: supabase, corners: "none" },
+  obsidian: { src: obsidian, corners: "none" },
+  canva: { src: canva, corners: "none" },
+  vercel: { src: vercel, plate: true },
+  elevenlabs: { src: elevenlabs, plate: true },
 };
 
 /** Logo for a plugin: its vendor's brand mark when we have one, else the icon key named by the definition (unknown names fall back to a plug). */

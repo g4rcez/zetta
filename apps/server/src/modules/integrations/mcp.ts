@@ -15,9 +15,11 @@ import { AccessError, type ActiveActor } from "../identity/access";
 import { catalogStdio } from "./plugins/catalog";
 import { getPlugin } from "./plugins/registry";
 import { toolAllowed } from "./tool-access";
+import { configureMail } from "./plugins/mail"; // importing registers the plugin
 import { configureWhatsapp } from "./plugins/whatsapp"; // importing registers the plugin
 import { configureHomeAssistant } from "./plugins/homeassistant"; // importing registers the plugin
 import "./plugins/google"; // importing registers the plugin
+import "./plugins/slack";
 import "./plugins/telegram"; // importing registers the plugin
 import "./plugins/reddit"; // importing registers the plugin
 import "./plugins/composio"; // importing registers the plugin
@@ -236,6 +238,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
 
   let core!: McpCore;
   configureWhatsapp({ allowPrivate: opts.allowPrivate }); // same private-address policy as MCP servers
+  configureMail({ allowPrivate: opts.allowPrivate });
   configureVault({ allowPrivate: Boolean(opts.allowPrivate) }); // 1Password Connect servers follow it too
   configureHomeAssistant({ allowPrivate: opts.allowPrivate }); // a Home Assistant server is normally on the LAN
   const plugins = createPlugins(db, connections, () => core);

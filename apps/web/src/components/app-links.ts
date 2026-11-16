@@ -15,6 +15,8 @@ import {
   LightningIcon,
   CodeIcon,
   AppWindowIcon,
+  FolderSimpleIcon,
+  UsersThreeIcon,
 } from "@phosphor-icons/react";
 
 /** Main rail destinations, in rail order (the command palette binds Alt+1… to them in this order). Each `group` is one contiguous run, rendered as a labelled section. */
@@ -56,4 +58,8 @@ export const appLinks = [
   { to: "/playground", group: "Build", label: "Playground", icon: CodeIcon },
   // Last again, so the Alt+N hotkeys above do not move. The sidebar shows it under More, after Skills.
   { to: "/apps", group: "Build", label: "Apps", icon: AppWindowIcon },
+  // Last again, so the Alt+N hotkeys above do not move. The sidebar shows it in its fixed block, after Tasks.
+  { to: "/projects", group: "Oversee", label: "Projects", icon: FolderSimpleIcon },
+  // Last again, so the Alt+N hotkeys above do not move. The sidebar shows it under More, next to Teams.
+  { to: "/organization", group: "Oversee", label: "Organization", icon: UsersThreeIcon },
 ] as const;

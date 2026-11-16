@@ -50,9 +50,10 @@ const linkOf = (label: AppLink["label"]) => appLinks.find((l) => l.label === lab
  * DESIGN.md "Sidebar structure": the daily destinations stay fixed on top; what bots know and can use sits in Library; building and
  * oversight tools sit in Advanced, which "Simple" navigation hides (Preferences > Display). Home is the Zetta row at the top.
  */
-const FIXED = [linkOf("Inbox"), linkOf("Tasks"), linkOf("Routines")];
+const FIXED = [linkOf("Inbox"), linkOf("Tasks"), linkOf("Projects"), linkOf("Routines")];
 const LIBRARY = [
   linkOf("Teams"),
+  linkOf("Organization"),
   linkOf("Memory"),
   linkOf("Skills"),
   linkOf("Plugins"),

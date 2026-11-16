@@ -296,7 +296,12 @@ export function Editor(props: EditorProps) {
       data-code={language ? "" : undefined}
       style={{ "--editor-rows": rows ?? 1 } as CSSProperties}
       // A click on the padding around the text still puts the caret in the editor.
-      onClick={(e) => e.target === e.currentTarget && view.current?.focus()}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) return view.current?.focus();
+        // In a field the editor sits inside the library's <label>, whose default action sends a click to the first control it holds:
+        // the hidden form mirror below. Focus then left the editor and typed text went into the mirror. Cancel only that default action.
+        if (!(e.target as HTMLElement).closest("input, button, a, select")) e.preventDefault();
+      }}
     >
       <div ref={host} />
       {(name || required) && (

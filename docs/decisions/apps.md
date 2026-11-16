@@ -77,7 +77,7 @@ The Bun image in a container (`oven/bun`) was not pulled here; the container plu
 
 ### Not verified (phase 2)
 
-No real browser has run a frame yet: happy-dom does not enforce the sandbox, the CSP or `Origin: null`. The first thing to do by hand is open an app with a page, click something that calls a query, then something that changes data, and see the bar. A frame can still navigate itself (a sandbox limit), so an app must not hold data its viewer should not see. The host runner is still not a sandbox.
+**Run in a real browser on 2026-11-15** (`scripts/e2e/app-frame.ts`, result in `docs/verification/e2e/app-frame.md`): Chromium opened a published app with a page; a query answered, a change showed the bar outside the frame, Allow ran it, Decline reached the page as `DECLINED`, and the frame had an opaque origin (`null`), blocked cookies and no network. Still not run: the container runner for app tools, and Firefox/Safari. Before that, no real browser had run a frame: happy-dom does not enforce the sandbox, the CSP or `Origin: null`. The first thing to do by hand is open an app with a page, click something that calls a query, then something that changes data, and see the bar. A frame can still navigate itself (a sandbox limit), so an app must not hold data its viewer should not see. The host runner is still not a sandbox.
 
 ## Phase 3: app storage
 

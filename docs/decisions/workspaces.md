@@ -34,6 +34,7 @@ Changes to existing tables:
 
 - **`membership`:** copy it into the default workspace; it is read-only for one release, then dropped.
 - **`invitation`:** add `workspace_id` and `role`.
+- **`org_chart`** (the company chart, `docs/decisions/organization.md`): add `workspace_id` with a unique index, so each workspace has one chart; its seats (`org_position`) are tenant-child rows like `team_member`. Admin rights over the chart become the workspace role `owner` or `admin`.
 - **`identity_audit`:** add a nullable `workspace_id`. A null value means a platform event, which the app role cannot see.
 - **`installation_identity` and `installation_settings`:** stay global. The install admin becomes the platform operator. In `local` mode the operator is also owner of the default workspace.
 

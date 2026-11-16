@@ -26,4 +26,4 @@ No search, filter, sort, bulk change or usage; a removed skill could not be seen
 - The update check compares against the repository's default branch (HEAD) only, not a branch or tag.
 - A zip cannot keep the executable bit, and the folder editor cannot edit files that are not text.
 - No bulk "update all".
-- Not verified in a real browser (happy-dom only), and the update flow was run against a fake GitHub, not the real API.
+- Browsing, describing, previewing and searching ran against the real GitHub on 2026-11-15 (`scripts/e2e/skills-market.ts`, `docs/verification/e2e/skills-market.md`). Still not verified: the page in a real browser (happy-dom only), and installing and the update flow, which ran against a fake GitHub.

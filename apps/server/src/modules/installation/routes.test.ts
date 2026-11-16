@@ -12,6 +12,11 @@ function app() {
     onboarding: "pending",
     laya: "off",
     layaLanguages: ["en"],
+    transcribeProvider: "local",
+    transcribeModel: "",
+    transcribeLanguage: "",
+    transcribeBaseUrl: "",
+    transcribeConnectionId: null,
   };
   const auth = {
     api: {
@@ -67,6 +72,11 @@ describe("installation settings", () => {
       laya: "off",
       layaLanguages: ["en"],
       layaModel: "english",
+      transcribeProvider: "local",
+      transcribeModel: "",
+      transcribeLanguage: "",
+      transcribeBaseUrl: "",
+      transcribeKey: "none",
       restartRequired: true,
     });
   });

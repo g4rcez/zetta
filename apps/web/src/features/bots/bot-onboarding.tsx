@@ -11,6 +11,7 @@ import {
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 
+import { UNVERIFIED_ENGINES } from "@zetta/core/maturity";
 import { BotAvatar, type AvatarValue } from "@/components/bot-avatar";
 import { Button, Input, Progress, Select } from "@/components/ui";
 import "../code/register";
@@ -167,15 +168,8 @@ const ArtTile = ({ icon: Icon, tint }: { icon: PhosphorIcon; tint: string }) => 
   </span>
 );
 
-const EXPERIMENTAL_HARNESSES = [
-  "codex",
-  "pi",
-  "omp",
-  "opencode",
-  "cursor",
-  "hermes",
-  "deepseek",
-] as const;
+/** The engines that are not stable in `@zetta/core/maturity`; the page groups them under one caveat. */
+const EXPERIMENTAL_HARNESSES = UNVERIFIED_ENGINES;
 
 /** Full-page, step-by-step "new bot" experience: explains each choice, reviews the instructions, then wires plugins, accounts and extras. */
 export function BotOnboarding({
@@ -1015,8 +1009,8 @@ export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draf
           ))}
         </div>
         <Group
-          label="Experimental"
-          hint="Not verified in Zetta yet. They may work; expect rough edges."
+          label="Not fully verified"
+          hint="At best one real answer was checked in Zetta; tools and isolation are not proved. Expect rough edges."
         >
           <div className="flex flex-wrap gap-2">
             {EXPERIMENTAL_HARNESSES.map((h) => (

@@ -153,6 +153,22 @@ test("a card that asks for a click keeps its Approve button", async () => {
   await unmount();
 });
 
+test("a company chart change is answered each time: no Always allow, no Allow in this chat", async () => {
+  const { host, unmount } = await render({
+    id: "p6",
+    kind: "chief_action",
+    botId: null,
+    proposedByBotId: TARGET,
+    diff: [{ field: "seat", from: null, to: "CTO" }],
+    patch: { tool: "org", op: "create", title: "Add the seat CTO" },
+  });
+  expect([...host.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
+    "Reject",
+    "Approve",
+  ]);
+  await unmount();
+});
+
 test("a person who chose to just click gets an Approve button on a card that asks for a hold", async () => {
   const { PreferencesProvider } = await import("../preferences/preferences");
   const realFetch = globalThis.fetch;

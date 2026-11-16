@@ -15,6 +15,8 @@ import { createFeaturesService } from "../features/service";
 import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
 import { createOutputStyles } from "../output-styles/service";
 import { createPreferenceStore } from "../preferences/store";
+import { createProfileStore } from "../profile/store";
+import { createProjectStore } from "../projects/store";
 import { createSkills } from "../skills/service";
 import { createTaskStore } from "../tasks/store";
 import { createDiscussionStore } from "../discussions/store";
@@ -106,6 +108,8 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
         tasks,
         features,
         preferences: createPreferenceStore(db),
+        profile: createProfileStore(db),
+        projects: createProjectStore(db),
         botClaude: createBotClaude(db),
         skills: { skills: createSkills(db), market: {} as never },
         memory: createMemory(db),
@@ -563,6 +567,524 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
     for (const p of await pending(A)) await approve(A, p.id);
     expect(await tasks.list(actor)).toHaveLength(0);
     expect((await artifacts.get(actor, art.id)).pinnedAt).toBeNull();
+  });
+
+  test("the chief adds and removes the people of a team, one card each, and the owner cannot be removed", async () => {
+    const actor = (await actorOf(A))!;
+    const made = await teamStore.create(actor, {
+      name: `People crew ${uuidv7().slice(-6)}`,
+      goal: "",
+      canvas: { x: 0, y: 0, w: 360, h: 280 },
+    });
+    const { say, chief } = await chiefOf(A);
+    const people = async () => (await teamStore.people(actor, made.id)).map((p) => p.userId);
+    expect(await people()).toEqual([A]);
+
+    prompts.length = 0;
+    await say(
+      [`\`\`\`zetta:team\n{"action":"add_people","team":"${made.name}","people":["${B}"]}\n\`\`\``],
+      "add B to the team",
+    );
+    const [card] = await pending(A);
+    expect(card).toMatchObject({
+      kind: "chief_action",
+      patch: { tool: "team", op: "add_people" },
+    });
+    expect(card!.diff.map((d) => [d.field, d.to])).toEqual([["add person", B]]);
+    expect(await people()).toEqual([A]);
+    // Adding a person is answered each time: "Always allow" saves no rule.
+    expect((await approve(A, card!.id)).json.status).toBe("approved");
+    expect(await people()).toEqual([A, B]);
+
+    // The team read shows bots and people, and nobody is added twice.
+    prompts.length = 0;
+    await say([`\`\`\`zetta:team\n{"action":"get","team":"${made.name}"}\n\`\`\``], "who is in it");
+    expect(prompts.join("\n")).toContain(`"userId":"${B}"`);
+    await say(
+      [`\`\`\`zetta:team\n{"action":"add_people","team":"${made.name}","people":["${B}"]}\n\`\`\``],
+      "add B again",
+    );
+    expect(prompts.join("\n")).toContain("they are already in the team");
+    expect(await pending(A)).toEqual([]);
+
+    // The owner stays; a member goes with a card.
+    prompts.length = 0;
+    await say(
+      [
+        `\`\`\`zetta:team\n{"action":"remove_people","team":"${made.name}","people":["${A}"]}\n\`\`\``,
+      ],
+      "remove me",
+    );
+    expect(prompts.join("\n")).toContain("The owner stays in the team");
+    await say(
+      [
+        `\`\`\`zetta:team\n{"action":"remove_people","team":"${made.name}","people":["${B}"]}\n\`\`\``,
+      ],
+      "remove B",
+    );
+    const [out] = await pending(A);
+    expect(out!.diff.map((d) => [d.field, d.to])).toEqual([
+      ["remove person", "no longer reads the team's rooms"],
+    ]);
+    expect(
+      (
+        await call(A, "POST", `/api/proposals/${out!.id}/decision`, {
+          approve: true,
+          remember: "bot",
+        })
+      ).json.status,
+    ).toBe("approved");
+    expect(await people()).toEqual([A]);
+    expect((await call(A, "GET", `/api/bots/${chief.id}/approval-rules`)).json.rules).toEqual([]);
+
+    // Another user's chief does not see this team at all.
+    const other = await chiefOf(B);
+    prompts.length = 0;
+    await other.say(
+      [`\`\`\`zetta:team\n{"action":"add_people","team":"${made.name}","people":["${B}"]}\n\`\`\``],
+      "add myself",
+    );
+    expect(prompts.join("\n")).toContain("no team called");
+    expect(await pending(B)).toEqual([]);
+  });
+
+  test("the chief changes the display settings and the name, one card each; how risky cards are approved cannot be changed", async () => {
+    const actor = (await actorOf(A))!;
+    const prefs = createPreferenceStore(db);
+    const profile = createProfileStore(db);
+    const { say } = await chiefOf(A);
+    await say(
+      [
+        '```zetta:preferences\n{"action":"update","navMode":"simple","steerMode":"interrupt","theme":null,"primaryColor":"#1A2B3C","railWidth":260}\n```',
+      ],
+      "simpler menu, my color, wider sidebar",
+    );
+    const [card] = await pending(A);
+    // Only what changes is listed: the theme was already unset.
+    expect(card!.diff.map((d) => d.field)).toEqual([
+      "navMode",
+      "steerMode",
+      "railWidth",
+      "primaryColor",
+    ]);
+    expect((await prefs.get(actor)).navMode).toBe("full");
+    expect((await approve(A, card!.id)).json.status).toBe("approved");
+    expect(await prefs.get(actor)).toMatchObject({
+      navMode: "simple",
+      steerMode: "interrupt",
+      primaryColor: "#1a2b3c",
+      railWidth: 260,
+      approvalMode: "hold",
+    });
+
+    // The guard that protects every card is not a setting a bot can change: the block is turned away before it becomes a card.
+    prompts.length = 0;
+    await say(
+      ['```zetta:preferences\n{"action":"update","approvalMode":"click"}\n```'],
+      "just click to approve",
+    );
+    expect(await pending(A)).toEqual([]);
+    expect((await prefs.get(actor)).approvalMode).toBe("hold");
+
+    // The name changes with a card; the read shows the name and never the email.
+    const before = (await profile.get(actor)).name;
+    await say(
+      ['```zetta:preferences\n{"action":"profile","name":"  Ana Souza  "}\n```'],
+      "my name is Ana Souza",
+    );
+    const [named] = await pending(A);
+    expect(named!.diff.map((d) => [d.field, d.to])).toEqual([["name", "Ana Souza"]]);
+    expect((await profile.get(actor)).name).toBe(before);
+    await approve(A, named!.id);
+    expect((await profile.get(actor)).name).toBe("Ana Souza");
+    prompts.length = 0;
+    await say(['```zetta:preferences\n{"action":"get"}\n```'], "what are my settings");
+    expect(prompts.join("\n")).toContain('"name":"Ana Souza"');
+    expect(prompts.join("\n")).not.toContain("@t.test");
+
+    // A room that does not exist cannot be put in the order.
+    prompts.length = 0;
+    await say(
+      ['```zetta:preferences\n{"action":"update","roomOrder":["No such room"]}\n```'],
+      "reorder rooms",
+    );
+    expect(prompts.join("\n")).toContain('no room called "No such room"');
+    expect(await pending(A)).toEqual([]);
+  });
+
+  test("the chief reads and edits a workflow: the graph is checked first, one card changes it, and a stale card does nothing", async () => {
+    const actor = (await actorOf(A))!;
+    const graph = (end: string) => ({
+      start: "a",
+      nodes: {
+        a: { type: "browse", url: "https://example.com/news", next: end },
+        [end]: { type: "end" },
+      },
+    });
+    const flow = await features.workflows.save(actor, { name: "News flow", graph: graph("done") });
+    const { say } = await chiefOf(A);
+
+    prompts.length = 0;
+    await say(
+      ['```zetta:workflow\n{"action":"get","workflow":"News flow"}\n```'],
+      "show the news flow",
+    );
+    expect(prompts.join("\n")).toContain("example.com/news");
+
+    // A graph that does not hold together never becomes a card.
+    prompts.length = 0;
+    await say(
+      [
+        '```zetta:workflow\n{"action":"update","workflow":"News flow","graph":{"start":"missing","nodes":{"a":{"type":"end"}}}}\n```',
+      ],
+      "break it",
+    );
+    expect(prompts.join("\n")).toContain("the graph is not valid");
+    expect(await pending(A)).toEqual([]);
+
+    const longer = {
+      start: "a",
+      nodes: {
+        a: { type: "browse", url: "https://example.com/news", next: "b" },
+        b: { type: "sources", next: "z" },
+        z: { type: "end" },
+      },
+    };
+    await say(
+      [
+        `\`\`\`zetta:workflow\n${JSON.stringify({ action: "update", workflow: "News flow", name: "News and sources", graph: longer })}\n\`\`\``,
+      ],
+      "add the sources step",
+    );
+    const [card] = await pending(A);
+    expect(card!.diff.map((d) => [d.field, d.to])).toEqual([
+      ["name", "News and sources"],
+      ["steps", "3 steps"],
+    ]);
+    expect((await features.workflows.get(actor, flow.id)).name).toBe("News flow");
+    expect((await approve(A, card!.id)).json.status).toBe("approved");
+    const saved = await features.workflows.get(actor, flow.id);
+    expect(saved).toMatchObject({ name: "News and sources", version: 2 });
+
+    // Somebody saves it in between: the old card cannot overwrite that.
+    await say(
+      [
+        `\`\`\`zetta:workflow\n${JSON.stringify({ action: "update", workflow: "News and sources", name: "Chief name" })}\n\`\`\``,
+      ],
+      "rename it",
+    );
+    const [late] = await pending(A);
+    await features.workflows.save(actor, {
+      id: flow.id,
+      name: "Own name",
+      graph: longer,
+      expectedVersion: 2,
+    });
+    expect((await approve(A, late!.id)).json.status).toBe("stale");
+    expect((await features.workflows.get(actor, flow.id)).name).toBe("Own name");
+  });
+
+  test("the chief manages the triggers of a routine; a webhook secret never goes through the chief, only through a form", async () => {
+    const actor = (await actorOf(A))!;
+    const owner = (await call(A, "POST", "/api/bots", { name: "Trigger owner" })).json.bot as {
+      id: string;
+    };
+    const routine = (await features.routines.create(actor, {
+      botId: owner.id,
+      title: "Inbox watcher",
+      prompt: "Look at what arrived.",
+      timezone: "UTC",
+      dailyAt: "08:00",
+    })) as { id: string };
+    const { say } = await chiefOf(A);
+    const triggers = () => features.routineTriggers.list(actor, routine.id);
+
+    prompts.length = 0;
+    await say(
+      ['```zetta:routine\n{"action":"get","routine":"Inbox watcher"}\n```'],
+      "what starts it",
+    );
+    expect(prompts.join("\n")).toContain('"triggers":[]');
+
+    // A webhook makes no card and no trigger: the person gets a form, and the chief is told it never sees the secret.
+    prompts.length = 0;
+    const reply = await say(
+      [
+        '```zetta:routine\n{"action":"trigger_add","routine":"Inbox watcher","kind":"webhook"}\n```',
+      ],
+      "add a webhook",
+    );
+    expect(reply).toContain("zetta:form-card");
+    expect(reply).toContain("routine_triggers");
+    expect(prompts.join("\n")).toContain("you never see it");
+    expect(await pending(A)).toEqual([]);
+    expect(await triggers()).toEqual([]);
+
+    // A Gmail trigger is a card, and exists only once approved.
+    await say(
+      [
+        '```zetta:routine\n{"action":"trigger_add","routine":"Inbox watcher","kind":"gmail","query":"from:boss is:unread"}\n```',
+      ],
+      "watch my boss",
+    );
+    const [card] = await pending(A);
+    expect(card!.diff.map((d) => d.field)).toEqual(["routine", "starts it when"]);
+    expect(await triggers()).toEqual([]);
+    expect((await approve(A, card!.id)).json.status).toBe("approved");
+    const [gmail] = await triggers();
+    expect(gmail).toMatchObject({
+      kind: "gmail",
+      status: "active",
+      filter: { query: "from:boss is:unread" },
+    });
+
+    await say(
+      [
+        `\`\`\`zetta:routine\n{"action":"trigger_pause","routine":"Inbox watcher","trigger":"${gmail!.id}"}\n\`\`\``,
+      ],
+      "pause it",
+    );
+    await approve(A, (await pending(A))[0]!.id);
+    expect((await triggers())[0]!.status).toBe("paused");
+
+    // An existing webhook: the read shows no secret, replacing it opens the form and changes nothing.
+    const made = await features.routineTriggers.create(actor, routine.id, { kind: "webhook" });
+    const secret = (made as { secret: string }).secret;
+    prompts.length = 0;
+    await say(
+      ['```zetta:routine\n{"action":"get","routine":"Inbox watcher"}\n```'],
+      "list the triggers",
+    );
+    expect(prompts.join("\n")).not.toContain(secret);
+    expect(prompts.join("\n")).not.toContain("secretHash");
+    const hook = (await triggers()).find((t) => t.kind === "webhook")!;
+    prompts.length = 0;
+    const rotate = await say(
+      [
+        `\`\`\`zetta:routine\n{"action":"trigger_rotate","routine":"Inbox watcher","trigger":"${hook.id}"}\n\`\`\``,
+      ],
+      "new secret",
+    );
+    expect(rotate).toContain("zetta:form-card");
+    expect(prompts.join("\n")).toContain("you never see it");
+    expect(await pending(A)).toEqual([]);
+    // The old secret still works: nothing was rotated by the chief.
+    // "off" means the secret was accepted and the routine is paused; "invalid" would mean the secret no longer works.
+    expect((await features.routineTriggers.receive(hook.id, secret, null, {})).status).not.toBe(
+      "invalid",
+    );
+    expect((await features.routineTriggers.receive(hook.id, "zrt_wrong", null, {})).status).toBe(
+      "invalid",
+    );
+
+    // Removing one is a card; an unknown id is turned away in words.
+    await say(
+      [
+        `\`\`\`zetta:routine\n{"action":"trigger_remove","routine":"Inbox watcher","trigger":"${gmail!.id}"}\n\`\`\``,
+      ],
+      "drop the gmail one",
+    );
+    await approve(A, (await pending(A))[0]!.id);
+    expect((await triggers()).map((t) => t.kind)).toEqual(["webhook"]);
+    prompts.length = 0;
+    await say(
+      [
+        '```zetta:routine\n{"action":"trigger_remove","routine":"Inbox watcher","trigger":"nope"}\n```',
+      ],
+      "drop a ghost",
+    );
+    expect(prompts.join("\n")).toContain("no trigger with that id");
+  });
+
+  test("the chief runs the user's projects with cards: create with members by name, change, reorder who works on it, ask for work; only the owner changes one", async () => {
+    const actor = (await actorOf(A))!;
+    const projects = createProjectStore(db);
+    const tag = uuidv7().slice(-6);
+    const worker = (await call(A, "POST", "/api/bots", { name: `Worker ${tag}` })).json.bot as {
+      id: string;
+    };
+    const crew = await teamStore.create(actor, {
+      name: `Project crew ${tag}`,
+      goal: "",
+      canvas: { x: 0, y: 0, w: 360, h: 280 },
+    });
+    await teamStore.addPerson(actor, crew.id, B);
+    const { say } = await chiefOf(A);
+    const name = `Spring ${tag}`;
+
+    // Create: people and bots are named, the card says who, and nothing exists before the approval.
+    await say(
+      [
+        `\`\`\`zetta:project\n${JSON.stringify({ action: "create", name, outcome: "A launch page and an email", labels: ["Launch", "launch"], bots: [`Worker ${tag}`], people: [B] })}\n\`\`\``,
+      ],
+      "start the spring project",
+    );
+    const [card] = await pending(A);
+    expect(card!.diff.map((d) => d.field)).toEqual(["name", "outcome", "labels", "bots", "people"]);
+    expect((await projects.list(actor)).some((p) => p.name === name)).toBe(false);
+    expect((await approve(A, card!.id)).json.status).toBe("approved");
+    const made = (await projects.list(actor)).find((p) => p.name === name)!;
+    expect(made).toMatchObject({
+      role: "owner",
+      labels: ["launch"],
+      outcome: "A launch page and an email",
+    });
+    expect(made.bots.map((b) => b.id)).toEqual([worker.id]);
+    expect(made.people.map((p) => p.userId)).toEqual([B]);
+
+    // A name that is taken, or a person who is not in the user's teams, never becomes a card.
+    prompts.length = 0;
+    await say(
+      [`\`\`\`zetta:project\n${JSON.stringify({ action: "create", name })}\n\`\`\``],
+      "again",
+    );
+    expect(prompts.join("\n")).toContain("already have a project called");
+    await say(
+      [
+        `\`\`\`zetta:project\n${JSON.stringify({ action: "create", name: `Other ${tag}`, people: ["Nobody Here"] })}\n\`\`\``,
+      ],
+      "with a stranger",
+    );
+    expect(prompts.join("\n")).toContain('no person of your teams called "Nobody Here"');
+    expect(await pending(A)).toEqual([]);
+
+    // Change: only what changes is listed.
+    await say(
+      [
+        `\`\`\`zetta:project\n${JSON.stringify({ action: "update", project: name, status: "paused", outcome: "A launch page and an email" })}\n\`\`\``,
+      ],
+      "put it on hold",
+    );
+    const [hold] = await pending(A);
+    expect(hold!.diff.map((d) => [d.field, d.to])).toEqual([["status", "paused"]]);
+    await approve(A, hold!.id);
+    expect((await projects.get(actor, made.id)).status).toBe("paused");
+
+    // Ask for work: the bot is told when the card is approved, and the task is on the project.
+    prompts.length = 0;
+    await say(
+      [
+        `\`\`\`zetta:project\n${JSON.stringify({ action: "add_work", project: name, to: { kind: "bot", who: `Worker ${tag}` }, text: "Write the launch email" })}\n\`\`\``,
+      ],
+      "ask the worker",
+    );
+    const [work] = await pending(A);
+    expect(work!.diff.map((d) => d.field)).toEqual(["project", "bot", "asks", "note"]);
+    expect((await tasks.list(actor)).some((t) => t.title === "Write the launch email")).toBe(false);
+    expect((await approve(A, work!.id)).json.status).toBe("approved");
+    const task = (await tasks.list(actor)).find((t) => t.title === "Write the launch email")!;
+    expect(task).toMatchObject({ projectId: made.id });
+    // The bot was told about the task and runs its own turn now: wait for it, so it cannot take the next scripted reply.
+    for (let i = 0; i < 50 && !prompts.join("\n").includes("This is the task"); i++)
+      await Bun.sleep(50);
+    expect(prompts.join("\n")).toContain("This is the task “Write the launch email”");
+    await Bun.sleep(200);
+
+    // Replace who works on it.
+    await say(
+      [
+        `\`\`\`zetta:project\n${JSON.stringify({ action: "members", project: name, bots: [`Worker ${tag}`], people: [] })}\n\`\`\``,
+      ],
+      "only the bot",
+    );
+    await approve(A, (await pending(A))[0]!.id);
+    expect((await projects.get(actor, made.id)).people).toEqual([]);
+
+    // B read this project as a person once: B's chief may read it, and may not change it.
+    await say(
+      [
+        `\`\`\`zetta:project\n${JSON.stringify({ action: "members", project: name, bots: [], people: [B] })}\n\`\`\``,
+      ],
+      "add B back",
+    );
+    await approve(A, (await pending(A))[0]!.id);
+    const other = await chiefOf(B);
+    prompts.length = 0;
+    await other.say([`\`\`\`zetta:project\n{"action":"list"}\n\`\`\``], "what projects do I have");
+    expect(prompts.join("\n")).toContain(name);
+    prompts.length = 0;
+    await other.say(
+      [
+        `\`\`\`zetta:project\n${JSON.stringify({ action: "update", project: name, status: "done" })}\n\`\`\``,
+      ],
+      "close it",
+    );
+    expect(prompts.join("\n")).toContain("only its owner changes it");
+    expect(await pending(B)).toEqual([]);
+  });
+
+  test("the chief reads how a bot did and its saved versions, and bringing one back is a card that applies as a new version", async () => {
+    const made = (await call(A, "POST", "/api/bots", { name: `Versioned ${uuidv7().slice(-6)}` }))
+      .json.bot as { id: string; name: string; version: number };
+    const v2 = (
+      await call(A, "PATCH", `/api/bots/${made.id}`, {
+        expectedVersion: made.version,
+        patch: { harness: "codex", instructions: "First wording." },
+      })
+    ).json.bot as { version: number };
+    const v3 = (
+      await call(A, "PATCH", `/api/bots/${made.id}`, {
+        expectedVersion: v2.version,
+        patch: { instructions: "Second wording." },
+      })
+    ).json.bot as { version: number };
+    const { say } = await chiefOf(A);
+
+    prompts.length = 0;
+    await say(
+      [`\`\`\`zetta:bot\n${JSON.stringify({ action: "history", bot: made.name })}\n\`\`\``],
+      "show its versions",
+    );
+    const seen = prompts.join("\n");
+    expect(seen).toContain("bot.history:");
+    expect(seen).toContain(`"version":${v3.version},"current":true`);
+
+    prompts.length = 0;
+    await say(
+      [`\`\`\`zetta:bot\n${JSON.stringify({ action: "stats", bot: made.name, days: 30 })}\n\`\`\``],
+      "how is it doing",
+    );
+    expect(prompts.join("\n")).toContain('"days":30');
+
+    // Asking for the version it already has, or one that does not exist, never becomes a card.
+    prompts.length = 0;
+    await say(
+      [
+        `\`\`\`zetta:bot\n${JSON.stringify({ action: "restore", bot: made.name, version: v3.version })}\n\`\`\``,
+      ],
+      "restore the current one",
+    );
+    expect(prompts.join("\n")).toContain("is what");
+    await say(
+      [
+        `\`\`\`zetta:bot\n${JSON.stringify({ action: "restore", bot: made.name, version: 99 })}\n\`\`\``,
+      ],
+      "restore 99",
+    );
+    expect(await pending(A)).toEqual([]);
+
+    await say(
+      [
+        `\`\`\`zetta:bot\n${JSON.stringify({ action: "restore", bot: made.name, version: v2.version })}\n\`\`\``,
+      ],
+      "go back to the first wording",
+    );
+    const [card] = await pending(A);
+    expect(card!.diff.map((d) => [d.field, d.to])).toEqual([["instructions", "First wording."]]);
+    expect(
+      (
+        (await call(A, "GET", "/api/bots")).json.bots as { id: string; instructions: string }[]
+      ).find((b) => b.id === made.id)!.instructions,
+    ).toBe("Second wording.");
+    expect((await approve(A, card!.id)).json.status).toBe("approved");
+    const after = (
+      (await call(A, "GET", "/api/bots")).json.bots as {
+        id: string;
+        instructions: string;
+        version: number;
+      }[]
+    ).find((b) => b.id === made.id)!;
+    expect(after).toMatchObject({ instructions: "First wording.", version: v3.version + 1 });
   });
 
   test("a bot that is not the chief cannot ask for any of it", async () => {

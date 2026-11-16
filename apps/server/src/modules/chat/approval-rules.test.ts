@@ -16,6 +16,18 @@ describe("approval rules", () => {
     expect(canRemember("create_routine", {})).toBe(true);
   });
 
+  test("a company chart change is never remembered, while other chief tools still can be", () => {
+    expect(canRemember("chief_action", { tool: "org" })).toBe(false);
+    expect(canRemember("chief_action", { tool: "team" })).toBe(true);
+  });
+
+  test("adding or removing a person of a team is never remembered, while the rest of the team tool can be", () => {
+    expect(actionKeyOf("chief_action", { tool: "team", op: "add_people" })).toBe("team:people");
+    expect(canRemember("chief_action", { tool: "team", op: "add_people" })).toBe(false);
+    expect(canRemember("chief_action", { tool: "team", op: "remove_people" })).toBe(false);
+    expect(canRemember("chief_action", { tool: "team", op: "update" })).toBe(true);
+  });
+
   test("broad kinds are narrowed by what they do, and cannot be remembered without it", () => {
     expect(actionKeyOf("chief_action", { tool: "routine" })).toBe("routine");
     expect(canRemember("chief_action", {})).toBe(false);

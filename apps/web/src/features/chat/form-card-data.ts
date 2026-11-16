@@ -1,5 +1,11 @@
 /** The forms the server may ask the chat to draw (apps/server/src/modules/chat/chief/forms.ts). */
-export const FORMS = ["connection", "invite", "installation", "source_login"] as const;
+export const FORMS = [
+  "connection",
+  "invite",
+  "installation",
+  "source_login",
+  "routine_triggers",
+] as const;
 export type FormName = (typeof FORMS)[number];
 export type FormCardData = {
   form: FormName;

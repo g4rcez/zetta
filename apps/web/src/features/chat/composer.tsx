@@ -41,6 +41,8 @@ import {
   AttachmentTitle,
 } from "@zetta/ui/components/attachment";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@zetta/ui/components/input-group";
+import { withTranscript } from "./audio";
+import { MicButton } from "./microphone";
 import { ActionHint } from "@/components/action-hint";
 import {
   NEW_POLL,
@@ -56,9 +58,12 @@ import { cn } from "@zetta/ui/lib/utils";
 
 import { ImageViewer } from "./attachment-image";
 import {
+  DOCUMENT_MAX_BYTES,
   IMAGE_MAX_BYTES,
+  isDocumentFile,
   listFiles,
   uploadAttachment,
+  uploadDocument,
   uploadImage,
   type Attachment as Attached,
   type Bot,
@@ -175,6 +180,8 @@ export function Composer({
   const qc = useQueryClient();
   const input = useRef<EditorView>(null);
   const file = useRef<HTMLInputElement>(null);
+  const latestValue = useRef(value);
+  latestValue.current = value;
   const [attached, setAttached] = useState<Attached[]>([]);
   const [staged, setStaged] = useState<Staged[]>([]);
   const [viewing, setViewing] = useState<number>();
@@ -288,6 +295,20 @@ export function Composer({
           );
         } catch (x) {
           dropStaged(key);
+          onError(x);
+        }
+      } else if (isDocumentFile(f)) {
+        // A PDF, an Office file or a table: the server reads its text, so the bot sees words instead of bytes.
+        if (f.size > DOCUMENT_MAX_BYTES) {
+          onError(new Error(`${f.name} is over 20 MB.`));
+          continue;
+        }
+        room--;
+        try {
+          const att = await uploadDocument(f, conversationId);
+          setAttached((a) => [...a, att]);
+          if (att.note) onError(new Error(`Heads up about ${f.name}: ${att.note}.`));
+        } catch (x) {
           onError(x);
         }
       } else {
@@ -782,12 +803,17 @@ export function Composer({
               <Tool label="Attach files or images" onClick={() => file.current?.click()}>
                 <PaperclipIcon />
               </Tool>
+              <MicButton
+                // The text as it is when the words arrive, not as it was when the recording began.
+                onText={(t) => onChange(withTranscript(latestValue.current, t))}
+                onError={onError}
+              />
               <input
                 ref={file}
                 type="file"
                 hidden
                 multiple
-                accept=".txt,.md,.json,.csv,.log,.ts,.js,.py,text/*,image/png,image/jpeg,image/webp,image/gif"
+                accept=".txt,.md,.json,.csv,.tsv,.log,.ts,.js,.py,.pdf,.docx,.pptx,.xlsx,text/*,image/png,image/jpeg,image/webp,image/gif"
                 onChange={(e) => {
                   const picked = Array.from(e.target.files ?? []);
                   e.target.value = "";

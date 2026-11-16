@@ -41,6 +41,27 @@ export function imagePath(rel: string, root = attachmentsRoot()) {
   return abs;
 }
 
+/** Keeps the original of an attached document (a PDF, an Office file or a table) next to the pictures, under its own hash and extension. */
+export async function saveDocument(
+  userId: string,
+  bytes: Uint8Array,
+  ext: string,
+  root = attachmentsRoot(),
+) {
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const rel = join(
+    safeUser(userId),
+    `${sha256}.${ext.replace(/[^a-z0-9]/g, "").slice(0, 8) || "bin"}`,
+  );
+  const abs = imagePath(rel, root);
+  if (!(await Bun.file(abs).exists())) {
+    await mkdir(dirname(abs), { recursive: true, mode: 0o700 });
+    await chmod(dirname(abs), 0o700).catch(() => {});
+    await writeFile(abs, bytes, { mode: 0o600 });
+  }
+  return { rel, sha256 };
+}
+
 /** Writes the bytes once (content-addressed, so the same picture is stored a single time) and returns the relative path. */
 export async function saveImage(
   userId: string,

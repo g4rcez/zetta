@@ -56,6 +56,7 @@ import {
 } from "./chat-client";
 import { asRow, shouldAutoOpen, transcriptRows, type Row } from "./chat-rows";
 import { DraftComposer, type DraftHandle } from "./draft-composer";
+import { FeedbackProvider } from "../bot-quality/feedback";
 import { MessageList, pinAuthorOf, type RowActions } from "./message-list";
 import { PinsBar } from "./pins-bar";
 import { usePins } from "./use-pins";
@@ -777,88 +778,90 @@ export function ChatPage() {
               onUnpin={(id) => setPinned(id, false)}
             />
             <SetupActionsContext.Provider value={setupActions}>
-              <MessageList
-                key={chatId ?? `new:${botId}`}
-                followToken={sent}
-                rows={rows}
-                bots={bots}
-                authorOf={authorOf}
-                fallbackBotId={botId}
-                busy={main.busy || loadingMessages}
-                label="Conversation"
-                actions={actions}
-                pinnedIds={pinnedIds}
-                intro={
-                  <>
-                    {loadingMessages && saved.length === 0 && (
-                      <div
-                        className="space-y-5 px-4 py-4"
-                        role="status"
-                        aria-label="Loading messages"
-                      >
-                        {["66%", "45%", "75%"].map((w, i) => (
-                          <div key={i} className="flex gap-2">
-                            <Skeleton className="size-9 rounded-lg" />
-                            <div className="flex-1 space-y-2">
-                              <Skeleton className="h-3 w-24 rounded" />
-                              <Skeleton
-                                className="h-4 rounded"
-                                style={{ display: "block", inlineSize: w }}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {!loadingMessages && rows.length === 0 && current && (
-                      <div className="mt-auto space-y-3 px-4 pt-10 pb-4">
-                        <BotAvatar bot={current} size={64} square />
-                        <h3 className="font-heading text-3xl font-medium tracking-tight text-balance">
-                          <ChannelIcon
-                            aria-hidden="true"
-                            className="mr-1 inline size-5 align-baseline text-muted-foreground"
-                          />
-                          {current.name}
-                        </h3>
-                        <p className="max-w-prose text-muted-foreground">
-                          This is the very beginning of your conversation with{" "}
-                          <strong className="text-foreground">{current.name}</strong>.{" "}
-                          {current.description}
-                        </p>
+              <FeedbackProvider conversationId={chatId}>
+                <MessageList
+                  key={chatId ?? `new:${botId}`}
+                  followToken={sent}
+                  rows={rows}
+                  bots={bots}
+                  authorOf={authorOf}
+                  fallbackBotId={botId}
+                  busy={main.busy || loadingMessages}
+                  label="Conversation"
+                  actions={actions}
+                  pinnedIds={pinnedIds}
+                  intro={
+                    <>
+                      {loadingMessages && saved.length === 0 && (
                         <div
-                          className="flex flex-wrap gap-2"
-                          role="group"
-                          aria-label="Suggested prompts"
+                          className="space-y-5 px-4 py-4"
+                          role="status"
+                          aria-label="Loading messages"
                         >
-                          {SUGGESTIONS.map((q) => (
-                            <Button
-                              key={q}
-                              size="sm"
-                              variant="outline"
-                              className="rounded-full"
-                              onClick={() =>
-                                void send({ text: q, attachmentIds: [], fileRefs: [] })
-                              }
-                            >
-                              {q}
-                            </Button>
+                          {["66%", "45%", "75%"].map((w, i) => (
+                            <div key={i} className="flex gap-2">
+                              <Skeleton className="size-9 rounded-lg" />
+                              <div className="flex-1 space-y-2">
+                                <Skeleton className="h-3 w-24 rounded" />
+                                <Skeleton
+                                  className="h-4 rounded"
+                                  style={{ display: "block", inlineSize: w }}
+                                />
+                              </div>
+                            </div>
                           ))}
                         </div>
-                      </div>
-                    )}
-                  </>
-                }
-                footer={
-                  main.summary && !main.busy ? (
-                    <p
-                      className="px-4 pt-1 pl-15 text-xs text-muted-foreground"
-                      aria-label="Delegation summary"
-                    >
-                      {main.summary}
-                    </p>
-                  ) : null
-                }
-              />
+                      )}
+                      {!loadingMessages && rows.length === 0 && current && (
+                        <div className="mt-auto space-y-3 px-4 pt-10 pb-4">
+                          <BotAvatar bot={current} size={64} square />
+                          <h3 className="font-heading text-3xl font-medium tracking-tight text-balance">
+                            <ChannelIcon
+                              aria-hidden="true"
+                              className="mr-1 inline size-5 align-baseline text-muted-foreground"
+                            />
+                            {current.name}
+                          </h3>
+                          <p className="max-w-prose text-muted-foreground">
+                            This is the very beginning of your conversation with{" "}
+                            <strong className="text-foreground">{current.name}</strong>.{" "}
+                            {current.description}
+                          </p>
+                          <div
+                            className="flex flex-wrap gap-2"
+                            role="group"
+                            aria-label="Suggested prompts"
+                          >
+                            {SUGGESTIONS.map((q) => (
+                              <Button
+                                key={q}
+                                size="sm"
+                                variant="outline"
+                                className="rounded-full"
+                                onClick={() =>
+                                  void send({ text: q, attachmentIds: [], fileRefs: [] })
+                                }
+                              >
+                                {q}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  }
+                  footer={
+                    main.summary && !main.busy ? (
+                      <p
+                        className="px-4 pt-1 pl-15 text-xs text-muted-foreground"
+                        aria-label="Delegation summary"
+                      >
+                        {main.summary}
+                      </p>
+                    ) : null
+                  }
+                />
+              </FeedbackProvider>
             </SetupActionsContext.Provider>
             <div className="w-full shrink-0 space-y-2 px-4 pb-4">
               <ProposalsPanel

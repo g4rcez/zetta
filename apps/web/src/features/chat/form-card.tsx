@@ -13,10 +13,12 @@ import {
 } from "../onboarding/installation-api";
 import { InvitationManager } from "../identity/invitation-manager";
 import { LayaSwitch } from "../studio/laya-switch";
+import { TranscribeSettings } from "../studio/transcribe-settings";
 import { MAIL_PRESETS } from "../studio/sources";
 import { call, sendSealed } from "./chat-client";
 import { errorMessage } from "./chat-client";
 import type { FormCardData } from "./form-card-data";
+import { RoutineTriggers } from "../routines/routine-triggers";
 import { formText } from "../shared/form-data";
 
 type Phase = "ready" | "busy" | "done" | "dismissed";
@@ -86,6 +88,16 @@ const FORM: Record<
     title: (d) => `Add an ${d.prefill.kind === "x" ? "X" : "email"} source`,
     done: () => "Added. The login is stored encrypted and will not be shown again.",
     body: (p) => <SourceLoginForm {...p} />,
+  },
+  routine_triggers: {
+    title: (d) => `Triggers of ${d.prefill.routineTitle ?? "the routine"}`,
+    done: () => "Done.",
+    body: (p) => (
+      <RoutineTriggers
+        routineId={p.data.prefill.routineId ?? ""}
+        paused={p.data.prefill.status === "paused"}
+      />
+    ),
   },
   connection: {
     title: (d) => `Add a ${d.prefill.provider ?? ""} key`,
@@ -158,6 +170,7 @@ function InstallationForm({ onCancel }: Props) {
   return (
     <div className="space-y-4">
       <LayaSwitch onError={setError} />
+      <TranscribeSettings />
       <NetworkMode onError={setError} />
       {error && <Alert theme="danger">{error}</Alert>}
       <div className="flex justify-end">

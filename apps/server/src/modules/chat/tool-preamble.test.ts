@@ -241,7 +241,16 @@ describe("chief creation tools", () => {
     // Raised from 31_800 to 31_900 on purpose: the bot access flags ([suggest only], [read only], ~100 characters) are read by every bot.
     // Raised from 31_900 to 32_400 on purpose: the zetta:import_bot line (~380 characters) and the weekdays option of zetta:routine (~75) are read by every Chief turn.
     // Raised to 32_950 on purpose (2026-11-10): zetta:my_routine (~480) lets every bot, not only the Chief, control its own routines.
-    expect(chief.length).toBeLessThan(32_950);
+    // Raised from 32_950 to 33_450 on purpose (2026-11-15): the zetta:org line (~450) lets the Chief draw the company chart for an administrator.
+    // Raised from 33_450 to 33_700 on purpose (2026-11-15): zetta:org update, index moves and unit/description on add_seat (~210).
+    // Raised from 33_700 to 33_900 on purpose (2026-11-15): zetta:team get and add_people/remove_people (~150).
+    // Raised from 33_900 to 34_200 on purpose (2026-11-15): zetta:preferences navMode/steerMode/theme/primaryColor/widths/roomOrder and profile name (~250).
+    // Raised from 34_200 to 34_500 on purpose (2026-11-15): zetta:workflow get/update and zetta:routine get and trigger actions (~130).
+    // Raised from 34_500 to 35_100 on purpose (2026-11-15): the zetta:project line (~700) lets the Chief manage the user's projects.
+    // Raised from 35_100 to 35_400 on purpose (2026-11-15): zetta:bot stats, history and restore (~110).
+    // Raised from 35_400 to 35_800 on purpose (2026-11-15): zetta:chats, the search of earlier chats, which every bot reads (~400).
+    // Raised from 35_800 to 36_200 on purpose (2026-11-15): the new workflow steps (tool, approval, wait, for_each, retry) in the zetta:workflow line (~330).
+    expect(chief.length).toBeLessThan(36_200);
     expect(toolPreamble("off", false, false)).not.toContain("next_wave");
   });
   test("every bot is told that [suggest only] items change by suggestion and [read only] items not at all", () => {

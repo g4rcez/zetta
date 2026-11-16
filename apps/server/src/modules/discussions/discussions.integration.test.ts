@@ -11,13 +11,14 @@ import { task } from "@zetta/db/schema/tasks";
 import { createApp } from "../../app";
 import { createMemory } from "../memory/service";
 import { createBotClaude } from "../bot-claude/store";
-import { cleanupTestUsers } from "../../test-support/db-cleanup";
+import { cleanupTestUsers, resetOrgChart } from "../../test-support/db-cleanup";
 import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
 import { createChatService } from "../chat/service";
 import { insertMessage } from "../chat/messages";
 import { MAX_PINS } from "../chat/pins";
 import { messagePin, pollVote } from "@zetta/db/schema/features";
 import { createFeaturesService } from "../features/service";
+import { createOrgStore } from "../org/store";
 import { createDiscussionStore } from "./store";
 import { createDiscussionWorker } from "./worker";
 import { liveTurns } from "./watchdog";
@@ -1598,6 +1599,111 @@ suite("group discussions against compose postgres", () => {
       summary: "Asked the user: Sign in to Reddit on the desktop",
     });
   }, 30_000);
+  test("a blocked bot that holds a seat asks its manager first: a bot manager takes the Chief's place, a person manager is only named", async () => {
+    const admin = { userId: A, isAdmin: true } as never;
+    const org = createOrgStore(db);
+    const wipe = () => resetOrgChart(db);
+    const version = async () => (await org.get(admin)).chart.version;
+    const seatNamed = async (title: string) =>
+      (await org.get(admin)).positions.find((p) => p.title === title)!.id;
+    const escalate = (problem: string) =>
+      `Blocked.\n\`\`\`zetta:escalate\n{"problem":"${problem}","tried":"WebFetch"}\n\`\`\``;
+    const helpOf = async (name: string) =>
+      (
+        (await call(A, "GET", "/api/discussions")).json.discussions as {
+          title: string;
+          kind: string;
+          status: string;
+          summary: string;
+        }[]
+      ).find((d) => d.title.startsWith(`Help: ${name}:`));
+    const chiefRow = (await call(A, "GET", "/api/bots")).json.bots.find(
+      (b: { kind: string }) => b.kind === "chief",
+    ) as { id: string };
+    await db.update(bot).set({ onboarded: true }).where(eq(bot.id, chiefRow.id));
+    await wipe();
+    try {
+      // CEO ─ Head of engineering (bot Boss) ─ Developer (bot Scout2)
+      //    └─ CFO (person B) ─ Finance and operations manager (bot Scout3)
+      const boss = await makeBot(A, "Boss", { visibility: "team" });
+      const scout2 = await makeBot(A, "Scout2", { visibility: "team" });
+      const scout3 = await makeBot(A, "Scout3", { visibility: "team" });
+      await org.create(admin, await version(), { templateKey: "ceo" });
+      const ceo = await seatNamed("CEO");
+      await org.create(admin, await version(), { parentId: ceo, templateKey: "head-engineering" });
+      await org.create(admin, await version(), {
+        parentId: await seatNamed("Head of engineering"),
+        templateKey: "software-engineer",
+      });
+      await org.create(admin, await version(), { parentId: ceo, templateKey: "cfo" });
+      await org.create(admin, await version(), {
+        parentId: await seatNamed("CFO"),
+        templateKey: "finance-ops",
+      });
+      for (const [title, holder] of [
+        ["Head of engineering", { kind: "bot", botId: boss.id }],
+        ["Software engineer", { kind: "bot", botId: scout2.id }],
+        ["CFO", { kind: "person", userId: B }],
+        ["Finance & operations manager", { kind: "bot", botId: scout3.id }],
+      ] as const)
+        await org.seat(admin, await version(), await seatNamed(title), holder);
+
+      // Scout2 reports to Boss, a bot of the team: Boss hears the request, not the Chief, and Scout2 goes on with Boss's answer.
+      replies.Scout2 = [escalate("The build fails"), "I wait for Boss.", "Built it."];
+      replies.Boss = [
+        'Use the cache.\n```zetta:discussion\n{"action":"resolve","summary":"Clear the cache and rebuild."}\n```',
+      ];
+      const chat2 = await chatWith(A, scout2.id);
+      await chat2.say("build the app");
+      await worker.drain();
+      let msgs = await messagesOf(A, chat2.c);
+      for (let i = 0; i < 50 && !msgs.some((m) => m.content === "Built it."); i++) {
+        await Bun.sleep(100);
+        msgs = await messagesOf(A, chat2.c);
+      }
+      expect(msgs.map((m) => m.content)).toContain("Built it.");
+      expect(await helpOf("Scout2")).toMatchObject({
+        kind: "help",
+        status: "resolved",
+        summary: "Clear the cache and rebuild.",
+      });
+      const bossRun = runs.find((r) => r.bot === "Boss" && r.prompt.includes("The build fails"));
+      expect(bossRun?.prompt).toContain(
+        "The company chart says Scout2 reports to Boss (Head of engineering)",
+      );
+      expect(runs.some((r) => r.bot === "Zetta" && r.prompt.includes("The build fails"))).toBe(
+        false,
+      );
+      expect(
+        runs.find((r) => r.bot === "Scout2" && r.prompt.includes("Boss answered:"))?.prompt,
+      ).toContain("You were blocked on it and asked Boss for help. Boss's answer is advice");
+
+      // Scout3 reports to a person who is not the user: the Chief still hears it, and the request names the person. Nothing goes to them.
+      replies.Scout3 = [escalate("The invoice tool is down"), "I wait.", "Filed it."];
+      replies.Zetta = [
+        'Retry later.\n```zetta:discussion\n{"action":"resolve","summary":"Retry in an hour."}\n```',
+      ];
+      const chat3 = await chatWith(A, scout3.id);
+      await chat3.say("file the invoices");
+      await worker.drain();
+      msgs = await messagesOf(A, chat3.c);
+      for (let i = 0; i < 50 && !msgs.some((m) => m.content === "Filed it."); i++) {
+        await Bun.sleep(100);
+        msgs = await messagesOf(A, chat3.c);
+      }
+      expect(msgs.map((m) => m.content)).toContain("Filed it.");
+      const chiefRun = runs.find(
+        (r) => r.bot === "Zetta" && r.prompt.includes("The invoice tool is down"),
+      );
+      expect(chiefRun?.prompt).toContain(`The company chart says Scout3 reports to ${B} (CFO).`);
+      expect(chiefRun?.prompt).toContain("name them in the handoff");
+      expect(
+        runs.find((r) => r.bot === "Scout3" && r.prompt.includes("The Chief answered:"))?.prompt,
+      ).toContain("asked the Chief for help. The Chief's answer is advice");
+    } finally {
+      await wipe();
+    }
+  }, 40_000);
   describe("deleting a room", () => {
     // Earlier tests leave bots named Support/Dev for this user and the oldest bot of a name wins, so each test uses fresh names.
     const pair = async () => {

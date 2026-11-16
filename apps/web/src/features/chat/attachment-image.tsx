@@ -6,7 +6,7 @@ import { ImageLightbox } from "@/components/zoom-image";
 
 import { Skeleton } from "@g4rcez/components";
 import { cn } from "@zetta/ui/lib/utils";
-import { ENV } from "../../env";
+import { serverOrigin } from "@/lib/server-origin";
 
 export type Pic = { id: string; name: string };
 
@@ -22,7 +22,7 @@ const attachmentSrc = (id: string) =>
   queryOptions({
     queryKey: ["attachments", id, "content"],
     queryFn: async () => {
-      const r = await fetch(new URL(`/api/attachments/${id}/content`, ENV.ZETTA_SERVER_URL), {
+      const r = await fetch(new URL(`/api/attachments/${id}/content`, serverOrigin()), {
         credentials: "include",
       });
       if (!r.ok) throw new Error("image");

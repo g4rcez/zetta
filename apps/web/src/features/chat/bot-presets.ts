@@ -1,3 +1,4 @@
+import { engineMaturity } from "@zetta/core/maturity";
 import { HARNESSES } from "@zetta/harness/models";
 import type { Bot } from "./chat-client";
 
@@ -9,7 +10,7 @@ export const harnessOptions = HARNESSES.map((h) => ({
       ? "fixture (offline test)"
       : h === "decision"
         ? "decision (Laya/Jev, no tokens)"
-        : h === "claude-code"
+        : engineMaturity(h).level === "stable"
           ? h
           : `${h} (not verified yet)`,
 }));

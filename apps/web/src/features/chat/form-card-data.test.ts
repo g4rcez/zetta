@@ -41,3 +41,16 @@ test("the key form is read with its provider and name", () => {
     )?.prefill,
   ).toEqual({ provider: "openai", label: "Work" });
 });
+
+test("the routine triggers card is read, with the routine it is about", () => {
+  expect(
+    parseFormCard(
+      '{"form":"routine_triggers","botId":null,"botName":null,"prefill":{"routineId":"r1","routineTitle":"Digest","status":"paused"}}',
+    ),
+  ).toEqual({
+    form: "routine_triggers",
+    botId: null,
+    botName: null,
+    prefill: { routineId: "r1", routineTitle: "Digest", status: "paused" },
+  });
+});

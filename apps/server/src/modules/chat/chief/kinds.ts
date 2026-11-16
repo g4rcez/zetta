@@ -15,6 +15,22 @@ const READS = new Set([
   "suggestions",
 ]);
 
+/**
+ * Chief kinds that the administrator's own bots may send too, not only the Chief. A read answers at once and every change is still a card
+ * the administrator approves. Anyone else's bot, and a bot the administrator only shares with the team, is refused.
+ */
+export const ADMIN_BOT_KINDS: ReadonlySet<string> = new Set(["org"]);
+export const adminBotMay = (
+  kind: string,
+  who: { ownerUserId: string },
+  actor: { userId: string; isAdmin: boolean },
+) => ADMIN_BOT_KINDS.has(kind) && actor.isAdmin && who.ownerUserId === actor.userId;
+/** What a bot is told when it may not use a chief kind. */
+export const chiefOnlyMessage = (kind: string) =>
+  ADMIN_BOT_KINDS.has(kind)
+    ? `${kind}: only the administrator's own bots can use the company chart.`
+    : `${kind}: only the chief can do this.`;
+
 /** A call the chief tools handle: a chief kind, or removing a task (the one task action only the chief has). */
 export const isChiefCall = (c: { kind: string; args: unknown }) =>
   CHIEF_KINDS.has(c.kind) ||

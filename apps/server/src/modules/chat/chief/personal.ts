@@ -1,4 +1,5 @@
 import { owned } from "./bot";
+import { openRooms } from "./room";
 import { categoryOf } from "@zetta/core/attention-kinds";
 import { pick, plan } from "./resolve";
 import type { ChiefArgs } from "./schemas";
@@ -8,14 +9,55 @@ export async function runPreferences(ctx: ChiefCtx, a: ChiefArgs<"preferences">)
   const store = ctx.deps.preferences;
   if (!store) return { error: "preferences are not available on this server." };
   const cur = await store.get(ctx.actor);
-  if (a.action === "get") return { read: `preferences.get:\n${JSON.stringify(cur)}` };
+  const profile = ctx.deps.profile;
+  if (a.action === "get") {
+    // The name, never the email.
+    const name = profile ? (await profile.get(ctx.actor)).name : undefined;
+    return { read: `preferences.get:\n${JSON.stringify({ ...cur, ...(name ? { name } : {}) })}` };
+  }
+  if (a.action === "profile") {
+    if (!profile) return { error: "the profile is not available on this server." };
+    const from = (await profile.get(ctx.actor)).name;
+    if (from === a.name) return { error: "that is already your name." };
+    return plan("Change your name", [{ field: "name", from, to: a.name }], {
+      tool: "preferences",
+      op: "profile",
+      name: a.name,
+    });
+  }
   const patch: Record<string, unknown> = {};
   const diff: DiffLine[] = [];
-  for (const k of ["timeFormat", "railMode", "sidebarSide"] as const)
+  for (const k of [
+    "timeFormat",
+    "railMode",
+    "sidebarSide",
+    "navMode",
+    "steerMode",
+    "railWidth",
+    "listWidth",
+  ] as const)
     if (a[k] !== undefined && a[k] !== cur[k]) {
       patch[k] = a[k];
       diff.push({ field: k, from: cur[k], to: a[k] });
     }
+  for (const k of ["theme", "primaryColor"] as const)
+    if (a[k] !== undefined && a[k] !== cur[k]) {
+      patch[k] = a[k];
+      diff.push({ field: k, from: cur[k], to: a[k] });
+    }
+  if (a.roomOrder) {
+    const rooms = await openRooms(ctx);
+    const ids: string[] = [];
+    for (const q of a.roomOrder) {
+      const r = pick(rooms, q, (x) => x.title, "room");
+      if ("error" in r) return r;
+      ids.push(r.hit.id);
+    }
+    if (JSON.stringify(ids) !== JSON.stringify(cur.roomOrder)) {
+      patch.roomOrder = ids;
+      diff.push({ field: "roomOrder", from: null, to: a.roomOrder.join(", ") });
+    }
+  }
   if (a.botOrder) {
     const bots = await owned(ctx);
     const ids: string[] = [];
@@ -36,6 +78,11 @@ export async function applyPreferences(
   ctx: ApplyCtx,
   p: Record<string, unknown>,
 ): Promise<Applied> {
+  if ((p as { op?: string }).op === "profile") {
+    if (!ctx.deps.profile) throw new Error("profile unavailable");
+    await ctx.deps.profile.update(ctx.actor, { name: (p as { name: string }).name });
+    return;
+  }
   if (!ctx.deps.preferences) throw new Error("preferences unavailable");
   await ctx.deps.preferences.update(ctx.actor, (p as { patch: never }).patch);
 }

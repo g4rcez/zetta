@@ -612,14 +612,16 @@ export function createDiscussionStore(
       tried: string,
       request: string,
       stoppedAt: HelpStop,
+      /** What the company chart adds: who the requester reports to. Written by the server. */
+      chartNote = "",
     ) {
       const opened = await open(a, {
         title: `${HELP_PREFIX}${requester.name}: ${problem}`.slice(0, 120),
         goal: `Unblock ${requester.name} inside the user's request. Hand off to the user when a person must act or the request's limits block the work.`,
         // The user's own words travel with the request: the Chief must keep their limits (sources, sites, scope, output).
-        context: `${request ? `User's request (binding; keep its sources, sites, scope and output):\n${request}\n\n` : ""}Problem: ${problem}\nTried: ${tried}`,
+        context: `${request ? `User's request (binding; keep its sources, sites, scope and output):\n${request}\n\n` : ""}Problem: ${problem}\nTried: ${tried}${chartNote ? `\n${chartNote}` : ""}`,
         members: [{ bot: requester.id }],
-        firstMessage: `${requester.name} is blocked and asks the Chief for help.`,
+        firstMessage: `${requester.name} is blocked and asks ${chief.kind === "chief" ? "the Chief" : chief.name} for help.`,
         createdBy: chief,
         tainted: false,
         wake: false,

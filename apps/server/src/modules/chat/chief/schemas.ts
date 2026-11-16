@@ -1,3 +1,6 @@
+import { ORG_DESCRIPTION_MAX, ORG_RANKS, ORG_TITLE_MAX, ORG_UNIT_MAX } from "@zetta/core/org";
+import { PROJECT_BRIEF_MAX, PROJECT_STATUSES, PROJECT_WATCH } from "@zetta/db/schema/projects";
+import { NAV_MODES, SIDEBAR_LIMITS, STEER_MODES, THEMES } from "@zetta/db/schema/preferences";
 import { OUTPUT_STYLE_KEYS, OUTPUT_STYLE_SCOPES } from "@zetta/db/schema/output-styles";
 import { TEAM_ROLE_COLORS, TEAM_ROLE_ICONS } from "@zetta/db/schema/teams";
 import { z } from "zod";
@@ -59,6 +62,12 @@ export const chiefSchemas = {
         commitIdentity: z.enum(["git-config", "bot", "account", "custom"]).optional(),
         commitEmail: z.email().max(254).nullable().optional(),
         requiredConnections: z.array(connectionKey).max(8).optional(),
+        // Chat memory (chat/context.ts): null is the default of each.
+        contextBytes: z.number().int().min(4000).max(60000).nullable().optional(),
+        summaryMode: z.enum(["chief", "bot", "off"]).optional(),
+        summaryMaxChars: z.number().int().min(500).max(6000).nullable().optional(),
+        summaryGapBytes: z.number().int().min(500).max(20000).nullable().optional(),
+        chatSearchLimit: z.number().int().min(1).max(10).nullable().optional(),
       })
       .refine((v) => Object.keys(v).length > 2, { message: "give at least one field to change" }),
     z.strictObject({
@@ -68,6 +77,20 @@ export const chiefSchemas = {
       folder: ref.nullable(),
     }),
     z.strictObject({ action: z.literal("archive"), bot: ref }),
+    /** The numbers of a bot (runs, how long they take, how often the person stepped in, ratings) over 7 or 30 days. */
+    z.strictObject({
+      action: z.literal("stats"),
+      bot: ref,
+      days: z.union([z.literal(7), z.literal(30)]).optional(),
+    }),
+    /** The saved versions of a bot, newest first, with what each one changed. */
+    z.strictObject({ action: z.literal("history"), bot: ref }),
+    /** Brings a past version of a bot back as a new version (a card). */
+    z.strictObject({
+      action: z.literal("restore"),
+      bot: ref,
+      version: z.number().int().positive(),
+    }),
   ]),
   folder: z.discriminatedUnion("action", [
     z.strictObject({ action: z.literal("list") }),
@@ -78,6 +101,107 @@ export const chiefSchemas = {
     }),
     z.strictObject({ action: z.literal("rename"), folder: ref, name: bounded(80) }),
     z.strictObject({ action: z.literal("remove"), folder: ref }),
+  ]),
+  /** The company chart: seats that report to seats, held by people or team bots. Only an administrator changes it. */
+  org: z.discriminatedUnion("action", [
+    z.strictObject({ action: z.literal("list") }),
+    z.strictObject({
+      action: z.literal("add_seat"),
+      /** The seat the new one reports to. Left out only when the chart is empty (the first seat is the CEO). */
+      under: ref.optional(),
+      /** A key of the role templates (ceo, cto, support-agent, ...). */
+      template: bounded(60).optional(),
+      title: bounded(ORG_TITLE_MAX).optional(),
+      rank: z.enum(ORG_RANKS).optional(),
+      unit: z.string().trim().max(ORG_UNIT_MAX).optional(),
+      description: z.string().trim().max(ORG_DESCRIPTION_MAX).optional(),
+    }),
+    z
+      .strictObject({
+        action: z.literal("update"),
+        seat: ref,
+        title: bounded(ORG_TITLE_MAX).optional(),
+        description: z.string().trim().max(ORG_DESCRIPTION_MAX).optional(),
+        unit: z.string().trim().max(ORG_UNIT_MAX).optional(),
+        rank: z.enum(ORG_RANKS).optional(),
+        /** One of the admin's own teams by name or id, or null to unlink. */
+        team: ref.nullable().optional(),
+      })
+      .refine((v) => Object.keys(v).length > 2, { message: "give at least one field to change" }),
+    z.strictObject({
+      action: z.literal("seat"),
+      seat: ref,
+      holder: z.discriminatedUnion("kind", [
+        z.strictObject({ kind: z.literal("open") }),
+        z.strictObject({ kind: z.literal("person"), who: ref }),
+        z.strictObject({ kind: z.literal("bot"), who: ref }),
+      ]),
+    }),
+    z
+      .strictObject({
+        action: z.literal("move"),
+        seat: ref,
+        /** The seat it reports to from now on. Left out, the seat stays where it reports and only changes its place (`index`). */
+        under: ref.optional(),
+        /** Its place among the seats that report to the same manager, from 0. */
+        index: z.number().int().min(0).max(1000).optional(),
+      })
+      .refine((v) => v.under !== undefined || v.index !== undefined, {
+        message: "say where to move it: under a seat, an index, or both",
+      }),
+    z.strictObject({ action: z.literal("remove"), seat: ref }),
+    z.strictObject({
+      action: z.literal("apply_template"),
+      template: bounded(60),
+      under: ref.optional(),
+    }),
+  ]),
+  /** Work a person follows as one thing: a brief, the bots and people on it, its rooms and its tasks. */
+  project: z.discriminatedUnion("action", [
+    z.strictObject({ action: z.literal("list") }),
+    z.strictObject({ action: z.literal("get"), project: ref }),
+    z.strictObject({
+      action: z.literal("create"),
+      name: bounded(120),
+      outcome: z.string().trim().max(PROJECT_BRIEF_MAX).optional(),
+      audience: z.string().trim().max(PROJECT_BRIEF_MAX).optional(),
+      doneWhen: z.string().trim().max(PROJECT_BRIEF_MAX).optional(),
+      notIncluded: z.string().trim().max(PROJECT_BRIEF_MAX).optional(),
+      labels: z.array(bounded(32)).max(10).optional(),
+      watch: z.enum(PROJECT_WATCH).optional(),
+      bots: z.array(ref).max(30).optional(),
+      people: z.array(ref).max(30).optional(),
+    }),
+    z
+      .strictObject({
+        action: z.literal("update"),
+        project: ref,
+        name: bounded(120).optional(),
+        outcome: z.string().trim().max(PROJECT_BRIEF_MAX).optional(),
+        audience: z.string().trim().max(PROJECT_BRIEF_MAX).optional(),
+        doneWhen: z.string().trim().max(PROJECT_BRIEF_MAX).optional(),
+        notIncluded: z.string().trim().max(PROJECT_BRIEF_MAX).optional(),
+        labels: z.array(bounded(32)).max(10).optional(),
+        watch: z.enum(PROJECT_WATCH).optional(),
+        status: z.enum(PROJECT_STATUSES).optional(),
+      })
+      .refine((v) => Object.keys(v).length > 2, { message: "give at least one field to change" }),
+    /** Who works on it: these lists replace the old ones. People are from the owner's teams. */
+    z.strictObject({
+      action: z.literal("members"),
+      project: ref,
+      bots: z.array(ref).max(30),
+      people: z.array(ref).max(30),
+    }),
+    /** The rooms that work for it: this list replaces the old one. */
+    z.strictObject({ action: z.literal("rooms"), project: ref, rooms: z.array(ref).max(30) }),
+    /** Asks someone on the project for something: a task on the project, and a bot starts on it at once. */
+    z.strictObject({
+      action: z.literal("add_work"),
+      project: ref,
+      to: z.strictObject({ kind: z.enum(["bot", "person"]), who: ref }),
+      text: bounded(4000),
+    }),
   ]),
   routine: z.discriminatedUnion("action", [
     z.strictObject({ action: z.literal("list") }),
@@ -110,6 +234,31 @@ export const chiefSchemas = {
     z.strictObject({ action: z.literal("resume"), routine: ref }),
     z.strictObject({ action: z.literal("run_now"), routine: ref }),
     z.strictObject({ action: z.literal("remove"), routine: ref }),
+    /** One routine with its triggers (what else starts it). A trigger's secret is never shown here. */
+    z.strictObject({ action: z.literal("get"), routine: ref }),
+    z
+      .strictObject({
+        action: z.literal("trigger_add"),
+        routine: ref,
+        /** A webhook opens a form for the person: its secret is shown only to them. */
+        kind: z.enum(["gmail", "home_assistant", "webhook"]),
+        query: bounded(200).optional(),
+        entityId: z
+          .string()
+          .regex(/^[a-z0-9_]{1,64}\.[a-z0-9_]{1,64}$/)
+          .optional(),
+        to: z.string().trim().min(1).max(50).optional(),
+      })
+      .refine((v) => v.kind !== "gmail" || !!v.query, { message: "a Gmail trigger needs a query" })
+      .refine((v) => v.kind !== "home_assistant" || !!v.entityId, {
+        message: "a Home Assistant trigger needs an entityId such as light.kitchen",
+      }),
+    /** `trigger` is an id from routine get. A new webhook secret (rotate) opens a form: the secret is shown only to the person. */
+    z.strictObject({
+      action: z.enum(["trigger_pause", "trigger_resume", "trigger_remove", "trigger_rotate"]),
+      routine: ref,
+      trigger: ref,
+    }),
   ]),
   team: z.discriminatedUnion("action", [
     z.strictObject({ action: z.literal("list") }),
@@ -135,6 +284,19 @@ export const chiefSchemas = {
       })
       .refine((v) => Object.keys(v).length > 2, { message: "give at least one field to change" }),
     z.strictObject({ action: z.literal("archive"), team: ref }),
+    /** One team with its bots and its people. */
+    z.strictObject({ action: z.literal("get"), team: ref }),
+    /** People of the installation (by name or id) the owner adds to the team: they read its rooms. */
+    z.strictObject({
+      action: z.literal("add_people"),
+      team: ref,
+      people: z.array(ref).min(1).max(12),
+    }),
+    z.strictObject({
+      action: z.literal("remove_people"),
+      team: ref,
+      people: z.array(ref).min(1).max(12),
+    }),
     /** A project room for the team that waits: the chief leads it, the team's bots join, nobody is woken until the user writes. */
     z.strictObject({
       action: z.literal("open_room"),
@@ -335,10 +497,42 @@ export const chiefSchemas = {
         timeFormat: z.enum(["24h", "12h"]).optional(),
         railMode: z.enum(["expanded", "collapsed"]).optional(),
         sidebarSide: z.enum(["left", "right"]).optional(),
+        /** "simple" hides the Advanced group of the sidebar. */
+        navMode: z.enum(NAV_MODES).optional(),
+        /** What a message sent while a bot works does: wait for the reply, or interrupt it. */
+        steerMode: z.enum(STEER_MODES).optional(),
+        /** The color theme, or null to follow the device. */
+        theme: z.enum(THEMES).nullable().optional(),
+        /** The main color as #rrggbb, or null for the theme's own. */
+        primaryColor: z
+          .string()
+          .regex(/^#[0-9a-f]{6}$/i)
+          .transform((v) => v.toLowerCase())
+          .nullable()
+          .optional(),
+        railWidth: z
+          .number()
+          .int()
+          .min(SIDEBAR_LIMITS.railWidth.min)
+          .max(SIDEBAR_LIMITS.railWidth.max)
+          .optional(),
+        listWidth: z
+          .number()
+          .int()
+          .min(SIDEBAR_LIMITS.listWidth.min)
+          .max(SIDEBAR_LIMITS.listWidth.max)
+          .optional(),
         /** Bots in the order the sidebar shows them (names or ids). */
         botOrder: z.array(ref).max(200).optional(),
+        /** Rooms in the order the sidebar shows them (titles or ids). */
+        roomOrder: z.array(ref).max(200).optional(),
       })
       .refine((v) => Object.keys(v).length > 1, { message: "give at least one field to change" }),
+    /** The person's name, as bots and other people see it. The picture and the email are not changed here. */
+    z.strictObject({
+      action: z.literal("profile"),
+      name: bounded(80).refine((s) => !/\p{Cc}/u.test(s), { message: "no control characters" }),
+    }),
   ]),
   conversation: z.discriminatedUnion("action", [
     z.strictObject({
@@ -361,6 +555,20 @@ export const chiefSchemas = {
   ]),
   workflow: z.discriminatedUnion("action", [
     z.strictObject({ action: z.literal("list") }),
+    /** One workflow with its graph, to edit from. */
+    z.strictObject({ action: z.literal("get"), workflow: ref }),
+    z
+      .strictObject({
+        action: z.literal("update"),
+        workflow: ref,
+        name: bounded(80).optional(),
+        /** The whole new graph; it is checked before the card is made. */
+        graph: z
+          .record(z.string(), z.unknown())
+          .refine((g) => JSON.stringify(g).length <= 60_000, { message: "the graph is too large" })
+          .optional(),
+      })
+      .refine((v) => Object.keys(v).length > 2, { message: "give at least one field to change" }),
     z.strictObject({
       action: z.literal("run"),
       workflow: ref,

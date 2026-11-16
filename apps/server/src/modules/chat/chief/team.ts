@@ -91,6 +91,66 @@ export async function runTeam(ctx: ChiefCtx, a: ChiefArgs<"team">): Promise<Outc
       },
     };
 
+  if (a.action === "get") {
+    const people = await teams.people(ctx.actor, t.id);
+    return {
+      read: `team.get:\n${JSON.stringify({
+        id: t.id,
+        name: t.name,
+        goal: t.goal,
+        bots: t.members.map((m) => ({ bot: m.name, botId: m.botId, kind: m.kind, role: m.role })),
+        people: people.map((p) => ({ userId: p.userId, name: p.name, role: p.role })),
+      })}`,
+    };
+  }
+
+  if (a.action === "add_people" || a.action === "remove_people") {
+    const adding = a.action === "add_people";
+    const owned = all.find((x) => x.id === t.id);
+    if (!owned) return { error: `no team called "${a.team}".` };
+    const inTeam = await teams.people(ctx.actor, t.id);
+    // Who can be named: the installation's members the owner can still add, or the people already in the team (never its owner).
+    const pool = adding
+      ? (await teams.candidates(ctx.actor, t.id)).map((c) => ({ id: c.userId, name: c.name }))
+      : inTeam.filter((p) => p.role !== "owner").map((p) => ({ id: p.userId, name: p.name }));
+    const chosen: { id: string; name: string }[] = [];
+    for (const who of a.people) {
+      if (adding) {
+        const already = inTeam.find(
+          (p) => p.userId === who || p.name.toLowerCase() === who.toLowerCase(),
+        );
+        if (already) continue;
+      } else if (inTeam.some((p) => p.role === "owner" && (p.userId === who || p.name === who)))
+        return { error: "The owner stays in the team, and only a member can be removed." };
+      const hit = pick(
+        pool,
+        who,
+        (p) => p.name,
+        adding ? "person you can add" : "person in the team",
+      );
+      if ("error" in hit) return hit;
+      if (!chosen.some((c) => c.id === hit.hit.id)) chosen.push(hit.hit);
+    }
+    if (!chosen.length)
+      return { error: `Nobody to ${adding ? "add" : "remove"}: they are already in the team.` };
+    return {
+      plan: {
+        title: `${adding ? "Add people to" : "Remove people from"} team ${t.name}`,
+        diff: chosen.map((c) => ({
+          field: adding ? "add person" : "remove person",
+          from: adding ? null : c.name,
+          to: adding ? c.name : "no longer reads the team's rooms",
+        })),
+        patch: {
+          tool: "team",
+          op: adding ? "add_people" : "remove_people",
+          id: t.id,
+          userIds: chosen.map((c) => c.id),
+        },
+      },
+    };
+  }
+
   if (a.action === "open_room") {
     if (t.members.length < 2)
       return { error: `"${t.name}" has no bot besides its chief yet. Add the team's bots first.` };
@@ -251,8 +311,13 @@ export async function applyTeam(ctx: ApplyCtx, p: Record<string, unknown>): Prom
     id: string;
     input: never;
     expectedVersion: number;
+    userIds?: string[];
   };
-  if (v.op === "update") await teams.save(ctx.actor, v.id, v.expectedVersion, v.input);
+  if (v.op === "add_people")
+    for (const u of v.userIds ?? []) await teams.addPerson(ctx.actor, v.id, u);
+  else if (v.op === "remove_people")
+    for (const u of v.userIds ?? []) await teams.removePerson(ctx.actor, v.id, u);
+  else if (v.op === "update") await teams.save(ctx.actor, v.id, v.expectedVersion, v.input);
   else if (v.op === "archive") await teams.archive(ctx.actor, v.id);
   else if (v.op === "open_room") await teams.startRoom(ctx.actor, v.id, v.input);
   else if (v.op === "role_create") await teams.createRole(ctx.actor, v.input);

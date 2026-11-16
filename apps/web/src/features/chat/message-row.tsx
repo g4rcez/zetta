@@ -37,6 +37,7 @@ import { errorMessage, isImage, type Bot, type Receipt } from "./chat-client";
 import { chatQueries } from "./chat-queries";
 import { PictureStrip } from "./attachment-image";
 import { CopyButton } from "./chat-copy";
+import { RateButtons, useFeedback } from "../bot-quality/feedback";
 import { EmojiPicker } from "./emoji-picker";
 import { computersOf, type Row } from "./chat-rows";
 import { elapsed, friendly, isGeneric, useNow, WorkTimeline } from "./work-timeline";
@@ -232,6 +233,11 @@ function HoverBar({
   onSaveToMemory: () => void;
 }) {
   const bar = useRef<HTMLDivElement>(null);
+  // Where the chat gives thumbs, 👍 and 👎 are ratings of the bot, not emoji reactions.
+  const rating = useFeedback();
+  const quick = rating
+    ? QUICK_REACTIONS.filter((r) => r.emoji !== "👍" && r.emoji !== "👎")
+    : QUICK_REACTIONS;
   useLayoutEffect(() => {
     if (entry === "keyboard") bar.current?.querySelector("button")?.focus();
   }, [entry]);
@@ -242,7 +248,8 @@ function HoverBar({
       aria-label="Message actions"
       className="absolute -top-4 right-4 z-10 flex items-center rounded-lg border bg-popover p-0.5 opacity-0 shadow-sm transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 has-aria-expanded:opacity-100 [@media(hover:none)]:hidden"
     >
-      {QUICK_REACTIONS.map(({ emoji, name }) => (
+      <RateButtons row={row} />
+      {quick.map(({ emoji, name }) => (
         <ActionHint key={emoji} label={name}>
           <Button
             size="icon-xs"

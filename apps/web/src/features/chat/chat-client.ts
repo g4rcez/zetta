@@ -1,5 +1,6 @@
+import type { SummaryMode } from "@zetta/core/chat-memory";
 import { uuidv7 } from "@zetta/core/uuid";
-import { ENV } from "../../env";
+import { serverOrigin } from "@/lib/server-origin";
 import { createSealedSend, type PublishedTransportKey } from "./sealed-send";
 
 export type BotAvatarValue =
@@ -29,6 +30,13 @@ export type Bot = {
   outputStyleId?: string | null;
   computerMode?: ComputerMode;
   autoLearn?: AutoLearn;
+  /** Bytes of the chat a turn reads back; null or missing is the default (24,000). */
+  contextBytes?: number | null;
+  /** Chat memory (see @zetta/core/chat-memory): who writes the summary, how long it is, when it refreshes, how many hits the search gives. */
+  summaryMode?: SummaryMode;
+  summaryMaxChars?: number | null;
+  summaryGapBytes?: number | null;
+  chatSearchLimit?: number | null;
   codeAccess?: boolean;
   commitIdentity?: CommitIdentity;
   commitEmail?: string | null;
@@ -99,6 +107,11 @@ export type BotPatch = Partial<{
   outputStyleId: string | null;
   computerMode: ComputerMode;
   autoLearn?: AutoLearn;
+  contextBytes: number | null;
+  summaryMode: SummaryMode;
+  summaryMaxChars: number | null;
+  summaryGapBytes: number | null;
+  chatSearchLimit: number | null;
   codeAccess: boolean;
   commitIdentity: CommitIdentity;
   commitEmail: string | null;
@@ -160,6 +173,17 @@ export const REMEMBERABLE: readonly ProposalKind[] = [
   "chief_action",
   "bot_action",
 ];
+/** Chief tools whose cards are never remembered (the server keeps the same list in chat/approval-rules.ts). */
+export const NEVER_REMEMBERED_TOOLS: ReadonlySet<string> = new Set([
+  "org",
+  "team:people",
+  "workflow_gate",
+]);
+/** The key the server narrows a chief card by (chat/approval-rules.ts `actionKeyOf`). */
+const chiefKeyOf = (patch: Record<string, unknown> | undefined) =>
+  patch?.tool === "team" && (patch.op === "add_people" || patch.op === "remove_people")
+    ? "team:people"
+    : String(patch?.tool ?? "");
 export type Proposal = {
   id: string;
   /** The bot the change is about. */
@@ -174,6 +198,11 @@ export type Proposal = {
   /** `hold`: the card widens what a bot may do, so Approve is a press-and-hold. Absent on old servers: a click. */
   confirm?: "hold" | "click";
 };
+/** Whether a card offers "Always allow" and "Allow in this chat": its kind may be remembered, and a chief tool must not be on the never list. */
+export const canRememberProposal = (p: Pick<Proposal, "kind" | "patch">): boolean =>
+  !!p.kind &&
+  REMEMBERABLE.includes(p.kind) &&
+  !(p.kind === "chief_action" && NEVER_REMEMBERED_TOOLS.has(chiefKeyOf(p.patch)));
 /** Where a list of approvals is asked for: a chat, a room, or a chat that has no conversation yet. */
 export type ProposalPlace = { chatId?: string; roomId?: string; newChat?: boolean };
 export type DecisionResult = {
@@ -438,7 +467,7 @@ export const errorCode = (e: unknown) => (e instanceof ApiError ? e.code : undef
 const REQUEST_TIMEOUT_MS = 30_000;
 /** Reads that several components share go through the query cache (`lib/query-client.ts`), which sends one request per key. */
 export async function call<T>(path: string, method = "GET", body?: object): Promise<T> {
-  const response = await fetch(new URL(path, ENV.ZETTA_SERVER_URL), {
+  const response = await fetch(new URL(path, serverOrigin()), {
     method,
     credentials: "include",
     // The server marks most answers `no-store`, so those are never kept. The polled lists carry an ETag: the browser asks
@@ -483,7 +512,7 @@ export type InterviewResult =
 export const stepOutputUrl = (conversationId: string, stepId: string) =>
   new URL(
     `/api/conversations/${conversationId}/steps/${encodeURIComponent(stepId)}/output`,
-    ENV.ZETTA_SERVER_URL,
+    serverOrigin(),
   ).toString();
 
 export const chatClient = {
@@ -719,6 +748,20 @@ const toBase64 = (file: Blob) =>
     r.onerror = () => reject(r.error);
     r.readAsDataURL(file);
   });
+/** Documents a bot can read the text of (the server extracts it): PDF, Word, PowerPoint, Excel, CSV and TSV. */
+export const DOCUMENT_EXTENSIONS = ["pdf", "docx", "pptx", "xlsx", "csv", "tsv"] as const;
+export const DOCUMENT_MAX_BYTES = 20 * 1024 * 1024;
+export const isDocumentFile = (file: Pick<File, "name">) => {
+  const ext = file.name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  return ext !== undefined && (DOCUMENT_EXTENSIONS as readonly string[]).includes(ext);
+};
+export const uploadDocument = async (file: File, conversationId?: string) =>
+  call<{ attachment: Attachment & { note?: string } }>("/api/attachments", "POST", {
+    name: file.name,
+    mimeType: file.type || "application/octet-stream",
+    dataBase64: await toBase64(file),
+    ...(conversationId ? { conversationId } : {}),
+  }).then((r) => r.attachment);
 export const uploadImage = async (file: File, conversationId?: string) =>
   call<{ attachment: Attachment }>("/api/attachments", "POST", {
     name: file.name || "image.png",

@@ -6,9 +6,22 @@ import { pick, plan } from "./resolve";
 import type { ChiefArgs } from "./schemas";
 import type { Applied, ApplyCtx, ChiefCtx, Outcome } from "./types";
 
+/** The rooms of the user that are still going, as the room tool and the sidebar order name them. */
+export const openRooms = (ctx: Pick<ChiefCtx, "deps" | "actor">) =>
+  ctx.deps.db
+    .select({ id: discussion.id, title: discussion.title, status: discussion.status })
+    .from(discussion)
+    .where(
+      and(
+        eq(discussion.ownerUserId, ctx.actor.userId),
+        eq(discussion.kind, "room"),
+        inArray(discussion.status, ["open", "paused", "stalled"]),
+      ),
+    );
+
 /** Rooms the user already has (pause, resume, cancel, silence the bots, who needs approval) and which bots may open rooms freely. */
 export async function runRoom(ctx: ChiefCtx, a: ChiefArgs<"room">): Promise<Outcome> {
-  const { discussions, teams, db } = ctx.deps;
+  const { discussions, teams } = ctx.deps;
   if (!discussions) return { error: "rooms are not available on this server." };
   const bots = await owned(ctx);
   if (a.action === "peers") {
@@ -29,16 +42,7 @@ export async function runRoom(ctx: ChiefCtx, a: ChiefArgs<"room">): Promise<Outc
       { tool: "room", op: "peers", botId: b.hit.id, ids: peers.map((p) => p.id) },
     );
   }
-  const rows = await db
-    .select({ id: discussion.id, title: discussion.title, status: discussion.status })
-    .from(discussion)
-    .where(
-      and(
-        eq(discussion.ownerUserId, ctx.actor.userId),
-        eq(discussion.kind, "room"),
-        inArray(discussion.status, ["open", "paused", "stalled"]),
-      ),
-    );
+  const rows = await openRooms(ctx);
   if (a.action === "list") return { read: `room.list:\n${JSON.stringify(rows)}` };
   const r = pick(rows, a.room, (x) => x.title, "room");
   if ("error" in r) return r;

@@ -12,6 +12,44 @@ export async function runWorkflow(ctx: ChiefCtx, a: ChiefArgs<"workflow">): Prom
     };
   const w = pick(rows, a.workflow, (x) => x.name, "workflow");
   if ("error" in w) return w;
+  if (a.action === "get") {
+    const full = await f.workflows.get(ctx.actor, w.hit.id);
+    const graph = JSON.stringify(full.graph);
+    return {
+      read: `workflow.get:\n${JSON.stringify({ id: full.id, name: full.name, version: full.version })}\ngraph${graph.length > 20_000 ? " (cut: too long to read whole, ask the user to edit it on the Studio page)" : ""}: ${graph.slice(0, 20_000)}`,
+    };
+  }
+  if (a.action === "update") {
+    let steps: number | undefined;
+    if (a.graph) {
+      const ok = f.workflows.validate(a.graph);
+      if (!ok.ok)
+        return { error: `the graph is not valid: ${ok.problems.slice(0, 5).join("; ")}.` };
+      steps = Object.keys((a.graph as { nodes?: object }).nodes ?? {}).length;
+    }
+    const was = await f.workflows.get(ctx.actor, w.hit.id);
+    const diff: { field: string; from: unknown; to: unknown }[] = [];
+    if (a.name !== undefined && a.name !== was.name)
+      diff.push({ field: "name", from: was.name, to: a.name });
+    if (a.graph) {
+      const before = Object.keys((was.graph as { nodes?: object }).nodes ?? {}).length;
+      diff.push({ field: "steps", from: `${before} steps`, to: `${steps} steps` });
+    }
+    if (!diff.length) return { error: `Nothing changes in "${w.hit.name}".` };
+    return plan(
+      `Change workflow ${w.hit.name}`,
+      diff,
+      {
+        tool: "workflow",
+        op: "update",
+        id: w.hit.id,
+        name: a.name ?? was.name,
+        graph: a.graph ?? was.graph,
+        expectedVersion: was.version,
+      },
+      was.version,
+    );
+  }
   return plan(
     `Run workflow ${w.hit.name}`,
     [
@@ -24,8 +62,22 @@ export async function runWorkflow(ctx: ChiefCtx, a: ChiefArgs<"workflow">): Prom
 }
 export async function applyWorkflow(ctx: ApplyCtx, p: Record<string, unknown>): Promise<Applied> {
   if (!ctx.deps.features) throw new Error("workflows unavailable");
-  const v = p as { id: string; input: string };
-  await ctx.deps.features.workflows.run(ctx.actor, v.id, v.input);
+  const v = p as {
+    op?: string;
+    id: string;
+    input: string;
+    name: string;
+    graph: unknown;
+    expectedVersion: number;
+  };
+  if (v.op === "update")
+    await ctx.deps.features.workflows.save(ctx.actor, {
+      id: v.id,
+      name: v.name,
+      graph: v.graph,
+      expectedVersion: v.expectedVersion,
+    });
+  else await ctx.deps.features.workflows.run(ctx.actor, v.id, v.input);
 }
 
 export async function runComputer(ctx: ChiefCtx, a: ChiefArgs<"computer">): Promise<Outcome> {

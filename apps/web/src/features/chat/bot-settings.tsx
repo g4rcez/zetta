@@ -19,6 +19,7 @@ import { BotRoutines } from "./bot-routines";
 import { BotOriginSection } from "../bots/bot-origin";
 import { BotDecision } from "./bot-decision";
 import { BotHooks } from "./bot-hooks";
+import { ChatMemoryForm } from "./chat-memory-form";
 import { harnessOptions, isAllowedModel, modelOptions } from "./bot-presets";
 import { registeredBotSections } from "./bot-sections";
 import "../claude/register"; // per-bot Claude Code permissions, skills and sub-agents
@@ -27,6 +28,8 @@ import "../computer/register";
 import "../discussions/register";
 import "../inbound/register";
 import "../plugins/register";
+import "../bot-quality/register"; // history, saved tests and the numbers of a bot
+import "../org/register"; // the seats a bot holds in the company chart
 import "../teams/register"; // the teams a bot belongs to and leads
 import {
   chatClient,
@@ -317,6 +320,14 @@ function LearningForm({ bot, onBotChange, notify }: Common) {
   );
 }
 
+/** How much of a chat the bot remembers: the form lives in chat-memory-form.tsx, this keeps its save. */
+function ChatMemorySection({ bot, onBotChange, notify }: Common) {
+  const { error, saving, save } = useSave(bot, onBotChange, notify);
+  return (
+    <ChatMemoryForm bot={bot} saving={saving} error={error} onSave={(patch) => void save(patch)} />
+  );
+}
+
 function OutputStyleForm({ bot, onBotChange, notify }: Common) {
   const { error, saving, save } = useSave(bot, onBotChange, notify);
   const saved: StyleChoice = {
@@ -402,6 +413,7 @@ export const BOT_TABS = [
       "general",
       "picture",
       "personality",
+      "chat-memory",
       "output-style",
       "origin",
       "teams",
@@ -414,6 +426,7 @@ export const BOT_TABS = [
   { id: "routines", label: "Routines", ids: ["routines"] },
   { id: "computer", label: "Computer", ids: ["code", "computer"] },
   { id: "approvals", label: "Approvals", ids: ["approvals"] },
+  { id: "quality", label: "Quality", ids: ["performance", "saved-tests", "history"] },
 ] as const;
 export type BotTab = (typeof BOT_TABS)[number]["id"];
 export const parseBotTab = (v: unknown): BotTab | undefined =>
@@ -487,6 +500,12 @@ function SettingsBody({
       title: "Output style",
       description: "How the bot writes: its tone of voice and the shape of its answers.",
       node: <OutputStyleForm key={`${bot.id}-${bot.version}`} {...common} />,
+    },
+    {
+      id: "chat-memory",
+      title: "Chat memory",
+      description: "How far back the bot remembers a chat.",
+      node: <ChatMemorySection {...common} />,
     },
     ...(bot.origin
       ? [

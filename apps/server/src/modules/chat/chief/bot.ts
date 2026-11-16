@@ -2,6 +2,12 @@ import { and, asc, eq } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
 
 import type { BotInput } from "../service";
+import {
+  changedFields,
+  createBotQuality,
+  restorePatch,
+  snapshotOfBot,
+} from "../../bot-quality/service";
 import { pick, sameValue, short } from "./resolve";
 import type { ChiefArgs } from "./schemas";
 import type { Applied, ApplyCtx, ChiefCtx, DiffLine, Outcome } from "./types";
@@ -43,6 +49,11 @@ const FIELDS = [
   "commitIdentity",
   "commitEmail",
   "requiredConnections",
+  "contextBytes",
+  "summaryMode",
+  "summaryMaxChars",
+  "summaryGapBytes",
+  "chatSearchLimit",
 ] as const;
 
 export async function runBot(ctx: ChiefCtx, a: ChiefArgs<"bot">): Promise<Outcome> {
@@ -56,12 +67,57 @@ export async function runBot(ctx: ChiefCtx, a: ChiefArgs<"bot">): Promise<Outcom
     if ("error" in r) return r;
     const b = r.hit;
     return {
-      read: `bot.get:\n${JSON.stringify({ ...summary(b), description: b.description, personality: b.personality, instructions: b.instructions, commitIdentity: b.commitIdentity, commitEmail: b.commitEmail, requiredConnections: b.requiredConnections })}`,
+      read: `bot.get:\n${JSON.stringify({ ...summary(b), description: b.description, personality: b.personality, instructions: b.instructions, commitIdentity: b.commitIdentity, commitEmail: b.commitEmail, requiredConnections: b.requiredConnections, contextBytes: b.contextBytes, summaryMode: b.summaryMode, summaryMaxChars: b.summaryMaxChars, summaryGapBytes: b.summaryGapBytes, chatSearchLimit: b.chatSearchLimit })}`,
     };
   }
   const r = pick(bots, a.bot, (b) => b.name, "bot");
   if ("error" in r) return r;
   const target = r.hit;
+  if (a.action === "stats" || a.action === "history" || a.action === "restore") {
+    // Reads and the restore card need only the database and `updateBot`; the saved-test runner (which needs the chat) is not used here.
+    const quality = createBotQuality(ctx.deps.db, { chat: ctx.deps.chat as never });
+    if (a.action === "stats")
+      return {
+        read: `bot.stats:\n${JSON.stringify(await quality.stats(ctx.actor, target.id, a.days ?? 7))}`,
+      };
+    if (a.action === "history") {
+      const h = await quality.revisions(ctx.actor, target.id);
+      return {
+        read: `bot.history:\n${JSON.stringify(
+          h.revisions.map((v) => ({
+            version: v.version,
+            current: v.current,
+            at: v.createdAt,
+            changed: v.changed,
+          })),
+        )}`,
+      };
+    }
+    const h = await quality.revisions(ctx.actor, target.id);
+    const old = h.revisions.find((v) => v.version === a.version);
+    if (!old) return { error: `${target.name} has no saved version ${a.version}.` };
+    if (old.current) return { error: `version ${a.version} is what ${target.name} has now.` };
+    const changes = restorePatch(old.config);
+    const fields = changedFields(snapshotOfBot(target), changes);
+    if (!fields.length) return { error: `version ${a.version} would change nothing.` };
+    return {
+      plan: {
+        title: `Bring back version ${a.version} of ${target.name}`,
+        diff: fields.map((f): DiffLine => ({
+          field: f,
+          from: short((snapshotOfBot(target) as Record<string, unknown>)[f]),
+          to: short((changes as Record<string, unknown>)[f]),
+        })),
+        patch: {
+          tool: "bot",
+          op: "update",
+          botId: target.id,
+          expectedVersion: target.version,
+          changes,
+        },
+      },
+    };
+  }
   if (a.action === "archive") {
     if (target.kind === "chief") return { error: "the chief cannot be archived." };
     return {

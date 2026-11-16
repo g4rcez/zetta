@@ -19,9 +19,22 @@ export const NEVER_REMEMBERED = new Set([
   "discussion_brief",
 ]);
 
+/**
+ * Chief tools whose changes are never remembered, whatever the action: one rule would cover every action of the tool. The company chart is
+ * shared by everyone and an administrator's choice each time (adding a seat and removing one are not the same decision).
+ */
+export const NEVER_REMEMBERED_TOOLS = new Set(["org", "team:people", "workflow_gate"]);
+
 /** What narrows a broad kind: the tool of a chief action, the call kinds of a held bot action. Empty for the other kinds. */
 export function actionKeyOf(kind: string, patch: unknown): string {
-  const p = (patch ?? {}) as { tool?: unknown; calls?: unknown };
+  const p = (patch ?? {}) as { tool?: unknown; op?: unknown; calls?: unknown };
+  // Adding a person to a team widens who reads its rooms: that is a decision each time, apart from the rest of the team tool.
+  if (
+    kind === "chief_action" &&
+    p.tool === "team" &&
+    (p.op === "add_people" || p.op === "remove_people")
+  )
+    return "team:people";
   if (kind === "chief_action" && typeof p.tool === "string") return p.tool;
   if (kind === "bot_action" && Array.isArray(p.calls))
     return [
@@ -40,8 +53,13 @@ export function canRemember(kind: string, patch: unknown): boolean {
   if (NEVER_REMEMBERED.has(kind)) return false;
   // A chief action with no named tool, or a held bot action with no calls, cannot be narrowed: it would allow too much.
   if ((kind === "chief_action" || kind === "bot_action") && !actionKeyOf(kind, patch)) return false;
+  if (kind === "chief_action" && NEVER_REMEMBERED_TOOLS.has(actionKeyOf(kind, patch))) return false;
   return true;
 }
+
+/** A rule already saved for a kind that is no longer remembered stops working (`match` refuses it); this keeps it off the list too. */
+const stillRemembered = (r: { kind: string; actionKey: string }) =>
+  r.kind !== "chief_action" || !NEVER_REMEMBERED_TOOLS.has(r.actionKey);
 
 const LABELS: Record<string, string> = {
   config: "Change its own settings",
@@ -117,8 +135,8 @@ export function createApprovalRules(db: Database) {
         .returning();
       return row;
     },
-    list(ownerUserId: string, botId: string) {
-      return db
+    async list(ownerUserId: string, botId: string) {
+      const rows = await db
         .select({
           id: approvalRule.id,
           kind: approvalRule.kind,
@@ -136,6 +154,7 @@ export function createApprovalRules(db: Database) {
           ),
         )
         .orderBy(desc(approvalRule.createdAt));
+      return rows.filter(stillRemembered);
     },
     async revoke(ownerUserId: string, id: string) {
       const [row] = await db

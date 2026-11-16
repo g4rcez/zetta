@@ -26,7 +26,7 @@ import {
   type DecisionResult,
   type Proposal,
   type ProposalKind,
-  REMEMBERABLE,
+  canRememberProposal,
 } from "./chat-client";
 
 const KIND_LABEL: Record<ProposalKind, string> = {
@@ -422,7 +422,7 @@ export function ProposalCard({
           </HoldButton>
         ) : (
           <>
-            {p.kind && REMEMBERABLE.includes(p.kind) && conversationId && (
+            {canRememberProposal(p) && conversationId && (
               <Button
                 size="sm"
                 variant="outline"
@@ -432,7 +432,7 @@ export function ProposalCard({
                 Allow in this chat
               </Button>
             )}
-            {p.kind && REMEMBERABLE.includes(p.kind) && (
+            {canRememberProposal(p) && (
               <Button
                 size="sm"
                 variant="outline"

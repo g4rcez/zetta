@@ -30,6 +30,11 @@ let installation = {
   layaLanguages: ["en"],
   layaModel: "english",
   restartRequired: false,
+  transcribeProvider: "local",
+  transcribeModel: "",
+  transcribeLanguage: "",
+  transcribeBaseUrl: "",
+  transcribeKey: "none",
 };
 let patches: unknown[] = [];
 globalThis.fetch = (async (input: URL | string, init?: RequestInit) => {
@@ -42,6 +47,7 @@ globalThis.fetch = (async (input: URL | string, init?: RequestInit) => {
     installation = { ...installation, ...body, restartRequired: true };
     return Response.json(installation);
   }
+  if (path === "/api/routines/r1/triggers") return Response.json({ triggers: [] });
   return Response.json({ error: { code: "UNAUTHENTICATED", message: "no" } }, { status: 401 });
 }) as typeof fetch;
 
@@ -99,5 +105,32 @@ test("the installation card shows the network choice, asks for the address, save
 
   expect(patches).toEqual([{ networkMode: "network", publicUrl: "https://zetta.example.invalid" }]);
   expect(host.textContent).toContain("Restart the Zetta server to apply the network choice.");
+  await act(async () => root.unmount());
+});
+
+test("the routine triggers card is the panel the routine page has: the webhook secret is made and shown only in the browser", async () => {
+  const { FormCard } = await import("./form-card");
+  const host = win.document.createElement("div");
+  win.document.body.append(host);
+  const root = createRoot(host as unknown as Element);
+  await act(async () =>
+    root.render(
+      withQuery(
+        <FormCard
+          data={{
+            form: "routine_triggers",
+            botId: null,
+            botName: null,
+            prefill: { routineId: "r1", routineTitle: "Morning digest", status: "active" },
+          }}
+        />,
+      ),
+    ),
+  );
+  await settle();
+  expect(host.textContent).toContain("Triggers of Morning digest");
+  expect(host.textContent).toContain("No triggers yet.");
+  const adders = [...host.querySelectorAll("button")].map((b) => b.textContent);
+  expect(adders).toContain("Add: Webhook");
   await act(async () => root.unmount());
 });

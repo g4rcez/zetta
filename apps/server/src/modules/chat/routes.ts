@@ -21,11 +21,22 @@ import {
   type ChatService,
 } from "./service";
 import { IMAGE_TYPES } from "./images";
+import { DocumentError } from "./extract";
 import { MAX_PINS, PinLimitError } from "./pins";
 import { MAX_LABEL, MAX_OPTIONS, MIN_OPTIONS, POLL_MODES, PollError } from "./polls";
 import { interviewInput, interviewTurn } from "./bot-interview";
 import { decisionConfigSchema } from "./routing";
 import { FileAccessError, type FileStore } from "./files";
+import {
+  CHAT_SEARCH_LIMIT_MAX,
+  CONTEXT_BYTES_MAX,
+  CONTEXT_BYTES_MIN,
+  SUMMARY_CHARS_MAX,
+  SUMMARY_CHARS_MIN,
+  SUMMARY_GAP_MAX,
+  SUMMARY_GAP_MIN,
+  SUMMARY_MODES,
+} from "./context";
 import { createUIMessageStreamResponse } from "ai";
 import { toUIMessageStream } from "./ui-stream";
 import { accessFail, createGuardedRoute, fail, out, rejectUntrustedOrigin } from "../http-response";
@@ -97,6 +108,24 @@ const botInput = z.strictObject({
   outputStyleId: z.string().uuid().nullable().optional(),
   computerMode: z.enum(["off", "browser", "desktop"]).optional(),
   autoLearn: z.enum(["off", "suggest", "auto"]).optional(),
+  /** How many bytes of the chat a turn reads back; null is the default (see chat/context.ts). */
+  contextBytes: z
+    .number()
+    .int()
+    .min(CONTEXT_BYTES_MIN)
+    .max(CONTEXT_BYTES_MAX)
+    .nullable()
+    .optional(),
+  summaryMode: z.enum(SUMMARY_MODES).optional(),
+  summaryMaxChars: z
+    .number()
+    .int()
+    .min(SUMMARY_CHARS_MIN)
+    .max(SUMMARY_CHARS_MAX)
+    .nullable()
+    .optional(),
+  summaryGapBytes: z.number().int().min(SUMMARY_GAP_MIN).max(SUMMARY_GAP_MAX).nullable().optional(),
+  chatSearchLimit: z.number().int().min(1).max(CHAT_SEARCH_LIMIT_MAX).nullable().optional(),
   codeAccess: z.boolean().optional(),
   commitIdentity: z.enum(["git-config", "bot", "account", "custom"]).optional(),
   commitEmail: z.email().max(254).nullable().optional(),
@@ -193,6 +222,13 @@ const uploadImage = z.strictObject({
   name: z.string().trim().min(1).max(200),
   mimeType: z.enum(IMAGE_TYPES),
   dataBase64: z.string().min(1).max(14_000_000),
+  conversationId: uuid.optional(),
+});
+/** A document (PDF, Word, PowerPoint, Excel, CSV, TSV) travels as base64 too; the server reads its text. 20 MB of bytes is ~28 MB of text. */
+const uploadDocument = z.strictObject({
+  name: z.string().trim().min(1).max(200),
+  mimeType: z.string().max(150).default("application/octet-stream"),
+  dataBase64: z.string().min(1).max(28_000_000),
   conversationId: uuid.optional(),
 });
 const noFiles: FileStore = {
@@ -497,11 +533,13 @@ export function createChatRoutes(
         "FALLBACK_INVALID",
         "The fallback must be a different harness from the main one, with a model that harness offers.",
       );
+    if (error instanceof DocumentError)
+      return fail(error.code === "TOO_BIG" ? 413 : 400, `DOCUMENT_${error.code}`, error.safe);
     if (error instanceof AttachmentError)
       return fail(
         400,
         "ATTACHMENT_INVALID",
-        "Attach a text file up to 256 KB or a PNG, JPEG, WebP or GIF image up to 10 MB.",
+        "Attach a text file up to 256 KB, a PDF, Word, PowerPoint, Excel or CSV file up to 20 MB, or a PNG, JPEG, WebP or GIF image up to 10 MB.",
       );
     if (error instanceof FileAccessError)
       return fail(
@@ -592,7 +630,11 @@ export function createChatRoutes(
         async ({ actor, body }) => ({
           attachment:
             body && typeof body === "object" && "dataBase64" in body
-              ? await chat.addImageAttachment(actor, parse(uploadImage, body))
+              ? (IMAGE_TYPES as readonly string[]).includes(
+                  String((body as { mimeType?: unknown }).mimeType),
+                )
+                ? await chat.addImageAttachment(actor, parse(uploadImage, body))
+                : await chat.addDocumentAttachment(actor, parse(uploadDocument, body))
               : await chat.addAttachment(actor, parse(upload, body)),
         }),
         201,

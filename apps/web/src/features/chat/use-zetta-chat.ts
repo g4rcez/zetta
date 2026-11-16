@@ -3,7 +3,7 @@ import { uuidv7 } from "@zetta/core/uuid";
 import { DefaultChatTransport } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { ENV } from "../../env";
+import { serverOrigin } from "@/lib/server-origin";
 import { refreshBotStatus } from "../bots/status";
 import { cancelTurn, chatClient } from "./chat-client";
 import { liveRows, reuseRows, summaryOf, type Row, type ZettaUIMessage } from "./chat-rows";
@@ -18,7 +18,7 @@ type Extras = {
   memoryIds?: string[];
   skills?: string[];
 };
-const url = (path: string) => new URL(path, ENV.ZETTA_SERVER_URL).toString();
+const url = (path: string) => new URL(path, serverOrigin()).toString();
 
 /**
  * One AI SDK chat bound to a conversation (or a thread inside it). useChat only holds the turn in flight:

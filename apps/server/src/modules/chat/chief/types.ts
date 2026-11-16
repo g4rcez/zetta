@@ -21,7 +21,11 @@ import type { createRouting } from "../routing";
 import type { Routines } from "../../features/routines";
 import type { ActiveActor } from "../../identity/access";
 import type { OutputStyles } from "../../output-styles/service";
+import type { ProfileStore } from "../../profile/store";
 import type { TaskStore } from "../../tasks/store";
+import type { OrgStore } from "../../org/store";
+import type { ProjectStore } from "../../projects/store";
+import type { ProjectWork } from "../../projects/work";
 import type { TeamStore } from "../../teams/store";
 import type { Analyzer } from "../../bots/import/analyze";
 import type { GrokSource } from "../../bots/import/grok-source";
@@ -98,7 +102,15 @@ export type ChiefDeps = {
         | "updateRole"
         | "deleteRole"
         | "setRoomTeam"
+        | "people"
+        | "candidates"
+        | "addPerson"
+        | "removePerson"
       >
+    | undefined;
+  /** The company chart: reads for anyone, changes for an administrator (the store checks it). */
+  org?:
+    | Pick<OrgStore, "get" | "create" | "update" | "seat" | "move" | "remove" | "applyPreset">
     | undefined;
   outputStyles?: OutputStyles | undefined;
   artifacts?: ArtifactStore | undefined;
@@ -116,6 +128,7 @@ export type ChiefDeps = {
         | "listAttention"
         | "attentionAction"
         | "workflows"
+        | "routineTriggers"
         | "snapshots"
       >
     | undefined;
@@ -127,6 +140,17 @@ export type ChiefDeps = {
       >
     | undefined;
   preferences?: Pick<PreferenceStore, "get" | "update"> | undefined;
+  /** Projects: the person's own, and the ones they work on. Changes are the owner's only. */
+  projects?:
+    | Pick<
+        ProjectStore,
+        "list" | "get" | "candidates" | "create" | "update" | "setMembers" | "setRooms"
+      >
+    | undefined;
+  /** Hands work to a bot or a person of a project (see projects/work.ts). */
+  projectWork?: ProjectWork | undefined;
+  /** The person's name (never the email). */
+  profile?: Pick<ProfileStore, "get" | "update"> | undefined;
   /** A getter, because the inbound service is built after the chat service it needs. */
   inbound?:
     | (() => Pick<InboundService, "listRoutes" | "setRoute" | "pollNow"> | undefined)

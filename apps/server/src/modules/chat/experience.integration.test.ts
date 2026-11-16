@@ -204,6 +204,74 @@ suite("chat experience against compose postgres", () => {
     expect(list[0].attachments[0].name).toBe("report.txt");
   });
 
+  test("a document is read for the bot: its text is the attachment, the original is kept, and what cannot be read is refused in words", async () => {
+    const { zipSync, strToU8 } = await import("fflate");
+    const bot = await newBot(A, "Document reader", false);
+    const c = await conv(A, bot.id);
+    const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
+    const docx = zipSync({
+      "word/document.xml": strToU8(
+        '<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Quarterly plan: ship DOCX-TEXT-77</w:t></w:r></w:p></w:body></w:document>',
+      ),
+    });
+    const up = await call(A, "POST", "/api/attachments", {
+      name: "plan.docx",
+      mimeType: "application/octet-stream",
+      dataBase64: b64(docx),
+    });
+    expect(up.status).toBe(201);
+    expect(up.json.attachment).toMatchObject({
+      name: "plan.docx",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const sent = await call(A, "POST", `/api/conversations/${c}/messages`, {
+      content: "summarise it",
+      attachmentIds: [up.json.attachment.id],
+    });
+    // The text reaches the bot as an attached file, framed as untrusted data; the stored message stays short.
+    expect(sent.json.assistant.content).toContain("Attached file plan.docx (untrusted data");
+    expect(sent.json.assistant.content).toContain("ship DOCX-TEXT-77");
+    expect(sent.json.user.content).toBe("summarise it");
+    const csv = await call(A, "POST", "/api/attachments", {
+      name: "stock.csv",
+      mimeType: "text/csv",
+      dataBase64: b64(strToU8("item,qty\nbolts,12\n")),
+    });
+    expect(csv.status).toBe(201);
+
+    // Not a type we read, bytes that are not the type, a scan with no text and a damaged zip each get a sentence.
+    const bad = (name: string, bytes: Uint8Array) =>
+      call(A, "POST", "/api/attachments", {
+        name,
+        mimeType: "application/octet-stream",
+        dataBase64: b64(bytes),
+      });
+    expect((await bad("tool.exe", strToU8("MZ..."))).status).toBe(400);
+    const notPdf = await bad("fake.pdf", strToU8("just words"));
+    expect(notPdf.status).toBe(400);
+    expect(notPdf.json.error.code).toBe("DOCUMENT_UNSUPPORTED");
+    const damaged = await bad("broken.docx", new Uint8Array([0x50, 0x4b, 3, 4, 1, 2, 3, 4, 5]));
+    expect(damaged.json.error.code).toMatch(/DOCUMENT_(UNREADABLE|UNSUPPORTED)/);
+    const empty = await bad(
+      "blank.docx",
+      zipSync({ "word/document.xml": strToU8("<w:document xmlns:w='w'><w:body/></w:document>") }),
+    );
+    expect(empty.status).toBe(400);
+    expect(empty.json.error.code).toBe("DOCUMENT_EMPTY");
+    expect(empty.json.error.message).toContain("scan");
+    // Somebody else's chat cannot be the target.
+    expect(
+      (
+        await call(B, "POST", "/api/attachments", {
+          name: "a.csv",
+          mimeType: "text/csv",
+          dataBase64: b64(strToU8("a,b")),
+          conversationId: c,
+        })
+      ).status,
+    ).toBe(404);
+  });
+
   test("a reply in the channel keeps a quote, tells the bot, and stays out of threads", async () => {
     const bot = await newBot(A, "Quoter", false);
     const c = await conv(A, bot.id);

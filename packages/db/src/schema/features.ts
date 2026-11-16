@@ -13,6 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { ATTENTION_KINDS } from "@zetta/core/attention-kinds";
+import type { WorkData } from "@zetta/core/work-suggestions";
 import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
@@ -247,11 +248,15 @@ export const attentionItem = zetta.table(
     readAt: timestamp("read_at", { withTimezone: true }),
     completed: text("completed").default("").notNull(),
     remaining: text("remaining").default("").notNull(),
+    /** A work card's suggested next steps and the one the person chose (see core/work-suggestions.ts). Null on every other card. */
+    work: jsonb("work").$type<WorkData>(),
     createdAt: created(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     index("attention_item_bot_id_idx").on(t.botId),
+    // The earlier decisions on a task are read by subject when its next card is shown.
+    index("attention_item_subject_idx").on(t.ownerUserId, t.subjectId),
     index("attention_owner_idx").on(t.ownerUserId, t.status),
     uniqueIndex("attention_live_source")
       .on(t.ownerUserId, t.sourceKey)

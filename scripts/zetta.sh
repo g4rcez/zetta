@@ -3,8 +3,9 @@
 # starts the Postgres that ships inside Zetta and migrates it; with DATABASE_URL set, this script starts the compose postgres and migrates it.
 # The web dev server is the only HTTPS entry point (https://<address>:3000, certificate from mkcert, see scripts/dev-certs.sh). It forwards /api to
 # the API on http://127.0.0.1:6000 (apps/web/vite.config.ts), so the browser makes no cross-origin call and the API never listens on the network.
-# <address> is this machine's private IPv4 address; set ZETTA_ADDRESS=<ip-or-host> to choose another. Open that address on every device, this one too:
-# Better Auth only accepts the origin in ZETTA_SERVER_URL.
+# The server and the web app answer on every address of this machine (localhost, Wi-Fi, Tailscale): the browser calls the address it opened and
+# Better Auth and CORS trust each interface address. <address> is only the primary one (OAuth callbacks, MCP): the host of ZETTA_SERVER_URL
+# (apps/web/.env), else this machine's private IPv4 address; ZETTA_ADDRESS=<ip-or-host> overrides both.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -37,13 +38,23 @@ else
   (cd packages/db && vp exec varlock run -- vp exec drizzle-kit migrate)
 fi
 
-ADDRESS=${ZETTA_ADDRESS:-$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')}
+# One address everywhere: ZETTA_ADDRESS, else the host of ZETTA_SERVER_URL (process variable or apps/web/.env), else this machine's private IPv4.
+WEB_URL=${ZETTA_SERVER_URL:-$(sed -n 's/^ZETTA_SERVER_URL=//p' apps/web/.env 2>/dev/null | tail -1 | tr -d "\"'")}
+URL_HOST=$(printf '%s' "$WEB_URL" | sed -nE 's#^https?://([^/:]+).*#\1#p')
+ADDRESS=${ZETTA_ADDRESS:-${URL_HOST:-$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')}}
 [ -n "$ADDRESS" ] || { echo "no network address found: set ZETTA_ADDRESS=<ip-or-host>" >&2; exit 1; }
 
-# The certificate must name the address, or other devices reject it. dev-certs.sh needs mkcert and keeps the same local CA.
-if ! openssl x509 -in .certs/localhost.pem -noout -text 2>/dev/null | grep -qE "(IP Address|DNS):$ADDRESS($|,)"; then
-  echo "▶ Creating a certificate for $ADDRESS"
-  bash scripts/dev-certs.sh "$ADDRESS" >/dev/null
+# The certificate must name every address this machine answers on (Wi-Fi, Ethernet, Tailscale), or the browser rejects the one it is missing. The
+# server trusts the same set of origins (apps/server/src/local-origins.ts). dev-certs.sh needs mkcert and keeps the same local CA.
+NAMES=$(printf '%s\n' "$ADDRESS" $(node -e 'for (const l of Object.values(require("os").networkInterfaces())) for (const e of l ?? []) if (e.family === "IPv4") console.log(e.address)') | sort -u)
+CERT_TEXT=$(openssl x509 -in .certs/localhost.pem -noout -text 2>/dev/null || true)
+MISSING=""
+for name in $NAMES; do
+  printf '%s' "$CERT_TEXT" | grep -qE "(IP Address|DNS):$name($|,)" || MISSING=1
+done
+if [ -n "$MISSING" ]; then
+  echo "▶ Creating a certificate for: $(echo $NAMES)"
+  bash scripts/dev-certs.sh $NAMES >/dev/null
 fi
 
 # Process variables win over .env files (varlock and Vite), so nothing is written to .env.

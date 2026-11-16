@@ -39,7 +39,8 @@ RUN set -eu; [ "$VAULT_CLIS" = "1" ] || exit 0; \
     op --version; bw --version; bws --version
 # ssh, ssh-agent, sftp and curl: Zetta runs a bot's machine calls (SSH, SFTP, FTP) itself with the key or password the user saved, so the
 # secret never reaches the bot (apps/server/src/modules/computer/machine-runner.ts). No daemon runs; they start for one call.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssh-client && rm -rf /var/lib/apt/lists/*
+# ffmpeg turns the voice notes people send through Telegram or WhatsApp (OGG/Opus) into samples the speech model reads (modules/transcribe).
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssh-client ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app /app
 
 EXPOSE 3000

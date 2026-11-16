@@ -9,7 +9,7 @@
 # computers. It needs a container engine (Podman or Docker) and the desktop images (docker/desktop, see docs/operations/runtime-modes.md).
 #
 # Variables: ZETTA_DEMO_PG_NAME (database container, default zetta-demo-pg), ZETTA_DEMO_DIR (state, default $TMPDIR/zetta-demo-computer), ZETTA_DEMO_ENGINE (podman or docker), ZETTA_VM_IMAGE,
-# ZETTA_VM_IMAGE_UBUNTU, ZETTA_DEMO_WEB_PORT, ZETTA_DEMO_API_PORT, ZETTA_DEMO_PG_PORT.
+# ZETTA_VM_IMAGE_UBUNTU, ZETTA_DEMO_WEB_PORT, ZETTA_DEMO_API_PORT, ZETTA_DEMO_PG_PORT, ZETTA_DEMO_ALLOW_PRIVATE=1 (lets the server reach addresses on this machine, for a fake provider).
 set -euo pipefail
 
 KIT=$(cd "$(dirname "$0")" && pwd)
@@ -114,7 +114,7 @@ up() {
       NODE_ENV=development PORT="$API_PORT" \
       BETTER_AUTH_SECRET="$auth_secret" ZETTA_SERVER_URL="$ORIGIN" \
       DATABASE_URL="$DB_URL" ZETTA_CONNECTION_KEY="$connection_key" ZETTA_SETUP_KEY="$setup_key" \
-      ZETTA_DB_POOL_MAX=10 ZETTA_EMBEDDING=off \
+      ZETTA_DB_POOL_MAX=10 ZETTA_EMBEDDING=off ZETTA_ALLOW_PRIVATE_NETWORK="${ZETTA_DEMO_ALLOW_PRIVATE:-}" \
       ZETTA_FILES_ROOT="$DEMO/state/files" ZETTA_VM_TOKEN_ROOT="$DEMO/state/vm" ZETTA_BROWSER_ROOT="$DEMO/state/browser" \
       ZETTA_ARTIFACTS_ROOT="$DEMO/state/artifacts" ZETTA_ATTACHMENTS_ROOT="$DEMO/state/attachments" \
       ZETTA_CODE_ROOT="$DEMO/state/code" ZETTA_CLAUDE_PLUGIN_ROOT="$DEMO/state/plugins" \

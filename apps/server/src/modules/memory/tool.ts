@@ -27,11 +27,11 @@ const why: Record<MemoryError["code"], string> = {
   AMBIGUOUS: "the match text is in the page more than once; give a longer span",
   FULL: `memory holds ${MEMORY_LIMITS.pages} items; ask the user to archive some`,
   INVALID:
-    "the item needs a title and content inside the size limits; type solo needs an author bot, type teams needs your own team ids",
+    "the item needs a title and content inside the size limits; type solo needs an author bot, type teams needs your own team ids, type project needs a project you are on",
   MANAGED:
     "it holds a Drive document: its title and text come from Drive and cannot be changed here",
   SLUG_TAKEN:
-    "another item (shared by a member, or private to another bot or team) already uses this slug; pick another slug",
+    "another item (shared by a member, or private to another bot, team or project) already uses this slug; pick another slug",
   READ_ONLY:
     "the owner keeps this item read only for bots, or it takes only suggestions and archiving it is theirs; leave it as it is",
   TOO_LONG: `the item would pass ${MEMORY_LIMITS.content} characters; archive or remove finished entries, or continue the list in a new item (<slug>-2) and link the two`,
@@ -52,7 +52,14 @@ export async function runMemoryTool(
   botId: string,
   conversationId: string | undefined,
   a: MemoryToolArgs,
-  ctx: { autoSources?: readonly string[]; teamId?: string | null } = {},
+  ctx: {
+    autoSources?: readonly string[];
+    teamId?: string | null;
+    /** The project of the room the bot works in, when the bot is on it: a new item with no type is for that project. */
+    projectId?: string | null;
+    /** The one project the bot is on, when the room names none: what `"type":"project"` means with no project named. */
+    onlyProjectId?: string | null;
+  } = {},
 ): Promise<MemoryToolOutcome> {
   const autoSources = ctx.autoSources ?? [];
   const author = { by: "bot" as const, botId, conversationId: conversationId ?? null };
@@ -199,6 +206,11 @@ export async function runMemoryTool(
         saved: { slug: p.slug, title: p.title, created: false },
       };
     }
+    // `"type":"project"` with no project named means the project of the room, or the one project the bot is on.
+    const askedProject =
+      a.action === "write"
+        ? (a.project ?? ctx.projectId ?? ctx.onlyProjectId ?? undefined)
+        : undefined;
     const r =
       a.action === "write"
         ? await memory.write(
@@ -209,14 +221,18 @@ export async function runMemoryTool(
               content: a.content,
               ...(a.howto !== undefined && { howto: a.howto }),
               ...(a.tags && { tags: a.tags }),
-              // In a team room a new item with no type is for that team; otherwise for all the owner's bots.
-              ...(a.type
-                ? { type: a.type, ...(a.teams && { teams: a.teams }) }
-                : a.teams
-                  ? { type: "teams" as const, teams: a.teams }
-                  : !found && ctx.teamId
-                    ? { type: "teams" as const, teams: [ctx.teamId] }
-                    : {}),
+              // A new item with no type is for the project of the room, else for the team of the room; otherwise for all the owner's bots.
+              ...(a.type === "project"
+                ? { type: a.type, ...(askedProject && { projects: [askedProject] }) }
+                : a.type
+                  ? { type: a.type, ...(a.teams && { teams: a.teams }) }
+                  : a.teams
+                    ? { type: "teams" as const, teams: a.teams }
+                    : !found && ctx.projectId
+                      ? { type: "project" as const, projects: [ctx.projectId] }
+                      : !found && ctx.teamId
+                        ? { type: "teams" as const, teams: [ctx.teamId] }
+                        : {}),
               ...(a.score !== undefined && { score: a.score }),
               ...(a.version !== undefined && { expectedVersion: a.version }),
               ...(a.sources && { sources: a.sources }),

@@ -60,6 +60,7 @@ export const TYPE_LABEL: Record<MemoryType, string> = {
   solo: "One bot",
   owner: "All my bots",
   teams: "Teams",
+  project: "A project",
   all: "Shared",
 };
 const TOP_TAGS = 3;

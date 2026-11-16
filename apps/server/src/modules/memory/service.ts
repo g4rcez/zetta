@@ -7,6 +7,7 @@ import { user } from "@zetta/db/schema/auth";
 import { bot } from "@zetta/db/schema/chat";
 import { knowledgeDoc } from "@zetta/db/schema/knowledge";
 import { task } from "@zetta/db/schema/tasks";
+import { project, projectMember } from "@zetta/db/schema/projects";
 import { team } from "@zetta/db/schema/teams";
 import {
   MEMORY_BOT_ACCESS,
@@ -19,6 +20,7 @@ import {
   memoryItem,
   memoryRaw,
   memoryItemColumns,
+  memoryItemProject,
   memoryItemTeam,
   memoryRevision,
   memorySource,
@@ -128,6 +130,7 @@ export type MemoryFilter = {
   /** The bot that created the item (`author_bot_id`), not the one that wrote the last version. */
   createdByBotId?: string;
   teamId?: string;
+  projectId?: string;
   minScore?: number;
   maxScore?: number;
   updatedSince?: Date;
@@ -140,6 +143,8 @@ type Content = Pick<MemoryItem, "title" | "howto" | "content" | "tags" | "status
 export type MemoryMeta = {
   type?: MemoryType | undefined;
   teams?: readonly string[] | undefined;
+  /** For type `project`: the projects whose bots read the item. A bot names only projects it is on. */
+  projects?: readonly string[] | undefined;
   score?: number | undefined;
   authorBotId?: string | null | undefined;
   /** What bots may do with the item. A person's choice: a bot that names a level other than the one the item has is refused. */
@@ -179,6 +184,7 @@ export const MEMORY_LIMITS = {
   pages: 2000,
   sources: 12,
   teams: 20,
+  projects: 5,
   /** The most characters one source holds (a web page, pasted text, a file): the screen reads all of it. */
   source: 100_000,
 } as const;
@@ -282,7 +288,9 @@ export function visibleTo(reader: MemoryReader, t = "memory_item"): ReturnType<t
   const own = botId
     ? sql`(${c("type")} in ('owner', 'all') or (${c("type")} = 'solo' and ${c("author_bot_id")} = ${botId})
         or (${c("type")} = 'teams' and exists (select 1 from memory_item_team wt join team_member tm on tm.team_id = wt.team_id
-          where wt.page_id = ${c("id")} and tm.bot_id = ${botId})))`
+          where wt.page_id = ${c("id")} and tm.bot_id = ${botId}))
+        or (${c("type")} = 'project' and exists (select 1 from memory_item_project wp join project_member pm on pm.project_id = wp.project_id
+          where wp.page_id = ${c("id")} and pm.bot_id = ${botId})))`
     : sql`true`;
   return sql`((${c("owner_user_id")} = ${userId} and ${own}) or (${c("type")} = 'all' and ${c("status")} <> 'archived'
     and exists (select 1 from membership m where m.user_id = ${c("owner_user_id")} and m.status = 'active')))`;
@@ -313,6 +321,10 @@ function filterSql(f: MemoryFilter, userId: string): ReturnType<typeof sql> {
   if (f.teamId)
     parts.push(
       sql`exists (select 1 from memory_item_team wt where wt.page_id = memory_item.id and wt.team_id = ${f.teamId})`,
+    );
+  if (f.projectId)
+    parts.push(
+      sql`exists (select 1 from memory_item_project wp where wp.page_id = memory_item.id and wp.project_id = ${f.projectId})`,
     );
   if (f.minScore !== undefined) parts.push(sql`memory_item.score >= ${f.minScore}`);
   if (f.maxScore !== undefined) parts.push(sql`memory_item.score <= ${f.maxScore}`);
@@ -411,6 +423,15 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
         const score = m.score ?? cur?.score ?? MEMORY_SCORE_DEFAULT;
         const botAccess = m.botAccess ?? cur?.botAccess ?? DEFAULT_BOT_ACCESS[author.by];
         const teams = type === "teams" ? [...new Set(m.teams ?? curTeams)] : [];
+        const curProjects = cur
+          ? (
+              await tx
+                .select({ id: memoryItemProject.projectId })
+                .from(memoryItemProject)
+                .where(eq(memoryItemProject.pageId, cur.id))
+            ).map((r) => r.id)
+          : [];
+        const projects = type === "project" ? [...new Set(m.projects ?? curProjects)] : [];
         if (
           !MEMORY_TYPES.includes(type) ||
           !MEMORY_BOT_ACCESS.includes(botAccess) ||
@@ -443,6 +464,28 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
             .from(team)
             .where(and(inArray(team.id, teams), eq(team.ownerUserId, owner)));
           if (mine.length !== teams.length) throw new MemoryError("INVALID");
+        }
+        if (type === "project") {
+          if (!projects.length || projects.length > MEMORY_LIMITS.projects)
+            throw new MemoryError("INVALID");
+          const mine = await tx
+            .select({ id: project.id })
+            .from(project)
+            .where(and(inArray(project.id, projects), eq(project.ownerUserId, owner)));
+          if (mine.length !== projects.length) throw new MemoryError("INVALID");
+          // A bot files an item only under projects it is on: otherwise it could not read what it just wrote.
+          if (author.by === "bot" && (!cur || !sameSet(curProjects, projects))) {
+            const on = await tx
+              .select({ id: projectMember.projectId })
+              .from(projectMember)
+              .where(
+                and(
+                  inArray(projectMember.projectId, projects),
+                  eq(projectMember.botId, author.botId),
+                ),
+              );
+            if (on.length !== projects.length) throw new MemoryError("INVALID");
+          }
         }
         // An item that holds a Drive document is written by the sync: its title and text are the document's, and it is never published
         // (the document was read with one person's token).
@@ -497,7 +540,8 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
           cur.score !== score ||
           cur.botAccess !== botAccess ||
           cur.authorBotId !== authorBotId ||
-          !sameSet(curTeams, teams);
+          !sameSet(curTeams, teams) ||
+          !sameSet(curProjects, projects);
         const contentChanged = !cur || !same(cur, c);
         if (cur && !contentChanged && !metaChanged)
           return { page: cur, created: false, changed: false };
@@ -546,6 +590,13 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
             await tx
               .insert(memoryItemTeam)
               .values(teams.map((teamId) => ({ pageId: page.id, teamId })));
+        }
+        if (!cur || !sameSet(curProjects, projects)) {
+          await tx.delete(memoryItemProject).where(eq(memoryItemProject.pageId, page.id));
+          if (projects.length)
+            await tx
+              .insert(memoryItemProject)
+              .values(projects.map((projectId) => ({ pageId: page.id, projectId })));
         }
         if (contentChanged) {
           // Edges follow the content; chunks are rebuilt (and embedded) by the ticker.
@@ -832,6 +883,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
         meta: {
           type: v.type,
           teams: v.teams,
+          projects: v.projects,
           score: v.score,
           authorBotId: v.authorBotId,
           botAccess: v.botAccess,
@@ -1218,6 +1270,14 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
             .where(eq(memoryItemTeam.pageId, hit.page.id))
         ).map((r) => r.id)
       : [];
+    const projects = own
+      ? (
+          await db
+            .select({ id: memoryItemProject.projectId })
+            .from(memoryItemProject)
+            .where(eq(memoryItemProject.pageId, hit.page.id))
+        ).map((r) => r.id)
+      : [];
     const near = (await graph(reader, [key], { limit: GRAPH_NODES })).edges;
     // `linkedFrom` stays the list of pages that link here; `links` are the edges this page writes.
     const linkedFrom = near
@@ -1227,7 +1287,7 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
       .filter((e) => e.from === key)
       .map((e) => ({ slug: e.to, title: e.toTitle, relation: e.relation }));
     return {
-      page: { ...hit.page, teams },
+      page: { ...hit.page, teams, projects },
       access,
       ownerName: access === "own" ? null : hit.ownerName,
       linkedFrom,
@@ -1390,6 +1450,9 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
         teams: sql<
           string[]
         >`coalesce((select array_agg(wt.team_id::text) from memory_item_team wt where wt.page_id = ${memoryItem.id}), '{}')`,
+        projects: sql<
+          string[]
+        >`coalesce((select array_agg(wp.project_id::text) from memory_item_project wp where wp.page_id = ${memoryItem.id}), '{}')`,
         updatedBy: memoryItem.updatedBy,
         updatedAt: memoryItem.updatedAt,
       })

@@ -12,6 +12,7 @@ import {
   type Bot,
   type BotAccess,
   type Status,
+  type ProjectName,
   type TeamName,
   type MemoryType,
 } from "./memory-api";
@@ -72,7 +73,12 @@ const AUTHOR = { user: "You", bot: "A bot", system: "The source check" } as cons
 type Applied = { key: string; label: string; patch: Record<string, unknown> };
 
 /** One entry per value set in the address, so each can be taken off alone. */
-function appliedFilters(f: MemoryFilter, bots: Bot[] | undefined, teams: TeamName[] | undefined) {
+function appliedFilters(
+  f: MemoryFilter,
+  bots: Bot[] | undefined,
+  teams: TeamName[] | undefined,
+  projects: ProjectName[] | undefined,
+) {
   const bot = (id: string) => bots?.find((b) => b.id === id)?.name ?? "A bot";
   const out: Applied[] = [
     ...f.types.map((t) => ({
@@ -117,6 +123,12 @@ function appliedFilters(f: MemoryFilter, bots: Bot[] | undefined, teams: TeamNam
       label: `Team: ${teams?.find((t) => t.id === f.team)?.name ?? "A team"}`,
       patch: { team: undefined },
     });
+  if (f.project)
+    out.push({
+      key: "project",
+      label: `Project: ${projects?.find((p) => p.id === f.project)?.name ?? "A project"}`,
+      patch: { project: undefined },
+    });
   if (f.since)
     out.push({
       key: "since",
@@ -142,6 +154,7 @@ export function FiltersBar({
   tags,
   bots,
   teams,
+  projects,
   shown,
   total,
 }: {
@@ -153,6 +166,7 @@ export function FiltersBar({
   tags: { tag: string; count: number }[];
   bots: Bot[] | undefined;
   teams: TeamName[] | undefined;
+  projects?: ProjectName[] | undefined;
   shown: number;
   total: number | undefined;
 }) {
@@ -165,7 +179,7 @@ export function FiltersBar({
     return () => clearTimeout(id);
   }, [text, search.q, set]);
   useEffect(() => setText(search.q ?? ""), [search.q]);
-  const applied = appliedFilters(filter, bots, teams);
+  const applied = appliedFilters(filter, bots, teams, projects);
   return (
     <section aria-label="Filters" className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -380,6 +394,21 @@ export function FiltersBar({
               {(teams ?? []).map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
+                </option>
+              ))}
+            </select>
+          </Facet>
+          <Facet label="Project">
+            <select
+              name="project"
+              value={filter.project ?? ""}
+              onChange={(e) => set({ project: e.target.value })}
+              className={control}
+            >
+              <option value="">Any project</option>
+              {(projects ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
                 </option>
               ))}
             </select>

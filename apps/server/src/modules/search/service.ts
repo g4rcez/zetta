@@ -26,11 +26,13 @@ const BRANCH: Record<SearchKind, string> = {
   conversation: `select 'conversation' as kind, c.id::text, c.title, c.title as snippet, c.id as conversation_id, null::uuid as message_id,
       ts_rank(to_tsvector('simple', f_unaccent(c.title)), q.q) as rank, c.updated_at
     from conversation c, q where c.owner_user_id = $2 and not c.archived and to_tsvector('simple', f_unaccent(c.title)) @@ q.q
+      and not exists (select 1 from bot_drive_run dr where dr.conversation_id = c.id)
     order by rank desc, c.updated_at desc limit $3`,
   message: `select 'message', m.id::text, c.title, ts_headline('simple', m.content, q.q || q.h, ${HEADLINE}), c.id, m.id,
       ts_rank(to_tsvector('simple', f_unaccent(m.content)), q.q), m.created_at
     from message m join conversation c on c.id = m.conversation_id, q
     where m.owner_user_id = $2 and c.owner_user_id = $2 and not c.archived and m.role <> 'system'
+      and not exists (select 1 from bot_drive_run dr where dr.conversation_id = c.id)
       and to_tsvector('simple', f_unaccent(m.content)) @@ q.q
     order by 7 desc, m.created_at desc limit $3`,
   // The id of a memory hit is its slug, which is how the memory item opens.
@@ -50,9 +52,65 @@ const BRANCH: Record<SearchKind, string> = {
     order by 7 desc, t.updated_at desc limit $3`,
 };
 
+export type ChatHit = {
+  conversationId: string;
+  title: string;
+  role: "user" | "assistant";
+  snippet: string;
+  at: string;
+};
+
+/**
+ * What the bot may read of the person's earlier chats (`zetta:chats`): messages of their own chats with bots, newest-relevant first, at
+ * most two per chat. Not the chat it is in, not archived chats, and never the chats that are not the person's conversation with a bot:
+ * outside people's chats, rooms, routine and memory-job chats, and the chats of a saved test.
+ */
+const CHATS_SQL = `with q as (select websearch_to_tsquery('simple', f_unaccent($1)) as q, websearch_to_tsquery('simple', $1) as h)
+  select * from (
+    select c.id as conversation_id, c.title, m.role, ts_headline('simple', m.content, q.q || q.h, ${HEADLINE}) as snippet, m.created_at,
+      row_number() over (partition by c.id order by ts_rank(to_tsvector('simple', f_unaccent(m.content)), q.q) desc, m.created_at desc) as nth,
+      ts_rank(to_tsvector('simple', f_unaccent(m.content)), q.q) as rank
+    from message m join conversation c on c.id = m.conversation_id, q
+    where m.owner_user_id = $2 and c.owner_user_id = $2 and c.kind = 'chat' and not c.archived
+      and m.role in ('user', 'assistant') and m.status = 'complete'
+      and ($3::uuid is null or c.id <> $3::uuid)
+      and ($4::uuid is null or c.bot_id = $4::uuid)
+      and ($5::timestamptz is null or m.created_at >= $5::timestamptz)
+      and not exists (select 1 from routine_run rr where rr.conversation_id = c.id)
+      and not exists (select 1 from memory_job mj where mj.conversation_id = c.id)
+      and not exists (select 1 from bot_drive_run dr where dr.conversation_id = c.id)
+      and to_tsvector('simple', f_unaccent(m.content)) @@ q.q
+  ) hits where nth <= 2 order by rank desc, created_at desc limit $6`;
+
 /** Full-text search over everything the signed-in user owns: chats, messages, memory items (which hold what bots remember), artifacts and tasks. */
 export function createSearch(db: Database) {
   return {
+    /** The person's earlier chats, for a bot that is asked about something said before. Always the asker's own: the bot owner's never. */
+    async chats(
+      a: ActiveActor,
+      raw: string,
+      opts: { botId?: string; since?: string; exceptConversationId?: string; limit?: number } = {},
+    ): Promise<ChatHit[]> {
+      const q = raw.trim().slice(0, MAX_QUERY);
+      if (!q) return [];
+      const since = opts.since ? new Date(`${opts.since}T00:00:00Z`) : null;
+      const { rows } = await db.$client.query(CHATS_SQL, [
+        q,
+        a.userId,
+        opts.exceptConversationId ?? null,
+        opts.botId ?? null,
+        since && !Number.isNaN(+since) ? since.toISOString() : null,
+        Math.min(Math.max(opts.limit ?? 6, 1), 10),
+      ]);
+      return rows.map((r: Record<string, unknown>) => ({
+        conversationId: r.conversation_id as string,
+        title: r.title as string,
+        role: r.role as "user" | "assistant",
+        snippet: r.snippet as string,
+        at: new Date(r.created_at as string).toISOString(),
+      }));
+    },
+
     async search(
       a: ActiveActor,
       raw: string,

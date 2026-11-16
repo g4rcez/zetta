@@ -51,7 +51,7 @@ export function SkillsPage({
             <LightningIcon className="size-5" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-2xl text-balance">Skills</h1>
+            <h1 className="flex items-center gap-2 text-2xl text-balance">Skills</h1>
             <p className="text-sm text-pretty text-muted-foreground">
               Give each bot the skills it needs, to build specialized bots. Write them here or
               install them from GitHub.

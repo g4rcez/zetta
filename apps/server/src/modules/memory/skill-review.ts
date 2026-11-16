@@ -39,7 +39,7 @@ const TIMEOUT_MS = 120_000;
 const TRANSCRIPT_ROWS = 10;
 const TRANSCRIPT_CHARS = 12_000;
 
-export type ReviewReason = "corrected" | "after_stop" | "steered" | "long_work";
+export type ReviewReason = "corrected" | "after_stop" | "steered" | "long_work" | "downvoted";
 
 /** Pure: why this finished reply deserves a review, or undefined. */
 export function reviewReason(t: {
@@ -179,7 +179,14 @@ export function createSkillReview(db: Database, skills: Skills, deps: { cli?: Ru
     try {
       out = await cli({
         harness: b.harness as NativeHarness,
-        prompt: reviewPrompt(b.name, transcript, own),
+        prompt: reviewPrompt(
+          b.name,
+          // A thumb down is a correction without words: what the person wrote about it (kept in `detail` until the review ends) leads.
+          r.reason === "downvoted"
+            ? `THE PERSON MARKED THE LAST ASSISTANT REPLY AS BAD${r.detail ? ` AND WROTE: ${r.detail.replace(/\s+/g, " ").slice(0, 500)}` : ""}\n\n${transcript}`
+            : transcript,
+          own,
+        ),
         model: b.model ?? null,
         userId: r.ownerUserId,
         timeoutMs: TIMEOUT_MS,
@@ -327,6 +334,56 @@ export function createSkillReview(db: Database, skills: Skills, deps: { cli?: Ru
           conversationId: t.conversationId,
           replyId: reply.id,
           reason,
+        })
+        .onConflictDoNothing()
+        .returning();
+      return row;
+    },
+    /**
+     * A thumb down on one of the bot's replies: queues a review of that reply, like a correction would. Same gates as `afterTurn` (an
+     * owner's own chat, autolearn on, an engine that loads skills), and the same half-hour debounce per conversation.
+     */
+    async afterDownvote(t: { ownerUserId: string; replyId: string; note: string }) {
+      const [reply] = await db
+        .select({
+          conversationId: message.conversationId,
+          role: message.role,
+          status: message.status,
+        })
+        .from(message)
+        .where(and(eq(message.id, t.replyId), eq(message.ownerUserId, t.ownerUserId)));
+      if (!reply || reply.role !== "assistant" || reply.status !== "complete") return undefined;
+      const [conv] = await db
+        .select({ kind: conversation.kind, botId: conversation.botId })
+        .from(conversation)
+        .where(eq(conversation.id, reply.conversationId));
+      if (!conv || conv.kind !== "chat" || !conv.botId) return undefined;
+      const [b] = await db
+        .select({ autoLearn: bot.autoLearn, harness: bot.harness, owner: bot.ownerUserId })
+        .from(bot)
+        .where(eq(bot.id, conv.botId));
+      if (!b || b.autoLearn === "off" || !SKILL_HARNESSES.has(b.harness)) return undefined;
+      if (b.owner !== t.ownerUserId) return undefined;
+      const [recentReview] = await db
+        .select({ id: skillReview.id })
+        .from(skillReview)
+        .where(
+          and(
+            eq(skillReview.conversationId, reply.conversationId),
+            gte(skillReview.createdAt, new Date(Date.now() - REVIEW_DEBOUNCE_MS)),
+          ),
+        )
+        .limit(1);
+      if (recentReview) return undefined;
+      const [row] = await db
+        .insert(skillReview)
+        .values({
+          ownerUserId: t.ownerUserId,
+          botId: conv.botId,
+          conversationId: reply.conversationId,
+          replyId: t.replyId,
+          reason: "downvoted",
+          detail: t.note.slice(0, 500),
         })
         .onConflictDoNothing()
         .returning();

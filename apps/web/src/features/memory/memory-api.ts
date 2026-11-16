@@ -5,7 +5,7 @@ import { ApiError, call, errorMessage } from "../chat/chat-client";
 import type { GraphData } from "./memory-graph";
 
 export type Status = "current" | "stale" | "archived";
-export type MemoryType = "solo" | "owner" | "teams" | "all";
+export type MemoryType = "solo" | "owner" | "teams" | "project" | "all";
 /** What bots may do with an item: change it, only send suggestions you accept, or only read it. */
 export type BotAccess = "edit" | "suggest" | "read";
 export type Relation = "related" | "depends-on" | "part-of" | "supersedes";
@@ -18,6 +18,7 @@ export type Bot = {
   kind?: "chief" | "specialist";
 };
 export type TeamName = { id: string; name: string };
+export type ProjectName = { id: string; name: string };
 export type Author = "user" | "bot" | "system";
 
 /** One of the person's own items, as the list returns it (no content). */
@@ -35,6 +36,8 @@ export type Row = {
   authorBotId: string | null;
   updatedByBotId: string | null;
   teams: string[];
+  /** The projects of a `project` item. */
+  projects: string[];
   updatedBy: Author;
   createdAt: string;
   updatedAt: string;
@@ -74,6 +77,8 @@ export type Item = {
   /** The bot that created the item; null when a person or the system did. */
   authorBotId: string | null;
   teams: string[];
+  /** The projects of a `project` item. Missing where the source does not know them (a search hit, a graph node, a shared item). */
+  projects?: string[];
   createdAt: string;
   updatedAt: string;
   /** Set on a search result: why it matched, and the items linked to it. */
@@ -205,6 +210,7 @@ export const TYPE = {
   solo: "One bot",
   owner: "All my bots",
   teams: "Teams",
+  project: "A project",
   all: "Shared",
 } as const satisfies Record<MemoryType, string>;
 export const BOT_ACCESS = {

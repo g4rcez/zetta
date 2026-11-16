@@ -14,7 +14,7 @@ export const SORTS = ["relevance", "updated", "created", "score", "title"] as co
 export type Sort = (typeof SORTS)[number];
 export const SINCE = { "7d": 7, "30d": 30, "90d": 90, "365d": 365 } as const;
 export type Since = keyof typeof SINCE;
-const TYPES: readonly MemoryType[] = ["solo", "owner", "teams", "all"];
+const TYPES: readonly MemoryType[] = ["solo", "owner", "teams", "project", "all"];
 const STATUSES: readonly Status[] = ["current", "stale", "archived"];
 const AUTHORS: readonly Author[] = ["user", "bot", "system"];
 const BOT_LEVELS: readonly BotAccess[] = ["edit", "suggest", "read"];
@@ -37,6 +37,8 @@ export type MemorySearch = {
   /** Id of the bot that created the item. */
   createdBy?: string;
   team?: string;
+  /** Id of a project: only the items of that project's memory. */
+  project?: string;
   min?: number;
   max?: number;
   since?: Since;
@@ -57,6 +59,7 @@ export type MemoryFilter = {
   bot?: string;
   createdBy?: string;
   team?: string;
+  project?: string;
   min?: number;
   max?: number;
   since?: Since;
@@ -106,6 +109,7 @@ export function parseMemorySearch(raw: Record<string, unknown>): MemorySearch {
     ...(isUuid(raw.bot) && { bot: raw.bot }),
     ...(isUuid(raw.createdBy) && { createdBy: raw.createdBy }),
     ...(isUuid(raw.team) && { team: raw.team }),
+    ...(isUuid(raw.project) && { project: raw.project }),
     ...(min !== undefined && { min }),
     ...(max !== undefined && { max }),
     ...(typeof raw.since === "string" && raw.since in SINCE && { since: raw.since as Since }),
@@ -126,6 +130,7 @@ export const filterOf = (s: MemorySearch): MemoryFilter => ({
   ...(s.bot && { bot: s.bot }),
   ...(s.createdBy && { createdBy: s.createdBy }),
   ...(s.team && { team: s.team }),
+  ...(s.project && { project: s.project }),
   ...(s.min !== undefined && { min: s.min }),
   ...(s.max !== undefined && { max: s.max }),
   ...(s.since && { since: s.since }),
@@ -145,6 +150,7 @@ export const activeCount = (f: MemoryFilter) =>
     f.bot,
     f.createdBy,
     f.team,
+    f.project,
     f.min !== undefined || f.max !== undefined,
     f.since,
   ].filter(Boolean).length;
@@ -167,6 +173,7 @@ export function mergeRows(pages: readonly Row[], shared: readonly SharedRow[]): 
       botId: r.updatedBy === "bot" ? r.updatedByBotId : null,
       authorBotId: r.authorBotId,
       teams: r.teams,
+      projects: r.projects ?? [],
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     })),
@@ -214,6 +221,7 @@ export function matches(item: Item, f: MemoryFilter, now = Date.now()) {
   if (f.bot && item.botId !== f.bot) return false;
   if (f.createdBy && item.authorBotId !== f.createdBy) return false;
   if (f.team && !item.teams.includes(f.team)) return false;
+  if (f.project && !item.projects?.includes(f.project)) return false;
   if (f.min !== undefined && item.score < f.min) return false;
   if (f.max !== undefined && item.score > f.max) return false;
   if (f.since && Date.parse(item.updatedAt) < now - SINCE[f.since] * 86_400_000) return false;
@@ -256,6 +264,7 @@ export function searchQuery(s: MemorySearch) {
   put("bot", s.bot);
   put("createdBy", s.createdBy);
   put("team", s.team);
+  put("project", s.project);
   put("min", s.min);
   put("max", s.max);
   put("since", s.since);

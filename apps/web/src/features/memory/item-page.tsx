@@ -21,6 +21,7 @@ import { SharedItem } from "./shared-item";
 import { useAction } from "./use-action";
 import { appendLink } from "./memory-links";
 import { useMemoryIndex } from "./use-memory-index";
+import { projectsQueries } from "../projects/projects-api";
 import { teamsQueries } from "../teams/teams-api";
 import {
   BOT_ACCESS,
@@ -67,6 +68,7 @@ export function MemoryItemPage({
   const teamsQuery = useQuery(teamsQueries.list());
   const bots = botsQuery.data;
   const teams = teamsQuery.data;
+  const projects = useQuery(projectsQueries.list()).data?.projects;
   const listError = botsQuery.error ?? teamsQuery.error;
   useEffect(() => {
     if (listError) setError(errorMessage(listError));
@@ -155,7 +157,9 @@ export function MemoryItemPage({
         ? `Only ${botName(p.authorBotId)} reads this item.`
         : p.type === "teams"
           ? `Bots in ${p.teams.map((id) => teams?.find((t) => t.id === id)?.name ?? "a team").join(", ")} read this item.`
-          : "All your bots can read this item.";
+          : p.type === "project"
+            ? `Bots on ${(p.projects ?? []).map((id) => projects?.find((x) => x.id === id)?.name ?? "a project").join(", ")} read this item.`
+            : "All your bots can read this item.";
 
   return (
     <div className="h-full overflow-y-auto">
@@ -342,6 +346,7 @@ export function MemoryItemPage({
                   meta={p.type !== "all"}
                   bots={bots}
                   teams={teams}
+                  projects={projects}
                   items={items}
                   self={p.slug}
                 />

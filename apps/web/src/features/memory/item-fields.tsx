@@ -12,6 +12,7 @@ import {
   type BotAccess,
   type Item,
   type Page,
+  type ProjectName,
   type TeamName,
   type MemoryType,
 } from "./memory-api";
@@ -22,17 +23,20 @@ export function Fields({
   contentLocked,
   bots,
   teams,
+  projects,
   items,
   self,
 }: {
   page?: Pick<Page, "title" | "howto" | "content" | "tags"> &
-    Partial<Pick<Page, "type" | "score" | "authorBotId" | "teams" | "botAccess">>;
+    Partial<Pick<Page, "type" | "score" | "authorBotId" | "teams" | "projects" | "botAccess">>;
   /** The visibility and score fields: not for a suggestion, and not for a shared item (the Share button sets that). */
   meta?: boolean;
   /** A source item: its text is kept unchanged, so the form has no content field. */
   contentLocked?: boolean;
   bots?: Bot[] | undefined;
   teams?: TeamName[] | undefined;
+  /** The person's projects: an item of type `project` is read by the bots on the ones ticked. */
+  projects?: ProjectName[] | undefined;
   /** The memory's items, for the `[[` autocomplete of the content. Without them the content is a plain textarea. */
   items?: readonly Item[] | undefined;
   /** The slug of the item being edited, so it is not offered as a link to itself. */
@@ -92,7 +96,7 @@ export function Fields({
             required={false}
             value={type}
             onChange={(e) => setType(e.target.value as MemoryType)}
-            options={(["owner", "teams", "solo"] as const).map((value) => ({
+            options={(["owner", "teams", "project", "solo"] as const).map((value) => ({
               value,
               label: TYPE[value],
             }))}
@@ -136,6 +140,25 @@ export function Fields({
               ))}
             </fieldset>
           )}
+          {type === "project" && (
+            <fieldset className="space-y-1">
+              <legend className="text-sm font-medium">Projects whose bots read it</legend>
+              {(projects ?? []).length === 0 && (
+                <p className="text-sm text-muted-foreground">You have no projects yet.</p>
+              )}
+              {(projects ?? []).map((p) => (
+                <label key={p.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="projects"
+                    value={p.id}
+                    defaultChecked={page?.projects?.includes(p.id) ?? false}
+                  />
+                  {p.name}
+                </label>
+              ))}
+            </fieldset>
+          )}
           <Input
             title="Score (0-100: how important it is; 80 and more is shown to bots first)"
             name="score"
@@ -170,6 +193,7 @@ export const metaFields = (f: FormData) => {
     ...(type && {
       type: String(type),
       teams: f.getAll("teams").map(String),
+      projects: f.getAll("projects").map(String),
       ...(f.get("authorBotId") && { authorBotId: formText(f, "authorBotId") }),
     }),
   };

@@ -19,6 +19,7 @@ import { errorMessage } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { Empty, Loading } from "../shared/ui";
 import { Segmented } from "../tasks/task-filter-bar";
+import { projectsQueries } from "../projects/projects-api";
 import { teamsQueries } from "../teams/teams-api";
 import { FiltersBar } from "./filters-bar";
 import { Fold } from "./fold";
@@ -59,6 +60,7 @@ export function MemoryExplorer({ search }: { search: MemorySearch }) {
   const teamsQuery = useQuery(teamsQueries.list());
   const bots = botsQuery.data;
   const teams = teamsQuery.data;
+  const projects = useQuery(projectsQueries.list()).data?.projects;
   const listFailure = botsQuery.error ?? teamsQuery.error;
   // CompanyDocs and Sources report their own load errors here.
   const [panelError, setListError] = useState<string>();
@@ -177,6 +179,7 @@ export function MemoryExplorer({ search }: { search: MemorySearch }) {
             tags={tags}
             bots={bots}
             teams={teams}
+            projects={projects}
             shown={shown?.length ?? 0}
             total={found.active ? shown?.length : items?.length}
           />
@@ -254,6 +257,7 @@ export function MemoryExplorer({ search }: { search: MemorySearch }) {
             items={items}
             bots={bots}
             teams={teams}
+            projects={projects}
             page={{ title: search.create ?? "", howto: "", content: "", tags: [] }}
           />
           <Button type="submit">Save item</Button>

@@ -36,7 +36,7 @@ const STATUS: Record<MemoryError["code"], [number, string]> = {
   FULL: [400, `Memory holds ${MEMORY_LIMITS.pages} items. Archive some first.`],
   INVALID: [
     400,
-    "An item needs a title and content inside the size limits. Type solo needs one of your bots; type teams needs one or more of your teams.",
+    "An item needs a title and content inside the size limits. Type solo needs one of your bots; type teams needs one or more of your teams; type project needs one or more of your projects.",
   ],
   MANAGED: [
     409,
@@ -65,6 +65,7 @@ const text = {
 const meta = {
   type: z.enum(MEMORY_TYPES).optional(),
   teams: z.array(uuid).max(MEMORY_LIMITS.teams).optional(),
+  projects: z.array(uuid).max(MEMORY_LIMITS.projects).optional(),
   score: z.number().int().min(0).max(MEMORY_SCORE_MAX).optional(),
   authorBotId: uuid.nullable().optional(),
   /** What bots may do with the item: edit it, only suggest changes, or only read it. */
@@ -105,6 +106,7 @@ const searchFilter = z
     bot: z.string().uuid().optional(),
     createdBy: z.string().uuid().optional(),
     team: z.string().uuid().optional(),
+    project: z.string().uuid().optional(),
     min: z.coerce.number().int().min(0).max(MEMORY_SCORE_MAX).optional(),
     max: z.coerce.number().int().min(0).max(MEMORY_SCORE_MAX).optional(),
     since: z.enum(["7d", "30d", "90d", "365d"]).optional(),
@@ -126,6 +128,7 @@ const searchFilter = z
     ...(v.bot && { botId: v.bot }),
     ...(v.createdBy && { createdByBotId: v.createdBy }),
     ...(v.team && { teamId: v.team }),
+    ...(v.project && { projectId: v.project }),
     ...(v.min !== undefined && { minScore: v.min }),
     ...(v.max !== undefined && { maxScore: v.max }),
     ...(v.since && { updatedSince: new Date(Date.now() - SINCE_DAYS[v.since] * 86_400_000) }),

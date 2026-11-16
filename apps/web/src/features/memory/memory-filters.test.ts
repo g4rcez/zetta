@@ -133,6 +133,15 @@ describe("matches", () => {
     expect(matches(item({ teams: [team] }), f({ team }), NOW)).toBe(true);
     expect(matches(item({ teams: [] }), f({ team }), NOW)).toBe(false);
   });
+  test("a project filter keeps only the items of that project's memory, and lives in the address", () => {
+    const project = "01a199f7-6d0f-7f13-8518-1ffa91665d30";
+    expect(matches(item({ type: "project", projects: [project] }), f({ project }), NOW)).toBe(true);
+    expect(matches(item({ type: "project", projects: [] }), f({ project }), NOW)).toBe(false);
+    // A search hit or a shared item does not know its projects: the filter leaves it out.
+    expect(matches(item({}), f({ project }), NOW)).toBe(false);
+    expect(parseMemorySearch({ project, type: "project" })).toEqual({ project, type: "project" });
+    expect(parseMemorySearch({ project: "not-an-id" })).toEqual({});
+  });
 });
 
 describe("sortItems", () => {
@@ -202,6 +211,7 @@ describe("tagCounts, activeCount, mergeRows", () => {
       authorBotId: null,
       updatedByBotId: "b1",
       teams: [],
+      projects: [],
       updatedBy: "bot",
       createdAt: "c",
       updatedAt: "u",

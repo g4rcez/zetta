@@ -5,14 +5,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { uuidv7 } from "@zetta/core/uuid";
 import { useState, type FormEvent } from "react";
 
+import { AdvancedSection } from "@/components/advanced-section";
+import { BotIdentity } from "@/components/bot-identity";
 import { Button, Select } from "@/components/ui";
+import { botRole } from "@zetta/core/bot-role";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { call, errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
-import { Badge, Loading, when } from "../shared/ui";
+import { Badge, Loading, useList, when } from "../shared/ui";
 import { describeSchedule } from "../studio/routine-schedule";
 import { RoutineTriggers } from "./routine-triggers";
-import { EditForm, History, NextRuns, ROUTINE_STATUS, statusOf, type Routine } from "./routines";
+import { RoutineForm, type RoutineFlow } from "./routine-form";
+import { History, NextRuns, ROUTINE_STATUS, statusOf, type Routine } from "./routines";
 
 const NO_BOTS: Bot[] = [];
 
@@ -54,7 +58,7 @@ function BehaviorForm({ r, onSaved }: { r: Routine; onSaved: () => void }) {
     <form
       key={r.version}
       onSubmit={(e) => void submit(e)}
-      className="grid gap-3 rounded-lg border bg-card p-4 text-sm sm:grid-cols-3"
+      className="grid gap-3 text-sm sm:grid-cols-3"
     >
       <div className="sm:col-span-3">
         <Select
@@ -109,13 +113,14 @@ function BehaviorForm({ r, onSaved }: { r: Routine; onSaved: () => void }) {
  * One routine on a page of its own: what it does and when, its controls (run now, pause, skip next), what runs next, every run with
  * its status, duration and chat (a running one can be stopped), how it behaves on overlap, downtime and failures, and its triggers.
  */
-export function RoutinePage({ routineId }: { routineId: string }) {
+export function RoutinePage({ routineId, edit }: { routineId: string; edit?: "on" }) {
   const tf = useTimeFormat();
   const qc = useQueryClient();
   const bots = useQuery(chatQueries.bots()).data ?? NO_BOTS;
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(edit === "on");
+  const [flows] = useList<RoutineFlow>("/api/workflows", "workflows", setError);
   const query = useQuery({
     queryKey: ["routines", { state: "all" }],
     queryFn: () => call<{ routines: Routine[] }>("/api/routines").then((x) => x.routines),
@@ -165,10 +170,11 @@ export function RoutinePage({ routineId }: { routineId: string }) {
             <Badge tone={ROUTINE_STATUS[st].tone}>{ROUTINE_STATUS[st].label}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            {bot?.name ?? "A bot"} · {describeSchedule(r, tf)}
+            {describeSchedule(r, tf)}
             {r.dailyAt ? "" : ` (${r.timezone})`}
             {r.statusReason ? ` · ${r.statusReason.replace(/_/g, " ")}` : ""}
           </p>
+          {bot && <BotIdentity bot={bot} size={24} sub={botRole(bot)} className="max-w-sm" />}
           <p className="text-sm whitespace-pre-wrap">{r.prompt}</p>
           <div className="flex flex-wrap gap-2 pt-2">
             <Button
@@ -225,9 +231,11 @@ export function RoutinePage({ routineId }: { routineId: string }) {
           {summary?.missing.length ? <Alert theme="warn">{summary.missing.join(" ")}</Alert> : null}
         </header>
         {editing && (
-          <EditForm
+          <RoutineForm
+            key={r.version}
             routine={r}
             bots={bots}
+            flows={flows ?? []}
             onSaved={() => {
               setEditing(false);
               setStatus("Saved.");
@@ -251,17 +259,18 @@ export function RoutinePage({ routineId }: { routineId: string }) {
             </>
           )}
         </section>
-        <section aria-label="Runs" className="space-y-2">
+        <section id="routine-runs" aria-label="Runs" className="scroll-mt-4 space-y-2">
           <h2 className="text-base font-semibold">Runs</h2>
           <History routineId={r.id} />
         </section>
-        <section aria-label="Behavior" className="space-y-2">
-          <h2 className="text-base font-semibold">Behavior</h2>
-          <BehaviorForm r={r} onSaved={reload} />
-        </section>
-        <section aria-label="Triggers" className="space-y-2">
+        <section id="routine-triggers" aria-label="Triggers" className="scroll-mt-4 space-y-2">
           <h2 className="text-base font-semibold">Triggers</h2>
           <RoutineTriggers routineId={r.id} paused={r.paused} />
+        </section>
+        <section aria-label="Behavior">
+          <AdvancedSection title="Advanced: how it behaves">
+            <BehaviorForm r={r} onSaved={reload} />
+          </AdvancedSection>
         </section>
       </div>
     </div>

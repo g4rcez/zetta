@@ -48,9 +48,15 @@ type AppLink = (typeof appLinks)[number];
 const linkOf = (label: AppLink["label"]) => appLinks.find((l) => l.label === label)!;
 /**
  * DESIGN.md "Sidebar structure": the daily destinations stay fixed on top; what bots know and can use sits in Library; building and
- * oversight tools sit in Advanced, which "Simple" navigation hides (Preferences > Display). Home is the Zetta row at the top.
+ * oversight tools sit in Advanced, which "Simple" navigation hides (Preferences > Display). The Calendar (route /agenda) is a daily destination, so it sits with Routines and is never hidden. Home is the Zetta row at the top.
  */
-const FIXED = [linkOf("Inbox"), linkOf("Tasks"), linkOf("Projects"), linkOf("Routines")];
+const FIXED = [
+  linkOf("Inbox"),
+  linkOf("Tasks"),
+  linkOf("Projects"),
+  linkOf("Routines"),
+  linkOf("Calendar"),
+];
 const LIBRARY = [
   linkOf("Teams"),
   linkOf("Organization"),
@@ -60,7 +66,7 @@ const LIBRARY = [
   linkOf("Apps"),
   linkOf("Artifacts"),
 ];
-const ADVANCED = [linkOf("Studio"), linkOf("Agenda"), linkOf("Playground"), linkOf("Computer")];
+const ADVANCED = [linkOf("Studio"), linkOf("Playground"), linkOf("Computer")];
 const MORE = [...LIBRARY, ...ADVANCED];
 const GROUP_KEY = (label: string) => `zetta.sidebar-${label.toLowerCase()}`;
 const RAIL_WIDTH = 56;

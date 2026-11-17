@@ -18,3 +18,10 @@ export function parseRoutinesSearch(search: Record<string, unknown>): RoutinesSe
   if (hours === 12 || hours === 24) out.hours = hours;
   return out;
 }
+
+/** The routine page's view: `?edit=on` opens it with the edit form showing (the list's "Edit" action links there). */
+export type RoutineSearch = { edit?: "on" };
+
+export function parseRoutineSearch(search: Record<string, unknown>): RoutineSearch {
+  return search.edit === "on" ? { edit: "on" } : {};
+}

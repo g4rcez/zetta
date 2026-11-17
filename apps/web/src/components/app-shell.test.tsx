@@ -24,6 +24,7 @@ let sidebarSide: "left" | "right" = "left";
 let railMode: "expanded" | "collapsed" = "expanded";
 let agentsState: "running" | "paused" = "running";
 let roomOrder: string[] = [];
+let navMode: "simple" | "full" = "full";
 const room = (id: string, title: string) => ({
   id,
   conversationId: `c-${id}`,
@@ -77,6 +78,7 @@ const fake = (async (input: URL | Request | string, init?: RequestInit) => {
         primaryColor: null,
         botOrder: [],
         roomOrder,
+        navMode,
       },
     });
   if (url.pathname === "/api/discussions")
@@ -277,4 +279,24 @@ test("the sidebar lists rooms in the saved order, and each room has a menu like 
   } finally {
     roomOrder = [];
   }
+});
+
+test("the Calendar (the /agenda page) sits in the main block next to Routines, in Simple and in Full", async () => {
+  for (const mode of ["simple", "full"] as const) {
+    navMode = mode;
+    const { host, unmount } = await mountShell("left");
+    const main = host.querySelector('aside nav[aria-label="Main"]')!;
+    const links = [...main.querySelectorAll("a")].map((a) => [
+      a.textContent?.trim(),
+      a.getAttribute("href"),
+    ]);
+    expect(links).toContainEqual(["Calendar", "/agenda"]);
+    expect(links.map(([label]) => label)).not.toContain("Agenda");
+    const labels = links.map(([label]) => label);
+    expect(labels.indexOf("Calendar")).toBe(labels.indexOf("Routines") + 1);
+    // Advanced still hides Studio, Playground and Computer in Simple; the Calendar is not in it.
+    expect(host.textContent).not.toContain("Agenda");
+    await unmount();
+  }
+  navMode = "full";
 });

@@ -11,7 +11,8 @@
     "dev:bare": "bun run --hot src/index.ts",
     "connections:rotate-user-key": "varlock run -- bun run src/scripts/rotate-user-key.ts",
     "env:generate": "varlock codegen",
-    "auth:generate": "varlock run -- bun x auth@latest generate --config src/services.ts --output ../../packages/db/src/schema/auth.ts --yes"
+    "auth:generate": "varlock run -- bun x auth@latest generate --config src/services.ts --output ../../packages/db/src/schema/auth.ts --yes",
+    "settings:doc": "bun scripts/settings-doc.ts"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.4.2",

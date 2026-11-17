@@ -53,6 +53,8 @@ export type Preferences = {
   /** `#rrggbb`. Null = the theme's own main color. */
   primaryColor: string | null;
   botOrder: string[];
+  /** The bots pinned to the chat sidebar, in the order pinned. Empty: the sidebar picks its few bots by itself (the chief, then recent chats). */
+  sidebarBots: string[];
   /** The same for rooms (`#` rows): ids, first on top; a room never placed sorts after, by name. */
   roomOrder: string[];
   /** Read-only here: it changes only through `setAgentsState`, which also stops the turns running now. */
@@ -80,6 +82,7 @@ const DEFAULTS: Preferences = {
   theme: null,
   primaryColor: null,
   botOrder: [],
+  sidebarBots: [],
   roomOrder: [],
   agentsState: "running",
 };

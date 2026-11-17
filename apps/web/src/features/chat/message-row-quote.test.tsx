@@ -192,27 +192,29 @@ const openToolbar = (host: HTMLElement) =>
     (host.querySelector('button[aria-label="Message actions"]') as unknown as HTMLElement).focus();
   });
 
-test("the toolbar offers Reply only where the page can quote", () => {
+test("the toolbar offers Quote only where the page can quote", () => {
   const withQuote = mount({ onQuote: () => {} });
   openToolbar(withQuote);
-  expect(withQuote.querySelector('button[aria-label="Reply"]')).not.toBeNull();
+  expect(withQuote.querySelector('button[aria-label="Quote"]')).not.toBeNull();
   const plain = mount({});
   openToolbar(plain);
-  expect(plain.querySelector('button[aria-label="Reply in thread"]')).not.toBeNull();
-  expect(plain.querySelector('button[aria-label="Reply"]')).toBeNull();
+  expect(plain.querySelector('button[aria-label="Open thread"]')).not.toBeNull();
+  expect(plain.querySelector('button[aria-label="Quote"]')).toBeNull();
+  // The old words are gone.
+  expect(plain.querySelector('[aria-label="Reply"], [aria-label="Reply in thread"]')).toBeNull();
 });
 
-test("Reply hands the message to the page", () => {
+test("Quote hands the message to the page", () => {
   const picked: string[] = [];
   const host = mount({ onQuote: (r: { id: string }) => picked.push(r.id) });
   openToolbar(host);
-  act(() => (host.querySelector('button[aria-label="Reply"]') as unknown as HTMLElement).click());
+  act(() => (host.querySelector('button[aria-label="Quote"]') as unknown as HTMLElement).click());
   expect(picked).toEqual(["m2"]);
 });
 
-test("a row inside a thread or room still offers Reply when the page gives it", () => {
+test("a row inside a thread or room still offers Quote when the page gives it", () => {
   const host = mount({ inThread: true, onQuote: () => {} });
   openToolbar(host);
-  expect(host.querySelector('button[aria-label="Reply"]')).not.toBeNull();
-  expect(host.querySelector('button[aria-label="Reply in thread"]')).toBeNull();
+  expect(host.querySelector('button[aria-label="Quote"]')).not.toBeNull();
+  expect(host.querySelector('button[aria-label="Open thread"]')).toBeNull();
 });

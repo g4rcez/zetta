@@ -185,6 +185,7 @@ import {
   type Poll,
   type PollMode,
 } from "./polls";
+import { snapshotBotConfig } from "../bots/bot-revision";
 import { insertWithSlug, isUniqueViolation } from "../bots/slug";
 import { user } from "@zetta/db/schema/auth";
 import type { TeamStore } from "../teams/store";
@@ -742,31 +743,7 @@ export function createChatService(
   }[] = [];
   const knowledge = createKnowledge(db);
   const botClaudeStore = createBotClaude(db);
-  const snapshotConfig = (r: typeof bot.$inferSelect) => ({
-    name: r.name,
-    description: r.description,
-    harness: r.harness,
-    model: r.model,
-    personality: r.personality,
-    instructions: r.instructions,
-    outputStyle: r.outputStyle,
-    outputStyleId: r.outputStyleId,
-    visibility: r.visibility,
-    // Added 2026-11-15 so "restore this version" brings back the whole configuration, not only the text. Older revisions lack them.
-    fallbackHarness: r.fallbackHarness,
-    fallbackModel: r.fallbackModel,
-    computerMode: r.computerMode,
-    autoLearn: r.autoLearn,
-    codeAccess: r.codeAccess,
-    commitIdentity: r.commitIdentity,
-    commitEmail: r.commitEmail,
-    contextBytes: r.contextBytes,
-    // Added 2026-11-15 with the chat memory controls.
-    summaryMode: r.summaryMode,
-    summaryMaxChars: r.summaryMaxChars,
-    summaryGapBytes: r.summaryGapBytes,
-    chatSearchLimit: r.chatSearchLimit,
-  });
+  const snapshotConfig = snapshotBotConfig;
   /** Memory is frozen per conversation and bot at its first turn (stable prompt prefix); writes show in tool results and in the next conversation. */
   async function frozenNotes(
     conversationId: string,

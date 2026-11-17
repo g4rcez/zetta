@@ -3,8 +3,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { eq } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
-import { bot } from "@zetta/db/schema/chat";
+import { bot, botRevision } from "@zetta/db/schema/chat";
 import { installationIdentity, membership } from "@zetta/db/schema/identity";
+import { orgPosition } from "@zetta/db/schema/org";
 import { userPreference } from "@zetta/db/schema/preferences";
 import { team } from "@zetta/db/schema/teams";
 import { createApp } from "../../app";
@@ -292,6 +293,85 @@ suite("company chart against postgres", () => {
     });
     expect(stranger.error!.message).toBe("That person is not a member any more.");
     expect(seatOf(await get(), "CFO").holder).toMatchObject({ botId: teamBot });
+  });
+
+  test("the palette offers the admin's own private bots, and seating one shares it only when asked", async () => {
+    const mine = await newBot(ADMIN, "Drafter", { visibility: "private" });
+    try {
+      const names = (await get()).palette!.bots;
+      expect(names.find((b) => b.id === mine)).toMatchObject({ visibility: "private" });
+      expect(names.find((b) => b.id === teamBot)).toMatchObject({ visibility: "team" });
+      // Another member's private bot stays out: only its owner can share it.
+      expect(names.some((b) => b.id === privateBot)).toBe(false);
+
+      const cfo = seatOf(await get(), "CFO");
+      const path = `/api/org/positions/${cfo.id}/seat`;
+      const before = (await db.select().from(bot).where(eq(bot.id, mine)))[0]!;
+      const refused = await write("PUT", path, { holder: { kind: "bot", botId: mine } });
+      expect(refused.error!.message).toBe(
+        "A private bot cannot hold a seat. Share it with the team first.",
+      );
+      expect((await db.select().from(bot).where(eq(bot.id, mine)))[0]!.visibility).toBe("private");
+
+      const shared = await write("PUT", path, {
+        holder: { kind: "bot", botId: mine },
+        shareBot: "team",
+      });
+      expect(shared.status).toBe(200);
+      expect(seatOf(shared.org, "CFO")).toMatchObject({
+        seat: "bot",
+        holder: { kind: "bot", botId: mine, name: "Drafter" },
+      });
+      const after = (await db.select().from(bot).where(eq(bot.id, mine)))[0]!;
+      expect(after.visibility).toBe("team");
+      expect(after.version).toBe(before.version + 1);
+      const [revision] = await db.select().from(botRevision).where(eq(botRevision.botId, mine));
+      expect(revision).toMatchObject({ version: after.version, changedByUserId: ADMIN });
+      expect(revision!.config).toMatchObject({ visibility: "team" });
+
+      // A bot that belongs to somebody else is refused even when sharing is asked for, and stays private.
+      const other = await write("PUT", path, {
+        holder: { kind: "bot", botId: privateBot },
+        shareBot: "team",
+      });
+      expect(other.error!.message).toBe("Only its owner can share this bot with the team.");
+      expect((await db.select().from(bot).where(eq(bot.id, privateBot)))[0]!.visibility).toBe(
+        "private",
+      );
+      await write("PUT", path, { holder: { kind: "bot", botId: teamBot } });
+    } finally {
+      await db.delete(botRevision).where(eq(botRevision.botId, mine));
+      await db.delete(orgPosition).where(eq(orgPosition.botId, mine));
+      await db.delete(bot).where(eq(bot.id, mine));
+    }
+  });
+
+  test("a seat made with a holder is filled at once, and a refused holder leaves no seat", async () => {
+    const cto = seatOf(await get(), "CTO");
+    const count = (await get()).positions.length;
+    const made = await write("POST", "/api/org/positions", {
+      parentId: cto.id,
+      title: "Reviewer",
+      holder: { kind: "bot", botId: teamBot },
+    });
+    expect(made.status).toBe(201);
+    expect(seatOf(made.org, "Reviewer")).toMatchObject({
+      seat: "bot",
+      holder: { kind: "bot", botId: teamBot },
+    });
+
+    const refused = await write("POST", "/api/org/positions", {
+      parentId: cto.id,
+      title: "Ghost",
+      holder: { kind: "bot", botId: privateBot },
+    });
+    expect(refused.error!.message).toBe(
+      "A private bot cannot hold a seat. Share it with the team first.",
+    );
+    const view = await get();
+    expect(view.positions.some((p) => p.title === "Ghost")).toBe(false);
+    expect(view.positions).toHaveLength(count + 1);
+    await write("DELETE", `/api/org/positions/${seatOf(view, "Reviewer").id}`);
   });
 
   test("one person can hold two seats, and a seat can be emptied", async () => {

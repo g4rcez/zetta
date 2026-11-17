@@ -2,13 +2,14 @@ import { canMove, childrenOf, validateTree, type OrgRank, type OrgSeat } from "@
 import { orgPresetByKey, orgTemplateByKey, presetRows } from "@zetta/core/org-templates";
 import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
-import { and, asc, eq, inArray, sql } from "@zetta/db/query";
+import { and, asc, eq, inArray, or, sql } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
-import { bot } from "@zetta/db/schema/chat";
+import { bot, botRevision } from "@zetta/db/schema/chat";
 import { membership } from "@zetta/db/schema/identity";
 import { orgChart, orgPosition } from "@zetta/db/schema/org";
 import { userPreference } from "@zetta/db/schema/preferences";
 import { team } from "@zetta/db/schema/teams";
+import { snapshotBotConfig } from "../bots/bot-revision";
 import type { ActiveActor } from "../identity/access";
 import { buildOrgDraft, type OrgDraft, type OrgDraftChoices } from "./draft";
 import { readOrgLinks, type OrgLink } from "./links";
@@ -74,7 +75,14 @@ export type OrgView = {
   /** Only for the admin: who can be put in a seat and which of their own teams can be linked. */
   palette: {
     people: { userId: string; name: string; avatar: Avatar; title: string }[];
-    bots: { id: string; name: string; description: string; avatar: Avatar }[];
+    /** Bots shared with the team, and the admin's own private ones: a private bot is shared when the admin seats it. */
+    bots: {
+      id: string;
+      name: string;
+      description: string;
+      avatar: Avatar;
+      visibility: "private" | "team";
+    }[];
     teams: { id: string; name: string }[];
   } | null;
 };
@@ -225,6 +233,9 @@ export type OrgCreate = {
   description?: string;
   unit?: string;
   rank?: OrgRank;
+  /** Who holds the new seat, written with the seat itself. */
+  holder?: OrgHolderInput;
+  shareBot?: OrgShareBot;
 };
 export type OrgUpdate = {
   title?: string;
@@ -237,6 +248,8 @@ export type OrgHolderInput =
   | { kind: "open" }
   | { kind: "person"; userId: string }
   | { kind: "bot"; botId: string };
+/** `team`: a private bot picked for a seat is shared with the team in the same step. */
+export type OrgShareBot = "team";
 
 const stale = () =>
   new OrgError("STALE_VERSION", "Someone changed the chart. Here is the latest; try again.");
@@ -318,6 +331,65 @@ export function createOrgStore(db: Database) {
           .where(eq(orgPosition.id, id));
   }
 
+  /** Checks who may hold a seat and writes it. A private bot is shared with the team only when asked, and only by its owner. */
+  async function applyHolder(
+    tx: Tx,
+    a: ActiveActor,
+    positionId: string,
+    holder: OrgHolderInput,
+    shareBot?: OrgShareBot,
+  ) {
+    if (holder.kind === "person") {
+      const [m] = await tx
+        .select({ id: membership.userId })
+        .from(membership)
+        .where(and(eq(membership.userId, holder.userId), eq(membership.status, "active")));
+      if (!m) throw new OrgError("INVALID", "That person is not a member any more.");
+    }
+    if (holder.kind === "bot") {
+      const [b] = await tx.select().from(bot).where(eq(bot.id, holder.botId));
+      if (!b || b.archived) throw new OrgError("NOT_FOUND", "That bot is not available.");
+      if (b.kind !== "specialist")
+        throw new OrgError("INVALID", "A personal chief of staff cannot hold a seat.");
+      if (b.visibility !== "team") {
+        if (shareBot !== "team")
+          throw new OrgError(
+            "INVALID",
+            "A private bot cannot hold a seat. Share it with the team first.",
+          );
+        if (b.ownerUserId !== a.userId)
+          throw new OrgError("NOT_ALLOWED", "Only its owner can share this bot with the team.");
+        const [shared] = await tx
+          .update(bot)
+          .set({
+            visibility: "team",
+            version: sql`${bot.version} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(eq(bot.id, b.id))
+          .returning();
+        await tx
+          .insert(botRevision)
+          .values({
+            botId: shared!.id,
+            version: shared!.version,
+            config: snapshotBotConfig(shared!),
+            changedByUserId: a.userId,
+          })
+          .onConflictDoNothing();
+      }
+    }
+    await tx
+      .update(orgPosition)
+      .set({
+        seat: holder.kind,
+        userId: holder.kind === "person" ? holder.userId : null,
+        botId: holder.kind === "bot" ? holder.botId : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(orgPosition.id, positionId));
+  }
+
   const store = {
     /** Told after every change with everyone who can read the chart, so open pages refresh. */
     onChange: undefined as ((userIds: string[]) => void) | undefined,
@@ -335,10 +407,23 @@ export function createOrgStore(db: Database) {
           .where(eq(membership.status, "active"))
           .orderBy(asc(user.name), asc(user.id)),
         db
-          .select({ id: bot.id, name: bot.name, description: bot.description, avatar: bot.avatar })
+          .select({
+            id: bot.id,
+            name: bot.name,
+            description: bot.description,
+            avatar: bot.avatar,
+            visibility: bot.visibility,
+          })
           .from(bot)
           .where(
-            and(eq(bot.visibility, "team"), eq(bot.kind, "specialist"), eq(bot.archived, false)),
+            and(
+              eq(bot.kind, "specialist"),
+              eq(bot.archived, false),
+              or(
+                eq(bot.visibility, "team"),
+                and(eq(bot.visibility, "private"), eq(bot.ownerUserId, a.userId)),
+              ),
+            ),
           )
           .orderBy(asc(bot.name), asc(bot.id)),
         db
@@ -382,16 +467,22 @@ export function createOrgStore(db: Database) {
           find(rows, parentId);
           if (rank === "ceo") throw new OrgError("INVALID", "There can be only one CEO.");
         }
-        await tx.insert(orgPosition).values({
-          chartId,
-          parentId,
-          rank,
-          title,
-          description: (v.description ?? tpl?.description ?? "").trim(),
-          unit: (v.unit ?? tpl?.unit ?? "").trim(),
-          templateKey: tpl?.key ?? null,
-          sortOrder: nextOrder(rows, parentId),
-        });
+        const [created] = await tx
+          .insert(orgPosition)
+          .values({
+            chartId,
+            parentId,
+            rank,
+            title,
+            description: (v.description ?? tpl?.description ?? "").trim(),
+            unit: (v.unit ?? tpl?.unit ?? "").trim(),
+            templateKey: tpl?.key ?? null,
+            sortOrder: nextOrder(rows, parentId),
+          })
+          .returning({ id: orgPosition.id });
+        // The holder goes in the same transaction: a refused holder leaves no half-made seat behind.
+        if (v.holder && v.holder.kind !== "open")
+          await applyHolder(tx, a, created!.id, v.holder, v.shareBot);
       });
       return store.get(a);
     },
@@ -461,40 +552,20 @@ export function createOrgStore(db: Database) {
       return store.get(a);
     },
 
-    /** Puts a person or a bot in a seat, or empties it. Only team-visible specialist bots and active members can hold one. */
-    async seat(a: ActiveActor, expectedVersion: number, id: string, holder: OrgHolderInput) {
+    /**
+     * Puts a person or a bot in a seat, or empties it. Only team-visible specialist bots and active members can hold one; with
+     * `shareBot: "team"` the admin's own private bot is shared with the team first.
+     */
+    async seat(
+      a: ActiveActor,
+      expectedVersion: number,
+      id: string,
+      holder: OrgHolderInput,
+      shareBot?: OrgShareBot,
+    ) {
       await mutate(a, expectedVersion, async (tx, rows) => {
         find(rows, id);
-        if (holder.kind === "person") {
-          const [m] = await tx
-            .select({ id: membership.userId })
-            .from(membership)
-            .where(and(eq(membership.userId, holder.userId), eq(membership.status, "active")));
-          if (!m) throw new OrgError("INVALID", "That person is not a member any more.");
-        }
-        if (holder.kind === "bot") {
-          const [b] = await tx
-            .select({ visibility: bot.visibility, kind: bot.kind, archived: bot.archived })
-            .from(bot)
-            .where(eq(bot.id, holder.botId));
-          if (!b || b.archived) throw new OrgError("NOT_FOUND", "That bot is not available.");
-          if (b.kind !== "specialist")
-            throw new OrgError("INVALID", "A personal chief of staff cannot hold a seat.");
-          if (b.visibility !== "team")
-            throw new OrgError(
-              "INVALID",
-              "A private bot cannot hold a seat. Share it with the team first.",
-            );
-        }
-        await tx
-          .update(orgPosition)
-          .set({
-            seat: holder.kind,
-            userId: holder.kind === "person" ? holder.userId : null,
-            botId: holder.kind === "bot" ? holder.botId : null,
-            updatedAt: new Date(),
-          })
-          .where(eq(orgPosition.id, id));
+        await applyHolder(tx, a, id, holder, shareBot);
       });
       return store.get(a);
     },

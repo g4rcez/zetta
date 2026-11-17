@@ -19,6 +19,12 @@ export const orgHolder = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("bot"), botId: orgUuid }),
 ]);
 
+/**
+ * What to do when the bot picked for a seat is private. `team` shares it with the team in the same step; left out, a private bot is
+ * refused. Only the web page sends it: the bot tools and MCP keep asking the owner to share first.
+ */
+export const orgShareBot = z.enum(["team"]);
+
 export const orgBodies = {
   create: z.strictObject({
     expectedVersion: orgVersion,
@@ -28,6 +34,9 @@ export const orgBodies = {
     description: orgDescription.optional(),
     unit: orgUnit.optional(),
     rank: orgRank.optional(),
+    /** Who holds the new seat; written in the same step as the seat, so a refused holder leaves no seat behind. */
+    holder: orgHolder.optional(),
+    shareBot: orgShareBot.optional(),
   }),
   update: z.strictObject({
     expectedVersion: orgVersion,
@@ -42,7 +51,11 @@ export const orgBodies = {
     parentId: orgUuid,
     index: z.number().int().min(0).max(1000).optional(),
   }),
-  seat: z.strictObject({ expectedVersion: orgVersion, holder: orgHolder }),
+  seat: z.strictObject({
+    expectedVersion: orgVersion,
+    holder: orgHolder,
+    shareBot: orgShareBot.optional(),
+  }),
   preset: z.strictObject({
     expectedVersion: orgVersion,
     presetKey: z.string().trim().min(1).max(60),

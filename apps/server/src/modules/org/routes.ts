@@ -57,7 +57,7 @@ export function createOrgRoutes({ access, org }: OrgServices, trustedOrigins: re
       "/positions/:id/seat",
       g(async (c) => {
         const v = schemas.seat.parse(c.body);
-        return { org: await org.seat(c.actor, v.expectedVersion, id(c), v.holder) };
+        return { org: await org.seat(c.actor, v.expectedVersion, id(c), v.holder, v.shareBot) };
       }),
     )
     .delete(

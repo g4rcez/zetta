@@ -82,6 +82,9 @@ export const userPreference = zetta.table(
     /** The person's sidebar order of bots (ids, first on top). Only that person reads it; a bot missing from it sorts after, by
      * the server's order, so no foreign key is needed and a deleted bot just drops out. The chief is always first and never listed. */
     botOrder: uuid("bot_order").array().default([]).notNull(),
+    /** The bots the person chose to keep in the chat sidebar (ids, in the order they were pinned). Empty = nothing chosen, and the sidebar
+     * lists the few bots it picks by itself. Only that person reads it; like `botOrder` it has no foreign key, so a deleted bot just drops out. */
+    sidebarBots: uuid("sidebar_bots").array().default([]).notNull(),
     /** The person's sidebar order of rooms (ids, first on top). Same rules as `botOrder`: only that person reads it, a room missing
      * from it sorts after by name, and a deleted room just drops out. */
     roomOrder: uuid("room_order").array().default([]).notNull(),

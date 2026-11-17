@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."user_preference" ADD COLUMN "sidebar_bots" uuid[] DEFAULT '{}'::uuid[] NOT NULL;

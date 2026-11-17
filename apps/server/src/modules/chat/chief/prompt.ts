@@ -7,7 +7,7 @@ import { BUILTIN_KEYS } from "../../output-styles/builtins";
  */
 export const ORG_TOOL = `\`\`\`zetta:org
 {"action":"add_seat","under":"CTO","template":"software-engineer"}
-\`\`\`   (the company chart; changes only for an administrator. action list | add_seat{under, template: role key such as cto, support-agent, or title, rank?, unit?, description?} | update{seat, title?, rank?, unit?, description?, team?: name|null} | seat{seat, holder: {kind: person|bot|open, who}} | move{seat, under?, index?} | remove{seat} | apply_template{template: small-startup|solo-founder|agency|product-team|support-desk, under?}. The first seat is the CEO.)`;
+\`\`\`   (the company chart; only an admin changes it. action list | works_with | add_seat{under, template: role key such as cto, support-agent, or title, rank?, unit?, description?} | update{seat, title?, rank?, unit?, description?, team?: name|null} | seat{seat, holder: {kind: person|bot|open, who}} | move{seat, under?, index?} | remove{seat} | apply_template{template: small-startup|solo-founder|agency|product-team|support-desk, under?}. The first seat is the CEO.)`;
 
 /** What an administrator's own bot reads (the Chief has the same block inside `CHIEF_MANAGE_TOOLS`). */
 export const ORG_BOT_TOOLS = `${ORG_TOOL}

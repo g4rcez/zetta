@@ -70,6 +70,44 @@ export type OrgHolderInput =
   | { kind: "person"; userId: string }
   | { kind: "bot"; botId: string };
 
+/** Why a bot of a team got no seat in the draft. */
+export type OrgDraftSkipReason =
+  | "private"
+  | "archived"
+  | "chief_of_staff"
+  | "already_seated"
+  | "too_many";
+export type OrgDraftSeat = {
+  ref: number;
+  parentRef: number | null;
+  rank: OrgRank;
+  title: string;
+  description: string;
+  unit: string;
+  team: { id: string; name: string } | null;
+  holder: { botId: string; name: string } | null;
+  note: string | null;
+};
+/** A first chart drafted from the admin's teams. Nothing is saved until the admin confirms it. */
+export type OrgDraft = {
+  seats: OrgDraftSeat[];
+  skipped: { botId: string; name: string; teamName: string; reason: OrgDraftSkipReason }[];
+  teams: { id: string; name: string; botCount: number }[];
+};
+/** What the admin leaves out of the draft before saving it. */
+export type OrgDraftChoices = { skipTeamIds: string[]; skipBotIds: string[] };
+
+export const ORG_LINK_KINDS = ["room", "workflow", "handoff"] as const;
+export type OrgLinkKind = (typeof ORG_LINK_KINDS)[number];
+/** Two bots of the chart that work together: `aId` and `bId` are bot ids. */
+export type OrgLink = {
+  aId: string;
+  bId: string;
+  weight: number;
+  kinds: OrgLinkKind[];
+  counts: Record<OrgLinkKind, number>;
+};
+
 const org = (r: { org: OrgView }) => r.org;
 const body = (expectedVersion: number, v: object = {}) => ({ expectedVersion, ...v });
 
@@ -94,6 +132,18 @@ export const orgApi = {
     call<{ org: OrgView }>(`/api/org/positions/${id}?expectedVersion=${version}`, "DELETE").then(
       org,
     ),
+  links: () => call<{ links: OrgLink[] }>("/api/org/links").then((r) => r.links),
+  draft: (choices: OrgDraftChoices = { skipTeamIds: [], skipBotIds: [] }) => {
+    const q = new URLSearchParams();
+    if (choices.skipTeamIds.length) q.set("skipTeamIds", choices.skipTeamIds.join(","));
+    if (choices.skipBotIds.length) q.set("skipBotIds", choices.skipBotIds.join(","));
+    const query = q.toString();
+    return call<{ draft: OrgDraft }>(`/api/org/draft${query ? `?${query}` : ""}`).then(
+      (r) => r.draft,
+    );
+  },
+  applyDraft: (version: number, choices: OrgDraftChoices) =>
+    call<{ org: OrgView }>("/api/org/draft", "POST", body(version, choices)).then(org),
   applyPreset: (version: number, presetKey: string, underPositionId?: string) =>
     call<{ org: OrgView }>(
       "/api/org/presets",
@@ -104,4 +154,14 @@ export const orgApi = {
 
 export const orgQueries = {
   get: () => queryOptions({ queryKey: ["org"], queryFn: () => orgApi.get(), staleTime: 30_000 }),
+  links: () =>
+    queryOptions({ queryKey: ["org", "links"], queryFn: () => orgApi.links(), staleTime: 30_000 }),
+  /** The preview is a fresh read every time it opens: teams change. */
+  draft: () =>
+    queryOptions({
+      queryKey: ["org", "draft"],
+      queryFn: () => orgApi.draft(),
+      staleTime: 0,
+      gcTime: 0,
+    }),
 };

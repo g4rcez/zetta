@@ -60,12 +60,21 @@ const view = (canEdit: boolean, list = positions()) => ({
 });
 
 let current: unknown = view(false);
+const BOT2 = "01a19da2-3c92-783a-b90d-c35975f3c60d";
+const TEAM = "01a1ce15-6b98-7fa6-a72d-0885e1cc5299";
+let links: unknown[] = [];
+let draft: unknown = { seats: [], skipped: [], teams: [] };
 let writes: { call: string; body: unknown }[] = [];
 globalThis.fetch = (async (input: URL | string, init?: RequestInit) => {
   const url = new URL(String(input));
   const method = init?.method ?? "GET";
   if (url.pathname === "/api/bots")
     return Response.json({ bots: [{ id: BOT, name: "Scribe", kind: "specialist" }] });
+  if (url.pathname === "/api/org/links") return Response.json({ links });
+  if (url.pathname === "/api/org/draft" && method === "GET") {
+    writes.push({ call: `GET ${url.pathname}${url.search}`, body: undefined });
+    return Response.json({ draft });
+  }
   if (url.pathname.startsWith("/api/org")) {
     if (method !== "GET")
       writes.push({
@@ -81,6 +90,8 @@ const mounted: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const unmount of mounted.splice(0)) await unmount();
   current = view(false);
+  links = [];
+  draft = { seats: [], skipped: [], teams: [] };
   writes = [];
 });
 const settle = () => act(async () => void (await new Promise((r) => setTimeout(r, 60))));
@@ -252,4 +263,181 @@ test("the admin removes a seat after being asked", async () => {
   expect(writes).toEqual([
     { call: `DELETE /api/org/positions/${S(4)}?expectedVersion=4`, body: undefined },
   ]);
+});
+
+test("the top of the page says what the chart changes", async () => {
+  const host = await organization({ view: "list" });
+  expect(text(host)).toContain("Bots read their seat, and escalation follows the chart.");
+});
+
+const withSecondBot = () => [
+  ...positions(),
+  seat(5, S(3), "Analyst", {
+    seat: "bot",
+    holder: { kind: "bot", botId: BOT2, name: "Mia", description: "", avatar: null },
+  }),
+];
+
+test("show=links lists who works with whom, in words, from the server's pairs", async () => {
+  current = view(false, withSecondBot());
+  links = [
+    {
+      aId: BOT,
+      bId: BOT2,
+      weight: 4,
+      kinds: ["room", "workflow"],
+      counts: { room: 3, workflow: 1, handoff: 0 },
+    },
+    {
+      aId: BOT,
+      bId: "01a19da2-3c92-783a-b90d-c35975f3c6ff",
+      weight: 1,
+      kinds: ["room"],
+      counts: { room: 1, workflow: 0, handoff: 0 },
+    },
+  ];
+  const host = await organization({ view: "list", show: "links" });
+  const section = host.querySelector('section[aria-label="Who works with whom"]')!;
+  // The second pair names a bot that holds no seat here: it is left out.
+  expect(section.querySelectorAll("li")).toHaveLength(1);
+  expect(section.textContent).toContain("Scribe and Mia: Work together in 3 rooms, 1 workflow");
+  // The layer points nobody out: every seat is lit the same.
+  const rows = [...host.querySelectorAll("ul[aria-label='Organization outline'] li > div")];
+  expect(rows.filter((r) => r.className.includes("opacity-50"))).toHaveLength(0);
+});
+
+test("without the layer in the address the page does not ask for the pairs", async () => {
+  current = view(false, withSecondBot());
+  links = [
+    {
+      aId: BOT,
+      bId: BOT2,
+      weight: 1,
+      kinds: ["room"],
+      counts: { room: 1, workflow: 0, handoff: 0 },
+    },
+  ];
+  const host = await organization({ view: "list" });
+  expect(host.querySelector('section[aria-label="Who works with whom"]')).toBeNull();
+});
+
+test("the works-with choice writes show=links to the address", async () => {
+  const seen: object[] = [];
+  const host = await mount(async () => {
+    const { OrganizationPage } = await import("./organization-page");
+    return <OrganizationPage search={{ view: "list" }} onSearch={(next) => void seen.push(next)} />;
+  });
+  const group = host.querySelector('[role="group"][aria-label="What to show"]')!;
+  const pick = [...group.querySelectorAll("button")].find((b) => b.textContent === "Works with")!;
+  expect(pick.getAttribute("aria-pressed")).toBe("false");
+  await click(pick);
+  expect(seen).toEqual([{ view: "list", show: "links" }]);
+});
+
+test("a bot's settings say who it reports to and link to its seat on the chart", async () => {
+  current = view(false, withSecondBot());
+  const host = await mount(async () => {
+    const { BotOrgSection } = await import("./bot-org-section");
+    return <BotOrgSection botId={BOT2} />;
+  });
+  expect(text(host)).toContain("Reports to an open seat (CFO)");
+  const link = [...host.querySelectorAll("a")].find((a) => a.textContent === "See on the chart")!;
+  expect(link.getAttribute("href")).toBe(`/organization?focus=${S(5)}`);
+});
+
+const teamDraft = () => ({
+  seats: [
+    {
+      ref: 0,
+      parentRef: null,
+      rank: "ceo",
+      title: "CEO",
+      description: "",
+      unit: "Company",
+      team: null,
+      holder: null,
+      note: null,
+    },
+    {
+      ref: 1,
+      parentRef: 0,
+      rank: "lead",
+      title: "Alpha lead",
+      description: "",
+      unit: "Alpha",
+      team: { id: TEAM, name: "Alpha" },
+      holder: { botId: BOT, name: "Scribe" },
+      note: null,
+    },
+    {
+      ref: 2,
+      parentRef: 1,
+      rank: "member",
+      title: "Writer",
+      description: "",
+      unit: "Alpha",
+      team: null,
+      holder: { botId: BOT2, name: "Mia" },
+      note: null,
+    },
+  ],
+  skipped: [{ botId: "x", name: "Hidden", teamName: "Alpha", reason: "private" }],
+  teams: [{ id: TEAM, name: "Alpha", botCount: 3 }],
+});
+
+test("Draw it from my teams opens a preview and saves nothing until it is confirmed", async () => {
+  current = { ...view(true, []), chart: { id: null, name: "Company", version: 0 } };
+  draft = teamDraft();
+  const host = await organization();
+  await click(buttons(host, "Review the draft")[0]);
+  const t = text(host);
+  for (const word of [
+    "Your teams as a chart",
+    "Alpha lead",
+    "Scribe",
+    "Writer",
+    "Mia",
+    "Hidden (Alpha): it is private",
+  ])
+    expect(t).toContain(word);
+  expect(buttons(host, "Create 3 seats")).toHaveLength(1);
+  // Only reads so far.
+  expect(writes.every((w) => w.call.startsWith("GET"))).toBe(true);
+  // Leave Mia out, then confirm: the write names what was left out.
+  const mia = [...host.querySelectorAll('input[type="checkbox"]')].find((c) =>
+    c.closest("div")?.textContent?.includes("Writer"),
+  ) as unknown as HTMLInputElement;
+  await click(mia);
+  expect(buttons(host, "Create 2 seats")).toHaveLength(1);
+  await click(buttons(host, "Create 2 seats")[0]);
+  expect(writes.at(-1)).toEqual({
+    call: "POST /api/org/draft",
+    body: { expectedVersion: 0, skipTeamIds: [], skipBotIds: [BOT2] },
+  });
+});
+
+test("leaving a team out of the draft drops its bots, and Back returns to the structures", async () => {
+  current = { ...view(true, []), chart: { id: null, name: "Company", version: 0 } };
+  draft = teamDraft();
+  const host = await organization();
+  await click(buttons(host, "Review the draft")[0]);
+  const lead = [
+    ...host.querySelectorAll('input[type="checkbox"]'),
+  ][0] as unknown as HTMLInputElement;
+  await click(lead);
+  expect(buttons(host, "Create 1 seat")).toHaveLength(1);
+  await click(buttons(host, "Create 1 seat")[0]);
+  expect(writes.at(-1)!.body).toEqual({ expectedVersion: 0, skipTeamIds: [TEAM], skipBotIds: [] });
+  await click(buttons(host, "Back")[0]);
+  expect(text(host)).toContain("Draw your organization");
+});
+
+test("with no teams the preview says so and offers nothing to create", async () => {
+  current = { ...view(true, []), chart: { id: null, name: "Company", version: 0 } };
+  const host = await organization();
+  await click(buttons(host, "Review the draft")[0]);
+  expect(text(host)).toContain("You have no teams yet.");
+  expect((buttons(host, "Create these seats")[0] as unknown as HTMLButtonElement).disabled).toBe(
+    true,
+  );
 });

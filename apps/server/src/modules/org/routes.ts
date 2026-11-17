@@ -67,6 +67,31 @@ export function createOrgRoutes({ access, org }: OrgServices, trustedOrigins: re
         return { org: await org.remove(c.actor, v.expectedVersion, id(c)) };
       }),
     )
+    .get(
+      "/links",
+      g(async (c) => ({ links: await org.links(c.actor) })),
+    )
+    .get(
+      "/draft",
+      g(async (c) => {
+        const q = schemas.draftQuery.parse(c.query);
+        const list = (v: string | undefined) =>
+          v ? z.array(uuid).max(300).parse(v.split(",").filter(Boolean)) : [];
+        return {
+          draft: await org.draft(c.actor, {
+            skipTeamIds: list(q.skipTeamIds),
+            skipBotIds: list(q.skipBotIds),
+          }),
+        };
+      }),
+    )
+    .post(
+      "/draft",
+      g(async (c) => {
+        const { expectedVersion, ...choices } = schemas.draft.parse(c.body);
+        return { org: await org.applyDraft(c.actor, expectedVersion, choices) };
+      }, 201),
+    )
     .post(
       "/presets",
       g(async (c) => {

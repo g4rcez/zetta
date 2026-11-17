@@ -8,13 +8,14 @@ Zetta is a server-backed bot manager. Your personal chief coordinates specialist
 
 Start with a job, not a technical component:
 
-| I want to… | Read |
-| --- | --- |
-| Set up a useful bot and know when it is ready | [Your first useful bot](user-guide/getting-started.md) |
-| Delegate work, find results, or resolve a blocker | [Work and attention](user-guide/work-and-attention.md) |
-| Correct a mistake or repeat a successful task | [Learning, routines, and workflows](user-guide/learning-and-automation.md) |
-| Understand what is private and what publication shares | [Privacy and sharing](user-guide/privacy-and-sharing.md) |
-| Let a bot use websites or a computer, including login help | [Browser and computer use](user-guide/browser-and-computer.md) |
+| I want to…                                                 | Read                                                                       |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Set up a useful bot and know when it is ready              | [Your first useful bot](user-guide/getting-started.md)                     |
+| Delegate work, find results, or resolve a blocker          | [Work and attention](user-guide/work-and-attention.md)                     |
+| Correct a mistake or repeat a successful task              | [Learning, routines, and workflows](user-guide/learning-and-automation.md) |
+| See who leads what and which bots work together            | [Organization chart](user-guide/organization-chart.md)                     |
+| Understand what is private and what publication shares     | [Privacy and sharing](user-guide/privacy-and-sharing.md)                   |
+| Let a bot use websites or a computer, including login help | [Browser and computer use](user-guide/browser-and-computer.md)             |
 
 You do not need to read the architecture section to follow these journeys. Use the [glossary](glossary.md) when a term is unfamiliar.
 
@@ -29,14 +30,14 @@ For developers and implementation agents:
 
 ## Which document owns what?
 
-| Question | Authority |
-| --- | --- |
-| What behavior and scope did the user confirm? | [Product intent](../intent/zetta-v1.md) |
-| How do the experiences fit together, and why? | This wiki |
-| What architecture and approval constraints guide implementation? | [Implementation plan](../../tasks/plan.md) |
-| What should be implemented next, and what is its status? | [TASKS.md](../../TASKS.md) |
-| What must a specific implementation prove? | Its numbered RFC and completion record |
-| How should an implementation worker proceed? | [RFC execution contract](../../tasks/README.md) |
+| Question                                                         | Authority                                       |
+| ---------------------------------------------------------------- | ----------------------------------------------- |
+| What behavior and scope did the user confirm?                    | [Product intent](../intent/zetta-v1.md)         |
+| How do the experiences fit together, and why?                    | This wiki                                       |
+| What architecture and approval constraints guide implementation? | [Implementation plan](../../tasks/plan.md)      |
+| What should be implemented next, and what is its status?         | [TASKS.md](../../TASKS.md)                      |
+| What must a specific implementation prove?                       | Its numbered RFC and completion record          |
+| How should an implementation worker proceed?                     | [RFC execution contract](../../tasks/README.md) |
 
 The wiki is an explanation layer, not another backlog or an API specification. Proposed designs and unresolved assumptions are labeled. If a page conflicts with confirmed intent, correct the page; do not treat it as permission to change product scope.
 

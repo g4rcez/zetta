@@ -39,7 +39,10 @@ export type ZettaMcpServices = {
   tasks: TaskStore;
   outputStyles: OutputStyles;
   /** The company chart: any member reads it; only the administrator gets the write tools. */
-  org: Pick<OrgStore, "get" | "create" | "update" | "move" | "seat" | "remove" | "applyPreset">;
+  org: Pick<
+    OrgStore,
+    "get" | "links" | "create" | "update" | "move" | "seat" | "remove" | "applyPreset"
+  >;
   /** Records a write the client made on the member's behalf (best effort, never throws). */
   audit: (ownerUserId: string, event: Parameters<typeof audit>[2]) => Promise<void>;
 };
@@ -534,6 +537,18 @@ export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveAc
       ...READ,
     },
     () => run(async () => orgChartView(await org.get(actor))),
+  );
+
+  server.registerTool(
+    "get_org_works_with",
+    {
+      title: "Get which bots work together",
+      description:
+        "Pairs of bots of the company chart that work together, from the rooms, workflows and decision handoffs of the person you act for. " +
+        "`aId` and `bId` are bot ids (see get_org_chart for the seat each holds); `counts` says how many rooms, workflows and handoffs they share.",
+      ...READ,
+    },
+    () => run(async () => ({ links: await org.links(actor) })),
   );
 
   // The tools that change the chart exist only for the administrator. The store checks it again on every call.

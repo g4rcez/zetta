@@ -23,6 +23,7 @@ const PROVIDER_NAME: Record<Provider, string> = {
   openrouter: "OpenRouter",
   deepseek: "DeepSeek",
   github: "GitHub",
+  compatible: "A model on my own server",
 };
 const HARNESS_STATUS: Record<
   Harness["status"],

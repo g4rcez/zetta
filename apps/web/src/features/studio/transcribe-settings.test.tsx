@@ -1,3 +1,4 @@
+import { DEFAULT_SPEECH_SETTINGS } from "@zetta/core/speech";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -26,6 +27,8 @@ const base = (over: Partial<Installation> = {}): Installation => ({
   transcribeLanguage: "",
   transcribeBaseUrl: "",
   transcribeKey: "none",
+  ...DEFAULT_SPEECH_SETTINGS,
+  pushPublicKey: null,
   ...over,
 });
 

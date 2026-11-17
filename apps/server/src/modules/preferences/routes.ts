@@ -1,3 +1,4 @@
+import { PUSH_MODES } from "@zetta/core/push";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import {
@@ -28,6 +29,7 @@ const patch = z.strictObject({
   listWidth: width(SIDEBAR_LIMITS.listWidth).optional(),
   timeFormat: z.enum(TIME_FORMATS).optional(),
   approvalMode: z.enum(APPROVAL_MODES).optional(),
+  pushMode: z.enum(PUSH_MODES).optional(),
   theme: z.enum(THEMES).nullable().optional(),
   primaryColor: z
     .string()

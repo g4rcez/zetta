@@ -40,6 +40,16 @@ describe("attention kinds", () => {
     expect(FYI_KINDS.filter((k) => notifyOf(k) === "native")).toEqual(["agenda_reminder"]);
   });
 
+  it("an available update is a decision for the administrator that opens a page and can be dismissed", () => {
+    expect(isDecisionKind("update_available")).toBe(true);
+    expect(QUEUE_KINDS).toContain("update_available");
+    expect(ACTIONS.update_available).toMatchObject({
+      act: "open_chat",
+      deny: "dismiss",
+      input: "none",
+    });
+  });
+
   it("recognises kinds and rejects anything else", () => {
     expect(isAttentionKind("loop_paused")).toBe(true);
     expect(isAttentionKind("nope")).toBe(false);

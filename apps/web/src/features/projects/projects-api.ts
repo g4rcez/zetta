@@ -54,7 +54,13 @@ export const EMPTY_BRIEF: Brief = { outcome: "", audience: "", doneWhen: "", not
 
 export type ProjectCounts = Record<TaskStatus, number> & { total: number };
 export type ProjectBot = { id: string; name: string };
-export type ProjectPerson = { userId: string; name: string };
+/** `avatar` and `title` come with the people a project can take (its candidates); a project's own member list holds the name only. */
+export type ProjectPerson = {
+  userId: string;
+  name: string;
+  avatar?: unknown;
+  title?: string;
+};
 
 /** A project as the list shows it. `role` is who is reading: the owner manages it, a member only reads. */
 export type Project = Brief & {

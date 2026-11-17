@@ -23,7 +23,11 @@ import { createMcp } from "./modules/integrations/mcp";
 import { createSources } from "./modules/integrations/sources";
 import { createConnectionStore } from "./modules/connections/store";
 import { createConnectionsService, PROVIDERS } from "./modules/connections/service";
-import { createComputerService, dockerBrowserConfig } from "./modules/computer/service";
+import {
+  assertPublicUrl,
+  createComputerService,
+  dockerBrowserConfig,
+} from "./modules/computer/service";
 import { createMachineRunner } from "./modules/computer/machine-runner";
 import { createMachineService } from "./modules/computer/machines";
 import { vmSecretsFrom } from "./modules/computer/vm-secrets";
@@ -67,6 +71,10 @@ import { createMemoryGraph } from "./modules/memory/graph";
 import { createMemory } from "./modules/memory/service";
 import { createSearch } from "./modules/search/service";
 import { createPreferenceStore } from "./modules/preferences/store";
+import { createPeopleDirectory } from "./modules/people/directory";
+import { currentBuild } from "./modules/updates/build-info";
+import { syncUpdateCard } from "./modules/updates/card";
+import { createUpdateChecker } from "./modules/updates/checker";
 import { createProfileStore } from "./modules/profile/store";
 import { createTaskStore } from "./modules/tasks/store";
 import { createOneShot } from "./modules/chat/one-shot";
@@ -466,6 +474,19 @@ export const transcriber = createConfiguredTranscriber({
   allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
 });
 export const transcribe = createTranscribe(transcriber);
+/**
+ * The daily "newer version" check (modules/updates). Its ticker is in index.ts and only the process that runs work raises the Catch up card;
+ * an `api` process answers from its own check when asked.
+ */
+export const updateChecker = createUpdateChecker({
+  build: currentBuild(),
+  feedUrl: process.env.ZETTA_UPDATE_FEED,
+  operatorOff: process.env.ZETTA_UPDATE_CHECK === "off",
+  mode: async () => (await installation.load()).updateCheck,
+  allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+  assertPublic: assertPublicUrl,
+  ...(runsWork ? { onVerdict: (v) => syncUpdateCard(db, v) } : { lazy: true }),
+});
 export const installationServices = {
   access: identity.access,
   installation,
@@ -473,6 +494,7 @@ export const installationServices = {
   transcriber,
   transcribeKey,
   allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+  updates: updateChecker,
 };
 /** The rolling summary of long chats (chat/summary.ts); its refresh job runs on the ticker in index.ts. */
 export const chatSummaries = createSummaries(db, createOneShot(db));
@@ -926,6 +948,7 @@ export const preferenceServices = {
 export const profileServices = {
   access: identity.access,
   profile: profileStore,
+  people: createPeopleDirectory(db),
   // The session lookup is memoized per request, so this adds no query.
   currentSessionId: async (headers: Headers) =>
     (await auth.api.getSession({ headers }))?.session.id,

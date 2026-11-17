@@ -702,6 +702,36 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
     expect(prompts.join("\n")).toContain('"name":"Ana Souza"');
     expect(prompts.join("\n")).not.toContain("@t.test");
 
+    // The same tool carries the profile lines: one card lists each changed line, and a bad zone or HTML never becomes a card.
+    await say(
+      [
+        '```zetta:preferences\n{"action":"profile","jobTitle":"Head of design","about":"I draw boxes.\\nAnd arrows.","timezone":"America/Sao_Paulo","contact":"+5511900000000"}\n```',
+      ],
+      "my title is head of design",
+    );
+    const [lines] = await pending(A);
+    expect(lines!.diff.map((d) => d.field)).toEqual(["jobTitle", "about", "timezone", "contact"]);
+    await approve(A, lines!.id);
+    expect(await profile.get(actor)).toMatchObject({
+      name: "Ana Souza",
+      jobTitle: "Head of design",
+      timezone: "America/Sao_Paulo",
+      contact: "+5511900000000",
+    });
+    prompts.length = 0;
+    await say(['```zetta:preferences\n{"action":"get"}\n```'], "what are my settings");
+    expect(prompts.join("\n")).toContain('"jobTitle":"Head of design"');
+    expect(prompts.join("\n")).not.toContain("@t.test");
+    await say(
+      ['```zetta:preferences\n{"action":"profile","timezone":"Mars/Olympus"}\n```'],
+      "move me to mars",
+    );
+    await say(
+      ['```zetta:preferences\n{"action":"profile","jobTitle":"<b>boss</b>"}\n```'],
+      "html title",
+    );
+    expect(await pending(A)).toEqual([]);
+
     // A room that does not exist cannot be put in the order.
     prompts.length = 0;
     await say(

@@ -72,7 +72,12 @@ EOF
   fi
 
   echo "▶ Building and starting the containers"
-  (cd "$dir" && "$container" compose up -d --build)
+  # The commit and its date go into the server image as build arguments (docker-compose.yml), so Studio can say which version runs and
+  # the daily update check can compare it with the published changelog. A git failure leaves them empty: the version is then unknown.
+  local commit date
+  commit=$(git -C "$dir" rev-parse --short HEAD 2>/dev/null || true)
+  date=$(git -C "$dir" log -1 --format=%cI 2>/dev/null || true)
+  (cd "$dir" && ZETTA_BUILD_COMMIT="$commit" ZETTA_BUILD_DATE="$date" "$container" compose up -d --build)
 
   cat <<EOF
 

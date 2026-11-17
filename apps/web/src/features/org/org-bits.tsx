@@ -25,7 +25,7 @@ import type { OrgIcon } from "@zetta/core/org-templates";
 
 import { BotIdentity } from "@/components/bot-identity";
 import { IconHint } from "@/components/icon-hint";
-import { UserAvatar } from "@/components/user-avatar";
+import { PersonIdentity } from "@/components/person-identity";
 import { cn } from "@zetta/ui/lib/utils";
 import type { OrgPosition, OrgProblem } from "./org-api";
 import { holderLine } from "./org-graph";
@@ -107,10 +107,12 @@ export function SeatHolder({
     );
   if (h?.kind === "person")
     return (
-      <span className={cn("flex min-w-0 items-center gap-2", className)}>
-        <UserAvatar name={h.name} avatar={h.avatar} size={size} />
-        <span className="min-w-0 truncate text-sm font-medium">{h.name}</span>
-      </span>
+      <PersonIdentity
+        // A seat on the chart and a row of the list have a fixed height: only the big form (the seat's own page) adds the job title.
+        person={{ name: h.name, avatar: h.avatar, title: size >= 32 ? h.jobTitle : undefined }}
+        size={size}
+        className={cn("gap-2", className)}
+      />
     );
   return (
     <span className={cn("flex min-w-0 items-center gap-2 text-muted-foreground", className)}>

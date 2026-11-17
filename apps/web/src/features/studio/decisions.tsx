@@ -7,6 +7,7 @@ import { call } from "../chat/chat-client";
 import { Badge } from "../shared/ui";
 import { LayaSwitch } from "./laya-switch";
 import { TranscribeSettings } from "./transcribe-settings";
+import { UpdateCheckSetting } from "./update-check-setting";
 import { DECISIONS_STATUS, decisionsQueries } from "./studio-queries";
 import { formText } from "../shared/form-data";
 
@@ -78,6 +79,9 @@ export function Decisions({ onError }: { onError: (m: string) => void }) {
       />
       <div className="rounded-xl border bg-card p-5 xl:col-span-2">
         <TranscribeSettings />
+      </div>
+      <div className="xl:col-span-2">
+        <UpdateCheckSetting onError={onError} />
       </div>
       <details className="rounded-xl border bg-card p-5 xl:col-span-2">
         <summary className="cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">

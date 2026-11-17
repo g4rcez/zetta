@@ -5,6 +5,8 @@ import { and, eq } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { attentionItem } from "@zetta/db/schema/features";
 import { membership } from "@zetta/db/schema/identity";
+import { orgChart, orgPosition } from "@zetta/db/schema/org";
+import { userPreference } from "@zetta/db/schema/preferences";
 import { task as taskTable } from "@zetta/db/schema/tasks";
 import { team } from "@zetta/db/schema/teams";
 import { createApp } from "../../app";
@@ -71,6 +73,7 @@ suite("tasks kanban against compose postgres", () => {
     assignee: string;
     assigneeUserId: string | null;
     assigneeName: string | null;
+    assigneeTitle: string;
   };
   const actorOf = (id: string) => access.requireActive(new Headers({ "x-test-user": id }));
   /** What a bot does when it needs a person: the owner's actor asks `assigneeUserId`. */
@@ -241,6 +244,35 @@ suite("tasks kanban against compose postgres", () => {
       }),
     );
     expect((await cardOf(ids[2]!, asked.id))?.status).toBe("open");
+  });
+  test("the board carries the assignee's job title, or the title of their seat when they wrote none", async () => {
+    const asked = await ask(ids[2]!, "Review the plan");
+    const titleOf = async () => (await list(ids[0]!)).find((t) => t.id === asked.id)?.assigneeTitle;
+    expect(await titleOf()).toBe("");
+    await db
+      .insert(userPreference)
+      .values({ ownerUserId: ids[2]!, jobTitle: "Head of design" })
+      .onConflictDoUpdate({
+        target: userPreference.ownerUserId,
+        set: { jobTitle: "Head of design" },
+      });
+    expect(await titleOf()).toBe("Head of design");
+    await db
+      .update(userPreference)
+      .set({ jobTitle: "" })
+      .where(eq(userPreference.ownerUserId, ids[2]!));
+    const chart = uuidv7();
+    await db.insert(orgChart).values({ id: chart, name: "Company" });
+    await db.insert(orgPosition).values({
+      chartId: chart,
+      rank: "ceo",
+      title: "Head of operations",
+      seat: "person",
+      userId: ids[2]!,
+    });
+    expect(await titleOf()).toBe("Head of operations");
+    await db.delete(orgPosition).where(eq(orgPosition.chartId, chart));
+    await db.delete(orgChart).where(eq(orgChart.id, chart));
   });
   test("a team member who was not asked and a stranger do not see the task", async () => {
     const asked = await ask(ids[2]!, "Private ask");

@@ -471,7 +471,7 @@ export function createProjectStore(db: Database) {
           .from(bot)
           .where(and(eq(bot.ownerUserId, a.userId), eq(bot.archived, false)))
           .orderBy(asc(bot.name), asc(bot.id)),
-        people.ofOwner(a.userId),
+        people.ofOwnerWithLines(a.userId),
         db
           .select({ id: discussion.id, title: discussion.title, projectId: discussion.projectId })
           .from(discussion)
@@ -485,7 +485,11 @@ export function createProjectStore(db: Database) {
           .orderBy(desc(discussion.updatedAt))
           .limit(200),
       ]);
-      return { bots, people: persons.map(({ userId, name }) => ({ userId, name })), rooms };
+      return {
+        bots,
+        people: persons.map(({ userId, name, avatar, title }) => ({ userId, name, avatar, title })),
+        rooms,
+      };
     },
     async create(a: ActiveActor, v: ProjectFields & { name: string } & Partial<ProjectMembers>) {
       const { bots = [], people: persons = [], ...fields } = v;

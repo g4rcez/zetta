@@ -34,6 +34,8 @@ export const DECISION_KINDS = [
   "work_drift",
   "work_checkin",
   "work_nudge",
+  /** A newer version of Zetta is published (modules/updates). Raised for the administrator only, one at a time. */
+  "update_available",
 ] as const;
 
 export const FYI_KINDS = [
@@ -158,4 +160,6 @@ export const ACTIONS: Record<DecisionKind, DecisionActions> = {
   work_drift: a("choose", "Choose", "not_now", "Not now", "optional_text"),
   work_checkin: a("choose", "Choose", "not_now", "Not now", "optional_text"),
   work_nudge: a("choose", "Choose", "not_now", "Not now", "optional_text"),
+  // "See the update" opens the Update page (the card's link); nothing is run here.
+  update_available: a("open_chat", "See the update", "dismiss", "Dismiss"),
 };

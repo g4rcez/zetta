@@ -3,6 +3,7 @@ import { and, asc, eq, ne, notInArray, sql } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { membership } from "@zetta/db/schema/identity";
 import { team, teamPerson } from "@zetta/db/schema/teams";
+import { createPeopleDirectory, type PersonLine } from "../people/directory";
 
 /**
  * A person counts while the installation membership is active under the same revision they joined with. A removed member loses the
@@ -13,9 +14,22 @@ const live = and(
   eq(membership.activationRevision, teamPerson.activationRevision),
 );
 
-export type TeamPersonView = { userId: string; name: string; role: "owner" | "member" };
+/** A person of a team. `title` is their job title, else the title of their seat in the company chart (empty when neither is written). */
+export type TeamPersonView = {
+  userId: string;
+  name: string;
+  role: "owner" | "member";
+} & PersonLine;
+
+const NO_LINE: PersonLine = { avatar: null, title: "" };
 
 export function createTeamPeople(db: Pick<Database, "select" | "insert" | "delete">) {
+  const directory = createPeopleDirectory(db);
+  /** Adds the picture and title to rows that carry a `userId`. */
+  async function withLines<T extends { userId: string }>(rows: T[]): Promise<(T & PersonLine)[]> {
+    const lines = await directory.lines(rows.map((r) => r.userId));
+    return rows.map((r) => ({ ...r, ...(lines.get(r.userId) ?? NO_LINE) }));
+  }
   /** Ids of the teams the user belongs to (owner or member). Use it as a subquery: `inArray(discussion.teamId, people.teamIds(id))`. */
   const teamIds = (userId: string) =>
     db
@@ -30,7 +44,8 @@ export function createTeamPeople(db: Pick<Database, "select" | "insert" | "delet
       const rows = await teamIds(userId);
       return rows.some((r) => r.id === teamId);
     },
-    async list(teamId: string): Promise<TeamPersonView[]> {
+    /** The people of a team, owner first. Without pictures and titles: it is on the path of every live update of a team room. */
+    async list(teamId: string) {
       return db
         .select({ userId: teamPerson.userId, name: user.name, role: teamPerson.role })
         .from(teamPerson)
@@ -38,6 +53,10 @@ export function createTeamPeople(db: Pick<Database, "select" | "insert" | "delet
         .innerJoin(user, eq(user.id, teamPerson.userId))
         .where(and(eq(teamPerson.teamId, teamId), live))
         .orderBy(sql`${teamPerson.role} = 'owner' desc`, asc(user.name), asc(teamPerson.userId));
+    },
+    /** `list` with each person's picture and title, for what a person or a bot reads. */
+    async listWithLines(teamId: string): Promise<TeamPersonView[]> {
+      return withLines(await this.list(teamId));
     },
     /**
      * The people of every active team this user owns, without the owner: who they can hand work to. One row per person, with the oldest
@@ -64,19 +83,24 @@ export function createTeamPeople(db: Pick<Database, "select" | "insert" | "delet
       const seen = new Set<string>();
       return rows.filter((r) => !seen.has(r.userId) && seen.add(r.userId));
     },
-    /** Active installation members who are not in the team yet. Name only: no email. */
+    /** `ofOwner` with each person's picture and title, for the project member picker. */
+    async ofOwnerWithLines(ownerUserId: string) {
+      return withLines(await this.ofOwner(ownerUserId));
+    },
+    /** Active installation members who are not in the team yet. Name, picture and title: no email. */
     async candidates(teamId: string) {
       const inTeam = db
         .select({ id: teamPerson.userId })
         .from(teamPerson)
         .innerJoin(membership, eq(membership.userId, teamPerson.userId))
         .where(and(eq(teamPerson.teamId, teamId), live));
-      return db
+      const rows = await db
         .select({ userId: user.id, name: user.name })
         .from(membership)
         .innerJoin(user, eq(user.id, membership.userId))
         .where(and(eq(membership.status, "active"), notInArray(user.id, inTeam)))
         .orderBy(asc(user.name), asc(user.id));
+      return withLines(rows);
     },
     /** The revision of the user's active membership, or undefined when they are not an active member. */
     async activeRevision(userId: string) {

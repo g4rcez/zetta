@@ -62,7 +62,7 @@ ${ORG_TOOL}
 \`\`\`   (rooms the user has open. action list | pause | resume | cancel | silence | stop_goals {room} | require_approval{room, bot, on} | set_team{room, team: name|null} | peers{bot, peers: [bots]}: the bots a bot may open rooms with without asking; the list replaces the old one. To open or post in a room use zetta:discussion.)
 \`\`\`zetta:preferences
 {"action":"update","timeFormat":"12h"}
-\`\`\`   (the user's own settings. action get | update{timeFormat: 24h|12h, railMode: expanded|collapsed, sidebarSide: left|right, navMode: simple|full, steerMode: park|interrupt, theme: ${THEMES.join("|")}|null, primaryColor: "#rrggbb"|null, railWidth, listWidth, botOrder: [bots], roomOrder: [rooms]} | profile{name}. How risky cards are approved cannot be changed here.)
+\`\`\`   (the user's settings. action get | update{timeFormat: 24h|12h, railMode: expanded|collapsed, sidebarSide: left|right, navMode: simple|full, steerMode: park|interrupt, theme: ${THEMES.join("|")}|null, primaryColor: "#rrggbb"|null, railWidth, listWidth, botOrder, roomOrder: [names]} | profile{name, jobTitle, department, about, timezone, contact}. Approval mode cannot be set.)
 \`\`\`zetta:conversation
 {"action":"archive","conversation":"Old plan"}
 \`\`\`   (the user's chats. action list{bot?, archived?} | start{bot} | rename{conversation, title} | pin | unpin | favorite | unfavorite | archive | unarchive | remove {conversation: title or id from list}. remove deletes the chat and its messages.)

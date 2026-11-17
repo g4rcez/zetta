@@ -36,6 +36,7 @@ import {
   useSidebarSide,
 } from "@/features/preferences/preferences";
 import { isRailTab } from "@/features/studio/studio-tabs";
+import { UpdateMark } from "@/features/updates/update-mark";
 
 import { Logo } from "./logo";
 import { PauseAgentsButton } from "@/features/agents/pause-agents";
@@ -54,6 +55,7 @@ const FIXED = [linkOf("Inbox"), linkOf("Tasks"), linkOf("Projects"), linkOf("Rou
 const LIBRARY = [
   linkOf("Teams"),
   linkOf("Organization"),
+  linkOf("People"),
   linkOf("Memory"),
   linkOf("Skills"),
   linkOf("Plugins"),
@@ -548,6 +550,7 @@ export function AppSidebar({
             </RailHint>
           )}
         </div>
+        <UpdateMark collapsed={collapsed} />
         <UserMenu rail={rail} />
       </div>
       {!mobile && !collapsed && (

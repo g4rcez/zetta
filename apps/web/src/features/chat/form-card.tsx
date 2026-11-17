@@ -14,6 +14,7 @@ import {
 import { InvitationManager } from "../identity/invitation-manager";
 import { LayaSwitch } from "../studio/laya-switch";
 import { TranscribeSettings } from "../studio/transcribe-settings";
+import { UpdateCheckSetting } from "../studio/update-check-setting";
 import { MAIL_PRESETS } from "../studio/sources";
 import { call, sendSealed } from "./chat-client";
 import { errorMessage } from "./chat-client";
@@ -171,6 +172,7 @@ function InstallationForm({ onCancel }: Props) {
     <div className="space-y-4">
       <LayaSwitch onError={setError} />
       <TranscribeSettings />
+      <UpdateCheckSetting onError={setError} />
       <NetworkMode onError={setError} />
       {error && <Alert theme="danger">{error}</Alert>}
       <div className="flex justify-end">

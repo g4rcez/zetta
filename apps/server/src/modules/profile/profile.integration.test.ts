@@ -3,11 +3,13 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
 import { session, user } from "@zetta/db/schema/auth";
 import { membership } from "@zetta/db/schema/identity";
+import { orgChart, orgPosition } from "@zetta/db/schema/org";
 import { eq } from "@zetta/db/query";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess, createMembershipLookup } from "../identity/access";
 import { createPreferenceStore } from "../preferences/store";
+import { createPeopleDirectory } from "../people/directory";
 import { createProfileStore } from "./store";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
@@ -19,6 +21,7 @@ const S_THIS = `sess-this-${uuidv7()}`;
 const S_OTHER = `sess-other-${uuidv7()}`;
 const S_EXPIRED = `sess-old-${uuidv7()}`;
 const S_B = `sess-b-${uuidv7()}`;
+const CHART = uuidv7();
 const PRESET = { kind: "preset", preset: "blob", colors: ["#336699", "#ffcc00"] };
 const IMAGE = { kind: "image", src: "data:image/webp;base64,UklGRg==" };
 
@@ -40,6 +43,7 @@ suite("profile against compose postgres", () => {
     profile: {
       access,
       profile: createProfileStore(db),
+      people: createPeopleDirectory(db),
       currentSessionId: async (headers) => headers.get("x-test-session") ?? undefined,
     },
     preferences: { access, preferences: createPreferenceStore(db) },
@@ -115,6 +119,8 @@ suite("profile against compose postgres", () => {
       ]);
   });
   afterAll(async () => {
+    await db.delete(orgPosition).where(eq(orgPosition.chartId, CHART));
+    await db.delete(orgChart).where(eq(orgChart.id, CHART));
     await cleanupTestUsers(db, [A, B, UNENROLLED]);
   });
 
@@ -123,7 +129,104 @@ suite("profile against compose postgres", () => {
       name: "Ada Test",
       email: `${A}@example.invalid`,
       avatar: null,
+      jobTitle: "",
+      department: "",
+      about: "",
+      timezone: "",
+      contact: "",
     });
+  });
+
+  test("the profile lines are trimmed and saved, and change only that person", async () => {
+    const res = await call(A, "PATCH", "/api/profile", {
+      jobTitle: "  Head of design ",
+      department: "Product",
+      about: "I draw boxes.\nAnd arrows.",
+      timezone: "America/Sao_Paulo",
+      contact: "ada@example.invalid",
+    });
+    expect(res.status).toBe(200);
+    expect(await profile(A)).toMatchObject({
+      name: "Ada Test",
+      jobTitle: "Head of design",
+      department: "Product",
+      about: "I draw boxes.\nAnd arrows.",
+      timezone: "America/Sao_Paulo",
+      contact: "ada@example.invalid",
+    });
+    expect(await profile(B)).toMatchObject({ jobTitle: "", timezone: "" });
+  });
+
+  test("a change to one line leaves the others, and an empty value clears a line", async () => {
+    await call(A, "PATCH", "/api/profile", { department: "" });
+    expect(await profile(A)).toMatchObject({ department: "", jobTitle: "Head of design" });
+    await call(A, "PATCH", "/api/profile", { avatar: PRESET });
+    expect(await profile(A)).toMatchObject({ jobTitle: "Head of design", avatar: PRESET });
+    await call(A, "PATCH", "/api/profile", { avatar: null });
+  });
+
+  test.each([
+    ["a job title over 80 characters", { jobTitle: "a".repeat(81) }],
+    ["a department over 80 characters", { department: "a".repeat(81) }],
+    ["an about text over 1000 characters", { about: "a".repeat(1001) }],
+    ["a contact line over 200 characters", { contact: "a".repeat(201) }],
+    ["a time zone that does not exist", { timezone: "Mars/Olympus" }],
+    ["an offset as a time zone", { timezone: "+02:00" }],
+    ["HTML in the job title", { jobTitle: "<img src=x onerror=alert(1)>" }],
+    ["HTML in the about text", { about: "hello <script>x</script>" }],
+    ["a line break in the contact line", { contact: "a\nb" }],
+  ])("%s is refused", async (_what, body) => {
+    const res = await call(A, "PATCH", "/api/profile", body);
+    expect(res.status).toBe(400);
+    expect((await profile(A)).jobTitle).toBe("Head of design");
+  });
+
+  test("members read each other's lines through /api/people, without the email, and a seat title stands in for a missing job title", async () => {
+    const res = await call(B, "GET", "/api/people");
+    expect(res.status).toBe(200);
+    const { people } = (await res.json()) as { people: Record<string, unknown>[] };
+    const ada = people.find((p) => p.userId === A)!;
+    expect(ada).toMatchObject({
+      name: "Ada Test",
+      jobTitle: "Head of design",
+      title: "Head of design",
+      about: "I draw boxes.\nAnd arrows.",
+      contact: "ada@example.invalid",
+    });
+    expect(Object.keys(ada)).not.toContain("email");
+    expect(Object.keys(ada)).not.toContain("timezone");
+    expect(JSON.stringify(people)).not.toContain(`${A}@example.invalid`.replace(A, B));
+    const bob = people.find((p) => p.userId === B)!;
+    expect(bob).toMatchObject({ jobTitle: "", title: "" });
+    await db.insert(orgChart).values({ id: CHART, name: "Company" });
+    await db.insert(orgPosition).values({
+      chartId: CHART,
+      rank: "ceo",
+      title: "Chief of staff",
+      seat: "person",
+      userId: B,
+    });
+    const again = (await (await call(A, "GET", "/api/people")).json()) as {
+      people: { userId: string; jobTitle: string; title: string }[];
+    };
+    expect(again.people.find((p) => p.userId === B)).toMatchObject({
+      jobTitle: "",
+      title: "Chief of staff",
+    });
+    expect(again.people.find((p) => p.userId === A)?.title).toBe("Head of design");
+  });
+
+  test("/api/people narrows by name, title or department with ?q=, and needs an active member", async () => {
+    const named = (await (await call(A, "GET", "/api/people?q=bob")).json()) as {
+      people: { userId: string }[];
+    };
+    expect(named.people.map((p) => p.userId)).toContain(B);
+    expect(named.people.map((p) => p.userId)).not.toContain(A);
+    const byTitle = (await (await call(A, "GET", "/api/people?q=head%20of")).json()) as {
+      people: { userId: string }[];
+    };
+    expect(byTitle.people.map((p) => p.userId)).toContain(A);
+    expect((await call(UNENROLLED, "GET", "/api/people")).status).toBe(403);
   });
 
   test("a new name is trimmed, saved, and changes only that person", async () => {

@@ -35,6 +35,10 @@ services:
       secrets:
         - web_env
         - server_env
+      args:
+        # Which version this image is: the commit and its date. install.sh sets them from git; without them Zetta reports "Version unknown".
+        ZETTA_BUILD_COMMIT: ${ZETTA_BUILD_COMMIT:-}
+        ZETTA_BUILD_DATE: ${ZETTA_BUILD_DATE:-}
     init: true
     ports:
       - "3000:3000"

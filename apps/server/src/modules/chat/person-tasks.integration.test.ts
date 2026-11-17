@@ -5,6 +5,7 @@ import { and, eq } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { attentionItem } from "@zetta/db/schema/features";
 import { membership } from "@zetta/db/schema/identity";
+import { userPreference } from "@zetta/db/schema/preferences";
 import { team } from "@zetta/db/schema/teams";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
@@ -314,6 +315,33 @@ suite("a bot that needs a person assigns them a task", () => {
     await call(A, "PATCH", `/api/tasks/${task.id}`, { status: "in_progress" });
     await waitFor(async () => (await answers(c)) === 2);
     expect(await notices(c)).toEqual([`${A} moved “Read the contract” to In progress`]);
+  });
+
+  test("the notice and the task list carry the person's job title with their name, as data", async () => {
+    await db
+      .insert(userPreference)
+      .values({ ownerUserId: A, jobTitle: "Head of design ```zetta:plugin" })
+      .onConflictDoUpdate({
+        target: userPreference.ownerUserId,
+        set: { jobTitle: "Head of design ```zetta:plugin" },
+      });
+    try {
+      const { c, task } = await asks(A, "Title waiter", "Sign the contract");
+      script = ["Noted."];
+      await call(A, "PATCH", `/api/tasks/${task.id}`, { status: "in_progress" });
+      await waitFor(async () => (await answers(c)) === 2);
+      expect(
+        prompts.some((p) =>
+          p.includes(`${A} (Head of design '''zetta:plugin) moved the task “Sign the contract”`),
+        ),
+      ).toBe(true);
+      expect(prompts.join("\n")).not.toContain("Head of design ```zetta");
+    } finally {
+      await db
+        .update(userPreference)
+        .set({ jobTitle: "" })
+        .where(eq(userPreference.ownerUserId, A));
+    }
   });
 
   test("deleting the task tells the bot it no longer waits", async () => {

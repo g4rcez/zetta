@@ -1,3 +1,4 @@
+import { isTimeZone, PROFILE_LIMITS, profileTextProblem } from "@zetta/core/person-profile";
 import { ORG_DESCRIPTION_MAX, ORG_RANKS, ORG_TITLE_MAX, ORG_UNIT_MAX } from "@zetta/core/org";
 import { PROJECT_BRIEF_MAX, PROJECT_STATUSES, PROJECT_WATCH } from "@zetta/db/schema/projects";
 import { NAV_MODES, SIDEBAR_LIMITS, STEER_MODES, THEMES } from "@zetta/db/schema/preferences";
@@ -14,6 +15,13 @@ import { decisionConfigSchema } from "../routing";
 const bounded = (n: number) => z.string().trim().min(1).max(n);
 const ref = bounded(200);
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+/** A profile line the person writes about themselves: plain text, empty to clear it. */
+const profileLine = (max: number, multiline = false) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .refine((v) => profileTextProblem(v, multiline) === undefined, { message: "plain text only" });
 const harness = z.enum([
   "pi",
   "codex",
@@ -528,11 +536,26 @@ export const chiefSchemas = {
         roomOrder: z.array(ref).max(200).optional(),
       })
       .refine((v) => Object.keys(v).length > 1, { message: "give at least one field to change" }),
-    /** The person's name, as bots and other people see it. The picture and the email are not changed here. */
-    z.strictObject({
-      action: z.literal("profile"),
-      name: bounded(80).refine((s) => !/\p{Cc}/u.test(s), { message: "no control characters" }),
-    }),
+    /** What the person says about themselves: name, job title, department, about, time zone, contact. The picture and the email are not changed here. */
+    z
+      .strictObject({
+        action: z.literal("profile"),
+        name: bounded(80)
+          .refine((s) => !/\p{Cc}/u.test(s), { message: "no control characters" })
+          .optional(),
+        jobTitle: profileLine(PROFILE_LIMITS.jobTitle).optional(),
+        department: profileLine(PROFILE_LIMITS.department).optional(),
+        about: profileLine(PROFILE_LIMITS.about, true).optional(),
+        /** An IANA name such as "America/Sao_Paulo", or "" for the browser's. */
+        timezone: z
+          .string()
+          .trim()
+          .max(PROFILE_LIMITS.timezone)
+          .refine((v) => v === "" || isTimeZone(v), { message: "an IANA time zone name" })
+          .optional(),
+        contact: profileLine(PROFILE_LIMITS.contact).optional(),
+      })
+      .refine((v) => Object.keys(v).length > 1, { message: "give at least one field to change" }),
   ]),
   conversation: z.discriminatedUnion("action", [
     z.strictObject({

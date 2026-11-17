@@ -7,6 +7,8 @@
 #   --url URL   the public address people will use, for example https://zetta.example.com (default: http://localhost:3001). Changing it on an
 #               existing install updates it everywhere, then rebuilds.
 #   --port N    the port the web app listens on (default 3001), when 3001 is taken.
+#   --agents L  the agent CLIs to put in the server image: claude-code, codex, both ("claude-code codex") or none (the default; each is 300 to
+#               430 MB, and the server does not use the copy you have on this computer). It is remembered for the next update.
 #   Pass options through the pipe:  curl -fsSL https://zettabot.app/install | bash -s -- --url https://zetta.example.com
 #
 # All code is inside main(), called on the last line, so a download that stops half way runs nothing. It also works with the macOS bash (3.2).
@@ -57,6 +59,24 @@ normalize_url() {
   echo "$url"
 }
 
+# "claude-code,codex" -> "claude-code codex": the agent CLIs the server image may hold. "none" and an empty list mean none.
+normalize_agents() {
+  local word out=""
+  for word in $(echo "$1" | tr ',' ' '); do
+    case "$word" in
+    claude-code | codex)
+      case " $out " in
+      *" $word "*) ;;
+      *) out="${out:+$out }$word" ;;
+      esac
+      ;;
+    none) ;;
+    *) return 1 ;;
+    esac
+  done
+  echo "$out"
+}
+
 # True when something already listens on this port of this computer.
 port_busy() {
   (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
@@ -84,6 +104,12 @@ set_env() {
 parse_args() {
   PUBLIC_URL=""
   WEB_PORT=""
+  AGENTS=""
+  AGENTS_GIVEN=0
+  if [ -n "${ZETTA_AGENTS+x}" ]; then
+    AGENTS=$(normalize_agents "$ZETTA_AGENTS") || fail "ZETTA_AGENTS=\"$ZETTA_AGENTS\" is not a list Zetta can use" "Use claude-code, codex, both (\"claude-code codex\") or none."
+    AGENTS_GIVEN=1
+  fi
   while [ $# -gt 0 ]; do
     case "$1" in
     --url)
@@ -100,12 +126,18 @@ parse_args() {
       WEB_PORT="$2"
       shift 2
       ;;
+    --agents)
+      [ $# -ge 2 ] || fail "--agents needs a list" "For example: --agents claude-code, or --agents \"claude-code codex\", or --agents none"
+      AGENTS=$(normalize_agents "$2") || fail "\"$2\" is not a list Zetta can use" "Use claude-code, codex, both (\"claude-code codex\") or none."
+      AGENTS_GIVEN=1
+      shift 2
+      ;;
     -h | --help)
       # Piped from curl, $0 is "bash": there is no file to read the help from.
-      if [ -f "$0" ]; then sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; else echo "Options: --url ADDRESS, --port NUMBER. See https://zettabot.app/install"; fi
+      if [ -f "$0" ]; then awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; else echo "Options: --url ADDRESS, --port NUMBER, --agents LIST. See https://zettabot.app/install"; fi
       exit 0
       ;;
-    *) fail "unknown option: $1" "Options: --url ADDRESS, --port NUMBER" ;;
+    *) fail "unknown option: $1" "Options: --url ADDRESS, --port NUMBER, --agents LIST" ;;
     esac
   done
 }
@@ -186,6 +218,34 @@ restore_old_files() {
   echo "  The saved copy stays in $RESCUED. Delete it when you have checked that everything is there."
 }
 
+# report_agents: says which agent CLIs this computer already has and what the server image will hold. The container is its own Linux system, so
+# a copy on this computer (a Mac or Windows binary, a login in the Keychain) is not something the server can use: it says so instead of
+# installing a second copy in silence.
+report_agents() {
+  local found=0 name label bin version
+  say "Looking for the AI agents Zetta can use"
+  for name in claude:"Claude Code" codex:"Codex"; do
+    label="${name#*:}"
+    name="${name%%:*}"
+    if bin=$(command -v "$name" 2>/dev/null) && [ -n "$bin" ]; then
+      version=$("$bin" --version </dev/null 2>/dev/null | head -n 1 || true)
+      echo "  ✓ $label is installed on this computer${version:+ ($version)}"
+      found=1
+    else
+      echo "  · $label is not installed on this computer"
+    fi
+  done
+  if [ "$found" = 1 ]; then
+    echo "  The server runs in its own container, so it does not use those copies or their sign-in."
+  fi
+  if [ -z "$AGENTS" ]; then
+    echo "  The server image holds no agent CLI, to save space (about 300 MB for Claude Code, 430 MB for Codex)."
+    echo "  To include one now, run this again with --agents claude-code (or codex)."
+  else
+    echo "  Including in the server image: $AGENTS"
+  fi
+}
+
 # wait_ready: true once the web app answers on its public port and forwards /api/meta to the server.
 wait_ready() {
   local probe="http://127.0.0.1:$1/api/meta" attempt=0
@@ -223,6 +283,11 @@ main() {
   port="${port:-3001}"
   local api_port="${ZETTA_API_PORT:-$(env_value "$root_env" ZETTA_API_PORT)}"
   api_port="${api_port:-3000}"
+
+  # The agent CLIs for the image: --agents or ZETTA_AGENTS, else what this install already chose, else none.
+  if [ "$AGENTS_GIVEN" = 0 ]; then
+    AGENTS=$(normalize_agents "$(env_value "$root_env" ZETTA_AGENTS)" 2>/dev/null || true)
+  fi
 
   # Ports only matter when nothing of ours holds them.
   if [ "$fresh" = 1 ] || ! stack_running; then
@@ -275,12 +340,14 @@ EOF
       {
         echo "ZETTA_SERVER_URL=$url"
         echo "ZETTA_WEB_PORT=$port"
+        echo "ZETTA_AGENTS=$AGENTS"
         [ "$fresh" = 0 ] || echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
       } >"$root_env"
     )
   else
     [ -z "$PUBLIC_URL" ] || set_env "$root_env" ZETTA_SERVER_URL "$url"
     [ -z "$WEB_PORT" ] || set_env "$root_env" ZETTA_WEB_PORT "$port"
+    [ "$AGENTS_GIVEN" = 0 ] || set_env "$root_env" ZETTA_AGENTS "$AGENTS"
   fi
 
   case "$url" in
@@ -288,6 +355,7 @@ EOF
   *) echo "warning: $url is not https. Sign-in from other computers and the plugins that use OAuth (Google, MCP clients) need https." >&2 ;;
   esac
 
+  report_agents
   [ "$fresh" = 1 ] || rescue_old_files
 
   say "Building and starting the containers (the first build takes several minutes)"
@@ -296,7 +364,7 @@ EOF
   local commit date
   commit=$(git -C "$DIR" rev-parse --short HEAD 2>/dev/null || true)
   date=$(git -C "$DIR" log -1 --format=%cI 2>/dev/null || true)
-  (cd "$DIR" && ZETTA_BUILD_COMMIT="$commit" ZETTA_BUILD_DATE="$date" "$CONTAINER" compose up -d --build)
+  (cd "$DIR" && ZETTA_BUILD_COMMIT="$commit" ZETTA_BUILD_DATE="$date" ZETTA_AGENTS="$AGENTS" "$CONTAINER" compose up -d --build)
 
   say "Waiting for Zetta to answer"
   if ! wait_ready "$port"; then

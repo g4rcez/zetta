@@ -58,11 +58,17 @@ esac`,
     case "$2" in
       version) exit 0 ;;
       ps) if [ "$4" = server ]; then echo "\${STUB_SERVER_ID:-}"; else echo "\${STUB_STACK_ID:-}"; fi; exit 0 ;;
-      up) echo "docker $* ZETTA_BUILD_COMMIT=$ZETTA_BUILD_COMMIT ZETTA_BUILD_DATE=$ZETTA_BUILD_DATE" >> "$STUB_LOG"; exit 0 ;;
+      up) echo "docker $* ZETTA_BUILD_COMMIT=$ZETTA_BUILD_COMMIT ZETTA_BUILD_DATE=$ZETTA_BUILD_DATE ZETTA_AGENTS=[$ZETTA_AGENTS]" >> "$STUB_LOG"; exit 0 ;;
       *) echo "docker $*" >> "$STUB_LOG"; exit 0 ;;
     esac ;;
 esac`,
   curl: `echo "curl $*" >> "$STUB_LOG"; exit "\${STUB_CURL_EXIT:-0}"`,
+};
+
+/** The agent CLIs a person may already have on this computer. */
+const HOST_AGENTS: Record<string, string> = {
+  claude: 'echo "2.1.326 (Claude Code)"',
+  codex: 'echo "codex-cli 0.163.0"',
 };
 
 type Result = {
@@ -76,7 +82,13 @@ type Result = {
 
 function install(
   args: string[] = [],
-  options: { omit?: string[]; env?: Record<string, string>; setup?: (dir: string) => void } = {},
+  options: {
+    omit?: string[];
+    env?: Record<string, string>;
+    setup?: (dir: string) => void;
+    /** Agent CLIs this computer already has: "claude" and/or "codex". */
+    host?: string[];
+  } = {},
 ): Result {
   const bin = join(root, "bin");
   const state = join(root, "state");
@@ -87,6 +99,10 @@ function install(
   for (const [name, body] of Object.entries(STUBS)) {
     if (options.omit?.includes(name)) continue;
     writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`);
+    chmodSync(join(bin, name), 0o755);
+  }
+  for (const name of options.host ?? []) {
+    writeFileSync(join(bin, name), `#!/bin/sh\n${HOST_AGENTS[name]}\n`);
     chmodSync(join(bin, name), 0o755);
   }
   options.setup?.(dir);
@@ -359,6 +375,163 @@ describe("moving the files of an older install onto the data volume", () => {
   });
 });
 
+describe("the agent CLIs", () => {
+  const lastUp = (log: string[]) => upCalls(log).at(-1) ?? "";
+
+  test("none is put in the image by default, and it says so and how to add one", () => {
+    const run = install(["--port", String(freePort())]);
+    expect(run.code).toBe(0);
+    expect(run.out).toContain("Claude Code is not installed on this computer");
+    expect(run.out).toContain("Codex is not installed on this computer");
+    expect(run.out).toContain("holds no agent CLI");
+    expect(run.out).toContain("--agents claude-code");
+    expect(lastUp(run.log)).toContain("ZETTA_AGENTS=[]");
+    expect(value(run.read(".env"), "ZETTA_AGENTS")).toBe("");
+  });
+
+  test("copies already on this computer are reported, with their version, and not used or copied", () => {
+    const run = install(["--port", String(freePort())], { host: ["claude", "codex"] });
+    expect(run.code).toBe(0);
+    expect(run.out).toContain("Claude Code is installed on this computer (2.1.326 (Claude Code))");
+    expect(run.out).toContain("Codex is installed on this computer (codex-cli 0.163.0)");
+    expect(run.out).toContain("does not use those copies or their sign-in");
+    expect(lastUp(run.log)).toContain("ZETTA_AGENTS=[]");
+    expect(run.log.some((line) => line.startsWith("docker cp"))).toBe(false);
+  });
+
+  test("a mix is reported for each one", () => {
+    const run = install(["--port", String(freePort())], { host: ["codex"] });
+    expect(run.out).toContain("Claude Code is not installed on this computer");
+    expect(run.out).toContain("Codex is installed on this computer");
+  });
+
+  test("--agents puts the engines you name in the image and remembers them", () => {
+    const run = install(["--port", String(freePort()), "--agents", "claude-code"]);
+    expect(lastUp(run.log)).toContain("ZETTA_AGENTS=[claude-code]");
+    expect(run.out).toContain("Including in the server image: claude-code");
+    expect(run.out).not.toContain("holds no agent CLI");
+    expect(value(run.read(".env"), "ZETTA_AGENTS")).toBe("claude-code");
+  });
+
+  test("a list is accepted with commas or spaces, without repeats, and none means none", () => {
+    expect(
+      lastUp(
+        install(["--port", String(freePort()), "--agents", "claude-code,codex,claude-code"]).log,
+      ),
+    ).toContain("ZETTA_AGENTS=[claude-code codex]");
+    rmSync(root, { recursive: true, force: true });
+    root = mkdtempSync(join(tmpdir(), "zetta-install-"));
+    expect(lastUp(install(["--port", String(freePort()), "--agents", "none"]).log)).toContain(
+      "ZETTA_AGENTS=[]",
+    );
+  });
+
+  test("the environment variable works and the option wins over it", () => {
+    const viaEnv = install(["--port", String(freePort())], { env: { ZETTA_AGENTS: "codex" } });
+    expect(lastUp(viaEnv.log)).toContain("ZETTA_AGENTS=[codex]");
+    rmSync(root, { recursive: true, force: true });
+    root = mkdtempSync(join(tmpdir(), "zetta-install-"));
+    const both = install(["--port", String(freePort()), "--agents", "claude-code"], {
+      env: { ZETTA_AGENTS: "codex" },
+    });
+    expect(lastUp(both.log)).toContain("ZETTA_AGENTS=[claude-code]");
+  });
+
+  test("an update keeps the choice, and --agents none clears it", () => {
+    const first = install(["--port", String(freePort()), "--agents", "codex"]);
+    expect(value(first.read(".env"), "ZETTA_AGENTS")).toBe("codex");
+
+    const again = install(["--port", String(freePort())]);
+    expect(lastUp(again.log)).toContain("ZETTA_AGENTS=[codex]");
+    expect(again.out).toContain("Including in the server image: codex");
+
+    const cleared = install(["--port", String(freePort()), "--agents", "none"]);
+    expect(lastUp(cleared.log)).toContain("ZETTA_AGENTS=[]");
+    expect(value(cleared.read(".env"), "ZETTA_AGENTS")).toBe("");
+  });
+
+  test("a name that is not an agent is refused before anything is changed", () => {
+    for (const bad of ["--agents bogus", "--agents claude-code,bogus"]) {
+      const run = install(["--port", String(freePort()), ...bad.split(" ")]);
+      expect(run.code).not.toBe(0);
+      expect(run.err).toContain("is not a list Zetta can use");
+      expect(upCalls(run.log)).toEqual([]);
+    }
+    expect(install(["--agents"]).err).toContain("--agents needs a list");
+    expect(install([], { env: { ZETTA_AGENTS: "bogus" } }).err).toContain('ZETTA_AGENTS="bogus"');
+  });
+});
+
+describe("the server image's agents stage", () => {
+  const read = (path: string) =>
+    readFileSync(join(import.meta.dir, "..", "..", "..", path), "utf8");
+  const dockerfile = read("apps/server/Dockerfile");
+  const stage = dockerfile.match(/FROM node:22-slim AS agents\n([\s\S]*?)\n\nFROM oven/)![1]!;
+  const block = stage.match(/RUN ([\s\S]*)$/)![1]!.replace(/\\\n/g, "\n");
+
+  /** Runs the stage's shell with a fake npm and cp, in a folder standing for /out. */
+  function runStage(agents: string) {
+    const out = join(root, "out");
+    const log = join(root, "stage.log");
+    rmSync(log, { force: true });
+    const fakes = [
+      `npm() { echo "npm $*" >> "${log}"; }`,
+      `cp() { echo "cp $*" >> "${log}"; : > "${out}/bin/node"; }`,
+    ].join("\n");
+    const run = Bun.spawnSync(["sh", "-c", `${fakes}\n${block.replaceAll("/out", out)}`], {
+      env: {
+        PATH: "/usr/bin:/bin",
+        ZETTA_AGENTS: agents,
+        CLAUDE_CODE_VERSION: "2.1.312",
+        CODEX_VERSION: "0.163.0",
+      },
+    });
+    return {
+      code: run.exitCode,
+      err: run.stderr.toString(),
+      log: existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [],
+      hasNode: existsSync(join(out, "bin", "node")),
+      hasBin: existsSync(join(out, "bin")),
+    };
+  }
+
+  test("with no agent it installs nothing and copies no node, but leaves the folder the image copies from", () => {
+    for (const agents of ["", "none"]) {
+      rmSync(join(root, "out"), { recursive: true, force: true });
+      const run = runStage(agents);
+      expect(run.code).toBe(0);
+      expect(run.log).toEqual([]);
+      expect(run.hasNode).toBe(false);
+      expect(run.hasBin).toBe(true);
+    }
+  });
+
+  test("an agent is installed at its pinned version and brings the node binary it runs on", () => {
+    const claude = runStage("claude-code");
+    expect(claude.log[0]).toMatch(
+      /^npm install -g --prefix .*\/out @anthropic-ai\/claude-code@2\.1\.312$/,
+    );
+    expect(claude.hasNode).toBe(true);
+
+    rmSync(join(root, "out"), { recursive: true, force: true });
+    const both = runStage("claude-code codex");
+    expect(both.log[0]).toContain("@anthropic-ai/claude-code@2.1.312 @openai/codex@0.163.0");
+  });
+
+  test("an unknown agent stops the build with the list of valid ones", () => {
+    const run = runStage("claude-code bogus");
+    expect(run.code).not.toBe(0);
+    expect(run.err).toContain("unknown agent: bogus (use claude-code, codex or none)");
+  });
+
+  test("the runtime image copies the stage's folder, and compose passes nothing by default", () => {
+    expect(dockerfile).toContain("COPY --from=agents /out /opt/agents");
+    expect(dockerfile).toContain('ENV PATH="/opt/agents/bin:${PATH}"');
+    expect(dockerfile).toContain('ARG ZETTA_AGENTS=""');
+    expect(read("docker-compose.yml")).toContain("ZETTA_AGENTS: ${ZETTA_AGENTS:-}");
+  });
+});
+
 describe("the helper functions", () => {
   const call = (body: string, ...args: string[]) =>
     Bun.spawnSync(["/bin/bash", "-c", `source "${script}"; ${body}`, "_", ...args], {
@@ -381,6 +554,20 @@ describe("the helper functions", () => {
       "https://x?y=1",
       "https://x y",
     ])
+      expect(check(bad)).toBeNull();
+  });
+
+  test("normalize_agents keeps the known names once, in order, and refuses the rest", () => {
+    const check = (input: string) => {
+      const run = call('normalize_agents "$1"', input);
+      return run.exitCode === 0 ? run.stdout.toString().trim() : null;
+    };
+    expect(check("claude-code")).toBe("claude-code");
+    expect(check("codex,claude-code")).toBe("codex claude-code");
+    expect(check("claude-code claude-code")).toBe("claude-code");
+    expect(check("none")).toBe("");
+    expect(check("")).toBe("");
+    for (const bad of ["claude", "Codex", "claude-code;rm", "gemini"])
       expect(check(bad)).toBeNull();
   });
 

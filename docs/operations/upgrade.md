@@ -22,6 +22,8 @@ curl -fsSL https://zettabot.app/install | bash -s -- --url https://zetta.example
 
 It writes the new address into `apps/server/.env`, `apps/web/.env` and the `.env` next to `docker-compose.yml`, then rebuilds. Sign-in from other computers and plugins that use OAuth need an `https://` address.
 
+**Agent CLIs.** The server image holds none by default: each is a native binary of 300 to 430 MB, and the server does not use a copy you already have on the computer. The installer reports what it finds. `--agents claude-code` (or `codex`, or `"claude-code codex"`, or `none`) chooses what goes into the image, and the choice is kept for the next update (`ZETTA_AGENTS` in the `.env` next to `docker-compose.yml`).
+
 Installed in another folder? Put the folder in front: `curl -fsSL https://zettabot.app/install | ZETTA_DIR=/path/to/zetta bash`.
 
 The installer also writes the version into the server image (`ZETTA_BUILD_COMMIT` and `ZETTA_BUILD_DATE`, build arguments of `apps/server/Dockerfile` that `docker-compose.yml` passes on). A build made by hand with `docker compose up -d --build` has no stamp, so it reads `Version unknown` and cannot say whether it is behind. A server run from a source checkout (`bun run dev`) asks git instead.

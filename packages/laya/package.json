@@ -2,7 +2,7 @@
   "name": "@zetta/laya",
   "version": "0.0.0",
   "private": true,
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

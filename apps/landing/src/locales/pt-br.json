@@ -2,7 +2,7 @@
   "meta": {
     "imageAlt": "Zetta: peça o resultado e um time de bots cuida do resto. O robô do Zetta no centro de quatro bots, e um deles precisa de você.",
     "title": "Zetta: bots que trabalham no seu servidor enquanto você faz outra coisa",
-    "description": "Zetta é um app gratuito e open source que roda um time de bots no seu próprio servidor. Diga ao Zetta o que você precisa e volte para o resultado."
+    "description": "Zetta é um app gratuito com código-fonte disponível que roda um time de bots no seu próprio servidor. Diga ao Zetta o que você precisa e volte para o resultado."
   },
   "header": {
     "home": "Início do Zetta",
@@ -25,7 +25,7 @@
       "after": ".",
       "rest": "O Zetta cuida do resto."
     },
-    "lead": "Zetta é um app gratuito e open source que roda no seu próprio servidor. Diga ao Zetta o que você precisa, como um resumo semanal ou uma revisão de código. Um time de bots faz o trabalho e só chama você quando precisa de uma decisão.",
+    "lead": "Zetta é um app gratuito com código-fonte disponível que roda no seu próprio servidor. Diga ao Zetta o que você precisa, como um resumo semanal ou uma revisão de código. Um time de bots faz o trabalho e só chama você quando precisa de uma decisão.",
     "primary": "Instalar com um comando",
     "secondary": "Ver ao vivo",
     "installLabel": "Uma linha no macOS, Linux ou WSL",
@@ -300,7 +300,7 @@
       },
       {
         "q": "O Zetta é grátis?",
-        "a": "É. O Zetta é open source sob a licença MIT. Você paga só pelo seu servidor e pelos agentes que os seus bots usam."
+        "a": "É. O Zetta é source-available e gratuito, inclusive para uso comercial. Se você usar comercialmente, avise o autor em até 60 dias após começar. Você paga só pelo seu servidor e pelos agentes que os seus bots usam."
       },
       {
         "q": "Onde ficam os meus dados?",
@@ -330,14 +330,14 @@
       "mark": "o primeiro trabalho",
       "after": ""
     },
-    "lead": "Um comando num servidor que você controla. Open source, MIT.",
+    "lead": "Um comando num servidor que você controla. Source-available e gratuito.",
     "primary": "Instalar com um comando",
     "secondary": "Estrela no GitHub"
   },
   "footer": {
     "share": "Chega de vigiar os seus agentes.",
     "tagline": "Zetta: bots que trabalham por você, no seu servidor.",
-    "license": "Licença MIT",
+    "license": "Licença Zetta",
     "links": {
       "repo": "Repositório",
       "docs": "Docs",

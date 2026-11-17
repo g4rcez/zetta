@@ -2,7 +2,7 @@
   "meta": {
     "imageAlt": "Zetta: ask for the result and a team of bots does the rest. The Zetta robot sits at the center of four bots, and one of them needs you.",
     "title": "Zetta: bots that work on your server while you do something else",
-    "description": "Zetta is a free, open source app that runs a team of bots on your own server. Tell Zetta what you need and come back to the result."
+    "description": "Zetta is a free, source-available app that runs a team of bots on your own server. Tell Zetta what you need and come back to the result."
   },
   "header": {
     "home": "Zetta home",
@@ -25,7 +25,7 @@
       "after": ".",
       "rest": "Zetta does the rest."
     },
-    "lead": "Zetta is a free, open source app that runs on your own server. Tell Zetta what you need, like a weekly summary or a code review. A team of bots does the work, and asks you only when it needs a decision.",
+    "lead": "Zetta is a free, source-available app that runs on your own server. Tell Zetta what you need, like a weekly summary or a code review. A team of bots does the work, and asks you only when it needs a decision.",
     "primary": "Install in one command",
     "secondary": "Watch it live",
     "installLabel": "One line on macOS, Linux or WSL",
@@ -300,7 +300,7 @@
       },
       {
         "q": "Is Zetta free?",
-        "a": "Yes. Zetta is open source under the MIT license. You pay only for your own server and for the agents your bots use."
+        "a": "Yes. Zetta is source-available and free to use, including commercially. If you use it commercially, tell the author within 60 days of starting. You pay only for your own server and for the agents your bots use."
       },
       {
         "q": "Where does my data live?",
@@ -330,14 +330,14 @@
       "mark": "its first job",
       "after": ""
     },
-    "lead": "One command on a server you control. Open source, MIT.",
+    "lead": "One command on a server you control. Source-available and free.",
     "primary": "Install in one command",
     "secondary": "Star on GitHub"
   },
   "footer": {
     "share": "Stop babysitting your agents.",
     "tagline": "Zetta: bots that do the work on your own server.",
-    "license": "MIT license",
+    "license": "Zetta license",
     "links": {
       "repo": "Repository",
       "docs": "Docs",

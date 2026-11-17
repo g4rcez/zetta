@@ -1,4 +1,4 @@
-MIT License
+Zetta License (MIT terms with a Commercial Use Notice)
 
 Copyright (c) 2026 g4rcez
 
@@ -9,8 +9,39 @@ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Notice. The above copyright notice and this license shall be included in all
+   copies or substantial portions of the Software.
+
+2. Commercial Use Notice. If you make Commercial Use of the Software, you must
+   tell the Licensor within 60 days after you begin. The notice must say who
+   you are (a person or an organization) and, in a sentence or two, how you
+   use the Software. Send it by opening an issue at
+   https://github.com/g4rcez/zetta/issues, or through any other contact
+   channel the Licensor publishes in the repository README.
+
+   The notice costs nothing and needs no approval. You may keep using the
+   Software while the Licensor reads it. The Licensor may propose a separate
+   business arrangement; you are free to decline, and declining does not end
+   your rights under this license.
+
+   "Commercial Use" means use in a business, or for commercial advantage or
+   monetary compensation, including running the Software inside a for-profit
+   organization, and offering the Software or a service built on it to third
+   parties. Personal, hobby, educational, academic research and non-profit use
+   is not Commercial Use and needs no notice.
+
+3. Redistribution. If you distribute the Software or a work derived from it,
+   you must include this license, so that the people who receive it know the
+   conditions that apply to them.
+
+4. Failure to notify. Using the Software commercially without the notice in
+   section 2 breaches this license. If the Licensor tells you in writing about
+   the breach and you do not send the notice within 30 days, your rights under
+   this license end until you send it. Sending the notice restores them.
+
+5. Earlier versions. Copies of the Software obtained under the MIT License
+   before 2026-11-16 remain under the MIT License. This license applies to
+   versions released on or after that date.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,

@@ -81,6 +81,8 @@ const botInput = z.strictObject({
   avatar: botAvatar.nullable().optional(),
   name: z.string().trim().min(1).max(80),
   description: z.string().max(2048).optional(),
+  /** One short line saying what the bot is for; shown beside the name wherever a bot is chosen. */
+  role: z.string().trim().max(60).optional(),
   visibility: z.enum(["private", "team"]).optional(),
   harness: z
     .enum([

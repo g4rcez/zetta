@@ -327,6 +327,8 @@ export type BotInput = {
   requiredConnections?: { key: string; provider: string }[];
   name: string;
   description?: string;
+  /** One short line (60 characters) saying what the bot is for; see `botRole` in @zetta/core/bot-role. */
+  role?: string;
   visibility?: "private" | "team";
   harness?: (typeof bot.$inferInsert)["harness"];
   model?: string | null;
@@ -5898,6 +5900,7 @@ export function createChatService(
               name: b.name,
               slug: b.slug,
               description: b.description,
+              role: b.role,
               harness: b.harness,
               model: null,
               fallbackHarness: null,
@@ -5943,6 +5946,7 @@ export function createChatService(
                 name: input.name.trim(),
                 slug,
                 description: input.description ?? "",
+                role: input.role?.trim() ?? "",
                 harness: input.harness ?? "fixture",
                 model: input.model ?? null,
                 fallbackHarness: input.fallbackHarness ?? null,
@@ -6019,6 +6023,7 @@ export function createChatService(
         .set({
           ...set,
           name: patch.name?.trim(),
+          role: patch.role?.trim(),
           version: sql`${bot.version} + 1`,
           updatedAt: new Date(),
         })

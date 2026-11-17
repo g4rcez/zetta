@@ -32,6 +32,10 @@ export const installationSettings = zetta.table(
     transcribeLanguage: text("transcribe_language").default("").notNull(),
     transcribeBaseUrl: text("transcribe_base_url").default("").notNull(),
     transcribeConnectionId: uuid("transcribe_connection_id"),
+    /** Whether the server checks once a day if a newer version is published. `off` sends nothing anywhere. */
+    updateCheck: text("update_check", { enum: ["on", "off"] })
+      .default("on")
+      .notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

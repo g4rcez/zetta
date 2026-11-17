@@ -25,6 +25,7 @@ const row = (
   parentMessageId: null,
   botId,
   createdAt: new Date(0),
+  editedAt: null,
 });
 
 async function chunks(events: ChatEvent[] | (() => AsyncGenerator<ChatEvent>)) {

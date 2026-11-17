@@ -60,7 +60,7 @@ export function createPreferenceStore(db: Database) {
         : {
             railMode: "expanded",
             sidebarSide: "left",
-            navMode: "full",
+            navMode: "simple",
             steerMode: "park",
             railWidth: SIDEBAR_LIMITS.railWidth.fallback,
             listWidth: SIDEBAR_LIMITS.listWidth.fallback,

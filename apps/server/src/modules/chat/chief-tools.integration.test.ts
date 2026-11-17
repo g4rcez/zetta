@@ -655,7 +655,7 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
     const { say } = await chiefOf(A);
     await say(
       [
-        '```zetta:preferences\n{"action":"update","navMode":"simple","steerMode":"interrupt","theme":null,"primaryColor":"#1A2B3C","railWidth":260}\n```',
+        '```zetta:preferences\n{"action":"update","navMode":"full","steerMode":"interrupt","theme":null,"primaryColor":"#1A2B3C","railWidth":260}\n```',
       ],
       "simpler menu, my color, wider sidebar",
     );
@@ -667,10 +667,10 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
       "railWidth",
       "primaryColor",
     ]);
-    expect((await prefs.get(actor)).navMode).toBe("full");
+    expect((await prefs.get(actor)).navMode).toBe("simple");
     expect((await approve(A, card!.id)).json.status).toBe("approved");
     expect(await prefs.get(actor)).toMatchObject({
-      navMode: "simple",
+      navMode: "full",
       steerMode: "interrupt",
       primaryColor: "#1a2b3c",
       railWidth: 260,

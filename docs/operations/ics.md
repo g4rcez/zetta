@@ -17,7 +17,7 @@ Open Plugins > Calendar link (ICS) and paste the address. Anybody who has the ad
 
 VEVENTs with title, start and end (timed, all-day, UTC, floating and TZID times, including Windows zone names), place and description. Recurring events are expanded for the window asked: daily, weekly, monthly and yearly rules with interval, count, until, BYDAY (also `2MO`, `-1FR`), BYMONTHDAY, BYMONTH and BYSETPOS, plus EXDATE, RDATE and moved or cancelled single occurrences. Not read: rules finer than a day, BYHOUR and similar, VTODO. Cancelled events are left out.
 
-The reader is our own (about 450 lines, no dependency): the feed is read-only and bounded, so a library such as `ical.js` was not worth the extra package. It is covered by tests for the cases above, including a clock change.
+The reader is our own (about 500 lines, no dependency): the feed is read-only and bounded, so a library such as `ical.js` was not worth the extra package. It is covered by tests for the cases above, including a clock change.
 
 ## Safety
 

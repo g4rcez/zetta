@@ -1,3 +1,4 @@
+import { BOT_ROLE_MAX } from "@zetta/core/bot-role";
 import { ORG_DESCRIPTION_MAX, ORG_RANKS, ORG_TITLE_MAX, ORG_UNIT_MAX } from "@zetta/core/org";
 import { PROJECT_BRIEF_MAX, PROJECT_STATUSES, PROJECT_WATCH } from "@zetta/db/schema/projects";
 import { NAV_MODES, SIDEBAR_LIMITS, STEER_MODES, THEMES } from "@zetta/db/schema/preferences";
@@ -50,6 +51,8 @@ export const chiefSchemas = {
         bot: ref,
         name: bounded(80).optional(),
         description: z.string().max(2048).optional(),
+        /** What the bot is for, in a few words; shown beside its name wherever a bot is chosen. "" clears it. */
+        role: z.string().trim().max(BOT_ROLE_MAX).optional(),
         personality: z.string().max(4096).optional(),
         instructions: z.string().max(16384).optional(),
         harness: harness.optional(),

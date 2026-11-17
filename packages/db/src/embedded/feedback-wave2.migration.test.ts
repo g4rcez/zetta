@@ -70,7 +70,8 @@ real(
     // The old shape: none of the new columns or the table exist.
     expect((await columns(url, "installation_settings")).has("speech_provider")).toBe(false);
     expect((await columns(url, "user_preference")).has("push_mode")).toBe(false);
-    expect((await columns(url, "connection")).has("config")).toBe(false);
+    expect((await columns(url, "connection")).has("config_base_url")).toBe(false);
+    expect((await columns(url, "connection")).has("config_model")).toBe(false);
     expect((await columns(url, "push_subscription")).size).toBe(0);
 
     // Existing rows: the installation row with a speech-to-text choice, two people (one with a preference row), and a sealed connection.
@@ -134,25 +135,36 @@ real(
 
     // The connection that existed has an empty config and is otherwise untouched.
     expect(
-      await run(url, `select provider, label, state, config from connection where id = $1`, [
-        connectionId,
-      ]),
-    ).toEqual([{ provider: "openai", label: "My key", state: "active", config: {} }]);
-
-    // The config holds an object of at most 2 KB.
-    await run(url, `update connection set config = $2::jsonb where id = $1`, [
-      connectionId,
-      JSON.stringify({ baseUrl: "http://127.0.0.1:11434/v1", model: "llama3.1:8b" }),
-    ]);
-    await expect(
-      run(url, `update connection set config = '[]'::jsonb where id = $1`, [connectionId]),
-    ).rejects.toThrow(/connection_config_check/);
-    await expect(
-      run(
+      await run(
         url,
-        `update connection set config = jsonb_build_object('x', repeat('x', 2100)) where id = $1`,
+        `select provider, label, state, config_base_url, config_model from connection where id = $1`,
         [connectionId],
       ),
+    ).toEqual([
+      {
+        provider: "openai",
+        label: "My key",
+        state: "active",
+        config_base_url: "",
+        config_model: "",
+      },
+    ]);
+
+    // The address and the model name are bounded text: 512 and 100 characters.
+    await run(url, `update connection set config_base_url = $2, config_model = $3 where id = $1`, [
+      connectionId,
+      "http://127.0.0.1:11434/v1",
+      "llama3.1:8b",
+    ]);
+    await expect(
+      run(url, `update connection set config_base_url = repeat('x', 513) where id = $1`, [
+        connectionId,
+      ]),
+    ).rejects.toThrow(/connection_config_check/);
+    await expect(
+      run(url, `update connection set config_model = repeat('x', 101) where id = $1`, [
+        connectionId,
+      ]),
     ).rejects.toThrow(/connection_config_check/);
 
     // Speech and push-key limits hold.

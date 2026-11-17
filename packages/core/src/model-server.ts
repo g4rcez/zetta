@@ -1,6 +1,6 @@
 /**
  * A model on the person's own server (Ollama, vLLM, LM Studio, llama.cpp, any OpenAI-compatible server). It is a `connection` of provider
- * `compatible`: the sealed secret is the optional API key, and the non-secret settings (address, model name) are `connection.config`.
+ * `compatible`: the sealed secret is the optional API key, and the non-secret settings (address, model name) are the `config_base_url` and `config_model` columns of `connection`.
  * See docs/decisions/feedback-wave2-foundation.md.
  *
  * This file also holds the address rule. It is pure (no DNS, no I/O) so the web form, the server route and the engine setup apply the

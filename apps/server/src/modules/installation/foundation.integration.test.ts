@@ -251,7 +251,7 @@ suite("wave 2 foundation: speech, push and model-server settings", () => {
     // A stored address that the rule refuses (written by hand) never comes back as usable.
     await db
       .update(connection)
-      .set({ config: { baseUrl: "http://169.254.169.254/latest", model: "m" } })
+      .set({ configBaseUrl: "http://169.254.169.254/latest", configModel: "m" })
       .where(eq(connection.id, made.id));
     expect(await readCompatibleConfig(db, A, made.id, { allowLocal: true })).toEqual({
       ok: false,

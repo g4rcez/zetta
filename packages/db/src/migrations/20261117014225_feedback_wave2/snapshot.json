@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "5ae1ff2b-deae-4ecb-9172-266b59b3d5c7",
+  "id": "91a49e2b-6ec2-4b9e-9e93-0e298a240a21",
   "prevIds": ["2625349f-0c5a-45eb-952c-d12f3a68e5e0"],
   "ddl": [
     {
@@ -3094,14 +3094,27 @@
       "table": "connection"
     },
     {
-      "type": "jsonb",
+      "type": "text",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
-      "default": "'{}'",
+      "default": "''",
       "generated": null,
       "identity": null,
-      "name": "config",
+      "name": "config_base_url",
+      "entityType": "columns",
+      "schema": "zetta",
+      "table": "connection"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "''",
+      "generated": null,
+      "identity": null,
+      "name": "config_model",
       "entityType": "columns",
       "schema": "zetta",
       "table": "connection"
@@ -29765,7 +29778,7 @@
       "table": "connection"
     },
     {
-      "value": "jsonb_typeof(\"config\") = 'object' and octet_length(\"config\"::text) <= 2048",
+      "value": "length(\"config_base_url\") <= 512 and length(\"config_model\") <= 100",
       "name": "connection_config_check",
       "entityType": "checks",
       "schema": "zetta",

@@ -6,7 +6,6 @@ import {
   foreignKey,
   index,
   integer,
-  jsonb,
   primaryKey,
   text,
   timestamp,
@@ -87,17 +86,19 @@ export const connection = zetta.table(
     ...metadataColumns(),
     currentCredentialVersion: integer("current_credential_version").notNull(),
     /**
-     * Settings of this connection that are NOT secret (never the key), as a JSON object of at most 2 KB. A connection of provider
-     * `compatible` (a model on the person's own server) keeps `{ baseUrl, model }` here (`CompatibleConfig` in @zetta/core/model-server).
-     * Written and read by the code that owns the provider, not by the credential store: the store's strict metadata does not carry it.
+     * Settings of this connection that are NOT secret (never the key). A connection of provider `compatible` (a model on the person's own
+     * server) keeps its address and its model name here (`CompatibleConfig` in @zetta/core/model-server). Two bounded text columns and no
+     * JSON: the connection store is security-reviewed and holds no free-form object. Written and read by the code that owns the provider,
+     * not by the credential store: the store's strict metadata does not carry them.
      */
-    config: jsonb("config").$type<Record<string, unknown>>().default({}).notNull(),
+    configBaseUrl: text("config_base_url").default("").notNull(),
+    configModel: text("config_model").default("").notNull(),
   },
   (table) => [
     ...metadataChecks("connection", table),
     check(
       "connection_config_check",
-      sql`jsonb_typeof(${table.config}) = 'object' and octet_length(${table.config}::text) <= 2048`,
+      sql`length(${table.configBaseUrl}) <= 512 and length(${table.configModel}) <= 100`,
     ),
     check("connection_owner_check", sql`octet_length(${table.ownerUserId}) between 1 and 256`),
     check(

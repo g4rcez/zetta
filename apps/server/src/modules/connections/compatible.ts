@@ -10,9 +10,9 @@ import { and, eq } from "@zetta/db/query";
 import { connection } from "@zetta/db/schema/connections";
 
 /**
- * The non-secret settings of a connection of provider `compatible` (a model on the person's own server): `connection.config`. The sealed
- * secret (the key, or the no-key placeholder) is read through `connections.secretFor` like any other. These two helpers only touch the
- * `config` column, so the credential store and its strict metadata stay as they were.
+ * The non-secret settings of a connection of provider `compatible` (a model on the person's own server): the columns `config_base_url`
+ * and `config_model` of `connection`. The sealed secret (the key, or the no-key placeholder) is read through `connections.secretFor` like
+ * any other. These two helpers only touch those columns, so the credential store and its strict metadata stay as they were.
  */
 
 /**
@@ -28,7 +28,7 @@ export async function writeCompatibleConfig(
 ): Promise<boolean> {
   const rows = await db
     .update(connection)
-    .set({ config: { baseUrl: config.baseUrl, model: config.model } })
+    .set({ configBaseUrl: config.baseUrl, configModel: config.model })
     .where(
       and(
         eq(connection.id, connectionId),
@@ -56,7 +56,7 @@ export async function readCompatibleConfig(
   o: { allowLocal: boolean },
 ): Promise<CompatibleRead> {
   const [row] = await db
-    .select({ config: connection.config })
+    .select({ baseUrl: connection.configBaseUrl, model: connection.configModel })
     .from(connection)
     .where(
       and(
@@ -67,7 +67,10 @@ export async function readCompatibleConfig(
       ),
     );
   if (!row) return { ok: false, reason: "not_found" };
-  const parsed = parseCompatibleConfig(row.config, o);
+  // Both columns still hold their empty default: no config was written yet (a connection is made first, its config second).
+  if (row.baseUrl === "" && row.model === "")
+    return { ok: false, reason: { field: "config", issue: "config_invalid" } };
+  const parsed = parseCompatibleConfig({ baseUrl: row.baseUrl, model: row.model }, o);
   return parsed.ok
     ? { ok: true, config: parsed.config, hostKind: parsed.hostKind }
     : { ok: false, reason: parsed.error };

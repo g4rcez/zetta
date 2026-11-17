@@ -4,13 +4,12 @@ import type { OrgPosition } from "./org-api";
 import {
   SEAT_SIZE,
   breadcrumb,
-  dropMove,
   foldedAfterSearch,
   hiddenSeats,
   holderLine,
   layoutTree,
   managerChoices,
-  seatAt,
+  searchOrder,
   shiftSeat,
   toFlow,
 } from "./org-graph";
@@ -77,7 +76,6 @@ describe("layout", () => {
     const flow = toFlow(chart, {
       collapsed: folded,
       filters: { q: "", show: "everyone" },
-      canEdit: true,
     });
     expect(flow.nodes.map((n) => n.id).sort()).toEqual(["ceo", "cfo", "cto"]);
     expect(flow.nodes.find((n) => n.id === "cto")!.data).toMatchObject({
@@ -88,9 +86,7 @@ describe("layout", () => {
 
   test("an empty chart has no layout", () => {
     expect(layoutTree([], none).size).toBe(0);
-    expect(
-      toFlow([], { collapsed: none, filters: { q: "", show: "everyone" }, canEdit: false }),
-    ).toEqual({
+    expect(toFlow([], { collapsed: none, filters: { q: "", show: "everyone" } })).toEqual({
       nodes: [],
       edges: [],
     });
@@ -101,7 +97,6 @@ describe("flow", () => {
   const flow = toFlow(chart, {
     collapsed: none,
     filters: { q: "", show: "everyone" },
-    canEdit: true,
   });
 
   test("one line from each manager to each report", () => {
@@ -113,22 +108,10 @@ describe("flow", () => {
     ]);
   });
 
-  test("only an editor can drag a seat, and never the CEO", () => {
-    expect(flow.nodes.find((n) => n.id === "ceo")!.draggable).toBe(false);
-    expect(flow.nodes.find((n) => n.id === "dev1")!.draggable).toBe(true);
-    const reader = toFlow(chart, {
-      collapsed: none,
-      filters: { q: "", show: "everyone" },
-      canEdit: false,
-    });
-    expect(reader.nodes.every((n) => n.draggable === false)).toBe(true);
-  });
-
   test("filters point seats out without removing the others", () => {
     const f = toFlow(chart, {
       collapsed: none,
       filters: { q: "ana", show: "everyone" },
-      canEdit: false,
     });
     expect(f.nodes).toHaveLength(5);
     expect(f.nodes.filter((n) => n.data.match === "yes").map((n) => n.id)).toEqual(["ceo"]);
@@ -142,35 +125,17 @@ describe("flow", () => {
     const f = toFlow(chart, {
       collapsed: new Set(["cto"]),
       filters: { q: "dev1", show: "everyone" },
-      canEdit: false,
     });
     expect(f.nodes.map((n) => n.id)).toContain("dev1");
   });
 });
 
-describe("dropping a seat on another", () => {
-  test("finds the seat under a point, the top one first, never the dragged seat", () => {
-    const nodes = [
-      { id: "a", position: { x: 0, y: 0 } },
-      { id: "b", position: { x: 10, y: 10 } },
-    ];
-    expect(seatAt(nodes, { x: 20, y: 20 })).toBe("b");
-    expect(seatAt(nodes, { x: 20, y: 20 }, "b")).toBe("a");
-    expect(seatAt(nodes, { x: 900, y: 900 })).toBeUndefined();
-  });
-
-  test("moving under another seat is allowed; the same manager or itself is a no-op", () => {
-    expect(dropMove(chart, "dev1", "cfo")).toEqual({ kind: "move", parentId: "cfo" });
-    expect(dropMove(chart, "dev1", "cto")).toEqual({ kind: "noop" });
-    expect(dropMove(chart, "dev1", "dev1")).toEqual({ kind: "noop" });
-  });
-
-  test("a seat cannot move under one of its own reports, and the CEO cannot move", () => {
-    expect(dropMove(chart, "cto", "dev1")).toEqual({
-      kind: "refused",
-      message: "A seat cannot report to one of its own reports.",
-    });
-    expect(dropMove(chart, "ceo", "cto")).toMatchObject({ kind: "refused" });
+describe("search order", () => {
+  test("a search lists the seats it found, each seat before the seats under it", () => {
+    const all = { q: "", show: "everyone" } as const;
+    expect(searchOrder(chart, all)).toEqual([]);
+    expect(searchOrder(chart, { q: "dev", show: "everyone" })).toEqual(["dev1", "dev2"]);
+    expect(searchOrder(chart, { q: "c", show: "everyone" })).toEqual(["ceo", "cto", "cfo"]);
   });
 });
 

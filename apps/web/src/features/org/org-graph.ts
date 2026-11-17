@@ -10,7 +10,6 @@ export type SeatData = {
   reports: number;
   collapsed: boolean;
   match: "yes" | "no" | "off";
-  canEdit: boolean;
 } & Record<string, unknown>;
 export type SeatNode = Node<SeatData, "seat">;
 
@@ -82,7 +81,6 @@ export function toFlow(
   opts: {
     collapsed: ReadonlySet<string>;
     filters: Pick<OrgFilterState, "q" | "show">;
-    canEdit: boolean;
   },
 ): { nodes: SeatNode[]; edges: Edge[] } {
   const on = filtering(opts.filters);
@@ -101,13 +99,11 @@ export function toFlow(
       position: at.get(p.id)!,
       width: SEAT_SIZE.w,
       height: SEAT_SIZE.h,
-      draggable: opts.canEdit && p.parentId !== null,
       data: {
         item: p,
         reports: reports.get(p.id) ?? 0,
         collapsed: collapsed.has(p.id),
         match: on ? (found.has(p.id) ? "yes" : "no") : "off",
-        canEdit: opts.canEdit,
       },
     })),
     edges: shown
@@ -119,43 +115,6 @@ export function toFlow(
         type: "smoothstep",
       })),
   };
-}
-
-/** The seat whose box holds the point (later seats sit above earlier ones), other than `except`. */
-export function seatAt(
-  nodes: readonly Pick<SeatNode, "id" | "position">[],
-  point: { x: number; y: number },
-  except?: string,
-): string | undefined {
-  return [...nodes]
-    .reverse()
-    .find(
-      (n) =>
-        n.id !== except &&
-        point.x >= n.position.x &&
-        point.x <= n.position.x + SEAT_SIZE.w &&
-        point.y >= n.position.y &&
-        point.y <= n.position.y + SEAT_SIZE.h,
-    )?.id;
-}
-
-export type DropMove =
-  | { kind: "noop" }
-  | { kind: "move"; parentId: string }
-  | { kind: "refused"; message: string };
-
-/** What dropping a seat on another one does: it starts to report to it. The same rules as the server, so a refusal never needs a round trip. */
-export function dropMove(
-  positions: readonly OrgPosition[],
-  draggedId: string,
-  targetId: string,
-): DropMove {
-  const dragged = positions.find((p) => p.id === draggedId);
-  if (!dragged || draggedId === targetId || dragged.parentId === targetId) return { kind: "noop" };
-  const problem = canMove(positions, draggedId, targetId);
-  return problem
-    ? { kind: "refused", message: problem.message }
-    : { kind: "move", parentId: targetId };
 }
 
 /** The place a seat takes when it moves earlier (-1) or later (+1) among its siblings, or undefined at the end of the row. */
@@ -187,4 +146,20 @@ export function managerChoices(positions: readonly OrgPosition[], id: string): O
 export function holderLine(p: Pick<OrgPosition, "holder" | "problem">): string {
   if (p.holder) return p.holder.name;
   return p.problem ? `Open seat (was ${p.problem.was})` : "Open seat";
+}
+
+/** The seats a search or a filter points out, in the order the outline reads them: each seat before the seats under it. */
+export function searchOrder(
+  positions: readonly OrgPosition[],
+  filters: Pick<OrgFilterState, "q" | "show">,
+): string[] {
+  const root = positions.find((p) => p.parentId === null);
+  if (!root || !filtering(filters)) return [];
+  const out: string[] = [];
+  const walk = (p: OrgPosition) => {
+    if (matchesFilters(p, filters)) out.push(p.id);
+    for (const r of childrenOf(positions, p.id)) walk(r);
+  };
+  walk(root);
+  return out;
 }

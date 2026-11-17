@@ -39,7 +39,6 @@ const nodes = (collapsed: string[] = []) =>
   toFlow(positions, {
     collapsed: new Set(collapsed),
     filters: { q: "", show: "links" },
-    canEdit: false,
   }).nodes;
 
 describe("the words of a line", () => {
@@ -99,7 +98,6 @@ describe("the dotted lines on the canvas", () => {
     const flow = toFlow(positions, {
       collapsed: new Set(),
       filters: { q: "", show: "links" },
-      canEdit: false,
     });
     expect(flow.edges.every((e) => e.type === "smoothstep")).toBe(true);
   });

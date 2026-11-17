@@ -1,20 +1,17 @@
 import { Alert } from "@g4rcez/components/alert";
 import { TreeStructureIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 
 import { Button, Input } from "@/components/ui";
 import { errorMessage } from "../chat/chat-client";
 import { Loading } from "../shared/ui";
-import { AddSeatPanel } from "./add-seat-panel";
 import { orgApi, orgQueries, type OrgPosition, type OrgView } from "./org-api";
 import { OrgCanvas } from "./org-canvas";
 import { useOrgEdit } from "./org-edit";
-import { shiftSeat } from "./org-graph";
+import { breadcrumb, searchOrder } from "./org-graph";
 import { OrgList } from "./org-list";
 import { OrgWorksList } from "./org-works-list";
-import { OrgPalettePanel, type OrgDragItem } from "./org-palette";
 import {
   ORG_SHOW,
   ORG_VIEWS,
@@ -25,7 +22,7 @@ import {
   type OrgViewMode,
 } from "./org-search";
 import { OrgStart } from "./org-start";
-import type { SeatActions } from "./seat-menu";
+import { SeatPanel } from "./seat-panel";
 
 const NO_POSITIONS: OrgPosition[] = [];
 const VIEW_LABELS: Record<OrgViewMode, string> = { chart: "Chart", list: "List" };
@@ -66,45 +63,10 @@ function Choice<T extends string>({
   );
 }
 
-/** Asks before a seat goes away, and says what happens to the seats under it. */
-function RemoveBar({
-  item,
-  reports,
-  busy,
-  onConfirm,
-  onCancel,
-}: {
-  item: OrgPosition;
-  reports: number;
-  busy: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={`Remove ${item.title}`}
-      className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 bg-card p-3 text-sm"
-    >
-      <p className="min-w-0 flex-1 text-pretty">
-        Remove <span className="font-medium">{item.title}</span>?{" "}
-        {reports > 0
-          ? `The ${reports} ${reports === 1 ? "seat" : "seats"} under it will report to its manager.`
-          : "Nobody reports to it."}
-      </p>
-      <Button size="sm" variant="destructive" disabled={busy} onClick={onConfirm}>
-        Remove this seat
-      </Button>
-      <Button size="sm" variant="ghost" onClick={onCancel}>
-        Keep it
-      </Button>
-    </div>
-  );
-}
-
 /**
- * The company chart: who leads what, and who every person and bot reports to. Everyone reads it; the admin draws it, by dragging on the
- * canvas or from each seat's menu and page. The view, the search and the group live in the address, so a link shows the same chart.
+ * The company chart: who leads what, and who every person and bot reports to. Everyone reads it; the admin draws it. A seat is selected
+ * by clicking it (or by searching), and everything about it is read and changed in the panel beside the chart. The view, the search, the
+ * group and the selected seat live in the address, so a link shows the same chart with the same seat open.
  */
 export function OrganizationPage({
   search,
@@ -113,11 +75,8 @@ export function OrganizationPage({
   search: OrgSearch;
   onSearch: (next: OrgSearch, opts?: { replace?: boolean }) => void;
 }) {
-  const navigate = useNavigate();
   const edit = useOrgEdit();
   const { data, error, isPending } = useQuery(orgQueries.get());
-  const [adding, setAdding] = useState<string>();
-  const [removing, setRemoving] = useState<string>();
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const state = toOrgState(search);
@@ -126,6 +85,8 @@ export function OrganizationPage({
   const linksError = links.error ? errorMessage(links.error) : undefined;
   const positions = data?.positions ?? NO_POSITIONS;
   const canEdit = data?.canEdit ?? false;
+  // A seat that is gone (removed, or from an old link) is no selection at all.
+  const selectedId = positions.some((p) => p.id === state.focus) ? state.focus : "";
   const set = (patch: Partial<typeof state>, opts?: { replace?: boolean }) =>
     onSearch(toOrgSearch({ ...state, ...patch }), opts);
 
@@ -140,19 +101,18 @@ export function OrganizationPage({
     },
     [edit],
   );
-  const actions: SeatActions = useMemo(
-    () => ({
-      open: (id) => void navigate({ to: "/organization/$positionId", params: { positionId: id } }),
-      addReport: (id) => setAdding(id),
-      shift: (id, delta) => {
-        const to = shiftSeat(positions, id, delta);
-        if (to) void run((v) => orgApi.move(v, id, to.parentId, to.index));
-      },
-      empty: (id) => void run((v) => orgApi.seat(v, id, { kind: "open" }), "The seat is open"),
-      remove: (id) => setRemoving(id),
-    }),
-    [navigate, positions, run],
-  );
+  /** Selects a seat (or none, with ""): a step in the history, so Back closes it. A seat inside a folded branch opens the branch. */
+  const select = (id: string) => {
+    if (id)
+      setFolded((now) => {
+        const above = breadcrumb(positions, id).filter((p) => now.has(p.id));
+        if (!above.length) return now;
+        const next = new Set(now);
+        for (const p of above) next.delete(p.id);
+        return next;
+      });
+    set({ focus: id });
+  };
   const toggle = useCallback(
     (id: string) =>
       setFolded((now) => {
@@ -162,23 +122,16 @@ export function OrganizationPage({
       }),
     [],
   );
-  const dropItem = (item: OrgDragItem, seatId: string) =>
-    void (item.type === "template"
-      ? run((v) => orgApi.create(v, { parentId: seatId, templateKey: item.id }), "Seat added")
-      : run(
-          (v) =>
-            orgApi.seat(
-              v,
-              seatId,
-              item.type === "person"
-                ? { kind: "person", userId: item.id }
-                : { kind: "bot", botId: item.id },
-            ),
-          "Seat filled",
-        ));
 
-  const addingSeat = positions.find((p) => p.id === adding);
-  const removingSeat = positions.find((p) => p.id === removing);
+  // Enter in the search goes to the first seat it found, and then to the next one.
+  const found = useMemo(() => searchOrder(positions, state), [positions, state.q, state.show]); // eslint-disable-line react-hooks/exhaustive-deps
+  const at = found.indexOf(selectedId);
+  const goNext = (e: KeyboardEvent) => {
+    if (e.key !== "Enter" || found.length === 0) return;
+    e.preventDefault();
+    select(found[(at + 1) % found.length]!);
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b px-4 py-3 md:px-6">
@@ -198,16 +151,30 @@ export function OrganizationPage({
         </div>
         {positions.length > 0 && (
           <div className="flex flex-wrap items-end gap-3">
-            <Input
-              type="search"
-              title="Find a seat or a person"
-              hiddenLabel
-              placeholder="Find a seat or a person"
-              required={false}
-              container="min-w-48 sm:w-64"
-              value={state.q}
-              onChange={(e) => set({ q: e.target.value }, { replace: true })}
-            />
+            <div className="flex items-end gap-2" onKeyDown={goNext}>
+              <Input
+                type="search"
+                title="Find a seat or a person"
+                hiddenLabel
+                placeholder="Find a seat or a person"
+                required={false}
+                container="min-w-48 sm:w-64"
+                value={state.q}
+                onChange={(e) => set({ q: e.target.value }, { replace: true })}
+              />
+              {state.q && (
+                <span
+                  role="status"
+                  className="pb-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums"
+                >
+                  {found.length === 0
+                    ? "No match"
+                    : at >= 0
+                      ? `${at + 1} of ${found.length}`
+                      : `${found.length} found. Enter shows the first.`}
+                </span>
+              )}
+            </div>
             <Choice
               label="What to show"
               options={ORG_SHOW}
@@ -225,42 +192,6 @@ export function OrganizationPage({
           </div>
         )}
       </header>
-      {(addingSeat || removingSeat) && (
-        <div className="space-y-3 border-b p-4 md:px-6">
-          {addingSeat && (
-            <AddSeatPanel
-              key={addingSeat.id}
-              parent={addingSeat}
-              busy={busy}
-              onCancel={() => setAdding(undefined)}
-              onAdd={(v) =>
-                void run((version) => orgApi.create(version, v), "Seat added").then(
-                  (view) => view && setAdding(undefined),
-                )
-              }
-              onPreset={(key, parentId) =>
-                void run(
-                  (version) => orgApi.applyPreset(version, key, parentId),
-                  "Team added",
-                ).then((view) => view && setAdding(undefined))
-              }
-            />
-          )}
-          {removingSeat && (
-            <RemoveBar
-              item={removingSeat}
-              reports={positions.filter((p) => p.parentId === removingSeat.id).length}
-              busy={busy}
-              onCancel={() => setRemoving(undefined)}
-              onConfirm={() =>
-                void run((version) => orgApi.remove(version, removingSeat.id), "Seat removed").then(
-                  (view) => view && setRemoving(undefined),
-                )
-              }
-            />
-          )}
-        </div>
-      )}
       {error && (
         <div className="p-4 md:px-6">
           <Alert theme="danger">{errorMessage(error)}</Alert>
@@ -282,46 +213,49 @@ export function OrganizationPage({
             }
           />
         </div>
-      ) : state.view === "list" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-5xl p-4 md:p-6">
-            <OrgList
-              positions={positions}
-              canEdit={canEdit}
-              filters={state}
-              collapsed={folded}
-              actions={actions}
-              onToggle={toggle}
-            />
-            {state.show === "links" && (
-              <OrgWorksList links={links.data} positions={positions} error={linksError} />
-            )}
-          </div>
-        </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          {canEdit && data?.palette && (
-            <OrgPalettePanel
-              palette={data.palette}
-              className="max-h-48 shrink-0 border-b md:max-h-none md:w-60 md:border-r md:border-b-0"
-            />
+          {state.view === "list" ? (
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+              <div className="mx-auto w-full max-w-5xl p-4 md:p-6">
+                <OrgList
+                  positions={positions}
+                  filters={state}
+                  collapsed={folded}
+                  selectedId={selectedId}
+                  onSelect={select}
+                  onToggle={toggle}
+                />
+                {state.show === "links" && (
+                  <OrgWorksList links={links.data} positions={positions} error={linksError} />
+                )}
+              </div>
+            </div>
+          ) : (
+            <main className="min-h-72 min-w-0 flex-1 max-md:basis-2/5">
+              <OrgCanvas
+                positions={positions}
+                filters={state}
+                collapsed={folded}
+                selectedId={selectedId}
+                onSelect={select}
+                onToggle={toggle}
+                showLinks={state.show === "links"}
+                links={links.data}
+                linksError={linksError}
+              />
+            </main>
           )}
-          <main className="min-h-0 min-w-0 flex-1">
-            <OrgCanvas
-              positions={positions}
-              canEdit={canEdit}
-              filters={state}
-              collapsed={folded}
-              focus={state.focus}
-              showLinks={state.show === "links"}
-              links={links.data}
-              linksError={linksError}
-              actions={actions}
-              onToggle={toggle}
-              onMoveSeat={(id, parentId) => void run((v) => orgApi.move(v, id, parentId), "Moved")}
-              onDropItem={dropItem}
-            />
-          </main>
+          <SeatPanel
+            positions={positions}
+            selectedId={selectedId}
+            canEdit={canEdit}
+            palette={data?.palette ?? null}
+            busy={busy}
+            run={run}
+            onSelect={select}
+            className="border-t max-md:max-h-[60%] md:w-96 md:shrink-0 md:border-t-0 md:border-l"
+          />
         </div>
       )}
     </div>

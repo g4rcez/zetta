@@ -11,6 +11,7 @@ Object.assign(globalThis, { scrollTo: () => {} });
 
 const S = (n: number) => `01a1ce15-6b98-7fa6-a72d-0885e1cc52${String(n).padStart(2, "0")}`;
 const BOT = "01a19da2-3c92-783a-b90d-c35975f3c60c";
+const PRIVATE_BOT = "01a19da2-3c92-783a-b90d-c35975f3c60e";
 const seat = (n: number, parentId: string | null, title: string, over: object = {}) => ({
   id: S(n),
   parentId,
@@ -49,7 +50,16 @@ const positions = () => [
 ];
 const palette = {
   people: [{ userId: "u1", name: "Ana Souza", avatar: null }],
-  bots: [{ id: BOT, name: "Scribe", description: "Writes", avatar: null }],
+  bots: [
+    { id: BOT, name: "Scribe", description: "Writes", avatar: null, visibility: "team" },
+    {
+      id: PRIVATE_BOT,
+      name: "Drafter",
+      description: "Drafts",
+      avatar: null,
+      visibility: "private",
+    },
+  ],
   teams: [],
 };
 const view = (canEdit: boolean, list = positions()) => ({
@@ -120,16 +130,30 @@ const mount = async (page: () => Promise<ReactNode>) => {
   mounted.push(() => act(async () => root.unmount()));
   return host as unknown as HTMLElement;
 };
-const organization = (search: object = {}) =>
+const organization = (search: object = {}, onSearch: (next: object) => void = () => {}) =>
   mount(async () => {
     const { OrganizationPage } = await import("./organization-page");
-    return <OrganizationPage search={search} onSearch={() => {}} />;
+    return <OrganizationPage search={search} onSearch={onSearch} />;
   });
-const seatPage = (id: string) =>
-  mount(async () => {
-    const { PositionPage } = await import("./position-page");
-    return <PositionPage id={id} />;
+/** A seat selected from the address, as a link or Back would leave it. */
+const seatPage = (id: string, canEdit = false) => {
+  if (canEdit) current = view(true);
+  return organization({ view: "list", focus: id });
+};
+/** Opens the Bots tab of the picker that is on screen. */
+const openBots = (host: HTMLElement) =>
+  click(
+    [...host.querySelectorAll('[role="group"][aria-label="Who can hold it"] button')].find((b) =>
+      b.textContent?.startsWith("Bots"),
+    ),
+  );
+const typeInto = async (el: Element | null | undefined, value: string) => {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value")!.set!.call(el, value);
+    el!.dispatchEvent(new win.Event("input", { bubbles: true }) as never);
   });
+  await settle();
+};
 const text = (host: HTMLElement) => host.textContent ?? "";
 const buttons = (host: HTMLElement, label: string) =>
   [...host.querySelectorAll("button")].filter((b) => b.textContent?.includes(label));
@@ -174,20 +198,210 @@ test("a reader sees the outline: seats under their managers, faces, open seats a
     expect(t).toContain(word);
   expect(t).toContain("Open seat (was Rui Lima)");
   expect(t).toContain("Only the admin changes the chart.");
-  // Nothing to change for a reader: no menus, no palette.
+  // Nothing to change for a reader: no menus, no palette, no panel until a seat is selected.
   expect(named(host, "Actions for")).toHaveLength(0);
   expect(host.querySelector('[aria-label="People, bots and roles"]')).toBeNull();
+  expect(host.querySelector('aside[aria-label^="Seat:"]')).toBeNull();
   // The engineer is nested under the CTO, who is nested under the CEO.
   const tree = host.querySelector('ul[aria-label="Organization outline"]')!;
   expect(tree.querySelectorAll("ul")).toHaveLength(2);
 });
 
-test("the admin has a menu on every seat", async () => {
+test("the admin has no menu or palette on the seats: a seat is changed in its panel", async () => {
   current = view(true);
   const host = await organization({ view: "list" });
-  expect(named(host, "Actions for")).toHaveLength(4);
-  expect(named(host, "Actions for CTO")).toHaveLength(1);
+  expect(named(host, "Actions for")).toHaveLength(0);
+  expect(host.querySelector('[aria-label="People, bots and roles"]')).toBeNull();
   expect(text(host)).not.toContain("Only the admin changes the chart.");
+  expect(text(host)).toContain("Select a seat to see who holds it");
+});
+
+test("clicking a seat selects it in the address, with a step in the history", async () => {
+  const seen: object[] = [];
+  const host = await organization({ view: "list" }, (next) => void seen.push(next));
+  const row = [...host.querySelectorAll("ul[aria-label='Organization outline'] button")].find((b) =>
+    b.textContent?.includes("CTO"),
+  );
+  await click(row);
+  expect(seen).toEqual([{ view: "list", focus: S(2) }]);
+});
+
+test("the panel reads for a reader: the line above, its words, who holds it, no form", async () => {
+  const host = await seatPage(S(2));
+  const panel = host.querySelector('aside[aria-label="Seat: CTO"]')!;
+  const t = panel.textContent ?? "";
+  expect(panel.querySelector('nav[aria-label="Reporting line"]')).not.toBeNull();
+  expect(t).toContain("Owns the technology.");
+  expect(t).toContain("Scribe");
+  expect(t).toContain("How a CTO works");
+  expect(panel.querySelectorAll("input")).toHaveLength(0);
+  expect(buttons(host, "Remove this seat")).toHaveLength(0);
+  // The developer reports to it.
+  expect(t).toContain("Developer");
+});
+
+test("an open seat explains why, in its panel", async () => {
+  const host = await seatPage(S(3));
+  expect(text(host)).toContain("Rui Lima is no longer a member, so this seat is open.");
+});
+
+test("a seat that is not in the chart is no selection", async () => {
+  const host = await seatPage("01a1ce15-6b98-7fa6-a72d-0885e1cc5299");
+  expect(host.querySelector('aside[aria-label^="Seat:"]')).toBeNull();
+});
+
+test("the admin assigns a person from the panel; the write carries the version they saw", async () => {
+  const host = await seatPage(S(3), true);
+  await click(buttons(host, "Assign a person or a bot")[0]);
+  const ana = buttons(host, "Ana Souza").find((b) => b.getAttribute("aria-pressed") !== null);
+  await click(ana);
+  expect(writes).toEqual([
+    {
+      call: `PUT /api/org/positions/${S(3)}/seat`,
+      body: { expectedVersion: 4, holder: { kind: "person", userId: "u1" } },
+    },
+  ]);
+});
+
+test("a private bot is listed, and seating it asks to share it with the team first", async () => {
+  const host = await seatPage(S(3), true);
+  await click(buttons(host, "Assign a person or a bot")[0]);
+  await openBots(host);
+  const drafter = buttons(host, "Drafter").find((b) => b.getAttribute("aria-pressed") !== null)!;
+  expect(drafter.textContent).toContain("Private");
+  await click(drafter);
+  // Nothing is written until the admin agrees.
+  expect(writes).toEqual([]);
+  expect(text(host)).toContain("Share Drafter with the team?");
+  await click(buttons(host, "Share and seat")[0]);
+  expect(writes).toEqual([
+    {
+      call: `PUT /api/org/positions/${S(3)}/seat`,
+      body: { expectedVersion: 4, holder: { kind: "bot", botId: PRIVATE_BOT }, shareBot: "team" },
+    },
+  ]);
+});
+
+test("the picker shows people and bots as two lists, and a search looks in both", async () => {
+  const host = await seatPage(S(3), true);
+  await click(buttons(host, "Assign a person or a bot")[0]);
+  const group = host.querySelector('[role="group"][aria-label="Who can hold it"]')!;
+  expect(group.textContent).toContain("People (1)");
+  expect(group.textContent).toContain("Bots (2)");
+  // People first: the bots are one tab away, not hidden under a long list.
+  const rows = () =>
+    [...host.querySelectorAll("aside button[aria-pressed]")].map((b) => b.textContent ?? "");
+  expect(rows().some((r) => r.includes("Ana Souza"))).toBe(true);
+  expect(rows().some((r) => r.includes("Drafter"))).toBe(false);
+  await typeInto(host.querySelector('aside input[type="search"]'), "draft");
+  expect(rows().some((r) => r.includes("Drafter"))).toBe(true);
+  expect(rows().some((r) => r.includes("Ana Souza"))).toBe(false);
+});
+
+test("cancelling the question leaves the private bot private and the seat as it was", async () => {
+  const host = await seatPage(S(3), true);
+  await click(buttons(host, "Assign a person or a bot")[0]);
+  await openBots(host);
+  await click(buttons(host, "Drafter").find((b) => b.getAttribute("aria-pressed") !== null));
+  await click(buttons(host, "Cancel")[0]);
+  expect(text(host)).not.toContain("Share Drafter with the team?");
+  expect(writes).toEqual([]);
+});
+
+test("adding a seat asks who first, then the role, and one write makes the seat and fills it", async () => {
+  const host = await seatPage(S(2), true);
+  await click(buttons(host, "Add a seat under this one")[0]);
+  const form = host.querySelector('section[aria-label="Add a seat under CTO"]')!;
+  // The role step cannot be finished before somebody (or nobody) is chosen.
+  const add = () => buttons(host, "Add seat")[0] as unknown as HTMLButtonElement;
+  await typeInto(form.querySelector("input[name='title'], input:not([type='search'])"), "Reviewer");
+  expect(add().disabled).toBe(true);
+  await openBots(host);
+  await click(buttons(host, "Scribe").find((b) => b.getAttribute("aria-pressed") !== null));
+  expect(add().disabled).toBe(false);
+  await click(add());
+  expect(writes).toEqual([
+    {
+      call: "POST /api/org/positions",
+      body: {
+        expectedVersion: 4,
+        parentId: S(2),
+        title: "Reviewer",
+        rank: "member",
+        holder: { kind: "bot", botId: BOT },
+      },
+    },
+  ]);
+});
+
+test("a new seat can be left open, and then it is made without a holder", async () => {
+  const host = await seatPage(S(2), true);
+  await click(buttons(host, "Add a seat under this one")[0]);
+  await click(buttons(host, "Leave it open")[0]);
+  const form = host.querySelector('section[aria-label="Add a seat under CTO"]')!;
+  await typeInto(form.querySelector("input:not([type='search'])"), "Intern");
+  await click(buttons(host, "Add seat")[0]);
+  expect(writes.at(-1)!.body).toEqual({
+    expectedVersion: 4,
+    parentId: S(2),
+    title: "Intern",
+    rank: "member",
+  });
+});
+
+test("a private bot chosen for a new seat is shared when the seat is saved", async () => {
+  const host = await seatPage(S(2), true);
+  await click(buttons(host, "Add a seat under this one")[0]);
+  await openBots(host);
+  await click(buttons(host, "Drafter").find((b) => b.getAttribute("aria-pressed") !== null));
+  await click(buttons(host, "Share and choose")[0]);
+  expect(writes).toEqual([]);
+  expect(text(host)).toContain("Drafter will be shared with the team when you add the seat.");
+  const form = host.querySelector('section[aria-label="Add a seat under CTO"]')!;
+  await typeInto(form.querySelector("input:not([type='search'])"), "Copy editor");
+  await click(buttons(host, "Add seat")[0]);
+  expect(writes.at(-1)!.body).toMatchObject({
+    holder: { kind: "bot", botId: PRIVATE_BOT },
+    shareBot: "team",
+  });
+});
+
+test("the admin removes a seat after being asked, and the panel closes", async () => {
+  const seen: object[] = [];
+  current = view(true);
+  const host = await organization({ view: "list", focus: S(4) }, (next) => void seen.push(next));
+  await click(buttons(host, "Remove this seat")[0]);
+  expect(writes).toEqual([]);
+  expect(text(host)).toContain("Remove Developer?");
+  await click(buttons(host, "Remove").find((b) => b.textContent === "Remove"));
+  expect(writes).toEqual([
+    { call: `DELETE /api/org/positions/${S(4)}?expectedVersion=4`, body: undefined },
+  ]);
+  // The seat under it is gone: the manager is selected next.
+  expect(seen.at(-1)).toEqual({ view: "list", focus: S(2) });
+});
+
+test("closing the panel clears the seat from the address", async () => {
+  const seen: object[] = [];
+  const host = await organization({ view: "list", focus: S(2) }, (next) => void seen.push(next));
+  await click(named(host, "Close the seat")[0]);
+  expect(seen).toEqual([{ view: "list" }]);
+});
+
+test("Enter in the search goes to the first seat it found, then the next", async () => {
+  const seen: object[] = [];
+  const host = await organization({ view: "list", q: "c" }, (next) => void seen.push(next));
+  const input = host.querySelector('input[type="search"]')!;
+  const enter = () =>
+    act(
+      async () =>
+        void input.dispatchEvent(
+          new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as never,
+        ),
+    );
+  expect(text(host)).toContain("3 found");
+  await enter();
+  expect(seen).toEqual([{ view: "list", q: "c", focus: S(1) }]);
 });
 
 test("a search from the address points out the seats that match and dims the rest", async () => {
@@ -215,54 +429,6 @@ test("a branch folds away and comes back", async () => {
   );
   await click(named(host, "Show what is under CTO")[0]);
   expect(text(host)).toContain("Developer");
-});
-
-test("a seat's page reads for a reader: the line above it, its words, who holds it, no form", async () => {
-  const host = await seatPage(S(2));
-  const t = text(host);
-  expect(host.querySelector('nav[aria-label="Reporting line"]')).not.toBeNull();
-  expect(t).toContain("Owns the technology.");
-  expect(t).toContain("Scribe");
-  expect(t).toContain("How this kind of seat works");
-  expect(host.querySelectorAll("input")).toHaveLength(0);
-  expect(buttons(host, "Remove this seat")).toHaveLength(0);
-  // The developer reports to it.
-  expect(t).toContain("Developer");
-});
-
-test("an open seat explains why, on its page", async () => {
-  const host = await seatPage(S(3));
-  expect(text(host)).toContain("Rui Lima is no longer a member, so this seat is open.");
-});
-
-test("the admin changes who holds a seat; the write carries the version they saw", async () => {
-  current = view(true);
-  const host = await seatPage(S(3));
-  const radios = [
-    ...host.querySelectorAll('input[name="holder"]'),
-  ] as unknown as HTMLInputElement[];
-  // Nobody, one person, one bot.
-  expect(radios).toHaveLength(3);
-  await click(radios[1]);
-  await click(buttons(host, "Save who holds it")[0]);
-  expect(writes).toEqual([
-    {
-      call: `PUT /api/org/positions/${S(3)}/seat`,
-      body: { expectedVersion: 4, holder: { kind: "person", userId: "u1" } },
-    },
-  ]);
-});
-
-test("the admin removes a seat after being asked", async () => {
-  current = view(true);
-  const host = await seatPage(S(4));
-  await click(buttons(host, "Remove this seat")[0]);
-  expect(writes).toEqual([]);
-  expect(text(host)).toContain("Remove Developer?");
-  await click(buttons(host, "Remove").find((b) => b.textContent === "Remove"));
-  expect(writes).toEqual([
-    { call: `DELETE /api/org/positions/${S(4)}?expectedVersion=4`, body: undefined },
-  ]);
 });
 
 test("the top of the page says what the chart changes", async () => {

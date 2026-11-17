@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
 import type { Receipt } from "./chat-client";
-import { uniqueReceipts } from "./receipts";
+import { groupReceipts, uniqueReceipts } from "./receipts";
 
 const task = (id: string, text: string, rest: Partial<Receipt> = {}): Receipt => ({
   kind: "task",
@@ -57,4 +57,36 @@ test("a handed-over task keeps its assignee when the same task is assigned again
     task("a", "T", { created: false, assignee, doneWhen: "tests and lint pass" }),
   ]);
   expect(r).toMatchObject({ assignee, doneWhen: "tests and lint pass", created: true });
+});
+
+test("several tasks the bot updated fold into one group, in the place of the first", () => {
+  const groups = groupReceipts([
+    task("a", "One", { created: false }),
+    { kind: "artifact", id: "x", text: "A page" },
+    task("b", "Two", { created: false }),
+    task("c", "Three", { created: false }),
+  ]);
+  expect(groups.map((g) => [g.kind, g.created, g.items.map((r) => r.id)])).toEqual([
+    ["task", false, ["a", "b", "c"]],
+    ["artifact", true, ["x"]],
+  ]);
+});
+
+test("tasks that were added and tasks that were updated are two groups: the verb differs", () => {
+  const groups = groupReceipts([
+    task("a", "One", { created: true }),
+    task("b", "Two", { created: false }),
+    task("c", "Three"),
+  ]);
+  // A receipt without `created` counts as made, like the chip says "added".
+  expect(groups.map((g) => [g.created, g.items.length])).toEqual([
+    [true, 2],
+    [false, 1],
+  ]);
+});
+
+test("kinds that carry their own controls are never folded", () => {
+  const memory = (id: string): Receipt => ({ kind: "memory", id, text: id, created: false });
+  const groups = groupReceipts([memory("a"), memory("b")]);
+  expect(groups.map((g) => g.items.length)).toEqual([1, 1]);
 });

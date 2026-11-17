@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { DEFAULT_SPEECH_SETTINGS } from "@zetta/core/speech";
 import { createApp } from "../../app";
 import { createIdentityAccess } from "../identity/access";
 import type { UpdateChecker } from "../updates/checker";
@@ -18,6 +19,10 @@ function app(updates?: UpdateChecker) {
     transcribeLanguage: "",
     transcribeBaseUrl: "",
     transcribeConnectionId: null,
+    ...DEFAULT_SPEECH_SETTINGS,
+    speechConnectionId: null,
+    pushPublicKey: null,
+    pushConnectionId: null,
     updateCheck: "on",
   };
   const auth = {
@@ -79,6 +84,9 @@ describe("installation settings", () => {
       transcribeLanguage: "",
       transcribeBaseUrl: "",
       transcribeKey: "none",
+      // Speech out starts on the device's own voice; push has no key yet. The ids of the sealed keys are never in the answer.
+      ...DEFAULT_SPEECH_SETTINGS,
+      pushPublicKey: null,
       updateCheck: "on",
       restartRequired: true,
     });

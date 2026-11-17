@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { DEFAULT_PUSH_MODE, type PushMode } from "@zetta/core/push";
 import { toast } from "@/lib/notify";
 
 import { ApiError, call } from "../chat/chat-client";
@@ -45,6 +46,8 @@ export type Preferences = {
   /** How hours show everywhere in the app. */
   timeFormat: TimeFormat;
   approvalMode: ApprovalMode;
+  /** What may wake this phone with a push: everything, a mention or a decision waiting, or nothing. */
+  pushMode: PushMode;
   /** Null = never chosen on the account: the device keeps its own light/dark choice. */
   theme: Theme | null;
   /** `#rrggbb`. Null = the theme's own main color. */
@@ -73,6 +76,7 @@ const DEFAULTS: Preferences = {
   listWidth: SIDEBAR_LIMITS.listWidth.fallback,
   timeFormat: DEFAULT_TIME_FORMAT,
   approvalMode: DEFAULT_APPROVAL_MODE,
+  pushMode: DEFAULT_PUSH_MODE,
   theme: null,
   primaryColor: null,
   botOrder: [],

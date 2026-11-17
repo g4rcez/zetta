@@ -42,8 +42,9 @@ services:
         # Which version this image is: the commit and its date. install.sh sets them from git; without them Zetta reports "Version unknown".
         ZETTA_BUILD_COMMIT: ${ZETTA_BUILD_COMMIT:-}
         ZETTA_BUILD_DATE: ${ZETTA_BUILD_DATE:-}
-        # The agent CLIs bots run on, installed in the image: claude-code, codex, both (the default) or none.
-        ZETTA_AGENTS: ${ZETTA_AGENTS:-claude-code codex}
+        # The agent CLIs to put in the image: claude-code, codex, both ("claude-code codex") or none (the default: each is 300 to 430 MB, and the server does
+        # not use a copy you already have on this computer). install.sh --agents sets it.
+        ZETTA_AGENTS: ${ZETTA_AGENTS:-}
     init: true
     ports:
       # The raw API is for this computer only; people reach Zetta through the web container above. Set ZETTA_API_BIND=0.0.0.0 to open it.

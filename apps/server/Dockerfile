@@ -7,11 +7,13 @@ RUN --mount=type=secret,id=web_env,target=/app/apps/web/.env.local --mount=type=
 ENV NODE_ENV=production
 RUN --mount=type=secret,id=web_env,target=/app/apps/web/.env.local --mount=type=secret,id=server_env,target=/app/apps/server/.env.local cd apps/server && bun run build
 
-# The agent CLIs bots run on (Claude Code, Codex). They are Node programs and the runtime image below has no Node, so they are installed here and
-# copied in with the node binary. ZETTA_AGENTS picks which ones: "claude-code codex" (the default), either one, or "none" to leave them out
-# (the engines then read "Not installed" in Studio). Versions are pinned; Claude Code matches docker/harness/Dockerfile.
+# The agent CLIs bots run on (Claude Code, Codex) are NOT in the image by default: each is a native binary of 300 to 430 MB, a person usually
+# uses one of them, and the server does not use the copy they already have on their computer. ZETTA_AGENTS puts the ones you list in
+# the image: "claude-code", "codex", both ("claude-code codex") or empty / "none" for neither (the engines then read "Not installed" in Studio).
+# install.sh --agents sets it. They are Node programs and the runtime image below has no Node, so they are installed here and copied in with the
+# node binary, and only when at least one is asked for. Versions are pinned; Claude Code matches docker/harness/Dockerfile.
 FROM node:22-slim AS agents
-ARG ZETTA_AGENTS="claude-code codex"
+ARG ZETTA_AGENTS=""
 ARG CLAUDE_CODE_VERSION=2.1.312
 ARG CODEX_VERSION=0.163.0
 RUN set -eu; packages=""; \
@@ -23,9 +25,12 @@ RUN set -eu; packages=""; \
         *) echo "unknown agent: $agent (use claude-code, codex or none)" >&2; exit 1 ;; \
       esac; \
     done; \
-    mkdir -p /opt/agents/bin; \
-    if [ -n "$packages" ]; then npm install -g --prefix /opt/agents $packages; fi; \
-    npm cache clean --force
+    mkdir -p /out/bin; \
+    if [ -n "$packages" ]; then \
+      npm install -g --prefix /out $packages; \
+      cp /usr/local/bin/node /out/bin/node; \
+      npm cache clean --force; \
+    fi
 
 FROM oven/bun:1 AS runner
 WORKDIR /app
@@ -61,9 +66,9 @@ RUN set -eu; [ "$VAULT_CLIS" = "1" ] || exit 0; \
 # secret never reaches the bot (apps/server/src/modules/computer/machine-runner.ts). No daemon runs; they start for one call.
 # ffmpeg turns the voice notes people send through Telegram or WhatsApp (OGG/Opus) into samples the speech model reads (modules/transcribe).
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssh-client ffmpeg && rm -rf /var/lib/apt/lists/*
-# The agent CLIs from the stage above, and the node binary they run on. Their sign-ins are kept in HOME, which docker-compose.yml puts on a volume.
-COPY --from=agents /usr/local/bin/node /usr/local/bin/node
-COPY --from=agents /opt/agents /opt/agents
+# The agent CLIs from the stage above (none by default) and the node binary they run on. Their sign-ins are kept in HOME, which
+# docker-compose.yml puts on a volume.
+COPY --from=agents /out /opt/agents
 ENV PATH="/opt/agents/bin:${PATH}"
 COPY --from=builder /app /app
 

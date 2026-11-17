@@ -178,7 +178,7 @@ test("the details read as Markdown: clickable links, the new labels, and no form
   const go = [...dialog!.querySelectorAll("button")].find((b) =>
     b.textContent?.includes("Open link"),
   );
-  await click(go);
+  await click(go as unknown as Element | undefined);
   (win as unknown as { open: unknown }).open = open;
   expect(opened).toHaveLength(1);
   expect(String(opened[0]![1])).toBe("_blank");

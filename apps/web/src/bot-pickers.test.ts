@@ -7,12 +7,7 @@ import { expect, test } from "bun:test";
 // or as `<option value={b.id}>{b.name}</option>`: those options carry the name only.
 
 /** Files that still build a name-only bot list on purpose. Each entry says who removes it. */
-const PENDING: Record<string, string> = {
-  // Pending: team T3 replaces the two bot selects of the routine form with BotSelect (feedback plan, item E and D).
-  "features/routines/routines.tsx": "routine form",
-  // Pending: team T2 replaces the "Bot to copy" select of the bot wizard with BotSelect (feedback plan, item E).
-  "features/bots/bot-onboarding.tsx": "bot wizard, copy a bot",
-};
+const PENDING: Record<string, string> = {};
 
 // The list a `.map(` runs over: it names the bots. `bots`, `(bots ?? [])`, `others`, `mine`, `specialists`.
 const BOT_LIST =

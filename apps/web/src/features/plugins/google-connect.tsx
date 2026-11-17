@@ -114,6 +114,7 @@ const SCOPES: { id: string; label: string; group: string }[] = [
   { id: "gmail.send", group: "Gmail", label: "Send email" },
   { id: "calendar.events.readonly", group: "Calendar", label: "Read events" },
   { id: "calendar.events", group: "Calendar", label: "Create and edit events" },
+  { id: "calendar.readonly", group: "Calendar", label: "See your calendars and when you are busy" },
   { id: "drive.readonly", group: "Drive", label: "Read all files" },
   { id: "drive.file", group: "Drive", label: "Only files created or opened with Zetta" },
   { id: "documents.readonly", group: "Docs", label: "Read documents" },

@@ -15,6 +15,7 @@ import { BOT_ROLE_MAX, botRole } from "@zetta/core/bot-role";
 import { UNVERIFIED_ENGINES } from "@zetta/core/maturity";
 import { AdvancedSection } from "@/components/advanced-section";
 import { BotAvatar, type AvatarValue } from "@/components/bot-avatar";
+import { BotSelect } from "@/components/bot-select";
 import { Button, Input, Progress, Select } from "@/components/ui";
 import "../code/register";
 import "../computer/register";
@@ -32,7 +33,7 @@ import { OutputStylePicker } from "../output-styles/output-style-picker";
 import { styleLabel } from "../output-styles/output-styles-api";
 import { MentionTextarea } from "../chat/mention";
 import { useSidebarData } from "../chat/sidebar-data";
-import { Badge, Choice, field } from "../shared/ui";
+import { Badge, Choice } from "../shared/ui";
 import { harnessQueries } from "../studio/studio-queries";
 import { usePlugins } from "../plugins/plugins-api";
 import {
@@ -889,21 +890,15 @@ function StartStep({
               label="Or copy one of your bots"
               hint="Copies its personality, instructions and engine."
             >
-              <select
-                aria-label="Bot to copy"
-                className={`${field} max-w-md ${copying ? "border-primary" : ""}`}
-                value={copying ? origin : ""}
-                onChange={(e) => e.target.value && onChoose(e.target.value)}
-              >
-                <option value="" disabled>
-                  Choose a bot…
-                </option>
-                {bots.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+              <div className="max-w-md">
+                <BotSelect
+                  label="Bot to copy"
+                  placeholder="Choose a bot…"
+                  bots={bots}
+                  value={copying ? origin : ""}
+                  onChange={(botId) => botId && onChoose(botId)}
+                />
+              </div>
             </Group>
           )}
         </div>

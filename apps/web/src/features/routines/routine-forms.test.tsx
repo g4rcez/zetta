@@ -53,9 +53,12 @@ globalThis.fetch = (async (input: URL | string, init?: RequestInit) => {
 const bots = [{ id: "b1", name: "Digest bot", kind: "specialist" }] as unknown as Bot[];
 const settle = () => act(async () => void (await new Promise((r) => setTimeout(r, 40))));
 const text = () => win.document.body.textContent ?? "";
-const click = async (el: Element | null | undefined, what: string) => {
+const click = async (target: unknown, what: string) => {
+  const el = target as Element | null | undefined;
   if (!el) throw new Error(`no ${what} in: ${text().slice(0, 400)}`);
-  await act(async () => void el.dispatchEvent(new win.MouseEvent("click", { bubbles: true })));
+  await act(
+    async () => void el.dispatchEvent(new win.MouseEvent("click", { bubbles: true }) as never),
+  );
   await settle();
 };
 const press = (label: string) =>
@@ -70,7 +73,9 @@ const fill = (name: string, value: string) => {
   Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value")!.set!.call(el, value);
 };
 const send = async (label: string) => {
-  const form = win.document.querySelector(`form[aria-label="${label}"]`) as HTMLFormElement;
+  const form = win.document.querySelector(
+    `form[aria-label="${label}"]`,
+  ) as unknown as HTMLFormElement;
   await act(
     async () =>
       void form.dispatchEvent(
@@ -88,19 +93,17 @@ async function mount(which: "new" | "edit", routine?: Record<string, unknown>) {
   const { createRoot } = await import("react-dom/client");
   const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } =
     await import("@tanstack/react-router");
-  const { NewRoutineForm, EditForm } = await import("./routines");
+  const { RoutineForm } = await import("./routine-form");
   const saved: unknown[] = [];
-  const element =
-    which === "new" ? (
-      <NewRoutineForm bots={bots} flows={[]} onCreated={(r) => saved.push(r)} onClose={() => {}} />
-    ) : (
-      <EditForm
-        routine={routine as never}
-        bots={bots}
-        onSaved={() => saved.push("saved")}
-        onCancel={() => {}}
-      />
-    );
+  const element = (
+    <RoutineForm
+      bots={bots}
+      flows={[{ id: "w1", name: "Weekly digest flow" }]}
+      routine={which === "edit" ? (routine as never) : undefined}
+      onSaved={(r) => saved.push(which === "new" ? r : "saved")}
+      onCancel={() => {}}
+    />
+  );
   const router = createRouter({
     routeTree: createRootRoute({
       component: () => (
@@ -226,27 +229,39 @@ test("changing the mode clears what was previewed for the other one", async () =
   expect(text()).not.toContain("Understood as");
 });
 
-test("editing a weekday routine: the box shows its schedule as an example, and the time field is still there", async () => {
+test("editing a weekday routine: the form says what it is now, and its time field is filled in", async () => {
   await mount("edit", weekdayRoutine);
-  const box = win.document.querySelector('[name="when"]') as HTMLInputElement;
-  expect(box).toBeTruthy();
-  expect(box.value).toBe("");
-  expect(box.getAttribute("placeholder")).toBe("weekdays at 08:44");
-  expect(win.document.querySelector('[name="dailyAt"]')).toBeTruthy();
+  expect(text()).toContain("Now: weekdays at 08:44");
+  const time = win.document.querySelector('[name="dailyAt"]') as unknown as HTMLInputElement;
+  expect(time.value).toBe("08:44");
+  expect(win.document.querySelector('[name="scheduleText"]')).toBeNull();
+  // The date of a one-time routine is the only thing that has no radio while editing.
+  expect(win.document.querySelectorAll('input[type="radio"][name="mode"]')).toHaveLength(3);
 });
 
-test("editing with the box empty sends the time field, as before", async () => {
+test("saving without touching the schedule sends the time field, as before, with the bot and the title", async () => {
   await mount("edit", weekdayRoutine);
   await send("Edit Digest");
   const patched = lastCall("/api/routines/r1")!;
   expect(patched.method).toBe("PATCH");
-  expect(patched.body).toMatchObject({ expectedVersion: 3, dailyAt: "08:44", timezone: "UTC" });
+  expect(patched.body).toMatchObject({
+    expectedVersion: 3,
+    dailyAt: "08:44",
+    timezone: "UTC",
+    botId: "b1",
+    title: "Digest",
+    prompt: "Write it.",
+  });
   expect(patched.body).not.toHaveProperty("when");
 });
 
 test("editing with words sends them instead of the time field", async () => {
   const { saved } = await mount("edit", weekdayRoutine);
-  fill("when", "every day at 7am");
+  await click(
+    win.document.querySelectorAll('input[type="radio"][name="mode"]')[0] as unknown as Element,
+    "the Describe it radio",
+  );
+  fill("scheduleText", "every day at 7am");
   await send("Edit Digest");
   const patched = lastCall("/api/routines/r1")!;
   expect(patched.body).toMatchObject({
@@ -256,6 +271,56 @@ test("editing with words sends them instead of the time field", async () => {
   });
   expect(patched.body).not.toHaveProperty("dailyAt");
   expect(saved).toEqual(["saved"]);
+});
+
+test("the time zone is one line with Change; Change shows the field and what is typed is sent", async () => {
+  await mount("edit", weekdayRoutine);
+  expect(text()).toContain("Time zone: UTC");
+  expect(win.document.querySelector('input[type="text"][name="timezone"]')).toBeNull();
+  await press("Change");
+  fill("timezone", "Europe/Lisbon");
+  await send("Edit Digest");
+  expect(lastCall("/api/routines/r1")!.body).toMatchObject({ timezone: "Europe/Lisbon" });
+});
+
+test("a new routine starts in the browser's time zone", async () => {
+  await mount("new");
+  const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  expect(text()).toContain(`Time zone: ${here}`);
+  fill("title", "Digest");
+  fill("scheduleText", "Monday to Friday at 8:30");
+  await send("New routine");
+  expect(lastCall("/api/routines")!.body).toMatchObject({ timezone: here });
+});
+
+test("the workflow select and the cron examples sit under Advanced, folded in Simple", async () => {
+  await mount("new");
+  const details = win.document.querySelector(
+    '[data-component="advanced-section"]',
+  ) as unknown as HTMLDetailsElement;
+  expect(details).toBeTruthy();
+  expect(details.hasAttribute("open")).toBe(false);
+  expect(details.textContent).toContain("Run a workflow instead");
+  expect(details.textContent).toContain("0 9 * * 1-5");
+  expect(details.querySelector('[name="workflowId"]')).toBeTruthy();
+  // The default view is the bot, the title, the instructions, the schedule and the buttons: nothing else sits outside it.
+  const outside = [...win.document.querySelectorAll("form [name]")].filter(
+    (el) => !details.contains(el as never),
+  );
+  expect(outside.map((el) => el.getAttribute("name"))).toEqual(
+    expect.arrayContaining(["botId", "title", "prompt", "scheduleText", "timezone"]),
+  );
+  expect(outside.map((el) => el.getAttribute("name"))).not.toContain("workflowId");
+});
+
+test("a workflow picked under Advanced is sent with the routine", async () => {
+  await mount("new");
+  fill("title", "Digest");
+  fill("scheduleText", "Monday to Friday at 8:30");
+  const select = win.document.querySelector('[name="workflowId"]') as unknown as HTMLInputElement;
+  select.value = "w1";
+  await send("New routine");
+  expect(lastCall("/api/routines")!.body).toMatchObject({ workflowId: "w1" });
 });
 
 test("a one-time routine has no schedule text to edit", async () => {

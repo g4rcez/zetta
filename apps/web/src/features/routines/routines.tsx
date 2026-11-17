@@ -1,26 +1,34 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { CaretRightIcon, ChatIcon, PlusIcon, WarningIcon } from "@phosphor-icons/react";
+import {
+  ChatIcon,
+  ClockCounterClockwiseIcon,
+  DotsThreeIcon,
+  LightningIcon,
+  PauseIcon,
+  PencilSimpleIcon,
+  PlayIcon,
+  PlusIcon,
+  TrashIcon,
+  WarningIcon,
+} from "@phosphor-icons/react";
 import { RoutineCalendar } from "./routine-calendar";
 import { RoutineTimeline } from "./routine-timeline";
 import type { RoutinesSearch } from "./routines-search";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Button, Input, Radiobox, Select } from "@/components/ui";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ActionHint } from "@/components/action-hint";
+import { BotIdentity } from "@/components/bot-identity";
+import { Button, MENU_DANGER, Menu, MenuItem, MenuSeparator, Modal } from "@/components/ui";
+import { botRole } from "@zetta/core/bot-role";
 
 import { ApiError, call, errorMessage, type Bot } from "../chat/chat-client";
-import { MentionTextarea } from "../chat/mention";
-import { RoutineTriggers, runOrigin } from "./routine-triggers";
-import { Badge, ConfirmButton, Empty, Modal, list, listItem, useList, when } from "../shared/ui";
+import { runOrigin } from "./routine-triggers";
+import { Badge, Empty, list, listItem, when } from "../shared/ui";
 import { relativeTime } from "../shared/relative-time";
 import { summarize } from "../studio/routine-format";
 import { refreshAttention, useRoutineUnreadChats } from "../attention/summary";
-import {
-  buildSchedule,
-  describeSchedule,
-  scheduleText,
-  type ScheduleMode,
-} from "../studio/routine-schedule";
+import { describeSchedule } from "../studio/routine-schedule";
 import { Alert } from "@g4rcez/components/alert";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
@@ -101,7 +109,6 @@ export type Run = {
   /** What started a webhook or event run (a body, a mail, a state change): outside data. */
   event?: unknown;
 };
-type Flow = { id: string; name: string };
 const NO_RUNS: Run[] = [];
 
 export const RUN_STATUS: Record<Run["status"], string> = {
@@ -127,7 +134,6 @@ export const ROUTINE_STATUS: Record<
   completed: { label: "Completed", tone: "neutral" },
 };
 const human = (s: string) => s.replace(/_/g, " ");
-const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 export function NextRuns({ runs }: { runs: string[] }) {
   const tf = useTimeFormat();
@@ -346,531 +352,197 @@ export function History({ routineId }: { routineId: string }) {
   );
 }
 
-export function EditForm({
-  routine,
-  bots,
-  onSaved,
-  onCancel,
-}: {
-  routine: Routine;
-  bots: Bot[];
-  onSaved: () => void;
-  onCancel: () => void;
-}) {
-  const [error, setError] = useState<string>();
-  async function save(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    setError(undefined);
-    const body: Record<string, unknown> = {
-      expectedVersion: routine.version,
-      botId: f.get("botId"),
-      title: f.get("title"),
-      prompt: f.get("prompt"),
-      timezone: f.get("timezone"),
-    };
-    // A schedule written in words replaces the time fields; the server reads it in the timezone sent with it.
-    const when = String(f.get("when") ?? "").trim();
-    if (when) body.when = when;
-    else if (routine.dailyAt) body.dailyAt = f.get("dailyAt");
-    else if (routine.everyMinutes) body.everyMinutes = Number(f.get("everyMinutes"));
-    try {
-      await call(`/api/routines/${routine.id}`, "PATCH", body);
-      onSaved();
-    } catch (x) {
-      setError(
-        x instanceof ApiError && x.code === "STALE_VERSION"
-          ? "This routine was changed somewhere else. Close this form to reload, then try again."
-          : errorMessage(x),
-      );
-    }
-  }
-  return (
-    <form
-      onSubmit={(e) => void save(e)}
-      className="mt-2 grid gap-2 rounded-lg border bg-card p-4 sm:grid-cols-2"
-      aria-label={`Edit ${routine.title}`}
-    >
-      <Select
-        title="Bot"
-        required={false}
-        name="botId"
-        defaultValue={routine.botId}
-        options={bots.map((b) => ({ value: b.id, label: b.name }))}
-      />
-      <Input title="Title" name="title" defaultValue={routine.title} required maxLength={120} />
-      <MentionTextarea
-        title="What should it do?"
-        className="sm:col-span-2"
-        name="prompt"
-        bots={bots}
-        defaultValue={routine.prompt}
-        required
-        rows={2}
-      />
-      {routine.dailyAt && (
-        <Input
-          title="Time of day"
-          name="dailyAt"
-          type="time"
-          defaultValue={routine.dailyAt}
-          required
-        />
-      )}
-      {!routine.dailyAt && routine.everyMinutes && (
-        <Input
-          title="Every how many minutes"
-          name="everyMinutes"
-          type="number"
-          min={5}
-          max={10080}
-          defaultValue={routine.everyMinutes}
-          required
-        />
-      )}
-      {routine.kind !== "once" && (
-        <Input
-          title="Or describe a new schedule (optional)"
-          name="when"
-          autoComplete="off"
-          placeholder={scheduleText(routine) || WHEN_EXAMPLES}
-          container="sm:col-span-2"
-          required={false}
-        />
-      )}
-      <Input title="Timezone" name="timezone" defaultValue={routine.timezone} required />
-      {routine.kind === "once" && (
-        <p className="text-xs text-muted-foreground sm:col-span-2">
-          The date of a one-time routine cannot be changed. Create a new routine for another date.
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="text-destructive sm:col-span-2">
-          {error}
-        </p>
-      )}
-      <div className="flex gap-2 sm:col-span-2">
-        <Button type="submit" size="sm">
-          Save changes
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </form>
-  );
-}
-
 const NEEDS_ATTENTION: RoutineStatus[] = ["failed", "interrupted", "blocked"];
-type View = "history" | "triggers" | "edit" | "activate";
-const WHEN_EXAMPLES = "Monday to Friday at 8:30 · every 15 minutes · tomorrow at 5pm · 0 9 * * 1-5";
 
 export const statusOf = (r: Routine): RoutineStatus =>
   r.status ?? (r.paused ? "paused" : "scheduled");
 
-/** Creating a routine is one focused task, so it gets its own dialog instead of sitting above the list. */
-export function NewRoutineForm({
-  bots,
-  flows,
-  onCreated,
-  onClose,
-}: {
-  bots: Bot[];
-  flows: Flow[];
-  onCreated: (r: Routine) => void;
-  onClose: () => void;
-}) {
-  const [mode, setMode] = useState<ScheduleMode>("text");
-  const [nextRuns, setNextRuns] = useState<string[]>();
-  // What the server understood the written schedule as, and anything it had to assume, shown next to the next runs.
-  const [understood, setUnderstood] = useState<{ text: string; assumed: string | null }>();
-  const [formError, setFormError] = useState<string>();
-  const schedule = (f: FormData) =>
-    buildSchedule({
-      mode,
-      timezone: String(f.get("timezone") ?? "") || localTz(),
-      dailyAt: String(f.get("dailyAt") ?? ""),
-      everyMinutes: String(f.get("everyMinutes") ?? ""),
-      onceLocal: String(f.get("onceLocal") ?? ""),
-      text: String(f.get("scheduleText") ?? ""),
+/** What a row's "More actions" menu can do. The list provides them, so every action stays one click away from the row. */
+type RowActions = {
+  onActivate: () => void;
+  onPause: () => void;
+  onDelete: () => void;
+};
+
+/**
+ * The one "More actions" menu of a routine row: the chat, the history, the triggers, editing, pause or activate, and delete. History,
+ * Triggers and Edit are on the routine's own page; the menu takes the person there.
+ */
+function RoutineMenu({ r, actions }: { r: Routine; actions: RowActions }) {
+  const navigate = useNavigate();
+  const name = `More actions for ${r.title}`;
+  const open = (hash?: string, edit?: "on") =>
+    void navigate({
+      to: "/routines/$routineId",
+      params: { routineId: r.id },
+      search: edit ? { edit } : {},
+      hash,
     });
-  async function preview(form: HTMLFormElement) {
-    setFormError(undefined);
-    setNextRuns(undefined);
-    setUnderstood(undefined);
-    const s = schedule(new FormData(form));
-    if (!s.ok) return setFormError(s.problem);
-    try {
-      const r = await call<{ nextRuns: string[]; understood?: string; assumed?: string | null }>(
-        "/api/routines/preview",
-        "POST",
-        s.value,
-      );
-      setNextRuns(r.nextRuns);
-      if (r.understood) setUnderstood({ text: r.understood, assumed: r.assumed ?? null });
-    } catch (e) {
-      setFormError(errorMessage(e));
-    }
-  }
-  async function create(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setFormError(undefined);
-    const f = new FormData(e.currentTarget),
-      s = schedule(f);
-    if (!s.ok) return setFormError(s.problem);
-    const workflowId = String(f.get("workflowId") ?? "");
-    try {
-      const r = await call<{ routine: Routine }>("/api/routines", "POST", {
-        botId: f.get("botId"),
-        title: f.get("title"),
-        prompt: f.get("prompt"),
-        ...s.value,
-        ...(workflowId ? { workflowId } : {}),
-        // Switched on at once: a routine left paused runs only when "Run now" is pressed, which reads as "it ran once and stopped".
-        activate: "on",
-      });
-      onCreated(r.routine);
-    } catch (x) {
-      setFormError(errorMessage(x));
-    }
-  }
   return (
-    <form
-      onSubmit={(e) => void create(e)}
-      className="grid gap-3 sm:grid-cols-2"
-      aria-label="New routine"
+    <Menu
+      asChild
+      hover={false}
+      title=""
+      floatingClassName="w-56"
+      label={
+        <ActionHint label={name}>
+          <button
+            type="button"
+            aria-label={name}
+            className="flex size-8 shrink-0 touch-manipulation items-center justify-center rounded-md border text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-open:bg-muted"
+          >
+            <DotsThreeIcon aria-hidden="true" className="size-4" />
+          </button>
+        </ActionHint>
+      }
     >
-      <Select
-        title="Bot"
-        name="botId"
-        required
-        options={bots.map((b) => ({ value: b.id, label: b.name }))}
-      />
-      <Input title="Title" name="title" required maxLength={120} />
-      <MentionTextarea
-        title="What should it do?"
-        className="sm:col-span-2"
-        name="prompt"
-        bots={bots}
-        required
-        rows={3}
-      />
-      <fieldset className="sm:col-span-2">
-        <legend className="text-sm">When</legend>
-        <div className="flex flex-wrap gap-3 text-sm">
-          {(
-            [
-              ["text", "Describe it"],
-              ["daily", "Every day"],
-              ["interval", "Every few minutes"],
-              ["once", "Once"],
-            ] as const
-          ).map(([v, l]) => (
-            <Radiobox
-              key={v}
-              name="mode"
-              checked={mode === v}
-              onChange={() => {
-                setMode(v);
-                setNextRuns(undefined);
-                setUnderstood(undefined);
-              }}
-            >
-              {l}
-            </Radiobox>
-          ))}
-        </div>
-      </fieldset>
-      {mode === "text" && (
-        <div className="sm:col-span-2">
-          <Input
-            title="When should it run?"
-            name="scheduleText"
-            autoComplete="off"
-            required
-            maxLength={200}
-            placeholder="Monday to Friday at 8:30"
-          />
-          <p className="mt-1 text-xs text-muted-foreground">
-            Say it in words or write a cron. For example: {WHEN_EXAMPLES}
-          </p>
-        </div>
+      <MenuItem
+        title="Open chat"
+        disabled={!r.conversationId}
+        onClick={() =>
+          void navigate({
+            to: "/chat/{-$chatId}",
+            params: { chatId: r.conversationId ?? undefined },
+          })
+        }
+      >
+        <ChatIcon aria-hidden="true" />
+        Open chat
+      </MenuItem>
+      <MenuItem title="History" onClick={() => open("routine-runs")}>
+        <ClockCounterClockwiseIcon aria-hidden="true" />
+        History
+      </MenuItem>
+      <MenuItem title="Triggers" onClick={() => open("routine-triggers")}>
+        <LightningIcon aria-hidden="true" />
+        Triggers
+      </MenuItem>
+      <MenuItem title="Edit" onClick={() => open(undefined, "on")}>
+        <PencilSimpleIcon aria-hidden="true" />
+        Edit
+      </MenuItem>
+      <MenuSeparator />
+      {r.paused ? (
+        <MenuItem title="Activate…" onClick={actions.onActivate}>
+          <PlayIcon aria-hidden="true" />
+          Activate…
+        </MenuItem>
+      ) : (
+        <MenuItem title="Pause" onClick={actions.onPause}>
+          <PauseIcon aria-hidden="true" />
+          Pause
+        </MenuItem>
       )}
-      {mode === "daily" && <Input title="Time of day" name="dailyAt" type="time" required />}
-      {mode === "interval" && (
-        <Input
-          title="Every how many minutes (5 or more)"
-          name="everyMinutes"
-          type="number"
-          min={5}
-          max={10080}
-          defaultValue={60}
-          required
-        />
-      )}
-      {mode === "once" && (
-        <Input title="Date and time" name="onceLocal" type="datetime-local" required />
-      )}
-      <Input title="Timezone" name="timezone" defaultValue={localTz()} />
-      <Select
-        title="Run a workflow instead (optional)"
-        required={false}
-        name="workflowId"
-        options={[
-          { value: "", label: "No, just ask the bot" },
-          ...flows.map((w) => ({ value: w.id, label: w.name })),
-        ]}
-      />
-      {nextRuns && (
-        <div className="sm:col-span-2" role="status">
-          {understood && (
-            <p className="mb-1 text-sm">
-              Understood as <span className="font-medium">{understood.text}</span>
-              {understood.assumed && (
-                <span className="block text-xs text-muted-foreground">{understood.assumed}</span>
-              )}
-            </p>
-          )}
-          <p className="text-xs font-medium">Next runs</p>
-          <NextRuns runs={nextRuns} />
-        </div>
-      )}
-      {formError && (
-        <p role="alert" className="text-destructive sm:col-span-2">
-          {formError}
-        </p>
-      )}
-      <p className="text-xs text-muted-foreground sm:col-span-2">
-        The routine is switched on when you create it. You can pause it at any time.
-      </p>
-      <div className="flex flex-wrap justify-end gap-2 sm:col-span-2">
-        <Button type="button" size="sm" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={(e) => void preview(e.currentTarget.form!)}
-        >
-          Preview schedule
-        </Button>
-        <Button type="submit" size="sm">
-          Create routine
-        </Button>
-      </div>
-    </form>
+      <MenuItem title="Delete" className={MENU_DANGER} onClick={actions.onDelete}>
+        <TrashIcon aria-hidden="true" />
+        Delete
+      </MenuItem>
+    </Menu>
   );
 }
 
-/** The routine's one chat: always visible on the row, with a dot when runs in it are not opened yet. */
-function RoutineChatLink({
-  conversationId,
-  unread,
-}: {
-  conversationId: string | null | undefined;
-  unread: boolean;
-}) {
-  if (!conversationId) return <span className="text-xs text-muted-foreground">No chat yet</span>;
-  return (
-    <Link
-      to="/chat/{-$chatId}"
-      params={{ chatId: conversationId }}
-      className="inline-flex items-center gap-1.5 rounded text-sm underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-    >
-      <ChatIcon aria-hidden="true" className="size-4 shrink-0" />
-      Open chat
-      {unread && (
-        <>
-          <span aria-hidden="true" className="size-2 rounded-full bg-muted-foreground" />
-          <span className="sr-only">(unread runs)</span>
-        </>
-      )}
-    </Link>
-  );
+/** The routine's bot with its role under the name; a bot the list cannot find shows as "A bot". */
+function RoutineBot({ bot }: { bot: Bot | undefined }) {
+  if (!bot) return <span className="text-sm text-muted-foreground">A bot</span>;
+  return <BotIdentity bot={bot} size={24} sub={botRole(bot)} />;
 }
+
 function RoutineRow({
   r,
-  botName,
+  bot,
   now,
   unread,
-  open,
   busy,
-  bots,
-  onOpen,
+  activating,
+  actions,
   onRun,
-  onPause,
-  onDelete,
-  onChanged,
-  onStatus,
+  onCloseActivate,
+  onActivated,
 }: {
   r: Routine;
-  botName: string;
+  bot: Bot | undefined;
   now: number;
   unread: boolean;
-  open: View | undefined;
   busy: boolean;
-  bots: Bot[];
-  onOpen: (v: View | "closed") => void;
+  /** The "Before you activate" card is open under the row. */
+  activating: boolean;
+  actions: RowActions;
   onRun: () => void;
-  onPause: () => void;
-  onDelete: () => Promise<void>;
-  onChanged: () => void;
-  onStatus: (m: string) => void;
+  onCloseActivate: () => void;
+  onActivated: () => void;
 }) {
   const tf = useTimeFormat();
   const st = statusOf(r);
-  const expanded = open !== undefined;
-  const panel = `routine-${r.id}`;
-  const runs = [
-    {
-      label: "Last run",
-      at: r.lastRunAt ?? null,
-      empty: "Never",
-      col: "@3xl:col-start-2",
-    },
-    {
-      label: "Next run",
-      at: r.paused ? null : r.nextRunAt,
-      empty: r.paused ? "Not scheduled" : "None upcoming",
-      col: "@3xl:col-start-3",
-    },
-  ];
+  const at = r.paused ? null : r.nextRunAt;
   return (
     <li id={`routine-row-${r.id}`} className={`${listItem} @container py-4`}>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 @3xl:grid-cols-[minmax(0,1fr)_9.5rem_9.5rem_13rem]">
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={panel}
-          onClick={() => onOpen(expanded ? "closed" : r.paused ? "activate" : "history")}
-          className="col-start-1 row-start-1 flex min-w-0 touch-manipulation items-start gap-2 rounded-md text-left focus-visible:outline-2 focus-visible:outline-ring"
-        >
-          <CaretRightIcon
-            aria-hidden="true"
-            className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out ${expanded ? "rotate-90" : ""}`}
-          />
-          <span className="min-w-0 flex-1">
-            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="min-w-0 break-words font-medium">{r.title}</span>
-              <Badge tone={ROUTINE_STATUS[st].tone}>{ROUTINE_STATUS[st].label}</Badge>
-            </span>
-            <span className="mt-0.5 block text-sm text-muted-foreground">
-              {botName} · {describeSchedule(r, tf)}
-              {r.dailyAt ? "" : ` (${r.timezone})`}
-            </span>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 @3xl:grid-cols-[minmax(0,1fr)_13rem_9.5rem_auto]">
+        <div className="col-start-1 row-start-1 min-w-0">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Link
+              to="/routines/$routineId"
+              params={{ routineId: r.id }}
+              search={{}}
+              className="min-w-0 rounded break-words font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              {r.title}
+            </Link>
+            <Badge tone={ROUTINE_STATUS[st].tone}>{ROUTINE_STATUS[st].label}</Badge>
+            {unread && (
+              <>
+                <span aria-hidden="true" className="size-2 rounded-full bg-muted-foreground" />
+                <span className="sr-only">(unread runs)</span>
+              </>
+            )}
           </span>
-        </button>
-        <div className="col-span-2 row-start-2 flex gap-8 pl-6 tabular-nums @3xl:contents">
-          {runs.map(({ label, at, empty, col }) => (
-            <div key={label} className={`min-w-0 @3xl:row-start-1 ${col}`}>
-              <div className="text-xs text-muted-foreground">{label}</div>
-              {at ? (
-                <>
-                  <div className="text-sm font-medium">{relativeTime(at, now)}</div>
-                  <time dateTime={at} className="block text-xs text-muted-foreground">
-                    {formatDateTime(at, tf)}
-                  </time>
-                </>
-              ) : (
-                <div className="text-sm text-muted-foreground">{empty}</div>
-              )}
-            </div>
-          ))}
+          <span className="mt-0.5 block text-sm text-muted-foreground">
+            {describeSchedule(r, tf)}
+            {r.dailyAt ? "" : ` (${r.timezone})`}
+          </span>
         </div>
-        <div className="col-start-2 row-start-1 flex flex-wrap items-center justify-end gap-3 @3xl:col-start-4">
-          <RoutineChatLink conversationId={r.conversationId} unread={unread} />
-          <Link
-            to="/routines/$routineId"
-            params={{ routineId: r.id }}
-            className="text-sm underline hover:text-foreground"
-          >
-            Open
-          </Link>
-          {r.paused ? (
-            <Button size="sm" variant="outline" onClick={() => onOpen("activate")}>
-              Activate…
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline" disabled={busy || st === "running"} onClick={onRun}>
-              {busy || st === "running" ? "Running…" : "Run now"}
-            </Button>
-          )}
+        <div className="col-span-2 row-start-2 flex min-w-0 flex-wrap items-center gap-x-8 gap-y-2 @3xl:contents">
+          <div className="min-w-0 @3xl:col-start-2 @3xl:row-start-1">
+            <RoutineBot bot={bot} />
+          </div>
+          <div className="min-w-0 tabular-nums @3xl:col-start-3 @3xl:row-start-1">
+            <div className="text-xs text-muted-foreground">Next run</div>
+            {at ? (
+              <>
+                <div className="text-sm font-medium">{relativeTime(at, now)}</div>
+                <time dateTime={at} className="block text-xs text-muted-foreground">
+                  {formatDateTime(at, tf)}
+                </time>
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                {r.paused ? "Not scheduled" : "None upcoming"}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="col-start-2 row-start-1 flex items-center justify-end gap-2 @3xl:col-start-4">
+          <Button size="sm" variant="outline" disabled={busy || st === "running"} onClick={onRun}>
+            {busy || st === "running" ? "Running…" : "Run now"}
+          </Button>
+          <RoutineMenu r={r} actions={actions} />
         </div>
       </div>
-      {expanded && (
-        <div id={panel} className="mt-3 space-y-3 sm:pl-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div role="group" aria-label="Show" className="flex gap-1">
-              {(
-                [
-                  ["history", "History"],
-                  ["triggers", "Triggers"],
-                  ["edit", "Edit"],
-                ] as const
-              ).map(([v, l]) => (
-                <Button
-                  key={v}
-                  size="xs"
-                  variant={open === v ? "secondary" : "ghost"}
-                  aria-pressed={open === v}
-                  onClick={() => onOpen(v)}
-                >
-                  {l}
-                </Button>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {!r.paused && (
-                <Button size="xs" variant="outline" onClick={onPause}>
-                  Pause
-                </Button>
-              )}
-              {r.paused && open !== "activate" && (
-                <Button size="xs" onClick={() => onOpen("activate")}>
-                  Activate…
-                </Button>
-              )}
-              <ConfirmButton
-                label="Delete"
-                question="Delete this routine? It will be archived."
-                confirmLabel="Delete"
-                size="xs"
-                onConfirm={onDelete}
-              />
-            </div>
-          </div>
-          {open === "activate" && (
-            <ActivationCard
-              routineId={r.id}
-              onClose={() => onOpen("closed")}
-              onDone={() => {
-                onOpen("closed");
-                onStatus("Routine activated.");
-                onChanged();
-              }}
-            />
-          )}
-          {open === "edit" && (
-            <EditForm
-              routine={r}
-              bots={bots}
-              onCancel={() => {
-                onOpen("closed");
-                onChanged();
-              }}
-              onSaved={() => {
-                onOpen("closed");
-                onStatus("Changes saved.");
-                onChanged();
-              }}
-            />
-          )}
-          {open === "history" && <History routineId={r.id} />}
-          {open === "triggers" && <RoutineTriggers routineId={r.id} paused={r.paused} />}
+      {activating && (
+        <div className="mt-3 sm:pl-6">
+          <ActivationCard routineId={r.id} onClose={onCloseActivate} onDone={onActivated} />
         </div>
       )}
     </li>
+  );
+}
+
+/** "New routine" is a page of its own (`/routines/new`), so it is a link. */
+function NewRoutineLink({ children }: { children?: ReactNode }) {
+  return (
+    <Button {...({ as: Link, to: "/routines/new" } as object)} size="sm">
+      <PlusIcon aria-hidden="true" className="size-4" />
+      {children ?? "New routine"}
+    </Button>
   );
 }
 
@@ -888,7 +560,6 @@ export function Routines({
 }) {
   const focusId = search.routine;
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const rowsQuery = useQuery({
     queryKey: ["routines", { state: "all" }],
     queryFn: () => call<{ routines: Routine[] }>("/api/routines").then((r) => r.routines),
@@ -904,12 +575,9 @@ export function Routines({
   }, [loadError]);
   // The whole ["routines"] prefix: the sidebar rows, the calendar, the timeline and every history read the same data.
   const reload = () => qc.invalidateQueries({ queryKey: ["routines"] });
-  const [flows] = useList<Flow>("/api/workflows", "workflows", onError);
   const [status, setStatus] = useState<string>();
-  const [creating, setCreating] = useState(false);
-  const [open, setOpen] = useState<{ id: string; view: View } | undefined>(
-    focusId ? { id: focusId, view: "history" } : undefined,
-  );
+  // The routine whose "Before you activate" card is open under its row.
+  const [activating, setActivating] = useState<string>();
   const unreadChats = useRoutineUnreadChats();
   const focused = useRef(false);
   const [busy, setBusy] = useState<string>();
@@ -948,17 +616,22 @@ export function Routines({
       await act(
         // "start": the answer comes when the run is claimed, not when the bot is done (a run can take minutes).
         () => call(`/api/routines/${id}/run`, "POST", { requestKey: uuidv7(), wait: "start" }),
-        "Run started. Open History to follow it.",
+        "Run started. Open the routine to follow it.",
       );
     } finally {
       setBusy(undefined);
     }
   };
-  const botName = (id: string) => bots.find((b) => b.id === id)?.name ?? "A bot";
   const needs = (rows ?? []).filter((r) => NEEDS_ATTENTION.includes(statusOf(r)));
   const summary = rows ? summarize(rows, now) : "";
-  const setView = (id: string, v: View | "closed") =>
-    setOpen(v === "closed" ? undefined : { id, view: v });
+  const confirmDelete = async (r: Routine) => {
+    const ok = await Modal.confirm<boolean>({
+      title: "Delete this routine?",
+      description: `"${r.title}" will be archived.`,
+      confirm: { text: "Delete", theme: "danger" },
+    });
+    if (ok) await act(() => call(`/api/routines/${r.id}`, "DELETE"), "Routine deleted.");
+  };
 
   return (
     <section aria-label="Routines" className="space-y-5">
@@ -966,10 +639,7 @@ export function Routines({
         <p role="status" className="min-w-0 text-sm text-pretty text-muted-foreground">
           {summary}
         </p>
-        <Button size="sm" onClick={() => setCreating(true)}>
-          <PlusIcon aria-hidden="true" className="size-4" />
-          New routine
-        </Button>
+        <NewRoutineLink />
       </div>
       {status && <Alert theme="info">{status}</Alert>}
 
@@ -1005,16 +675,21 @@ export function Routines({
                       Run again
                     </Button>
                   )}
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => {
-                      setTab("overview");
-                      setView(r.id, statusOf(r) === "blocked" ? "activate" : "history");
-                    }}
-                  >
-                    {statusOf(r) === "blocked" ? "Review" : "See why"}
-                  </Button>
+                  {statusOf(r) === "blocked" ? (
+                    <Button size="xs" variant="ghost" onClick={() => setActivating(r.id)}>
+                      Review
+                    </Button>
+                  ) : (
+                    <Link
+                      to="/routines/$routineId"
+                      params={{ routineId: r.id }}
+                      search={{}}
+                      hash="routine-runs"
+                      className="inline-flex h-6 items-center rounded-md px-2 text-xs hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                    >
+                      See why
+                    </Link>
+                  )}
                 </span>
               </li>
             ))}
@@ -1074,9 +749,7 @@ export function Routines({
                     No routines yet. A routine asks a bot to do something on a schedule and keeps
                     the result in a chat you can open.
                   </p>
-                  <Button size="sm" onClick={() => setCreating(true)}>
-                    Create your first routine
-                  </Button>
+                  <NewRoutineLink>Create your first routine</NewRoutineLink>
                 </div>
               )}
               <ul className={list}>
@@ -1084,25 +757,27 @@ export function Routines({
                   <RoutineRow
                     key={r.id}
                     r={r}
-                    bots={bots}
-                    botName={botName(r.botId)}
+                    bot={bots.find((b) => b.id === r.botId)}
                     now={now}
                     unread={r.conversationId ? unreadChats.has(r.conversationId) : false}
-                    open={open?.id === r.id ? open.view : undefined}
                     busy={busy === r.id}
-                    onOpen={(v) => setView(r.id, v)}
+                    activating={activating === r.id}
                     onRun={() => void run(r.id)}
-                    onPause={() =>
-                      void act(
-                        () => call(`/api/routines/${r.id}/paused`, "POST", { paused: true }),
-                        "Paused.",
-                      )
-                    }
-                    onDelete={() =>
-                      act(() => call(`/api/routines/${r.id}`, "DELETE"), "Routine deleted.")
-                    }
-                    onChanged={() => void reload()}
-                    onStatus={setStatus}
+                    onCloseActivate={() => setActivating(undefined)}
+                    onActivated={() => {
+                      setActivating(undefined);
+                      setStatus("Routine activated.");
+                      void reload();
+                    }}
+                    actions={{
+                      onActivate: () => setActivating(r.id),
+                      onPause: () =>
+                        void act(
+                          () => call(`/api/routines/${r.id}/paused`, "POST", { paused: true }),
+                          "Paused.",
+                        ),
+                      onDelete: () => void confirmDelete(r),
+                    }}
                   />
                 ))}
               </ul>
@@ -1110,30 +785,6 @@ export function Routines({
           </>
         )}
       </div>
-
-      {creating && (
-        <Modal title="New routine" onClose={() => setCreating(false)}>
-          <NewRoutineForm
-            bots={bots}
-            flows={flows ?? []}
-            onClose={() => setCreating(false)}
-            onCreated={(created) => {
-              setCreating(false);
-              // The new routine opens on its own page: its controls, what runs next and its runs.
-              void navigate({ to: "/routines/$routineId", params: { routineId: created.id } });
-              setTab("overview");
-              // A routine is switched on when it is created; one whose bot is not ready stays paused and shows what is missing.
-              setView(created.id, created.paused ? "activate" : "history");
-              setStatus(
-                created.paused
-                  ? "Routine created, but it is paused: something is missing. See below, then activate it."
-                  : "Routine created and switched on.",
-              );
-              void reload();
-            }}
-          />
-        </Modal>
-      )}
     </section>
   );
 }

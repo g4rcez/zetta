@@ -1,8 +1,8 @@
 import {
-  CaretRightIcon,
   CheckIcon,
   CircleIcon,
   CircleNotchIcon,
+  FootprintsIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -10,6 +10,7 @@ import { cn } from "@zetta/ui/lib/utils";
 
 import type { Message, PlanStep } from "./chat-client";
 import type { Row } from "./chat-rows";
+import { Disclosure } from "./disclosure";
 import { StepOutput } from "./step-output";
 
 /** "plugin notion.search" -> "Running notion · search"; other labels pass through. */
@@ -235,23 +236,17 @@ export function WorkTimeline({
   // One quiet line. While the bot works it names what it is doing now; when done it says how much work there was. The rail opens on click.
   const doing = live ?? (plan ? undefined : friendly(steps.at(-1)?.label)) ?? "Working";
   return (
-    <details
+    <Disclosure
       onToggle={measure}
-      className="group/timeline w-full max-w-prose text-xs text-muted-foreground"
-    >
-      <summary className="flex w-fit max-w-full cursor-pointer list-none items-center gap-1.5 rounded-md py-0.5 select-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-        <CaretRightIcon
-          aria-hidden="true"
-          className="size-3 shrink-0 transition-transform group-open/timeline:rotate-90 motion-reduce:transition-none"
+      className="w-full max-w-prose"
+      // The icon is the live signal: it pulses while the bot works.
+      icon={
+        <FootprintsIcon
+          className={cn(working && "animate-pulse text-primary motion-reduce:animate-none")}
         />
-        <span
-          aria-hidden="true"
-          className={cn(
-            "size-1.5 shrink-0 rounded-full bg-muted-foreground/50",
-            working && "animate-pulse bg-primary motion-reduce:animate-none",
-          )}
-        />
-        <span className="min-w-0 truncate">
+      }
+      label={
+        <>
           {working ? (
             <>
               {doing}
@@ -266,8 +261,9 @@ export function WorkTimeline({
               · <span className="tabular-nums">{elapsed(total)}</span>
             </>
           )}
-        </span>
-      </summary>
+        </>
+      }
+    >
       <ol
         ref={list}
         aria-label={plan ? "Plan" : "Work timeline"}
@@ -314,6 +310,6 @@ export function WorkTimeline({
           </li>
         ))}
       </ol>
-    </details>
+    </Disclosure>
   );
 }

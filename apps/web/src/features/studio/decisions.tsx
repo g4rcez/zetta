@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { AdvancedSection } from "@/components/advanced-section";
 import { EditorField } from "@/components/editor/editor";
 import { Button, Input } from "@/components/ui";
 
@@ -79,11 +80,8 @@ export function Decisions({ onError }: { onError: (m: string) => void }) {
       <div className="rounded-xl border bg-card p-5 xl:col-span-2">
         <TranscribeSettings />
       </div>
-      <details className="rounded-xl border bg-card p-5 xl:col-span-2">
-        <summary className="cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-          Try it on a sample
-        </summary>
-        <form onSubmit={(e) => void decide(e)} className="mt-4 space-y-3">
+      <AdvancedSection title="Try it on a sample" defaultOpen={false} className="xl:col-span-2">
+        <form onSubmit={(e) => void decide(e)} className="space-y-3">
           {/* Plain on purpose: pasted external text (a ticket, an email), where `@` appears in addresses and handles. */}
           <EditorField
             title="Situation"
@@ -108,7 +106,7 @@ export function Decisions({ onError }: { onError: (m: string) => void }) {
             {busy ? "Deciding…" : "Decide"}
           </Button>
         </form>
-      </details>
+      </AdvancedSection>
       {result && (
         <div
           role="status"

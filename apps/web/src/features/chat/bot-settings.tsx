@@ -3,8 +3,11 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "@/lib/notify";
 
+import { BOT_ROLE_MAX, botRole } from "@zetta/core/bot-role";
+import { AdvancedSection } from "@/components/advanced-section";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Input, Modal, Select } from "@/components/ui";
+import { useNavMode } from "../preferences/preferences";
 import { Empty, Loading, Panel } from "../shared/ui";
 import {
   DEFAULT_CHOICE,
@@ -80,7 +83,7 @@ const Failure = ({ error }: { error?: string | undefined }) =>
     </p>
   ) : null;
 
-function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
+export function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
   const { error, setError, saving, save } = useSave(bot, onBotChange, notify);
   const [harness, setHarness] = useState(bot.harness);
   const [model, setModel] = useState(bot.model ?? "");
@@ -106,6 +109,7 @@ function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
     const data = new FormData(event.currentTarget);
     void save({
       name: String(data.get("name") ?? "").trim() || bot.name,
+      role: String(data.get("role") ?? "").trim(),
       description: String(data.get("description") ?? ""),
       harness: String(data.get("harness") ?? "fixture"),
       model: String(data.get("model") ?? "").trim() || null,
@@ -121,21 +125,20 @@ function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
         className="grid gap-4 md:grid-cols-2"
       >
         <Input title="Name" name="name" defaultValue={bot.name} maxLength={80} required />
-        <Select
-          title="Harness"
-          required={false}
-          name="harness"
-          value={harness}
-          onChange={(e) => {
-            setHarness(e.target.value);
-            if (!isAllowedModel(e.target.value, model)) setModel("");
-            if (e.target.value === fallback) {
-              setFallback("");
-              setFallbackModel("");
-            }
-          }}
-          options={harnessOptions}
-        />
+        <div className="space-y-1">
+          <Input
+            title="Role"
+            name="role"
+            required={false}
+            defaultValue={bot.role ?? ""}
+            maxLength={BOT_ROLE_MAX}
+            placeholder={botRole(bot)}
+          />
+          <p className="text-xs text-pretty text-muted-foreground">
+            What this bot does for the team, e.g. Support lead. It shows beside the name wherever
+            someone picks a bot.
+          </p>
+        </div>
         <Input
           title="Description"
           container="md:col-span-2"
@@ -149,48 +152,67 @@ function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
             This bot has no AI. Its answers come only from the options in Decision routing below.
           </p>
         )}
-        {harness !== "fixture" && (
-          <Select
-            title="Model"
-            container="md:col-span-2"
-            required={false}
-            name="model"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            options={modelOptions(harness, bot.harness === harness ? bot.model : null)}
-          />
-        )}
-        {canFallBack && (
-          <>
+        <AdvancedSection className="md:col-span-2">
+          <div className="grid gap-4 md:grid-cols-2">
             <Select
-              title="Fallback harness"
+              title="Harness"
               required={false}
-              name="fallbackHarness"
-              value={fallback}
+              name="harness"
+              value={harness}
               onChange={(e) => {
-                setFallback(e.target.value);
-                setFallbackModel("");
+                setHarness(e.target.value);
+                if (!isAllowedModel(e.target.value, model)) setModel("");
+                if (e.target.value === fallback) {
+                  setFallback("");
+                  setFallbackModel("");
+                }
               }}
-              options={[{ value: "", label: "None" }, ...fallbackChoices]}
+              options={harnessOptions}
             />
-            {fallback && fallbackModels.length > 1 ? (
+            {harness !== "fixture" && (
               <Select
-                title="Fallback model"
+                title="Model"
+                container="md:col-span-2"
                 required={false}
-                name="fallbackModel"
-                value={fallbackModel}
-                onChange={(e) => setFallbackModel(e.target.value)}
-                options={fallbackModels}
+                name="model"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                options={modelOptions(harness, bot.harness === harness ? bot.model : null)}
               />
-            ) : (
-              <span aria-hidden="true" />
             )}
-            <p className="text-xs text-muted-foreground md:col-span-2">
-              Used for a turn when the main harness reaches its usage limit, is not signed in, or is
-              not installed. The next turn tries the main harness again.
-            </p>
-          </>
-        )}
+            {canFallBack && (
+              <>
+                <Select
+                  title="Fallback harness"
+                  required={false}
+                  name="fallbackHarness"
+                  value={fallback}
+                  onChange={(e) => {
+                    setFallback(e.target.value);
+                    setFallbackModel("");
+                  }}
+                  options={[{ value: "", label: "None" }, ...fallbackChoices]}
+                />
+                {fallback && fallbackModels.length > 1 ? (
+                  <Select
+                    title="Fallback model"
+                    required={false}
+                    name="fallbackModel"
+                    value={fallbackModel}
+                    onChange={(e) => setFallbackModel(e.target.value)}
+                    options={fallbackModels}
+                  />
+                ) : (
+                  <span aria-hidden="true" />
+                )}
+                <p className="text-xs text-muted-foreground md:col-span-2">
+                  Used for a turn when the main harness reaches its usage limit, is not signed in,
+                  or is not installed. The next turn tries the main harness again.
+                </p>
+              </>
+            )}
+          </div>
+        </AdvancedSection>
         <div className={`${saveRow} md:col-span-2`}>
           <Failure error={error} />
           <Button type="submit" size="sm" disabled={saving}>
@@ -395,6 +417,32 @@ function DeleteForm({ bot, setBots }: { bot: Bot; setBots: (f: (l: Bot[]) => Bot
   );
 }
 
+/**
+ * Sections that only power users change. In the simple view each one starts folded under an "Advanced" block (one click opens it, and so
+ * does its entry in the left list); in the full view they show as plain sections, as they always did.
+ */
+const ADVANCED_SECTIONS: ReadonlySet<string> = new Set([
+  "chat-memory",
+  "hooks",
+  "decision",
+  "claude",
+  "inbound",
+  "code",
+  "computer",
+]);
+
+function SectionFold({ title, children }: { title: string; children: ReactNode }) {
+  const full = useNavMode() === "full";
+  if (full) return <>{children}</>;
+  return <AdvancedSection title={`Advanced: ${title}`}>{children}</AdvancedSection>;
+}
+
+/** The fold directly inside a section's anchor, when the person's view put one there. */
+const foldOf = (anchor: HTMLElement | null) =>
+  Array.from(anchor?.children ?? []).find((c) => c.tagName === "DETAILS") as
+    | HTMLDetailsElement
+    | undefined;
+
 type Entry = {
   id: string;
   title: string;
@@ -437,6 +485,17 @@ const GROUPS: { label: string; ids: readonly string[] }[] = BOT_TABS.map((t) => 
   label: t.label,
   ids: t.ids,
 }));
+
+function SectionBody({ entry: e }: { entry: Entry }) {
+  const body = e.bare ? (
+    e.node
+  ) : (
+    <Panel title={e.title} {...(e.description ? { description: e.description } : {})}>
+      {e.node}
+    </Panel>
+  );
+  return ADVANCED_SECTIONS.has(e.id) ? <SectionFold title={e.title}>{body}</SectionFold> : body;
+}
 
 function useActiveSection(root: React.RefObject<HTMLElement | null>, ids: string[]) {
   const [active, setActive] = useState(ids[0]);
@@ -593,7 +652,11 @@ function SettingsBody({
   const jump = (id: string) => (event: React.MouseEvent) => {
     event.preventDefault();
     setActive(id);
-    document.getElementById(id)?.scrollIntoView({
+    const anchor = document.getElementById(id);
+    // A folded section opens first, so the jump lands on its content and not on a closed line.
+    const fold = foldOf(anchor);
+    if (fold) fold.open = true;
+    anchor?.scrollIntoView({
       behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     });
   };
@@ -681,16 +744,7 @@ function SettingsBody({
               <h2 className="label-mono">{g.label}</h2>
               {g.items.map((e) => (
                 <div key={e.id} id={e.id} className="scroll-mt-16 md:scroll-mt-8">
-                  {e.bare ? (
-                    e.node
-                  ) : (
-                    <Panel
-                      title={e.title}
-                      {...(e.description ? { description: e.description } : {})}
-                    >
-                      {e.node}
-                    </Panel>
-                  )}
+                  <SectionBody entry={e} />
                 </div>
               ))}
             </div>

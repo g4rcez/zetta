@@ -15,12 +15,15 @@ export function AdvancedSection({
   children,
   defaultOpen,
   className,
+  onOpenChange,
 }: {
   title?: string;
   children: ReactNode;
   /** Forces the starting state. Leave it out to follow the person's view (full: open, simple: folded). */
   defaultOpen?: boolean;
   className?: string;
+  /** Called when the person opens or folds the block (for work that should wait until it is first opened). */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const full = useNavMode() === "full";
   const [chosen, setChosen] = useState<boolean | null>(null);
@@ -29,7 +32,10 @@ export function AdvancedSection({
     <details
       open={open}
       data-component="advanced-section"
-      onToggle={(e) => setChosen(e.currentTarget.open)}
+      onToggle={(e) => {
+        setChosen(e.currentTarget.open);
+        onOpenChange?.(e.currentTarget.open);
+      }}
       className={cn("group rounded-lg border bg-card/40", className)}
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">

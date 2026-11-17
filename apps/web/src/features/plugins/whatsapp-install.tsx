@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Alert } from "@g4rcez/components/alert";
 
+import { AdvancedSection } from "@/components/advanced-section";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Input } from "@/components/ui";
 import { errorMessage, type Bot } from "../chat/chat-client";
@@ -103,9 +104,8 @@ export function WhatsappInstall({
             ))}
           </fieldset>
         )}
-        <details className="rounded-lg border p-3">
-          <summary className="cursor-pointer text-sm font-medium">Advanced settings</summary>
-          <div className="mt-3 space-y-3">
+        <AdvancedSection title="Advanced settings">
+          <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
               Leave these empty to use the WhatsApp server your administrator set up. Unofficial
               API: WhatsApp may restrict accounts that automate messaging.
@@ -145,7 +145,7 @@ export function WhatsappInstall({
               />
             )}
           </div>
-        </details>
+        </AdvancedSection>
         {local && <Alert theme="danger">{local}</Alert>}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>

@@ -13,6 +13,8 @@ export type Bot = {
   name: string;
   /** Friendly-url id, unique and fixed at creation; names the bot's database. */ slug?: string;
   description: string;
+  /** One short line saying what the bot is for (60 characters at most). Empty: use `botRole(bot)` from @zetta/core/bot-role for the label. */
+  role?: string;
   visibility: "private" | "team";
   canEdit: boolean;
   version: number;
@@ -97,6 +99,7 @@ export type BotPatch = Partial<{
   avatar: BotAvatarValue | null;
   name: string;
   description: string;
+  role: string;
   harness: string;
   model: string | null;
   fallbackHarness: string | null;
@@ -528,6 +531,7 @@ export const chatClient = {
     avatar?: BotAvatarValue | null;
     name: string;
     description?: string;
+    role?: string;
     visibility?: "private" | "team";
     harness?: string;
     model?: string | null;

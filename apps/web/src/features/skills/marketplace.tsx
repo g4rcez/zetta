@@ -5,7 +5,7 @@ import { Button, Input } from "@/components/ui";
 import { formatSize } from "../artifacts/artifacts-api";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { Badge, Panel } from "../shared/ui";
-import { BotPicker } from "./bot-picker";
+import { BotPicker } from "@/components/bot-picker";
 import { looksLikeSource } from "./source";
 import { SkillPicker, type PickerItem } from "./skill-picker";
 import {

@@ -66,7 +66,7 @@ export const SIDEBAR_LIMITS = {
 
 const DEFAULTS: Preferences = {
   railMode: "expanded",
-  navMode: "full",
+  navMode: "simple",
   steerMode: "park",
   sidebarSide: DEFAULT_SIDEBAR_SIDE,
   railWidth: SIDEBAR_LIMITS.railWidth.fallback,
@@ -199,6 +199,12 @@ export const useApprovalMode = (): ApprovalMode =>
 /** Whether this person's agents are paused. Outside the provider (tests, public pages) they are running. */
 export const useAgentsState = (): AgentsState =>
   useContext(Ctx)?.preferences.agentsState ?? "running";
+
+/**
+ * How much to show: `simple` folds the advanced parts of a page (see `AdvancedSection`), `full` shows them. Outside the provider (tests,
+ * public pages) and before the first answer with nothing cached it is `simple`, the default for a new person.
+ */
+export const useNavMode = (): "simple" | "full" => useContext(Ctx)?.preferences.navMode ?? "simple";
 
 export function usePreferences(): Value {
   const value = useContext(Ctx);

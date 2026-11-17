@@ -7,7 +7,7 @@ import { errorMessage, type Bot } from "../chat/chat-client";
 import { formatSize } from "../artifacts/artifacts-api";
 import { relativeTime } from "../shared/relative-time";
 import { Badge, ConfirmButton, Empty, list, listItem, Panel } from "../shared/ui";
-import { BotPicker } from "./bot-picker";
+import { BotPicker } from "@/components/bot-picker";
 import { SkillFiles } from "./skill-files";
 import { unzipSkill, zipSkill, ZipError, type ZipFile } from "./skill-zip";
 import { SkillForm } from "./skill-form";

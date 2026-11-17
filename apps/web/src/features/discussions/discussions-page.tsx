@@ -73,6 +73,8 @@ import { MessageList, pinAuthorOf } from "../chat/message-list";
 import { PinsBar } from "../chat/pins-bar";
 import { usePins } from "../chat/use-pins";
 import { usePollActions } from "../chat/use-poll-actions";
+import { quoteChip, quoteFields } from "../chat/quote-selection";
+import { useRoomMessages } from "./use-room-messages";
 import { useZettaChat } from "../chat/use-zetta-chat";
 import type { Author } from "../chat/message-row";
 import { ProposalsPanel } from "../chat/proposals-panel";
@@ -548,6 +550,14 @@ function RoomView({
 
   // A team member who does not own the room reads it. The live stream is the owner's, so a member sees new messages by polling.
   const readOnly = !!detail && !!session && detail.owner.userId !== session.user.id;
+  // A quote to an older post loads the page around it; the owner edits their own posts.
+  const roomMessages = useRoomMessages({
+    roomId: id,
+    conversationId,
+    loaded: messages,
+    readOnly,
+    onError: fail,
+  });
   // Every running turn streams here live, exactly like a chat reply, each in its own stream: a turn that starts or ends never
   // touches the live row of another one. The page reloads when a turn settles.
   const [followed, setFollowed] = useState<string[]>([]);
@@ -603,7 +613,10 @@ function RoomView({
     },
     [bots, session?.user.name, session?.user.image, meAvatar, readOnly, detail?.owner.name],
   );
-  const rows = useMemo(() => transcriptRows(messages, liveRows), [messages, liveRows]);
+  const rows = useMemo(
+    () => transcriptRows(roomMessages.messages, liveRows),
+    [roomMessages.messages, liveRows],
+  );
   const { pins, pinnedIds, setPinned } = usePins(detail?.discussion.conversationId, fail);
   const polls = usePollActions(detail?.discussion.conversationId, fail);
 
@@ -629,7 +642,7 @@ function RoomView({
   async function send(out: Outgoing) {
     setBusy(true);
     try {
-      await discussionsApi.post(id, out.text, { ...out, quotedMessageId: quoting?.id });
+      await discussionsApi.post(id, out.text, { ...out, ...quoteFields(quoting) });
       draft.current?.clear();
       setQuoting(undefined);
       setSent((n) => n + 1);
@@ -1025,7 +1038,9 @@ function RoomView({
                 label="Room transcript"
                 threads={false}
                 pinnedIds={pinnedIds}
+                editingId={roomMessages.editingId}
                 actions={{
+                  ...roomMessages.actions,
                   onPin: (row, pin) => setPinned(row.id, pin),
                   onVote: polls.vote,
                   // A person who only reads the room (a team member) votes, but the poll is not theirs to close.
@@ -1105,13 +1120,10 @@ function RoomView({
                   polls
                   skillBots={detail.members.map((m) => m.botId)}
                   replyTo={
-                    quoting && {
-                      id: quoting.id,
-                      name: authorOf(quoting).name,
-                      excerpt: quoting.content,
-                      onCancel: () => setQuoting(undefined),
-                    }
+                    quoting &&
+                    quoteChip(quoting, authorOf(quoting).name, () => setQuoting(undefined))
                   }
+                  onEditLast={roomMessages.editLast}
                   onSubmit={send}
                   onError={fail}
                 />

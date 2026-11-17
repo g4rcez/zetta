@@ -61,6 +61,10 @@ import { MessageList, pinAuthorOf, type RowActions } from "./message-list";
 import { PinsBar } from "./pins-bar";
 import { usePins } from "./use-pins";
 import { usePollActions } from "./use-poll-actions";
+import { CHAT_EDIT_MAX, useEditMessage } from "./use-edit-message";
+import { useQuotedPage } from "./use-quoted-page";
+import { lastEditable } from "./message-edit";
+import { quoteChip, quoteFields } from "./quote-selection";
 import { SetupActionsContext, type SetupActions } from "./setup-actions";
 import type { Author } from "./message-row";
 import { ProposalsPanel } from "./proposals-panel";
@@ -234,7 +238,13 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatsLoaded, bots, urlChat, chatId, openChatRow, lookedUp, defaultBot?.id]);
   const messagesQuery = useQuery({ ...chatQueries.messages(chatId ?? ""), enabled: !!chatId });
-  const saved = (chatId && messagesQuery.data) || NO_MESSAGES;
+  // A quote that points above the loaded page adds the messages around it, so the page of the list is longer than the query's.
+  const quotedPage = useQuotedPage({
+    conversationId: chatId,
+    loaded: (chatId && messagesQuery.data) || NO_MESSAGES,
+    onError: fail,
+  });
+  const saved = quotedPage.messages;
   const loadingMessages = !!chatId && messagesQuery.isLoading;
   const messagesError = messagesQuery.error;
   useEffect(() => {
@@ -244,6 +254,12 @@ export function ChatPage() {
     (id: string) => qc.invalidateQueries({ queryKey: chatQueries.messages(id).queryKey }),
     [qc],
   );
+
+  const edit = useEditMessage({
+    conversationId: chatId,
+    submit: (messageId, text) => chatClient.editMessage(chatId!, messageId, text),
+    onSaved: quotedPage.replace,
+  });
 
   const settle = useCallback(
     async (id: string) => {
@@ -388,12 +404,12 @@ export function ChatPage() {
       }
       draft.current?.clear();
       setSent((n) => n + 1);
-      const quotedMessageId = quoting?.id;
+      const quoted = quoteFields(quoting);
       setQuoting(undefined);
       void main
         .send(text, {
           conversationId: id,
-          ...(quotedMessageId ? { quotedMessageId } : {}),
+          ...quoted,
           ...(poll ? { poll } : {}),
           attachmentIds,
           fileRefs,
@@ -445,6 +461,12 @@ export function ChatPage() {
     onReact: (row, emoji) => void toggleReact(row, emoji),
     onReply: (row) => setThread(row.id),
     onQuote: (row) => setQuoting(row),
+    onShowMessage: (id) => quotedPage.show(id),
+    onEdit: (row) => edit.start(row),
+    onSaveEdit: (row, text) => edit.save(row, text),
+    onCancelEdit: () => edit.cancel(),
+    loadRevisions: (row) => edit.revisions(row),
+    editMax: CHAT_EDIT_MAX,
     onPin: (row, pin) => setPinned(row.id, pin),
     onVote: (row, options) => polls.vote(row, options),
     onClosePoll: (row) => polls.close(row),
@@ -480,6 +502,19 @@ export function ChatPage() {
       onReact: (row, emoji) => latestActions.current.onReact(row, emoji),
       onReply: (row) => latestActions.current.onReply(row),
       onQuote: (row) => latestActions.current.onQuote?.(row),
+      onShowMessage: (id) => latestActions.current.onShowMessage?.(id),
+      // A room's transcript opened here is read-only: it is edited from Rooms.
+      ...(roomChat
+        ? {}
+        : {
+            onEdit: (row: Row) => latestActions.current.onEdit?.(row),
+            onSaveEdit: (row: Row, text: string) =>
+              latestActions.current.onSaveEdit?.(row, text) ?? Promise.resolve(),
+            onCancelEdit: () => latestActions.current.onCancelEdit?.(),
+            loadRevisions: (row: Row) =>
+              latestActions.current.loadRevisions?.(row) ?? Promise.resolve([]),
+            editMax: CHAT_EDIT_MAX,
+          }),
       onPin: (row, pin) => latestActions.current.onPin?.(row, pin),
       onVote: (row, options) => latestActions.current.onVote?.(row, options),
       onClosePoll: (row) => latestActions.current.onClosePoll?.(row),
@@ -488,7 +523,7 @@ export function ChatPage() {
       onOpenArtifact: (id) => latestActions.current.onOpenArtifact?.(id),
       stepOutputUrl: (stepId) => latestActions.current.stepOutputUrl?.(stepId),
     }),
-    [],
+    [roomChat],
   );
   function openChat(id: string) {
     toChat(id);
@@ -575,6 +610,7 @@ export function ChatPage() {
         bot={current}
         authorOf={authorOf}
         actions={actions}
+        editingId={edit.editingId}
         onClose={() => setThread(undefined)}
         onSettled={settle}
         onProposal={() => void loadProposals()}
@@ -790,6 +826,7 @@ export function ChatPage() {
                   label="Conversation"
                   actions={actions}
                   pinnedIds={pinnedIds}
+                  editingId={edit.editingId}
                   intro={
                     <>
                       {loadingMessages && saved.length === 0 && (
@@ -926,13 +963,13 @@ export function ChatPage() {
                   polls
                   skillBots={botId ? [botId] : []}
                   replyTo={
-                    quoting && {
-                      id: quoting.id,
-                      name: authorOf(quoting).name,
-                      excerpt: quoting.content,
-                      onCancel: () => setQuoting(undefined),
-                    }
+                    quoting &&
+                    quoteChip(quoting, authorOf(quoting).name, () => setQuoting(undefined))
                   }
+                  onEditLast={() => {
+                    const last = lastEditable(rows.filter((r) => !r.parentMessageId));
+                    if (last) edit.start(last);
+                  }}
                   storageKey={draftKey(botId, chatId)}
                   handle={draft}
                   placeholder={

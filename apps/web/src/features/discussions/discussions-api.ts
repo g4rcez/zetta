@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { call } from "../chat/chat-client";
+import { call, type Message } from "../chat/chat-client";
 
 export type DiscussionStatus = "open" | "paused" | "stalled" | "resolved" | "cancelled";
 /** `room`: a team or user room. `help` and `permissions`: made by the Chief to solve a bot's issue. */
@@ -133,6 +133,8 @@ export const discussionsApi = {
       skills?: { botId: string; name: string }[];
       /** A message of this room the post replies to. */
       quotedMessageId?: string;
+      /** The part of the quoted message the person selected. */
+      quoteExcerpt?: string;
       /** The post is a poll: `content` is its question. */
       poll?: { options: string[]; mode: "single" | "multiple" };
     } = {},
@@ -144,8 +146,14 @@ export const discussionsApi = {
       ...(files.memoryIds?.length ? { memoryIds: files.memoryIds } : {}),
       ...(files.skills?.length ? { skills: files.skills } : {}),
       ...(files.quotedMessageId ? { quotedMessageId: files.quotedMessageId } : {}),
+      ...(files.quoteExcerpt ? { quoteExcerpt: files.quoteExcerpt } : {}),
       ...(files.poll ? { poll: files.poll } : {}),
     }),
+  /** Changes the text of the owner's own post in a room. Returns it as the message list shows it. */
+  editMessage: (id: string, messageId: string, content: string) =>
+    call<{ message: Message }>(`/api/discussions/${id}/messages/${messageId}`, "PATCH", {
+      content,
+    }).then((r) => r.message),
   act: (id: string, action: "pause" | "resume" | "cancel") =>
     call<{ discussion: Discussion }>(`/api/discussions/${id}/${action}`, "POST", {}).then(
       (r) => r.discussion,

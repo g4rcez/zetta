@@ -15,6 +15,7 @@ import {
   ChatTextIcon,
   DotsThreeIcon,
   PaperclipIcon,
+  PencilSimpleIcon,
   PushPinIcon,
   SmileyIcon,
 } from "@phosphor-icons/react";
@@ -33,7 +34,7 @@ import { BotAvatar } from "@/components/bot-avatar";
 import { BotIdentity, useBotIdentity } from "@/components/bot-identity";
 import { UserAvatar } from "@/components/user-avatar";
 
-import { errorMessage, isImage, type Bot, type Receipt } from "./chat-client";
+import { errorMessage, isImage, type Bot, type Receipt, type Revision } from "./chat-client";
 import { chatQueries } from "./chat-queries";
 import { PictureStrip } from "./attachment-image";
 import { CopyButton } from "./chat-copy";
@@ -43,6 +44,9 @@ import { computersOf, type Row } from "./chat-rows";
 import { elapsed, friendly, isGeneric, useNow, WorkTimeline } from "./work-timeline";
 import { VmCard } from "./vm-card";
 import { SeenMark } from "./seen-mark";
+import { MoreActions } from "./message-actions";
+import { canEditRow, EditedMark, MessageEditor } from "./message-edit";
+import { useTouchScreen } from "./use-touch";
 import { PollCard } from "./poll-card";
 import { pollBody } from "./poll-votes";
 import { Response } from "./response";
@@ -209,7 +213,7 @@ function ReactionPicker({ onReact }: { onReact: (emoji: string) => void }) {
   );
 }
 
-/** Floating Slack toolbar: quick reactions, the full emoji picker, reply in the channel, reply in thread, copy, more. */
+/** Floating Slack toolbar: quick reactions, the full emoji picker, quote, open the thread, pin, copy, edit, more. */
 function HoverBar({
   row,
   inThread,
@@ -219,6 +223,7 @@ function HoverBar({
   onQuote,
   pinned,
   onPin,
+  onEdit,
   onSaveToMemory,
 }: {
   row: Row;
@@ -230,6 +235,8 @@ function HoverBar({
   onQuote: (() => void) | undefined;
   pinned: boolean;
   onPin: (() => void) | undefined;
+  /** Only for a message the person may edit. */
+  onEdit: (() => void) | undefined;
   onSaveToMemory: () => void;
 }) {
   const bar = useRef<HTMLDivElement>(null);
@@ -263,15 +270,15 @@ function HoverBar({
       ))}
       <ReactionPicker onReact={onReact} />
       {onQuote && (
-        <ActionHint label="Reply">
-          <Button size="icon-xs" variant="ghost" aria-label="Reply" onClick={onQuote}>
+        <ActionHint label="Quote">
+          <Button size="icon-xs" variant="ghost" aria-label="Quote" onClick={onQuote}>
             <ArrowBendUpLeftIcon />
           </Button>
         </ActionHint>
       )}
       {!inThread && (
-        <ActionHint label="Reply in thread">
-          <Button size="icon-xs" variant="ghost" aria-label="Reply in thread" onClick={onReply}>
+        <ActionHint label="Open thread">
+          <Button size="icon-xs" variant="ghost" aria-label="Open thread" onClick={onReply}>
             <ChatTextIcon />
           </Button>
         </ActionHint>
@@ -289,6 +296,13 @@ function HoverBar({
         </ActionHint>
       )}
       <CopyButton text={row.content} label="Copy message" className="!size-7 [&_svg]:!size-3.5" />
+      {onEdit && (
+        <ActionHint label="Edit">
+          <Button size="icon-xs" variant="ghost" aria-label="Edit" onClick={onEdit}>
+            <PencilSimpleIcon />
+          </Button>
+        </ActionHint>
+      )}
       {row.role === "assistant" && (
         <Menu
           asChild
@@ -313,7 +327,7 @@ function HoverBar({
   );
 }
 
-/** Brings the quoted message into view and flashes it. Nothing happens when it is not loaded in this list. */
+/** Brings the quoted message into view and flashes it. Nothing happens when it is not loaded in this list (the page loads it first). */
 export function showMessage(id: string) {
   const el = document.getElementById(`message-${id}`);
   if (!el) return;
@@ -354,9 +368,12 @@ function HandoffReceipt({ r }: { r: Receipt }) {
 function QuoteReference({
   quote,
   author,
+  onShow,
 }: {
   quote: NonNullable<NonNullable<Row["meta"]>["quote"]>;
   author: Author | undefined;
+  /** Goes to the original, loading the page around it when it is not in the list. */
+  onShow: (id: string) => void;
 }) {
   const name = author?.name ?? "Message";
   return (
@@ -369,7 +386,7 @@ function QuoteReference({
       <button
         type="button"
         aria-label={`Go to the message from ${name}`}
-        onClick={() => showMessage(quote.id)}
+        onClick={() => onShow(quote.id)}
         className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md pr-2 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
       >
         {author?.bot ? (
@@ -524,6 +541,14 @@ export const MessageRow = memo(function MessageRow({
   onQueue,
   onOpenArtifact,
   stepOutputUrl,
+  onShowMessage = showMessage,
+  onEdit,
+  editing = false,
+  onSaveEdit,
+  onCancelEdit,
+  loadRevisions,
+  editMax,
+  bots,
 }: {
   row: Row;
   author: Author;
@@ -553,8 +578,26 @@ export const MessageRow = memo(function MessageRow({
   onOpenArtifact?: (id: string) => void;
   /** Where the live output of a command of this running turn streams from. */
   stepOutputUrl?: (stepId: string) => string | undefined;
+  /** Go to the message a quote points at. The page fetches the page around it when it is not loaded; without it only a loaded one is found. */
+  onShowMessage?: (id: string) => void;
+  /** Start editing the person's own message. Without it the message has no Edit. */
+  onEdit?: (row: Row) => void;
+  /** This message is being edited: its text is a box with Save and Cancel. */
+  editing?: boolean;
+  /** Saves the new text; resolves when the server took it and throws to keep the editor open. */
+  onSaveEdit?: (row: Row, text: string) => Promise<unknown>;
+  onCancelEdit?: () => void;
+  /** The earlier texts of an edited message. Only the author has them: without it the "edited" mark is plain text. */
+  loadRevisions?: (row: Row) => Promise<Revision[]>;
+  /** The longest text an edit may have. */
+  editMax?: number | undefined;
+  /** The bots a mention in the editor can pick. Only given to the message being edited. */
+  bots?: Bot[] | undefined;
 }) {
   const tf = useTimeFormat();
+  const touch = useTouchScreen();
+  const editable = Boolean(onEdit) && !readOnly && canEditRow(row);
+  const editor = editing && editable && onSaveEdit && onCancelEdit && bots;
   const saved = !row.streaming && !readOnly;
   // The toolbar (tooltips, popover, menu) mounts on first hover or keyboard focus, not for every row of a long history.
   const [bar, setBar] = useState<"idle" | "pointer" | "keyboard">("idle");
@@ -596,7 +639,22 @@ export const MessageRow = memo(function MessageRow({
           : undefined
       }
     >
+      {saved && !editing && touch && (
+        <MoreActions
+          row={row}
+          inThread={inThread}
+          pinned={pinned}
+          onReact={(e) => onReact(row, e)}
+          onReply={() => onReply(row)}
+          onQuote={onQuote && (() => onQuote(row))}
+          onPin={onPin && (() => onPin(row, !pinned))}
+          onEdit={editable && onEdit ? () => onEdit(row) : undefined}
+          onSaveToMemory={() => onSaveToMemory(row)}
+        />
+      )}
       {saved &&
+        !editing &&
+        !touch &&
         (bar === "idle" ? (
           // The one tab stop each row had to reach the toolbar; focusing it swaps in the real toolbar.
           // No hint: screen-reader-only control, never seen.
@@ -616,10 +674,13 @@ export const MessageRow = memo(function MessageRow({
             onQuote={onQuote && (() => onQuote(row))}
             pinned={pinned}
             onPin={onPin && (() => onPin(row, !pinned))}
+            onEdit={editable && onEdit ? () => onEdit(row) : undefined}
             onSaveToMemory={() => onSaveToMemory(row)}
           />
         ))}
-      {row.meta?.quote && <QuoteReference quote={row.meta.quote} author={quoteAuthor} />}
+      {row.meta?.quote && (
+        <QuoteReference quote={row.meta.quote} author={quoteAuthor} onShow={onShowMessage} />
+      )}
       {continued ? (
         <time
           dateTime={row.createdAt}
@@ -649,6 +710,7 @@ export const MessageRow = memo(function MessageRow({
             >
               {time(row.createdAt, tf)}
             </time>
+            {row.editedAt && <EditedMark row={row} load={editable ? loadRevisions : undefined} />}
             {pinned && (
               <IconHint label="Pinned">
                 <PushPinIcon weight="fill" className="size-3 text-primary" />
@@ -677,6 +739,14 @@ export const MessageRow = memo(function MessageRow({
           <WorkingStatus
             label={friendly(row.activity ?? row.meta?.activity) ?? "Thinking"}
             since={isGeneric(row.activity ?? row.meta?.activity) ? row.createdAt : undefined}
+          />
+        ) : editor ? (
+          <MessageEditor
+            row={row}
+            bots={bots}
+            max={editMax}
+            onSave={onSaveEdit}
+            onCancel={onCancelEdit}
           />
         ) : (
           <>
@@ -946,6 +1016,9 @@ export const MessageRow = memo(function MessageRow({
             </span>
             <span className="text-muted-foreground">View thread</span>
           </button>
+        )}
+        {continued && row.editedAt && (
+          <EditedMark row={row} load={editable ? loadRevisions : undefined} />
         )}
         {row.role === "user" && row.seenBy?.length ? <SeenMark botIds={row.seenBy} /> : null}
       </MessageContent>

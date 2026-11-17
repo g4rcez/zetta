@@ -1,18 +1,21 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { skillName } from "../bot-claude/profile";
-import { AccessError, type ActiveActor, type createIdentityAccess } from "../identity/access";
-import { DiscussionError, publicRoom, type DiscussionStore } from "./store";
+import { AccessError, type createIdentityAccess } from "../identity/access";
+import { DiscussionError, MAX_ROOM_POST, publicRoom, type DiscussionStore } from "./store";
 import type { DiscussionWorker } from "./worker";
 import { accessFail, createGuardedRoute, fail } from "../http-response";
 import { MAX_LABEL, MAX_OPTIONS, MIN_OPTIONS, POLL_MODES, PollError } from "../chat/polls";
+import { MessageEditError } from "../chat/message-edit";
+import { QUOTE_EXCERPT, QuoteExcerptError } from "../chat/messages";
+import type { ChatService } from "../chat/service";
 
 export type DiscussionServices = {
   access: ReturnType<typeof createIdentityAccess>;
   store: DiscussionStore;
   worker: DiscussionWorker;
   /** Silence, cancel and delete also abort the turns that are running now. */
-  chat: { cancelTurn(actor: ActiveActor, conversationId: string): Promise<unknown> };
+  chat: Pick<ChatService, "cancelTurn" | "listMessages">;
 };
 const uuid = z.string().uuid();
 const schemas = {
@@ -36,7 +39,7 @@ const schemas = {
   }),
   post: z
     .strictObject({
-      content: z.string().trim().max(4000),
+      content: z.string().trim().max(MAX_ROOM_POST),
       attachmentIds: z.array(uuid).max(5).optional(),
       fileRefs: z.array(z.string().min(1).max(300)).max(5).optional(),
       memoryIds: z.array(uuid).max(5).optional(),
@@ -47,6 +50,8 @@ const schemas = {
         .max(5)
         .optional(),
       quotedMessageId: uuid.optional(),
+      /** The part of the quoted message the person selected. It must be found in that message. */
+      quoteExcerpt: z.string().trim().min(1).max(QUOTE_EXCERPT).optional(),
       /** A poll this post makes: `content` is the question, these are the options. */
       poll: z
         .strictObject({
@@ -59,10 +64,12 @@ const schemas = {
         .optional(),
     })
     .refine((v) => v.content || v.attachmentIds?.length || v.fileRefs?.length)
+    .refine((v) => !v.quoteExcerpt || !!v.quotedMessageId)
     .transform(({ wikiIds, ...v }) => ({
       ...v,
       ...((v.memoryIds ?? wikiIds) && { memoryIds: v.memoryIds ?? wikiIds }),
     })),
+  edit: z.strictObject({ content: z.string().trim().min(1).max(MAX_ROOM_POST) }),
   loop: z.strictObject({
     goal: z.string().trim().max(500).default(""),
     doneWhen: z.string().trim().min(1).max(300),
@@ -95,6 +102,18 @@ export function createDiscussionRoutes(
     if (e instanceof AccessError) return accessFail(e);
     if (e instanceof DiscussionError) return fail(STATUS[e.code], e.code, e.safe);
     if (e instanceof PollError) return fail(400, `POLL_${e.code}`, e.safe);
+    if (e instanceof QuoteExcerptError)
+      return fail(
+        422,
+        e.code,
+        "The quoted text is not part of that message. Select it again and quote it.",
+      );
+    if (e instanceof MessageEditError)
+      return fail(
+        e.code === "NOT_FOUND" ? 404 : e.code === "NOT_ALLOWED" ? 403 : 400,
+        `MESSAGE_${e.code}`,
+        e.safe,
+      );
     if (e instanceof z.ZodError)
       return fail(400, "INVALID_REQUEST", "Check the details and try again.");
     return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
@@ -158,6 +177,27 @@ export function createDiscussionRoutes(
         const v = schemas.post.parse(c.body);
         return { message: await store.postAsOwner(c.actor, id(c), v.content, v) };
       }, 201),
+    )
+    .patch(
+      "/discussions/:id/messages/:messageId",
+      g(async (c) => {
+        const messageId = uuid.parse(c.params.messageId);
+        const room = id(c);
+        const row = await store.editMessage(
+          c.actor,
+          room,
+          messageId,
+          schemas.edit.parse(c.body).content,
+        );
+        const [message] = await chat.listMessages(c.actor, row.conversationId, { messageId });
+        return { message };
+      }),
+    )
+    .get(
+      "/discussions/:id/messages/:messageId/revisions",
+      g(async (c) => ({
+        revisions: await store.messageRevisions(c.actor, id(c), uuid.parse(c.params.messageId)),
+      })),
     )
     .post(
       "/discussions/:id/pause",

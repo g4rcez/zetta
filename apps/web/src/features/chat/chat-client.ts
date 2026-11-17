@@ -322,6 +322,8 @@ export type MessageMeta = {
     role: "user" | "assistant";
     botId: string | null;
     excerpt: string;
+    /** The excerpt is a part the person selected, not the start of the message. */
+    part?: true;
   };
   /** A group discussion this chat started reported back. */ discussion?: {
     id: string;
@@ -347,6 +349,8 @@ export type Message = {
   seq: number;
   role: "user" | "assistant" | "system";
   content: string;
+  /** When the author last changed the text; null or missing: never edited. */
+  editedAt?: string | null;
   status: "complete" | "failed" | "running" | "interrupted" | "cancelled";
   reactions?: Reaction[];
   meta?: MessageMeta;
@@ -362,6 +366,8 @@ export type Message = {
    */
   queue?: "pending" | "running" | "failed" | "merged" | "held";
 };
+/** An earlier text of an edited message. */
+export type Revision = { id: string; content: string; createdAt: string };
 export type UsedKnowledge = {
   notes: { id: string; content: string }[];
   items: { id: string; slug: string; title: string }[];
@@ -568,6 +574,21 @@ export const chatClient = {
     ),
   messages: (id: string) =>
     call<{ messages: Message[] }>(`/api/conversations/${id}/messages`).then((r) => r.messages),
+  /** The page that holds `messageId`, ending where the loaded messages begin (`beforeSeq`): what a quote jumps to when its original is not loaded. */
+  messagesAround: (id: string, messageId: string, beforeSeq: number) =>
+    call<{ messages: Message[] }>(
+      `/api/conversations/${id}/messages?around=${messageId}&before=${beforeSeq}`,
+    ).then((r) => r.messages),
+  /** Changes the text of the person's own message in a chat. Returns it as the list shows it. */
+  editMessage: (id: string, messageId: string, content: string) =>
+    call<{ message: Message }>(`/api/conversations/${id}/messages/${messageId}`, "PATCH", {
+      content,
+    }).then((r) => r.message),
+  /** The earlier texts of a message the person wrote, newest first. */
+  revisions: (id: string, messageId: string) =>
+    call<{ revisions: Revision[] }>(
+      `/api/conversations/${id}/messages/${messageId}/revisions`,
+    ).then((r) => r.revisions),
   /** Saves a message while the chat is busy; the server answers it, with whatever else waits, when the turn before it ends. */
   enqueue: (
     id: string,
@@ -576,6 +597,7 @@ export const chatClient = {
       content: string;
       parentMessageId?: string;
       quotedMessageId?: string;
+      quoteExcerpt?: string;
       poll?: { options: string[]; mode: "single" | "multiple" };
       attachmentIds?: string[];
       fileRefs?: string[];

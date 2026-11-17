@@ -11,6 +11,8 @@ import { MessageList, quoteAuthorOf, type RowActions } from "./message-list";
 import { MessageRow, type Author } from "./message-row";
 import { draftKey, useDraft } from "./use-draft";
 import { useZettaChat } from "./use-zetta-chat";
+import { lastEditable } from "./message-edit";
+import { quoteChip, quoteFields } from "./quote-selection";
 
 /** Slack thread pane: the parent message, its replies, and a composer that replies inside the thread. */
 export function ThreadPanel({
@@ -22,6 +24,7 @@ export function ThreadPanel({
   bot,
   authorOf,
   actions: pageActions,
+  editingId,
   onClose,
   onSettled,
   onProposal,
@@ -36,6 +39,8 @@ export function ThreadPanel({
   bot?: Bot | undefined;
   authorOf: (row: Row) => Author;
   actions: RowActions;
+  /** The message being edited, in the thread or the parent. */
+  editingId?: string | undefined;
   onClose: () => void;
   onSettled: (conversationId: string) => Promise<void>;
   onProposal: () => void;
@@ -74,6 +79,7 @@ export function ThreadPanel({
         busy={chat.busy}
         label="Thread replies"
         actions={actions}
+        editingId={editingId}
         intro={
           <>
             <div className="pt-2">
@@ -83,6 +89,8 @@ export function ThreadPanel({
                 quoteAuthor={quoteAuthorOf(parent, authorOf)}
                 continued={false}
                 inThread
+                editing={editingId === parent.id}
+                bots={bots}
                 {...actions}
               />
             </div>
@@ -116,22 +124,21 @@ export function ThreadPanel({
           onError={onError}
           autoFocus
           replyTo={
-            quoting && {
-              id: quoting.id,
-              name: authorOf(quoting).name,
-              excerpt: quoting.content,
-              onCancel: () => setQuoting(undefined),
-            }
+            quoting && quoteChip(quoting, authorOf(quoting).name, () => setQuoting(undefined))
           }
+          onEditLast={() => {
+            const last = lastEditable(replies);
+            if (last) actions.onEdit?.(last);
+          }}
           onStop={() => void chat.stop()}
           onSubmit={async ({ text, attachmentIds, fileRefs, memoryIds, skills }) => {
             draft.clear();
             setSent((n) => n + 1);
-            const quotedMessageId = quoting?.id;
+            const quoted = quoteFields(quoting);
             setQuoting(undefined);
             try {
               await chat.send(text, {
-                ...(quotedMessageId ? { quotedMessageId } : {}),
+                ...quoted,
                 attachmentIds,
                 fileRefs,
                 memoryIds,

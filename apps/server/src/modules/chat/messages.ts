@@ -80,25 +80,61 @@ export const MAX_MESSAGE = 60_000;
 export const clip = (text: string) =>
   text.length > MAX_MESSAGE ? `${text.slice(0, MAX_MESSAGE - 20)}\n…(truncated)` : text;
 
-/** A snapshot of the message a user replied to in the channel (`meta.quote`). It stays readable if the original changes or goes away. */
+/**
+ * A snapshot of the message a user replied to in the channel (`meta.quote`). It stays readable if the original changes or goes away.
+ * `part` marks an excerpt the person selected inside the message (Quote selection) instead of the start of it.
+ */
 export type Quote = {
   id: string;
   role: "user" | "assistant";
   botId: string | null;
   excerpt: string;
+  part?: true;
 };
-const QUOTE_EXCERPT = 500;
-export const quoteOf = (m: {
-  id: string;
-  role: string;
-  botId: string | null;
-  content: string;
-}): Quote => ({
-  id: m.id,
-  role: m.role === "assistant" ? "assistant" : "user",
-  botId: m.role === "assistant" ? m.botId : null,
-  excerpt: m.content.slice(0, QUOTE_EXCERPT),
-});
+export const QUOTE_EXCERPT = 500;
+/** The selection a person quoted is not in the message it claims to come from (or it is empty). */
+export class QuoteExcerptError extends Error {
+  readonly code = "QUOTE_EXCERPT_NOT_FOUND";
+  constructor() {
+    super("The quoted text is not part of that message.");
+  }
+}
+/**
+ * The text of a message the way a person sees it: Markdown links keep their label, the marks (`*`, `_`, backticks, `#`, `>`, list
+ * bullets) go, and whitespace collapses. A selection is copied from the page, which shows the rendered text, so both sides are
+ * flattened before they are compared. The web app keeps the same rule in `features/chat/quote-selection.ts`.
+ */
+export const flatten = (text: string) =>
+  text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s*(?:[-+]|\d+[.)])\s+/gm, "")
+    .replace(/[*_~`#>@|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+/** True when `part` appears in `whole`, ignoring whitespace and Markdown marks. */
+export const sameText = (whole: string, part: string) => {
+  const needle = flatten(part);
+  return needle.length > 0 && flatten(whole).includes(needle);
+};
+export const quoteOf = (
+  m: {
+    id: string;
+    role: string;
+    botId: string | null;
+    content: string;
+  },
+  /** The part of the message the person selected. It must be found in the message, or the quote is refused. */
+  selection?: string,
+): Quote => {
+  const base = {
+    id: m.id,
+    role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+    botId: m.role === "assistant" ? m.botId : null,
+  };
+  if (selection === undefined) return { ...base, excerpt: m.content.slice(0, QUOTE_EXCERPT) };
+  if (!sameText(m.content, selection)) throw new QuoteExcerptError();
+  return { ...base, excerpt: selection.trim().slice(0, QUOTE_EXCERPT), part: true };
+};
 /** Read `meta.quote` back from a saved message. Anything that is not a well-formed quote is ignored. */
 export const savedQuote = (meta: unknown): Quote | null => {
   const q = (meta as { quote?: Partial<Quote> } | null)?.quote;

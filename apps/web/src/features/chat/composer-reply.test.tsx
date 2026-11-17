@@ -27,7 +27,13 @@ afterEach(async () => {
   await new Promise((done) => setTimeout(done, 20));
 });
 
-function mount(replyTo: { id: string; name: string; excerpt: string; onCancel: () => void }) {
+function mount(replyTo: {
+  id: string;
+  name: string;
+  excerpt: string;
+  selection?: boolean;
+  onCancel: () => void;
+}) {
   const host = win.document.createElement("div");
   win.document.body.append(host);
   const root = createRoot(host as never);
@@ -51,7 +57,7 @@ function mount(replyTo: { id: string; name: string; excerpt: string; onCancel: (
   return host as unknown as HTMLElement;
 }
 
-test("a reply shows who it answers and what, and the X cancels it", () => {
+test("a quote shows who it quotes and what, and the X cancels it", () => {
   let cancelled = 0;
   const host = mount({
     id: "m1",
@@ -59,11 +65,22 @@ test("a reply shows who it answers and what, and the X cancels it", () => {
     excerpt: "the deploy runs at noon",
     onCancel: () => cancelled++,
   });
-  expect(host.textContent).toContain("Replying to");
-  expect(host.textContent).toContain("Helper");
+  expect(host.textContent).toContain("Quoting Helper");
+  expect(host.textContent).not.toContain("Replying");
   expect(host.textContent).toContain("the deploy runs at noon");
   act(() =>
-    (host.querySelector('button[aria-label="Cancel reply"]') as unknown as HTMLElement).click(),
+    (host.querySelector('button[aria-label="Cancel quote"]') as unknown as HTMLElement).click(),
   );
   expect(cancelled).toBe(1);
+});
+
+test("a quote of a selection reads Quoting <name>: <selection>", () => {
+  const host = mount({
+    id: "m1",
+    name: "Helper",
+    excerpt: "runs at noon",
+    selection: true,
+    onCancel: () => {},
+  });
+  expect(host.textContent).toContain("Quoting Helper: runs at noon");
 });

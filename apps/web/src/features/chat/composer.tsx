@@ -154,6 +154,7 @@ export function Composer({
   memory,
   skillBots = [],
   replyTo,
+  onEditLast,
   polls = false,
 }: {
   value: string;
@@ -173,7 +174,11 @@ export function Composer({
   skillBots?: readonly string[];
   /** Text only: no attachments, server files or @mentions (the setup interview). */ minimal?: boolean;
   /** The message the next send replies to in this channel (not a thread): shown as a chip, and the cursor moves into the box when it changes. */
-  replyTo?: { id: string; name: string; excerpt: string; onCancel: () => void } | undefined;
+  replyTo?:
+    | { id: string; name: string; excerpt: string; selection?: boolean; onCancel: () => void }
+    | undefined;
+  /** The Up arrow in an empty box edits the person's last message. Without it the arrow does nothing special. */
+  onEditLast?: (() => void) | undefined;
   /** Offer the poll tool: the box's text becomes the question and the person writes the options. Only for screens whose submit forwards `poll`. */
   polls?: boolean;
 }) {
@@ -455,7 +460,23 @@ export function Composer({
       }
     }
     if (mention.onKeyDown(e)) return;
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    if (
+      e.key === "ArrowUp" &&
+      onEditLast &&
+      !e.shiftKey &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.isComposing &&
+      !latestValue.current.trim() &&
+      !attached.length &&
+      !staged.length &&
+      !fileRefs.length &&
+      !poll
+    ) {
+      e.preventDefault();
+      onEditLast();
+    } else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       void submit();
     } else if (e.key === "Escape") {
@@ -607,15 +628,18 @@ export function Composer({
             <div className="flex w-full min-w-0 items-center gap-2 text-xs">
               <ArrowBendUpLeftIcon aria-hidden="true" className="size-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate">
-                Replying to <b className="font-semibold">{replyTo.name}</b>
-                <span className="text-muted-foreground"> · {replyTo.excerpt}</span>
+                Quoting <b className="font-semibold">{replyTo.name}</b>
+                <span className="text-muted-foreground">
+                  {replyTo.selection ? ": " : " · "}
+                  {replyTo.excerpt}
+                </span>
               </span>
-              <ActionHint label="Cancel reply">
+              <ActionHint label="Cancel quote">
                 <Button
                   type="button"
                   size="icon-xs"
                   variant="ghost"
-                  aria-label="Cancel reply"
+                  aria-label="Cancel quote"
                   onClick={replyTo.onCancel}
                 >
                   <XIcon />

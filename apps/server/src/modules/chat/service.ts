@@ -130,6 +130,10 @@ import {
 } from "../preferences/agents-state";
 import { createRouting, DECISION_FALLBACK, type Route } from "./routing";
 import { clip, insertMessage, quoteLine, quoteOf, savedQuote, type Quote } from "./messages";
+import { editUserMessage, MessageEditError, messageRevisions } from "./message-edit";
+
+/** The longest text a person posts in a chat (the same limit the route of a new message has). */
+const MAX_EDIT_CHAT = 32_768;
 import { normalizeMentionText, refreshMentionLabels } from "./mention-text";
 import { HARNESS_LABELS, harnessReadiness } from "./harnesses";
 import { addUsage, noUsage, type TokenUsage } from "./claude-stream";
@@ -432,12 +436,16 @@ export type External = {
   eventIds: string[];
   /** The events framed as untrusted data plus how to answer. */ prompt: string;
 };
+/** How many messages before a quoted one the page around it starts. */
+const AROUND_CONTEXT = 25;
 export type Converse = {
   clientRequestId?: string | undefined;
   content: string;
   parentMessageId?: string | undefined;
   /** A message of this chat the user replies to in the channel (not a thread): saved as `meta.quote`, shown above the text and told to the bot. */
   quotedMessageId?: string | undefined;
+  /** The part of the quoted message the person selected (Quote selection). It must be found in that message. */
+  quoteExcerpt?: string | undefined;
   /** A poll this message makes: `content` is its question. Saved as `meta.poll`; the message then reads "📊 question". */
   poll?: { options: string[]; mode?: PollMode | undefined } | undefined;
   attachmentIds?: string[];
@@ -3817,7 +3825,7 @@ export function createChatService(
     };
   }
   /** The message a channel reply quotes, as a snapshot. It must belong to the same chat. */
-  async function loadQuote(conversationId: string, id: string): Promise<Quote> {
+  async function loadQuote(conversationId: string, id: string, selection?: string): Promise<Quote> {
     const [m] = await db
       .select({
         id: message.id,
@@ -3828,7 +3836,7 @@ export function createChatService(
       .from(message)
       .where(and(eq(message.id, id), eq(message.conversationId, conversationId)));
     if (!m) throw new AccessError("NOT_FOUND");
-    return quoteOf(m);
+    return quoteOf(m, selection);
   }
   /** A short reply that only says what it will do next ("I'll read the page…", "Next:"), not an answer. */
   const announcesStep = (text: string) =>
@@ -6832,23 +6840,53 @@ export function createChatService(
     async listMessages(
       actor: ActiveActor,
       conversationId: string,
-      opts: { beforeSeq?: number; limit?: number } = {},
+      opts: {
+        beforeSeq?: number;
+        limit?: number;
+        /** Only this message, in the shape of the list (what an edit returns). */
+        messageId?: string;
+        /** From a few messages before this one up to `beforeSeq` (or the newest): the page a quote jumps to when its original is not loaded. */
+        aroundMessageId?: string;
+      } = {},
     ) {
       const conv = await this.getConversation(actor, conversationId);
       const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+      const target = opts.messageId ?? opts.aroundMessageId;
+      const [anchor] = target
+        ? await db
+            .select({ seq: message.seq })
+            .from(message)
+            .where(and(eq(message.id, target), eq(message.conversationId, conversationId)))
+        : [];
+      if (target && !anchor) throw new AccessError("NOT_FOUND");
+      const around = anchor && opts.aroundMessageId ? Math.max(1, anchor.seq - AROUND_CONTEXT) : 0;
       const page = await db
         .select()
         .from(message)
         .where(
           and(
             eq(message.conversationId, conversationId),
+            opts.messageId ? eq(message.id, opts.messageId) : undefined,
+            around ? sql`${message.seq} >= ${around}` : undefined,
             opts.beforeSeq ? sql`${message.seq} < ${opts.beforeSeq}` : undefined,
           ),
         )
-        .orderBy(sql`${message.seq} desc`)
+        .orderBy(around ? sql`${message.seq} asc` : sql`${message.seq} desc`)
         .limit(limit + 1);
-      const rows = page.slice(0, limit).reverse();
-      const hasMore = page.length > limit;
+      const rows = around ? page.slice(0, limit) : page.slice(0, limit).reverse();
+      // A page that starts at the window's first message has older ones before it.
+      const hasMore = around ? around > 1 : page.length > limit;
+      // A single message has none of its replies on the page: count them.
+      const replyTotals = opts.messageId
+        ? new Map(
+            (
+              await db
+                .select({ n: sql<number>`count(*)::int` })
+                .from(message)
+                .where(and(eq(message.parentMessageId, opts.messageId), ne(message.role, "system")))
+            ).map((r) => [opts.messageId!, r.n]),
+          )
+        : undefined;
       const atts = await this.listAttachments(
         actor,
         rows.map((m) => m.id),
@@ -6922,12 +6960,53 @@ export function createChatService(
           ...m,
           attachments: atts.filter((a) => a.messageId === m.id),
           reactions: [...counts.values()],
-          replyCount: rows.filter((x) => x.parentMessageId === m.id && x.role !== "system").length,
+          replyCount:
+            replyTotals?.get(m.id) ??
+            rows.filter((x) => x.parentMessageId === m.id && x.role !== "system").length,
           queue: queued.get(m.id),
           ...(seen.has(m.id) ? { seenBy: seen.get(m.id)! } : {}),
           ...(savedPoll(m.meta) ? { pollVotes: votes.get(m.id) ?? {} } : {}),
           hasMore,
         };
+      });
+    },
+    /**
+     * The person changes the text of one of their own messages in a chat (a room goes through `discussions`). Returns the message in the
+     * shape of the list. Nothing starts a bot turn and nobody is woken by the new mentions: the bot reads the new text next turn.
+     */
+    async editMessage(
+      actor: ActiveActor,
+      conversationId: string,
+      messageId: string,
+      content: string,
+    ) {
+      const conv = await this.getConversation(actor, conversationId);
+      if (conv.kind === "discussion") throw new DiscussionConversationError();
+      if (conv.kind === "inbound" || conv.ownerUserId !== actor.userId)
+        throw new MessageEditError("NOT_ALLOWED", "You can only edit your own messages.");
+      const { chosen, skipped } = await resolveMentions(actor, content, conv.botId);
+      await editUserMessage(db, {
+        conversationId: conv.id,
+        messageId,
+        userId: actor.userId,
+        content,
+        max: MAX_EDIT_CHAT,
+        readers: [conv.ownerUserId],
+        mentions:
+          chosen.length || skipped.length
+            ? { asked: chosen.map((m) => ({ botId: m.id, name: m.name })), skipped }
+            : null,
+      });
+      const [edited] = await this.listMessages(actor, conv.id, { messageId });
+      return edited!;
+    },
+    /** The earlier texts of a message the person wrote, newest first. */
+    async messageRevisions(actor: ActiveActor, conversationId: string, messageId: string) {
+      const conv = await this.getConversation(actor, conversationId);
+      return messageRevisions(db, {
+        conversationId: conv.id,
+        messageId,
+        userId: actor.userId,
       });
     },
     /** The people who see a conversation change: its owner, and the people of the team when it is a team room. */
@@ -7195,7 +7274,7 @@ export function createChatService(
         if (!parent) throw new AccessError("NOT_FOUND");
       }
       const quoteInput = input.quotedMessageId
-        ? await loadQuote(conv.id, input.quotedMessageId)
+        ? await loadQuote(conv.id, input.quotedMessageId, input.quoteExcerpt)
         : null;
       // The poll this message makes (a person's poll), or the one a queued message was saved with. A new message gets its id now, so the
       // prompt can tell the bot which message to vote on.
@@ -7817,6 +7896,7 @@ export function createChatService(
         | "clientRequestId"
         | "parentMessageId"
         | "quotedMessageId"
+        | "quoteExcerpt"
         | "poll"
         | "attachmentIds"
         | "fileRefs"
@@ -7850,7 +7930,9 @@ export function createChatService(
       }
       const stop = await stopSaid(actor, conv.id, input, "busy");
       if (stop) return stop;
-      const quote = input.quotedMessageId ? await loadQuote(conv.id, input.quotedMessageId) : null;
+      const quote = input.quotedMessageId
+        ? await loadQuote(conv.id, input.quotedMessageId, input.quoteExcerpt)
+        : null;
       const madePoll = input.poll ? newPoll({ question: input.content, ...input.poll }) : undefined;
       const memoryIds = [...new Set(input.memoryIds ?? [])];
       if (

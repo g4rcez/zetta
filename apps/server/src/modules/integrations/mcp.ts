@@ -30,6 +30,7 @@ import "./plugins/supabase"; // importing registers the plugin
 import "./plugins/obsidian"; // importing registers the plugin (local installs)
 import "./plugins/apple"; // importing registers the plugin (local installs on macOS)
 import "./plugins/canva"; // importing registers the plugin
+import "./plugins/figma"; // importing registers the plugin
 import "./plugins/apps"; // importing registers the plugin
 import { configureVault } from "./plugins/vault"; // importing registers 1Password and Bitwarden
 import {

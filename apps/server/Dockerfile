@@ -43,6 +43,13 @@ RUN set -eu; [ "$VAULT_CLIS" = "1" ] || exit 0; \
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssh-client ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app /app
 
+# The commit this image was built from and its date (ISO 8601). The image holds no .git, so the server reads them from here
+# (modules/updates/build-info.ts). install.sh sets both; an empty value means "Version unknown". After the heavy layers on purpose.
+ARG ZETTA_BUILD_COMMIT=
+ARG ZETTA_BUILD_DATE=
+ENV ZETTA_BUILD_COMMIT=$ZETTA_BUILD_COMMIT \
+    ZETTA_BUILD_DATE=$ZETTA_BUILD_DATE
+
 EXPOSE 3000
 
 WORKDIR /app/apps/server

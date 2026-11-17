@@ -54,6 +54,7 @@ import {
   apps,
   skillReview,
   chatSummaries,
+  updateChecker,
 } from "./services";
 
 initLogger({
@@ -216,6 +217,7 @@ if (runsWork) {
     void background.run("chat:proposals", () => chatServices.chat.expireProposals());
     void background.run("apps:pending", () => apps.expirePending());
     void background.run("routines:triggers", () => featureServices.features.routineTriggers.tick());
+    void background.run("updates:check", () => updateChecker.tick());
   }, 30_000);
 
   // Generations that were running when the previous process died are marked interrupted (never silently "complete").

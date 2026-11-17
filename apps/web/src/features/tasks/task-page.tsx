@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import { toast } from "@/lib/notify";
 import { Button, Menu, MenuItem } from "@/components/ui";
 import { BotIdentity } from "@/components/bot-identity";
+import { PersonIdentity } from "@/components/person-identity";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
 import { authClient } from "@/lib/auth-client";
@@ -543,11 +544,23 @@ export function TaskDetail({
                   />
                 )}
                 {task.assignee === "person" && (
-                  <p className="inline-flex items-center gap-1.5">
+                  <div className="inline-flex items-center gap-1.5">
                     <UserCircleIcon aria-hidden className="size-5 text-muted-foreground" />
                     <span className="text-muted-foreground">Assigned to</span>{" "}
-                    {task.assigneeUserId === viewerId ? "you" : (task.assigneeName ?? "a person")}
-                  </p>
+                    {task.assigneeUserId === viewerId ? (
+                      "you"
+                    ) : (
+                      <PersonIdentity
+                        card
+                        size={24}
+                        person={{
+                          name: task.assigneeName ?? "a person",
+                          title: task.assigneeTitle,
+                          ...(task.assigneeUserId ? { userId: task.assigneeUserId } : {}),
+                        }}
+                      />
+                    )}
+                  </div>
                 )}
                 {task.botId && !guest && (
                   <BotIdentity

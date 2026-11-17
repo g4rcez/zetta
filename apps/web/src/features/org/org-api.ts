@@ -6,7 +6,7 @@ import { call, type BotAvatarValue } from "../chat/chat-client";
 export type { OrgRank, OrgSeat };
 
 export type OrgHolder =
-  | { kind: "person"; userId: string; name: string; avatar: unknown }
+  | { kind: "person"; userId: string; name: string; avatar: unknown; jobTitle?: string }
   | {
       kind: "bot";
       botId: string;
@@ -36,7 +36,7 @@ export type OrgPosition = {
 };
 
 export type OrgPalette = {
-  people: { userId: string; name: string; avatar: unknown }[];
+  people: { userId: string; name: string; avatar: unknown; title?: string }[];
   bots: { id: string; name: string; description: string; avatar: BotAvatarValue | null }[];
   teams: { id: string; name: string }[];
 };

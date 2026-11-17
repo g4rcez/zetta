@@ -157,7 +157,7 @@ export function DecisionCard({
         </p>
       )}
       <footer className="flex flex-wrap items-center justify-between gap-2">
-        {card.resultLink ? (
+        {card.resultLink && card.kind !== "update_available" ? (
           <Link
             to={card.resultLink as never}
             className="text-sm text-muted-foreground underline underline-offset-2"

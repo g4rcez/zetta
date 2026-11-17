@@ -11,6 +11,7 @@ import {
 import { accessFail, fail, out, rejectUntrustedOrigin } from "../http-response";
 import { assertPublicUrl } from "../computer/service";
 import { languageCode, TranscribeError, type Transcriber } from "../transcribe/transcriber";
+import type { UpdateChecker } from "../updates/checker";
 
 export type InstallationServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -25,6 +26,8 @@ export type InstallationServices = {
   };
   /** Private network addresses allowed by the operator (ZETTA_ALLOW_PRIVATE_NETWORK): a provider on the local network, over http. */
   allowPrivate?: boolean;
+  /** The daily "newer version" check (modules/updates). */
+  updates?: UpdateChecker;
 };
 
 const patchInput = z.strictObject({
@@ -36,6 +39,7 @@ const patchInput = z.strictObject({
     .optional(),
   onboarding: z.enum(["pending", "done"]).optional(),
   laya: z.enum(["on", "off"]).optional(),
+  updateCheck: z.enum(["on", "off"]).optional(),
   layaLanguages: z.array(z.string().refine(isLayaTag)).max(64).optional(),
   transcribeProvider: z.enum(["local", "openai", "compatible"]).optional(),
   transcribeModel: z
@@ -64,6 +68,7 @@ export function createInstallationRoutes(
     transcriber,
     transcribeKey,
     allowPrivate,
+    updates,
   }: InstallationServices,
   trustedOrigins: readonly string[],
 ) {
@@ -111,6 +116,26 @@ export function createInstallationRoutes(
         try {
           await access.requireActive(request.headers);
           return out(await body(await installation.load()));
+        } catch (e) {
+          return mapError(e);
+        }
+      })
+      // The build of this server and what the update check knows. Signed in only: `GET /api/meta` stays public and carries no version.
+      .get("/version", async ({ request }) => {
+        try {
+          await access.requireActive(request.headers);
+          return out(
+            updates
+              ? await updates.status()
+              : {
+                  build: null,
+                  state: "unknown",
+                  latest: null,
+                  changes: [],
+                  checkedAt: null,
+                  check: "off",
+                },
+          );
         } catch (e) {
           return mapError(e);
         }

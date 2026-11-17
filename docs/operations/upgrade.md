@@ -1,0 +1,46 @@
+# Updating Zetta
+
+Zetta has no release numbers. A version is the commit the server was built from, and the day of that commit. Studio > Overview and the foot of Preferences show it as `Version 54121d6 · 2026-11-10`, so a bug report can name its build.
+
+## How to update
+
+Run the installer again, on the computer where Zetta is installed:
+
+```bash
+curl -fsSL https://zettabot.app/install | bash
+```
+
+It pulls the new code, keeps your `apps/server/.env` and `apps/web/.env` (their secrets protect what is already stored), rebuilds the images and restarts the containers. Your data stays in the Postgres volume and is not touched. Zetta is unavailable for a minute while it rebuilds.
+
+Installed in another folder? Put the folder in front: `curl -fsSL https://zettabot.app/install | ZETTA_DIR=/path/to/zetta bash`.
+
+The installer also writes the version into the server image (`ZETTA_BUILD_COMMIT` and `ZETTA_BUILD_DATE`, build arguments of `apps/server/Dockerfile` that `docker-compose.yml` passes on). A build made by hand with `docker compose up -d --build` has no stamp, so it reads `Version unknown` and cannot say whether it is behind. A server run from a source checkout (`bun run dev`) asks git instead.
+
+## How Zetta tells you an update exists
+
+Once a day the server reads the list of changes the landing site publishes at `https://zettabot.app/changelog.json` and compares its newest day with the day of the build. The result is one of:
+
+- **current**: the build is on the newest published day.
+- **behind**: newer changes exist. The administrator sees a quiet **Update available** link at the foot of the sidebar and one **Catch up** card. Both open **Update**, which lists the changes since the build (the newest 30) and the command above with a copy button.
+- **unknown**: the build has no stamp, the list could not be read, or the check is off.
+
+Members who are not administrators see nothing. The card is raised for the administrator only, at most one at a time. It closes by itself when the build is current. A card you dismiss does not come back for the same version.
+
+The day is the unit: the list groups changes by UTC day, so a build made earlier on the newest day counts as current.
+
+## What the check sends
+
+One plain `GET` of that address. It has no body, no cookies, no query string and no identifier: not a name, an address, an installation id or the version of the build. The only header is `Accept: application/json`. The answer is capped at 512 KB, the request at 5 seconds, and any failure is ignored (it tries again an hour later, or tomorrow). The result is kept in memory, so a restart checks again at once. With several servers (see `scaling.md`), the worker runs the check and raises the card; an `api` server answers from its own check, at most once a day.
+
+`GET /api/meta` stays public and carries no version. The version is read at `GET /api/installation/version`, for a signed-in person only.
+
+## How to turn it off
+
+- **Administrator:** Studio > Decisions > **Check for updates**, or ask the Chief to open the installation settings. Off sends nothing, hides the mark and closes the card.
+- **Operator:** set `ZETTA_UPDATE_CHECK=off` in `apps/server/.env`. It wins over the setting, and Studio says so.
+
+To read the list from another address (a mirror, for example), set `ZETTA_UPDATE_FEED` to an `https://` address with the same JSON shape. It must not be on a private network unless `ZETTA_ALLOW_PRIVATE_NETWORK=1` is set, as for every other address an administrator types.
+
+## Not included
+
+Release tags, signed packages and desktop auto-update. Zetta never updates itself: you run the command when you choose to.

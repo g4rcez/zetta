@@ -11,7 +11,7 @@ A bot tool never skips a person's decision. A change a bot asks for is a card th
 | Company chart             | `zetta:org` (Chief and the administrator's own bots), MCP `*_org_*`                             | Admin only; see `organization.md`.                                                                                                                                              |
 | Projects                  | `zetta:project` (Chief)                                                                         | list, get, create, update, members, rooms, add_work. Only the owner changes a project. Other bots do not read projects: they already get the brief of the projects they are on. |
 | People of a team          | `zetta:team` add_people, remove_people, get                                                     | Never remembered by "Always allow".                                                                                                                                             |
-| Display settings and name | `zetta:preferences` update, profile                                                             | `approvalMode` is not offered. The picture and the email do not change here.                                                                                                    |
+| Display settings and name | `zetta:preferences` update, profile                                                             | `approvalMode` is not offered. Profile lines (job title, department, about, time zone, contact) go in the same card. Not the picture or the email.                              |
 | Workflows                 | `zetta:workflow` get, update                                                                    | The graph is checked before the card. There is no delete, in the web app either.                                                                                                |
 | Routine triggers          | `zetta:routine` get, trigger_add, trigger_pause, trigger_resume, trigger_remove, trigger_rotate | A Gmail or Home Assistant trigger is a card. A **webhook and a new webhook secret open a form**: the secret is shown only in the person's browser, never to the bot.            |
 
@@ -38,7 +38,7 @@ Human only, on purpose, from the same change: **the speech-to-text provider and 
 
 - **Secrets and sign-ins**: API keys, plugin keys, source logins, machine secrets, webhook secrets. A bot opens a form (`zetta:setup`, `zetta:connection`, the triggers form); the person types or reads the secret.
 - **Approving a card**, and **how risky cards are approved** (`approvalMode`): a bot must not decide its own approvals.
-- **Invitations and installation settings**: the Chief opens the form for the administrator.
+- **Invitations and installation settings**: the Chief opens the form for the administrator. The "Check for updates" switch (`on | off`) is in that form. The update page and its command are read by the administrator in the web app; the Catch up card of an available update is for the administrator only.
 - **Changing the profile picture**: an uploaded image would pass through the model.
 - **Deleting a workflow**: nobody can, yet.
 - **Editing a person's message**: only the author, in the web app. The MCP server has no message tools, and a bot that rewrote what a person said would change the record of the conversation. See `message-edit-and-quote.md`.

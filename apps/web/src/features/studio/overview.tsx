@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { outputStylesQueries } from "../output-styles/output-styles-api";
 import { call } from "../chat/chat-client";
 import { Badge, list, useList } from "../shared/ui";
+import { VersionLine } from "../updates/version-line";
 import {
   connectionsQueries,
   decisionsQueries,
@@ -104,25 +105,28 @@ const SECTIONS = studioTabs.filter(
 export function Overview({ onError }: { onError: (m: string) => void }) {
   const status = useStatus(onError);
   return (
-    <ul aria-label="Studio sections" className={list}>
-      {SECTIONS.map((s) => (
-        <li key={s.slug}>
-          <Link
-            to="/studio/$tab"
-            params={{ tab: s.slug }}
-            className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-3 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
-          >
-            <span className="min-w-0 flex-1 basis-64">
-              <span className="block font-medium">{s.label}</span>
-              <span className="block text-pretty text-muted-foreground">{s.blurb}</span>
-            </span>
-            <span className="flex shrink-0 items-center gap-2">
-              <Summary status={status[s.slug as StudioTab] ?? CHECKING} />
-              <CaretRightIcon aria-hidden="true" className="size-4 text-muted-foreground" />
-            </span>
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-3">
+      <VersionLine />
+      <ul aria-label="Studio sections" className={list}>
+        {SECTIONS.map((s) => (
+          <li key={s.slug}>
+            <Link
+              to="/studio/$tab"
+              params={{ tab: s.slug }}
+              className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-3 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+            >
+              <span className="min-w-0 flex-1 basis-64">
+                <span className="block font-medium">{s.label}</span>
+                <span className="block text-pretty text-muted-foreground">{s.blurb}</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <Summary status={status[s.slug as StudioTab] ?? CHECKING} />
+                <CaretRightIcon aria-hidden="true" className="size-4 text-muted-foreground" />
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

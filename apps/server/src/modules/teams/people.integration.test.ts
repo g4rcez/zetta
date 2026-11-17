@@ -5,6 +5,8 @@ import { and, eq } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { bot } from "@zetta/db/schema/chat";
 import { membership } from "@zetta/db/schema/identity";
+import { orgChart, orgPosition } from "@zetta/db/schema/org";
+import { userPreference } from "@zetta/db/schema/preferences";
 import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createChatService } from "../chat/service";
@@ -21,6 +23,7 @@ const OWNER = `people-owner-${tag}`;
 const MEMBER = `people-member-${tag}`;
 const OUTSIDER = `people-outsider-${tag}`;
 const ALL = [OWNER, MEMBER, OUTSIDER];
+const CHART = uuidv7();
 
 suite("team people against postgres", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
@@ -134,7 +137,9 @@ suite("team people against postgres", () => {
   test("a new team has its owner as the only person", async () => {
     const r = await call(OWNER, "GET", `/api/teams/${teamId}/people`);
     expect(r.status).toBe(200);
-    expect(r.json.people).toEqual([{ userId: OWNER, name: "Name owner", role: "owner" }]);
+    expect(r.json.people).toEqual([
+      { userId: OWNER, name: "Name owner", role: "owner", avatar: null, title: "" },
+    ]);
   });
 
   test("a team member cannot read the team's room before the owner adds them", async () => {
@@ -147,15 +152,25 @@ suite("team people against postgres", () => {
 
   test("the owner adds a member, who then reads the room, its list and its transcript", async () => {
     const before = await call(OWNER, "GET", `/api/teams/${teamId}/candidates`);
-    expect(before.json.candidates).toContainEqual({ userId: MEMBER, name: "Name member" });
+    expect(before.json.candidates).toContainEqual({
+      userId: MEMBER,
+      name: "Name member",
+      avatar: null,
+      title: "",
+    });
     const added = await call(OWNER, "POST", `/api/teams/${teamId}/people`, { userId: MEMBER });
     expect(added.status).toBe(201);
     expect(added.json.people).toEqual([
-      { userId: OWNER, name: "Name owner", role: "owner" },
-      { userId: MEMBER, name: "Name member", role: "member" },
+      { userId: OWNER, name: "Name owner", role: "owner", avatar: null, title: "" },
+      { userId: MEMBER, name: "Name member", role: "member", avatar: null, title: "" },
     ]);
     const after = await call(OWNER, "GET", `/api/teams/${teamId}/candidates`);
-    expect(after.json.candidates).not.toContainEqual({ userId: MEMBER, name: "Name member" });
+    expect(after.json.candidates).not.toContainEqual({
+      userId: MEMBER,
+      name: "Name member",
+      avatar: null,
+      title: "",
+    });
 
     const room = await call(MEMBER, "GET", `/api/discussions/${roomId}`);
     expect(room.status).toBe(200);
@@ -169,6 +184,47 @@ suite("team people against postgres", () => {
       "Room open for team Crew. Waiting for the first order.",
     );
     expect((await call(MEMBER, "GET", `/api/teams/${teamId}/people`)).status).toBe(200);
+  });
+
+  test("a person's job title shows under their name in the team's people and in the candidates, with the seat title as the fallback", async () => {
+    await db
+      .insert(userPreference)
+      .values({ ownerUserId: MEMBER, jobTitle: "Head of design" })
+      .onConflictDoUpdate({
+        target: userPreference.ownerUserId,
+        set: { jobTitle: "Head of design" },
+      });
+    const people = await call(OWNER, "GET", `/api/teams/${teamId}/people`);
+    expect(people.json.people.find((p: { userId: string }) => p.userId === MEMBER)).toMatchObject({
+      title: "Head of design",
+    });
+    expect(people.json.people.find((p: { userId: string }) => p.userId === OWNER)?.title).toBe("");
+    // Taken out and put back: the candidates list carries the same title.
+    await call(OWNER, "DELETE", `/api/teams/${teamId}/people/${MEMBER}`);
+    const candidates = await call(OWNER, "GET", `/api/teams/${teamId}/candidates`);
+    expect(
+      candidates.json.candidates.find((c: { userId: string }) => c.userId === MEMBER),
+    ).toMatchObject({ title: "Head of design" });
+    await call(OWNER, "POST", `/api/teams/${teamId}/people`, { userId: MEMBER });
+    // Without a job title of their own the seat they hold stands in.
+    await db
+      .update(userPreference)
+      .set({ jobTitle: "" })
+      .where(eq(userPreference.ownerUserId, MEMBER));
+    await db.insert(orgChart).values({ id: CHART, name: "Company" });
+    await db.insert(orgPosition).values({
+      chartId: CHART,
+      rank: "ceo",
+      title: "Head of operations",
+      seat: "person",
+      userId: MEMBER,
+    });
+    const again = await call(OWNER, "GET", `/api/teams/${teamId}/people`);
+    expect(again.json.people.find((p: { userId: string }) => p.userId === MEMBER)?.title).toBe(
+      "Head of operations",
+    );
+    await db.delete(orgPosition).where(eq(orgPosition.chartId, CHART));
+    await db.delete(orgChart).where(eq(orgChart.id, CHART));
   });
 
   test("a member can read but not write, manage the team, or reach the owner's other chats", async () => {
@@ -204,7 +260,9 @@ suite("team people against postgres", () => {
     expect(own.status).toBe(400);
     const removed = await call(OWNER, "DELETE", `/api/teams/${teamId}/people/${MEMBER}`);
     expect(removed.status).toBe(200);
-    expect(removed.json.people).toEqual([{ userId: OWNER, name: "Name owner", role: "owner" }]);
+    expect(removed.json.people).toEqual([
+      { userId: OWNER, name: "Name owner", role: "owner", avatar: null, title: "" },
+    ]);
     expect((await call(MEMBER, "GET", `/api/discussions/${roomId}`)).status).toBe(404);
   });
 
@@ -219,7 +277,7 @@ suite("team people against postgres", () => {
       .where(eq(membership.userId, MEMBER));
     expect((await call(MEMBER, "GET", `/api/discussions/${roomId}`)).status).toBe(403);
     expect((await call(OWNER, "GET", `/api/teams/${teamId}/people`)).json.people).toEqual([
-      { userId: OWNER, name: "Name owner", role: "owner" },
+      { userId: OWNER, name: "Name owner", role: "owner", avatar: null, title: "" },
     ]);
     expect(
       (await call(OWNER, "POST", `/api/teams/${teamId}/people`, { userId: MEMBER })).status,

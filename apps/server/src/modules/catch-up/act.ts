@@ -217,6 +217,7 @@ export function createCatchUpActions(deps: ActDeps) {
       case "inbound_unanswered":
       case "inbound_rate":
       case "bot_ask":
+      case "update_available":
         return;
       // Work cards are answered through their options (see `act` below), never through this table.
       case "work_stuck":
@@ -290,6 +291,7 @@ export function createCatchUpActions(deps: ActDeps) {
       case "sign_in":
       case "connection_lost":
       case "bot_ask":
+      case "update_available":
       case "proposal":
       // "Not now" on a work card: `deny` already asked the scan for quiet.
       case "work_stuck":

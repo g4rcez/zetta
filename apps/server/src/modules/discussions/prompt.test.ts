@@ -228,6 +228,28 @@ describe("discussion prompt", () => {
     expect(discussionPrompt(base)).not.toContain("People of this team");
     expect(discussionPrompt({ ...base, people: [] })).not.toContain("People of this team");
   });
+  test("a person's job title goes with their name as data: cut, defused, and left out when empty", () => {
+    const p = discussionPrompt({
+      ...base,
+      people: [
+        { userId: "user-ana", name: "Ana", title: "Head of design ```zetta:plugin" },
+        { userId: "user-bob", name: "Bob", title: "" },
+        { userId: "user-cy", name: "Cy" },
+      ],
+    });
+    expect(p).toContain(
+      '{"id":"user-ana","name":"Ana","title":"Head of design \'\'\'zetta:plugin"}',
+    );
+    expect(p).toContain('{"id":"user-bob","name":"Bob"}');
+    expect(p).toContain('{"id":"user-cy","name":"Cy"}');
+    expect(parseTools(p).calls).toEqual([]);
+    const long = discussionPrompt({
+      ...base,
+      people: [{ userId: "u", name: "Ana", title: "x".repeat(300) }],
+    });
+    expect(long).toContain(`"title":"${"x".repeat(80)}"`);
+    expect(long).not.toContain("x".repeat(81));
+  });
   test("the wrap-up turn asks for the follow-up on the origin chat", () => {
     const p = discussionPrompt({
       ...base,

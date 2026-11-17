@@ -15,6 +15,8 @@ import {
 } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { message } from "@zetta/db/schema/chat";
+import { orgPosition } from "@zetta/db/schema/org";
+import { userPreference } from "@zetta/db/schema/preferences";
 import { team } from "@zetta/db/schema/teams";
 import {
   task,
@@ -41,8 +43,14 @@ import {
 } from "./follow-up";
 
 export { TASK_ASSIGNEES, TASK_PRIORITIES, TASK_STATUSES };
-/** A task as the board shows it: `assigneeName` is the person it is assigned to, when it is a person task. */
-export type Task = typeof task.$inferSelect & { assigneeName: string | null };
+/**
+ * A task as the board shows it: `assigneeName` is the person it is assigned to, when it is a person task, and `assigneeTitle` their job
+ * title (else the title of their company-chart seat; empty when neither is written).
+ */
+export type Task = typeof task.$inferSelect & {
+  assigneeName: string | null;
+  assigneeTitle: string;
+};
 /** A top-level task with its subtasks (oldest first), as a bot reads the board. */
 export type TaskWithSubtasks = Task & { subtasks: Task[] };
 
@@ -117,7 +125,11 @@ export function createTaskStore(db: Database) {
     )!;
   const withName = () =>
     db
-      .select({ ...getTableColumns(task), assigneeName: user.name })
+      .select({
+        ...getTableColumns(task),
+        assigneeName: user.name,
+        assigneeTitle: sql<string>`coalesce(nullif(btrim((select ${userPreference.jobTitle} from ${userPreference} where ${userPreference.ownerUserId} = ${task.assigneeUserId})), ''), (select ${orgPosition.title} from ${orgPosition} where ${orgPosition.seat} = 'person' and ${orgPosition.userId} = ${task.assigneeUserId} order by ${orgPosition.sortOrder}, ${orgPosition.id} limit 1), '')`,
+      })
       .from(task)
       .leftJoin(user, eq(user.id, task.assigneeUserId));
   async function get(a: ActiveActor, id: string): Promise<Task> {
@@ -708,7 +720,11 @@ export function createTaskStore(db: Database) {
       if (row.assigneeUserId)
         await closeAttentionKey(db, row.assigneeUserId, cardKey(id), "cancelled");
       if (row.assignee === "person")
-        notify({ kind: "removed", task: { ...row, assigneeName: null }, by: a.userId });
+        notify({
+          kind: "removed",
+          task: { ...row, assigneeName: null, assigneeTitle: "" },
+          by: a.userId,
+        });
       changed(row);
       return row;
     },

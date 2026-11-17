@@ -12,6 +12,7 @@ import { team } from "@zetta/db/schema/teams";
 import type { ActiveActor } from "../identity/access";
 import { buildOrgDraft, type OrgDraft, type OrgDraftChoices } from "./draft";
 import { readOrgLinks, type OrgLink } from "./links";
+import { createPeopleDirectory } from "../people/directory";
 
 /** The most seats one chart holds: the canvas and the prompts stay readable, and one admin cannot fill the table. */
 export const ORG_MAX_POSITIONS = 300;
@@ -37,7 +38,7 @@ type Tx = Pick<Database, "select" | "insert" | "update" | "delete" | "execute">;
 export type OrgHolderProblem = "member_removed" | "bot_private" | "bot_archived" | "bot_missing";
 
 export type OrgHolder =
-  | { kind: "person"; userId: string; name: string; avatar: Avatar }
+  | { kind: "person"; userId: string; name: string; avatar: Avatar; jobTitle?: string }
   | {
       kind: "bot";
       botId: string;
@@ -72,7 +73,7 @@ export type OrgView = {
   canEdit: boolean;
   /** Only for the admin: who can be put in a seat and which of their own teams can be linked. */
   palette: {
-    people: { userId: string; name: string; avatar: Avatar }[];
+    people: { userId: string; name: string; avatar: Avatar; title: string }[];
     bots: { id: string; name: string; description: string; avatar: Avatar }[];
     teams: { id: string; name: string }[];
   } | null;
@@ -112,7 +113,11 @@ export async function readOrg(
       : [],
     userIds.length
       ? db
-          .select({ id: userPreference.ownerUserId, avatar: userPreference.avatar })
+          .select({
+            id: userPreference.ownerUserId,
+            avatar: userPreference.avatar,
+            jobTitle: userPreference.jobTitle,
+          })
           .from(userPreference)
           .where(inArray(userPreference.ownerUserId, userIds))
       : [],
@@ -142,6 +147,7 @@ export async function readOrg(
   const nameOf = new Map(people.map((p) => [p.id, p.name]));
   const isActive = new Set(active.map((m) => m.id));
   const avatarOf = new Map(avatars.map((a) => [a.id, a.avatar]));
+  const jobTitleOf = new Map(avatars.map((a) => [a.id, a.jobTitle]));
   const botOf = new Map(bots.map((b) => [b.id, b]));
   const teamOf = new Map(teams.map((t) => [t.id, t.name]));
   const positions = rows
@@ -175,6 +181,7 @@ export async function readOrg(
             userId: r.userId,
             name,
             avatar: smallAvatar(avatarOf.get(r.userId) ?? null),
+            jobTitle: jobTitleOf.get(r.userId) ?? "",
           },
           problem: null,
         };
@@ -340,11 +347,17 @@ export function createOrgStore(db: Database) {
           .where(and(eq(team.ownerUserId, a.userId), eq(team.status, "active")))
           .orderBy(asc(team.name), asc(team.id)),
       ]);
+      // The title of each person as the rest of the app shows it: their own job title, else their seat.
+      const titles = await createPeopleDirectory(db).lines(people.map((p) => p.userId));
       return {
         ...view,
         canEdit: true,
         palette: {
-          people: people.map((p) => ({ ...p, avatar: smallAvatar(p.avatar ?? null) })),
+          people: people.map((p) => ({
+            ...p,
+            avatar: smallAvatar(p.avatar ?? null),
+            title: titles.get(p.userId)?.title ?? "",
+          })),
           bots: bots.map((b) => ({ ...b, avatar: smallAvatar(b.avatar) })),
           teams,
         },

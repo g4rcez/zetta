@@ -35,6 +35,7 @@ Human only, on purpose, from the same change: **the speech-to-text provider and 
 - **Invitations and installation settings**: the Chief opens the form for the administrator.
 - **Changing the profile picture**: an uploaded image would pass through the model.
 - **Deleting a workflow**: nobody can, yet.
+- **Editing a person's message**: only the author, in the web app. The MCP server has no message tools, and a bot that rewrote what a person said would change the record of the conversation. See `message-edit-and-quote.md`.
 
 ## Known narrow spots, not filled
 

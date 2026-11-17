@@ -39,6 +39,12 @@ const patch = z.strictObject({
     .optional(),
   // Ids only, never names: a stale or foreign id is harmless because only this person reads the list.
   botOrder: z.array(z.uuid()).max(500).optional(),
+  // The bots pinned to the chat sidebar. A repeated id is one pin.
+  sidebarBots: z
+    .array(z.uuid())
+    .max(500)
+    .transform((ids) => [...new Set(ids)])
+    .optional(),
   roomOrder: z.array(z.uuid()).max(500).optional(),
 });
 

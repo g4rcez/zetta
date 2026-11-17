@@ -29,6 +29,8 @@ export type Preferences = {
   theme: Theme | null;
   primaryColor: string | null;
   botOrder: string[];
+  /** The bots this person pinned to the chat sidebar, in the order pinned. Empty: the sidebar picks its few bots by itself. */
+  sidebarBots: string[];
   roomOrder: string[];
   /** Read-only here: it changes only through `PUT /api/agents/state`, which also stops the running turns. */
   agentsState: AgentsState;
@@ -49,6 +51,7 @@ export function createPreferenceStore(db: Database) {
     theme: r.theme,
     primaryColor: r.primaryColor,
     botOrder: r.botOrder,
+    sidebarBots: r.sidebarBots,
     roomOrder: r.roomOrder,
     agentsState: r.agentsState,
   });
@@ -74,6 +77,7 @@ export function createPreferenceStore(db: Database) {
             theme: null,
             primaryColor: null,
             botOrder: [],
+            sidebarBots: [],
             roomOrder: [],
             agentsState: "running",
           };

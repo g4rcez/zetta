@@ -83,6 +83,7 @@ suite("layout preferences against compose postgres", () => {
       theme: null,
       primaryColor: null,
       botOrder: [],
+      sidebarBots: [],
       roomOrder: [],
       agentsState: "running",
     });
@@ -104,6 +105,7 @@ suite("layout preferences against compose postgres", () => {
       theme: null,
       primaryColor: null,
       botOrder: [],
+      sidebarBots: [],
       roomOrder: [],
       agentsState: "running",
     });
@@ -120,6 +122,7 @@ suite("layout preferences against compose postgres", () => {
       theme: null,
       primaryColor: null,
       botOrder: [],
+      sidebarBots: [],
       roomOrder: [],
       agentsState: "running",
     });
@@ -141,6 +144,18 @@ suite("layout preferences against compose postgres", () => {
     expect((await call(ids[0]!, "PATCH", { botOrder: order })).status).toBe(200);
     expect(await read(ids[0]!)).toMatchObject({ railWidth: 260, botOrder: order });
     expect(await read(ids[1]!)).toMatchObject({ botOrder: [] });
+  });
+  test("the bots pinned to the sidebar are kept for that person only, once each, and must be bot ids", async () => {
+    const A = "00000000-0000-7000-8000-000000000003";
+    const B = "00000000-0000-7000-8000-000000000004";
+    expect((await call(ids[0]!, "PATCH", { sidebarBots: [B, A, B] })).status).toBe(200);
+    // A repeated id is one pin, and the order pinned is kept.
+    expect(await read(ids[0]!)).toMatchObject({ sidebarBots: [B, A], railWidth: 260 });
+    expect(await read(ids[1]!)).toMatchObject({ sidebarBots: [] });
+    expect((await call(ids[0]!, "PATCH", { sidebarBots: ["not-a-bot"] })).status).toBe(400);
+    // Unpinning everything goes back to the sidebar's own pick.
+    expect((await call(ids[0]!, "PATCH", { sidebarBots: [] })).status).toBe(200);
+    expect(await read(ids[0]!)).toMatchObject({ sidebarBots: [] });
   });
   test("the hour format defaults to 24h and a change is kept for that person only", async () => {
     expect(await read(ids[1]!)).toMatchObject({ timeFormat: "24h" });

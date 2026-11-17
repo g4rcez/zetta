@@ -9,11 +9,14 @@ services:
         - web_env
         - server_env
       args:
-        # The one public address: the web container serves the app and forwards /api to the server container.
-        ZETTA_SERVER_URL: http://localhost:3001
+        # The one public address: the web container serves the app and forwards /api to the server container. It comes from the .env next to
+        # this file (install.sh writes it; `install.sh --url https://zetta.example.com` changes it everywhere), and the server reads the same
+        # address from apps/server/.env.
+        ZETTA_SERVER_URL: ${ZETTA_SERVER_URL:-http://localhost:3001}
     init: true
     ports:
-      - "3001:80"
+      # The one port people use. ZETTA_WEB_PORT in the .env next to this file moves it when 3001 is taken (install.sh --port).
+      - "${ZETTA_WEB_PORT:-3001}:80"
     env_file:
       - path: apps/web/.env
         required: false
@@ -39,16 +42,26 @@ services:
         # Which version this image is: the commit and its date. install.sh sets them from git; without them Zetta reports "Version unknown".
         ZETTA_BUILD_COMMIT: ${ZETTA_BUILD_COMMIT:-}
         ZETTA_BUILD_DATE: ${ZETTA_BUILD_DATE:-}
+        # The agent CLIs to put in the image: claude-code, codex, both ("claude-code codex") or none (the default: each is 300 to 430 MB, and the server does
+        # not use a copy you already have on this computer). install.sh --agents sets it.
+        ZETTA_AGENTS: ${ZETTA_AGENTS:-}
     init: true
     ports:
-      - "3000:3000"
+      # The raw API is for this computer only; people reach Zetta through the web container above. Set ZETTA_API_BIND=0.0.0.0 to open it.
+      - "${ZETTA_API_BIND:-127.0.0.1}:${ZETTA_API_PORT:-3000}:3000"
     env_file:
       - path: apps/server/.env
         required: false
     environment:
-      ZETTA_SERVER_URL: http://localhost:3001
+      # ZETTA_SERVER_URL is not set here: apps/server/.env is its one source (docs/operations/settings.md).
       ZETTA_HOST: 0.0.0.0
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/zetta
+      # Everything the server keeps on disk lives on the zetta_data volume, so an update does not erase it: HOME holds the bots' code folders,
+      # attachments, artifacts, model caches and the agent CLIs' sign-ins (~/.claude, ~/.codex); ZETTA_FILES_ROOT holds the files store.
+      HOME: /data/home
+      ZETTA_FILES_ROOT: /data/files
+    volumes:
+      - zetta_data:/data
     healthcheck:
       test:
         [
@@ -86,6 +99,7 @@ services:
 
 volumes:
   zetta_postgres_data:
+  zetta_data:
 
 # BuildKit makes these available only while install/build commands run.
 secrets:

@@ -48,6 +48,10 @@ export const SCOPES = {
     url: "https://www.googleapis.com/auth/calendar.events",
     label: "Calendar: create and edit events",
   },
+  "calendar.readonly": {
+    url: "https://www.googleapis.com/auth/calendar.readonly",
+    label: "Calendar: see your calendars and when you are busy",
+  },
   "drive.readonly": {
     url: "https://www.googleapis.com/auth/drive.readonly",
     label: "Drive: read all files",

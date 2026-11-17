@@ -1,5 +1,5 @@
 import { registerPlugin, type PluginDef, type PluginTool } from "../registry";
-import { calendarTools } from "./calendar";
+import { calendarTools, resumeCalendar } from "./calendar";
 import { docsTools } from "./docs";
 import { driveTools } from "./drive";
 import { gmailTools } from "./gmail";
@@ -56,7 +56,8 @@ const accountTools: PluginTool[] = [
  *   - every write tool needs its own opt-in scope, chosen by the user at connect time and re-checked against what Google actually granted;
  *   - gmail_create_draft only creates a draft the user reviews and sends themselves;
  *   - gmail_send additionally needs the per-account `allowSend` switch (default off) and is rate limited;
- *   - calendar_create_event never invites guests (sendUpdates=none).
+ *   - calendar_update_event and calendar_delete_event always stop for the user's Approve card; calendar_create_event does when it has guests.
+ *     sendUpdates is "none" unless the call asks for "all", and then the card names every address Google will e-mail (see calendar.ts).
  * Note: Google's gmail.compose scope technically also permits sending drafts; Zetta never calls that, but revoke it if that matters to you.
  */
 export const googlePlugin: PluginDef = {
@@ -123,6 +124,7 @@ export const googlePlugin: PluginDef = {
     ...docsTools,
     ...sheetsTools,
   ],
+  pausing: { resume: resumeCalendar },
   connect: startConnect,
   callback: finishConnect,
   disconnect,

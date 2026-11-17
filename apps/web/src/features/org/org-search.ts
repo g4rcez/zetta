@@ -4,8 +4,11 @@ import type { OrgPosition } from "./org-api";
 export const ORG_VIEWS = ["chart", "list"] as const;
 export type OrgViewMode = (typeof ORG_VIEWS)[number];
 
-/** Whom the page points out: everyone, or only the people, or only the bots. The others stay, dimmed. */
-export const ORG_SHOW = ["everyone", "people", "bots"] as const;
+/**
+ * What the page points out: everyone, or only the people, or only the bots (the others stay, dimmed). `links` points nobody out: it
+ * draws dotted lines between the bots that work together.
+ */
+export const ORG_SHOW = ["everyone", "people", "bots", "links"] as const;
 export type OrgShow = (typeof ORG_SHOW)[number];
 
 export type OrgSearch = { view?: OrgViewMode; q?: string; show?: OrgShow; focus?: string };
@@ -36,7 +39,8 @@ export const toOrgSearch = (s: OrgFilterState): OrgSearch =>
   parseOrgSearch({ view: s.view, q: s.q, show: s.show, focus: s.focus });
 
 /** Whether any filter points seats out. */
-export const filtering = (f: Pick<OrgFilterState, "q" | "show">) => !!f.q || f.show !== "everyone";
+export const filtering = (f: Pick<OrgFilterState, "q" | "show">) =>
+  !!f.q || (f.show !== "everyone" && f.show !== "links");
 
 /** The words a search reads on a seat: its title, unit and the name of whoever holds it (or held it). */
 export const seatWords = (p: OrgPosition) =>

@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 
 import { BotIdentity } from "@/components/bot-identity";
 import { Checkbox } from "@/components/ui";
-import { UserAvatar } from "@/components/user-avatar";
+import { PersonIdentity } from "@/components/person-identity";
 import type { Bot } from "../chat/chat-client";
 import type { Candidates } from "./projects-api";
 
@@ -64,8 +64,7 @@ export function MemberPicker({
                     checked={people.includes(p.userId)}
                     onChange={() => onPeople(toggle(people, p.userId))}
                   />
-                  <UserAvatar name={p.name} size={24} />
-                  <span className="truncate text-sm font-medium">{p.name}</span>
+                  <PersonIdentity person={p} size={24} />
                 </label>
               </li>
             ))}

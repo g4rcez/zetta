@@ -13,6 +13,7 @@ import { OrgCanvas } from "./org-canvas";
 import { useOrgEdit } from "./org-edit";
 import { shiftSeat } from "./org-graph";
 import { OrgList } from "./org-list";
+import { OrgWorksList } from "./org-works-list";
 import { OrgPalettePanel, type OrgDragItem } from "./org-palette";
 import {
   ORG_SHOW,
@@ -32,6 +33,7 @@ const SHOW_LABELS: Record<OrgShow, string> = {
   everyone: "Everyone",
   people: "People",
   bots: "Bots",
+  links: "Works with",
 };
 
 function Choice<T extends string>({
@@ -119,6 +121,9 @@ export function OrganizationPage({
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const state = toOrgState(search);
+  // The works-with pairs are read only while the layer is on, from the address.
+  const links = useQuery({ ...orgQueries.links(), enabled: state.show === "links" });
+  const linksError = links.error ? errorMessage(links.error) : undefined;
   const positions = data?.positions ?? NO_POSITIONS;
   const canEdit = data?.canEdit ?? false;
   const set = (patch: Partial<typeof state>, opts?: { replace?: boolean }) =>
@@ -186,7 +191,8 @@ export function OrganizationPage({
         <div className="min-w-0 flex-1 basis-64">
           <h1 className="text-2xl text-balance">Organization</h1>
           <p className="text-sm text-pretty text-muted-foreground">
-            Who leads what, and who every person and bot reports to.
+            Who leads what, and who every person and bot reports to. Bots read their seat, and
+            escalation follows the chart.
             {!canEdit && positions.length > 0 ? " Only the admin changes the chart." : ""}
           </p>
         </div>
@@ -203,7 +209,7 @@ export function OrganizationPage({
               onChange={(e) => set({ q: e.target.value }, { replace: true })}
             />
             <Choice
-              label="Who to point out"
+              label="What to show"
               options={ORG_SHOW}
               value={state.show}
               names={SHOW_LABELS}
@@ -271,6 +277,9 @@ export function OrganizationPage({
             busy={busy}
             onPreset={(key) => void run((v) => orgApi.applyPreset(v, key), "Chart drawn")}
             onCeo={() => void run((v) => orgApi.create(v, { templateKey: "ceo" }), "Chart started")}
+            onDraft={(choices) =>
+              void run((v) => orgApi.applyDraft(v, choices), "Chart drawn from your teams")
+            }
           />
         </div>
       ) : state.view === "list" ? (
@@ -284,6 +293,9 @@ export function OrganizationPage({
               actions={actions}
               onToggle={toggle}
             />
+            {state.show === "links" && (
+              <OrgWorksList links={links.data} positions={positions} error={linksError} />
+            )}
           </div>
         </div>
       ) : (
@@ -301,6 +313,9 @@ export function OrganizationPage({
               filters={state}
               collapsed={folded}
               focus={state.focus}
+              showLinks={state.show === "links"}
+              links={links.data}
+              linksError={linksError}
               actions={actions}
               onToggle={toggle}
               onMoveSeat={(id, parentId) => void run((v) => orgApi.move(v, id, parentId), "Moved")}

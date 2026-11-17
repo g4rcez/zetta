@@ -11,8 +11,11 @@ import {
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 
+import { BOT_ROLE_MAX, botRole } from "@zetta/core/bot-role";
 import { UNVERIFIED_ENGINES } from "@zetta/core/maturity";
+import { AdvancedSection } from "@/components/advanced-section";
 import { BotAvatar, type AvatarValue } from "@/components/bot-avatar";
+import { BotSelect } from "@/components/bot-select";
 import { Button, Input, Progress, Select } from "@/components/ui";
 import "../code/register";
 import "../computer/register";
@@ -30,7 +33,7 @@ import { OutputStylePicker } from "../output-styles/output-style-picker";
 import { styleLabel } from "../output-styles/output-styles-api";
 import { MentionTextarea } from "../chat/mention";
 import { useSidebarData } from "../chat/sidebar-data";
-import { Badge, Choice, field } from "../shared/ui";
+import { Badge, Choice } from "../shared/ui";
 import { harnessQueries } from "../studio/studio-queries";
 import { usePlugins } from "../plugins/plugins-api";
 import {
@@ -57,6 +60,8 @@ import { IconHint } from "@/components/icon-hint";
 
 export type Draft = {
   name: string;
+  /** What the bot does for the team, in a few words; shown beside its name in pickers. */
+  role?: string;
   description: string;
   harness: string;
   model: string;
@@ -68,6 +73,7 @@ export type Draft = {
 };
 const BLANK: Draft = {
   name: "",
+  role: "",
   description: "",
   harness: "fixture",
   model: "",
@@ -228,7 +234,12 @@ export function BotOnboarding({
   function choose(id: string) {
     setOrigin(id);
     if (id === "blank") {
-      setDraft((d) => ({ ...BLANK, name: d.name, description: d.description }));
+      setDraft((d) => ({
+        ...BLANK,
+        name: d.name,
+        role: d.role ?? "",
+        description: d.description,
+      }));
       return;
     }
     const chosen = templateById(id);
@@ -241,6 +252,7 @@ export function BotOnboarding({
         instructions: chosen.instructions,
         outputStyle: chosen.outputStyle,
         outputStyleId: null,
+        role: !d.role || d.role === previous?.role ? chosen.role : d.role,
         description:
           !d.description || d.description === previous?.description
             ? chosen.description
@@ -253,7 +265,7 @@ export function BotOnboarding({
     }
     const source = bots.find((b) => b.id === id);
     if (source) {
-      setDraft(duplicateOf(source));
+      setDraft({ ...duplicateOf(source), role: source.role ?? "" });
       setAvatar(source.avatar ?? null);
     }
   }
@@ -267,6 +279,7 @@ export function BotOnboarding({
         ...(fromTemplate ? templateInput(fromTemplate) : {}),
         avatar,
         name: draft.name.trim(),
+        role: (draft.role ?? "").trim(),
         description: draft.description,
         visibility: draft.visibility,
         harness: draft.harness,
@@ -317,6 +330,7 @@ export function BotOnboarding({
       setDraft({
         ...BLANK,
         name: created.name,
+        role: created.role ?? "",
         description: created.description,
         harness: created.harness,
         model: created.model ?? "",
@@ -502,7 +516,9 @@ export function BotOnboarding({
                       "Requiring accounts the bot never uses: people get blocked for nothing.",
                     ]}
                   >
-                    <BotAccounts bot={bot} onBotChange={replaceBot} />
+                    <AdvancedSection title="Accounts this bot needs">
+                      <BotAccounts bot={bot} onBotChange={replaceBot} />
+                    </AdvancedSection>
                   </Guided>
                 )}
                 {current.id === "extras" && bot && (
@@ -874,21 +890,15 @@ function StartStep({
               label="Or copy one of your bots"
               hint="Copies its personality, instructions and engine."
             >
-              <select
-                aria-label="Bot to copy"
-                className={`${field} max-w-md ${copying ? "border-primary" : ""}`}
-                value={copying ? origin : ""}
-                onChange={(e) => e.target.value && onChoose(e.target.value)}
-              >
-                <option value="" disabled>
-                  Choose a bot…
-                </option>
-                {bots.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+              <div className="max-w-md">
+                <BotSelect
+                  label="Bot to copy"
+                  placeholder="Choose a bot…"
+                  bots={bots}
+                  value={copying ? origin : ""}
+                  onChange={(botId) => botId && onChoose(botId)}
+                />
+              </div>
             </Group>
           )}
         </div>
@@ -940,6 +950,20 @@ export function IdentityStep({
           placeholder="What is it good at, and when should someone use it?"
         />
       </div>
+      <div className="max-w-md space-y-1">
+        <Input
+          title="Role"
+          required={false}
+          value={draft.role ?? ""}
+          onChange={(e) => set({ role: e.target.value })}
+          maxLength={BOT_ROLE_MAX}
+          placeholder={botRole({ description: draft.description, ...(kind ? { kind } : {}) })}
+        />
+        <p className="text-xs text-pretty text-muted-foreground">
+          What this bot does for the team, e.g. Support lead. It shows beside the name wherever
+          someone picks a bot.
+        </p>
+      </div>
       <Group label="Picture">
         <BotAvatarPicker botId="new-bot" kind={kind} value={avatar} onChange={setAvatar} />
       </Group>
@@ -984,7 +1008,7 @@ export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draf
         "The biggest model for simple, high-volume tasks.",
       ]}
     >
-      <div role="radiogroup" aria-label="Engine" className="space-y-8">
+      <div role="radiogroup" aria-label="Engine">
         <div className="grid gap-3 sm:grid-cols-2">
           {PRIMARY_HARNESSES.map((h) => (
             <Choice
@@ -1008,11 +1032,18 @@ export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draf
             </Choice>
           ))}
         </div>
+      </div>
+      <AdvancedSection
+        {...((EXPERIMENTAL_HARNESSES as readonly string[]).includes(draft.harness)
+          ? { defaultOpen: true }
+          : {})}
+        className="mt-6"
+      >
         <Group
           label="Not fully verified"
           hint="At best one real answer was checked in Zetta; tools and isolation are not proved. Expect rough edges."
         >
-          <div className="flex flex-wrap gap-2">
+          <div role="radiogroup" aria-label="Other engines" className="flex flex-wrap gap-2">
             {EXPERIMENTAL_HARNESSES.map((h) => (
               <label
                 key={h}
@@ -1031,18 +1062,18 @@ export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draf
             ))}
           </div>
         </Group>
-      </div>
-      {draft.harness !== "fixture" && (
-        <div className="max-w-md">
-          <Select
-            title="Model"
-            required={false}
-            value={draft.model}
-            onChange={(e) => set({ model: e.target.value })}
-            options={modelOptions(draft.harness)}
-          />
-        </div>
-      )}
+        {draft.harness !== "fixture" && (
+          <div className="max-w-md">
+            <Select
+              title="Model"
+              required={false}
+              value={draft.model}
+              onChange={(e) => set({ model: e.target.value })}
+              options={modelOptions(draft.harness)}
+            />
+          </div>
+        )}
+      </AdvancedSection>
     </Guided>
   );
 }
@@ -1487,7 +1518,7 @@ export function PluginsStep({
   );
 }
 
-/** A folded section of optional setup: its title and why you would want it, with the controls inside. */
+/** A folded section of optional setup: its title, why you would want it, and the controls. It starts folded for everyone: the step is the "skip it unless you need it" one. */
 function ExtraSection({
   title,
   why,
@@ -1498,19 +1529,10 @@ function ExtraSection({
   children: ReactNode;
 }) {
   return (
-    <details className="group border-b py-1 first:border-t">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-md py-3 focus-visible:outline-2 focus-visible:outline-ring">
-        <span>
-          <span className="block font-medium">{title}</span>
-          <span className="text-xs text-pretty text-muted-foreground">{why}</span>
-        </span>
-        <span className="shrink-0 text-xs text-primary group-open:hidden">Set up</span>
-        <span className="hidden shrink-0 text-xs text-muted-foreground group-open:inline">
-          Hide
-        </span>
-      </summary>
-      <div className="pb-4">{children}</div>
-    </details>
+    <AdvancedSection title={title} defaultOpen={false}>
+      <p className="text-xs text-pretty text-muted-foreground">{why}</p>
+      {children}
+    </AdvancedSection>
   );
 }
 
@@ -1535,7 +1557,7 @@ function ExtrasStep({
         "Routing rules that overlap: messages bounce between bots.",
       ]}
     >
-      <div>
+      <div className="space-y-3">
         {computer && (
           <ExtraSection
             title="Computer use"

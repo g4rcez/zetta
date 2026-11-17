@@ -2,7 +2,7 @@ import { useState, type DragEvent, type ReactNode } from "react";
 
 import { BotIdentity } from "@/components/bot-identity";
 import { Input } from "@/components/ui";
-import { UserAvatar } from "@/components/user-avatar";
+import { PersonIdentity } from "@/components/person-identity";
 import { cn } from "@zetta/ui/lib/utils";
 import { ORG_RANK_LABELS } from "@zetta/core/org";
 import type { OrgRoleTemplate } from "@zetta/core/org-templates";
@@ -120,10 +120,7 @@ export function OrgPalettePanel({
         {tab === "people" &&
           people.map((p) => (
             <Draggable key={p.userId} item={{ type: "person", id: p.userId }}>
-              <span className="flex min-w-0 items-center gap-2">
-                <UserAvatar name={p.name} avatar={p.avatar} size={28} />
-                <span className="min-w-0 truncate text-sm font-medium">{p.name}</span>
-              </span>
+              <PersonIdentity person={p} size={28} className="gap-2" />
             </Draggable>
           ))}
         {tab === "bots" &&

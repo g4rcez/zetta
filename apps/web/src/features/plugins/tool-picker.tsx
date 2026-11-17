@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { AdvancedSection } from "@/components/advanced-section";
 import { errorMessage } from "../chat/chat-client";
 import { pluginsApi, pluginsQueries, type ToolAccess } from "./plugins-api";
 import { Alert } from "@g4rcez/components/alert";
@@ -38,19 +39,20 @@ export function ToolPicker({
   }
   const off = disabled || busy;
   return (
-    <details
-      className="rounded-lg border bg-card px-3 py-2 text-sm"
-      onToggle={(e) => {
-        if (e.currentTarget.open) setOpened(true);
-      }}
-    >
-      <summary className="cursor-pointer text-xs text-muted-foreground">
-        Tools {name} may use
-        {access
+    <AdvancedSection
+      title={`Tools ${name} may use${
+        access
           ? `: ${access.toolsMode === "all" ? "all" : `${access.allowedTools.length} selected`}`
-          : ""}
-      </summary>
-      <div className="mt-2 space-y-2">
+          : ""
+      }`}
+      // Folded for everyone: it is a per-plugin detail, and it only loads once it is opened.
+      defaultOpen={false}
+      onOpenChange={(open) => {
+        if (open) setOpened(true);
+      }}
+      className="bg-card text-sm"
+    >
+      <div className="space-y-2">
         {error && <Alert theme="danger">{error}</Alert>}
         {!access && !error && <p className="text-xs text-muted-foreground">Loading...</p>}
         {access && (
@@ -110,6 +112,6 @@ export function ToolPicker({
           </>
         )}
       </div>
-    </details>
+    </AdvancedSection>
   );
 }

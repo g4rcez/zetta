@@ -15,6 +15,8 @@ export type BotTemplate = {
   id: string;
   /** Becomes the bot's name. */
   title: string;
+  /** What the bot does for the team, in a few words (60 characters at most). Becomes the bot's role, shown beside its name in pickers. */
+  role: string;
   /** One plain sentence: what it is good at and when to use it. Becomes the bot's description, which routing reads. */
   description: string;
   category: TemplateCategory;
@@ -40,6 +42,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   {
     id: "researcher",
     title: "Researcher",
+    role: "Research lead",
     description: "Finds sources, weighs the evidence and cites what it used.",
     category: "research",
     avatar: { kind: "preset", preset: "owl", colors: ["#4a80e6"] },
@@ -71,6 +74,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   {
     id: "analyst",
     title: "Data analyst",
+    role: "Data and numbers",
     description: "Turns data into numbers, comparisons and one clear recommendation.",
     category: "research",
     avatar: { kind: "preset", preset: "orbit", colors: ["#4aa396"] },
@@ -108,6 +112,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   {
     id: "engineer",
     title: "Software engineer",
+    role: "Writes and changes code",
     description: "Pragmatic engineer: small diffs, tests and honest trade-offs.",
     category: "engineering",
     avatar: { kind: "preset", preset: "robot", colors: ["#7e5cc4"] },
@@ -146,6 +151,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   {
     id: "reviewer",
     title: "Code reviewer",
+    role: "Reviews code changes",
     description: "Reviews a change for bugs, risks and missing tests, in order of severity.",
     category: "engineering",
     avatar: { kind: "preset", preset: "hexagon", colors: ["#dc8a42"] },
@@ -183,6 +189,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   {
     id: "editor",
     title: "Editor",
+    role: "Writing editor",
     description: "Tightens writing and keeps the author's voice.",
     category: "writing",
     avatar: { kind: "preset", preset: "spark", colors: ["#cfa843"] },
@@ -214,6 +221,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   {
     id: "tutor",
     title: "Tutor",
+    role: "Teaches new topics",
     description: "Teaches a topic step by step and checks that you understood.",
     category: "writing",
     avatar: { kind: "preset", preset: "frog", colors: ["#46a05f"] },
@@ -245,6 +253,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   {
     id: "coach",
     title: "Coach",
+    role: "Coaching and next steps",
     description: "Asks good questions and helps you agree on a next step.",
     category: "people",
     avatar: { kind: "preset", preset: "cat", colors: ["#c8588a"] },
@@ -276,6 +285,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   {
     id: "concierge",
     title: "Concierge",
+    role: "Front desk",
     description: "Friendly front desk that answers quickly and routes the rest.",
     category: "people",
     avatar: { kind: "preset", preset: "bell", colors: ["#47a5c4"] },
@@ -307,6 +317,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   {
     id: "support",
     title: "Support agent",
+    role: "Support lead",
     description: "Sorts incoming requests, drafts replies and escalates what it cannot answer.",
     category: "people",
     avatar: { kind: "preset", preset: "mouse", colors: ["#d66b57"] },
@@ -345,6 +356,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   {
     id: "planner",
     title: "Planner",
+    role: "Plans and follows up",
     description: "Breaks a goal into tasks with owners and follows up until they are done.",
     category: "people",
     avatar: { kind: "preset", preset: "arrow", colors: ["#c95454"] },
@@ -391,6 +403,7 @@ export const templateById = (id: string) => BOT_TEMPLATES.find((t) => t.id === i
 /** What a new bot is created with. Every field of the template that a bot has is applied, so “Create now” gives a bot that works as shown. */
 export const templateInput = (t: BotTemplate) => ({
   name: t.title,
+  role: t.role,
   description: t.description,
   avatar: t.avatar,
   personality: t.personality,

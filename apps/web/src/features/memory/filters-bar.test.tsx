@@ -73,10 +73,32 @@ test("the Filters button opens a drawer with every facet", async () => {
   await press(open);
   const dialog = win.document.querySelector("[role='dialog']");
   expect(dialog?.textContent).toContain("Created by");
-  const created = dialog?.querySelector("select[name='createdBy']") as unknown as
-    | HTMLSelectElement
+  const created = dialog?.querySelector("input[type='hidden'][name='createdBy']") as unknown as
+    | HTMLInputElement
     | undefined;
   expect(created?.value).toBe(BOT);
   expect(dialog?.textContent).toContain("Show 1 item");
+  await page.unmount();
+});
+
+test("the bot filter lists each bot with what it is for", async () => {
+  // The library builds `new Event("change")` from the global, and happy-dom only takes its own Event class.
+  const realEvent = globalThis.Event;
+  globalThis.Event = win.Event as unknown as typeof Event;
+  const page = await mount({ by: "bot" });
+  await press(
+    [...win.document.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Filters")),
+  );
+  const box = win.document.querySelector("[role='dialog'] [role='combobox']") as never;
+  await act(async () => {
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"])
+      (box as Element).dispatchEvent(
+        new win.MouseEvent(type, { bubbles: true, button: 0 }) as unknown as Event,
+      );
+  });
+  await settle();
+  const shown = [...win.document.querySelectorAll('[role="option"]')].map((o) => o.textContent);
+  expect(shown).toEqual(["BartenderSpecialist"]);
+  globalThis.Event = realEvent;
   await page.unmount();
 });

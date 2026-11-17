@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import type { AvatarValue } from "@zetta/core/avatar";
 
 import { call } from "../chat/chat-client";
 import { STATIC } from "@/lib/query-policy";
@@ -71,8 +72,20 @@ export type TeamSave = {
   members: Omit<TeamMember, "name" | "role">[];
 };
 
-export type TeamPerson = { userId: string; name: string; role: "owner" | "member" };
-export type TeamCandidate = { userId: string; name: string };
+/** `title` is the person's job title, else the title of their seat in the company chart; empty when neither is written. */
+export type TeamPerson = {
+  userId: string;
+  name: string;
+  role: "owner" | "member";
+  avatar?: AvatarValue | null;
+  title?: string;
+};
+export type TeamCandidate = {
+  userId: string;
+  name: string;
+  avatar?: AvatarValue | null;
+  title?: string;
+};
 
 export const teamsApi = {
   roles: () => call<{ roles: TeamRole[] }>("/api/team-roles").then((r) => r.roles),

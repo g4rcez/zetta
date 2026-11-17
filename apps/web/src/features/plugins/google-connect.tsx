@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
+import { AdvancedSection } from "@/components/advanced-section";
 import { Button, Input } from "@/components/ui";
 import { errorCode, errorMessage } from "../chat/chat-client";
 import { usePluginApi, type PluginTest } from "./plugins-api";
@@ -113,6 +114,7 @@ const SCOPES: { id: string; label: string; group: string }[] = [
   { id: "gmail.send", group: "Gmail", label: "Send email" },
   { id: "calendar.events.readonly", group: "Calendar", label: "Read events" },
   { id: "calendar.events", group: "Calendar", label: "Create and edit events" },
+  { id: "calendar.readonly", group: "Calendar", label: "See your calendars and when you are busy" },
   { id: "drive.readonly", group: "Drive", label: "Read all files" },
   { id: "drive.file", group: "Drive", label: "Only files created or opened with Zetta" },
   { id: "documents.readonly", group: "Docs", label: "Read documents" },
@@ -254,11 +256,11 @@ function AccountCard({
           Disconnect
         </Button>
       </div>
-      <details>
-        <summary className="cursor-pointer text-xs text-muted-foreground">
-          {ok ? "Change permissions" : "Choose permissions to reconnect"}
-        </summary>
-        <div className="mt-2 space-y-3">
+      <AdvancedSection
+        title={ok ? "Change permissions" : "Choose permissions to reconnect"}
+        defaultOpen={false}
+      >
+        <div className="space-y-3">
           <Permissions
             scopes={scopes}
             allowSend={allowSend}
@@ -284,7 +286,7 @@ function AccountCard({
             )}
           </Button>
         </div>
-      </details>
+      </AdvancedSection>
     </section>
   );
 }
@@ -488,12 +490,9 @@ export function GoogleConnect({
         />
       ))}
       {accounts.length ? (
-        <details>
-          <summary className="cursor-pointer text-xs text-muted-foreground">
-            Add another Google account
-          </summary>
-          <div className="mt-2">{picker}</div>
-        </details>
+        <AdvancedSection title="Add another Google account" defaultOpen={false}>
+          {picker}
+        </AdvancedSection>
       ) : (
         picker
       )}

@@ -48,7 +48,7 @@ async function mount(onCreated: (t: { id: string }) => void) {
     root.render(
       <NewTeamForm
         bots={[
-          { id: A, name: "Writer" },
+          { id: A, name: "Writer", role: "Drafts the posts" },
           { id: B, name: "Editor" },
         ]}
         existing={1}
@@ -116,4 +116,14 @@ test("members sit inside the box, and the box grows to fit them", () => {
   const pts = memberPoints(box, 6);
   expect(pts.every((p) => p.x >= box.x && p.y >= box.y && p.y < box.y + box.h)).toBe(true);
   expect(nextBox(0, 0).h).toBeLessThan(box.h + 1);
+});
+
+test("every bot is listed with its avatar, name and role", async () => {
+  const root = await mount(() => {});
+  const items = [...win.document.querySelectorAll("fieldset li")].map((li) => li.textContent);
+  expect(items[0]).toContain("Writer");
+  expect(items[0]).toContain("Drafts the posts");
+  expect(items[1]).toContain("Editor");
+  expect(items[1]).toContain("Specialist");
+  await act(async () => root.unmount());
 });

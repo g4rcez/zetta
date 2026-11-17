@@ -74,6 +74,9 @@ export const bot = zetta.table(
     // Friendly-url id, unique across the installation and fixed at creation (renames keep it). Names the bot's database schema (`<snake>_bot`).
     slug: text("slug").notNull(),
     description: text("description").default("").notNull(),
+    // One short line saying what the bot is for ("Support lead"), shown beside the name wherever a bot is chosen. Empty: the UI falls back
+    // to the seat title, the first line of `description`, then the kind (`botRole` in @zetta/core/bot-role).
+    role: text("role").default("").notNull(),
     harness: text("harness", {
       enum: [
         "pi",
@@ -158,6 +161,7 @@ export const bot = zetta.table(
       sql`${table.kind} <> 'chief' or ${table.visibility} = 'private'`,
     ),
     check("bot_name_check", sql`length(btrim(${table.name})) between 1 and 80`),
+    check("bot_role_check", sql`length(${table.role}) <= 60`),
     check(
       "bot_context_bytes_check",
       sql`${table.contextBytes} is null or ${table.contextBytes} between 4000 and 60000`,
@@ -261,6 +265,8 @@ export const message = zetta.table(
     // Author bot for assistant messages: the conversation's own bot, or a member bot in a room. Never another bot's chat (insertMessage and the message_author_guard trigger refuse it).
     botId: uuid("author_bot_id").references(() => bot.id, setNull),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    /** When the author last changed the text; null = never edited. Every earlier text stays in `message_revision`. */
+    editedAt: timestamp("edited_at", { withTimezone: true }),
     /** The server instance running this row (see server_instance). Recovery leaves the rows of a live instance alone. */
     ownerInstance: uuid("owner_instance"),
   },
@@ -277,6 +283,29 @@ export const message = zetta.table(
       .where(sql`${table.clientRequestId} is not null`),
     check("message_content_check", sql`length(${table.content}) <= 65536`),
     index("message_search_idx").using("gin", searchVector(table.content)),
+  ],
+);
+
+/** An earlier text of an edited message, saved when the edit happens so nothing is lost. The current text stays in `message.content`. */
+export const messageRevision = zetta.table(
+  "message_revision",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => message.id, cascade),
+    /** The text the message had before this edit. */
+    content: text("content").notNull(),
+    editedByUserId: text("edited_by_user_id")
+      .notNull()
+      .references(() => user.id, restrict),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("message_revision_message_id_idx").on(table.messageId, table.createdAt),
+    check("message_revision_content_check", sql`length(${table.content}) <= 65536`),
   ],
 );
 

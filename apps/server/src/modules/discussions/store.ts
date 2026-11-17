@@ -21,6 +21,7 @@ import { user } from "@zetta/db/schema/auth";
 import { dockerConfig } from "../chat/harness";
 import type { FileStore } from "../chat/files";
 import { insertMessage, quoteOf } from "../chat/messages";
+import { editUserMessage, messageRevisions } from "../chat/message-edit";
 import { transaction } from "./transaction";
 import { codeEnabled } from "../chat/pipeline";
 import type { LoopStore } from "../chat/loops";
@@ -43,6 +44,8 @@ export type DiscussionTurn = typeof discussionTurn.$inferSelect;
 export type Member = typeof discussionMember.$inferSelect;
 
 export const PERMISSIONS_TITLE = "Permissions";
+/** The longest text a person posts in a room (the post route and an edit share it). */
+export const MAX_ROOM_POST = 4000;
 /** A room as the API shows it: never the dedupe key. */
 export const publicRoom = (d: Discussion) => ({ ...d, openKey: undefined });
 /** Where a blocked bot stopped, kept on its help request so the answer can resume it (a loop, or the chat turn). */
@@ -99,6 +102,8 @@ export type PostFiles = {
   skills?: { botId: string; name: string }[] | undefined;
   /** A message of this room the post replies to: saved as `meta.quote`, and the bot that wrote it is woken. */
   quotedMessageId?: string | undefined;
+  /** The part of the quoted message the person selected. It must be found in that message. */
+  quoteExcerpt?: string | undefined;
   /** A poll this post makes: the text is its question. Saved as `meta.poll`; the post then reads "📊 question". */
   poll?: { options: string[]; mode?: PollMode | undefined } | undefined;
 };
@@ -1116,7 +1121,7 @@ export function createDiscussionStore(
         : [];
       if (attached.quotedMessageId && !quoted)
         throw new DiscussionError("NOT_FOUND", "That message is no longer available.");
-      const quote = quoted ? quoteOf(quoted) : null;
+      const quote = quoted ? quoteOf(quoted, attached.quoteExcerpt) : null;
       const [quotedMember] = quote?.botId
         ? await db
             .select({ botId: discussionMember.botId })
@@ -1184,6 +1189,31 @@ export function createDiscussionStore(
       });
       if (res.n) onEnqueue?.();
       return res.row;
+    },
+    /**
+     * The owner changes the text of one of their own posts in the room. No bot is woken and no turn is queued: the members read the new
+     * text the next time they read the room. Returns the row; the route reads it back in the shape of the message list.
+     */
+    async editMessage(a: ActiveActor, id: string, messageId: string, text: string) {
+      const d = await loadOwned(a, id);
+      const crowd = d.teamId ? await people.list(d.teamId) : [];
+      return editUserMessage(db, {
+        conversationId: d.conversationId,
+        messageId,
+        userId: a.userId,
+        content: text,
+        max: MAX_ROOM_POST,
+        readers: [...new Set([d.ownerUserId, ...crowd.map((p) => p.userId)])],
+      });
+    },
+    /** The earlier texts of a post the person wrote in this room, newest first. */
+    async messageRevisions(a: ActiveActor, id: string, messageId: string) {
+      const d = await loadReadable(a, id);
+      return messageRevisions(db, {
+        conversationId: d.conversationId,
+        messageId,
+        userId: a.userId,
+      });
     },
     async updateContext(
       a: ActiveActor,

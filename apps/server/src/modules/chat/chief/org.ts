@@ -37,6 +37,23 @@ export async function runOrg(ctx: ChiefCtx, a: ChiefArgs<"org">): Promise<Outcom
         })),
       )}`,
     };
+  if (a.action === "works_with") {
+    const names = new Map(
+      seats.flatMap((p) => (p.holder?.kind === "bot" ? [[p.holder.botId, p.holder.name]] : [])),
+    );
+    const links = await org.links(ctx.actor);
+    return {
+      read: `org.works_with (bots of the chart that work together, from the rooms, workflows and decision handoffs of this user):\n${JSON.stringify(
+        links.map((l) => ({
+          a: names.get(l.aId) ?? l.aId,
+          b: names.get(l.bId) ?? l.bId,
+          rooms: l.counts.room,
+          workflows: l.counts.workflow,
+          handoffs: l.counts.handoff,
+        })),
+      )}`,
+    };
+  }
   if (!ctx.actor.isAdmin) return { error: NOT_ADMIN };
 
   if (a.action === "apply_template") {

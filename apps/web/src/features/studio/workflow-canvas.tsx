@@ -16,6 +16,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, useMemo, useState } from "react";
+import { BotSelect } from "@/components/bot-select";
 import { Button, Input, Select } from "@/components/ui";
 
 import { ApiError, call, errorMessage, type Bot } from "../chat/chat-client";
@@ -327,12 +328,11 @@ function Editor({
           </legend>
           {selected.data.kind === "prompt" && (
             <>
-              <Select
-                title="Bot"
-                required={false}
+              <BotSelect
+                label="Bot"
+                bots={bots}
                 value={selected.data.botId}
-                onChange={(e) => patch(selected.id, { botId: e.target.value })}
-                options={bots.map((b) => ({ value: b.id, label: b.name }))}
+                onChange={(botId) => patch(selected.id, { botId })}
               />
               <Input
                 title="Instruction ({{prev}} = previous output, {{input}} = run input)"
@@ -387,12 +387,11 @@ function Editor({
           )}
           {selected.data.kind === "tool" && (
             <>
-              <Select
-                title="Bot (its grants are used)"
-                required={false}
+              <BotSelect
+                label="Bot (its grants are used)"
+                bots={bots}
                 value={selected.data.botId}
-                onChange={(e) => patch(selected.id, { botId: e.target.value })}
-                options={bots.map((b) => ({ value: b.id, label: b.name }))}
+                onChange={(botId) => patch(selected.id, { botId })}
               />
               <Select
                 title="Kind of tool"

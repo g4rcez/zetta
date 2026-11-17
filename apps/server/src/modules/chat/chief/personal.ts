@@ -1,9 +1,13 @@
 import { owned } from "./bot";
 import { openRooms } from "./room";
 import { categoryOf } from "@zetta/core/attention-kinds";
-import { pick, plan } from "./resolve";
+import { pick, plan, short } from "./resolve";
+import type { ProfilePatch } from "../../profile/store";
 import type { ChiefArgs } from "./schemas";
 import type { Applied, ApplyCtx, ChiefCtx, DiffLine, Outcome } from "./types";
+
+/** What `zetta:preferences profile` can change, in the order the card shows it. */
+const PROFILE_FIELDS = ["name", "jobTitle", "department", "about", "timezone", "contact"] as const;
 
 export async function runPreferences(ctx: ChiefCtx, a: ChiefArgs<"preferences">): Promise<Outcome> {
   const store = ctx.deps.preferences;
@@ -11,19 +15,33 @@ export async function runPreferences(ctx: ChiefCtx, a: ChiefArgs<"preferences">)
   const cur = await store.get(ctx.actor);
   const profile = ctx.deps.profile;
   if (a.action === "get") {
-    // The name, never the email.
-    const name = profile ? (await profile.get(ctx.actor)).name : undefined;
-    return { read: `preferences.get:\n${JSON.stringify({ ...cur, ...(name ? { name } : {}) })}` };
+    // The name and the lines the person wrote about themselves, never the email.
+    const mine = profile ? await profile.get(ctx.actor) : undefined;
+    const shown = mine
+      ? {
+          name: mine.name,
+          jobTitle: mine.jobTitle,
+          department: mine.department,
+          about: mine.about,
+          timezone: mine.timezone,
+          contact: mine.contact,
+        }
+      : {};
+    return { read: `preferences.get:\n${JSON.stringify({ ...cur, ...shown })}` };
   }
   if (a.action === "profile") {
     if (!profile) return { error: "the profile is not available on this server." };
-    const from = (await profile.get(ctx.actor)).name;
-    if (from === a.name) return { error: "that is already your name." };
-    return plan("Change your name", [{ field: "name", from, to: a.name }], {
-      tool: "preferences",
-      op: "profile",
-      name: a.name,
-    });
+    const now = await profile.get(ctx.actor);
+    const patch: Record<string, string> = {};
+    const diff: DiffLine[] = [];
+    for (const k of PROFILE_FIELDS) {
+      const to = a[k];
+      if (to === undefined || to === now[k]) continue;
+      patch[k] = to;
+      diff.push({ field: k, from: short(now[k], 200), to: short(to, 200) });
+    }
+    if (!diff.length) return { error: "your profile already says that." };
+    return plan("Change your profile", diff, { tool: "preferences", op: "profile", patch });
   }
   const patch: Record<string, unknown> = {};
   const diff: DiffLine[] = [];
@@ -80,7 +98,7 @@ export async function applyPreferences(
 ): Promise<Applied> {
   if ((p as { op?: string }).op === "profile") {
     if (!ctx.deps.profile) throw new Error("profile unavailable");
-    await ctx.deps.profile.update(ctx.actor, { name: (p as { name: string }).name });
+    await ctx.deps.profile.update(ctx.actor, (p as { patch: ProfilePatch }).patch);
     return;
   }
   if (!ctx.deps.preferences) throw new Error("preferences unavailable");

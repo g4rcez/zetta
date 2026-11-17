@@ -250,7 +250,8 @@ describe("chief creation tools", () => {
     // Raised from 35_100 to 35_400 on purpose (2026-11-15): zetta:bot stats, history and restore (~110).
     // Raised from 35_400 to 35_800 on purpose (2026-11-15): zetta:chats, the search of earlier chats, which every bot reads (~400).
     // Raised from 35_800 to 36_200 on purpose (2026-11-15): the new workflow steps (tool, approval, wait, for_each, retry) in the zetta:workflow line (~330).
-    expect(chief.length).toBeLessThan(36_200);
+    // Raised from 36_200 to 36_300 on purpose (2026-11-16): `role` on zetta:bot update (~30).
+    expect(chief.length).toBeLessThan(36_300);
     expect(toolPreamble("off", false, false)).not.toContain("next_wave");
   });
   test("every bot is told that [suggest only] items change by suggestion and [read only] items not at all", () => {

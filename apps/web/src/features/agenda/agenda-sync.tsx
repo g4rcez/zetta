@@ -19,7 +19,7 @@ const NO_WRITERS: Writer[] = [];
 /**
  * What the Google plugin allows. Its own key (not under "agenda"): the check calls Google, so an Agenda reload must not repeat it.
  */
-const googleStatus = queryOptions({
+export const googleStatus = queryOptions({
   queryKey: ["agenda-google-status"],
   staleTime: 5 * 60_000,
   refetchOnWindowFocus: false,
@@ -94,16 +94,11 @@ export function AgendaSyncPanel({
   if (google === "missing" || google === "no-calendar")
     return (
       <p className="text-xs text-muted-foreground">
-        {google === "missing" ? "Connect Google" : "Give Google Calendar access"} in{" "}
-        <Link
-          to="/studio/$tab"
-          params={{ tab: "plugins" }}
-          search={{ plugin: "google" } as never}
-          className="underline"
-        >
-          Studio › Plugins
+        {google === "missing" ? "Connect Google" : "Give Google Calendar access"} on the{" "}
+        <Link to="/plugins/$pluginId" params={{ pluginId: "google" }} className="underline">
+          Google plugin
         </Link>{" "}
-        to sync your Agenda with Google Calendar.
+        page to sync your Agenda with Google Calendar.
       </p>
     );
   return (

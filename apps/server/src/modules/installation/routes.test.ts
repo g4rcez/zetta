@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createApp } from "../../app";
 import { createIdentityAccess } from "../identity/access";
+import type { UpdateChecker } from "../updates/checker";
 import type { InstallationSettings } from "./service";
 
 const origin = "https://app.example.invalid";
 
-function app() {
+function app(updates?: UpdateChecker) {
   let saved: InstallationSettings = {
     networkMode: "local",
     publicUrl: null,
@@ -17,6 +18,7 @@ function app() {
     transcribeLanguage: "",
     transcribeBaseUrl: "",
     transcribeConnectionId: null,
+    updateCheck: "on",
   };
   const auth = {
     api: {
@@ -44,7 +46,7 @@ function app() {
   };
   return createApp({
     auth,
-    installation: { access, installation, runningMode: "local" },
+    installation: { access, installation, runningMode: "local", ...(updates ? { updates } : {}) },
     webOrigin: origin,
     desktopOrigins: [],
   });
@@ -77,6 +79,7 @@ describe("installation settings", () => {
       transcribeLanguage: "",
       transcribeBaseUrl: "",
       transcribeKey: "none",
+      updateCheck: "on",
       restartRequired: true,
     });
   });
@@ -127,5 +130,49 @@ describe("installation settings", () => {
         })
       ).status,
     ).toBe(400);
+  });
+  test("only an administrator turns the update check off, with a valid value", async () => {
+    const a = app();
+    expect((await patch(a, "member", { updateCheck: "off" })).status).toBe(403);
+    expect((await patch(a, "admin", { updateCheck: "never" })).status).toBe(400);
+    const res = await patch(a, "admin", { updateCheck: "off" });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { updateCheck: string }).updateCheck).toBe("off");
+  });
+});
+
+describe("GET /api/installation/version", () => {
+  const status = {
+    build: { commit: "abc1234", date: "2026-11-10T12:00:00.000Z" },
+    state: "behind",
+    latest: { date: "2026-11-12" },
+    changes: [],
+    checkedAt: "2026-11-16T00:00:00.000Z",
+    check: "on",
+  };
+  const checker = { tick: async () => {}, status: async () => status } as unknown as UpdateChecker;
+  const read = (a: ReturnType<typeof app>, cookie?: string) =>
+    a.handle(
+      new Request("http://localhost/api/installation/version", {
+        headers: cookie ? { cookie } : {},
+      }),
+    );
+  test("it is for signed-in members only", async () => {
+    expect((await read(app(checker))).status).toBe(401);
+  });
+  test("a member reads the build and the state", async () => {
+    const res = await read(app(checker), "member");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(status);
+  });
+  test("a server without the checker says it does not know and that nothing is checked", async () => {
+    const res = await read(app(), "member");
+    expect(await res.json()).toMatchObject({ build: null, state: "unknown", check: "off" });
+  });
+  test("the public meta route still carries no version", async () => {
+    const res = await app(checker).handle(new Request("http://localhost/api/meta"));
+    const text = JSON.stringify(await res.json());
+    expect(text).not.toContain("abc1234");
+    expect(text.toLowerCase()).not.toContain("version");
   });
 });

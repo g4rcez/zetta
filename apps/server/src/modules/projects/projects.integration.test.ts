@@ -279,6 +279,9 @@ suite("projects against postgres", () => {
       [scribe, painter, chiefBot].sort(),
     );
     expect(candidates.body.people.map((x) => x.userId).sort()).toEqual([C, D].sort());
+    // Each candidate carries a picture slot and the title to show under the name (empty when none is written).
+    expect(candidates.body.people[0]).toHaveProperty("avatar");
+    expect(candidates.body.people[0]).toHaveProperty("title");
     expect(candidates.body.rooms.map((r) => r.id)).toEqual([roomId]);
   });
 

@@ -24,7 +24,7 @@ import { Button, Input, Select } from "@/components/ui";
 import { call, errorMessage, sendSealed, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { ConfirmButton } from "../shared/ui";
-import { BotPicker } from "../skills/bot-picker";
+import { BotPicker } from "@/components/bot-picker";
 import { formText } from "../shared/form-data";
 import {
   computerQueries,

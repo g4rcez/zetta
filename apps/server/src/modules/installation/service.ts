@@ -18,6 +18,8 @@ export type InstallationSettings = {
   transcribeLanguage: string;
   transcribeBaseUrl: string;
   transcribeConnectionId: string | null;
+  /** Whether the server checks once a day if a newer version is published (modules/updates). `off` sends nothing anywhere. */
+  updateCheck: "on" | "off";
 };
 export type InstallationPatch = Partial<InstallationSettings>;
 /** What the API returns: the saved settings plus the model they select. The id of the key's connection never leaves the server. */
@@ -40,6 +42,7 @@ const DEFAULTS: InstallationSettings = {
   transcribeLanguage: "",
   transcribeBaseUrl: "",
   transcribeConnectionId: null,
+  updateCheck: "on",
 };
 
 export class InvalidInstallationError extends Error {}
@@ -55,6 +58,7 @@ const fromRow = (row: typeof installationSettings.$inferSelect): InstallationSet
   transcribeLanguage: row.transcribeLanguage,
   transcribeBaseUrl: row.transcribeBaseUrl,
   transcribeConnectionId: row.transcribeConnectionId,
+  updateCheck: row.updateCheck,
 });
 
 /** `onChange` runs after a saved update, so a running feature (Laya) follows the new setting without a restart. */
@@ -104,6 +108,7 @@ export function createInstallationService(
         transcribeLanguage: values.transcribeLanguage,
         transcribeBaseUrl: values.transcribeBaseUrl,
         transcribeConnectionId: values.transcribeConnectionId,
+        updateCheck: values.updateCheck,
       };
       onChange?.(saved);
       return saved;

@@ -1,6 +1,7 @@
 import { Checkbox } from "@/components/ui";
+import { botRole } from "@zetta/core/bot-role";
 import { BotIdentity } from "@/components/bot-identity";
-import type { Bot } from "../chat/chat-client";
+import type { Bot } from "@/features/chat/chat-client";
 
 /** Which of the person's bots bring a skill to their harness. Each bot is drawn with its identity, never as plain text. */
 export function BotPicker({
@@ -27,7 +28,7 @@ export function BotPicker({
               )
             }
           >
-            <BotIdentity bot={b} size={24} />
+            <BotIdentity bot={b} size={24} sub={botRole(b)} />
           </Checkbox>
         </li>
       ))}

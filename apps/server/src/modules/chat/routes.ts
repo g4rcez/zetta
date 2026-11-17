@@ -23,6 +23,8 @@ import {
 import { IMAGE_TYPES } from "./images";
 import { DocumentError } from "./extract";
 import { MAX_PINS, PinLimitError } from "./pins";
+import { MessageEditError } from "./message-edit";
+import { QUOTE_EXCERPT, QuoteExcerptError } from "./messages";
 import { MAX_LABEL, MAX_OPTIONS, MIN_OPTIONS, POLL_MODES, PollError } from "./polls";
 import { interviewInput, interviewTurn } from "./bot-interview";
 import { decisionConfigSchema } from "./routing";
@@ -81,6 +83,8 @@ const botInput = z.strictObject({
   avatar: botAvatar.nullable().optional(),
   name: z.string().trim().min(1).max(80),
   description: z.string().max(2048).optional(),
+  /** One short line saying what the bot is for; shown beside the name wherever a bot is chosen. */
+  role: z.string().trim().max(60).optional(),
   visibility: z.enum(["private", "team"]).optional(),
   harness: z
     .enum([
@@ -181,6 +185,8 @@ const sendBody = z.strictObject({
   content: z.string().trim().max(32768),
   parentMessageId: uuid.optional(),
   quotedMessageId: uuid.optional(),
+  /** The part of the quoted message the person selected. It must be found in that message. */
+  quoteExcerpt: z.string().trim().min(1).max(QUOTE_EXCERPT).optional(),
   /** A poll this message makes: `content` is the question, these are the options. */
   poll: z
     .strictObject({
@@ -201,10 +207,13 @@ const hasBody = (v: {
   attachmentIds?: string[] | undefined;
   fileRefs?: string[] | undefined;
 }) => !!v.content || !!v.attachmentIds?.length || !!v.fileRefs?.length;
-const send = sendBody.refine(hasBody).transform(({ wikiIds, ...v }) => ({
-  ...v,
-  ...((v.memoryIds ?? wikiIds) && { memoryIds: v.memoryIds ?? wikiIds }),
-}));
+const send = sendBody
+  .refine(hasBody)
+  .refine((v) => !v.quoteExcerpt || !!v.quotedMessageId)
+  .transform(({ wikiIds, ...v }) => ({
+    ...v,
+    ...((v.memoryIds ?? wikiIds) && { memoryIds: v.memoryIds ?? wikiIds }),
+  }));
 const conversationPatch = z.strictObject({
   title: z.string().trim().min(1).max(120).optional(),
   pinned: z.boolean().optional(),
@@ -479,6 +488,18 @@ export function createChatRoutes(
       return fail(
         error.code === "CLOSED" ? 409 : error.code === "NOT_ALLOWED" ? 403 : 400,
         `POLL_${error.code}`,
+        error.safe,
+      );
+    if (error instanceof QuoteExcerptError)
+      return fail(
+        422,
+        error.code,
+        "The quoted text is not part of that message. Select it again and quote it.",
+      );
+    if (error instanceof MessageEditError)
+      return fail(
+        error.code === "NOT_FOUND" ? 404 : error.code === "NOT_ALLOWED" ? 403 : 400,
+        `MESSAGE_${error.code}`,
         error.safe,
       );
     if (error instanceof PinLimitError)
@@ -963,10 +984,32 @@ export function createChatRoutes(
           beforeSeq: query.before
             ? parse(z.coerce.number().int().positive(), query.before)
             : undefined,
+          aroundMessageId: query.around ? parse(uuid, query.around) : undefined,
           limit: query.limit
             ? parse(z.coerce.number().int().min(1).max(500), query.limit)
             : undefined,
         }),
+      })),
+    )
+    .patch(
+      "/conversations/:id/messages/:messageId",
+      guarded(async ({ actor, body, params }) => ({
+        message: await chat.editMessage(
+          actor,
+          parse(uuid, params.id),
+          parse(uuid, params.messageId),
+          parse(z.strictObject({ content: z.string().trim().min(1).max(32768) }), body).content,
+        ),
+      })),
+    )
+    .get(
+      "/conversations/:id/messages/:messageId/revisions",
+      guarded(async ({ actor, params }) => ({
+        revisions: await chat.messageRevisions(
+          actor,
+          parse(uuid, params.id),
+          parse(uuid, params.messageId),
+        ),
       })),
     )
     .put(
@@ -1022,6 +1065,7 @@ export function createChatRoutes(
         const v = parse(send, body);
         return chat.sendMessage(actor, parse(uuid, params.id), v.content, v.parentMessageId, {
           quotedMessageId: v.quotedMessageId,
+          quoteExcerpt: v.quoteExcerpt,
           poll: v.poll,
           attachmentIds: v.attachmentIds,
           fileRefs: v.fileRefs,

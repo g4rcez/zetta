@@ -17,13 +17,14 @@ import {
   AppWindowIcon,
   FolderSimpleIcon,
   UsersThreeIcon,
+  UserCircleIcon,
 } from "@phosphor-icons/react";
 
 /** Main rail destinations, in rail order (the command palette binds Alt+1… to them in this order). Each `group` is one contiguous run, rendered as a labelled section. */
 export const appLinks = [
   { to: "/chat/{-$chatId}", group: "Work", label: "Chat", icon: ChatsIcon },
   { to: "/rooms", group: "Work", label: "Rooms", icon: HashIcon },
-  { to: "/agenda", group: "Work", label: "Agenda", icon: CalendarIcon },
+  { to: "/agenda", group: "Work", label: "Calendar", icon: CalendarIcon },
   { to: "/catch-up", group: "Work", label: "Inbox", icon: BellIcon },
   { to: "/studio", group: "Build", label: "Studio", icon: SquaresFourIcon },
   {
@@ -62,4 +63,6 @@ export const appLinks = [
   { to: "/projects", group: "Oversee", label: "Projects", icon: FolderSimpleIcon },
   // Last again, so the Alt+N hotkeys above do not move. The sidebar shows it under More, next to Teams.
   { to: "/organization", group: "Oversee", label: "Organization", icon: UsersThreeIcon },
+  // Last again. The sidebar shows it under More, after Organization.
+  { to: "/people", group: "Oversee", label: "People", icon: UserCircleIcon },
 ] as const;

@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "@/lib/notify";
 
+import { PersonIdentity } from "@/components/person-identity";
 import { Button, Select } from "@/components/ui";
 
 import { errorMessage } from "../chat/chat-client";
@@ -59,10 +60,13 @@ export function TeamPeoplePanel({ teamId, title = "People" }: { teamId: string; 
       <ul className={list}>
         {people.map((p) => (
           <li key={p.userId} className={`${listItem} flex items-center justify-between gap-3`}>
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 truncate font-medium">{p.name}</span>
-              {p.role === "owner" && <Badge tone="warning">Owner</Badge>}
-            </span>
+            <PersonIdentity
+              card
+              size={28}
+              person={p}
+              trailing={p.role === "owner" ? <Badge tone="warning">Owner</Badge> : undefined}
+              className="max-w-full"
+            />
             {p.role === "member" && (
               <ConfirmButton
                 label="Remove"
@@ -87,7 +91,10 @@ export function TeamPeoplePanel({ teamId, title = "People" }: { teamId: string; 
               onChange={(e) => setPick(e.target.value)}
               options={[
                 { value: "", label: "Choose a person" },
-                ...candidates.map((c) => ({ value: c.userId, label: c.name })),
+                ...candidates.map((c) => ({
+                  value: c.userId,
+                  label: c.title ? `${c.name} · ${c.title}` : c.name,
+                })),
               ]}
             />
           </div>

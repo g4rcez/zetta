@@ -15,10 +15,11 @@ import { cn } from "@zetta/ui/lib/utils";
 
 import { BotsContext } from "@/components/bot-identity";
 
-import type { Bot } from "./chat-client";
+import type { Bot, Revision } from "./chat-client";
 import { groupMessages, type Row } from "./chat-rows";
 import { repoByRow } from "./github-refs";
 import { MessageRow, type Author } from "./message-row";
+import { QuoteSelection } from "./quote-selection";
 import type { Pin } from "./chat-client";
 
 export type RowActions = {
@@ -38,6 +39,17 @@ export type RowActions = {
   onOpenArtifact?: (id: string) => void;
   /** Where the live output of a command of the running turn streams from. Without it a step is not clickable (rooms, threads). */
   stepOutputUrl?: (stepId: string) => string | undefined;
+  /** Go to the message a quote points at, fetching the page around it when it is not loaded. Without it only a loaded one is found. */
+  onShowMessage?: (id: string) => void;
+  /** Start editing the person's own message. Without it no message has Edit. */
+  onEdit?: (row: Row) => void;
+  /** Saves the new text of the message being edited; throws when the server refuses. */
+  onSaveEdit?: (row: Row, text: string) => Promise<unknown>;
+  onCancelEdit?: () => void;
+  /** The earlier texts of an edited message (only its author has them). */
+  loadRevisions?: (row: Row) => Promise<Revision[]>;
+  /** The longest text an edit may have (a room post holds less than a chat message). */
+  editMax?: number;
 };
 
 /** Who wrote the message `row` quotes, found the same way as the author of a row. */
@@ -119,6 +131,10 @@ type LineProps = {
   readOnly: boolean;
   recent: boolean;
   pinned: boolean;
+  /** This row is the one being edited. */
+  editing: boolean;
+  /** The bots a mention in the editor can pick: only the row being edited carries them, so the other rows stay memoized. */
+  editBots: Bot[] | undefined;
   actions: RowActions;
 };
 
@@ -135,6 +151,8 @@ const Line = memo(function Line({
   readOnly,
   recent,
   pinned,
+  editing,
+  editBots,
   actions,
 }: LineProps) {
   return (
@@ -167,6 +185,8 @@ const Line = memo(function Line({
             inThread={inThread || !threads}
             readOnly={readOnly}
             pinned={pinned}
+            editing={editing}
+            bots={editBots}
             {...actions}
           />
         )}
@@ -194,6 +214,7 @@ export function MessageList({
   footer,
   actions,
   pinnedIds,
+  editingId,
   followToken = 0,
 }: {
   rows: Row[];
@@ -202,7 +223,7 @@ export function MessageList({
   authorOf: (row: Row) => Author;
   fallbackBotId?: string | undefined;
   inThread?: boolean;
-  /** false hides "Reply in thread" where replies are not supported (group discussions). */ threads?: boolean;
+  /** false hides "Open thread" where replies are not supported (group discussions). */ threads?: boolean;
   /** Rows without reaction, reply or save actions (the setup interview). */ readOnly?: boolean;
   busy: boolean;
   label: string;
@@ -211,6 +232,8 @@ export function MessageList({
   actions: RowActions;
   /** The ids of the pinned messages of this conversation: their rows show it and offer Unpin. */
   pinnedIds?: ReadonlySet<string> | undefined;
+  /** The message being edited: its row shows the editor. */
+  editingId?: string | undefined;
   followToken?: number;
 }) {
   const grouped = useMemo(() => groupMessages(rows, fallbackBotId), [rows, fallbackBotId]);
@@ -218,6 +241,7 @@ export function MessageList({
   const repos = useMemo(() => repoByRow(rows), [rows]);
   return (
     <BotsContext.Provider value={botsById}>
+      {actions.onQuote && <QuoteSelection rows={rows} onQuote={actions.onQuote} />}
       <MessageScrollerProvider autoScroll>
         <FollowOnSend token={followToken} />
         <MessageScroller className="flex-1">
@@ -242,6 +266,8 @@ export function MessageList({
                   readOnly={readOnly}
                   recent={i >= grouped.length - RENDERED_TAIL}
                   pinned={pinnedIds?.has(row.id) ?? false}
+                  editing={editingId === row.id}
+                  editBots={editingId === row.id ? bots : undefined}
                   actions={actions}
                 />
               ))}

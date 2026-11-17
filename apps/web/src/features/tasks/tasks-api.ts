@@ -33,6 +33,8 @@ export type Task = {
   assignee: "bot" | "person";
   assigneeUserId: string | null;
   assigneeName: string | null;
+  /** The assignee's job title, else the title of their company-chart seat; empty when neither is written. */
+  assigneeTitle?: string;
   botId: string | null;
   conversationId: string | null;
   /** Set on a step: the task it belongs to. The list holds steps and tasks together (see task-steps.ts). */

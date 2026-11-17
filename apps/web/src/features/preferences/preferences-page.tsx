@@ -4,6 +4,7 @@ import { ApprovalsSection } from "./approvals-section";
 import { DisplaySection } from "./display-section";
 import { ProfileSection } from "./profile-section";
 import { SecuritySection } from "./security-section";
+import { VersionLine } from "../updates/version-line";
 import { SessionsSection } from "./sessions-section";
 
 /** The signed-in person's own profile, password, display choices and sessions, in one scrolling page. */
@@ -30,6 +31,7 @@ export function PreferencesPage() {
         <DisplaySection />
         <ApprovalsSection />
         <SessionsSection />
+        <VersionLine className="pt-2 text-center" />
       </div>
     </div>
   );

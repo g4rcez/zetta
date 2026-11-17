@@ -275,7 +275,7 @@ export function createTeamStore(
         .from(team)
         .where(and(eq(team.id, id), eq(team.status, "active")));
       requireTeamMember(a, row, row ? await people.isPerson(a.userId, id) : false);
-      return people.list(id);
+      return people.listWithLines(id);
     },
     /** Active installation members the owner can still add. */
     async candidates(a: ActiveActor, id: string) {
@@ -286,7 +286,7 @@ export function createTeamStore(
       await loadOwned(a, id);
       if (!(await people.add(id, userId)))
         throw new TeamError("NOT_FOUND", "That person is not a member of this installation.");
-      return people.list(id);
+      return people.listWithLines(id);
     },
     async removePerson(a: ActiveActor, id: string, userId: string) {
       await loadOwned(a, id);
@@ -295,7 +295,7 @@ export function createTeamStore(
           "INVALID",
           "The owner stays in the team, and only a member can be removed.",
         );
-      return people.list(id);
+      return people.listWithLines(id);
     },
     async archive(a: ActiveActor, id: string) {
       await loadOwned(a, id);

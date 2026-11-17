@@ -68,10 +68,13 @@ import { Drawer } from "@/components/drawer";
 import { ComputerActivity } from "../computer/computer-activity";
 import { refreshAttention } from "../attention/summary";
 import { MentionTextarea, mentionedBots, withoutMention } from "../chat/mention";
+import { Response } from "../chat/response";
 import { MessageList, pinAuthorOf } from "../chat/message-list";
 import { PinsBar } from "../chat/pins-bar";
 import { usePins } from "../chat/use-pins";
 import { usePollActions } from "../chat/use-poll-actions";
+import { quoteChip, quoteFields } from "../chat/quote-selection";
+import { useRoomMessages } from "./use-room-messages";
 import { useZettaChat } from "../chat/use-zetta-chat";
 import type { Author } from "../chat/message-row";
 import { ProposalsPanel } from "../chat/proposals-panel";
@@ -87,6 +90,13 @@ import {
   type RoomTurn,
 } from "./discussions-api";
 import { teamsApi } from "../teams/teams-api";
+import {
+  canEditRoom,
+  CONTEXT_LABEL,
+  GOAL_LABEL,
+  goalLine,
+  NEW_ROOM_MORE_LABEL,
+} from "./room-description";
 import { roomLabel, roomStatus } from "./rooms";
 import { busyIds, coveredRoom, nextFollowed, type StreamState } from "./room-streams";
 // The flow canvas (@xyflow/react) is about 40 kB gzip plus its CSS and only a team room's canvas view draws it.
@@ -163,41 +173,64 @@ function KindIcon({ kind, className }: { kind: RoomKind; className?: string }) {
   );
 }
 
+/** The first line of the room's goal under its title. It opens the details, where the whole goal and the details are read. */
+function GoalLine({ goal, onOpen }: { goal: string; onOpen: () => void }) {
+  const line = goalLine(goal);
+  if (!line) return null;
+  return (
+    // No hint: it shows the goal's own words.
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`What this room is for: ${line}. Open the room details`}
+      className="block max-w-full truncate rounded px-1.5 text-left text-xs leading-tight text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      {line}
+    </button>
+  );
+}
+
 /** The 48px bar every room page shares. */
 function PageHeader({
   title,
   icon,
   team,
+  subtitle,
   children,
 }: {
   title: string;
   icon: ReactNode;
   /** A team room: the title becomes the link to the team settings page, like a bot's header. */
   team?: { teamId: string; roomId: string };
+  /** A line under the title, such as the room's goal. */
+  subtitle?: ReactNode;
   children?: ReactNode;
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
-      {team ? (
-        // No hint: it shows the room title.
-        <Link
-          to="/teams/$teamId/settings"
-          params={{ teamId: team.teamId }}
-          search={{ room: team.roomId }}
-          aria-label={`${title} settings`}
-          className="flex min-w-0 max-w-[60%] items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-        >
-          {icon}
-          <h2 className="truncate font-heading text-base font-medium leading-tight">{title}</h2>
-          <UsersIcon aria-label="Team" className="size-3.5 shrink-0 text-muted-foreground" />
-          <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-        </Link>
-      ) : (
-        <>
-          {icon}
-          <h2 className="truncate font-heading text-base font-medium leading-tight">{title}</h2>
-        </>
-      )}
+      <div className={cn("flex min-w-0 flex-col justify-center", team && "max-w-[60%]")}>
+        {team ? (
+          // No hint: it shows the room title.
+          <Link
+            to="/teams/$teamId/settings"
+            params={{ teamId: team.teamId }}
+            search={{ room: team.roomId }}
+            aria-label={`${title} settings`}
+            className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-0.5 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            {icon}
+            <h2 className="truncate font-heading text-base font-medium leading-tight">{title}</h2>
+            <UsersIcon aria-label="Team" className="size-3.5 shrink-0 text-muted-foreground" />
+            <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+          </Link>
+        ) : (
+          <div className="flex min-w-0 items-center gap-2 px-1.5">
+            {icon}
+            <h2 className="truncate font-heading text-base font-medium leading-tight">{title}</h2>
+          </div>
+        )}
+        {subtitle}
+      </div>
       <div className="ml-auto flex min-w-0 items-center gap-1">{children}</div>
     </header>
   );
@@ -446,7 +479,6 @@ function RoomView({
   const navigate = useNavigate();
   const qc = useQueryClient();
   const draft = useRef<DraftHandle | null>(null);
-  const [edit, setEdit] = useState<{ title: string; goal: string; context: string }>();
   const teams = useTeams();
   const [busy, setBusy] = useState(false);
   const [openBot, setOpenBot] = useState<string>();
@@ -518,6 +550,14 @@ function RoomView({
 
   // A team member who does not own the room reads it. The live stream is the owner's, so a member sees new messages by polling.
   const readOnly = !!detail && !!session && detail.owner.userId !== session.user.id;
+  // A quote to an older post loads the page around it; the owner edits their own posts.
+  const roomMessages = useRoomMessages({
+    roomId: id,
+    conversationId,
+    loaded: messages,
+    readOnly,
+    onError: fail,
+  });
   // Every running turn streams here live, exactly like a chat reply, each in its own stream: a turn that starts or ends never
   // touches the live row of another one. The page reloads when a turn settles.
   const [followed, setFollowed] = useState<string[]>([]);
@@ -573,7 +613,10 @@ function RoomView({
     },
     [bots, session?.user.name, session?.user.image, meAvatar, readOnly, detail?.owner.name],
   );
-  const rows = useMemo(() => transcriptRows(messages, liveRows), [messages, liveRows]);
+  const rows = useMemo(
+    () => transcriptRows(roomMessages.messages, liveRows),
+    [roomMessages.messages, liveRows],
+  );
   const { pins, pinnedIds, setPinned } = usePins(detail?.discussion.conversationId, fail);
   const polls = usePollActions(detail?.discussion.conversationId, fail);
 
@@ -599,7 +642,7 @@ function RoomView({
   async function send(out: Outgoing) {
     setBusy(true);
     try {
-      await discussionsApi.post(id, out.text, { ...out, quotedMessageId: quoting?.id });
+      await discussionsApi.post(id, out.text, { ...out, ...quoteFields(quoting) });
       draft.current?.clear();
       setQuoting(undefined);
       setSent((n) => n + 1);
@@ -655,6 +698,7 @@ function RoomView({
             )
           }
           {...(d.teamId ? { team: { teamId: d.teamId, roomId: id } } : {})}
+          subtitle={<GoalLine goal={d.goal} onOpen={() => setDetails(true)} />}
         >
           {d.status !== "open" && (
             <span
@@ -994,7 +1038,9 @@ function RoomView({
                 label="Room transcript"
                 threads={false}
                 pinnedIds={pinnedIds}
+                editingId={roomMessages.editingId}
                 actions={{
+                  ...roomMessages.actions,
                   onPin: (row, pin) => setPinned(row.id, pin),
                   onVote: polls.vote,
                   // A person who only reads the room (a team member) votes, but the poll is not theirs to close.
@@ -1074,13 +1120,10 @@ function RoomView({
                   polls
                   skillBots={detail.members.map((m) => m.botId)}
                   replyTo={
-                    quoting && {
-                      id: quoting.id,
-                      name: authorOf(quoting).name,
-                      excerpt: quoting.content,
-                      onCancel: () => setQuoting(undefined),
-                    }
+                    quoting &&
+                    quoteChip(quoting, authorOf(quoting).name, () => setQuoting(undefined))
                   }
+                  onEditLast={roomMessages.editLast}
                   onSubmit={send}
                   onError={fail}
                 />
@@ -1097,14 +1140,14 @@ function RoomView({
           <div className="flex items-center justify-between gap-2">
             <h3 className="font-heading text-base font-medium">Details</h3>
             <div className="flex items-center gap-1">
-              {!isClosed && edit === undefined && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setEdit({ title: d.title, goal: d.goal, context: d.context })}
+              {canEditRoom(d, !readOnly) && (
+                <Link
+                  to="/rooms/$roomId/settings"
+                  params={{ roomId: id }}
+                  className="inline-flex h-8 items-center rounded-md border border-input bg-card px-3 text-sm font-medium hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
                 >
-                  Edit
-                </Button>
+                  Edit room
+                </Link>
               )}
               <ActionHint label="Close details">
                 <Button
@@ -1125,132 +1168,67 @@ function RoomView({
               code wait for you to approve the brief.
             </Alert>
           )}
-          {d.kind === "room" && !isClosed && (
-            <Select
-              title="Type"
-              required={false}
-              disabled={busy}
-              value={d.teamId ?? ""}
-              onChange={(e) =>
-                void act(
-                  () => discussionsApi.setTeam(id, e.target.value || null),
-                  "Room type changed.",
-                )
-              }
-              options={[
-                { value: "", label: "Plain room" },
-                ...teams.map((t) => ({ value: t.id, label: `Team: ${t.name}` })),
-              ]}
-            />
-          )}
-          {edit === undefined ? (
-            <>
+          <BotsContext.Provider value={botsById}>
+            <div className="space-y-1">
+              <h4 className="label-mono">{GOAL_LABEL}</h4>
+              {d.goal ? (
+                <Response text={d.goal} />
+              ) : (
+                <p className="text-muted-foreground">(not set)</p>
+              )}
+            </div>
+            {d.summary && (
               <div className="space-y-1">
-                <h4 className="label-mono">Goal</h4>
-                <p className="whitespace-pre-wrap">{d.goal || "(not set)"}</p>
+                <h4 className="label-mono">Outcome</h4>
+                <p className="whitespace-pre-wrap">{d.summary}</p>
               </div>
-              {d.summary && (
-                <div className="space-y-1">
-                  <h4 className="label-mono">Outcome</h4>
-                  <p className="whitespace-pre-wrap">{d.summary}</p>
-                </div>
-              )}
-              {roomTeam && (
-                <div className="space-y-1">
-                  <h4 className="label-mono">Team context</h4>
-                  <p className="line-clamp-6 whitespace-pre-wrap break-words">
-                    {roomTeam.context || "(empty)"}
-                  </p>
-                  <Link
-                    className="text-xs text-primary hover:underline"
-                    to="/teams/$teamId/settings"
-                    params={{ teamId: roomTeam.id }}
-                    search={{ room: id }}
-                  >
-                    Edit in team settings
-                  </Link>
-                </div>
-              )}
-              {detail.routines.length > 0 && (
-                <div className="space-y-1">
-                  <h4 className="label-mono">Routines</h4>
-                  <ul className="space-y-1">
-                    {detail.routines.map((r) => (
-                      <li key={r.id}>
-                        <Link
-                          className="text-primary hover:underline"
-                          to="/routines"
-                          search={{ routine: r.id }}
-                        >
-                          {r.title}
-                        </Link>{" "}
-                        <span className="text-xs text-muted-foreground">{r.status}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+            )}
+            {roomTeam && (
               <div className="space-y-1">
-                <h4 className="label-mono">
-                  Room context <span className="font-normal normal-case">v{d.contextVersion}</span>
-                </h4>
-                <p className="whitespace-pre-wrap break-words">{d.context || "(empty)"}</p>
+                <h4 className="label-mono">Team context</h4>
+                <p className="line-clamp-6 whitespace-pre-wrap break-words">
+                  {roomTeam.context || "(empty)"}
+                </p>
+                <Link
+                  className="text-xs text-primary hover:underline"
+                  to="/teams/$teamId/settings"
+                  params={{ teamId: roomTeam.id }}
+                  search={{ room: id }}
+                >
+                  Edit in team settings
+                </Link>
               </div>
-            </>
-          ) : (
-            <form
-              className="space-y-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void act(async () => {
-                  await discussionsApi.update(id, d.version, {
-                    title: edit.title.trim(),
-                    goal: edit.goal.trim(),
-                    context: edit.context,
-                  });
-                  setEdit(undefined);
-                }, "Room saved.");
-              }}
-            >
-              <Input
-                title="Title"
-                required
-                maxLength={120}
-                value={edit.title}
-                onChange={(e) => setEdit({ ...edit, title: e.target.value })}
-              />
-              <MentionTextarea
-                title="Goal"
-                required={false}
-                rows={3}
-                maxLength={1000}
-                bots={bots}
-                value={edit.goal}
-                onChange={(goal) => setEdit({ ...edit, goal })}
-              />
-              <MentionTextarea
-                title="Room context"
-                required={false}
-                rows={8}
-                maxLength={8000}
-                bots={bots}
-                value={edit.context}
-                onChange={(context) => setEdit({ ...edit, context })}
-              />
-              <p className="text-xs text-muted-foreground">
-                Changing the goal or the context asks again before a code bot acts on outside
-                content.
-              </p>
-              <div className="flex gap-2">
-                <Button size="sm" type="submit" disabled={busy || !edit.title.trim()}>
-                  Save
-                </Button>
-                <Button size="sm" variant="ghost" type="button" onClick={() => setEdit(undefined)}>
-                  Discard
-                </Button>
+            )}
+            {detail.routines.length > 0 && (
+              <div className="space-y-1">
+                <h4 className="label-mono">Routines</h4>
+                <ul className="space-y-1">
+                  {detail.routines.map((r) => (
+                    <li key={r.id}>
+                      <Link
+                        className="text-primary hover:underline"
+                        to="/routines"
+                        search={{ routine: r.id }}
+                      >
+                        {r.title}
+                      </Link>{" "}
+                      <span className="text-xs text-muted-foreground">{r.status}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </form>
-          )}
+            )}
+            <div className="space-y-1">
+              <h4 className="label-mono">
+                {CONTEXT_LABEL} <span className="font-normal normal-case">v{d.contextVersion}</span>
+              </h4>
+              {d.context ? (
+                <Response text={d.context} />
+              ) : (
+                <p className="text-muted-foreground">(empty)</p>
+              )}
+            </div>
+          </BotsContext.Provider>
           <div className="space-y-2">
             <h4 className="label-mono">Bots</h4>
             <ul className="space-y-2.5">
@@ -1314,6 +1292,7 @@ function NewRoom({
 }) {
   const ready = bots.filter((b) => b.onboarded);
   const [task, setTask] = useState("");
+  const [more, setMore] = useState("");
   const [busy, setBusy] = useState(false);
   const [teamId, setTeamId] = useState("");
   // Ticked bots stay apart from the goal text, so a room can start with members and no goal.
@@ -1335,17 +1314,22 @@ function NewRoom({
       if (teamId) {
         // The team's chief and bots join; the team context is shared with the room.
         const goal = task.trim();
-        onCreated(
-          await teamsApi.startRoom(teamId, {
-            title,
-            ...(goal ? { goal, firstMessage: goal } : {}),
-          }),
-        );
+        const roomId = await teamsApi.startRoom(teamId, {
+          title,
+          ...(goal ? { goal, firstMessage: goal } : {}),
+        });
+        // The team route has no field for the details, so they are saved on the room it just opened.
+        const details = more.trim();
+        if (details) {
+          const room = await discussionsApi.get(roomId);
+          await discussionsApi.update(roomId, room.discussion.version, { context: details });
+        }
+        onCreated(roomId);
       } else {
         const d = await discussionsApi.create({
           title,
           goal: task.trim(),
-          context: "",
+          context: more.trim(),
           members: picked.map((b) => ({ bot: b.id })),
         });
         onCreated(d.id);
@@ -1403,6 +1387,16 @@ function NewRoom({
           rows={4}
           maxLength={1000}
           placeholder="Type @ to bring a bot in, e.g. @Dev fix the login crash, then @DaVinci check the screen"
+        />
+        <MentionTextarea
+          title={NEW_ROOM_MORE_LABEL}
+          value={more}
+          onChange={setMore}
+          bots={ready}
+          required={false}
+          rows={4}
+          maxLength={8000}
+          placeholder="Background, links and references the bots should read. Markdown works."
         />
         {!teamId && (
           <fieldset className="flex flex-col gap-3">

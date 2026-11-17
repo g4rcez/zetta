@@ -10,6 +10,9 @@ import { orgChart, orgPosition } from "@zetta/db/schema/org";
 import { userPreference } from "@zetta/db/schema/preferences";
 import { team } from "@zetta/db/schema/teams";
 import type { ActiveActor } from "../identity/access";
+import { buildOrgDraft, type OrgDraft, type OrgDraftChoices } from "./draft";
+import { readOrgLinks, type OrgLink } from "./links";
+import { createPeopleDirectory } from "../people/directory";
 
 /** The most seats one chart holds: the canvas and the prompts stay readable, and one admin cannot fill the table. */
 export const ORG_MAX_POSITIONS = 300;
@@ -35,8 +38,16 @@ type Tx = Pick<Database, "select" | "insert" | "update" | "delete" | "execute">;
 export type OrgHolderProblem = "member_removed" | "bot_private" | "bot_archived" | "bot_missing";
 
 export type OrgHolder =
-  | { kind: "person"; userId: string; name: string; avatar: Avatar }
-  | { kind: "bot"; botId: string; name: string; description: string; avatar: Avatar };
+  | { kind: "person"; userId: string; name: string; avatar: Avatar; jobTitle?: string }
+  | {
+      kind: "bot";
+      botId: string;
+      name: string;
+      description: string;
+      /** What the bot is for, in a few words; empty when its owner wrote none (the web falls back to the seat title). */
+      role?: string;
+      avatar: Avatar;
+    };
 
 export type OrgPositionView = {
   id: string;
@@ -62,7 +73,7 @@ export type OrgView = {
   canEdit: boolean;
   /** Only for the admin: who can be put in a seat and which of their own teams can be linked. */
   palette: {
-    people: { userId: string; name: string; avatar: Avatar }[];
+    people: { userId: string; name: string; avatar: Avatar; title: string }[];
     bots: { id: string; name: string; description: string; avatar: Avatar }[];
     teams: { id: string; name: string }[];
   } | null;
@@ -102,7 +113,11 @@ export async function readOrg(
       : [],
     userIds.length
       ? db
-          .select({ id: userPreference.ownerUserId, avatar: userPreference.avatar })
+          .select({
+            id: userPreference.ownerUserId,
+            avatar: userPreference.avatar,
+            jobTitle: userPreference.jobTitle,
+          })
           .from(userPreference)
           .where(inArray(userPreference.ownerUserId, userIds))
       : [],
@@ -112,6 +127,7 @@ export async function readOrg(
             id: bot.id,
             name: bot.name,
             description: bot.description,
+            role: bot.role,
             avatar: bot.avatar,
             visibility: bot.visibility,
             kind: bot.kind,
@@ -131,6 +147,7 @@ export async function readOrg(
   const nameOf = new Map(people.map((p) => [p.id, p.name]));
   const isActive = new Set(active.map((m) => m.id));
   const avatarOf = new Map(avatars.map((a) => [a.id, a.avatar]));
+  const jobTitleOf = new Map(avatars.map((a) => [a.id, a.jobTitle]));
   const botOf = new Map(bots.map((b) => [b.id, b]));
   const teamOf = new Map(teams.map((t) => [t.id, t.name]));
   const positions = rows
@@ -164,6 +181,7 @@ export async function readOrg(
             userId: r.userId,
             name,
             avatar: smallAvatar(avatarOf.get(r.userId) ?? null),
+            jobTitle: jobTitleOf.get(r.userId) ?? "",
           },
           problem: null,
         };
@@ -188,6 +206,7 @@ export async function readOrg(
             botId: b.id,
             name: b.name,
             description: b.description,
+            role: b.role,
             avatar: smallAvatar(b.avatar),
           },
           problem: null,
@@ -328,11 +347,17 @@ export function createOrgStore(db: Database) {
           .where(and(eq(team.ownerUserId, a.userId), eq(team.status, "active")))
           .orderBy(asc(team.name), asc(team.id)),
       ]);
+      // The title of each person as the rest of the app shows it: their own job title, else their seat.
+      const titles = await createPeopleDirectory(db).lines(people.map((p) => p.userId));
       return {
         ...view,
         canEdit: true,
         palette: {
-          people: people.map((p) => ({ ...p, avatar: smallAvatar(p.avatar ?? null) })),
+          people: people.map((p) => ({
+            ...p,
+            avatar: smallAvatar(p.avatar ?? null),
+            title: titles.get(p.userId)?.title ?? "",
+          })),
           bots: bots.map((b) => ({ ...b, avatar: smallAvatar(b.avatar) })),
           teams,
         },
@@ -559,6 +584,54 @@ export function createOrgStore(db: Database) {
         await tx.insert(orgPosition).values(made);
       });
       return store.get(a);
+    },
+
+    /**
+     * A first chart drafted from the admin's teams, for the admin to review. Nothing is saved: `applyDraft` is the confirmation.
+     * Only the admin reads it, because it lists the admin's own teams and the bots in them.
+     */
+    async draft(a: ActiveActor, choices: OrgDraftChoices = {}): Promise<OrgDraft> {
+      if (!a.isAdmin) throw new OrgError("NOT_ALLOWED", "Only the admin draws the chart.");
+      return buildOrgDraft(db, a.userId, choices);
+    },
+
+    /**
+     * Saves the draft (the same one `draft` returns for the same choices) into an empty chart, in one step: the CEO seat, a leader seat per
+     * team, and a seat for every bot the admin kept. Teams are linked to their leader seat.
+     */
+    async applyDraft(a: ActiveActor, expectedVersion: number, choices: OrgDraftChoices = {}) {
+      await mutate(a, expectedVersion, async (tx, rows, chartId) => {
+        if (rows.length)
+          throw new OrgError("INVALID", "A draft from your teams needs an empty chart.");
+        const draft = await buildOrgDraft(tx, a.userId, choices);
+        if (draft.seats.length > ORG_MAX_POSITIONS)
+          throw new OrgError("INVALID", `The chart can have at most ${ORG_MAX_POSITIONS} seats.`);
+        const idOf = draft.seats.map(() => uuidv7());
+        await tx.insert(orgPosition).values(
+          draft.seats.map((s) => ({
+            id: idOf[s.ref]!,
+            chartId,
+            parentId: s.parentRef === null ? null : idOf[s.parentRef]!,
+            rank: s.rank,
+            title: s.title,
+            description: s.description,
+            unit: s.unit,
+            templateKey: s.templateKey,
+            teamId: s.team?.id ?? null,
+            seat: s.holder ? ("bot" as const) : ("open" as const),
+            botId: s.holder?.botId ?? null,
+            sortOrder: s.sortOrder,
+          })),
+        );
+      });
+      return store.get(a);
+    },
+
+    /** The bots of the chart that work together, from rooms, workflows and decision routes the reader has. */
+    async links(a: ActiveActor): Promise<OrgLink[]> {
+      const { positions } = await readOrg(db, a.userId);
+      const seated = positions.flatMap((p) => (p.holder?.kind === "bot" ? [p.holder.botId] : []));
+      return readOrgLinks(db, a.userId, seated);
     },
   };
   return store;

@@ -15,6 +15,8 @@ export type Installation = {
   layaLanguages: string[];
   /** The model those languages select: English only, or the multilingual one. */
   layaModel: "english" | "multilingual";
+  /** Whether the server checks once a day if a newer version is published. `off` sends nothing anywhere. */
+  updateCheck?: "on" | "off";
   /** The saved network mode differs from the one the server booted with. */
   restartRequired: boolean;
   /** Speech to text: the server's own model, OpenAI, or any server that speaks OpenAI's transcription API. */
@@ -40,7 +42,10 @@ export const installationApi = {
   /** The answer is the saved installation: it replaces the cached one. */
   patch: (
     patch: Partial<
-      Pick<Installation, "networkMode" | "publicUrl" | "onboarding" | "laya" | "layaLanguages">
+      Pick<
+        Installation,
+        "networkMode" | "publicUrl" | "onboarding" | "laya" | "layaLanguages" | "updateCheck"
+      >
     > &
       TranscribeSettingsPatch,
   ) =>

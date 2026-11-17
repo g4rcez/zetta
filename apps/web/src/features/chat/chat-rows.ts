@@ -33,6 +33,8 @@ export type Row = Message & {
   plan?: PlanStep[];
   computers?: { id: string; name: string }[];
   computerSteps?: ComputerStep[];
+  /** Only on the row a page hands to `onQuote`: the part of the message the person selected (Quote selection). */
+  quoteSelection?: string;
 };
 /** Computers a bot used on this message: announced live while it works, then kept in the saved receipts. */
 export const computersOf = (r: Row) => {

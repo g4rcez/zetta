@@ -65,7 +65,7 @@ export function FeedbackProvider({
 export const useFeedback = () => useContext(FeedbackContext);
 
 /** Only a finished answer of a bot can be rated. */
-const rateable = (row: Row) =>
+export const rateable = (row: Row) =>
   row.role === "assistant" && Boolean(row.botId) && row.status === "complete" && !row.streaming;
 
 /**

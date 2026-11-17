@@ -6,7 +6,7 @@ import { Button } from "@/components/ui";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { relativeTime } from "../shared/relative-time";
-import { BotPicker } from "../skills/bot-picker";
+import { BotPicker } from "@/components/bot-picker";
 import { Badge, card, Empty, Loading } from "../shared/ui";
 import {
   appsApi,

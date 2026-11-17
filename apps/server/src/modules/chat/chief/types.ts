@@ -110,7 +110,10 @@ export type ChiefDeps = {
     | undefined;
   /** The company chart: reads for anyone, changes for an administrator (the store checks it). */
   org?:
-    | Pick<OrgStore, "get" | "create" | "update" | "seat" | "move" | "remove" | "applyPreset">
+    | Pick<
+        OrgStore,
+        "get" | "links" | "create" | "update" | "seat" | "move" | "remove" | "applyPreset"
+      >
     | undefined;
   outputStyles?: OutputStyles | undefined;
   artifacts?: ArtifactStore | undefined;

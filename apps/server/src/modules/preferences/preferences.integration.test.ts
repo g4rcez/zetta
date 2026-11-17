@@ -72,7 +72,7 @@ suite("layout preferences against compose postgres", () => {
   test("a person who never changed anything gets the defaults", async () => {
     expect(await read(ids[0]!)).toEqual({
       railMode: "expanded",
-      navMode: "full",
+      navMode: "simple",
       steerMode: "park",
       sidebarSide: "left",
       railWidth: 224,
@@ -92,7 +92,7 @@ suite("layout preferences against compose postgres", () => {
     await call(ids[0]!, "PATCH", { railWidth: 260 });
     expect(await read(ids[0]!)).toEqual({
       railMode: "collapsed",
-      navMode: "full",
+      navMode: "simple",
       steerMode: "park",
       sidebarSide: "left",
       railWidth: 260,
@@ -107,7 +107,7 @@ suite("layout preferences against compose postgres", () => {
     });
     expect(await read(ids[1]!)).toEqual({
       railMode: "expanded",
-      navMode: "full",
+      navMode: "simple",
       steerMode: "park",
       sidebarSide: "left",
       railWidth: 224,

@@ -9,11 +9,17 @@ const win = setupDom();
 
 type Call = { method: string; path: string; body: unknown };
 const calls: Call[] = [];
-let profile: { name: string; email: string; avatar: unknown } = {
+const BLANK = {
   name: "Ada Lovelace",
   email: "ada@example.invalid",
   avatar: null,
+  jobTitle: "",
+  department: "",
+  about: "",
+  timezone: "",
+  contact: "",
 };
+let profile: Record<string, unknown> & { name: string; email: string } = BLANK;
 let passwordAnswer: "ok" | "wrong" = "ok";
 const FIREFOX =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:130.0) Gecko/20100101 Firefox/130.0";
@@ -33,6 +39,17 @@ const api = (path: string, method: string, body: unknown): Answer => {
     if (method === "PATCH") profile = { ...profile, ...(body as object) };
     return { body: { profile } };
   }
+  if (path === "/api/installation/version")
+    return {
+      body: {
+        build: { commit: "54121d6", date: "2026-11-10T12:00:00.000Z" },
+        state: "current",
+        latest: { date: "2026-11-10" },
+        changes: [],
+        checkedAt: null,
+        check: "on",
+      },
+    };
   if (path === "/api/profile/sessions")
     return {
       body: {
@@ -127,9 +144,9 @@ const press = async (label: string) => {
   await settle();
 };
 
-async function mount() {
+async function mount(savedLines: Partial<typeof BLANK> = {}) {
   calls.length = 0;
-  profile = { name: "Ada Lovelace", email: "ada@example.invalid", avatar: null };
+  profile = { ...BLANK, ...savedLines };
   passwordAnswer = "ok";
   const { PreferencesPage } = await import("./preferences-page");
   const { PreferencesProvider } = await import("./preferences");
@@ -164,6 +181,89 @@ test("saving a new name sends only the name", async () => {
   expect(button("Save profile")?.disabled).toBe(false);
   await submit("name");
   expect(writes()).toEqual([{ method: "PATCH", path: "/api/profile", body: { name: "Ada King" } }]);
+});
+
+test("the profile has job title, department, contact, time zone and about, empty at first", async () => {
+  await mount();
+  expect(input("jobTitle").value).toBe("");
+  expect(input("department").value).toBe("");
+  expect(input("contact").value).toBe("");
+  expect(text()).toContain("Time zone");
+  expect(text()).toContain("this device");
+  expect(text()).toContain("About you");
+  expect(button("Save profile")?.disabled).toBe(true);
+});
+
+test("saved lines are shown, and a saved time zone says it was chosen", async () => {
+  await mount({ jobTitle: "Head of design", department: "Product", timezone: "America/Sao_Paulo" });
+  expect(input("jobTitle").value).toBe("Head of design");
+  expect(input("department").value).toBe("Product");
+  expect(text()).toContain("America/Sao_Paulo");
+  expect(text()).toContain("chosen by you");
+});
+
+test("saving a job title and a contact sends only those two, trimmed", async () => {
+  await mount();
+  await type("jobTitle", "  Head of design ");
+  await type("contact", "ada@example.invalid");
+  await submit("jobTitle");
+  expect(writes()).toEqual([
+    {
+      method: "PATCH",
+      path: "/api/profile",
+      body: { jobTitle: "Head of design", contact: "ada@example.invalid" },
+    },
+  ]);
+  expect(input("jobTitle").value).toBe("Head of design");
+  expect(button("Save profile")?.disabled).toBe(true);
+});
+
+test("clearing a saved line sends an empty value, and a line left alone is never sent", async () => {
+  await mount({ jobTitle: "Head of design", department: "Product" });
+  await type("department", "");
+  await submit("department");
+  expect(writes()).toEqual([{ method: "PATCH", path: "/api/profile", body: { department: "" } }]);
+});
+
+test("the time zone starts as the device's and is saved only after Change and a choice", async () => {
+  await mount();
+  await press("Change");
+  const select = win.document.querySelector(
+    'select[name="timezone"]',
+  ) as unknown as HTMLSelectElement;
+  expect(select.value).toBe("");
+  await act(async () => {
+    select.value = "Europe/Lisbon";
+    select.dispatchEvent(new win.Event("change", { bubbles: true }) as never);
+  });
+  await submit("jobTitle");
+  expect(writes()).toEqual([
+    { method: "PATCH", path: "/api/profile", body: { timezone: "Europe/Lisbon" } },
+  ]);
+});
+
+test("a refused line shows the server's answer and keeps the draft", async () => {
+  await mount();
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: URL | Request | string, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/api/profile" && init?.method === "PATCH")
+      return Response.json(
+        { error: { code: "INVALID_REQUEST", message: "Check the details and try again." } },
+        { status: 400 },
+      );
+    return original(input, init);
+  }) as typeof fetch;
+  await type("jobTitle", "<b>boss</b>");
+  await submit("jobTitle");
+  globalThis.fetch = original;
+  expect(text()).toContain("Check the details and try again.");
+  expect(input("jobTitle").value).toBe("<b>boss</b>");
+});
+
+test("the footer names the build of the server", async () => {
+  await mount();
+  expect(text()).toContain("Version 54121d6 · 2026-11-10");
 });
 
 test("a confirmation that does not match is refused before any request", async () => {

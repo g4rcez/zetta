@@ -5,6 +5,7 @@ import { eq } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { bot } from "@zetta/db/schema/chat";
 import { installationIdentity, membership } from "@zetta/db/schema/identity";
+import { userPreference } from "@zetta/db/schema/preferences";
 import { team } from "@zetta/db/schema/teams";
 import { createApp } from "../../app";
 import { cleanupTestUsers, resetOrgChart } from "../../test-support/db-cleanup";
@@ -248,6 +249,24 @@ suite("company chart against postgres", () => {
       seat: "person",
       holder: { kind: "person", userId: B },
     });
+    // What the holder wrote about themselves goes with the seat, and the palette shows their title as the rest of the app does.
+    await db
+      .insert(userPreference)
+      .values({ ownerUserId: B, jobTitle: "Head of tech" })
+      .onConflictDoUpdate({
+        target: userPreference.ownerUserId,
+        set: { jobTitle: "Head of tech" },
+      });
+    expect(seatOf(await get(), "CTO").holder).toMatchObject({
+      kind: "person",
+      jobTitle: "Head of tech",
+    });
+    expect(
+      (await get()).palette!.people.find((p: { userId: string }) => p.userId === B),
+    ).toMatchObject({
+      title: "Head of tech",
+    });
+    await db.update(userPreference).set({ jobTitle: "" }).where(eq(userPreference.ownerUserId, B));
 
     const cfo = seatOf(await get(), "CFO");
     const botSeat = await write("PUT", `/api/org/positions/${cfo.id}/seat`, {

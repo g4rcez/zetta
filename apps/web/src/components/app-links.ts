@@ -18,6 +18,7 @@ import {
   FolderSimpleIcon,
   UsersThreeIcon,
   UserCircleIcon,
+  RobotIcon,
 } from "@phosphor-icons/react";
 
 /** Main rail destinations, in rail order (the command palette binds Alt+1… to them in this order). Each `group` is one contiguous run, rendered as a labelled section. */
@@ -65,4 +66,6 @@ export const appLinks = [
   { to: "/organization", group: "Oversee", label: "Organization", icon: UsersThreeIcon },
   // Last again. The sidebar shows it under More, after Organization.
   { to: "/people", group: "Oversee", label: "People", icon: UserCircleIcon },
+  // Last again. The sidebar shows it under More, before Teams.
+  { to: "/bots", group: "Build", label: "Bots", icon: RobotIcon },
 ] as const;

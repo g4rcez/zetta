@@ -59,6 +59,7 @@ const FIXED = [
   linkOf("Calendar"),
 ];
 const LIBRARY = [
+  linkOf("Bots"),
   linkOf("Teams"),
   linkOf("Organization"),
   linkOf("People"),

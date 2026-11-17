@@ -1,3 +1,4 @@
+import { botRole } from "@zetta/core/bot-role";
 import { and, asc, eq } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
 
@@ -37,6 +38,7 @@ const summary = (b: Row) => ({
 const FIELDS = [
   "name",
   "description",
+  "role",
   "personality",
   "instructions",
   "harness",
@@ -60,14 +62,14 @@ export async function runBot(ctx: ChiefCtx, a: ChiefArgs<"bot">): Promise<Outcom
   const bots = await owned(ctx);
   if (a.action === "list")
     return {
-      read: `bot.list:\n${JSON.stringify(bots.map((b) => ({ ...summary(b), description: b.description.slice(0, 200) })))}`,
+      read: `bot.list:\n${JSON.stringify(bots.map((b) => ({ ...summary(b), role: botRole(b), description: b.description.slice(0, 200) })))}`,
     };
   if (a.action === "get") {
     const r = pick(bots, a.bot, (b) => b.name, "bot");
     if ("error" in r) return r;
     const b = r.hit;
     return {
-      read: `bot.get:\n${JSON.stringify({ ...summary(b), description: b.description, personality: b.personality, instructions: b.instructions, commitIdentity: b.commitIdentity, commitEmail: b.commitEmail, requiredConnections: b.requiredConnections, contextBytes: b.contextBytes, summaryMode: b.summaryMode, summaryMaxChars: b.summaryMaxChars, summaryGapBytes: b.summaryGapBytes, chatSearchLimit: b.chatSearchLimit })}`,
+      read: `bot.get:\n${JSON.stringify({ ...summary(b), role: b.role, shownAs: botRole(b), description: b.description, personality: b.personality, instructions: b.instructions, commitIdentity: b.commitIdentity, commitEmail: b.commitEmail, requiredConnections: b.requiredConnections, contextBytes: b.contextBytes, summaryMode: b.summaryMode, summaryMaxChars: b.summaryMaxChars, summaryGapBytes: b.summaryGapBytes, chatSearchLimit: b.chatSearchLimit })}`,
     };
   }
   const r = pick(bots, a.bot, (b) => b.name, "bot");

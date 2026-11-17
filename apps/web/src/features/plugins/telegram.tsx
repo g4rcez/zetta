@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useState, type FormEvent } from "react";
 
+import { botRole } from "@zetta/core/bot-role";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Input } from "@/components/ui";
 import { errorCode, errorMessage, type Bot } from "../chat/chat-client";
@@ -156,7 +157,7 @@ export function TelegramInstall({
                 key={b.id}
                 leading={<BotAvatar bot={b} size={40} />}
                 title={b.name}
-                description={b.description}
+                description={botRole(b)}
                 label={`${b.name} can use ${meta.name}`}
                 checked={chosen.has(b.id)}
                 onChange={(on) =>

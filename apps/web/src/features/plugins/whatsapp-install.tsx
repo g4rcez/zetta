@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Alert } from "@g4rcez/components/alert";
 
 import { AdvancedSection } from "@/components/advanced-section";
+import { botRole } from "@zetta/core/bot-role";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button, Input } from "@/components/ui";
 import { errorMessage, type Bot } from "../chat/chat-client";
@@ -89,7 +90,7 @@ export function WhatsappInstall({
                 key={b.id}
                 leading={<BotAvatar bot={b} size={40} />}
                 title={b.name}
-                description={b.description}
+                description={botRole(b)}
                 label={`${b.name} can use ${meta.name}`}
                 checked={chosen.has(b.id)}
                 onChange={(on) =>

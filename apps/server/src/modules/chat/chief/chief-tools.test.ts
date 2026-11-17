@@ -44,6 +44,19 @@ describe("parseTools: chief setup blocks", () => {
     expect(r.text).toBe("Done.");
   });
 
+  test("a bot update takes a role of 60 characters at most, trimmed", () => {
+    const ok = parseTools(
+      fence("bot", '{"action":"update","bot":"Researcher","role":"  Support lead  "}'),
+    );
+    expect(ok.rejected).toEqual([]);
+    expect(ok.calls[0]!.args).toMatchObject({ role: "Support lead" });
+    const long = parseTools(
+      fence("bot", `{"action":"update","bot":"Researcher","role":"${"x".repeat(61)}"}`),
+    );
+    expect(long.calls).toEqual([]);
+    expect(long.rejected).toHaveLength(1);
+  });
+
   test("an update with nothing to change is rejected", () => {
     const r = parseTools(fence("bot", '{"action":"update","bot":"Researcher"}'));
     expect(r.calls).toEqual([]);

@@ -12,7 +12,9 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
+import { botRole } from "@zetta/core/bot-role";
 import { BotAvatar } from "@/components/bot-avatar";
+import { BotIdentity } from "@/components/bot-identity";
 import { Button, Checkbox, Input } from "@/components/ui";
 import { ActionHint } from "@/components/action-hint";
 import type { Bot } from "../chat/chat-client";
@@ -237,7 +239,7 @@ function AssigneeRow({
           key={b.id}
           id={b.id}
           name={b.name}
-          detail={b.description.trim() || (b.kind === "chief" ? "Chief" : "Specialist")}
+          detail={botRole(b)}
           face={<BotAvatar bot={b} size={24} square />}
           selected={selected}
           onChange={onChange}
@@ -251,6 +253,18 @@ function AssigneeRow({
         selected={selected}
         onChange={onChange}
       />
+      {/* The hint above only opens on hover or focus: the bots being filtered stay named, with what each one is for, in plain sight. */}
+      {bots
+        .filter((b) => selected.includes(b.id))
+        .map((b) => (
+          <BotIdentity
+            key={b.id}
+            bot={b}
+            size={20}
+            sub={botRole(b)}
+            className="ml-2 max-w-48 flex-none"
+          />
+        ))}
     </div>
   );
 }

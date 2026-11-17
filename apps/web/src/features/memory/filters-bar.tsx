@@ -1,6 +1,7 @@
 import { FunnelSimpleIcon, MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { BotSelect } from "@/components/bot-select";
 import { Drawer } from "@/components/drawer";
 import { Button } from "@/components/ui";
 import { cn } from "@zetta/ui/lib/utils";
@@ -352,37 +353,23 @@ export function FiltersBar({
             </select>
           </Facet>
           {filter.by === "bot" && (
-            <Facet label="Which bot">
-              <select
-                name="bot"
-                value={filter.bot ?? ""}
-                onChange={(e) => set({ bot: e.target.value })}
-                className={control}
-              >
-                <option value="">Any bot</option>
-                {(bots ?? []).map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </Facet>
+            <BotSelect
+              label="Which bot"
+              name="bot"
+              placeholder="Any bot"
+              bots={bots ?? []}
+              value={filter.bot ?? ""}
+              onChange={(botId) => set({ bot: botId })}
+            />
           )}
-          <Facet label="Created by">
-            <select
-              name="createdBy"
-              value={filter.createdBy ?? ""}
-              onChange={(e) => set({ createdBy: e.target.value })}
-              className={control}
-            >
-              <option value="">Anyone</option>
-              {(bots ?? []).map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </Facet>
+          <BotSelect
+            label="Created by"
+            name="createdBy"
+            placeholder="Anyone"
+            bots={bots ?? []}
+            value={filter.createdBy ?? ""}
+            onChange={(botId) => set({ createdBy: botId })}
+          />
           <Facet label="Team">
             <select
               name="team"

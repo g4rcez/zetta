@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from "react";
 
+import { botRole } from "@zetta/core/bot-role";
+import { BotIdentity } from "@/components/bot-identity";
+import type { BotSelectBot } from "@/components/bot-select";
 import { Button, Input } from "@/components/ui";
 import { errorMessage } from "../chat/chat-client";
 import { BOT_SIZE, TEAM_DEFAULT_SIZE } from "./team-graph";
 import { teamsApi, type Team, type TeamBox } from "./teams-api";
-
-type Pick = { id: string; name: string };
 
 /** Where the members sit inside the new team's box: rows of two, below the team's title. */
 export function memberPoints(box: TeamBox, count: number) {
@@ -36,7 +37,7 @@ export function NewTeamForm({
   onCreated,
   onCancel,
 }: {
-  bots: Pick[];
+  bots: BotSelectBot[];
   /** Teams already on the canvas, to place the new box beside them. */
   existing: number;
   onCreated: (team: Team) => void;
@@ -97,8 +98,8 @@ export function NewTeamForm({
                 className="flex items-center justify-between gap-2 rounded-md border px-2 py-1"
               >
                 <label className="flex min-w-0 items-center gap-2">
-                  <input type="checkbox" name="bots" value={b.id} />
-                  <span className="truncate">{b.name}</span>
+                  <input type="checkbox" name="bots" value={b.id} aria-label={b.name} />
+                  <BotIdentity bot={b} size={24} sub={botRole(b)} />
                 </label>
                 <label className="flex items-center gap-1 text-xs text-muted-foreground">
                   <input type="radio" name="lead" value={b.id} />

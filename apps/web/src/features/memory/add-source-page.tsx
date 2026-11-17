@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
 import { BotIdentity } from "@/components/bot-identity";
 import { EditorField } from "@/components/editor/editor";
-import { Button, Input, Select } from "@/components/ui";
+import { BotSelect } from "@/components/bot-select";
+import { Button, Input } from "@/components/ui";
 import { call } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { Badge, field, list, listItem } from "../shared/ui";
@@ -164,6 +165,8 @@ export function AddSourcePage({
 }) {
   const navigate = useNavigate();
   const bots = useQuery(chatQueries.bots()).data as Bot[] | undefined;
+  // BotSelect rebuilds its options when this list changes, so it must not be a new array on every render.
+  const specialists = useMemo(() => (bots ?? []).filter((b) => b.kind !== "chief"), [bots]);
   const checks = useQuery({ ...memoryQueries.checks(), refetchInterval: 5000 });
   const { run, feedback, setError } = useAction();
   const [busy, setBusy] = useState(false);
@@ -263,17 +266,12 @@ export function AddSourcePage({
             </label>
           )}
           <Input title="Title (optional)" name="title" maxLength={160} />
-          <Select
-            title="Bot that reads it"
+          <BotSelect
+            label="Bot that reads it"
             name="botId"
-            required={false}
             defaultValue=""
-            options={[
-              { value: "", label: "Your chief" },
-              ...(bots ?? [])
-                .filter((b) => b.kind !== "chief")
-                .map((b) => ({ value: b.id, label: b.name })),
-            ]}
+            placeholder="Your chief"
+            bots={specialists}
           />
           <div className="flex items-center gap-3">
             <Button type="submit" disabled={busy}>

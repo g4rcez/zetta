@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/lib/notify";
 
 import { BotIdentity } from "@/components/bot-identity";
+import { BotSelect } from "@/components/bot-select";
 import { Button, Progress } from "@/components/ui";
 import { errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
@@ -154,19 +155,15 @@ export function ArtifactsPage({ filter }: { filter: ArtifactFilter }) {
               className={`${field} pl-9`}
             />
           </div>
-          <select
-            aria-label="Filter by bot"
-            value={bot ?? ""}
-            onChange={(e) => set({ bot: e.target.value || undefined })}
-            className={`${field} w-44`}
-          >
-            <option value="">All bots</option>
-            {bots.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+          <div className="w-56">
+            <BotSelect
+              label="Filter by bot"
+              placeholder="All bots"
+              bots={bots}
+              value={bot ?? ""}
+              onChange={(botId) => set({ bot: botId || undefined })}
+            />
+          </div>
           <select
             aria-label="Filter by type"
             value={kind ?? ""}

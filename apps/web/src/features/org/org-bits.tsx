@@ -20,6 +20,7 @@ import {
   UsersIcon,
   type Icon,
 } from "@phosphor-icons/react";
+import { botRole } from "@zetta/core/bot-role";
 import { ORG_RANK_LABELS, type OrgRank } from "@zetta/core/org";
 import type { OrgIcon } from "@zetta/core/org-templates";
 
@@ -102,6 +103,8 @@ export function SeatHolder({
       <BotIdentity
         bot={{ id: h.botId, name: h.name, avatar: h.avatar }}
         size={size}
+        // The seat title is already printed beside the holder, so it is not the fallback here.
+        sub={botRole({ role: h.role, description: h.description })}
         className={className}
       />
     );

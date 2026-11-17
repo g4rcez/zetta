@@ -2,6 +2,7 @@ import { ChatsIcon, UsersIcon } from "@phosphor-icons/react";
 import { cn } from "@zetta/ui/lib/utils";
 import type { EditorView } from "@codemirror/view";
 import { useQueryClient } from "@tanstack/react-query";
+import { botRole } from "@zetta/core/bot-role";
 import { legacyMentions, mentionIds, mentionToken, parseMentions } from "@zetta/core/mentions";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 
@@ -223,10 +224,17 @@ export function MentionPopup({
               badge={<BotStatusDot botId={b.id} className="size-2 border-popover" />}
             />
           )}
-          <span className="font-medium">{b.name}</span>
-          <span className="truncate text-xs text-muted-foreground">
-            {state.char}
-            {mentionKey(b.name)}
+          <span className="min-w-0 flex-1">
+            <span className="flex items-baseline gap-2">
+              <span className="font-medium">{b.name}</span>
+              <span className="truncate text-xs text-muted-foreground">
+                {state.char}
+                {mentionKey(b.name)}
+              </span>
+            </span>
+            {!isTag(b) && (
+              <span className="block truncate text-xs text-muted-foreground">{botRole(b)}</span>
+            )}
           </span>
         </li>
       ))}

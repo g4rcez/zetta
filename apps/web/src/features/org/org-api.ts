@@ -12,6 +12,8 @@ export type OrgHolder =
       botId: string;
       name: string;
       description: string;
+      /** What the bot is for, in a few words. Empty: the seat title tells (see `botRole`). */
+      role?: string;
       avatar: BotAvatarValue | null;
     };
 /** Why a seat reads as open although somebody was put in it. `mine`: the reader owns that bot. */

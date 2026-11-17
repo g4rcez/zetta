@@ -36,7 +36,15 @@ export type OrgHolderProblem = "member_removed" | "bot_private" | "bot_archived"
 
 export type OrgHolder =
   | { kind: "person"; userId: string; name: string; avatar: Avatar }
-  | { kind: "bot"; botId: string; name: string; description: string; avatar: Avatar };
+  | {
+      kind: "bot";
+      botId: string;
+      name: string;
+      description: string;
+      /** What the bot is for, in a few words; empty when its owner wrote none (the web falls back to the seat title). */
+      role?: string;
+      avatar: Avatar;
+    };
 
 export type OrgPositionView = {
   id: string;
@@ -112,6 +120,7 @@ export async function readOrg(
             id: bot.id,
             name: bot.name,
             description: bot.description,
+            role: bot.role,
             avatar: bot.avatar,
             visibility: bot.visibility,
             kind: bot.kind,
@@ -188,6 +197,7 @@ export async function readOrg(
             botId: b.id,
             name: b.name,
             description: b.description,
+            role: b.role,
             avatar: smallAvatar(b.avatar),
           },
           problem: null,

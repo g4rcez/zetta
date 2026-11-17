@@ -1,6 +1,8 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
+  BuildingsIcon,
   CaretRightIcon,
+  DotsThreeIcon,
   HashIcon,
   MagnifyingGlassIcon,
   MoonIcon,
@@ -8,6 +10,7 @@ import {
   PauseIcon,
   PlayIcon,
   SidebarSimpleIcon,
+  UserIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
@@ -21,12 +24,8 @@ import {
   useBotAttention,
   useRoutineUnread,
 } from "@/features/attention/summary";
-import {
-  SidebarTree,
-  orderBots,
-  useSidebarLocation,
-  useSidebarNavigation,
-} from "@/features/chat/sidebar";
+import { SidebarTree, useSidebarLocation, useSidebarNavigation } from "@/features/chat/sidebar";
+import { pickSidebarBots } from "@/features/chat/sidebar-bot-list";
 import { useRooms, useSidebarData } from "@/features/chat/sidebar-data";
 import { groupRooms, roomSignal } from "@/features/discussions/rooms";
 import {
@@ -41,6 +40,7 @@ import { UpdateMark } from "@/features/updates/update-mark";
 import { Logo } from "./logo";
 import { PauseAgentsButton } from "@/features/agents/pause-agents";
 import { ModeToggle } from "./mode-toggle";
+import { useSidebarLayout, type SidebarLayout } from "./sidebar-layout";
 import { railLabel, railRow, railRowActive, railRowExpanded } from "./rail-row";
 import { ResizeHandle } from "./resize-handle";
 import UserMenu from "./user-menu";
@@ -71,6 +71,19 @@ const LIBRARY = [
 ];
 const ADVANCED = [linkOf("Studio"), linkOf("Playground"), linkOf("Computer")];
 const MORE = [...LIBRARY, ...ADVANCED];
+// Workspace layout: the same pages, in sections a team reads at a glance.
+const WORKSPACE = [linkOf("Teams"), linkOf("Organization"), linkOf("People")];
+const LIBRARY_TEAM = [
+  linkOf("Bots"),
+  linkOf("Memory"),
+  linkOf("Skills"),
+  linkOf("Plugins"),
+  linkOf("Apps"),
+  linkOf("Artifacts"),
+];
+// Bots listed in the sidebar before "All bots": a team already has the page, a solo person lives in this list.
+const BOTS_PERSONAL = 7;
+const BOTS_WORKSPACE = 5;
 const GROUP_KEY = (label: string) => `zetta.sidebar-${label.toLowerCase()}`;
 const RAIL_WIDTH = 56;
 
@@ -166,6 +179,28 @@ function NavRow({
   );
 }
 
+/** One destination of the personal grid: a 40px tile with a 20px icon. The name is in the hint and the screen-reader text, because five labels do not fit a 224px sidebar at 12px. */
+function NavTile({ link, badge }: { link: AppLink; badge?: ReactNode }) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const active = isActive(link, pathname);
+  const params = "params" in link ? link.params : undefined;
+  const Icon = link.icon;
+  return (
+    <RailHint collapsed label={link.label} icon={<Icon className="size-4" aria-hidden="true" />}>
+      <Link
+        to={link.to as string}
+        params={params as never}
+        aria-current={active ? "page" : undefined}
+        className={cn(railRow, "h-10 w-full", active && railRowActive)}
+      >
+        <Icon className="size-5 shrink-0" aria-hidden="true" />
+        <span className="sr-only">{link.label}</span>
+        {badge}
+      </Link>
+    </RailHint>
+  );
+}
+
 /** A count on a nav row: a dot when the rail is collapsed, a pill when it is open. Amber is only for "a person is needed" (DESIGN.md "The Attention Rule"). */
 function CountBadge({
   collapsed,
@@ -219,13 +254,17 @@ function RoutinesBadge({ collapsed }: { collapsed: boolean }) {
 
 /** The collapsed rail shows each bot as its avatar, in the same order as the full sidebar, with the attention dot kept. */
 function RailBots() {
-  const { bots } = useSidebarData();
+  const { bots, chats } = useSidebarData();
   const { preferences } = usePreferences();
   const attention = useBotAttention();
   const { botId } = useSidebarLocation();
   const { toBot } = useSidebarNavigation();
-  const { chief, rest } = orderBots(bots, preferences.botOrder);
-  const list = chief ? [chief, ...rest] : rest;
+  const { shown: list, total } = pickSidebarBots(bots, chats, {
+    order: preferences.botOrder,
+    pinned: preferences.sidebarBots,
+    currentId: botId,
+    limit: BOTS_PERSONAL,
+  });
   return (
     <ul aria-label="Bots" className="flex flex-col items-center gap-px">
       {list.map((b) => {
@@ -264,6 +303,20 @@ function RailBots() {
           </li>
         );
       })}
+      {total > list.length && (
+        <li>
+          <RailHint
+            collapsed
+            label="All bots"
+            icon={<DotsThreeIcon className="size-4" aria-hidden="true" />}
+          >
+            <Link to="/bots" search={{}} className={railRow}>
+              <DotsThreeIcon className="size-4 shrink-0" aria-hidden="true" />
+              <span className="sr-only">All bots ({total})</span>
+            </Link>
+          </RailHint>
+        </li>
+      )}
     </ul>
   );
 }
@@ -400,6 +453,11 @@ export function AppSidebar({
   const rail = collapsed ? "collapsed" : "expanded";
   const paused = useAgentsState() === "paused";
   const iconButton = cn(railRow, "w-8");
+  const { layout, set: setLayout } = useSidebarLayout();
+  const [swaps, setSwaps] = useState(0);
+  const other: SidebarLayout = layout === "personal" ? "workspace" : "personal";
+  const personal = !collapsed && layout === "personal";
+  const OtherIcon = other === "workspace" ? BuildingsIcon : UserIcon;
   return (
     <aside
       aria-label="Sidebar"
@@ -425,6 +483,27 @@ export function AppSidebar({
             {!collapsed && <span className="truncate text-sm font-semibold">Zetta</span>}
           </Link>
         </ActionHint>
+        {!collapsed && (
+          <RailHint
+            collapsed={false}
+            label={`Switch to the ${other} layout`}
+            iconOnly
+            expandedSide="bottom"
+            icon={<OtherIcon className="size-4" aria-hidden="true" />}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setLayout(other);
+                setSwaps((n) => n + 1);
+              }}
+              aria-label={`Switch to the ${other} layout`}
+              className={iconButton}
+            >
+              <OtherIcon className="size-4" aria-hidden="true" />
+            </button>
+          </RailHint>
+        )}
         <RailHint
           collapsed={collapsed}
           label="Search"
@@ -463,48 +542,70 @@ export function AppSidebar({
           </RailHint>
         )}
       </div>
-      <nav
-        aria-label="Main"
-        className={cn("shrink-0 space-y-px px-2", collapsed && "flex flex-col items-center")}
-      >
-        {FIXED.map((l) => (
-          <NavRow
-            key={l.label}
-            link={l}
-            collapsed={collapsed}
-            badge={
-              l.label === "Inbox" ? (
-                <CatchUpBadge collapsed={collapsed} />
-              ) : l.label === "Routines" ? (
-                <RoutinesBadge collapsed={collapsed} />
-              ) : undefined
-            }
-          />
-        ))}
-      </nav>
-      {collapsed ? (
-        <>
-          {/* Outside the scroll box, so it stays in place while the rooms, bots and More icons scroll under it. */}
-          <span aria-hidden="true" className="mx-auto mt-2 h-px w-6 shrink-0 bg-sidebar-border" />
-          <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto px-2 py-2 [scrollbar-width:none] hover:[scrollbar-width:thin]">
-            <RailRooms />
-            <RailBots />
-            <span aria-hidden="true" className="h-px w-6 shrink-0 bg-sidebar-border" />
-            <nav aria-label="More" className="flex flex-col items-center gap-px">
-              {(preferences.navMode === "simple" ? LIBRARY : MORE).map((l) => (
-                <NavRow key={l.label} link={l} collapsed />
-              ))}
-            </nav>
-          </div>
-        </>
-      ) : (
-        <SidebarTree>
-          <NavGroup label="Library" links={LIBRARY} defaultOpen />
-          {preferences.navMode !== "simple" && (
-            <NavGroup label="Advanced" links={ADVANCED} defaultOpen={false} />
+      {/* Remounts when the layout is switched by hand, so the new body fades in (index.css ".sidebar-swap"); never on load. */}
+      <div key={swaps} className={cn("flex min-h-0 flex-1 flex-col", swaps > 0 && "sidebar-swap")}>
+        <nav
+          aria-label="Main"
+          className={cn(
+            "shrink-0 px-2",
+            personal ? "grid grid-cols-5 gap-1" : "space-y-px",
+            collapsed && "flex flex-col items-center",
           )}
-        </SidebarTree>
-      )}
+        >
+          {FIXED.map((l) => {
+            const badge =
+              l.label === "Inbox" ? (
+                <CatchUpBadge collapsed={collapsed || personal} />
+              ) : l.label === "Routines" ? (
+                <RoutinesBadge collapsed={collapsed || personal} />
+              ) : undefined;
+            return personal ? (
+              <NavTile key={l.label} link={l} badge={badge} />
+            ) : (
+              <NavRow key={l.label} link={l} collapsed={collapsed} badge={badge} />
+            );
+          })}
+        </nav>
+        {collapsed ? (
+          <>
+            {/* Outside the scroll box, so it stays in place while the rooms, bots and More icons scroll under it. */}
+            <span aria-hidden="true" className="mx-auto mt-2 h-px w-6 shrink-0 bg-sidebar-border" />
+            <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto px-2 py-2 [scrollbar-width:none] hover:[scrollbar-width:thin]">
+              <RailRooms />
+              <RailBots />
+              <span aria-hidden="true" className="h-px w-6 shrink-0 bg-sidebar-border" />
+              <nav aria-label="More" className="flex flex-col items-center gap-px">
+                {(preferences.navMode === "simple" ? LIBRARY : MORE).map((l) => (
+                  <NavRow key={l.label} link={l} collapsed />
+                ))}
+              </nav>
+            </div>
+          </>
+        ) : (
+          <SidebarTree
+            botLimit={personal ? BOTS_PERSONAL : BOTS_WORKSPACE}
+            leading={
+              personal ? undefined : (
+                <>
+                  <NavGroup label="Workspace" links={WORKSPACE} defaultOpen />
+                  <NavGroup label="Library" links={LIBRARY_TEAM} defaultOpen />
+                  {preferences.navMode !== "simple" && (
+                    <NavGroup label="Build" links={ADVANCED} defaultOpen={false} />
+                  )}
+                </>
+              )
+            }
+          >
+            {personal && (
+              <NavGroup
+                label="More"
+                links={preferences.navMode === "simple" ? LIBRARY : MORE}
+                defaultOpen={false}
+              />
+            )}
+          </SidebarTree>
+        )}
+      </div>
       <div
         className={cn(
           "shrink-0 space-y-px border-t border-sidebar-border p-2",

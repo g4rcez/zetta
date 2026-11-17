@@ -25,6 +25,8 @@ let railMode: "expanded" | "collapsed" = "expanded";
 let agentsState: "running" | "paused" = "running";
 let roomOrder: string[] = [];
 let navMode: "simple" | "full" = "full";
+/** Members the fake workspace reports (`/api/people`): one is a solo account. */
+let members = 1;
 const room = (id: string, title: string) => ({
   id,
   conversationId: `c-${id}`,
@@ -83,6 +85,19 @@ const fake = (async (input: URL | Request | string, init?: RequestInit) => {
     });
   if (url.pathname === "/api/discussions")
     return Response.json({ discussions: [room("r-a", "Alpha"), room("r-b", "Beta")] });
+  if (url.pathname === "/api/people")
+    return Response.json({
+      people: Array.from({ length: members }, (_, i) => ({
+        userId: `u-${i}`,
+        name: `Person ${i}`,
+        avatar: null,
+        jobTitle: "",
+        title: "",
+        department: "",
+        about: "",
+        contact: "",
+      })),
+    });
   if (url.pathname === "/api/bots") return Response.json({ bots: [blockedBot] });
   return Response.json({ error: { code: "TEST", message: "offline" } }, { status: 500 });
 }) as typeof fetch;
@@ -299,4 +314,68 @@ test("the Calendar (the /agenda page) sits in the main block next to Routines, i
     await unmount();
   }
   navMode = "full";
+});
+
+// The test DOM has no global `localStorage` (the app reads it behind a try/catch): give these tests the window's, empty each time.
+const clearLayout = () => {
+  Object.assign(globalThis, { localStorage: win.localStorage });
+  win.localStorage.clear();
+};
+const names = (el: {
+  querySelectorAll(selector: string): Iterable<{ textContent: string | null }>;
+}) => [...el.querySelectorAll("a")].map((a) => a.textContent?.trim());
+
+test("a solo account gets the personal layout: a grid of the five daily pages, and the rest behind More", async () => {
+  clearLayout();
+  members = 1;
+  navMode = "full";
+  const { host, unmount } = await mountShell("left");
+  const main = host.querySelector('aside nav[aria-label="Main"]')!;
+  expect(main.className).toContain("grid-cols-5");
+  expect(names(main)).toEqual(["Inbox", "Tasks", "Projects", "Routines", "Calendar"]);
+  const more = [...host.querySelectorAll("aside section[aria-label] button")].find(
+    (b) => b.textContent?.trim() === "More",
+  )!;
+  expect(more.getAttribute("aria-expanded")).toBe("false");
+  expect(host.querySelector('aside section[aria-label="Workspace"]')).toBeNull();
+  expect(names(host.querySelector("aside")!)).not.toContain("Organization");
+  await press(more);
+  expect(names(host.querySelector("aside")!)).toContain("Organization");
+  await unmount();
+});
+
+test("a workspace with a team gets labeled sections instead of the grid", async () => {
+  clearLayout();
+  members = 3;
+  navMode = "full";
+  const { host, unmount } = await mountShell("left");
+  const main = host.querySelector('aside nav[aria-label="Main"]')!;
+  expect(main.className).not.toContain("grid-cols-5");
+  const workspace = host.querySelector('aside section[aria-label="Workspace"]')!;
+  expect(names(workspace)).toEqual(["Teams", "Organization", "People"]);
+  const library = host.querySelector('aside section[aria-label="Library"]')!;
+  expect(names(library)).toContain("Memory");
+  expect(host.querySelector('aside section[aria-label="Build"]')).not.toBeNull();
+  await unmount();
+  members = 1;
+});
+
+test("the header switch changes the layout and the choice is remembered in this browser", async () => {
+  clearLayout();
+  members = 1;
+  const { host, unmount } = await mountShell("left");
+  const toggle = host.querySelector('aside button[aria-label="Switch to the workspace layout"]')!;
+  await press(toggle);
+  expect(host.querySelector('aside nav[aria-label="Main"]')!.className).not.toContain(
+    "grid-cols-5",
+  );
+  expect(host.querySelector('aside section[aria-label="Workspace"]')).not.toBeNull();
+  expect(win.localStorage.getItem("zetta.sidebar-layout")).toBe("workspace");
+  await unmount();
+  // A new visit keeps the choice, even though the account is still solo.
+  const again = await mountShell("left");
+  expect(again.host.querySelector('aside section[aria-label="Workspace"]')).not.toBeNull();
+  await again.unmount();
+  win.localStorage.clear();
+  delete (globalThis as { localStorage?: unknown }).localStorage;
 });

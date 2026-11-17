@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
+import { botRole } from "@zetta/core/bot-role";
+import { BotIdentity } from "@/components/bot-identity";
 import { Checkbox } from "@/components/ui";
 
 import { errorMessage, type Bot } from "../chat/chat-client";
@@ -58,8 +60,11 @@ export function BotPeersSection({ bot, bots }: { bot: Bot; bots: Bot[] }) {
                 disabled={busy}
                 onChange={(e) => void toggle(b.id, e.target.checked)}
               >
-                {b.name}
-                {b.codeAccess ? " (can change code)" : ""}
+                <BotIdentity
+                  bot={b}
+                  size={24}
+                  sub={`${botRole(b)}${b.codeAccess ? " · can change code" : ""}`}
+                />
               </Checkbox>
             </li>
           ))}

@@ -4,6 +4,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
+import { botRole } from "@zetta/core/bot-role";
 import { BotAvatar } from "@/components/bot-avatar";
 import { Button } from "@/components/ui";
 import { errorMessage, type Bot } from "../chat/chat-client";
@@ -122,7 +123,7 @@ function InstallForm({
                 key={b.id}
                 leading={<BotAvatar bot={b} size={40} />}
                 title={b.name}
-                description={b.description}
+                description={botRole(b)}
                 label={`${b.name} can use ${meta.name}`}
                 checked={chosen.has(b.id)}
                 onChange={(on) =>
@@ -329,7 +330,7 @@ function BotsSection({
                 <ToggleCard
                   leading={<BotAvatar bot={b} size={40} />}
                   title={b.name}
-                  description={b.description}
+                  description={botRole(b)}
                   detail={detail.join(" · ")}
                   label={`${b.name} can use ${meta.name}`}
                   checked={Boolean(bound[b.id]?.on)}

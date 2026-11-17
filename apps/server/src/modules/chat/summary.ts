@@ -1,5 +1,5 @@
 import type { Database } from "@zetta/db";
-import { and, asc, desc, eq, gt, isNull, lte, ne, sql } from "@zetta/db/query";
+import { and, asc, desc, eq, gt, gte, isNull, lte, ne, sql } from "@zetta/db/query";
 import {
   bot,
   conversation,
@@ -31,6 +31,32 @@ export function cutPoint(rows: readonly { seq: number; bytes: number }[], budget
     if (used > budget) return rows[i]!.seq;
   }
   return undefined;
+}
+
+/**
+ * A person edited the message at `seq`. A summary that already covers it holds the old text, so it is queued to be written again from
+ * the start: `through_seq` goes back to 0 (the job then ignores the old body and rebuilds it) and `wanted_through_seq` keeps what the
+ * summary covered. The old body is still read until the new one is ready. A summary that stops before the message is not touched.
+ */
+export async function markSummaryStale(
+  db: Pick<Database, "update">,
+  conversationId: string,
+  seq: number,
+) {
+  await db
+    .update(conversationSummary)
+    .set({
+      status: "pending",
+      wantedThroughSeq: sql`${conversationSummary.throughSeq}`,
+      throughSeq: 0,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(conversationSummary.conversationId, conversationId),
+        gte(conversationSummary.throughSeq, seq),
+      ),
+    );
 }
 
 const replyOf = (max: number) => z.object({ summary: z.string().trim().min(1).max(max) });
@@ -210,7 +236,7 @@ export function createSummaries(db: Database, ask: Ask) {
           }
           const got = await ask(
             row.ownerUserId,
-            summaryPrompt(row.body, transcript, maxChars),
+            summaryPrompt(row.throughSeq === 0 ? "" : row.body, transcript, maxChars),
             replyOf(maxChars),
             90_000,
             mode === "bot" ? row.botId : undefined,

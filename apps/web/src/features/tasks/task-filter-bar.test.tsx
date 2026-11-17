@@ -34,15 +34,13 @@ afterEach(async () => {
   await act(async () => roots.splice(0).forEach((r) => r.unmount()));
 });
 
-async function mount() {
+async function mount(state: typeof DEFAULT_STATE = DEFAULT_STATE) {
   const host = win.document.createElement("div");
   win.document.body.append(host);
   const root = createRoot(host as unknown as Element);
   roots.push(root);
   await act(async () => {
-    root.render(
-      <TaskFilterBar state={DEFAULT_STATE} onChange={() => {}} bots={bots} labels={[]} />,
-    );
+    root.render(<TaskFilterBar state={state} onChange={() => {}} bots={bots} labels={[]} />);
   });
   return host;
 }
@@ -90,4 +88,18 @@ test("the fixed avatars explain themselves", async () => {
 test("the avatar no longer carries a native title", async () => {
   const host = await mount();
   expect(avatar(host as unknown as Element, "Da Vinci").getAttribute("title")).toBeNull();
+});
+
+test("a bot being filtered stays named with its role in plain sight, not only in the hover hint", async () => {
+  const host = await mount({ ...DEFAULT_STATE, botIds: ["00000000-0000-7000-8000-000000000001"] });
+  const row = host.querySelector('[aria-label="Filter by assignee"]')!.textContent;
+  expect(row).toContain("Da Vinci");
+  expect(row).toContain("Draws and designs");
+  expect(row).not.toContain("Scout");
+  // With nothing chosen the row stays compact: avatars only.
+  await act(async () => roots.splice(0).forEach((r) => r.unmount()));
+  const plain = await mount();
+  expect(plain.querySelector('[aria-label="Filter by assignee"]')!.textContent).not.toContain(
+    "Draws and designs",
+  );
 });

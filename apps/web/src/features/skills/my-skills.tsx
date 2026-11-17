@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button, Checkbox, Input, Select } from "@/components/ui";
 import { BotIdentity } from "@/components/bot-identity";
@@ -8,6 +8,7 @@ import { formatSize } from "../artifacts/artifacts-api";
 import { relativeTime } from "../shared/relative-time";
 import { Badge, ConfirmButton, Empty, list, listItem, Panel } from "../shared/ui";
 import { BotPicker } from "@/components/bot-picker";
+import { BotSelect } from "@/components/bot-select";
 import { SkillFiles } from "./skill-files";
 import { unzipSkill, zipSkill, ZipError, type ZipFile } from "./skill-zip";
 import { SkillForm } from "./skill-form";
@@ -80,7 +81,8 @@ export function MySkills({
   // The answer of the last check against GitHub, by skill. Asking GitHub is on request, so it is not part of the address.
   const [updates, setUpdates] = useState<Map<string, SkillUpdate>>();
   const botsById = new Map(bots.map((b) => [b.id, b]));
-  const mine = bots.filter((b) => b.canEdit);
+  // BotSelect rebuilds its options when the list changes: keep the same array between renders.
+  const mine = useMemo(() => bots.filter((b) => b.canEdit), [bots]);
   const archivedView = search.view === "archived";
   const filters = {
     find: search.find,
@@ -249,17 +251,15 @@ export function MySkills({
               { value: "size", label: "Largest" },
             ]}
           />
-          <Select
-            title="Bot"
-            container="sm:col-span-2"
-            required={false}
-            value={search.bot ?? ""}
-            onChange={(e) => setSearch({ bot: e.target.value || undefined }, { replace: true })}
-            options={[
-              { value: "", label: "Any bot" },
-              ...mine.map((b) => ({ value: b.id, label: b.name })),
-            ]}
-          />
+          <div className="sm:col-span-2">
+            <BotSelect
+              label="Bot"
+              placeholder="Any bot"
+              bots={mine}
+              value={search.bot ?? ""}
+              onChange={(botId) => setSearch({ bot: botId || undefined }, { replace: true })}
+            />
+          </div>
           <div className="flex items-end gap-2 sm:col-span-2">
             <Button
               size="sm"

@@ -2,6 +2,7 @@ import { ActionHint } from "@/components/action-hint";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { uuidv7 } from "@zetta/core/uuid";
 import { Suspense, lazy, useState, type FormEvent } from "react";
+import { BotSelect } from "@/components/bot-select";
 import { Button, Input, Select } from "@/components/ui";
 import { MentionTextarea } from "../chat/mention";
 import { useSidebarData } from "../chat/sidebar-data";
@@ -380,17 +381,14 @@ function Editor({
           />
           {s.kind === "prompt" && (
             <div className="grid gap-2 sm:grid-cols-[10rem_1fr]">
-              <Select
-                title={`Step ${i + 1} bot`}
-                hiddenLabel
-                required={false}
+              <BotSelect
+                label={`Step ${i + 1} bot`}
+                bots={bots}
                 value={s.botId}
-                onChange={(e) => patch(i, { botId: e.target.value })}
-                options={bots.map((b) => ({ value: b.id, label: b.name }))}
+                onChange={(botId) => patch(i, { botId })}
               />
               <Input
                 title={`Step ${i + 1} prompt`}
-                hiddenLabel
                 value={s.template}
                 onChange={(e) => patch(i, { template: e.target.value })}
               />

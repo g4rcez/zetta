@@ -11,9 +11,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 
 import { setupDom } from "../skills/dom-env";
-import { parseAddSourceSearch } from "./add-source-page";
 
 const win = setupDom();
+// Loaded after the DOM exists: the library reads `document` when it is first imported.
+const { parseAddSourceSearch } = await import("./add-source-page");
 // The router restores the scroll position after each navigation; the test DOM has no window.scrollTo.
 (globalThis as { scrollTo?: () => void }).scrollTo = () => {};
 
@@ -48,12 +49,13 @@ const held = {
   createdAt: "2026-11-09T00:00:00Z",
   finishedAt: null,
 };
+let fakeBots: unknown[] = [];
 globalThis.fetch = (async (input: URL | string, init?: RequestInit) => {
   const url = new URL(String(input));
   const path = `${url.pathname}${url.search}`;
   const method = init?.method ?? "GET";
   calls.push({ path, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-  if (path === "/api/bots") return Response.json({ bots: [] });
+  if (path === "/api/bots") return Response.json({ bots: fakeBots });
   if (path === "/api/memory-checks")
     return Response.json({
       checks: {
@@ -149,4 +151,40 @@ test("pasted text and a file have their own fields", async () => {
   const file = await mount("file");
   expect(win.document.querySelector('input[type="file"]')).not.toBeNull();
   await file.unmount();
+});
+
+test("the bot that reads a source is picked with its role, not by name alone", async () => {
+  fakeBots = [
+    {
+      id: "00000000-0000-7000-8000-0000000000d1",
+      name: "Ana",
+      kind: "specialist",
+      role: "Archivist",
+      description: "",
+      onboarded: true,
+    },
+    {
+      id: "00000000-0000-7000-8000-0000000000d2",
+      name: "Ana",
+      kind: "specialist",
+      role: "",
+      description: "Reads the weekly report\nmore",
+      onboarded: true,
+    },
+  ];
+  // The library builds `new Event("change")` from the global, and happy-dom only takes its own Event class.
+  const realEvent = globalThis.Event;
+  globalThis.Event = win.Event as unknown as typeof Event;
+  const { unmount } = await mount("url");
+  const box = win.document.querySelector('[role="combobox"]') as unknown as HTMLElement;
+  await act(async () => {
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"])
+      box.dispatchEvent(new win.MouseEvent(type, { bubbles: true, button: 0 }) as unknown as Event);
+  });
+  await settle();
+  const shown = [...win.document.querySelectorAll('[role="option"]')].map((o) => o.textContent);
+  expect(shown).toEqual(["AnaArchivist", "AnaReads the weekly report"]);
+  fakeBots = [];
+  globalThis.Event = realEvent;
+  await unmount();
 });

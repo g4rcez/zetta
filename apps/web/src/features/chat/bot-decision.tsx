@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { BotSelect } from "@/components/bot-select";
 import { Button, Checkbox, Input, Select } from "@/components/ui";
 import { MentionTextarea } from "./mention";
 import { LayaOffNote } from "../studio/laya-switch";
@@ -79,7 +80,8 @@ function DecisionForm({ bot, bots, initial }: { bot: Bot; bots: Bot[]; initial: 
   const [route, setRoute] = useState<Route>();
   const setOpt = (i: number, p: Partial<DecisionOption>) =>
     setCfg({ ...cfg, options: cfg.options.map((o, k) => (k === i ? { ...o, ...p } : o)) });
-  const others = bots.filter((b) => b.id !== bot.id);
+  // BotSelect rebuilds its options when the list changes: keep the same array between renders.
+  const others = useMemo(() => bots.filter((b) => b.id !== bot.id), [bots, bot.id]);
   // A decision-only bot (harness "decision") has no AI: its model picks an option and the option's reply is the whole answer.
   const only = bot.harness === "decision";
   const engine = only ? (bot.model === "jev" ? "jev" : "laya") : (cfg.backend ?? "laya");
@@ -219,13 +221,12 @@ function DecisionForm({ bot, bots, initial }: { bot: Bot; bots: Bot[]; initial: 
               onChange={(e) => setOpt(i, { description: e.target.value })}
             />
             {o.action === "delegate" && (
-              <Select
-                title="Hand over to"
-                required={false}
+              <BotSelect
+                label="Hand over to"
+                bots={others}
                 value={o.targetBotId ?? ""}
-                onChange={(e) => setOpt(i, { targetBotId: e.target.value || undefined })}
+                onChange={(botId) => setOpt(i, { targetBotId: botId || undefined })}
                 placeholder="Choose a bot…"
-                options={others.map((b) => ({ value: b.id, label: b.name }))}
               />
             )}
             {(o.action === "ask_user" ||

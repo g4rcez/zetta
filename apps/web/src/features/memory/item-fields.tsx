@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { EditorField } from "@/components/editor/editor";
+import { BotSelect } from "@/components/bot-select";
 import { Input, Select } from "@/components/ui";
 
 import { MemoryLinkTextarea } from "./memory-link-textarea";
@@ -113,12 +114,11 @@ export function Fields({
             }))}
           />
           {type === "solo" && (
-            <Select
-              title="The bot that reads it"
+            <BotSelect
+              label="The bot that reads it"
               name="authorBotId"
-              required={false}
               defaultValue={page?.authorBotId ?? bots?.[0]?.id ?? ""}
-              options={(bots ?? []).map((b) => ({ value: b.id, label: b.name }))}
+              bots={bots ?? []}
             />
           )}
           {type === "teams" && (

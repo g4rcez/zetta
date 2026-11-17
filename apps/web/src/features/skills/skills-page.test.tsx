@@ -320,3 +320,24 @@ test("a skill with files lists them on request, with sizes and the executable mo
   expect(text()).toContain("2.0 KB");
   await unmount();
 });
+
+test("the bot filter comes from the address and lists each bot with what it is for", async () => {
+  // The library builds `new Event("change")` from the global, and happy-dom only takes its own Event class.
+  const realEvent = globalThis.Event;
+  globalThis.Event = win.Event as unknown as typeof Event;
+  const { unmount } = await mount({ bot: BOT });
+  const box = win.document.querySelector(
+    '[role="search"] [role="combobox"]',
+  ) as unknown as HTMLInputElement;
+  // Nothing was clicked: the filter shows the bot that the address names.
+  expect(box.value).toBe("Da Vinci");
+  await act(async () => {
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"])
+      box.dispatchEvent(new win.MouseEvent(type, { bubbles: true, button: 0 }) as unknown as Event);
+  });
+  await settle();
+  const shown = [...win.document.querySelectorAll('[role="option"]')].map((o) => o.textContent);
+  expect(shown).toEqual(["Da VinciSpecialist"]);
+  globalThis.Event = realEvent;
+  await unmount();
+});

@@ -154,7 +154,7 @@ The visual reference is Linear: a quiet gray ground, one content panel, dense ro
 **Key Characteristics:**
 
 - Cool, low-chroma neutrals in light and dark themes. One emerald signal. Amber only for attention.
-- WCAG 2.2 AA, with AAA color contrast: every text and background pair is 7:1 or more (PRODUCT.md). Non-text indicators (input borders, focus rings, icons that carry meaning) are 3:1 or more. Focus rings are always visible.
+- WCAG 2.2 AA, with AAA color contrast: every text and background pair is 7:1 or more (PRODUCT.md). Non-text indicators (focus rings, checkbox, radio and switch borders, icons that carry meaning) are 3:1 or more. Text-field borders are soft at rest (`--field`, a step from `--border` toward `--input`); the field is found by its shape and fill, and focus brings the 3:1 `--ring`. Floating layers (menus, dropdowns, popovers, tooltips) use the `--border` hairline and a shadow. Focus rings are always visible.
 - All sizes and spaces are even pixel values on a 4px grid. Base text is 14px.
 - Flat at rest. Depth comes from surface tone and 1px borders; only floating layers have shadows.
 - Every color comes from a semantic token. A new color scheme is a new set of values for the same tokens.
@@ -176,16 +176,17 @@ Values are sRGB hex so that contrast is directly measurable.
 
 ### Surfaces
 
-| Token                     | Light     | Dark      | Use                                                            |
-| ------------------------- | --------- | --------- | -------------------------------------------------------------- |
-| `--sidebar`               | `#F3F3F5` | `#09090B` | App ground: the sidebar and the frame around the content panel |
-| `--background`            | `#FBFBFC` | `#0F0F11` | The content panel (chat, lists, pages)                         |
-| `--card`                  | `#FFFFFF` | `#141417` | Cards, composer, inputs                                        |
-| `--popover`               | `#FFFFFF` | `#1A1A1E` | Menus, popovers, command palette, dialogs                      |
-| `--muted` / `--secondary` | `#F0F0F3` | `#1C1C20` | Quiet fills: code, badges, secondary buttons                   |
-| `--accent`                | `#EDEDF0` | `#26262B` | Hover and the selected sidebar row                             |
-| `--border`                | `#E2E2E6` | `#26262B` | Hairlines and panel edges (decorative)                         |
-| `--input`                 | `#8A8A93` | `#6E6E78` | Borders of inputs, checkboxes and other controls (3:1 or more) |
+| Token                     | Light     | Dark      | Use                                                                                                     |
+| ------------------------- | --------- | --------- | ------------------------------------------------------------------------------------------------------- |
+| `--sidebar`               | `#F3F3F5` | `#09090B` | App ground: the sidebar and the frame around the content panel                                          |
+| `--background`            | `#FBFBFC` | `#0F0F11` | The content panel (chat, lists, pages)                                                                  |
+| `--card`                  | `#FFFFFF` | `#141417` | Cards, composer, inputs                                                                                 |
+| `--popover`               | `#FFFFFF` | `#1A1A1E` | Menus, popovers, command palette, dialogs                                                               |
+| `--muted` / `--secondary` | `#F0F0F3` | `#1C1C20` | Quiet fills: code, badges, secondary buttons                                                            |
+| `--accent`                | `#EDEDF0` | `#26262B` | Hover and the selected sidebar row                                                                      |
+| `--border`                | `#E2E2E6` | `#26262B` | Hairlines and panel edges (decorative)                                                                  |
+| `--input`                 | `#8A8A93` | `#6E6E78` | Borders of checkboxes, radios and switch tracks (3:1 or more)                                           |
+| `--field`                 | derived   | derived   | Text-field and field-like button border: 38% `--input` mixed into `--border` (soft, not tested for 3:1) |
 
 ### Text
 
@@ -226,7 +227,7 @@ A theme passes when all these pairs pass. The current values pass. The lowest te
 - 7:1 or more: `--foreground`, `--muted-foreground` and `--primary` on `--sidebar`, `--background`, `--card`, `--popover`, `--muted` and `--accent`.
 - 7:1 or more: `--primary-foreground` on `--primary`; `--attention-foreground` on `--attention`; each status `-foreground` on its status fill.
 - 7:1 or more: warn, success, info and destructive as text on `--background`, `--card`, `--sidebar` and on their own 10% tint.
-- 3:1 or more: `--input` and `--ring` on `--background`, `--card` and `--sidebar`.
+- 3:1 or more: `--input` (checkbox, radio, switch) and `--ring` on `--background`, `--card` and `--sidebar`.
 
 ### Named Rules
 
@@ -343,14 +344,14 @@ Flat at rest. Surfaces separate by tone (`--sidebar` → `--background` → `--c
 ### Buttons
 
 - **Primary:** `--primary` fill, `--primary-foreground` text, 32px, 12px side padding, md radius. One per view.
-- **Secondary:** `--card` fill, 1px `--input` border, `--foreground` text.
+- **Secondary:** `--card` fill, 1px `--field` border, `--foreground` text.
 - **Ghost:** no fill; `--accent` fill on hover.
 - **Destructive:** destructive 10% tint with destructive text; a confirmation dialog comes before any action that cannot be undone.
 - **Focus:** 2px `--ring` outline with 2px offset. **Press:** no movement. **Disabled:** 50% opacity, `cursor: not-allowed`, and the `disabled` attribute.
 
 ### Inputs
 
-- 32px, md radius, `--card` fill, 1px `--input` border. Focus: `--ring` border and a 1px `--ring` ring. Error: destructive border, an icon, and a message below the field linked with `aria-describedby`.
+- 32px, md radius, `--card` fill, 1px `--field` border. Focus: `--ring` border and a 1px `--ring` ring. Error: destructive border, an icon, and a message below the field linked with `aria-describedby`.
 - Placeholder text uses `--muted-foreground` and is never the only label.
 
 ### Sidebar rows

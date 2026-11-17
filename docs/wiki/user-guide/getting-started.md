@@ -10,6 +10,10 @@ For example: “Prepare a daily briefing from these sources. Link the sources an
 
 Each user has one personal chief for coordination. You can start there or configure a specialist directly. Folders organize bots in the sidebar; moving a bot does not change who can use it.
 
+## Choose which bots show in the chat sidebar
+
+The chat sidebar lists your chief and a few bots, and "All bots (n)" opens the full list. By default it picks the bots you chatted with most recently. To choose them yourself, open **Bots** and press the pin on a bot's card, or open a bot's `⋯` menu in the sidebar and choose **Remove from sidebar**. The first time you do either, the list you already see becomes your pins, so you adjust it instead of starting from nothing. After that the sidebar lists your chief and your pinned bots, in the order you pinned them, with no limit. The bot you have open is always shown. The choice is yours alone: it changes only your sidebar, and you can pin a bot someone else owns. If you remove every pin, the sidebar goes back to picking by itself.
+
 ## Configure by form or conversation
 
 1. Describe the bot's job, choose its name, and supply relevant instructions. Advanced model, skill, and hook controls remain accessible without being the first burden.

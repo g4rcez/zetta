@@ -93,9 +93,8 @@ export function AvatarPicker({
           // Unselected previews each use their own swatch so shapes are easy to tell apart.
           const shown = on ? color : AVATAR_SWATCHES[i % AVATAR_SWATCHES.length]!;
           return (
-            <ActionHint label={p.label}>
+            <ActionHint key={p.id} label={p.label}>
               <button
-                key={p.id}
                 type="button"
                 role="radio"
                 aria-checked={on}
@@ -113,9 +112,8 @@ export function AvatarPicker({
         {AVATAR_CHARACTERS.map((p) => {
           const on = value?.kind === "preset" && value.preset === p.id;
           return (
-            <ActionHint label={p.label}>
+            <ActionHint key={p.id} label={p.label}>
               <button
-                key={p.id}
                 type="button"
                 role="radio"
                 aria-checked={on}
@@ -182,9 +180,8 @@ export function AvatarPicker({
       {value?.kind === "preset" && !character && (
         <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Color">
           {AVATAR_SWATCHES.map((c) => (
-            <ActionHint label={`Color ${c}`}>
+            <ActionHint key={c} label={`Color ${c}`}>
               <button
-                key={c}
                 type="button"
                 role="radio"
                 aria-checked={color === c}

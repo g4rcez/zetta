@@ -1,4 +1,11 @@
-import { DotsThreeIcon, GearSixIcon, PlusIcon, RobotIcon, TrashIcon } from "@phosphor-icons/react";
+import {
+  DotsThreeIcon,
+  GearSixIcon,
+  PlusIcon,
+  PushPinIcon,
+  RobotIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { useNavigate } from "@tanstack/react-router";
 import { botRole } from "@zetta/core/bot-role";
 import { useMemo } from "react";
@@ -9,6 +16,7 @@ import { BotStatusDot } from "@/components/bot-status";
 import { Button, Input, MENU_DANGER, Menu, MenuItem, MenuSeparator, Modal } from "@/components/ui";
 import { toast } from "@/lib/notify";
 import { errorMessage, chatClient, type Bot } from "../chat/chat-client";
+import { useSidebarPins } from "../chat/sidebar-pin-actions";
 import { useSidebarData } from "../chat/sidebar-data";
 import { useSidebarNavigation } from "../chat/sidebar";
 import { Empty, Loading } from "../shared/ui";
@@ -68,17 +76,49 @@ function BotMenu({ bot, onDelete }: { bot: Bot; onDelete: (bot: Bot) => void }) 
   );
 }
 
+/** Puts the bot in the chat sidebar or takes it out. Everyone can: it only changes what this person sees. The chief is always there. */
+function PinButton({
+  bot,
+  pinned,
+  onPin,
+}: {
+  bot: Bot;
+  pinned: boolean;
+  onPin: (bot: Bot, on: boolean) => void;
+}) {
+  const label = pinned
+    ? `Remove ${bot.name} from the chat sidebar`
+    : `Show ${bot.name} in the chat sidebar`;
+  return (
+    <ActionHint label={label}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-pressed={pinned}
+        onClick={() => onPin(bot, !pinned)}
+        className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring aria-pressed:text-primary"
+      >
+        <PushPinIcon aria-hidden="true" weight={pinned ? "fill" : "regular"} className="size-4" />
+      </button>
+    </ActionHint>
+  );
+}
+
 function BotCard({
   bot,
   hasChat,
+  pinned,
   onOpen,
   onNewChat,
+  onPin,
   onDelete,
 }: {
   bot: Bot;
   hasChat: boolean;
+  pinned: boolean;
   onOpen: (id: string) => void;
   onNewChat: (id: string) => void;
+  onPin: (bot: Bot, on: boolean) => void;
   onDelete: (bot: Bot) => void;
 }) {
   // A bot someone else owns and has not finished setting up cannot take chats yet.
@@ -95,6 +135,7 @@ function BotCard({
           <h2 className="truncate text-base font-medium">{bot.name}</h2>
           <p className="truncate text-xs text-muted-foreground">{botRole(bot)}</p>
         </div>
+        {bot.kind !== "chief" && <PinButton bot={bot} pinned={pinned} onPin={onPin} />}
         {bot.canEdit && <BotMenu bot={bot} onDelete={onDelete} />}
       </div>
       <p className="line-clamp-2 min-h-10 text-pretty text-muted-foreground">
@@ -124,6 +165,7 @@ export function BotsPage({
   const navigate = useNavigate();
   const { bots, chats, chatsLoaded, setBots } = useSidebarData();
   const { toBot, toDraft } = useSidebarNavigation();
+  const { inSidebar, setPinned } = useSidebarPins();
   const withChat = useMemo(() => new Set(chats.map((c) => c.botId)), [chats]);
   const shown = filterBots(bots, search.q);
   return (
@@ -139,7 +181,8 @@ export function BotsPage({
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl text-balance">Bots</h1>
             <p className="text-sm text-pretty text-muted-foreground">
-              Everyone on your team of bots. Open a chat, start a new one, or change a bot.
+              Everyone on your team of bots. Open a chat, start a new one, or change a bot. Pin a
+              bot to keep it in the chat sidebar.
             </p>
           </div>
           <Button size="sm" className="shrink-0" onClick={() => void navigate({ to: "/bots/new" })}>
@@ -184,6 +227,8 @@ export function BotsPage({
                 key={b.id}
                 bot={b}
                 hasChat={withChat.has(b.id)}
+                pinned={inSidebar.has(b.id)}
+                onPin={(bot, on) => setPinned(bot.id, on)}
                 onOpen={toBot}
                 onNewChat={toDraft}
                 onDelete={(bot) => void deleteBot(bot, setBots)}

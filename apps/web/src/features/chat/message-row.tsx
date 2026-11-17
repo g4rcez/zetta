@@ -52,7 +52,8 @@ import { pollBody } from "./poll-votes";
 import { Response } from "./response";
 import { splitActionNotes } from "./action-notes";
 import { stripToolFences } from "./tool-fences";
-import { uniqueReceipts } from "./receipts";
+import { ReceiptGroupChip } from "./receipt-group";
+import { groupReceipts, uniqueReceipts } from "./receipts";
 import { ReceiptUndo, SkillReceipt } from "./receipt-undo";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime, formatTime, type TimeFormat } from "@/features/preferences/time-format";
@@ -620,6 +621,10 @@ export const MessageRow = memo(function MessageRow({
       !(r.kind === "task" && r.assignee),
   );
   const made = all.filter((r) => r.kind === "bot" || r.kind === "team");
+  // Several receipts of one kind and verb (a bulk "updated …") fold into one chip; the rest stay a chip each.
+  const groups = groupReceipts(receipts);
+  const folded = groups.filter((g) => g.items.length > 1);
+  const single = groups.filter((g) => g.items.length === 1).flatMap((g) => g.items);
   const computers = computersOf(row);
   const replies = row.replyCount ?? 0;
   const poll = row.meta?.poll;
@@ -885,7 +890,12 @@ export const MessageRow = memo(function MessageRow({
             className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground"
             aria-label="What the bot saved"
           >
-            {receipts.map((r) => (
+            {folded.map((g) => (
+              <li key={g.key}>
+                <ReceiptGroupChip group={g} />
+              </li>
+            ))}
+            {single.map((r) => (
               <li key={`${r.kind}-${r.id}`} className="flex items-center gap-1" title={r.text}>
                 {r.kind === "agenda" ? (
                   <Link

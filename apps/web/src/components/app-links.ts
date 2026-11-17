@@ -23,7 +23,7 @@ import {
 export const appLinks = [
   { to: "/chat/{-$chatId}", group: "Work", label: "Chat", icon: ChatsIcon },
   { to: "/rooms", group: "Work", label: "Rooms", icon: HashIcon },
-  { to: "/agenda", group: "Work", label: "Agenda", icon: CalendarIcon },
+  { to: "/agenda", group: "Work", label: "Calendar", icon: CalendarIcon },
   { to: "/catch-up", group: "Work", label: "Inbox", icon: BellIcon },
   { to: "/studio", group: "Build", label: "Studio", icon: SquaresFourIcon },
   {

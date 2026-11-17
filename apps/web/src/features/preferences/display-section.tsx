@@ -124,14 +124,14 @@ export function DisplaySection() {
               checked={preferences.navMode === "simple"}
               onChange={() => set({ navMode: "simple" })}
             >
-              Simple: chats, tasks, routines and your library
+              Simple: chats, tasks, routines, calendar and your library
             </Radiobox>
             <Radiobox
               name="nav-mode"
               checked={preferences.navMode !== "simple"}
               onChange={() => set({ navMode: "full" })}
             >
-              Full: also Studio, Agenda, Playground and Computer
+              Full: also Studio, Playground and Computer
             </Radiobox>
           </div>
         </fieldset>

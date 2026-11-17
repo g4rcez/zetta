@@ -41,7 +41,8 @@ function SheetItem({
       type="button"
       role="menuitem"
       variant="ghost"
-      className="h-11 w-full justify-start gap-3 px-3 text-sm"
+      // "!": the library's .__button centers its content and beat justify-start, so the sheet read as a centered list.
+      className="h-11 w-full !justify-start gap-3 px-3 text-sm"
       {...(pressed === undefined ? {} : { "aria-pressed": pressed })}
       onClick={onClick}
     >

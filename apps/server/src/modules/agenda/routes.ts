@@ -84,7 +84,11 @@ export function createAgendaRoutes(
         const kinds = v.kinds
           ? z.array(z.enum(AGENDA_KINDS)).parse(v.kinds.split(",").filter(Boolean))
           : undefined;
-        return { items: await agenda.list(c.actor, v.from, v.to, kinds) };
+        const items = await agenda.list(c.actor, v.from, v.to, kinds);
+        // The user's calendar link (ICS) is shown read-only beside their own items; it is events, so a kind filter without events skips it.
+        const external =
+          !kinds || kinds.includes("event") ? await scheduler.external(c.actor, v.from, v.to) : [];
+        return { items, external };
       }),
     )
     .post(

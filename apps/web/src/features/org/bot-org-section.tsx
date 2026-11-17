@@ -40,7 +40,7 @@ export function BotOrgSection({ botId }: { botId: string }) {
                 </Link>
                 <span className="text-xs text-muted-foreground">
                   {reportsToText(positions, s)}
-                  {manager ? ` (${manager.title})` : ""} · <SeeOnChart seatId={s.id} />
+                  {manager?.holder ? ` (${manager.title})` : ""} · <SeeOnChart seatId={s.id} />
                 </span>
               </li>
             );

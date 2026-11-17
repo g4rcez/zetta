@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { errorMessage } from "../chat/chat-client";
 import { RankMark } from "./org-bits";
 import { orgQueries } from "./org-api";
+import { reportsToText, SeeOnChart } from "./reports-to";
 
 /** The seats this bot holds in the company chart, and who each reports to. A bot is put in a seat on the Organization page. */
 export function BotOrgSection({ botId }: { botId: string }) {
@@ -38,9 +39,8 @@ export function BotOrgSection({ botId }: { botId: string }) {
                   <RankMark rank={s.rank} />
                 </Link>
                 <span className="text-xs text-muted-foreground">
-                  {manager
-                    ? `reports to ${manager.holder?.name ?? "an open seat"} (${manager.title})`
-                    : "top of the company"}
+                  {reportsToText(positions, s)}
+                  {manager ? ` (${manager.title})` : ""} · <SeeOnChart seatId={s.id} />
                 </span>
               </li>
             );

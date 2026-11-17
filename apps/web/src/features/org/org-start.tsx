@@ -1,7 +1,10 @@
-import { TreeStructureIcon } from "@phosphor-icons/react";
+import { TreeStructureIcon, UsersThreeIcon } from "@phosphor-icons/react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui";
 import { ORG_PRESETS, presetRows, type OrgPreset } from "@zetta/core/org-templates";
+import type { OrgDraftChoices } from "./org-api";
+import { OrgDraftPreview } from "./org-draft";
 
 /** How a preset reads at a glance: how many seats it makes and the first level under its top seat. */
 export function presetSummary(preset: OrgPreset) {
@@ -48,18 +51,40 @@ function PresetCard({
   );
 }
 
-/** What an empty chart shows: the admin starts from a structure or from the CEO alone; everyone else is told the chart is not drawn yet. */
+/** The way in that starts from what the admin already has: the teams. It opens a preview; nothing is saved by this button. */
+function TeamsCard({ busy, onReview }: { busy: boolean; onReview: () => void }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-primary/40 bg-card p-4 sm:flex-row sm:items-center">
+      <UsersThreeIcon aria-hidden="true" className="size-8 shrink-0 text-primary" />
+      <div className="min-w-0 flex-1 space-y-1">
+        <h3 className="text-base font-semibold">Draw it from my teams</h3>
+        <p className="text-sm text-pretty text-muted-foreground">
+          Each team becomes a unit, its chief leads it and its bots take a seat. You see the draft
+          and adjust it before anything is saved.
+        </p>
+      </div>
+      <Button disabled={busy} onClick={onReview}>
+        Review the draft
+      </Button>
+    </div>
+  );
+}
+
+/** What an empty chart shows: the admin starts from their teams, a structure or the CEO alone; everyone else is told the chart is not drawn yet. */
 export function OrgStart({
   canEdit,
   busy,
   onPreset,
   onCeo,
+  onDraft,
 }: {
   canEdit: boolean;
   busy: boolean;
   onPreset: (key: string) => void;
   onCeo: () => void;
+  onDraft: (choices: OrgDraftChoices) => void;
 }) {
+  const [reviewing, setReviewing] = useState(false);
   if (!canEdit)
     return (
       <div className="mx-auto max-w-prose px-4 py-12 text-center">
@@ -73,6 +98,8 @@ export function OrgStart({
         </p>
       </div>
     );
+  if (reviewing)
+    return <OrgDraftPreview busy={busy} onConfirm={onDraft} onCancel={() => setReviewing(false)} />;
   return (
     <div className="mx-auto w-full max-w-5xl space-y-5 p-4 md:p-8">
       <div className="space-y-1">
@@ -82,6 +109,7 @@ export function OrgStart({
           seats, move seats around and rename them.
         </p>
       </div>
+      <TeamsCard busy={busy} onReview={() => setReviewing(true)} />
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {ORG_PRESETS.map((p) => (
           <PresetCard key={p.key} preset={p} busy={busy} onUse={onPreset} />

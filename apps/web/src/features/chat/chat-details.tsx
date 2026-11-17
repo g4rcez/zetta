@@ -6,6 +6,7 @@ import { Button } from "@/components/ui";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotCurrentTask, BotStatusLabel } from "@/components/bot-status";
 import { useBotStatus } from "../bots/status";
+import { BotReportsTo } from "../org/reports-to";
 import type { Attachment, Bot } from "./chat-client";
 
 const size = (bytes: number) =>
@@ -72,6 +73,7 @@ export function ChatDetails({
             </div>
             <BotStatusLabel botId={bot.id} />
             <BotWork botId={bot.id} />
+            <BotReportsTo botId={bot.id} />
             {bot.description && (
               <p className="text-sm text-pretty text-muted-foreground">{bot.description}</p>
             )}

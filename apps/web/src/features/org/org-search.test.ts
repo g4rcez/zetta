@@ -43,6 +43,18 @@ describe("the address of the organization page", () => {
     });
   });
 
+  test("the works-with layer is show=links: kept in the address, and it points nobody out", () => {
+    expect(parseOrgSearch({ show: "links" })).toEqual({ show: "links" });
+    expect(toOrgSearch(toOrgState({ show: "links", view: "list" }))).toEqual({
+      view: "list",
+      show: "links",
+    });
+    expect(filtering({ q: "", show: "links" })).toBe(false);
+    expect(matchesFilters(seat({}), { q: "", show: "links" })).toBe(true);
+    // A search still points seats out while the lines are drawn.
+    expect(filtering({ q: "a", show: "links" })).toBe(true);
+  });
+
   test("a long search is cut", () => {
     expect(parseOrgSearch({ q: "x".repeat(200) }).q).toHaveLength(80);
   });

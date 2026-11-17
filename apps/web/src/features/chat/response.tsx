@@ -24,6 +24,7 @@ import { parseInboundCard } from "./inbound-card-data";
 import { SetupCard } from "./setup-card";
 import { parseSetupCard } from "./setup-card-data";
 import { stripToolFences } from "./tool-fences";
+import "./resizable-blocks";
 import { UiSkeleton, UiView } from "./ui-registry";
 import { parseWhatsapp, WhatsappView } from "./whatsapp-view";
 

@@ -457,6 +457,39 @@ html.dark {
   padding: 0.25rem 0.5rem;
 }
 
+/* A table and a code block scroll inside a capped height; their bottom edge is a grip that resizes it (features/chat/resizable-blocks.ts
+   reads the drag; a press on the grip lands on the block itself, because the grip is its ::after). */
+.chat-response :is([data-streamdown="table-wrapper"], [data-streamdown="code-block"]) {
+  position: relative;
+}
+.chat-response :is([data-streamdown="table-wrapper"], [data-streamdown="code-block"])::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 0.75rem;
+  cursor: ns-resize;
+  border-radius: 0 0 0.75rem 0.75rem;
+  background: linear-gradient(var(--muted-foreground), var(--muted-foreground)) center 0.3rem / 2rem
+    0.1875rem no-repeat;
+  opacity: 0.35;
+  transition: opacity 150ms ease-out;
+}
+.chat-response :is([data-streamdown="table-wrapper"], [data-streamdown="code-block"]):hover::after {
+  opacity: 0.9;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-response :is([data-streamdown="table-wrapper"], [data-streamdown="code-block"])::after {
+    transition: none;
+  }
+}
+@media (pointer: coarse) {
+  /* A finger cannot drag it without scrolling the page: fullscreen is the way to see the whole block there. */
+  .chat-response :is([data-streamdown="table-wrapper"], [data-streamdown="code-block"])::after {
+    display: none;
+  }
+}
+
 .chat-code pre,
 .chat-inline-code,
 .chat-response [data-streamdown="inline-code"] {

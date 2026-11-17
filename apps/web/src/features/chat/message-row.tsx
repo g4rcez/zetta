@@ -698,7 +698,9 @@ export const MessageRow = memo(function MessageRow({
           )}
         </MessageAvatar>
       )}
-      <MessageContent className="gap-1">
+      {/* Beside the avatar, not under it: `flex-1 basis-0` lets the content fit in the rest of the row, where `w-full` pushed it to a new line
+          of the wrapping row. Only the quote reference above (`basis-full`) takes a line of its own. */}
+      <MessageContent className="w-auto flex-1 basis-0 gap-1">
         {!continued && (
           <MessageHeader className="gap-2 px-0 text-sm leading-5">
             <span className="truncate font-semibold text-foreground">{author.name}</span>

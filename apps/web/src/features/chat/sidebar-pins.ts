@@ -16,20 +16,16 @@ export function pinnedBots<B extends Pickable>(bots: readonly B[], pinned: reado
 
 /**
  * What the sidebar lists when the person pinned bots: the chief first, then the pinned bots in their order. There is no cap, because
- * these are the bots they chose. The open bot is added at the end when it is not pinned, so the chat on screen is always in the list.
+ * these are the bots they chose. The open bot is not added: a person can take out the bot whose chat is on screen, and the chat stays open.
  * Returns undefined when nothing is pinned (or every pin is stale): the sidebar then picks by itself, as before.
  */
 export function pickPinned<B extends Pickable>(
   bots: readonly B[],
   pinned: readonly string[],
-  currentId: string | undefined,
 ): B[] | undefined {
   const chosen = pinnedBots(bots, pinned);
   if (chosen.length === 0) return undefined;
-  const shown = [...bots.filter((b) => b.kind === "chief"), ...chosen];
-  const open = bots.find((b) => b.id === currentId);
-  if (open && !shown.includes(open)) shown.push(open);
-  return shown;
+  return [...bots.filter((b) => b.kind === "chief"), ...chosen];
 }
 
 /** The pins after pinning (`on`) or unpinning one bot: a new pin goes last, and a bot is never in the list twice. */

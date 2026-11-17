@@ -55,7 +55,7 @@ afterEach(async () => {
   saved = [];
 });
 const settle = (ms = 80) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
-const mount = async () => {
+const mount = async (open?: string) => {
   const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } =
     await import("@tanstack/react-router");
   const { SidebarDataProvider } = await import("./sidebar-data");
@@ -71,7 +71,7 @@ const mount = async () => {
             <SidebarDataProvider>
               <SidebarBots
                 query=""
-                botId={undefined}
+                botId={open}
                 onBot={() => {}}
                 onNewChat={() => {}}
                 onNewBot={() => {}}
@@ -98,9 +98,10 @@ const names = (host: HTMLElement) =>
   [...host.querySelectorAll("button[data-chat-row] span.truncate")].map(
     (n) => n.childNodes[0]?.textContent,
   );
-const click = async (el: Element | null | undefined) => {
+const click = async (target: unknown) => {
+  const el = target as Element;
   await act(
-    async () => void el!.dispatchEvent(new win.MouseEvent("click", { bubbles: true }) as never),
+    async () => void el.dispatchEvent(new win.MouseEvent("click", { bubbles: true }) as never),
   );
   await settle(60);
 };
@@ -137,4 +138,81 @@ test("a bot row can be taken out of the sidebar, even a bot the person does not 
     [...win.document.querySelectorAll("*")].filter((e) => e.textContent === "Remove from sidebar")
       .length,
   ).toBeLessThanOrEqual(1);
+});
+
+const choose = (name: string) =>
+  [...win.document.querySelectorAll('input[type="checkbox"]')].find(
+    (e) => e.getAttribute("aria-label") === name,
+  ) as HTMLInputElement | undefined;
+
+test("the Bots header has a checklist to choose which bots are in the sidebar; the chief is not in it", async () => {
+  const host = await mount();
+  await click(host.querySelector('button[aria-label="Choose bots"]'));
+  expect(choose("Dev Bot")?.checked).toBe(true);
+  expect(choose("Ana")?.checked).toBe(true);
+  expect(choose("Zetta")).toBeUndefined();
+  // Unticking starts from what is on screen, so only Dev Bot goes.
+  await click(choose("Dev Bot"));
+  await settle(520);
+  expect(saved).toEqual([{ sidebarBots: [ANA] }]);
+});
+
+test("a bot that is not in the sidebar is unticked, ticking adds it, and Automatic clears the choice", async () => {
+  pinned = [ANA];
+  const host = await mount();
+  await click(host.querySelector('button[aria-label="Choose bots"]'));
+  expect(choose("Ana")?.checked).toBe(true);
+  expect(choose("Dev Bot")?.checked).toBe(false);
+  await click(choose("Dev Bot"));
+  await settle(520);
+  expect(saved).toEqual([{ sidebarBots: [ANA, DEV] }]);
+  saved = [];
+  const auto = [...win.document.querySelectorAll("button")].find((e) =>
+    e.textContent?.includes("Automatic"),
+  );
+  await click(auto);
+  await settle(520);
+  expect(saved).toEqual([{ sidebarBots: [] }]);
+});
+
+test("the row menu offers Delete bot only for a bot the person owns; never for the chief or someone else's bot", async () => {
+  const host = await mount();
+  const menuTexts = async (name: string) => {
+    await click(host.querySelector(`button[aria-label="Actions for ${name}"]`));
+    return [...win.document.querySelectorAll('[role="menuitem"]')].map((e) =>
+      e.textContent?.trim(),
+    );
+  };
+  expect(await menuTexts("Ana")).toContain("Delete bot");
+  await click(win.document.body);
+  expect(await menuTexts("Dev Bot")).not.toContain("Delete bot");
+  expect(await menuTexts("Zetta")).not.toContain("Delete bot");
+});
+
+test("the checklist lists the bots in the sidebar's order, then the ones left out", async () => {
+  pinned = [ANA];
+  const host = await mount();
+  await click(host.querySelector('button[aria-label="Choose bots"]'));
+  const listed = [...win.document.querySelectorAll('input[type="checkbox"]')].map((e) =>
+    e.getAttribute("aria-label"),
+  );
+  expect(listed).toEqual(["Ana", "Dev Bot"]);
+});
+
+test("the bot whose chat is open can be taken out of the sidebar too", async () => {
+  const host = await mount(ANA);
+  expect(names(host)).toContain("Ana");
+  await click(host.querySelector('button[aria-label="Actions for Ana"]'));
+  const remove = [...win.document.querySelectorAll('[role="menuitem"]')].find(
+    (e) => e.textContent?.trim() === "Remove from sidebar",
+  );
+  await click(remove);
+  await settle(520);
+  expect(saved).toEqual([{ sidebarBots: [DEV] }]);
+});
+
+test("with pins, the open bot is not added back to the sidebar", async () => {
+  pinned = [DEV];
+  const host = await mount(ANA);
+  expect(names(host)).toEqual(["Zetta", "Dev Bot"]);
 });

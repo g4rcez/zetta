@@ -16,18 +16,17 @@ test("the chief is never a pin, a missing bot is ignored, and a repeat counts on
 });
 
 test("with pins the sidebar lists the chief, then the pins, with no cap", () => {
-  const shown = pickPinned(all, ["d", "b", "a", "c"], undefined)!;
+  const shown = pickPinned(all, ["d", "b", "a", "c"])!;
   expect(shown.map((x) => x.id)).toEqual(["chief", "d", "b", "a", "c"]);
 });
 
-test("the open bot is added at the end when it is not pinned, and not twice when it is", () => {
-  expect(pickPinned(all, ["a"], "c")!.map((x) => x.id)).toEqual(["chief", "a", "c"]);
-  expect(pickPinned(all, ["a"], "a")!.map((x) => x.id)).toEqual(["chief", "a"]);
+test("pins are the whole list: nothing is added for the bot whose chat is open", () => {
+  expect(pickPinned(all, ["a"])!.map((x) => x.id)).toEqual(["chief", "a"]);
 });
 
 test("nothing pinned, or only stale pins, means the sidebar picks by itself", () => {
-  expect(pickPinned(all, [], "a")).toBeUndefined();
-  expect(pickPinned(all, ["gone", "chief"], "a")).toBeUndefined();
+  expect(pickPinned(all, [])).toBeUndefined();
+  expect(pickPinned(all, ["gone", "chief"])).toBeUndefined();
 });
 
 test("pinning puts a bot last, unpinning removes it, and nobody is listed twice", () => {

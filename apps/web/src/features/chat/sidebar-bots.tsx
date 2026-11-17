@@ -4,6 +4,7 @@ import {
   ChatCircleIcon,
   DotsThreeIcon,
   GearSixIcon,
+  TrashIcon,
   HashIcon,
   PlusIcon,
   PushPinSlashIcon,
@@ -12,12 +13,14 @@ import {
 import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotStatusDot } from "@/components/bot-status";
-import { Menu, MenuItem } from "@/components/ui";
+import { MENU_DANGER, Menu, MenuItem, MenuSeparator } from "@/components/ui";
 import { useBotAttention, type BotAttention } from "../attention/summary";
 import { usePreferences } from "../preferences/preferences";
 
 import type { Bot } from "./chat-client";
+import { canDeleteBot, confirmDeleteBot } from "./delete-bot";
 import { pickSidebarBots } from "./sidebar-bot-list";
+import { SidebarBotChooser } from "./sidebar-bot-chooser";
 import { useSidebarData } from "./sidebar-data";
 import { useSidebarPins } from "./sidebar-pin-actions";
 import { AttentionCount, Hint } from "./sidebar-parts";
@@ -34,6 +37,7 @@ function BotRow({
   onOpen,
   onNewChat,
   onRemove,
+  onDelete,
 }: {
   bot: Bot;
   current: boolean;
@@ -42,6 +46,8 @@ function BotRow({
   onNewChat: (id: string) => void;
   /** Takes the bot out of the sidebar (it stays in "All bots"). */
   onRemove: (id: string) => void;
+  /** Deletes the bot for good, after asking. */
+  onDelete: (bot: Bot) => void;
 }) {
   const navigate = useNavigate();
   const blocked = !bot.canEdit && !bot.onboarded;
@@ -117,7 +123,7 @@ function BotRow({
             <PlusIcon aria-hidden="true" className="size-3.5" />
           </button>
         </Hint>
-        {(bot.canEdit || bot.kind !== "chief") && (
+        {(bot.canEdit || bot.kind !== "chief" || canDeleteBot(bot)) && (
           <Menu
             asChild
             hover={false}
@@ -126,7 +132,7 @@ function BotRow({
             label={
               <Hint
                 title="Bot actions"
-                description="Open this bot's settings or take it out of the sidebar."
+                description="Open this bot's settings, take it out of the sidebar or delete it."
               >
                 <button
                   type="button"
@@ -154,6 +160,15 @@ function BotRow({
                 <PushPinSlashIcon />
                 Remove from sidebar
               </MenuItem>
+            )}
+            {canDeleteBot(bot) && (
+              <>
+                <MenuSeparator />
+                <MenuItem title="Delete bot" className={MENU_DANGER} onClick={() => onDelete(bot)}>
+                  <TrashIcon />
+                  Delete bot
+                </MenuItem>
+              </>
             )}
           </Menu>
         )}
@@ -185,9 +200,10 @@ export function SidebarBots({
   onNewRoom: () => void;
   newChatBot: string | undefined;
 }) {
-  const { bots, chats, chatsLoaded } = useSidebarData();
+  const { bots, setBots, chats, chatsLoaded } = useSidebarData();
+  const navigate = useNavigate();
   const { preferences } = usePreferences();
-  const { setPinned } = useSidebarPins();
+  const { setPinned } = useSidebarPins(botId);
   const attention = useBotAttention();
   const { shown, total } = pickSidebarBots(bots, chats, {
     order: preferences.botOrder,
@@ -201,6 +217,7 @@ export function SidebarBots({
     <section aria-label="Bots">
       <div className="flex items-center gap-1 pt-3 pb-1 pl-2">
         <h3 className="label-mono">Bots</h3>
+        <SidebarBotChooser botId={botId} />
         <Menu
           asChild
           hover={false}
@@ -211,7 +228,7 @@ export function SidebarBots({
               <button
                 type="button"
                 aria-label="Add a chat, bot or room"
-                className="ml-auto flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
               >
                 <PlusIcon aria-hidden="true" className="size-4" />
               </button>
@@ -251,6 +268,19 @@ export function SidebarBots({
             onOpen={onBot}
             onNewChat={onNewChat}
             onRemove={(id) => setPinned(id, false)}
+            onDelete={(bot) =>
+              void confirmDeleteBot(bot).then((gone) => {
+                if (!gone) return;
+                setBots((list) => list.filter((x) => x.id !== bot.id));
+                // The open chat belonged to this bot: leave it instead of showing a bot that no longer exists.
+                if (bot.id === botId)
+                  void navigate({
+                    to: "/chat/{-$chatId}",
+                    params: { chatId: undefined },
+                    search: {},
+                  });
+              })
+            }
           />
         ))}
       </ul>

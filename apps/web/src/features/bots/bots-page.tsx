@@ -13,9 +13,9 @@ import { useMemo } from "react";
 import { ActionHint } from "@/components/action-hint";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotStatusDot } from "@/components/bot-status";
-import { Button, Input, MENU_DANGER, Menu, MenuItem, MenuSeparator, Modal } from "@/components/ui";
-import { toast } from "@/lib/notify";
-import { errorMessage, chatClient, type Bot } from "../chat/chat-client";
+import { Button, Input, MENU_DANGER, Menu, MenuItem, MenuSeparator } from "@/components/ui";
+import type { Bot } from "../chat/chat-client";
+import { confirmDeleteBot } from "../chat/delete-bot";
 import { useSidebarPins } from "../chat/sidebar-pin-actions";
 import { useSidebarData } from "../chat/sidebar-data";
 import { useSidebarNavigation } from "../chat/sidebar";
@@ -24,20 +24,7 @@ import { filterBots, type BotsSearch } from "./bots-search";
 
 /** Asks first, then deletes the bot and takes it out of the shared list. Its chats stay. */
 async function deleteBot(bot: Bot, setBots: (f: (l: Bot[]) => Bot[]) => void) {
-  const confirmed = await Modal.confirm<boolean>({
-    title: `Delete ${bot.name}?`,
-    description:
-      "It loses its plugins, accounts, computer access, inbound channels, routines and team places, and all its running work stops. Its chats stay.",
-    confirm: { text: "Delete bot", theme: "danger" },
-  });
-  if (!confirmed) return;
-  try {
-    await chatClient.deleteBot(bot.id);
-    setBots((list) => list.filter((b) => b.id !== bot.id));
-    toast.success(`${bot.name} was deleted.`);
-  } catch (e) {
-    toast.error(errorMessage(e));
-  }
+  if (await confirmDeleteBot(bot)) setBots((list) => list.filter((b) => b.id !== bot.id));
 }
 
 function BotMenu({ bot, onDelete }: { bot: Bot; onDelete: (bot: Bot) => void }) {

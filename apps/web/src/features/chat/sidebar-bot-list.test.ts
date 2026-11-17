@@ -54,12 +54,11 @@ test("pinned bots replace the automatic list: the chief, then the pins in their 
   const chats = [{ botId: "i", updatedAt: "2026-03-01T00:00:00Z" }];
   const pinned = ["h", "b"];
   expect(ids(pickSidebarBots(bots, chats, { order: [], pinned }))).toEqual(["chief", "h", "b"]);
-  // The open bot stays visible even when it is not pinned.
+  // The open bot is not forced in: the person can take out the bot whose chat is open.
   expect(ids(pickSidebarBots(bots, chats, { order: [], pinned, currentId: "e" }))).toEqual([
     "chief",
     "h",
     "b",
-    "e",
   ]);
   // Many pins are all shown: the cap is for the automatic list only.
   const many = bots.slice(1).map((b) => b.id);

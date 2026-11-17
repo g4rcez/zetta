@@ -7,6 +7,26 @@ RUN --mount=type=secret,id=web_env,target=/app/apps/web/.env.local --mount=type=
 ENV NODE_ENV=production
 RUN --mount=type=secret,id=web_env,target=/app/apps/web/.env.local --mount=type=secret,id=server_env,target=/app/apps/server/.env.local cd apps/server && bun run build
 
+# The agent CLIs bots run on (Claude Code, Codex). They are Node programs and the runtime image below has no Node, so they are installed here and
+# copied in with the node binary. ZETTA_AGENTS picks which ones: "claude-code codex" (the default), either one, or "none" to leave them out
+# (the engines then read "Not installed" in Studio). Versions are pinned; Claude Code matches docker/harness/Dockerfile.
+FROM node:22-slim AS agents
+ARG ZETTA_AGENTS="claude-code codex"
+ARG CLAUDE_CODE_VERSION=2.1.312
+ARG CODEX_VERSION=0.163.0
+RUN set -eu; packages=""; \
+    for agent in $ZETTA_AGENTS; do \
+      case "$agent" in \
+        claude-code) packages="$packages @anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" ;; \
+        codex) packages="$packages @openai/codex@$CODEX_VERSION" ;; \
+        none) ;; \
+        *) echo "unknown agent: $agent (use claude-code, codex or none)" >&2; exit 1 ;; \
+      esac; \
+    done; \
+    mkdir -p /opt/agents/bin; \
+    if [ -n "$packages" ]; then npm install -g --prefix /opt/agents $packages; fi; \
+    npm cache clean --force
+
 FROM oven/bun:1 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
@@ -41,6 +61,10 @@ RUN set -eu; [ "$VAULT_CLIS" = "1" ] || exit 0; \
 # secret never reaches the bot (apps/server/src/modules/computer/machine-runner.ts). No daemon runs; they start for one call.
 # ffmpeg turns the voice notes people send through Telegram or WhatsApp (OGG/Opus) into samples the speech model reads (modules/transcribe).
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssh-client ffmpeg && rm -rf /var/lib/apt/lists/*
+# The agent CLIs from the stage above, and the node binary they run on. Their sign-ins are kept in HOME, which docker-compose.yml puts on a volume.
+COPY --from=agents /usr/local/bin/node /usr/local/bin/node
+COPY --from=agents /opt/agents /opt/agents
+ENV PATH="/opt/agents/bin:${PATH}"
 COPY --from=builder /app /app
 
 # The commit this image was built from and its date (ISO 8601). The image holds no .git, so the server reads them from here
@@ -53,4 +77,5 @@ ENV ZETTA_BUILD_COMMIT=$ZETTA_BUILD_COMMIT \
 EXPOSE 3000
 
 WORKDIR /app/apps/server
-CMD ["bun", "dist/index.mjs"]
+# HOME is on a volume in docker-compose.yml and starts empty: make sure it exists before the server (and the agent CLIs) write into it.
+CMD ["sh", "-c", "mkdir -p \"${HOME:-/root}\" && exec bun dist/index.mjs"]

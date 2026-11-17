@@ -105,6 +105,8 @@ export const chiefSchemas = {
   /** The company chart: seats that report to seats, held by people or team bots. Only an administrator changes it. */
   org: z.discriminatedUnion("action", [
     z.strictObject({ action: z.literal("list") }),
+    /** The bots of the chart that work together (shared rooms, workflows, decision handoffs). A read. */
+    z.strictObject({ action: z.literal("works_with") }),
     z.strictObject({
       action: z.literal("add_seat"),
       /** The seat the new one reports to. Left out only when the chart is empty (the first seat is the CEO). */

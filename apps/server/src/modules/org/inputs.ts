@@ -48,5 +48,15 @@ export const orgBodies = {
     presetKey: z.string().trim().min(1).max(60),
     underPositionId: orgUuid.optional(),
   }),
+  /** What the admin kept on the preview of "draw it from my teams": the ids of teams and bots left out. */
+  draft: z.strictObject({
+    expectedVersion: orgVersion,
+    skipTeamIds: z.array(orgUuid).max(300).optional(),
+    skipBotIds: z.array(orgUuid).max(300).optional(),
+  }),
+  draftQuery: z.object({
+    skipTeamIds: z.string().max(12_000).optional(),
+    skipBotIds: z.string().max(12_000).optional(),
+  }),
   expected: z.strictObject({ expectedVersion: z.coerce.number().int().min(0) }),
 };

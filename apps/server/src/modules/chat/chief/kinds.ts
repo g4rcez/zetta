@@ -13,6 +13,7 @@ const READS = new Set([
   "vms",
   "status",
   "suggestions",
+  "works_with",
 ]);
 
 /**

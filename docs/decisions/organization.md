@@ -52,6 +52,12 @@ Role templates (24 seats in five groups) and structure presets (solo founder, sm
 - Web: `apps/web/src/features/org/` (page, canvas, outline, seat page, palette, add-seat panel, start screen), routes `/organization` and `/organization/$positionId`.
 - Live topic `org`: a write refreshes every open chart.
 
+## Added 2026-11-16: draw it from the teams, and the works-with layer
+
+- **Draw it from my teams** (start screen). `GET /api/org/draft` returns a proposal, `modules/org/draft.ts`: a CEO seat (open), one leader seat per active team the admin owns (the team's chief holds it when that bot may hold a seat; the seat is linked to the team), and a seat under it for each other team bot (titled by the team role, else the bot's role, else its name). A bot that cannot hold a seat (private, archived, a personal chief of staff) or that already has one under another team is listed under `skipped` with the reason. Nothing is saved by the read. `POST /api/org/draft` confirms: the server rebuilds the same draft inside the chart's transaction, minus the teams (`skipTeamIds`) and bots (`skipBotIds`) the admin unticked, and writes it in one step into an empty chart. One new write instead of many calls of the seat endpoints, so a half-drawn chart cannot happen.
+- **Works with** (`show=links`). `GET /api/org/links` returns `{ aId, bId, weight, kinds, counts }` pairs of bot ids, only for bots that hold a seat. Sources, all read from existing rows and scoped to the reader: members of the same room (open, paused or stalled, or changed in the last 90 days; rooms of more than 12 bots are skipped), bots that follow each other in a workflow graph (through steps that belong to no bot), and `decision_config` options that delegate to another bot. At most 150 pairs, strongest first. No table; the web app draws them as dotted lines, and as a list in the outline view.
+- **Chief and MCP.** `zetta:org` has the read action `works_with`; the MCP server has `get_org_works_with`. The draft has no Chief action: confirming it is a write and would need its own approval card.
+
 ## The non-technical test
 
 Plain words on screen ("Reports to", "Open seat", "Leads"), every button says what it does, a refusal says why ("A seat cannot report to one of its own reports"), and the outline view does everything the canvas does except dragging, so it works on a phone, with the keyboard and with a screen reader.

@@ -10,6 +10,8 @@ import { orgChart, orgPosition } from "@zetta/db/schema/org";
 import { userPreference } from "@zetta/db/schema/preferences";
 import { team } from "@zetta/db/schema/teams";
 import type { ActiveActor } from "../identity/access";
+import { buildOrgDraft, type OrgDraft, type OrgDraftChoices } from "./draft";
+import { readOrgLinks, type OrgLink } from "./links";
 
 /** The most seats one chart holds: the canvas and the prompts stay readable, and one admin cannot fill the table. */
 export const ORG_MAX_POSITIONS = 300;
@@ -559,6 +561,54 @@ export function createOrgStore(db: Database) {
         await tx.insert(orgPosition).values(made);
       });
       return store.get(a);
+    },
+
+    /**
+     * A first chart drafted from the admin's teams, for the admin to review. Nothing is saved: `applyDraft` is the confirmation.
+     * Only the admin reads it, because it lists the admin's own teams and the bots in them.
+     */
+    async draft(a: ActiveActor, choices: OrgDraftChoices = {}): Promise<OrgDraft> {
+      if (!a.isAdmin) throw new OrgError("NOT_ALLOWED", "Only the admin draws the chart.");
+      return buildOrgDraft(db, a.userId, choices);
+    },
+
+    /**
+     * Saves the draft (the same one `draft` returns for the same choices) into an empty chart, in one step: the CEO seat, a leader seat per
+     * team, and a seat for every bot the admin kept. Teams are linked to their leader seat.
+     */
+    async applyDraft(a: ActiveActor, expectedVersion: number, choices: OrgDraftChoices = {}) {
+      await mutate(a, expectedVersion, async (tx, rows, chartId) => {
+        if (rows.length)
+          throw new OrgError("INVALID", "A draft from your teams needs an empty chart.");
+        const draft = await buildOrgDraft(tx, a.userId, choices);
+        if (draft.seats.length > ORG_MAX_POSITIONS)
+          throw new OrgError("INVALID", `The chart can have at most ${ORG_MAX_POSITIONS} seats.`);
+        const idOf = draft.seats.map(() => uuidv7());
+        await tx.insert(orgPosition).values(
+          draft.seats.map((s) => ({
+            id: idOf[s.ref]!,
+            chartId,
+            parentId: s.parentRef === null ? null : idOf[s.parentRef]!,
+            rank: s.rank,
+            title: s.title,
+            description: s.description,
+            unit: s.unit,
+            templateKey: s.templateKey,
+            teamId: s.team?.id ?? null,
+            seat: s.holder ? ("bot" as const) : ("open" as const),
+            botId: s.holder?.botId ?? null,
+            sortOrder: s.sortOrder,
+          })),
+        );
+      });
+      return store.get(a);
+    },
+
+    /** The bots of the chart that work together, from rooms, workflows and decision routes the reader has. */
+    async links(a: ActiveActor): Promise<OrgLink[]> {
+      const { positions } = await readOrg(db, a.userId);
+      const seated = positions.flatMap((p) => (p.holder?.kind === "bot" ? [p.holder.botId] : []));
+      return readOrgLinks(db, a.userId, seated);
     },
   };
   return store;

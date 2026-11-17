@@ -26,7 +26,7 @@ const { createMemoryHistory, createRootRoute, createRouter, Outlet, RouterProvid
 
 const CHIEF = "00000000-0000-7000-8000-000000000002";
 
-const row = {
+const baseRow = {
   id: "m1",
   role: "assistant",
   botId: CHIEF,
@@ -46,9 +46,12 @@ const row = {
 
 const roots: ReturnType<typeof createRoot>[] = [];
 afterEach(async () => {
+  row = baseRow;
   await act(async () => roots.splice(0).forEach((r) => r.unmount()));
   await new Promise((done) => setTimeout(done, 20));
 });
+
+let row: never = baseRow;
 
 async function mount() {
   const root = createRootRoute({
@@ -108,4 +111,27 @@ test("a bulk update is one chip with the icon, and it opens to list the tasks", 
   expect(summaries.filter((s) => s?.startsWith("updated"))).toHaveLength(1);
   // The one task that was added keeps its own chip.
   expect(chips.querySelector(":scope > li > a")?.textContent).toContain("A brand new task");
+});
+
+test("every fold in a reply reads the same: the caret first, then an icon, then the words", async () => {
+  row = {
+    ...(baseRow as object),
+    content: "Done.\n\n📋 Read the task board.\n\n🔎 Read the project list.",
+    meta: {
+      ...((baseRow as { meta: object }).meta as object),
+      used: { notes: ["a note"], docs: [{ docId: "d1", chunkId: "c1" }] },
+    },
+  } as never;
+  const host = await mount();
+  const summaries = [...host.querySelectorAll("details > summary")];
+  const labels = summaries.map((s) => s.textContent?.trim());
+  expect(labels).toEqual(["2 actions", "updated 4 tasks", "Used 1 note", "1 source"]);
+  for (const summary of summaries) {
+    const parts = [...summary.children];
+    // Same three parts in the same order: caret, icon, label.
+    expect(parts).toHaveLength(3);
+    expect(parts[0]!.tagName.toLowerCase()).toBe("svg");
+    expect(parts[1]!.querySelector("svg")).not.toBeNull();
+    expect(parts[2]!.textContent?.trim()).not.toBe("");
+  }
 });

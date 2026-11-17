@@ -1,8 +1,9 @@
-import { CalendarPlusIcon, CaretRightIcon, CodeIcon, ListChecksIcon } from "@phosphor-icons/react";
+import { CalendarPlusIcon, CodeIcon, ListChecksIcon } from "@phosphor-icons/react";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { Receipt } from "./chat-client";
+import { Disclosure } from "./disclosure";
 import type { ReceiptGroup } from "./receipts";
 
 const LINK = "hover:text-foreground hover:underline";
@@ -18,10 +19,9 @@ function summary(g: ReceiptGroup): string {
 }
 
 function GroupIcon({ kind }: { kind: Receipt["kind"] }) {
-  const className = "size-3.5";
-  if (kind === "agenda") return <CalendarPlusIcon aria-hidden="true" className={className} />;
-  if (kind === "playground") return <CodeIcon aria-hidden="true" className={className} />;
-  return <ListChecksIcon aria-hidden="true" className={className} />;
+  if (kind === "agenda") return <CalendarPlusIcon />;
+  if (kind === "playground") return <CodeIcon />;
+  return <ListChecksIcon />;
 }
 
 /** One receipt of a group, as a link to the thing. */
@@ -51,15 +51,7 @@ function GroupItem({ r }: { r: Receipt }): ReactNode {
  */
 export function ReceiptGroupChip({ group }: { group: ReceiptGroup }) {
   return (
-    <details className="group/receipts">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-        <GroupIcon kind={group.kind} />
-        {summary(group)}
-        <CaretRightIcon
-          aria-hidden="true"
-          className="size-3 transition-transform group-open/receipts:rotate-90 motion-reduce:transition-none"
-        />
-      </summary>
+    <Disclosure icon={<GroupIcon kind={group.kind} />} label={summary(group)}>
       <ul aria-label={summary(group)} className="mt-1 space-y-0.5 pl-5">
         {group.items.map((r) => (
           <li key={`${r.kind}-${r.id}`} className="truncate">
@@ -67,6 +59,6 @@ export function ReceiptGroupChip({ group }: { group: ReceiptGroup }) {
           </li>
         ))}
       </ul>
-    </details>
+    </Disclosure>
   );
 }

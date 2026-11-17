@@ -4,12 +4,13 @@ import { memo, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowBendUpLeftIcon,
   BookmarkSimpleIcon,
-  CaretRightIcon,
+  BooksIcon,
   CalendarPlusIcon,
   AppWindowIcon,
   CodeIcon,
   FileArchiveIcon,
   BrainIcon,
+  LightningIcon,
   ListChecksIcon,
   UsersIcon,
   ChatTextIcon,
@@ -52,6 +53,7 @@ import { pollBody } from "./poll-votes";
 import { Response } from "./response";
 import { splitActionNotes } from "./action-notes";
 import { stripToolFences } from "./tool-fences";
+import { Disclosure } from "./disclosure";
 import { ReceiptGroupChip } from "./receipt-group";
 import { groupReceipts, uniqueReceipts } from "./receipts";
 import { ReceiptUndo, SkillReceipt } from "./receipt-undo";
@@ -80,15 +82,13 @@ function UsedNotes({ row }: { row: Row }) {
       Math.max(used?.instructions?.length ?? 0, used?.items?.length ?? 0);
   if (n === 0) return null;
   return (
-    <details
-      className="text-xs text-muted-foreground"
+    <Disclosure
+      icon={<BrainIcon />}
+      label={`Used ${n} ${n === 1 ? "note" : "notes"}`}
       onToggle={(e) => {
         if ((e.currentTarget as HTMLDetailsElement).open) setOpened(true);
       }}
     >
-      <summary className="w-fit cursor-pointer select-none hover:text-foreground">
-        Used {n} {n === 1 ? "note" : "notes"}
-      </summary>
       <div aria-live="polite" className="mt-1 space-y-1 border-l-2 pl-3">
         {!data && !error && <p>Loading…</p>}
         {error && (
@@ -128,7 +128,7 @@ function UsedNotes({ row }: { row: Row }) {
         ) : null}
         {data && !data.notes.length && !data.items.length && <p>Those notes no longer exist.</p>}
       </div>
-    </details>
+    </Disclosure>
   );
 }
 
@@ -139,15 +139,13 @@ function Sources({ row }: { row: Row }) {
   const n = row.meta?.used?.docs?.length ?? 0;
   if (n === 0) return null;
   return (
-    <details
-      className="text-xs text-muted-foreground"
+    <Disclosure
+      icon={<BooksIcon />}
+      label={`${n} ${n === 1 ? "source" : "sources"}`}
       onToggle={(e) => {
         if ((e.currentTarget as HTMLDetailsElement).open) setOpened(true);
       }}
     >
-      <summary className="w-fit cursor-pointer select-none hover:text-foreground">
-        {n} {n === 1 ? "source" : "sources"}
-      </summary>
       <div aria-live="polite" className="mt-1 space-y-1 border-l-2 pl-3">
         {!list && !error && <p>Checking access…</p>}
         {error && (
@@ -177,7 +175,7 @@ function Sources({ row }: { row: Row }) {
           ))}
         </ol>
       </div>
-    </details>
+    </Disclosure>
   );
 }
 
@@ -770,14 +768,10 @@ export const MessageRow = memo(function MessageRow({
             )}
             {notes.length > 0 && (
               // DESIGN.md "Bot work": the run's actions fold into one summary line under the reply.
-              <details className="group/notes text-xs text-muted-foreground">
-                <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md py-0.5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-                  <CaretRightIcon
-                    aria-hidden="true"
-                    className="size-3 transition-transform group-open/notes:rotate-90 motion-reduce:transition-none"
-                  />
-                  {notes.length} {notes.length === 1 ? "action" : "actions"}
-                </summary>
+              <Disclosure
+                icon={<LightningIcon />}
+                label={`${notes.length} ${notes.length === 1 ? "action" : "actions"}`}
+              >
                 <ul
                   aria-label="Actions"
                   className="mt-1 list-disc space-y-0.5 pl-5 marker:text-muted-foreground"
@@ -786,7 +780,7 @@ export const MessageRow = memo(function MessageRow({
                     <li key={i}>{n}</li>
                   ))}
                 </ul>
-              </details>
+              </Disclosure>
             )}
             {working && (
               <WorkingStatus

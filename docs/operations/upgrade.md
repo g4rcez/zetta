@@ -10,7 +10,17 @@ Run the installer again, on the computer where Zetta is installed:
 curl -fsSL https://zettabot.app/install | bash
 ```
 
-It pulls the new code, keeps your `apps/server/.env` and `apps/web/.env` (their secrets protect what is already stored), rebuilds the images and restarts the containers. Your data stays in the Postgres volume and is not touched. Zetta is unavailable for a minute while it rebuilds.
+It pulls the new code, keeps your `.env` files (their secrets protect what is already stored), rebuilds the images, restarts the containers and waits until Zetta answers. Your data stays on two volumes and is not touched: `zetta_postgres_data` (the database) and `zetta_data` (the files bots and people store, the bots' code folders, model downloads and the agent sign-ins). Zetta is unavailable for a minute while it rebuilds.
+
+**The first update that adds `zetta_data`.** Older installs kept those files inside the server container, so every rebuild erased them. When the installer finds a running server and no `zetta_data` yet, it copies the files out of that container first, and back in once the new server answers. The copy stays in `.zetta-old-files` in the install folder; delete it when you have checked that everything is there.
+
+**Changing the address or the port.** Run the installer with `--url` or `--port` after `bash -s --`:
+
+```bash
+curl -fsSL https://zettabot.app/install | bash -s -- --url https://zetta.example.com
+```
+
+It writes the new address into `apps/server/.env`, `apps/web/.env` and the `.env` next to `docker-compose.yml`, then rebuilds. Sign-in from other computers and plugins that use OAuth need an `https://` address.
 
 Installed in another folder? Put the folder in front: `curl -fsSL https://zettabot.app/install | ZETTA_DIR=/path/to/zetta bash`.
 

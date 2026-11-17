@@ -49,7 +49,7 @@ Role templates (24 seats in five groups) and structure presets (solo founder, sm
 ## Where things are
 
 - Server: `apps/server/src/modules/org/` (`store.ts` writes and `readOrg`, `routes.ts` at `/api/org`, `context.ts` prompt text, `escalation.ts`, `work-note.ts`) and `chat/chief/org.ts`.
-- Web: `apps/web/src/features/org/` (page, canvas, outline, seat page, palette, add-seat panel, start screen), routes `/organization` and `/organization/$positionId`.
+- Web: `apps/web/src/features/org/` (page, canvas, outline, seat panel, holder picker, add-under form, start screen), route `/organization` (the old `/organization/$positionId` redirects to `/organization?focus=<id>`).
 - Live topic `org`: a write refreshes every open chart.
 
 ## Added 2026-11-16: draw it from the teams, and the works-with layer
@@ -58,9 +58,19 @@ Role templates (24 seats in five groups) and structure presets (solo founder, sm
 - **Works with** (`show=links`). `GET /api/org/links` returns `{ aId, bId, weight, kinds, counts }` pairs of bot ids, only for bots that hold a seat. Sources, all read from existing rows and scoped to the reader: members of the same room (open, paused or stalled, or changed in the last 90 days; rooms of more than 12 bots are skipped), bots that follow each other in a workflow graph (through steps that belong to no bot), and `decision_config` options that delegate to another bot. At most 150 pairs, strongest first. No table; the web app draws them as dotted lines, and as a list in the outline view.
 - **Chief and MCP.** `zetta:org` has the read action `works_with`; the MCP server has `get_org_works_with`. The draft has no Chief action: confirming it is a write and would need its own approval card.
 
+## Changed 2026-11-17: one panel, share on pick
+
+The admin found the page hard to use: bots could not be put in seats, and editing was spread over a drag palette, a card menu, a panel above the chart and a separate seat page. Decided in an interview the same day.
+
+- **One docked panel edits a seat.** Clicking a seat (canvas or outline) selects it in the address (`focus`) and opens the panel beside the chart (under it on a phone). It holds who holds the seat, who it reports to (with earlier/later among siblings), who reports to it, the words of the seat, add under, and remove. The palette, the card menu, the add-seat panel and the seat page are gone; `/organization/$positionId` redirects to `/organization?focus=<id>`.
+- **No dragging of seats.** A scroll pans the canvas, a pinch or Ctrl+scroll zooms, a drag pans. A seat moves through "Reports to". A search lists the matches in outline order; Enter goes to the first, then the next, and the canvas moves only when the seat is out of sight.
+- **Private bots are listed; seating one shares it.** The palette now holds the bots shared with the team and the admin's own private specialist bots (`visibility` on each). Another member's private bot is never offered. Picking a private bot asks "Share _X_ with the team?"; on yes the web sends `shareBot: "team"` and the server, in the seat's transaction, checks that the actor owns the bot, sets it to team, bumps `version` and writes a `bot_revision` (`snapshotBotConfig`, now in `modules/bots/bot-revision.ts`, shared with the chat service). Without `shareBot` a private bot is still refused. `shareBot` is a string enum on purpose.
+- **Add under asks who first.** `POST /api/org/positions` takes an optional `holder` and `shareBot` and writes the seat and its holder in one transaction (`applyHolder`, shared with `seat`), so a refused holder leaves no seat behind.
+- **Kept as before:** the bot tools, the Chief (`zetta:org`) and MCP do not take `shareBot` or a holder on create: a bot-driven change still asks the owner to share first, and the preamble cap is unchanged.
+
 ## The non-technical test
 
-Plain words on screen ("Reports to", "Open seat", "Leads"), every button says what it does, a refusal says why ("A seat cannot report to one of its own reports"), and the outline view does everything the canvas does except dragging, so it works on a phone, with the keyboard and with a screen reader.
+Plain words on screen ("Reports to", "Open seat", "Leads"), every button says what it does, a refusal says why ("A seat cannot report to one of its own reports"), and the outline view does everything the canvas does, because both select a seat and change it in the same panel, so it works on a phone, with the keyboard and with a screen reader.
 
 ## Not done
 
@@ -69,4 +79,4 @@ Plain words on screen ("Reports to", "Open seat", "Leads"), every button says wh
 
 ## Verified
 
-Server integration tests on a real database, the web app in a real headless browser (drag, menus, seat page, phone, member view, empty start screen), and a real model: given the turn text of a seated bot and of the Chief, it names the manager and the CEO correctly. A real model's judgment about when to escalate (rather than reading the chart back) has not been tried.
+Server integration tests on a real database, the web app in a real headless browser (panel, share-on-pick, add under, wheel pan and zoom, search, phone, member view, empty start screen), and a real model: given the turn text of a seated bot and of the Chief, it names the manager and the CEO correctly. A real model's judgment about when to escalate (rather than reading the chart back) has not been tried.

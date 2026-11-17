@@ -21,9 +21,23 @@ On an empty chart the administrator starts in one of three ways:
 2. **Use a structure** that is close to yours (solo founder, small startup, agency, product team, support desk).
 3. **Start with just a CEO** and add seats one by one.
 
-A private bot, or your personal chief of staff, cannot hold a seat. The draft lists them under "Without a seat of their own", with the reason. Share a bot with the team and draw again if you want it in the chart.
+A personal chief of staff cannot hold a seat. A bot that you keep private can: you are asked first, because a seat is visible to the whole team (see below). The draft lists bots it could not seat under "Without a seat of their own", with the reason.
 
-After that, change the chart freely: drag a seat onto another to change who it reports to, put a person or a bot in a seat from the left panel, rename a seat, or open it for its own page.
+## Change the chart: one panel for every seat
+
+Click a seat, on the chart or in the outline, and its panel opens beside the chart. Everything about that seat is there, so you never leave the page and nothing needs dragging. The address keeps the seat (`focus=`), so a link, a reload and Back show the same seat.
+
+- **Held by.** Press **Assign a person or a bot** (or **Change who holds it**). The list has a **People** tab and a **Bots** tab. A search looks in both. Pick one and the seat is filled at once, or choose **Leave it open**.
+- **Reports to.** Pick another manager and press **Move this seat**. **Earlier** and **Later** change its place among the seats that report to the same manager.
+- **Add a seat under this one.** Two steps, who first: pick the person or the bot (or leave it open), then say what the seat is. Type a title or tap a role most teams have, choose a level, and press **Add seat**. One press creates the seat and fills it. **Or add a whole team** adds a ready-made group of seats.
+- **Title, level and what it is responsible for.** Open the fold to rename a seat, set its unit and write what it is responsible for. Bots in the seat read these words before they work.
+- **Remove this seat.** You are asked first. The seats under it report to its manager, and nobody is deleted.
+
+To look around: scroll to move over the chart, pinch (or hold Ctrl and scroll) to zoom. Type in **Find a seat or a person** and press Enter to go to the first match, and Enter again for the next. The seat you choose is brought into view when it was out of sight.
+
+### Putting a private bot in a seat
+
+Your private bots are in the list, marked **Private**. Pick one and Zetta asks: "Share _Writer_ with the team?". Everyone in the team can then see the bot and talk to it, because a seat on the chart is visible to everyone who reads it. Press **Share and seat** to do both in one step, or **Cancel** to change nothing. You can share only your own bots: another member's private bot is not offered.
 
 ## See which bots work together
 
@@ -39,4 +53,4 @@ The layer reads your own rooms, workflows and decision routes, so two people can
 
 ## Get to a bot's seat
 
-On a bot's settings page, in the Organization section, and in the details panel of a chat with the bot, you read "Reports to Ana · See on the chart". The link opens the chart with that seat in view.
+On a bot's settings page, in the Organization section, and in the details panel of a chat with the bot, you read "Reports to Ana · See on the chart". The link opens the chart with that seat selected.

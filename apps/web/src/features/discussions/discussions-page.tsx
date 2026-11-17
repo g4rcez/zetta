@@ -1144,7 +1144,7 @@ function RoomView({
                 <Link
                   to="/rooms/$roomId/settings"
                   params={{ roomId: id }}
-                  className="inline-flex h-8 items-center rounded-md border border-input bg-card px-3 text-sm font-medium hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                  className="inline-flex h-8 items-center rounded-md border border-field bg-card px-3 text-sm font-medium hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
                 >
                   Edit room
                 </Link>

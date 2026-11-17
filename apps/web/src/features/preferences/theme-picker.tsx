@@ -80,7 +80,7 @@ export function ThemePicker({
                     onChange={() => onChange(theme)}
                   />
                   <span
-                    className={`relative block rounded-xl border-2 p-0.5 transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring ${checked ? "border-primary" : "border-transparent hover:border-input"}`}
+                    className={`relative block rounded-xl border-2 p-0.5 transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring ${checked ? "border-primary" : "border-transparent hover:border-field"}`}
                   >
                     <span aria-hidden className="block">
                       {theme === "system" ? <SystemSample /> : <Sample preview={theme} />}

@@ -59,7 +59,7 @@ export function DisplaySection() {
               aria-label="Main color"
               value={preferences.primaryColor ?? primary}
               onChange={(e) => set({ primaryColor: e.target.value.toLowerCase() })}
-              className="size-8 cursor-pointer rounded-md border border-input bg-transparent p-0.5"
+              className="size-8 cursor-pointer rounded-md border border-field bg-transparent p-0.5"
             />
             <span className="font-mono text-xs text-muted-foreground">
               {preferences.primaryColor ?? "Theme color"}

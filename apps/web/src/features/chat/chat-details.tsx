@@ -81,7 +81,7 @@ export function ChatDetails({
               <Link
                 to="/bots/$botId/settings"
                 params={{ botId: bot.id }}
-                className="inline-flex h-8 items-center gap-2 rounded-md border border-input bg-card px-3 text-sm font-medium hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-field bg-card px-3 text-sm font-medium hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
               >
                 <GearSixIcon aria-hidden="true" className="size-4" />
                 Bot settings

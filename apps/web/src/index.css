@@ -94,8 +94,8 @@ html.dark {
   --var-color-background: var(--background);
   --var-color-foreground: var(--foreground);
   --var-color-border: var(--border);
-  /* Field borders (Input, MultiSelect) need 3:1 non-text contrast; --input is the app token for it. */
-  --var-color-input: var(--input);
+  /* Field borders (Input, Select, MultiSelect, Autocomplete) are soft at rest (--field); focus brings the full ring. Controls that carry state (checkbox, radio, switch) keep --input at 3:1. */
+  --var-color-input: var(--field);
   --var-color-ring: var(--ring);
   --var-color-muted: var(--muted);
   --var-color-muted-foreground: var(--muted-foreground);
@@ -115,7 +115,7 @@ html.dark {
   --var-menu-surface-background: var(--popover);
   --var-tooltip-surface-background: var(--popover);
   --var-tooltip-surface-foreground: var(--popover-foreground);
-  --var-tooltip-surface-border: var(--input);
+  --var-tooltip-surface-border: var(--border);
   --var-modal-overlay-background: oklch(0 0 0 / 60%);
 }
 
@@ -228,9 +228,9 @@ html.dark {
   --var-free-text-placeholder-foreground: var(--muted-foreground);
   --var-free-text-error-placeholder-foreground: var(--var-color-danger);
 
-  --var-dropdown-surface-border: var(--input);
+  --var-dropdown-surface-border: var(--border);
   --var-dropdown-surface-foreground: var(--popover-foreground);
-  --var-menu-surface-border: var(--input);
+  --var-menu-surface-border: var(--border);
   --var-menu-surface-foreground: var(--popover-foreground);
   --var-menu-item-active-background: var(--accent);
   --var-menu-item-active-foreground: var(--foreground);
@@ -523,4 +523,25 @@ html.dark,
 /* A Dropdown without a title (the emoji picker, the server-file list) still renders its header; hide the empty one. */
 .__dropdown__header:has(> .__dropdown__title:empty) {
   display: none;
+}
+
+/* Switching the sidebar layout by hand: the new body eases in, 180ms, ease-out. With reduced motion it only fades. */
+@keyframes sidebar-swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes sidebar-swap-fade {
+  from {
+    opacity: 0;
+  }
+}
+.sidebar-swap {
+  animation: sidebar-swap-in 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-swap {
+    animation-name: sidebar-swap-fade;
+  }
 }

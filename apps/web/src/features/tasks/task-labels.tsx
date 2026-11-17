@@ -48,7 +48,7 @@ export function LabelsEditor({
               e.preventDefault();
               add();
             }}
-            className="h-7 w-full rounded-md border border-dashed border-input bg-transparent px-2 text-xs focus-visible:outline-2 focus-visible:outline-ring"
+            className="h-7 w-full rounded-md border border-dashed border-field bg-transparent px-2 text-xs focus-visible:outline-2 focus-visible:outline-ring"
           />
           <datalist id={listId}>
             {known

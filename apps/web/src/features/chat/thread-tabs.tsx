@@ -92,7 +92,7 @@ export function ThreadTabs({
             setRenaming(false);
           }
         }}
-        className="h-8 min-w-0 flex-1 rounded-md border border-input bg-card px-2 text-base outline-none focus-visible:outline-2 focus-visible:outline-ring"
+        className="h-8 min-w-0 flex-1 rounded-md border border-field bg-card px-2 text-base outline-none focus-visible:outline-2 focus-visible:outline-ring"
       />
     );
   }
@@ -139,7 +139,7 @@ export function ThreadTabs({
                 choose(list[active]);
               }
             }}
-            className="h-8 w-full rounded-md border border-input bg-card px-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            className="h-8 w-full rounded-md border border-field bg-card px-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
           />
           <div role="group" aria-label="Which chats" className="flex gap-1 px-0.5 pt-1">
             {(

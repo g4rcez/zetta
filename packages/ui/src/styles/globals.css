@@ -69,6 +69,11 @@
   --sidebar: #09090b;
 }
 
+/* Border of text fields and field-like buttons: a soft step from --border toward --input. Checkboxes, radios and switches keep the full --input (3:1). Focus uses --ring. */
+:root {
+  --field: color-mix(in oklab, var(--input) 38%, var(--border));
+}
+
 @theme inline {
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --font-heading: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
@@ -94,6 +99,7 @@
   --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
+  --color-field: var(--field);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);

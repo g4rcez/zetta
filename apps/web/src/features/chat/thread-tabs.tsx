@@ -104,13 +104,15 @@ export function ThreadTabs({
         aria-label="Switch chat"
         buttonProps={{
           className:
-            "flex h-8 min-w-0 items-center gap-1 rounded-md px-1.5 text-base font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
+            // The same type and spacing as the bot beside it (`text-sm`, `px-1.5`, `h-8`), so the header reads as one breadcrumb: the bot
+            // in muted text, then the open chat in the foreground colour.
+            "flex h-8 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
         }}
         trigger={
           <>
             <span className="truncate">{current?.title ?? "New chat"}</span>
             <span className="sr-only">, switch chat</span>
-            <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+            <CaretDownIcon aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
           </>
         }
       >

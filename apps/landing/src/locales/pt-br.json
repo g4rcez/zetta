@@ -55,7 +55,7 @@
         "tone": "needs"
       }
     ],
-    "proof": ["6 agentes", "1 comando", "Licença MIT", "Seus dados ficam no seu servidor"]
+    "proof": ["6 agentes", "1 comando", "Uso gratuito", "Seus dados ficam no seu servidor"]
   },
   "pain": {
     "before": "Cada agente que você roda é mais um terminal para vigiar. O Zetta junta todos num time no seu servidor e ",
@@ -262,8 +262,8 @@
       "after": ""
     },
     "lead": "Você precisa de Git, OpenSSL e um Docker ou Podman rodando. O Zetta sobe um app web, uma API e um banco Postgres.",
-    "note": "Gratuito sob a licença MIT. Ainda é inicial: leia o repositório e as issues antes de depender dele.",
-    "badges": ["Grátis", "Licença MIT", "Seu servidor, seus dados"],
+    "note": "Gratuito, inclusive para uso comercial (uso comercial exige um aviso ao autor). Ainda é inicial: leia o repositório e as issues antes de depender dele.",
+    "badges": ["Grátis", "Código-fonte disponível", "Seu servidor, seus dados"],
     "copy": "Copiar",
     "copied": "Copiado",
     "steps": [

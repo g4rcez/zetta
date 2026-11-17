@@ -55,7 +55,7 @@
         "tone": "needs"
       }
     ],
-    "proof": ["6 agents", "1 command", "MIT license", "Your data stays on your server"]
+    "proof": ["6 agents", "1 command", "Free to use", "Your data stays on your server"]
   },
   "pain": {
     "before": "Every agent you run is one more terminal to watch. Zetta puts them in one team on your server and ",
@@ -262,8 +262,8 @@
       "after": ""
     },
     "lead": "You need Git, OpenSSL and a running Docker or Podman. Zetta starts a web app, an API and a Postgres database.",
-    "note": "Free under the MIT license. It is early: read the repository and its issues before you depend on it.",
-    "badges": ["Free", "MIT license", "Your server, your data"],
+    "note": "Free to use, including commercially (commercial use needs a notice to the author). It is early: read the repository and its issues before you depend on it.",
+    "badges": ["Free", "Source available", "Your server, your data"],
     "copy": "Copy",
     "copied": "Copied",
     "steps": [

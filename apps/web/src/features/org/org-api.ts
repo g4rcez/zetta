@@ -37,7 +37,14 @@ export type OrgPosition = {
 
 export type OrgPalette = {
   people: { userId: string; name: string; avatar: unknown; title?: string }[];
-  bots: { id: string; name: string; description: string; avatar: BotAvatarValue | null }[];
+  /** Bots shared with the team, and the admin's own private ones (a private bot is shared when the admin seats it). */
+  bots: {
+    id: string;
+    name: string;
+    description: string;
+    avatar: BotAvatarValue | null;
+    visibility: "private" | "team";
+  }[];
   teams: { id: string; name: string }[];
 };
 
@@ -50,6 +57,9 @@ export type OrgView = {
   palette: OrgPalette | null;
 };
 
+/** `team`: a private bot picked for a seat is shared with the team in the same step. */
+export type OrgShareBot = "team";
+
 export type OrgCreate = {
   parentId?: string | null;
   templateKey?: string;
@@ -57,6 +67,9 @@ export type OrgCreate = {
   description?: string;
   unit?: string;
   rank?: OrgRank;
+  /** Who holds the new seat, written with the seat itself. */
+  holder?: OrgHolderInput;
+  shareBot?: OrgShareBot;
 };
 export type OrgUpdate = {
   title?: string;
@@ -124,10 +137,12 @@ export const orgApi = {
       "POST",
       body(version, { parentId, ...(index !== undefined && { index }) }),
     ).then(org),
-  seat: (version: number, id: string, holder: OrgHolderInput) =>
-    call<{ org: OrgView }>(`/api/org/positions/${id}/seat`, "PUT", body(version, { holder })).then(
-      org,
-    ),
+  seat: (version: number, id: string, holder: OrgHolderInput, shareBot?: OrgShareBot) =>
+    call<{ org: OrgView }>(
+      `/api/org/positions/${id}/seat`,
+      "PUT",
+      body(version, { holder, ...(shareBot && { shareBot }) }),
+    ).then(org),
   remove: (version: number, id: string) =>
     call<{ org: OrgView }>(`/api/org/positions/${id}?expectedVersion=${version}`, "DELETE").then(
       org,

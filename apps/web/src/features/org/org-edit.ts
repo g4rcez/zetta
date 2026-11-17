@@ -5,6 +5,12 @@ import { toast } from "@/lib/notify";
 import { errorMessage } from "../chat/chat-client";
 import { orgQueries, type OrgView } from "./org-api";
 
+/** One write of the chart, queued behind the others; resolves to the fresh chart, or undefined when the write failed. */
+export type OrgRun = (
+  work: (version: number) => Promise<OrgView>,
+  done?: string,
+) => Promise<OrgView | undefined>;
+
 /**
  * Runs the writes of the chart one at a time. Each one is given the version of the chart the last write returned, so two quick drags
  * never carry the same version and refuse each other. A failure shows its message (the server words it for a person) and reloads the

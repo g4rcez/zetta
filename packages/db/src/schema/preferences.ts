@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { check, integer, jsonb, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { DEFAULT_PUSH_MODE, PUSH_MODES } from "@zetta/core/push";
 import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
@@ -72,6 +73,8 @@ export const userPreference = zetta.table(
     approvalMode: text("approval_mode", { enum: APPROVAL_MODES }).default("hold").notNull(),
     /** `paused` stops every agent of this person from starting work (see AGENTS_STATES). */
     agentsState: text("agents_state", { enum: AGENTS_STATES }).default("running").notNull(),
+    /** What may wake this person's phone with a push: everything, only a mention or a decision waiting, or nothing (`@zetta/core/push`). */
+    pushMode: text("push_mode", { enum: PUSH_MODES }).default(DEFAULT_PUSH_MODE).notNull(),
     /** The color theme. Null = the person never chose one on their account: the device keeps its own choice. */
     theme: text("theme", { enum: THEMES }),
     /** The main color, `#rrggbb` in lower case. Null = the theme's own main color. */

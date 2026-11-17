@@ -41,7 +41,8 @@ function SheetItem({
       type="button"
       role="menuitem"
       variant="ghost"
-      className="h-11 w-full justify-start gap-3 px-3 text-sm"
+      // "!": the library's .__button centers its content and beat justify-start, so the sheet read as a centered list.
+      className="h-11 w-full !justify-start gap-3 px-3 text-sm"
       {...(pressed === undefined ? {} : { "aria-pressed": pressed })}
       onClick={onClick}
     >
@@ -126,7 +127,8 @@ export function MoreActions({
             size="icon-sm"
             variant="ghost"
             aria-label="More"
-            className="absolute top-0.5 right-2 z-10"
+            // "!": the library's .__button sets position: relative, which beat "absolute" and left the button in the row, at its left edge.
+            className="!absolute top-0.5 right-2 z-10"
           >
             <DotsThreeIcon weight="bold" />
           </Button>

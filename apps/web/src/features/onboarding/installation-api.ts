@@ -3,9 +3,10 @@ import { queryOptions } from "@tanstack/react-query";
 import { queryClient } from "@/lib/query-client";
 import { call, sendSealed } from "../chat/chat-client";
 import { STATIC } from "@/lib/query-policy";
+import type { SpeechSettings } from "@zetta/core/speech";
 
 export type NetworkMode = "local" | "network";
-export type Installation = {
+export type Installation = SpeechSettings & {
   networkMode: NetworkMode;
   publicUrl: string | null;
   onboarding: "pending" | "done";
@@ -27,6 +28,8 @@ export type Installation = {
   transcribeBaseUrl: string;
   /** The key is never sent here: whether one is saved, the operator's own is used, or the saved one cannot be read any more. */
   transcribeKey: "none" | "set" | "operator" | "unavailable";
+  /** The public key of the installation's push messages; null until the server made one. The private key never leaves the server. */
+  pushPublicKey: string | null;
 };
 export type TranscribeProvider = "local" | "openai" | "compatible";
 export type TranscribeSettingsPatch = Partial<

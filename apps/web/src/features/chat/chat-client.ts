@@ -85,7 +85,15 @@ export type BotStatusEntry = {
   /** Open (not done) tasks of this bot, steps not counted. */
   openTasks: number;
 };
-export type Provider = "anthropic" | "openai" | "google" | "openrouter" | "deepseek" | "github";
+/** `compatible`: a model on the person's own server (listed in Accounts, created by its own form: it is not in `PROVIDERS` below). */
+export type Provider =
+  | "anthropic"
+  | "openai"
+  | "google"
+  | "openrouter"
+  | "deepseek"
+  | "github"
+  | "compatible";
 export const PROVIDERS: readonly Provider[] = [
   "anthropic",
   "openai",

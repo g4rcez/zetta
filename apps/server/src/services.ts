@@ -105,6 +105,10 @@ import { TurnBusyError } from "./modules/chat/turns";
 import { createFirstAccountSetup, createSetupState } from "./modules/identity/first-account";
 import { matchesConnectionKey } from "./modules/identity/setup-key";
 import { createInstallationService } from "./modules/installation/service";
+import { createInstallationKeyReader } from "./modules/connections/installation-key";
+import { createSpeechReader } from "./modules/installation/speech";
+import { createPushReader } from "./modules/installation/push";
+import { SPEECH_KEY_ENV } from "@zetta/core/speech";
 import { topics } from "@zetta/core/live-topics";
 import { events } from "./modules/events/bus";
 import { work } from "./modules/events/work";
@@ -398,6 +402,22 @@ const transcribeKey = {
       await connections.revoke(actor, before, old.revision).catch(() => undefined);
   },
 };
+/**
+ * Read access to the other sealed keys of the installation (wave 2): the speech-out provider key and the private VAPID key of push. The
+ * same in every ZETTA_ROLE (both read the database and share ZETTA_CONNECTION_KEY). Writing them is the feature's own route.
+ */
+const installationKeyDeps = {
+  owner: connectionOwner,
+  actorFor: (userId: string) => issueBackgroundActor(membershipLookup, userId),
+  connections,
+};
+export const speechKey = createInstallationKeyReader({
+  ...installationKeyDeps,
+  operatorKey: () => process.env[SPEECH_KEY_ENV] || undefined,
+});
+export const pushKey = createInstallationKeyReader(installationKeyDeps);
+export const speechReader = createSpeechReader({ load: () => installation.load(), key: speechKey });
+export const pushReader = createPushReader({ load: () => installation.load(), key: pushKey });
 export const connectionServices = { access: identity.access, connections, transcribeKey };
 // Administrator opt-in: lets MCP servers and the WhatsApp (WAHA) plugin reach private/localhost addresses (e.g. a WAHA container). Off by default.
 const mcp = createMcp(db, connections, {

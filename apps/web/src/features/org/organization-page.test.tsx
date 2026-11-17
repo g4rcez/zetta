@@ -341,6 +341,8 @@ test("a bot's settings say who it reports to and link to its seat on the chart",
     return <BotOrgSection botId={BOT2} />;
   });
   expect(text(host)).toContain("Reports to an open seat (CFO)");
+  // The open seat's title is part of the sentence already: it is not appended a second time.
+  expect(text(host)).not.toContain("(CFO) (CFO)");
   const link = [...host.querySelectorAll("a")].find((a) => a.textContent === "See on the chart")!;
   expect(link.getAttribute("href")).toBe(`/organization?focus=${S(5)}`);
 });

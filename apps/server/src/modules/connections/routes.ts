@@ -1,11 +1,17 @@
+import { COMPATIBLE_PROVIDER } from "@zetta/core/model-server";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { ConnectionsUnavailableError, PROVIDERS, type ConnectionsService } from "./service";
 
-/** `plugin`, `machine` and `transcribe` connections hold secrets managed by the Plugins tab, the Computer tab and the installation settings; they are neither listed nor user-creatable here. */
-const MANAGED = ["plugin", "machine", "transcribe"];
-const USER_PROVIDERS = PROVIDERS.filter((p) => !MANAGED.includes(p));
+/** `plugin`, `machine`, `transcribe`, `speech` and `push` connections hold secrets managed by the Plugins tab, the Computer tab and the installation settings; they are neither listed nor user-creatable here. */
+const MANAGED = ["plugin", "machine", "transcribe", "speech", "push"];
+/**
+ * `compatible` (a model on the person's own server) is the person's own and is listed here, so it can be revoked, but it cannot be created
+ * here: it needs an address and a model name, which only its own route takes (the address rule decides what may be saved).
+ */
+const NOT_CREATABLE = [...MANAGED, COMPATIBLE_PROVIDER];
+const USER_PROVIDERS = PROVIDERS.filter((p) => !NOT_CREATABLE.includes(p));
 import { TransportError } from "@zetta/core/sealed-transport";
 import { ConnectionStoreError } from "./store-contract";
 import { TransportKeyExpiredError, transportKeyring, type TransportKeyring } from "./transport";

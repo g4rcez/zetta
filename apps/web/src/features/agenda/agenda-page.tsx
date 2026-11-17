@@ -13,13 +13,15 @@ import {
   type AgendaKind,
   type AgendaSync,
 } from "./agenda-api";
+import { AgendaConnect, useCalendarSource } from "./agenda-empty";
 import { AgendaItemModal } from "./agenda-item-modal";
+import { LinkedEventLabel, LinkedEventModal, type LinkedShown } from "./agenda-linked";
 import { KIND_ICON, KIND_LABEL, KIND_THEME, pillTheme } from "./agenda-kinds";
 import { AgendaSyncPanel } from "./agenda-sync";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatTime } from "@/features/preferences/time-format";
 
-type Ev = CalendarEvent<{ id: string; date: Date; item: AgendaItem }>;
+type Ev = CalendarEvent<{ id: string; date: Date; item?: AgendaItem; linked?: LinkedShown }>;
 const MONTH_MS = 31 * 86_400_000;
 const DONE_THEME = "neutral";
 const FILTERS: CalendarFilter[] = [
@@ -40,7 +42,7 @@ const SYNC_OFF: AgendaSync = {
 };
 const startOfMonth = (d: Date, add = 0) => new Date(d.getFullYear(), d.getMonth() + add, 1);
 /** All-day items are stored at UTC midnight; the calendar groups by local day, so they are placed on that calendar date locally. */
-const displayDate = (i: AgendaItem) => {
+const displayDate = (i: { startAt: string; allDay: boolean }) => {
   const d = new Date(i.startAt);
   return i.allDay ? new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) : d;
 };
@@ -51,12 +53,14 @@ export function AgendaPage({ focusId }: { focusId?: string | undefined }) {
     from: startOfMonth(new Date(), -2),
     to: startOfMonth(new Date(), 4),
   }));
-  const { items, reload } = useAgenda(window, onError);
+  const { items, external, reload } = useAgenda(window, onError);
+  const source = useCalendarSource();
   const qc = useQueryClient();
   const syncQuery = useQuery(agendaQueries.sync());
   const sync = syncQuery.data ?? (syncQuery.isError ? SYNC_OFF : undefined);
   const setSync = (next: AgendaSync) => qc.setQueryData(agendaQueries.sync().queryKey, next);
   const [editing, setEditing] = useState<{ item?: AgendaItem; at?: Date }>();
+  const [viewing, setViewing] = useState<LinkedShown>();
   // Opened from an attention item or a chat receipt (/agenda?item=<id>).
   useEffect(() => {
     if (!focusId) return;
@@ -67,8 +71,8 @@ export function AgendaPage({ focusId }: { focusId?: string | undefined }) {
   }, [focusId, onError, qc]);
 
   const events = useMemo<Ev[]>(
-    () =>
-      (items ?? []).map((i) => ({
+    () => [
+      ...(items ?? []).map((i) => ({
         id: i.id,
         date: displayDate(i),
         item: i,
@@ -76,8 +80,21 @@ export function AgendaPage({ focusId }: { focusId?: string | undefined }) {
         filterId: i.status === "done" ? "done" : i.kind,
         className: `${pillTheme(i.status === "done" ? DONE_THEME : KIND_THEME[i.kind])} ${i.syncState === "error" ? "ring-1 ring-destructive" : ""}`,
       })),
-    [items],
+      // The calendar link's events: read-only, so a dashed outline and no edit form.
+      ...external.flatMap((c) =>
+        c.events.map((e) => ({
+          id: e.id,
+          date: displayDate(e),
+          linked: { ...e, calendar: c.calendar },
+          title: e.title,
+          filterId: "event",
+          className: `${pillTheme("neutral")} border border-dashed`,
+        })),
+      ),
+    ],
+    [items, external],
   );
+  const linkProblems = external.filter((c) => c.error);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col gap-3 p-4 md:px-6">
@@ -90,6 +107,12 @@ export function AgendaPage({ focusId }: { focusId?: string | undefined }) {
         </div>
         <AgendaSyncPanel sync={sync} onSync={setSync} onSynced={reload} onError={onError} />
       </div>
+      <AgendaConnect source={source} syncEnabled={sync?.enabled} />
+      {linkProblems.map((c) => (
+        <p key={c.calendar} role="alert" className="shrink-0 text-sm text-destructive">
+          {c.calendar}: {c.error}
+        </p>
+      ))}
       <div className="flex min-h-[32rem] flex-1 flex-col">
         <PageCalendar<Ev & { id: string; date: Date }>
           events={events}
@@ -98,8 +121,12 @@ export function AgendaPage({ focusId }: { focusId?: string | undefined }) {
           filters={FILTERS}
           onAddEvent={() => setEditing({})}
           onSlotClick={(date) => setEditing({ at: date })}
-          onEventClick={(e) => setEditing({ item: (e as Ev).item })}
-          renderEvent={(e) => <AgendaEventLabel item={e.item} />}
+          onEventClick={(e) => {
+            const ev = e as Ev;
+            if (ev.linked) setViewing(ev.linked);
+            else setEditing({ item: ev.item });
+          }}
+          renderEvent={(e) => <EventLabel event={e} />}
         />
       </div>
       <div className="flex shrink-0 justify-between text-xs text-muted-foreground">
@@ -123,6 +150,7 @@ export function AgendaPage({ focusId }: { focusId?: string | undefined }) {
           Load later months
         </Button>
       </div>
+      {viewing && <LinkedEventModal event={viewing} onClose={() => setViewing(undefined)} />}
       {editing && (
         <AgendaItemModal
           item={editing.item}
@@ -134,6 +162,14 @@ export function AgendaPage({ focusId }: { focusId?: string | undefined }) {
         />
       )}
     </div>
+  );
+}
+
+function EventLabel({ event }: { event: Ev }) {
+  return event.linked ? (
+    <LinkedEventLabel event={event.linked} />
+  ) : (
+    <AgendaEventLabel item={event.item!} />
   );
 }
 

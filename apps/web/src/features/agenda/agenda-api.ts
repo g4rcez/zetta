@@ -26,6 +26,25 @@ export type AgendaItem = {
   syncError: string;
   version: number;
 };
+/** One event of the user's calendar link (ICS). Read from the feed when the Agenda is read, never stored: it cannot be edited here. */
+export type LinkedEvent = {
+  id: string;
+  title: string;
+  startAt: string;
+  endAt: string | null;
+  allDay: boolean;
+  location: string;
+  description: string;
+  recurring: boolean;
+};
+export type LinkedCalendar = {
+  source: "ics";
+  calendar: string;
+  events: LinkedEvent[];
+  /** Why the link could not be read, in plain words. The rest of the Agenda still loads. */
+  error?: string;
+};
+export type AgendaRead = { items: AgendaItem[]; external: LinkedCalendar[] };
 export type AgendaDraft = {
   kind: AgendaKind;
   title: string;
@@ -47,10 +66,10 @@ export type AgendaSync = {
 };
 
 export const agendaApi = {
-  list: (from: Date, to: Date) =>
-    call<{ items: AgendaItem[] }>(
+  list: (from: Date, to: Date): Promise<AgendaRead> =>
+    call<{ items: AgendaItem[]; external?: LinkedCalendar[] }>(
       `/api/agenda?${new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })}`,
-    ).then((r) => r.items),
+    ).then((r) => ({ items: r.items, external: r.external ?? [] })),
   get: (id: string) => call<{ item: AgendaItem }>(`/api/agenda/${id}`).then((r) => r.item),
   create: (v: AgendaDraft) =>
     call<{ item: AgendaItem }>("/api/agenda", "POST", v).then((r) => r.item),
@@ -102,14 +121,12 @@ export function useAgenda(window: { from: Date; to: Date }, onError: (m: string)
     if (error) onError(errorMessage(error));
   }, [error, onError]);
   const reload = useCallback(() => qc.invalidateQueries({ queryKey: ["agenda"] }), [qc]);
-  const key = agendaQueries.list(window.from, window.to).queryKey;
-  const setItems = useCallback(
-    (next: AgendaItem[]) => qc.setQueryData<AgendaItem[]>(key, next),
-    // The key holds the window as text.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [qc, JSON.stringify(key)],
-  );
-  return { items: query.data ?? (query.isError ? NO_ITEMS : undefined), reload, setItems };
+  return {
+    items: query.data?.items ?? (query.isError ? NO_ITEMS : undefined),
+    external: query.data?.external ?? NO_LINKED,
+    reload,
+  };
 }
 
 const NO_ITEMS: AgendaItem[] = [];
+const NO_LINKED: LinkedCalendar[] = [];

@@ -6,6 +6,7 @@ import { issueBackgroundActor, type ActiveActor, type MembershipLookup } from ".
 import { accountLabel } from "../integrations/plugins/google/oauth";
 import { PluginError, type PluginContext } from "../integrations/plugins/registry";
 import { createGoogleAgendaSync } from "./google-sync";
+import { createIcsAgendaView } from "./ics-view";
 
 export type AgendaPlugins = { contextFor: (a: ActiveActor, id: string) => Promise<PluginContext> };
 const SYNC_EVERY_MS = 5 * 60_000,
@@ -22,6 +23,7 @@ export function createAgendaScheduler(
   lookup: MembershipLookup,
 ) {
   const google = createGoogleAgendaSync(db);
+  const ics = createIcsAgendaView(plugins);
   let busy = false;
 
   async function remind(now: Date) {
@@ -157,6 +159,8 @@ export function createAgendaScheduler(
   return {
     syncUser,
     syncIfEnabled,
+    /** Events of the user's calendar link (ICS), read when the Agenda is read and shown read-only. See ics-view.ts. */
+    external: ics.external,
     async tick(now = new Date()) {
       if (busy) return;
       busy = true; // a slow Google round must not overlap the next tick

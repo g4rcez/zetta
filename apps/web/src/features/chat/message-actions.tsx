@@ -126,7 +126,8 @@ export function MoreActions({
             size="icon-sm"
             variant="ghost"
             aria-label="More"
-            className="absolute top-0.5 right-2 z-10"
+            // "!": the library's .__button sets position: relative, which beat "absolute" and left the button in the row, at its left edge.
+            className="!absolute top-0.5 right-2 z-10"
           >
             <DotsThreeIcon weight="bold" />
           </Button>

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { BOT_ROLE_MAX } from "@zetta/core/bot-role";
 import { isAvatarValue } from "@zetta/core/avatar";
 import { AVATAR_SWATCHES, characterOf, shapeOf, type AvatarValue } from "@/components/bot-avatar";
 import {
@@ -17,6 +18,9 @@ test("every template has the fields a bot needs", () => {
   for (const t of BOT_TEMPLATES) {
     expect(t.title.length).toBeGreaterThan(0);
     expect(t.title.length).toBeLessThanOrEqual(80);
+    // The role is the short line pickers show beside the name; the API accepts 60 characters.
+    expect(t.role.length).toBeGreaterThan(0);
+    expect(t.role.length).toBeLessThanOrEqual(BOT_ROLE_MAX);
     // A card shows one plain sentence.
     expect(t.description.length).toBeGreaterThan(20);
     expect(t.description.length).toBeLessThanOrEqual(110);
@@ -66,6 +70,7 @@ test("create-now input carries everything the template defines", () => {
   const t = templateById("researcher")!;
   expect(templateInput(t)).toEqual({
     name: "Researcher",
+    role: t.role,
     description: t.description,
     avatar: t.avatar,
     personality: t.personality,

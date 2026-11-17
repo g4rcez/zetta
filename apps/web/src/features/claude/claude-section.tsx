@@ -1,3 +1,4 @@
+import { AdvancedSection } from "@/components/advanced-section";
 import { ActionHint } from "@/components/action-hint";
 import {
   RobotIcon as BotIcon,
@@ -420,11 +421,11 @@ function AssetDialog({
         aria-label={`${asset ? "Edit" : "Add"} ${noun}`}
       >
         {!asset && (
-          <details className="rounded-md border px-3 py-2">
-            <summary className="cursor-pointer text-xs font-medium">
-              Import from a {kind === "skill" ? "SKILL.md" : "agent .md"} file
-            </summary>
-            <div className="mt-2 space-y-2">
+          <AdvancedSection
+            title={`Import from a ${kind === "skill" ? "SKILL.md" : "agent .md"} file`}
+            defaultOpen={false}
+          >
+            <div className="space-y-2">
               {/* Plain on purpose: a pasted file for another tool, where `@` has its own meaning. */}
               <EditorField title="Paste the file" value={paste} onChange={setPaste} rows={5} />
               <Button
@@ -441,7 +442,7 @@ function AssetDialog({
                 instructions are kept. Other settings in the file (hooks, permissions) are ignored.
               </p>
             </div>
-          </details>
+          </AdvancedSection>
         )}
         <Input
           title="Name"

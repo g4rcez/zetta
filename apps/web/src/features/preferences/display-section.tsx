@@ -117,21 +117,21 @@ export function DisplaySection() {
           </div>
         </fieldset>
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">Navigation</legend>
+          <legend className="text-sm font-medium">How much to show</legend>
           <div className="flex flex-wrap gap-x-6 gap-y-2">
             <Radiobox
               name="nav-mode"
               checked={preferences.navMode === "simple"}
               onChange={() => set({ navMode: "simple" })}
             >
-              Simple: chats, tasks, routines and your library
+              Simple: the essentials
             </Radiobox>
             <Radiobox
               name="nav-mode"
               checked={preferences.navMode !== "simple"}
               onChange={() => set({ navMode: "full" })}
             >
-              Full: also Studio, Agenda, Playground and Computer
+              Full: every setting
             </Radiobox>
           </div>
         </fieldset>

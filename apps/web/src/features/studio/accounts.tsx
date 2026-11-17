@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { AdvancedSection } from "@/components/advanced-section";
 import { Button, Input, Select } from "@/components/ui";
 
 import {
@@ -165,14 +166,11 @@ function Connections({ onError }: { onError: (m: string) => void }) {
         </Alert>
       )}
       {data?.configured && (
-        <details open={data.connections.length === 0} className="rounded-lg border bg-card p-4">
-          <summary className="cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-            Add an account
-          </summary>
+        <AdvancedSection title="Add an account" defaultOpen={data.connections.length === 0}>
           <form
             onSubmit={(e) => void create(e)}
             autoComplete="off"
-            className="mt-4 grid gap-3 sm:grid-cols-3"
+            className="grid gap-3 sm:grid-cols-3"
           >
             <Select
               title="Provider"
@@ -205,7 +203,7 @@ function Connections({ onError }: { onError: (m: string) => void }) {
               </Button>
             </div>
           </form>
-        </details>
+        </AdvancedSection>
       )}
       {status && <Alert theme="info">{status}</Alert>}
       {error && (

@@ -22,7 +22,7 @@ export function buildLlmsTxt({
     "",
     `> ${description}`,
     "",
-    "Zetta is free and source-available (commercial use needs a notice to the author within 60 days) and runs on your own server. Every page of this site has a Markdown twin (add `.md` to its address); the links below are those twins.",
+    "Zetta is free and open source (AGPL-3.0) and runs on your own server. Every page of this site has a Markdown twin (add `.md` to its address); the links below are those twins.",
     "",
     "## Docs",
     "",

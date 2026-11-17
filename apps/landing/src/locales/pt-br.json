@@ -2,7 +2,7 @@
   "meta": {
     "imageAlt": "Zetta: peça o resultado e um time de bots cuida do resto. O robô do Zetta no centro de quatro bots, e um deles precisa de você.",
     "title": "Zetta: bots que trabalham no seu servidor enquanto você faz outra coisa",
-    "description": "Zetta é um app gratuito com código-fonte disponível que roda um time de bots no seu próprio servidor. Diga ao Zetta o que você precisa e volte para o resultado."
+    "description": "Zetta é um app gratuito e open source que roda um time de bots no seu próprio servidor. Diga ao Zetta o que você precisa e volte para o resultado."
   },
   "header": {
     "home": "Início do Zetta",
@@ -25,7 +25,7 @@
       "after": ".",
       "rest": "O Zetta cuida do resto."
     },
-    "lead": "Zetta é um app gratuito com código-fonte disponível que roda no seu próprio servidor. Diga ao Zetta o que você precisa, como um resumo semanal ou uma revisão de código. Um time de bots faz o trabalho e só chama você quando precisa de uma decisão.",
+    "lead": "Zetta é um app gratuito e open source que roda no seu próprio servidor. Diga ao Zetta o que você precisa, como um resumo semanal ou uma revisão de código. Um time de bots faz o trabalho e só chama você quando precisa de uma decisão.",
     "primary": "Instalar com um comando",
     "secondary": "Ver ao vivo",
     "installLabel": "Uma linha no macOS, Linux ou WSL",
@@ -55,7 +55,7 @@
         "tone": "needs"
       }
     ],
-    "proof": ["6 agentes", "1 comando", "Uso gratuito", "Seus dados ficam no seu servidor"]
+    "proof": ["6 agentes", "1 comando", "AGPL-3.0", "Seus dados ficam no seu servidor"]
   },
   "pain": {
     "before": "Cada agente que você roda é mais um terminal para vigiar. O Zetta junta todos num time no seu servidor e ",
@@ -262,8 +262,8 @@
       "after": ""
     },
     "lead": "Você precisa de Git, OpenSSL e um Docker ou Podman rodando. O Zetta sobe um app web, uma API e um banco Postgres.",
-    "note": "Gratuito, inclusive para uso comercial (uso comercial exige um aviso ao autor). Ainda é inicial: leia o repositório e as issues antes de depender dele.",
-    "badges": ["Grátis", "Código-fonte disponível", "Seu servidor, seus dados"],
+    "note": "Gratuito sob a licença AGPL-3.0. Ainda é inicial: leia o repositório e as issues antes de depender dele.",
+    "badges": ["Grátis", "Open source", "Seu servidor, seus dados"],
     "copy": "Copiar",
     "copied": "Copiado",
     "steps": [
@@ -300,7 +300,7 @@
       },
       {
         "q": "O Zetta é grátis?",
-        "a": "É. O Zetta é source-available e gratuito, inclusive para uso comercial. Se você usar comercialmente, avise o autor em até 60 dias após começar. Você paga só pelo seu servidor e pelos agentes que os seus bots usam."
+        "a": "É. O Zetta é open source sob a licença AGPL-3.0, então você roda no seu servidor de graça. Se oferecer um Zetta modificado a outras pessoas como serviço, precisa publicar as suas mudanças sob a mesma licença, ou pedir outra licença ao autor. Você paga só pelo seu servidor e pelos agentes que os seus bots usam."
       },
       {
         "q": "Onde ficam os meus dados?",
@@ -330,14 +330,14 @@
       "mark": "o primeiro trabalho",
       "after": ""
     },
-    "lead": "Um comando num servidor que você controla. Source-available e gratuito.",
+    "lead": "Um comando num servidor que você controla. Open source, AGPL-3.0.",
     "primary": "Instalar com um comando",
     "secondary": "Estrela no GitHub"
   },
   "footer": {
     "share": "Chega de vigiar os seus agentes.",
     "tagline": "Zetta: bots que trabalham por você, no seu servidor.",
-    "license": "Licença Zetta",
+    "license": "Licença AGPL-3.0",
     "links": {
       "repo": "Repositório",
       "docs": "Docs",

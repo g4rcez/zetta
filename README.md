@@ -201,3 +201,9 @@ Use existing shared UI primitives and Tailwind styles. The [shadcn chat componen
 - [n8n](https://n8n.io/) — visual workflows and inspectable execution.
 
 These are product references, not promises of identical behavior. Zetta keeps its own private-chat, per-user chief, account ownership and snapshot model.
+
+## License
+
+Zetta is licensed under the [GNU Affero General Public License v3.0](LICENSE). You can run, study and modify it for free, including at work. If you offer a modified Zetta to others over a network, the AGPL requires you to publish your changes under the same license. For a different license, open an issue at https://github.com/g4rcez/zetta/issues.
+
+Versions obtained before 2026-11-16 were released under the MIT License and stay under it for those copies.

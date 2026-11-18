@@ -340,6 +340,12 @@ Optional · not secret
 
 Features. ZETTA_LAYA_PRELOAD=0 loads the Laya model on first use instead of at boot. ZETTA_MEMORY_LEARN=off stops bots from learning into memory on their own (ZETTA_WIKI_LEARN is its old name).
 
+### `ZETTA_LESSON_BATCH`, `ZETTA_LIGHT_RUNS`
+
+Optional · not secret
+
+Lessons (modules/learning). ZETTA_LESSON_BATCH=off stops the daily reading of chats for lessons for everyone (a person can also turn it off in Lessons). ZETTA_LIGHT_RUNS=on makes background work that only reads text (the daily reading) run Claude Code without the person's own settings, MCP servers and tools, which costs far fewer tokens; off until measured against the full run.
+
 ### `ZETTA_MCP_ALLOWLIST`, `ZETTA_MCP_MEMBER_STDIO`
 
 Optional · not secret

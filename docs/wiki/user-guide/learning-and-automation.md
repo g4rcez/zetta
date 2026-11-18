@@ -27,6 +27,20 @@ A better-sounding answer is not enough to prove the correction was used. Forgett
 
 Learning can retain scoped facts and procedures without asking for approval on every ordinary learning event. It must not silently change bot configuration or promote your private knowledge to shared use. A learning receipt should explain what was retained and link to inspection, correction, or deletion.
 
+## What your bots learn, and how to keep only what helps
+
+Once a day Zetta reads a bot's chats with you and looks for things worth remembering. A single message never teaches a bot: a lesson needs your own words behind it (Zetta checks that the quote is really in a message you wrote, never in a web page, a file or another bot), and it must either be said outright ("from now on", "always", "nunca") or show up in two chats or on two days. A lesson is one short sentence, kept as a small memory item.
+
+A new lesson goes **on trial**: the bot follows it at once, and Zetta watches what happens after the replies that used it. If you did not have to step in (stop, redirect, correct or rate down), it is kept after a handful of uses. If you did, it is dropped. Dropping archives the lesson: nothing is deleted, and you can bring it back.
+
+- **Lessons** (sidebar) ranks every memory item and skill by what happened after it was used (helps, hurts, unclear, unused), next to how often you step in for that bot. Select the ones not worth keeping and archive them together.
+- **Suggestions** (a tab of the same page) is the weekly tidy-up: lessons that repeat or pull against each other, items a newer one replaced, items nobody used for months. It only suggests. Nothing changes until you accept, and a dismissed suggestion does not come back.
+- **What I learned** (the bot's settings, Skills and learning) lists the lessons of one bot and why each exists, with **Run now** to read today's chats on the spot. Turn the daily reading, the automatic forgetting or the tidy-up off for yourself there.
+- **Is it getting better?** (the bot's Quality tab) draws how often you stepped in, week by week, with the lessons that started, were kept or dropped. **Compare without memory** on a saved test asks the same question once as the bot is and once without its memory and skills, side by side: your pick counts for or against what the bot knows.
+- A lesson check can run as a workflow: **Add the weekly check to my workflows** on the Lessons page. It asks your Chief which lessons to drop and waits for your yes.
+
+A bot never rewrites a memory item by itself. When it wants to replace one, you get a suggestion to accept.
+
 ## Turn a successful task into a routine
 
 Start from a successful task or a reusable instruction. Keep the method, not an accidental copy of yesterday's source data or secrets. Configure through forms or an authorized bot conversation, then inspect the same draft and validation results.

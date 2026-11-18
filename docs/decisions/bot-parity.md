@@ -49,3 +49,13 @@ Human only, on purpose, from the same change: **the speech-to-text provider and 
 - Workflows: bots cannot run a workflow they did not propose; the Chief runs, reads and edits.
 - Skills: other bots can search and install (card); the Chief manages the library.
 - Apps: a bot builds and updates apps; the tool policy and per-bot assignment are the person's.
+
+## Added on 2026-11-18 (what the bots learn)
+
+| Feature                                              | Tool                                                                                                                    | Notes                                                                                                                                         |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lessons the bots learned: list, stats                | `zetta:lessons` list, stats (Chief, and any of the person's own bots, read), MCP `list_lessons`, `get_lessons_progress` | Reads answer at once. A bot of someone else gets neither. See `lessons.md`.                                                                   |
+| Keep, drop, bring back, accept or turn down a lesson | `zetta:lessons` keep, drop, restore, accept, reject (Chief, a card each time), MCP `change_lessons` (write scope)       | Nothing is deleted: a dropped lesson is archived and comes back with restore. A workflow's `zetta` step uses the same tool.                   |
+| Weekly lesson check                                  | Workflow tool kind `zetta`, target `lessons` (list, stats, keep, drop, restore, accept, reject)                         | A write step must follow an approval step, like every tool that changes something. The Lessons page adds the ready-made check with one click. |
+| Every bot knowing what it learned                    | No tool: each bot's prompt already carries its own "YOUR LESSONS" block                                                 | A separate read tool for every bot would add tokens to every turn for what the prompt already says. Decided on 2026-11-18.                    |
+| Tidy-up suggestions, "is it getting better?"         | None for bots yet (web app only)                                                                                        | Suggestions are accepted by the person on the Lessons page. The weekly trend is on the bot's Quality tab. **Not done:** a Chief read of both. |

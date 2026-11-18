@@ -2,3 +2,7 @@ env = false
 
 [test]
 preload = ["./src/test-support/embedded-db.preload.ts"]
+
+[run]
+# Run package scripts and node-shebang binaries (vp, astro, tsdown) on Bun, not Node.
+bun = true

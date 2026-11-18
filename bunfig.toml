@@ -1,1 +1,5 @@
 env = false
+
+[run]
+# Run package scripts and node-shebang binaries (vp, astro, tsdown) on Bun, not Node.
+bun = true

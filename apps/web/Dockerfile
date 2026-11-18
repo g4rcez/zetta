@@ -1,5 +1,4 @@
-FROM node:24 AS builder
-COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
+FROM oven/bun:1 AS builder
 WORKDIR /app
 
 COPY . .

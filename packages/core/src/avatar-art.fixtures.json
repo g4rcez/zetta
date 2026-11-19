@@ -1,0 +1,488 @@
+{
+  "arrow": [
+    {
+      "colors": ["#46a05f"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#87c197\"></stop><stop offset=\"1\" stop-color=\"#357847\"></stop></linearGradient></defs><path d=\"M12 9Q14 4 19 7L56 34Q61 38 54 40L38 43L30 57Q27 62 24 56Z\" fill=\"url(#g)\"></path><rect x=\"18.5\" y=\"23.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"35.099999999999994\" y=\"23.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><path d=\"M12 9Q14 4 19 7L56 34Q61 38 54 40L38 43L30 57Q27 62 24 56Z\" fill=\"url(#g)\"></path><rect x=\"18.5\" y=\"23.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"35.099999999999994\" y=\"23.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><path d=\"M12 9Q14 4 19 7L56 34Q61 38 54 40L38 43L30 57Q27 62 24 56Z\" fill=\"url(#g)\"></path><rect x=\"18.5\" y=\"23.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"35.099999999999994\" y=\"23.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><path d=\"M12 9Q14 4 19 7L56 34Q61 38 54 40L38 43L30 57Q27 62 24 56Z\" fill=\"url(#g)\"></path><rect x=\"18.5\" y=\"23.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"35.099999999999994\" y=\"23.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "blob": [
+    {
+      "colors": ["#4a80e6"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#89acef\"></stop><stop offset=\"1\" stop-color=\"#3860ad\"></stop></linearGradient></defs><path d=\"M32 6C48 4 58 18 56 34C54 50 42 58 28 56C14 54 6 42 8 28C10 14 20 7 32 6Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><path d=\"M32 6C48 4 58 18 56 34C54 50 42 58 28 56C14 54 6 42 8 28C10 14 20 7 32 6Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><path d=\"M32 6C48 4 58 18 56 34C54 50 42 58 28 56C14 54 6 42 8 28C10 14 20 7 32 6Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><path d=\"M32 6C48 4 58 18 56 34C54 50 42 58 28 56C14 54 6 42 8 28C10 14 20 7 32 6Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "circle": [
+    {
+      "colors": ["#c95454"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#dc9090\"></stop><stop offset=\"1\" stop-color=\"#973f3f\"></stop></linearGradient></defs><circle cx=\"32\" cy=\"32\" r=\"26\" fill=\"url(#g)\"></circle><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><circle cx=\"32\" cy=\"32\" r=\"26\" fill=\"url(#g)\"></circle><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><circle cx=\"32\" cy=\"32\" r=\"26\" fill=\"url(#g)\"></circle><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><circle cx=\"32\" cy=\"32\" r=\"26\" fill=\"url(#g)\"></circle><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "square": [
+    {
+      "colors": ["#dc8a42"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e8b384\"></stop><stop offset=\"1\" stop-color=\"#a56832\"></stop></linearGradient></defs><rect x=\"7\" y=\"7\" width=\"50\" height=\"50\" rx=\"14\" fill=\"url(#g)\"></rect><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><rect x=\"7\" y=\"7\" width=\"50\" height=\"50\" rx=\"14\" fill=\"url(#g)\"></rect><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><rect x=\"7\" y=\"7\" width=\"50\" height=\"50\" rx=\"14\" fill=\"url(#g)\"></rect><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><rect x=\"7\" y=\"7\" width=\"50\" height=\"50\" rx=\"14\" fill=\"url(#g)\"></rect><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "pill": [
+    {
+      "colors": ["#7e5cc4"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ab95d9\"></stop><stop offset=\"1\" stop-color=\"#5f4593\"></stop></linearGradient></defs><rect x=\"14\" y=\"5\" width=\"36\" height=\"54\" rx=\"18\" fill=\"url(#g)\"></rect><rect x=\"20.5\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><rect x=\"14\" y=\"5\" width=\"36\" height=\"54\" rx=\"18\" fill=\"url(#g)\"></rect><rect x=\"20.5\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><rect x=\"14\" y=\"5\" width=\"36\" height=\"54\" rx=\"18\" fill=\"url(#g)\"></rect><rect x=\"20.5\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><rect x=\"14\" y=\"5\" width=\"36\" height=\"54\" rx=\"18\" fill=\"url(#g)\"></rect><rect x=\"20.5\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "drop": [
+    {
+      "colors": ["#47a5c4"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#87c5d9\"></stop><stop offset=\"1\" stop-color=\"#357c93\"></stop></linearGradient></defs><path d=\"M32 5C40 17 54 26 54 40C54 52 44 59 32 59C20 59 10 52 10 40C10 26 24 17 32 5Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"35.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"35.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><path d=\"M32 5C40 17 54 26 54 40C54 52 44 59 32 59C20 59 10 52 10 40C10 26 24 17 32 5Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"35.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"35.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><path d=\"M32 5C40 17 54 26 54 40C54 52 44 59 32 59C20 59 10 52 10 40C10 26 24 17 32 5Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"35.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"35.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><path d=\"M32 5C40 17 54 26 54 40C54 52 44 59 32 59C20 59 10 52 10 40C10 26 24 17 32 5Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"35.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"35.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "bell": [
+    {
+      "colors": ["#c8588a"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#db92b3\"></stop><stop offset=\"1\" stop-color=\"#964268\"></stop></linearGradient></defs><path d=\"M22 8Q32 4 42 8L56 52Q57 58 50 58H14Q7 58 8 52Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><path d=\"M22 8Q32 4 42 8L56 52Q57 58 50 58H14Q7 58 8 52Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><path d=\"M22 8Q32 4 42 8L56 52Q57 58 50 58H14Q7 58 8 52Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><path d=\"M22 8Q32 4 42 8L56 52Q57 58 50 58H14Q7 58 8 52Z\" fill=\"url(#g)\"></path><rect x=\"20.5\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "hexagon": [
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><polygon points=\"32,7 54,19 54,45 32,57 10,45 10,19\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><polygon points=\"32,7 54,19 54,45 32,57 10,45 10,19\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><polygon points=\"32,7 54,19 54,45 32,57 10,45 10,19\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><polygon points=\"32,7 54,19 54,45 32,57 10,45 10,19\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "diamond": [
+    {
+      "colors": ["#4aa396"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#89c3bb\"></stop><stop offset=\"1\" stop-color=\"#387a71\"></stop></linearGradient></defs><rect x=\"15\" y=\"15\" width=\"34\" height=\"34\" rx=\"5\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\" transform=\"rotate(45 32 32)\"></rect><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><rect x=\"15\" y=\"15\" width=\"34\" height=\"34\" rx=\"5\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\" transform=\"rotate(45 32 32)\"></rect><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><rect x=\"15\" y=\"15\" width=\"34\" height=\"34\" rx=\"5\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\" transform=\"rotate(45 32 32)\"></rect><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><rect x=\"15\" y=\"15\" width=\"34\" height=\"34\" rx=\"5\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\" transform=\"rotate(45 32 32)\"></rect><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "star": [
+    {
+      "colors": ["#d66b57"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e49f92\"></stop><stop offset=\"1\" stop-color=\"#a15041\"></stop></linearGradient></defs><polygon points=\"32.0,8.0 39.1,25.3 57.7,26.7 43.4,38.7 47.9,56.8 32.0,47.0 16.1,56.8 20.6,38.7 6.3,26.7 24.9,25.3\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><polygon points=\"32.0,8.0 39.1,25.3 57.7,26.7 43.4,38.7 47.9,56.8 32.0,47.0 16.1,56.8 20.6,38.7 6.3,26.7 24.9,25.3\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><polygon points=\"32.0,8.0 39.1,25.3 57.7,26.7 43.4,38.7 47.9,56.8 32.0,47.0 16.1,56.8 20.6,38.7 6.3,26.7 24.9,25.3\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><polygon points=\"32.0,8.0 39.1,25.3 57.7,26.7 43.4,38.7 47.9,56.8 32.0,47.0 16.1,56.8 20.6,38.7 6.3,26.7 24.9,25.3\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"31.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "triangle": [
+    {
+      "colors": ["#46a05f"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#87c197\"></stop><stop offset=\"1\" stop-color=\"#357847\"></stop></linearGradient></defs><polygon points=\"32,9 56,52 8,52\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"34.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"34.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><polygon points=\"32,9 56,52 8,52\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"34.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"34.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><polygon points=\"32,9 56,52 8,52\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"34.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"34.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><polygon points=\"32,9 56,52 8,52\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"34.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"34.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "pentagon": [
+    {
+      "colors": ["#4a80e6"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#89acef\"></stop><stop offset=\"1\" stop-color=\"#3860ad\"></stop></linearGradient></defs><polygon points=\"32.0,7.0 56.7,25.0 47.3,54.0 16.7,54.0 7.3,25.0\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"27.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"27.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><polygon points=\"32.0,7.0 56.7,25.0 47.3,54.0 16.7,54.0 7.3,25.0\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"27.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"27.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><polygon points=\"32.0,7.0 56.7,25.0 47.3,54.0 16.7,54.0 7.3,25.0\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"27.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"27.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><polygon points=\"32.0,7.0 56.7,25.0 47.3,54.0 16.7,54.0 7.3,25.0\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"27.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"27.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "octagon": [
+    {
+      "colors": ["#c95454"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#dc9090\"></stop><stop offset=\"1\" stop-color=\"#973f3f\"></stop></linearGradient></defs><polygon points=\"41.9,8.0 56.0,22.1 56.0,41.9 41.9,56.0 22.1,56.0 8.0,41.9 8.0,22.1 22.1,8.0\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><polygon points=\"41.9,8.0 56.0,22.1 56.0,41.9 41.9,56.0 22.1,56.0 8.0,41.9 8.0,22.1 22.1,8.0\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><polygon points=\"41.9,8.0 56.0,22.1 56.0,41.9 41.9,56.0 22.1,56.0 8.0,41.9 8.0,22.1 22.1,8.0\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><polygon points=\"41.9,8.0 56.0,22.1 56.0,41.9 41.9,56.0 22.1,56.0 8.0,41.9 8.0,22.1 22.1,8.0\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "cross": [
+    {
+      "colors": ["#dc8a42"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e8b384\"></stop><stop offset=\"1\" stop-color=\"#a56832\"></stop></linearGradient></defs><polygon points=\"24,8 40,8 40,24 56,24 56,40 40,40 40,56 24,56 24,40 8,40 8,24 24,24\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><polygon points=\"24,8 40,8 40,24 56,24 56,40 40,40 40,56 24,56 24,40 8,40 8,24 24,24\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><polygon points=\"24,8 40,8 40,24 56,24 56,40 40,40 40,56 24,56 24,40 8,40 8,24 24,24\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><polygon points=\"24,8 40,8 40,24 56,24 56,40 40,40 40,56 24,56 24,40 8,40 8,24 24,24\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "arch": [
+    {
+      "colors": ["#7e5cc4"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ab95d9\"></stop><stop offset=\"1\" stop-color=\"#5f4593\"></stop></linearGradient></defs><path d=\"M10 57V32A22 22 0 0 1 54 32V57Z\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></path><rect x=\"20.5\" y=\"32.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"32.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><path d=\"M10 57V32A22 22 0 0 1 54 32V57Z\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></path><rect x=\"20.5\" y=\"32.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"32.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><path d=\"M10 57V32A22 22 0 0 1 54 32V57Z\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></path><rect x=\"20.5\" y=\"32.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"32.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><path d=\"M10 57V32A22 22 0 0 1 54 32V57Z\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></path><rect x=\"20.5\" y=\"32.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"32.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "parallelogram": [
+    {
+      "colors": ["#47a5c4"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#87c5d9\"></stop><stop offset=\"1\" stop-color=\"#357c93\"></stop></linearGradient></defs><polygon points=\"20,10 58,10 44,54 6,54\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><polygon points=\"20,10 58,10 44,54 6,54\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><polygon points=\"20,10 58,10 44,54 6,54\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><polygon points=\"20,10 58,10 44,54 6,54\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "kite": [
+    {
+      "colors": ["#c8588a"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#db92b3\"></stop><stop offset=\"1\" stop-color=\"#964268\"></stop></linearGradient></defs><polygon points=\"32,6 54,28 32,58 10,28\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><polygon points=\"32,6 54,28 32,58 10,28\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><polygon points=\"32,6 54,28 32,58 10,28\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><polygon points=\"32,6 54,28 32,58 10,28\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"24.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "burst": [
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><polygon points=\"32.0,5.0 40.4,11.7 51.1,12.9 52.3,23.6 59.0,32.0 52.3,40.4 51.1,51.1 40.4,52.3 32.0,59.0 23.6,52.3 12.9,51.1 11.7,40.4 5.0,32.0 11.7,23.6 12.9,12.9 23.6,11.7\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#ffffff"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\"></stop><stop offset=\"1\" stop-color=\"#bfbfbf\"></stop></linearGradient></defs><polygon points=\"32.0,5.0 40.4,11.7 51.1,12.9 52.3,23.6 59.0,32.0 52.3,40.4 51.1,51.1 40.4,52.3 32.0,59.0 23.6,52.3 12.9,51.1 11.7,40.4 5.0,32.0 11.7,23.6 12.9,12.9 23.6,11.7\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#101820"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#64696e\"></stop><stop offset=\"1\" stop-color=\"#0c1218\"></stop></linearGradient></defs><polygon points=\"32.0,5.0 40.4,11.7 51.1,12.9 52.3,23.6 59.0,32.0 52.3,40.4 51.1,51.1 40.4,52.3 32.0,59.0 23.6,52.3 12.9,51.1 11.7,40.4 5.0,32.0 11.7,23.6 12.9,12.9 23.6,11.7\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#fff\" fill-opacity=\"0.8\"></rect>"
+    },
+    {
+      "colors": ["#cfa843"],
+      "svg": "<defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#e0c685\"></stop><stop offset=\"1\" stop-color=\"#9b7e32\"></stop></linearGradient></defs><polygon points=\"32.0,5.0 40.4,11.7 51.1,12.9 52.3,23.6 59.0,32.0 52.3,40.4 51.1,51.1 40.4,52.3 32.0,59.0 23.6,52.3 12.9,51.1 11.7,40.4 5.0,32.0 11.7,23.6 12.9,12.9 23.6,11.7\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"5\" stroke-linejoin=\"round\"></polygon><rect x=\"20.5\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect><rect x=\"37.099999999999994\" y=\"26.9\" width=\"6.4\" height=\"10.2\" rx=\"2.4\" fill=\"#000\" fill-opacity=\"0.8\"></rect>"
+    }
+  ],
+  "orbit": [
+    {
+      "colors": ["#0b0b0f", "#f4f4f5", "#7c7cff"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#0b0b0f\"></rect><circle cx=\"32\" cy=\"32\" r=\"13\" fill=\"#f4f4f5\"></circle><ellipse cx=\"32\" cy=\"32\" rx=\"25\" ry=\"9\" fill=\"none\" stroke=\"#7c7cff\" stroke-width=\"3.5\" transform=\"rotate(-28 32 32)\"></ellipse><path d=\"M14 52 50 12\" stroke=\"#7c7cff\" stroke-width=\"3.5\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#ffffff", "#000000", "#ff0000"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#ffffff\"></rect><circle cx=\"32\" cy=\"32\" r=\"13\" fill=\"#000000\"></circle><ellipse cx=\"32\" cy=\"32\" rx=\"25\" ry=\"9\" fill=\"none\" stroke=\"#ff0000\" stroke-width=\"3.5\" transform=\"rotate(-28 32 32)\"></ellipse><path d=\"M14 52 50 12\" stroke=\"#ff0000\" stroke-width=\"3.5\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#123456", "#abcdef", "#fedcba"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#123456\"></rect><circle cx=\"32\" cy=\"32\" r=\"13\" fill=\"#abcdef\"></circle><ellipse cx=\"32\" cy=\"32\" rx=\"25\" ry=\"9\" fill=\"none\" stroke=\"#fedcba\" stroke-width=\"3.5\" transform=\"rotate(-28 32 32)\"></ellipse><path d=\"M14 52 50 12\" stroke=\"#fedcba\" stroke-width=\"3.5\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#112233"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#112233\"></rect><circle cx=\"32\" cy=\"32\" r=\"13\" fill=\"#f4f4f5\"></circle><ellipse cx=\"32\" cy=\"32\" rx=\"25\" ry=\"9\" fill=\"none\" stroke=\"#7c7cff\" stroke-width=\"3.5\" transform=\"rotate(-28 32 32)\"></ellipse><path d=\"M14 52 50 12\" stroke=\"#7c7cff\" stroke-width=\"3.5\" stroke-linecap=\"round\"></path>"
+    }
+  ],
+  "mouse": [
+    {
+      "colors": ["#fde68a", "#9ca3af", "#f9a8d4"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#fde68a\"></rect><circle cx=\"15\" cy=\"17\" r=\"11\" fill=\"#9ca3af\"></circle><circle cx=\"49\" cy=\"17\" r=\"11\" fill=\"#9ca3af\"></circle><circle cx=\"15\" cy=\"17\" r=\"6\" fill=\"#f9a8d4\"></circle><circle cx=\"49\" cy=\"17\" r=\"6\" fill=\"#f9a8d4\"></circle><ellipse cx=\"32\" cy=\"38\" rx=\"20\" ry=\"18\" fill=\"#9ca3af\"></ellipse><circle cx=\"24\" cy=\"34\" r=\"3\" fill=\"#000\"></circle><circle cx=\"40\" cy=\"34\" r=\"3\" fill=\"#000\"></circle><ellipse cx=\"32\" cy=\"43\" rx=\"3.5\" ry=\"2.8\" fill=\"#f9a8d4\"></ellipse><path d=\"M10 40h9M10 46l9-3M54 40h-9M54 46l-9-3\" stroke=\"#1b1b1f\" stroke-width=\"1.5\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#ffffff", "#000000", "#ff0000"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#ffffff\"></rect><circle cx=\"15\" cy=\"17\" r=\"11\" fill=\"#000000\"></circle><circle cx=\"49\" cy=\"17\" r=\"11\" fill=\"#000000\"></circle><circle cx=\"15\" cy=\"17\" r=\"6\" fill=\"#ff0000\"></circle><circle cx=\"49\" cy=\"17\" r=\"6\" fill=\"#ff0000\"></circle><ellipse cx=\"32\" cy=\"38\" rx=\"20\" ry=\"18\" fill=\"#000000\"></ellipse><circle cx=\"24\" cy=\"34\" r=\"3\" fill=\"#fff\"></circle><circle cx=\"40\" cy=\"34\" r=\"3\" fill=\"#fff\"></circle><ellipse cx=\"32\" cy=\"43\" rx=\"3.5\" ry=\"2.8\" fill=\"#ff0000\"></ellipse><path d=\"M10 40h9M10 46l9-3M54 40h-9M54 46l-9-3\" stroke=\"#1b1b1f\" stroke-width=\"1.5\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#123456", "#abcdef", "#fedcba"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#123456\"></rect><circle cx=\"15\" cy=\"17\" r=\"11\" fill=\"#abcdef\"></circle><circle cx=\"49\" cy=\"17\" r=\"11\" fill=\"#abcdef\"></circle><circle cx=\"15\" cy=\"17\" r=\"6\" fill=\"#fedcba\"></circle><circle cx=\"49\" cy=\"17\" r=\"6\" fill=\"#fedcba\"></circle><ellipse cx=\"32\" cy=\"38\" rx=\"20\" ry=\"18\" fill=\"#abcdef\"></ellipse><circle cx=\"24\" cy=\"34\" r=\"3\" fill=\"#000\"></circle><circle cx=\"40\" cy=\"34\" r=\"3\" fill=\"#000\"></circle><ellipse cx=\"32\" cy=\"43\" rx=\"3.5\" ry=\"2.8\" fill=\"#fedcba\"></ellipse><path d=\"M10 40h9M10 46l9-3M54 40h-9M54 46l-9-3\" stroke=\"#1b1b1f\" stroke-width=\"1.5\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#112233"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#112233\"></rect><circle cx=\"15\" cy=\"17\" r=\"11\" fill=\"#9ca3af\"></circle><circle cx=\"49\" cy=\"17\" r=\"11\" fill=\"#9ca3af\"></circle><circle cx=\"15\" cy=\"17\" r=\"6\" fill=\"#f9a8d4\"></circle><circle cx=\"49\" cy=\"17\" r=\"6\" fill=\"#f9a8d4\"></circle><ellipse cx=\"32\" cy=\"38\" rx=\"20\" ry=\"18\" fill=\"#9ca3af\"></ellipse><circle cx=\"24\" cy=\"34\" r=\"3\" fill=\"#000\"></circle><circle cx=\"40\" cy=\"34\" r=\"3\" fill=\"#000\"></circle><ellipse cx=\"32\" cy=\"43\" rx=\"3.5\" ry=\"2.8\" fill=\"#f9a8d4\"></ellipse><path d=\"M10 40h9M10 46l9-3M54 40h-9M54 46l-9-3\" stroke=\"#1b1b1f\" stroke-width=\"1.5\" stroke-linecap=\"round\"></path>"
+    }
+  ],
+  "robot": [
+    {
+      "colors": ["#0f172a", "#94a3b8", "#22d3ee"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#0f172a\"></rect><path d=\"M32 8v8\" stroke=\"#22d3ee\" stroke-width=\"3\" stroke-linecap=\"round\"></path><circle cx=\"32\" cy=\"8\" r=\"3.5\" fill=\"#22d3ee\"></circle><rect x=\"10\" y=\"16\" width=\"44\" height=\"36\" rx=\"9\" fill=\"#94a3b8\"></rect><rect x=\"17\" y=\"26\" width=\"10\" height=\"9\" rx=\"3\" fill=\"#22d3ee\"></rect><rect x=\"37\" y=\"26\" width=\"10\" height=\"9\" rx=\"3\" fill=\"#22d3ee\"></rect><path d=\"M22 43h20\" stroke=\"#0f172a\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-dasharray=\"4 3\"></path>"
+    },
+    {
+      "colors": ["#ffffff", "#000000", "#ff0000"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#ffffff\"></rect><path d=\"M32 8v8\" stroke=\"#ff0000\" stroke-width=\"3\" stroke-linecap=\"round\"></path><circle cx=\"32\" cy=\"8\" r=\"3.5\" fill=\"#ff0000\"></circle><rect x=\"10\" y=\"16\" width=\"44\" height=\"36\" rx=\"9\" fill=\"#000000\"></rect><rect x=\"17\" y=\"26\" width=\"10\" height=\"9\" rx=\"3\" fill=\"#ff0000\"></rect><rect x=\"37\" y=\"26\" width=\"10\" height=\"9\" rx=\"3\" fill=\"#ff0000\"></rect><path d=\"M22 43h20\" stroke=\"#ffffff\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-dasharray=\"4 3\"></path>"
+    },
+    {
+      "colors": ["#123456", "#abcdef", "#fedcba"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#123456\"></rect><path d=\"M32 8v8\" stroke=\"#fedcba\" stroke-width=\"3\" stroke-linecap=\"round\"></path><circle cx=\"32\" cy=\"8\" r=\"3.5\" fill=\"#fedcba\"></circle><rect x=\"10\" y=\"16\" width=\"44\" height=\"36\" rx=\"9\" fill=\"#abcdef\"></rect><rect x=\"17\" y=\"26\" width=\"10\" height=\"9\" rx=\"3\" fill=\"#fedcba\"></rect><rect x=\"37\" y=\"26\" width=\"10\" height=\"9\" rx=\"3\" fill=\"#fedcba\"></rect><path d=\"M22 43h20\" stroke=\"#123456\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-dasharray=\"4 3\"></path>"
+    },
+    {
+      "colors": ["#112233"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#112233\"></rect><path d=\"M32 8v8\" stroke=\"#22d3ee\" stroke-width=\"3\" stroke-linecap=\"round\"></path><circle cx=\"32\" cy=\"8\" r=\"3.5\" fill=\"#22d3ee\"></circle><rect x=\"10\" y=\"16\" width=\"44\" height=\"36\" rx=\"9\" fill=\"#94a3b8\"></rect><rect x=\"17\" y=\"26\" width=\"10\" height=\"9\" rx=\"3\" fill=\"#22d3ee\"></rect><rect x=\"37\" y=\"26\" width=\"10\" height=\"9\" rx=\"3\" fill=\"#22d3ee\"></rect><path d=\"M22 43h20\" stroke=\"#112233\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-dasharray=\"4 3\"></path>"
+    }
+  ],
+  "cat": [
+    {
+      "colors": ["#c7d2fe", "#f59e0b", "#fef3c7"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#c7d2fe\"></rect><path d=\"M10 28 12 6l16 12zM54 28 52 6 36 18z\" fill=\"#f59e0b\"></path><circle cx=\"32\" cy=\"36\" r=\"22\" fill=\"#f59e0b\"></circle><ellipse cx=\"32\" cy=\"44\" rx=\"10\" ry=\"7\" fill=\"#fef3c7\"></ellipse><ellipse cx=\"23\" cy=\"33\" rx=\"2.5\" ry=\"3.5\" fill=\"#000\"></ellipse><ellipse cx=\"41\" cy=\"33\" rx=\"2.5\" ry=\"3.5\" fill=\"#000\"></ellipse><path d=\"M29 41h6l-3 3z\" fill=\"#1b1b1f\"></path><path d=\"M6 36h10M6 42l10-2M58 36H48M58 42l-10-2\" stroke=\"#1b1b1f\" stroke-width=\"1.5\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#ffffff", "#000000", "#ff0000"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#ffffff\"></rect><path d=\"M10 28 12 6l16 12zM54 28 52 6 36 18z\" fill=\"#000000\"></path><circle cx=\"32\" cy=\"36\" r=\"22\" fill=\"#000000\"></circle><ellipse cx=\"32\" cy=\"44\" rx=\"10\" ry=\"7\" fill=\"#ff0000\"></ellipse><ellipse cx=\"23\" cy=\"33\" rx=\"2.5\" ry=\"3.5\" fill=\"#fff\"></ellipse><ellipse cx=\"41\" cy=\"33\" rx=\"2.5\" ry=\"3.5\" fill=\"#fff\"></ellipse><path d=\"M29 41h6l-3 3z\" fill=\"#1b1b1f\"></path><path d=\"M6 36h10M6 42l10-2M58 36H48M58 42l-10-2\" stroke=\"#1b1b1f\" stroke-width=\"1.5\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#123456", "#abcdef", "#fedcba"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#123456\"></rect><path d=\"M10 28 12 6l16 12zM54 28 52 6 36 18z\" fill=\"#abcdef\"></path><circle cx=\"32\" cy=\"36\" r=\"22\" fill=\"#abcdef\"></circle><ellipse cx=\"32\" cy=\"44\" rx=\"10\" ry=\"7\" fill=\"#fedcba\"></ellipse><ellipse cx=\"23\" cy=\"33\" rx=\"2.5\" ry=\"3.5\" fill=\"#000\"></ellipse><ellipse cx=\"41\" cy=\"33\" rx=\"2.5\" ry=\"3.5\" fill=\"#000\"></ellipse><path d=\"M29 41h6l-3 3z\" fill=\"#1b1b1f\"></path><path d=\"M6 36h10M6 42l10-2M58 36H48M58 42l-10-2\" stroke=\"#1b1b1f\" stroke-width=\"1.5\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#112233"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#112233\"></rect><path d=\"M10 28 12 6l16 12zM54 28 52 6 36 18z\" fill=\"#f59e0b\"></path><circle cx=\"32\" cy=\"36\" r=\"22\" fill=\"#f59e0b\"></circle><ellipse cx=\"32\" cy=\"44\" rx=\"10\" ry=\"7\" fill=\"#fef3c7\"></ellipse><ellipse cx=\"23\" cy=\"33\" rx=\"2.5\" ry=\"3.5\" fill=\"#000\"></ellipse><ellipse cx=\"41\" cy=\"33\" rx=\"2.5\" ry=\"3.5\" fill=\"#000\"></ellipse><path d=\"M29 41h6l-3 3z\" fill=\"#1b1b1f\"></path><path d=\"M6 36h10M6 42l10-2M58 36H48M58 42l-10-2\" stroke=\"#1b1b1f\" stroke-width=\"1.5\" stroke-linecap=\"round\"></path>"
+    }
+  ],
+  "owl": [
+    {
+      "colors": ["#134e4a", "#a16207", "#fde047"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#134e4a\"></rect><path d=\"M12 10 22 18H42L52 10V40C52 50 43 58 32 58S12 50 12 40z\" fill=\"#a16207\"></path><circle cx=\"23\" cy=\"30\" r=\"9\" fill=\"#fff\"></circle><circle cx=\"41\" cy=\"30\" r=\"9\" fill=\"#fff\"></circle><circle cx=\"23\" cy=\"30\" r=\"4.5\" fill=\"#fde047\"></circle><circle cx=\"41\" cy=\"30\" r=\"4.5\" fill=\"#fde047\"></circle><circle cx=\"23\" cy=\"30\" r=\"2\" fill=\"#1b1b1f\"></circle><circle cx=\"41\" cy=\"30\" r=\"2\" fill=\"#1b1b1f\"></circle><path d=\"M28 38h8l-4 8z\" fill=\"#fde047\"></path>"
+    },
+    {
+      "colors": ["#ffffff", "#000000", "#ff0000"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#ffffff\"></rect><path d=\"M12 10 22 18H42L52 10V40C52 50 43 58 32 58S12 50 12 40z\" fill=\"#000000\"></path><circle cx=\"23\" cy=\"30\" r=\"9\" fill=\"#fff\"></circle><circle cx=\"41\" cy=\"30\" r=\"9\" fill=\"#fff\"></circle><circle cx=\"23\" cy=\"30\" r=\"4.5\" fill=\"#ff0000\"></circle><circle cx=\"41\" cy=\"30\" r=\"4.5\" fill=\"#ff0000\"></circle><circle cx=\"23\" cy=\"30\" r=\"2\" fill=\"#1b1b1f\"></circle><circle cx=\"41\" cy=\"30\" r=\"2\" fill=\"#1b1b1f\"></circle><path d=\"M28 38h8l-4 8z\" fill=\"#ff0000\"></path>"
+    },
+    {
+      "colors": ["#123456", "#abcdef", "#fedcba"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#123456\"></rect><path d=\"M12 10 22 18H42L52 10V40C52 50 43 58 32 58S12 50 12 40z\" fill=\"#abcdef\"></path><circle cx=\"23\" cy=\"30\" r=\"9\" fill=\"#fff\"></circle><circle cx=\"41\" cy=\"30\" r=\"9\" fill=\"#fff\"></circle><circle cx=\"23\" cy=\"30\" r=\"4.5\" fill=\"#fedcba\"></circle><circle cx=\"41\" cy=\"30\" r=\"4.5\" fill=\"#fedcba\"></circle><circle cx=\"23\" cy=\"30\" r=\"2\" fill=\"#1b1b1f\"></circle><circle cx=\"41\" cy=\"30\" r=\"2\" fill=\"#1b1b1f\"></circle><path d=\"M28 38h8l-4 8z\" fill=\"#fedcba\"></path>"
+    },
+    {
+      "colors": ["#112233"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#112233\"></rect><path d=\"M12 10 22 18H42L52 10V40C52 50 43 58 32 58S12 50 12 40z\" fill=\"#a16207\"></path><circle cx=\"23\" cy=\"30\" r=\"9\" fill=\"#fff\"></circle><circle cx=\"41\" cy=\"30\" r=\"9\" fill=\"#fff\"></circle><circle cx=\"23\" cy=\"30\" r=\"4.5\" fill=\"#fde047\"></circle><circle cx=\"41\" cy=\"30\" r=\"4.5\" fill=\"#fde047\"></circle><circle cx=\"23\" cy=\"30\" r=\"2\" fill=\"#1b1b1f\"></circle><circle cx=\"41\" cy=\"30\" r=\"2\" fill=\"#1b1b1f\"></circle><path d=\"M28 38h8l-4 8z\" fill=\"#fde047\"></path>"
+    }
+  ],
+  "spark": [
+    {
+      "colors": ["#312e81", "#fbbf24", "#f472b6"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#312e81\"></rect><path d=\"M30 8c2 14 8 20 22 22-14 2-20 8-22 22-2-14-8-20-22-22 14-2 20-8 22-22z\" fill=\"#fbbf24\"></path><path d=\"M50 36c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z\" fill=\"#f472b6\"></path>"
+    },
+    {
+      "colors": ["#ffffff", "#000000", "#ff0000"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#ffffff\"></rect><path d=\"M30 8c2 14 8 20 22 22-14 2-20 8-22 22-2-14-8-20-22-22 14-2 20-8 22-22z\" fill=\"#000000\"></path><path d=\"M50 36c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z\" fill=\"#ff0000\"></path>"
+    },
+    {
+      "colors": ["#123456", "#abcdef", "#fedcba"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#123456\"></rect><path d=\"M30 8c2 14 8 20 22 22-14 2-20 8-22 22-2-14-8-20-22-22 14-2 20-8 22-22z\" fill=\"#abcdef\"></path><path d=\"M50 36c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z\" fill=\"#fedcba\"></path>"
+    },
+    {
+      "colors": ["#112233"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#112233\"></rect><path d=\"M30 8c2 14 8 20 22 22-14 2-20 8-22 22-2-14-8-20-22-22 14-2 20-8 22-22z\" fill=\"#fbbf24\"></path><path d=\"M50 36c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z\" fill=\"#f472b6\"></path>"
+    }
+  ],
+  "ghost": [
+    {
+      "colors": ["#1e1b4b", "#e0e7ff", "#f9a8d4"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#1e1b4b\"></rect><path d=\"M15 56V30C15 18 22 9 32 9S49 18 49 30V56L43 50L37.5 56L32 50L26.5 56L21 50Z\" fill=\"#e0e7ff\"></path><ellipse cx=\"26\" cy=\"29\" rx=\"3\" ry=\"4\" fill=\"#000\"></ellipse><ellipse cx=\"38\" cy=\"29\" rx=\"3\" ry=\"4\" fill=\"#000\"></ellipse><circle cx=\"20.5\" cy=\"37\" r=\"3\" fill=\"#f9a8d4\"></circle><circle cx=\"43.5\" cy=\"37\" r=\"3\" fill=\"#f9a8d4\"></circle><ellipse cx=\"32\" cy=\"38\" rx=\"3\" ry=\"4\" fill=\"#1b1b1f\"></ellipse>"
+    },
+    {
+      "colors": ["#ffffff", "#000000", "#ff0000"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#ffffff\"></rect><path d=\"M15 56V30C15 18 22 9 32 9S49 18 49 30V56L43 50L37.5 56L32 50L26.5 56L21 50Z\" fill=\"#000000\"></path><ellipse cx=\"26\" cy=\"29\" rx=\"3\" ry=\"4\" fill=\"#fff\"></ellipse><ellipse cx=\"38\" cy=\"29\" rx=\"3\" ry=\"4\" fill=\"#fff\"></ellipse><circle cx=\"20.5\" cy=\"37\" r=\"3\" fill=\"#ff0000\"></circle><circle cx=\"43.5\" cy=\"37\" r=\"3\" fill=\"#ff0000\"></circle><ellipse cx=\"32\" cy=\"38\" rx=\"3\" ry=\"4\" fill=\"#1b1b1f\"></ellipse>"
+    },
+    {
+      "colors": ["#123456", "#abcdef", "#fedcba"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#123456\"></rect><path d=\"M15 56V30C15 18 22 9 32 9S49 18 49 30V56L43 50L37.5 56L32 50L26.5 56L21 50Z\" fill=\"#abcdef\"></path><ellipse cx=\"26\" cy=\"29\" rx=\"3\" ry=\"4\" fill=\"#000\"></ellipse><ellipse cx=\"38\" cy=\"29\" rx=\"3\" ry=\"4\" fill=\"#000\"></ellipse><circle cx=\"20.5\" cy=\"37\" r=\"3\" fill=\"#fedcba\"></circle><circle cx=\"43.5\" cy=\"37\" r=\"3\" fill=\"#fedcba\"></circle><ellipse cx=\"32\" cy=\"38\" rx=\"3\" ry=\"4\" fill=\"#1b1b1f\"></ellipse>"
+    },
+    {
+      "colors": ["#112233"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#112233\"></rect><path d=\"M15 56V30C15 18 22 9 32 9S49 18 49 30V56L43 50L37.5 56L32 50L26.5 56L21 50Z\" fill=\"#e0e7ff\"></path><ellipse cx=\"26\" cy=\"29\" rx=\"3\" ry=\"4\" fill=\"#000\"></ellipse><ellipse cx=\"38\" cy=\"29\" rx=\"3\" ry=\"4\" fill=\"#000\"></ellipse><circle cx=\"20.5\" cy=\"37\" r=\"3\" fill=\"#f9a8d4\"></circle><circle cx=\"43.5\" cy=\"37\" r=\"3\" fill=\"#f9a8d4\"></circle><ellipse cx=\"32\" cy=\"38\" rx=\"3\" ry=\"4\" fill=\"#1b1b1f\"></ellipse>"
+    }
+  ],
+  "rocket": [
+    {
+      "colors": ["#0c1a3a", "#e5e7eb", "#f97316"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#0c1a3a\"></rect><circle cx=\"11\" cy=\"13\" r=\"1.5\" fill=\"#e5e7eb\"></circle><circle cx=\"53\" cy=\"18\" r=\"1.5\" fill=\"#e5e7eb\"></circle><circle cx=\"50\" cy=\"55\" r=\"1.5\" fill=\"#e5e7eb\"></circle><path d=\"M26 46Q32 66 38 46Z\" fill=\"#f97316\"></path><path d=\"M25 34 14 50l12-4zM39 34l11 16-12-4z\" fill=\"#f97316\"></path><path d=\"M32 5C43 14 45 30 42 47H22C19 30 21 14 32 5z\" fill=\"#e5e7eb\"></path><circle cx=\"32\" cy=\"26\" r=\"6\" fill=\"#0c1a3a\" stroke=\"#f97316\" stroke-width=\"2.5\"></circle>"
+    },
+    {
+      "colors": ["#ffffff", "#000000", "#ff0000"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#ffffff\"></rect><circle cx=\"11\" cy=\"13\" r=\"1.5\" fill=\"#000000\"></circle><circle cx=\"53\" cy=\"18\" r=\"1.5\" fill=\"#000000\"></circle><circle cx=\"50\" cy=\"55\" r=\"1.5\" fill=\"#000000\"></circle><path d=\"M26 46Q32 66 38 46Z\" fill=\"#ff0000\"></path><path d=\"M25 34 14 50l12-4zM39 34l11 16-12-4z\" fill=\"#ff0000\"></path><path d=\"M32 5C43 14 45 30 42 47H22C19 30 21 14 32 5z\" fill=\"#000000\"></path><circle cx=\"32\" cy=\"26\" r=\"6\" fill=\"#ffffff\" stroke=\"#ff0000\" stroke-width=\"2.5\"></circle>"
+    },
+    {
+      "colors": ["#123456", "#abcdef", "#fedcba"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#123456\"></rect><circle cx=\"11\" cy=\"13\" r=\"1.5\" fill=\"#abcdef\"></circle><circle cx=\"53\" cy=\"18\" r=\"1.5\" fill=\"#abcdef\"></circle><circle cx=\"50\" cy=\"55\" r=\"1.5\" fill=\"#abcdef\"></circle><path d=\"M26 46Q32 66 38 46Z\" fill=\"#fedcba\"></path><path d=\"M25 34 14 50l12-4zM39 34l11 16-12-4z\" fill=\"#fedcba\"></path><path d=\"M32 5C43 14 45 30 42 47H22C19 30 21 14 32 5z\" fill=\"#abcdef\"></path><circle cx=\"32\" cy=\"26\" r=\"6\" fill=\"#123456\" stroke=\"#fedcba\" stroke-width=\"2.5\"></circle>"
+    },
+    {
+      "colors": ["#112233"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#112233\"></rect><circle cx=\"11\" cy=\"13\" r=\"1.5\" fill=\"#e5e7eb\"></circle><circle cx=\"53\" cy=\"18\" r=\"1.5\" fill=\"#e5e7eb\"></circle><circle cx=\"50\" cy=\"55\" r=\"1.5\" fill=\"#e5e7eb\"></circle><path d=\"M26 46Q32 66 38 46Z\" fill=\"#f97316\"></path><path d=\"M25 34 14 50l12-4zM39 34l11 16-12-4z\" fill=\"#f97316\"></path><path d=\"M32 5C43 14 45 30 42 47H22C19 30 21 14 32 5z\" fill=\"#e5e7eb\"></path><circle cx=\"32\" cy=\"26\" r=\"6\" fill=\"#112233\" stroke=\"#f97316\" stroke-width=\"2.5\"></circle>"
+    }
+  ],
+  "frog": [
+    {
+      "colors": ["#fef9c3", "#4ade80", "#fb7185"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#fef9c3\"></rect><ellipse cx=\"32\" cy=\"41\" rx=\"23\" ry=\"17\" fill=\"#4ade80\"></ellipse><circle cx=\"19\" cy=\"23\" r=\"10\" fill=\"#4ade80\"></circle><circle cx=\"45\" cy=\"23\" r=\"10\" fill=\"#4ade80\"></circle><circle cx=\"19\" cy=\"23\" r=\"6.5\" fill=\"#fff\"></circle><circle cx=\"45\" cy=\"23\" r=\"6.5\" fill=\"#fff\"></circle><circle cx=\"20\" cy=\"24\" r=\"3.2\" fill=\"#1b1b1f\"></circle><circle cx=\"44\" cy=\"24\" r=\"3.2\" fill=\"#1b1b1f\"></circle><circle cx=\"14\" cy=\"43\" r=\"3.5\" fill=\"#fb7185\"></circle><circle cx=\"50\" cy=\"43\" r=\"3.5\" fill=\"#fb7185\"></circle><path d=\"M20 45Q32 54 44 45\" fill=\"none\" stroke=\"#1b1b1f\" stroke-width=\"2.2\" stroke-linecap=\"round\"></path><path d=\"M29 36h.1M35 36h.1\" stroke=\"#1b1b1f\" stroke-width=\"2.4\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#ffffff", "#000000", "#ff0000"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#ffffff\"></rect><ellipse cx=\"32\" cy=\"41\" rx=\"23\" ry=\"17\" fill=\"#000000\"></ellipse><circle cx=\"19\" cy=\"23\" r=\"10\" fill=\"#000000\"></circle><circle cx=\"45\" cy=\"23\" r=\"10\" fill=\"#000000\"></circle><circle cx=\"19\" cy=\"23\" r=\"6.5\" fill=\"#fff\"></circle><circle cx=\"45\" cy=\"23\" r=\"6.5\" fill=\"#fff\"></circle><circle cx=\"20\" cy=\"24\" r=\"3.2\" fill=\"#1b1b1f\"></circle><circle cx=\"44\" cy=\"24\" r=\"3.2\" fill=\"#1b1b1f\"></circle><circle cx=\"14\" cy=\"43\" r=\"3.5\" fill=\"#ff0000\"></circle><circle cx=\"50\" cy=\"43\" r=\"3.5\" fill=\"#ff0000\"></circle><path d=\"M20 45Q32 54 44 45\" fill=\"none\" stroke=\"#1b1b1f\" stroke-width=\"2.2\" stroke-linecap=\"round\"></path><path d=\"M29 36h.1M35 36h.1\" stroke=\"#1b1b1f\" stroke-width=\"2.4\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#123456", "#abcdef", "#fedcba"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#123456\"></rect><ellipse cx=\"32\" cy=\"41\" rx=\"23\" ry=\"17\" fill=\"#abcdef\"></ellipse><circle cx=\"19\" cy=\"23\" r=\"10\" fill=\"#abcdef\"></circle><circle cx=\"45\" cy=\"23\" r=\"10\" fill=\"#abcdef\"></circle><circle cx=\"19\" cy=\"23\" r=\"6.5\" fill=\"#fff\"></circle><circle cx=\"45\" cy=\"23\" r=\"6.5\" fill=\"#fff\"></circle><circle cx=\"20\" cy=\"24\" r=\"3.2\" fill=\"#1b1b1f\"></circle><circle cx=\"44\" cy=\"24\" r=\"3.2\" fill=\"#1b1b1f\"></circle><circle cx=\"14\" cy=\"43\" r=\"3.5\" fill=\"#fedcba\"></circle><circle cx=\"50\" cy=\"43\" r=\"3.5\" fill=\"#fedcba\"></circle><path d=\"M20 45Q32 54 44 45\" fill=\"none\" stroke=\"#1b1b1f\" stroke-width=\"2.2\" stroke-linecap=\"round\"></path><path d=\"M29 36h.1M35 36h.1\" stroke=\"#1b1b1f\" stroke-width=\"2.4\" stroke-linecap=\"round\"></path>"
+    },
+    {
+      "colors": ["#112233"],
+      "svg": "<rect width=\"64\" height=\"64\" fill=\"#112233\"></rect><ellipse cx=\"32\" cy=\"41\" rx=\"23\" ry=\"17\" fill=\"#4ade80\"></ellipse><circle cx=\"19\" cy=\"23\" r=\"10\" fill=\"#4ade80\"></circle><circle cx=\"45\" cy=\"23\" r=\"10\" fill=\"#4ade80\"></circle><circle cx=\"19\" cy=\"23\" r=\"6.5\" fill=\"#fff\"></circle><circle cx=\"45\" cy=\"23\" r=\"6.5\" fill=\"#fff\"></circle><circle cx=\"20\" cy=\"24\" r=\"3.2\" fill=\"#1b1b1f\"></circle><circle cx=\"44\" cy=\"24\" r=\"3.2\" fill=\"#1b1b1f\"></circle><circle cx=\"14\" cy=\"43\" r=\"3.5\" fill=\"#fb7185\"></circle><circle cx=\"50\" cy=\"43\" r=\"3.5\" fill=\"#fb7185\"></circle><path d=\"M20 45Q32 54 44 45\" fill=\"none\" stroke=\"#1b1b1f\" stroke-width=\"2.2\" stroke-linecap=\"round\"></path><path d=\"M29 36h.1M35 36h.1\" stroke=\"#1b1b1f\" stroke-width=\"2.4\" stroke-linecap=\"round\"></path>"
+    }
+  ]
+}

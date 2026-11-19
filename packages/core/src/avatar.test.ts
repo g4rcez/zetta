@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { AVATAR_IMAGE_MAX, isAvatarValue, parseAvatar, type AvatarValue } from "./avatar";
+import {
+  AVATAR_IMAGE_MAX,
+  isAvatarValue,
+  isAvatarWire,
+  parseAvatar,
+  parseAvatarRef,
+  type AvatarValue,
+} from "./avatar";
 
 const preset = {
   kind: "preset",
@@ -56,5 +63,42 @@ describe("isAvatarValue", () => {
   });
   test("refuses an unknown kind", () => {
     expect(isAvatarValue({ kind: "url", src: "https://example.invalid/a.png" })).toBe(false);
+  });
+});
+
+describe("avatar links", () => {
+  const link: AvatarValue = {
+    kind: "image",
+    src: "/api/avatars/bot/01a1eeec-aa83-739b-a10f-6b7d70613b34?v=2w82qzmqqbf0",
+  };
+  test("a link names the owner and the id", () => {
+    expect(parseAvatarRef(link.src)).toEqual({
+      owner: "bot",
+      id: "01a1eeec-aa83-739b-a10f-6b7d70613b34",
+    });
+    expect(parseAvatarRef("/api/avatars/user/abc_DEF-123")).toEqual({
+      owner: "user",
+      id: "abc_DEF-123",
+    });
+  });
+  test.each([
+    "https://example.invalid/api/avatars/bot/abc",
+    "//example.invalid/api/avatars/bot/abc",
+    "/api/avatars/bot/../../admin",
+    "/api/avatars/team/abc",
+    "/api/avatars/bot/abc?v=UPPER",
+    "/api/avatars/bot/abc?x=1",
+    "data:image/png;base64,AAAA",
+  ])("%s is not one of our links", (src) => {
+    expect(parseAvatarRef(src)).toBeNull();
+  });
+  test("a client may send a link, but it is not a stored value", () => {
+    expect(isAvatarWire(link)).toBe(true);
+    expect(parseAvatar(link)).toEqual(link);
+    expect(isAvatarValue(link)).toBe(false);
+  });
+  test("a link with extra keys is refused", () => {
+    expect(isAvatarWire({ ...link, extra: 1 })).toBe(false);
+    expect(isAvatarWire({ kind: "preset", src: link.src })).toBe(false);
   });
 });

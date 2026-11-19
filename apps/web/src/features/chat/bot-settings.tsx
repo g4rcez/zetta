@@ -32,6 +32,7 @@ import "../discussions/register";
 import "../inbound/register";
 import "../plugins/register";
 import "../bot-quality/register"; // history, saved tests and the numbers of a bot
+import "../learning/register"; // what the bot learned from you: its lessons
 import "../bot-stats/register"; // routines, calls, messages, tasks and a chart of a bot
 import "../org/register"; // the seats a bot holds in the company chart
 import "../teams/register"; // the teams a bot belongs to and leads
@@ -303,17 +304,16 @@ function PersonalityForm({ bot, bots, onBotChange, notify }: Common) {
 }
 
 const LEARN_OPTIONS = [
-  { value: "auto", label: "Save what it learns as its own skills" },
-  { value: "suggest", label: "Suggest skills; I save them" },
+  { value: "auto", label: "Learn from my chats; new lessons start on trial" },
+  { value: "suggest", label: "Suggest lessons; I start them" },
   { value: "off", label: "Off" },
 ];
 
-/** Autolearn: after a correction or a method that worked, the bot keeps the lesson as a skill of its own. */
+/** Autolearn: once a day the bot reads what you said to it and proposes lessons; this says what happens to them. */
 function LearningForm({ bot, onBotChange, notify }: Common) {
   const { error, saving, save } = useSave(bot, onBotChange, notify);
   const saved = bot.autoLearn ?? "auto";
   const [mode, setMode] = useState(saved);
-  const canLoad = bot.harness === "claude-code" || bot.harness === "hermes";
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void save({ autoLearn: mode });
@@ -329,9 +329,11 @@ function LearningForm({ bot, onBotChange, notify }: Common) {
         options={LEARN_OPTIONS}
       />
       <p className="text-xs text-muted-foreground">
-        {canLoad
-          ? "When you correct the bot, or it finishes a long piece of work, it may save the lesson as a skill of its own. The chat shows each one with View and Undo. It never changes skills you wrote or installed, or one you edited."
-          : "This bot's engine cannot load skills, so it does not learn any. Claude Code and Hermes bots can."}
+        Once a day, after your chats go quiet, the bot reads what you said to it and looks for
+        lessons: how you want the work done. A lesson starts when you said it outright, or said it
+        twice in different chats or on different days. It is used right away, on trial, and kept or
+        dropped by what happens next. Every lesson, with your own words as proof, is in “What I
+        learned” below. Works on every engine.
       </p>
       <div className={saveRow}>
         <Failure error={error} />
@@ -471,12 +473,16 @@ export const BOT_TABS = [
       "delete",
     ],
   },
-  { id: "skills", label: "Skills and learning", ids: ["claude", "learning", "hooks", "decision"] },
+  {
+    id: "skills",
+    label: "Skills and learning",
+    ids: ["claude", "learning", "lessons", "hooks", "decision"],
+  },
   { id: "plugins", label: "Plugins", ids: ["plugins", "accounts", "inbound", "database"] },
   { id: "routines", label: "Routines", ids: ["routines"] },
   { id: "computer", label: "Computer", ids: ["code", "computer"] },
   { id: "approvals", label: "Approvals", ids: ["approvals"] },
-  { id: "quality", label: "Quality", ids: ["performance", "saved-tests", "history"] },
+  { id: "quality", label: "Quality", ids: ["progress", "performance", "saved-tests", "history"] },
 ] as const;
 export type BotTab = (typeof BOT_TABS)[number]["id"];
 export const parseBotTab = (v: unknown): BotTab | undefined =>
@@ -588,7 +594,7 @@ function SettingsBody({
     {
       id: "learning",
       title: "Learning",
-      description: "Lessons the bot keeps as its own skills.",
+      description: "Whether the bot learns from your chats.",
       node: (
         <LearningForm
           bot={bot}

@@ -68,7 +68,7 @@ const press = (host: HTMLElement, label: string) =>
       .dispatchEvent(new win.MouseEvent("click", { bubbles: true }) as never),
   );
 
-test("a held message says why it waits and can be sent or removed", () => {
+test("a message an older Stop held can still be sent or removed", () => {
   const acts: string[] = [];
   const host = mount(
     { queue: "held" },
@@ -81,14 +81,41 @@ test("a held message says why it waits and can be sent or removed", () => {
   expect(acts).toEqual(["retry", "remove"]);
 });
 
-test("a waiting message can be removed; one answered with later messages says so and has no actions", () => {
-  const waiting = mount({ queue: "pending" }, { onQueue: () => {} });
-  expect(waiting.textContent).toContain("with your other waiting messages");
-  expect(buttons(waiting)).toContain("Remove");
-  const merged = mount({ id: "m2", queue: "merged" }, { onQueue: () => {} });
+test("a message the bot has not read yet looks like any other message: no waiting text, nothing to press", () => {
+  const plain = mount({}, { onQueue: () => {} });
+  const waiting = mount({ id: "m2", queue: "pending" }, { onQueue: () => {} });
+  expect(waiting.textContent).not.toMatch(/wait|queue|held/i);
+  expect(buttons(waiting)).not.toContain("Send now");
+  expect(buttons(waiting)).not.toContain("Remove");
+  expect(buttons(waiting)).toEqual(buttons(plain));
+  // A message the bot took while it worked has no line of its own either: the read mark says it.
+  const read = mount(
+    { id: "m3", meta: { steer: { replyId: "r1", at: 1 } } },
+    { onQueue: () => {} },
+  );
+  expect(read.textContent).not.toContain("next step");
+});
+
+test("a message that keeps a turn of its own says when the bot reads it, with nothing to press", () => {
+  const host = mount({ queue: "pending", waits: "after_reply" }, { onQueue: () => {} });
+  expect(host.textContent).toContain("The bot reads this when its current reply ends.");
+  expect(buttons(host)).not.toContain("Send now");
+  expect(buttons(host)).not.toContain("Remove");
+});
+
+test("a message being answered says so, and one that was not answered can be sent again or removed", () => {
+  const merged = mount({ queue: "merged" }, { onQueue: () => {} });
   expect(merged.textContent).toContain("Answering it with the messages below");
   expect(buttons(merged)).not.toContain("Remove");
-  expect(buttons(merged)).not.toContain("Send now");
+  const acts: string[] = [];
+  const failed = mount(
+    { id: "m2", queue: "failed" },
+    { onQueue: (_row: unknown, action: string) => acts.push(action) },
+  );
+  expect(failed.textContent).toContain("Not answered.");
+  press(failed, "Retry");
+  press(failed, "Remove");
+  expect(acts).toEqual(["retry", "remove"]);
 });
 
 test("a read-only log shows the state without actions", () => {
@@ -101,7 +128,11 @@ test('a "stop" typed in the chat says what it stopped', () => {
   expect(mount({ meta: { stop: { held: 0, rooms: 0 } } }).textContent).toContain(
     "Stopped the bot.",
   );
-  const both = mount({ id: "m3", meta: { stop: { held: 2, rooms: 1 } } }).textContent;
-  expect(both).toContain("The 2 messages that were waiting are held.");
+  const both = mount({ id: "m3", meta: { stop: { unread: 2, rooms: 1 } } }).textContent;
+  expect(both).toContain("It had not read 2 of your messages.");
   expect(both).toContain("One room was silenced.");
+  // A stop saved before the count was renamed still reads.
+  expect(mount({ id: "m4", meta: { stop: { held: 1, rooms: 0 } } }).textContent).toContain(
+    "It had not read one of your messages.",
+  );
 });

@@ -401,61 +401,50 @@ function QuoteReference({
 }
 
 /** Live feedback line for a reply that is not ready yet: the label, plus the time since `since` (when known) and bouncing dots. */
-/** What a "stop" typed in the chat did, said under the message. */
-function stopLine(stop: { held: number; rooms: number }) {
+/** What a "stop" typed in the chat did, said under the message. `held` is what older messages saved for `unread`. */
+function stopLine(stop: { unread?: number; held?: number; rooms: number }) {
   const parts = ["Stopped the bot."];
-  if (stop.held)
+  const unread = stop.unread ?? stop.held ?? 0;
+  if (unread)
     parts.push(
-      stop.held === 1
-        ? "The message that was waiting is held."
-        : `The ${stop.held} messages that were waiting are held.`,
+      unread === 1
+        ? "It had not read one of your messages."
+        : `It had not read ${unread} of your messages.`,
     );
   if (stop.rooms)
     parts.push(stop.rooms === 1 ? "One room was silenced." : `${stop.rooms} rooms were silenced.`);
   return parts.join(" ");
 }
 
-/** What a person can do with a message that waits: send it now (interrupting the reply), send a held one, or remove it. */
-export type QueueAction = "remove" | "retry" | "interrupt";
+/** What a person can do with a message that was not answered, or one an older Stop held: send it again, or remove it. */
+export type QueueAction = "remove" | "retry";
 
 type QueueStateProps = {
   state: NonNullable<Row["queue"]>;
+  /** The bot reads it when its reply ends, not while it works (a picture, a file, picked skills, another bot named in it). */
+  waits?: Row["waits"];
   /** Absent in a read-only log: the state is shown, with no way to change it. */
   onAct?: (action: QueueAction) => void;
 };
-/** A message sent while the bot worked: waiting, being answered (alone or with the others that waited), held by a Stop, or failed. */
-function QueueState({ state, onAct }: QueueStateProps) {
+/**
+ * A message sent while the bot worked. It reaches the bot while it works, so a waiting one shows nothing: it looks like any other
+ * message until the read mark appears. Only what the person may want to know or act on is said: it keeps a turn of its own, it is
+ * being answered, or it was not answered.
+ */
+function QueueState({ state, waits, onAct }: QueueStateProps) {
   if (state === "pending")
-    return (
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span>
-          Waiting: the bot reads it at its next step, or with your other waiting messages when this
-          reply ends.
-        </span>
-        {onAct && (
-          <>
-            {/* No hint: the button has visible text. */}
-            <Button
-              size="xs"
-              variant="ghost"
-              aria-label="Send now: interrupt the reply so the bot reads this first"
-              onClick={() => onAct("interrupt")}
-            >
-              Send now
-            </Button>
-            <Button size="xs" variant="ghost" onClick={() => onAct("remove")}>
-              Remove
-            </Button>
-          </>
-        )}
-      </div>
-    );
+    return waits === "after_reply" ? (
+      <p className="text-xs text-muted-foreground">
+        The bot reads this when its current reply ends.
+      </p>
+    ) : null;
   if (state === "running" || state === "merged")
     return (
       <WorkingStatus
         label={state === "merged" ? "Answering it with the messages below" : "Answering"}
       />
     );
+  // Only messages held by a Stop before Stop changed: it no longer holds anything.
   if (state === "held")
     return (
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -803,15 +792,13 @@ export const MessageRow = memo(function MessageRow({
         {row.status === "cancelled" && (
           <p className="text-xs italic text-muted-foreground">Stopped.</p>
         )}
-        {row.meta?.steer && (
-          <p className="text-xs text-muted-foreground">Used by the bot at its next step.</p>
-        )}
         {row.meta?.stop && (
           <p className="text-xs text-muted-foreground">{stopLine(row.meta.stop)}</p>
         )}
         {row.queue && (
           <QueueState
             state={row.queue}
+            {...(row.waits ? { waits: row.waits } : {})}
             {...(onQueue && !readOnly
               ? { onAct: (action: QueueAction) => onQueue(row, action) }
               : {})}

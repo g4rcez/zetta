@@ -294,7 +294,8 @@ export function ChatPage() {
     },
   });
   // A running goal loop starts each step on the server: follow it live, and reload when it moves on.
-  // The server answers the waiting messages together when the turn before them ends: follow that answer live and refresh until none waits.
+  // A message the running reply did not read is answered by a turn the server starts when that reply ends: follow that answer live
+  // and refresh until none waits.
   const waiting = saved.some((m) => m.queue === "pending" || m.queue === "running");
   const follow = useRef(main);
   follow.current = main;
@@ -491,9 +492,7 @@ export function ChatPage() {
       void (
         action === "remove"
           ? chatClient.removeQueued(chatId, row.id)
-          : action === "interrupt"
-            ? chatClient.interrupt(chatId)
-            : chatClient.retryQueued(chatId, row.id)
+          : chatClient.retryQueued(chatId, row.id)
       ).then(() => reload(chatId), fail);
     },
   };
@@ -974,7 +973,7 @@ export function ChatPage() {
                   handle={draft}
                   placeholder={
                     main.busy
-                      ? "Queue a follow-up…"
+                      ? "Add to your request…"
                       : current
                         ? `Message ${current.visibility === "private" ? "" : "#"}${current.name}`
                         : "Message your bot"

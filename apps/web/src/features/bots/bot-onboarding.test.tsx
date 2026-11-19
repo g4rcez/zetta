@@ -114,7 +114,7 @@ test("the gallery shows every template with its title, description and picture",
     expect(card!.textContent).toContain(t.title);
     expect(card!.textContent).toContain(t.description);
     // The picture the bot will get, not a stand-in icon.
-    expect(card!.querySelector("svg"), `${t.id} picture`).toBeTruthy();
+    expect(card!.querySelector('img[src^="/api/avatars/preset/"]'), `${t.id} picture`).toBeTruthy();
   }
   // Grouped by what the bot is for.
   for (const label of [

@@ -15,6 +15,7 @@ import { BOT_ROLE_MAX, botRole } from "@zetta/core/bot-role";
 import { UNVERIFIED_ENGINES } from "@zetta/core/maturity";
 import { AdvancedSection } from "@/components/advanced-section";
 import { BotAvatar, type AvatarValue } from "@/components/bot-avatar";
+import { EngineLogo } from "@/components/engine-logo";
 import { BotSelect } from "@/components/bot-select";
 import { Button, Input, Progress, Select } from "@/components/ui";
 import "../code/register";
@@ -913,12 +914,15 @@ export function IdentityStep({
   avatar,
   setAvatar,
   kind,
+  roleChoices,
 }: {
   draft: Draft;
   set: (p: Partial<Draft>) => void;
   avatar: AvatarValue | null;
   setAvatar: (v: AvatarValue | null) => void;
   kind?: "chief" | "specialist";
+  /** The roles of the company chart: one click fills the Role field. Given to a person who joined a company that drew its chart. */
+  roleChoices?: readonly string[];
 }) {
   return (
     <Guided
@@ -963,6 +967,24 @@ export function IdentityStep({
           What this bot does for the team, e.g. Support lead. It shows beside the name wherever
           someone picks a bot.
         </p>
+        {roleChoices && roleChoices.length > 0 && (
+          <div role="group" aria-label="Roles of your company" className="space-y-1 pt-1">
+            <p className="text-xs font-medium text-muted-foreground">Roles of your company</p>
+            <div className="flex flex-wrap gap-2">
+              {roleChoices.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  aria-pressed={draft.role === r}
+                  onClick={() => set({ role: r })}
+                  className={`min-h-6 rounded-full border px-3 py-1 text-xs hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring ${draft.role === r ? "border-primary bg-primary/[0.06]" : ""}`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       <Group label="Picture">
         <BotAvatarPicker botId="new-bot" kind={kind} value={avatar} onChange={setAvatar} />
@@ -993,9 +1015,27 @@ export function IdentityStep({
   );
 }
 
-export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draft>) => void }) {
+const EFFORT_CHOICES = [
+  { value: "", label: "Default" },
+  ...["low", "medium", "high", "xhigh", "max"].map((v) => ({ value: v, label: v })),
+];
+
+export function EngineStep({
+  draft,
+  set,
+  effort,
+  setEffort,
+}: {
+  draft: Draft;
+  set: (p: Partial<Draft>) => void;
+  /** Claude Code's reasoning effort. Empty = its default. Only given where the bot exists, so it can be saved. */
+  effort?: string;
+  setEffort?: (v: string) => void;
+}) {
   const pick = (h: string) =>
     set({ harness: h, model: isAllowedModel(h, draft.model) ? draft.model : "" });
+  const takesModel = draft.harness !== "fixture";
+  const takesEffort = draft.harness === "claude-code" && setEffort !== undefined;
   return (
     <Guided
       good={[
@@ -1019,6 +1059,7 @@ export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draf
               onSelect={pick}
               title={
                 <span className="flex items-center gap-2">
+                  <EngineLogo harness={h.id} />
                   {h.name}
                   {h.badge && (
                     <span className="rounded-full bg-success/15 px-1.5 py-0.5 text-xs font-medium text-success">
@@ -1033,6 +1074,42 @@ export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draf
           ))}
         </div>
       </div>
+      {(takesModel || takesEffort) && (
+        <section
+          aria-label={`${draft.harness} settings`}
+          className="mt-6 space-y-3 rounded-lg border bg-card p-4"
+        >
+          <h3 className="flex items-center gap-2 text-base font-semibold">
+            <EngineLogo harness={draft.harness} />
+            Model and effort
+          </h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {takesModel && (
+              <Select
+                title="Model"
+                required={false}
+                value={draft.model}
+                onChange={(e) => set({ model: e.target.value })}
+                options={modelOptions(draft.harness, draft.model)}
+              />
+            )}
+            {takesEffort && (
+              <Select
+                title="Effort"
+                required={false}
+                value={effort ?? ""}
+                onChange={(e) => setEffort(e.target.value)}
+                options={EFFORT_CHOICES}
+              />
+            )}
+          </div>
+          {takesEffort && (
+            <p className="text-xs text-pretty text-muted-foreground">
+              Higher effort thinks longer and costs more. Leave it on Default if you are unsure.
+            </p>
+          )}
+        </section>
+      )}
       <AdvancedSection
         {...((EXPERIMENTAL_HARNESSES as readonly string[]).includes(draft.harness)
           ? { defaultOpen: true }
@@ -1047,7 +1124,7 @@ export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draf
             {EXPERIMENTAL_HARNESSES.map((h) => (
               <label
                 key={h}
-                className={`cursor-pointer rounded-full border px-3 py-1 text-sm transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring ${draft.harness === h ? "border-primary bg-primary/[0.06] text-foreground" : "text-muted-foreground hover:border-foreground/25 hover:text-foreground"}`}
+                className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring ${draft.harness === h ? "border-primary bg-primary/[0.06] text-foreground" : "text-muted-foreground hover:border-foreground/25 hover:text-foreground"}`}
               >
                 <input
                   type="radio"
@@ -1057,22 +1134,12 @@ export function EngineStep({ draft, set }: { draft: Draft; set: (p: Partial<Draf
                   onChange={() => pick(h)}
                   className="sr-only"
                 />
+                <EngineLogo harness={h} size={14} />
                 {h}
               </label>
             ))}
           </div>
         </Group>
-        {draft.harness !== "fixture" && (
-          <div className="max-w-md">
-            <Select
-              title="Model"
-              required={false}
-              value={draft.model}
-              onChange={(e) => set({ model: e.target.value })}
-              options={modelOptions(draft.harness)}
-            />
-          </div>
-        )}
       </AdvancedSection>
     </Guided>
   );
@@ -1094,50 +1161,51 @@ export function InstructionsStep({
   checks: ReturnType<typeof reviewInstructions>;
 }) {
   const { bots } = useSidebarData();
+  const hasDraft = draft.instructions.trim().length > 0 || draft.personality.trim().length > 0;
   return (
-    <div className="@container text-sm">
-      <div className="grid gap-4 @3xl:grid-cols-2">
-        <div className="h-[min(40rem,72dvh)] min-h-0">
-          <InstructionsInterview
-            interviewer={
-              draft.harness === "decision" ? bots.find((b) => b.kind === "chief") : undefined
-            }
-            engine={{
-              harness: draft.harness,
-              model: draft.model || null,
-              name: draft.name,
-              description: draft.description,
-              avatar,
-            }}
-            state={interview}
-            setState={setInterview}
-            draft={{
-              personality: draft.personality,
-              instructions: draft.instructions,
-              outputStyle: draft.outputStyle,
-            }}
-            onDraft={(d) =>
-              set({
-                instructions: d.instructions,
-                ...(d.personality !== undefined ? { personality: d.personality } : {}),
-                ...(d.outputStyle ? { outputStyle: d.outputStyle, outputStyleId: null } : {}),
-              })
-            }
-          />
-        </div>
-        <ConfigPreview
-          draft={draft}
-          set={set}
-          avatar={avatar}
-          interview={interview}
-          checks={checks}
-        />
-      </div>
+    <div className="h-[min(44rem,76dvh)] min-h-0 text-sm">
+      <InstructionsInterview
+        interviewer={
+          draft.harness === "decision" ? bots.find((b) => b.kind === "chief") : undefined
+        }
+        engine={{
+          harness: draft.harness,
+          model: draft.model || null,
+          name: draft.name,
+          description: draft.description,
+          avatar,
+        }}
+        state={interview}
+        setState={setInterview}
+        draft={{
+          personality: draft.personality,
+          instructions: draft.instructions,
+          outputStyle: draft.outputStyle,
+        }}
+        footer={
+          hasDraft || interview.manual ? (
+            <ConfigPreview
+              draft={draft}
+              set={set}
+              avatar={avatar}
+              interview={interview}
+              checks={checks}
+            />
+          ) : undefined
+        }
+        onDraft={(d) =>
+          set({
+            instructions: d.instructions,
+            ...(d.personality !== undefined ? { personality: d.personality } : {}),
+            ...(d.outputStyle ? { outputStyle: d.outputStyle, outputStyleId: null } : {}),
+          })
+        }
+      />
     </div>
   );
 }
 
-/** The bot's configuration as it stands, beside the setup chat: it updates while the person talks. */
+/** The bot's configuration as it stands, inside the setup chat after the questions: it updates while the person talks. */
 function ConfigPreview({
   draft,
   set,
@@ -1165,7 +1233,7 @@ function ConfigPreview({
   return (
     <section
       aria-label="Preview"
-      className="flex h-[min(40rem,72dvh)] min-h-0 flex-col overflow-hidden rounded-lg border bg-background"
+      className="mx-4 mb-4 overflow-hidden rounded-lg border bg-background"
     >
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
         <BotAvatar bot={{ id: "new-bot", avatar }} size={24} square className="shrink-0" />
@@ -1185,7 +1253,7 @@ function ConfigPreview({
           </Button>
         )}
       </header>
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+      <div className="space-y-6 p-4">
         {hasDraft || interview.manual ? (
           <>
             {actions.length > 0 && (

@@ -25,6 +25,56 @@ import { useSidebarData } from "./sidebar-data";
 import { useSidebarPins } from "./sidebar-pin-actions";
 import { AttentionCount, Hint } from "./sidebar-parts";
 
+/** The actions a bot's menu offers, shared by the row and the tile. */
+function BotMenuItems({
+  bot,
+  onRemove,
+  onDelete,
+  onNewChat,
+}: {
+  bot: Bot;
+  onRemove: (id: string) => void;
+  onDelete: (bot: Bot) => void;
+  /** Only where the surface has no "New chat" button of its own (the tile). */
+  onNewChat?: (id: string) => void;
+}) {
+  const navigate = useNavigate();
+  return (
+    <>
+      {onNewChat && (
+        <MenuItem title="New chat" onClick={() => onNewChat(bot.id)}>
+          <ChatCircleIcon />
+          New chat
+        </MenuItem>
+      )}
+      {bot.canEdit && (
+        <MenuItem
+          title="Settings"
+          onClick={() => void navigate({ to: "/bots/$botId/settings", params: { botId: bot.id } })}
+        >
+          <GearSixIcon />
+          Settings
+        </MenuItem>
+      )}
+      {bot.kind !== "chief" && (
+        <MenuItem title="Remove from sidebar" onClick={() => onRemove(bot.id)}>
+          <PushPinSlashIcon />
+          Remove from sidebar
+        </MenuItem>
+      )}
+      {canDeleteBot(bot) && (
+        <>
+          <MenuSeparator />
+          <MenuItem title="Delete bot" className={MENU_DANGER} onClick={() => onDelete(bot)}>
+            <TrashIcon />
+            Delete bot
+          </MenuItem>
+        </>
+      )}
+    </>
+  );
+}
+
 /**
  * One quiet row per bot: avatar, name and what needs the person. Clicking opens its latest chat; "New chat" and the actions
  * show on hover and on keyboard focus (always on touch screens, which have no hover). Rule: owners see their own unready bots with a
@@ -40,6 +90,8 @@ function BotRow({
   onDelete,
 }: {
   bot: Bot;
+  /** Only the tile uses it; a row's avatar is always 20px. */
+  avatarSize?: number | undefined;
   current: boolean;
   attention: BotAttention | undefined;
   onOpen: (id: string) => void;
@@ -49,7 +101,6 @@ function BotRow({
   /** Deletes the bot for good, after asking. */
   onDelete: (bot: Bot) => void;
 }) {
-  const navigate = useNavigate();
   const blocked = !bot.canEdit && !bot.onboarded;
   const setup = bot.canEdit && !bot.onboarded;
   const tag =
@@ -144,34 +195,125 @@ function BotRow({
               </Hint>
             }
           >
-            {bot.canEdit && (
-              <MenuItem
-                title="Settings"
-                onClick={() =>
-                  void navigate({ to: "/bots/$botId/settings", params: { botId: bot.id } })
-                }
-              >
-                <GearSixIcon />
-                Settings
-              </MenuItem>
-            )}
-            {bot.kind !== "chief" && (
-              <MenuItem title="Remove from sidebar" onClick={() => onRemove(bot.id)}>
-                <PushPinSlashIcon />
-                Remove from sidebar
-              </MenuItem>
-            )}
-            {canDeleteBot(bot) && (
-              <>
-                <MenuSeparator />
-                <MenuItem title="Delete bot" className={MENU_DANGER} onClick={() => onDelete(bot)}>
-                  <TrashIcon />
-                  Delete bot
-                </MenuItem>
-              </>
-            )}
+            <BotMenuItems bot={bot} onRemove={onRemove} onDelete={onDelete} />
           </Menu>
         )}
+      </span>
+    </li>
+  );
+}
+
+/** Sidebar padding (16px) and two 4px gaps leave the width of three tiles; the avatar takes a bit over half of one, between 32 and 64px. */
+export function tileAvatarSize(railWidth: number) {
+  const tile = (railWidth - 16 - 8) / 3;
+  return Math.min(64, Math.max(32, Math.round(tile * 0.55)));
+}
+
+/**
+ * Personal layout: a bot is a tile, a big avatar with its name below, three to a line, square. Same rules as the row: owners see their own unready bots with a
+ * setup dot, nobody else can open an unready team bot. The actions menu shows on hover and on keyboard focus.
+ */
+function BotTile({
+  bot,
+  avatarSize = 40,
+  current,
+  attention,
+  onOpen,
+  onNewChat,
+  onRemove,
+  onDelete,
+}: {
+  bot: Bot;
+  /** Grows with the sidebar, so the avatar keeps its share of the square tile. */
+  avatarSize?: number | undefined;
+  current: boolean;
+  attention: BotAttention | undefined;
+  onOpen: (id: string) => void;
+  onNewChat: (id: string) => void;
+  onRemove: (id: string) => void;
+  onDelete: (bot: Bot) => void;
+}) {
+  const blocked = !bot.canEdit && !bot.onboarded;
+  const setup = bot.canEdit && !bot.onboarded;
+  return (
+    <li className="group/bot relative">
+      <button
+        type="button"
+        data-chat-row
+        aria-current={current ? "page" : undefined}
+        aria-disabled={blocked || undefined}
+        title={
+          blocked
+            ? "Its owner has to finish setting this bot up before you can chat with it."
+            : setup
+              ? "Not ready yet: finish setup"
+              : bot.name
+        }
+        onClick={() => {
+          if (!blocked) onOpen(bot.id);
+        }}
+        className={cn(
+          "flex aspect-square w-full min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-center transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-ring motion-reduce:transition-none",
+          current ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
+          blocked && "cursor-not-allowed opacity-50",
+        )}
+      >
+        <BotAvatar bot={bot} size={avatarSize} badge={<BotStatusDot botId={bot.id} />} />
+        <span
+          className={cn(
+            "w-full truncate text-xs leading-4",
+            current || attention?.unread ? "font-semibold" : "font-medium",
+          )}
+        >
+          {bot.name}
+          {bot.kind === "chief" && <span className="sr-only"> (your chief)</span>}
+          {bot.kind !== "chief" && bot.visibility === "private" && (
+            <span className="sr-only"> (private)</span>
+          )}
+        </span>
+      </button>
+      {(attention || setup) && (
+        <span className="pointer-events-none absolute top-1 right-1 flex transition-opacity duration-150 group-focus-within/bot:opacity-0 group-hover/bot:opacity-0 pointer-coarse:group-hover/bot:opacity-100 pointer-coarse:group-focus-within/bot:opacity-100 motion-reduce:transition-none">
+          {attention ? (
+            <AttentionCount attention={attention} />
+          ) : (
+            <span
+              role="img"
+              aria-label="Finish setup"
+              className="size-2 rounded-full bg-attention"
+            />
+          )}
+        </span>
+      )}
+      {/* One button in the corner, so it fits the narrowest tile; "New chat" moves into its menu. On a touch screen the count wins and the actions live in the bot's page. */}
+      <span className="absolute top-0.5 right-0.5 flex opacity-0 transition-opacity duration-150 group-focus-within/bot:opacity-100 group-hover/bot:opacity-100 motion-reduce:transition-none pointer-coarse:hidden">
+        <Menu
+          asChild
+          hover={false}
+          title=""
+          floatingClassName="w-56"
+          label={
+            <Hint
+              title="Bot actions"
+              description="Start a chat, open this bot's settings, take it out of the sidebar or delete it."
+            >
+              <button
+                type="button"
+                aria-label={`Actions for ${bot.name}`}
+                className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-sidebar hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-open:text-foreground"
+              >
+                <DotsThreeIcon aria-hidden="true" className="size-4" />
+              </button>
+            </Hint>
+          }
+        >
+          <BotMenuItems
+            bot={bot}
+            onRemove={onRemove}
+            onDelete={onDelete}
+            {...(blocked ? {} : { onNewChat })}
+          />
+        </Menu>
       </span>
     </li>
   );
@@ -184,6 +326,7 @@ function BotRow({
 export function SidebarBots({
   query,
   limit,
+  tiles = false,
   botId,
   onBot,
   onNewChat,
@@ -193,6 +336,8 @@ export function SidebarBots({
 }: {
   query: string;
   limit?: number | undefined;
+  /** Personal layout: bots as a grid of avatar tiles instead of rows. */
+  tiles?: boolean;
   botId: string | undefined;
   onBot: (id: string) => void;
   onNewChat: (id: string) => void;
@@ -213,6 +358,8 @@ export function SidebarBots({
     ...(limit ? { limit } : {}),
   });
   const loading = !chatsLoaded && bots.length === 0;
+  const Item = tiles ? BotTile : BotRow;
+  const avatarSize = tileAvatarSize(preferences.railWidth);
   return (
     <section aria-label="Bots">
       <div className="flex items-center gap-1 pt-3 pb-1 pl-2">
@@ -258,10 +405,11 @@ export function SidebarBots({
           ))}
         </ul>
       )}
-      <ul className="space-y-px">
+      <ul className={tiles ? "grid grid-cols-3 gap-1" : "space-y-px"}>
         {shown.map((b) => (
-          <BotRow
+          <Item
             key={b.id}
+            {...(tiles ? { avatarSize } : {})}
             bot={b}
             current={b.id === botId}
             attention={attention.get(b.id)}

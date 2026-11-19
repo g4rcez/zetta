@@ -10,6 +10,7 @@ import { authClient } from "@/lib/auth-client";
 import { cachedAuthGuard } from "@/lib/auth-guard";
 import { useLiveEvents } from "@/lib/live-events";
 import { SidebarDataProvider } from "@/features/chat/sidebar-data";
+import { call } from "@/features/chat/chat-client";
 import { IdentityRequestError, getIdentityError, identityClient } from "@/lib/identity-client";
 
 function CheckingMembership() {
@@ -33,6 +34,15 @@ export const Route = createFileRoute("/_auth")({
       if (identity.state !== "active") throw redirect({ to: "/login" });
       const session = await sessionRequest;
       if (!session.data) throw redirect({ to: "/login" });
+      // A new account (not the installation admin, who has the first-run setup) sets up its own Chief and engine first.
+      if (!identity.isAdmin) {
+        const onboarding = await call<{ preferences: { memberOnboarding?: string } }>(
+          "/api/preferences",
+        )
+          .then((r) => r.preferences.memberOnboarding)
+          .catch(() => undefined);
+        if (onboarding === "pending") throw redirect({ to: "/onboarding", replace: true });
+      }
       return { session, identity };
     }),
 });

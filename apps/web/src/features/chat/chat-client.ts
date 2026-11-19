@@ -309,7 +309,7 @@ export type MessageMeta = {
   /** A message sent while a bot worked, read by that bot at its next step (`replyId` is the reply that used it) instead of getting its own answer. */
   steer?: { replyId: string; at: number };
   /** The person typed "stop" while work was going on: what the stop did. */
-  stop?: { held: number; rooms: number };
+  stop?: { unread?: number; held?: number; rooms: number };
   /** On a reply that is still running: what the bot is doing now, saved every few seconds for a reader without the live stream. */
   activity?: string;
   /** What the bot did while it worked, oldest first (`at` is epoch ms). */ timeline?: {
@@ -369,10 +369,12 @@ export type Message = {
   /** On a poll: the votes so far. */
   pollVotes?: PollVotes;
   /**
-   * Sent while the chat was busy. `pending`: waits. `running`: being answered. `merged`: being answered together with the messages
-   * sent after it. `held`: the person stopped the bot before it was read; it is sent or removed by hand. `failed`: not answered.
+   * Sent while the chat was busy. `pending`: the bot has not read it yet. `running`: being answered. `merged`: being answered
+   * together with the messages sent after it. `failed`: not answered. `held`: only on messages an older Stop held.
    */
   queue?: "pending" | "running" | "failed" | "merged" | "held";
+  /** On a `pending` message the running reply cannot read while it works: it is answered when that reply ends. */
+  waits?: "after_reply";
 };
 /** An earlier text of an edited message. */
 export type Revision = { id: string; content: string; createdAt: string };
@@ -616,9 +618,6 @@ export const chatClient = {
     call<{ message: Message }>(`/api/conversations/${id}/queue`, "POST", body).then(
       (r) => r.message,
     ),
-  /** Ends the running reply so the waiting messages are read now; the next turn continues the work (not a Stop). */
-  interrupt: (id: string) =>
-    call<{ interrupted: boolean }>(`/api/conversations/${id}/interrupt`, "POST"),
   removeQueued: (id: string, messageId: string) =>
     call(`/api/conversations/${id}/queue/${messageId}`, "DELETE"),
   retryQueued: (id: string, messageId: string) =>

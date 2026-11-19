@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { SparkleIcon } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui";
@@ -33,6 +33,8 @@ type Props = {
   setState: (s: InterviewState | ((s: InterviewState) => InterviewState)) => void;
   /** What is written now; sent along when refining. */
   draft: { personality: string; instructions: string; outputStyle: OutputStyleKey };
+  /** Drawn in the chat after the last message: the preview and the answer style, once there is a draft. */
+  footer?: ReactNode;
   onDraft: (d: {
     personality?: string;
     instructions: string;
@@ -57,13 +59,15 @@ export function InstructionsInterview({
   state,
   setState,
   draft,
+  footer,
   onDraft,
 }: Props) {
   const [answer, setAnswer] = useState("");
   const [composerError, setComposerError] = useState<string | null>(null);
   const latest = useRef(0);
   const started = useRef(false);
-  const t0 = useRef(Date.now());
+  // When each line first showed, so "Thinking · 5s" counts from the send and not from when the page opened.
+  const stamps = useRef(new Map<string, number>());
   const hasDraft = draft.instructions.trim().length > 0;
 
   const patch = (p: Partial<InterviewState>) => setState((s) => ({ ...s, ...p }));
@@ -184,6 +188,7 @@ export function InstructionsInterview({
   function restart() {
     latest.current++;
     started.current = true;
+    stamps.current.clear();
     setAnswer("");
     setState({ ...FRESH_INTERVIEW, current: OPENING });
   }
@@ -204,16 +209,21 @@ export function InstructionsInterview({
 
   const rows = useMemo(
     () =>
-      interviewLines(state, hasDraft).map(({ role, content, streaming }, i): Row => ({
-        id: `i${i}`,
-        seq: i,
-        role,
-        content,
-        status: "complete",
-        botId: role === "assistant" ? asker.id : null,
-        createdAt: new Date(t0.current + i * 1000).toISOString(),
-        ...(streaming ? { streaming } : {}),
-      })),
+      interviewLines(state, hasDraft).map(({ role, content, streaming }, i): Row => {
+        const key = `${i}|${role}|${streaming ? "s" : ""}|${content}`;
+        const seen = stamps.current.get(key) ?? Date.now();
+        stamps.current.set(key, seen);
+        return {
+          id: `i${i}`,
+          seq: i,
+          role,
+          content,
+          status: "complete",
+          botId: role === "assistant" ? asker.id : null,
+          createdAt: new Date(seen).toISOString(),
+          ...(streaming ? { streaming } : {}),
+        };
+      }),
     [state, hasDraft, asker.id],
   );
 
@@ -274,6 +284,7 @@ export function InstructionsInterview({
           readOnly
           busy={thinking}
           label="Setup interview"
+          footer={footer}
           actions={actions}
         />
         <div className="space-y-2 border-t p-3">

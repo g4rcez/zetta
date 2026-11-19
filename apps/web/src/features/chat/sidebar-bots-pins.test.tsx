@@ -55,7 +55,7 @@ afterEach(async () => {
   saved = [];
 });
 const settle = (ms = 80) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
-const mount = async (open?: string) => {
+const mount = async (open?: string, tiles = false) => {
   const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } =
     await import("@tanstack/react-router");
   const { SidebarDataProvider } = await import("./sidebar-data");
@@ -71,6 +71,7 @@ const mount = async (open?: string) => {
             <SidebarDataProvider>
               <SidebarBots
                 query=""
+                tiles={tiles}
                 botId={open}
                 onBot={() => {}}
                 onNewChat={() => {}}
@@ -215,4 +216,22 @@ test("with pins, the open bot is not added back to the sidebar", async () => {
   pinned = [DEV];
   const host = await mount(ANA);
   expect(names(host)).toEqual(["Zetta", "Dev Bot"]);
+});
+
+test("the personal layout lists bots as tiles in a grid that fits the sidebar's width, with the same actions as a row", async () => {
+  const host = await mount(DEV, true);
+  const grid = host.querySelector("ul.grid");
+  expect(grid).not.toBeNull();
+  const tiles = [...host.querySelectorAll("button[data-chat-row]")];
+  expect(tiles.map((t) => t.querySelector("span.truncate")?.childNodes[0]?.textContent)).toEqual([
+    "Zetta",
+    "Dev Bot",
+    "Ana",
+  ]);
+  expect(tiles.map((t) => t.getAttribute("aria-current"))).toEqual([null, "page", null]);
+  // The open bot is the highlighted tile; the row's menu is still there, with its way out.
+  await click(host.querySelector('button[aria-label="Actions for Dev Bot"]'));
+  expect(
+    [...win.document.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent?.trim()),
+  ).toContain("Remove from sidebar");
 });

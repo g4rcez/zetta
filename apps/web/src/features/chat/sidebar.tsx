@@ -71,11 +71,14 @@ export function SidebarTree({
   children,
   leading,
   botLimit,
+  botTiles = false,
 }: {
   children?: ReactNode;
   /** Shown above the rooms: the workspace layout's sections. */
   leading?: ReactNode;
   botLimit?: number;
+  /** Bots as avatar tiles (personal layout). */
+  botTiles?: boolean;
 }) {
   const { bots } = useSidebarData();
   const { botId } = useSidebarLocation();
@@ -103,12 +106,11 @@ export function SidebarTree({
         className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3"
         aria-label="Rooms and bots"
       >
-        {leading}
-        <RoomsSection query={q} />
-        <RoutinesSection query={q} />
+        {/* Bots come first: they are who people open the app for. */}
         <SidebarBots
           query={q}
           limit={botLimit}
+          tiles={botTiles}
           botId={botId}
           newChatBot={newChatBot}
           onBot={toBot}
@@ -116,6 +118,10 @@ export function SidebarTree({
           onNewBot={toNewBot}
           onNewRoom={() => void navigate({ to: "/rooms", search: { new: true } })}
         />
+        {/* Rooms sit right under the bots: bots and rooms are the main destinations, the grouped pages follow. */}
+        <RoomsSection query={q} />
+        {leading}
+        <RoutinesSection query={q} />
         {children}
       </nav>
     </div>

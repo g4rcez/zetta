@@ -65,6 +65,7 @@ const LIBRARY = [
   linkOf("People"),
   linkOf("Memory"),
   linkOf("Skills"),
+  linkOf("Lessons"),
   linkOf("Plugins"),
   linkOf("Apps"),
   linkOf("Artifacts"),
@@ -77,12 +78,13 @@ const LIBRARY_TEAM = [
   linkOf("Bots"),
   linkOf("Memory"),
   linkOf("Skills"),
+  linkOf("Lessons"),
   linkOf("Plugins"),
   linkOf("Apps"),
   linkOf("Artifacts"),
 ];
 // Bots listed in the sidebar before "All bots": a team already has the page, a solo person lives in this list.
-const BOTS_PERSONAL = 7;
+const BOTS_PERSONAL = 6;
 const BOTS_WORKSPACE = 5;
 const GROUP_KEY = (label: string) => `zetta.sidebar-${label.toLowerCase()}`;
 const RAIL_WIDTH = 56;
@@ -571,8 +573,8 @@ export function AppSidebar({
             {/* Outside the scroll box, so it stays in place while the rooms, bots and More icons scroll under it. */}
             <span aria-hidden="true" className="mx-auto mt-2 h-px w-6 shrink-0 bg-sidebar-border" />
             <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto px-2 py-2 [scrollbar-width:none] hover:[scrollbar-width:thin]">
-              <RailRooms />
               <RailBots />
+              <RailRooms />
               <span aria-hidden="true" className="h-px w-6 shrink-0 bg-sidebar-border" />
               <nav aria-label="More" className="flex flex-col items-center gap-px">
                 {(preferences.navMode === "simple" ? LIBRARY : MORE).map((l) => (
@@ -584,6 +586,7 @@ export function AppSidebar({
         ) : (
           <SidebarTree
             botLimit={personal ? BOTS_PERSONAL : BOTS_WORKSPACE}
+            botTiles={personal}
             leading={
               personal ? undefined : (
                 <>

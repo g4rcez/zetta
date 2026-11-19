@@ -184,6 +184,21 @@ export function withBuiltinSkills(profile: AgentProfile | undefined): AgentProfi
 }
 
 /**
+ * The profile without the person's own skills (the "without" side of a paired test run). Zetta's built-in skills are put back by
+ * `withBuiltinSkills`, so only what was learned or installed is left out. The bot's agents stay: they are configuration, not memory.
+ */
+export function withoutSkills(profile: AgentProfile | undefined): AgentProfile | undefined {
+  if (!profile) return profile;
+  return {
+    ...profile,
+    skills: [],
+    files: Object.fromEntries(
+      Object.entries(profile.files).filter(([k]) => !k.startsWith("skills/")),
+    ),
+  };
+}
+
+/**
  * Puts the skills the person picked first, so the Hermes size budget (`hermesPrompt`) never drops one of them.
  * A bot's own skill is capped at LIMITS.body, so two picks always fit. A library skill may be larger than the whole budget
  * (LIMITS.librarySkillBody): then Hermes leaves it out even when picked, and Claude Code, which reads it from the plugin dir, is unaffected.

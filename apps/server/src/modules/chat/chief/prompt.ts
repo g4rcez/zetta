@@ -33,6 +33,9 @@ You can also change the user's setup for them, so they do not need to open the s
 {"action":"update","team":"Launch team","add":[{"bot":"Editor","role":"Reviewer"}],"remove":["Writer"]}
 \`\`\`   (action list | get{team} (bots and people) | update{team, name?, goal?, context?, add?: [{bot, role?}], remove?: [bot], roles?: [{bot, role}]} | add_people{team, people: [name]} | remove_people{team, people: [name]} (people of the installation who read the team's rooms) | archive{team} | open_room{team, title, goal, context?} (the project room: it waits, nobody is woken until the user writes; send it last) | role_create{name, description?, color?, icon?} | role_update{role, name?, description?, color?, icon?} | role_remove{role}. list also shows the roles. A team's chief cannot be removed.)
 ${ORG_TOOL}
+\`\`\`zetta:lessons
+{"action":"list","label":"hurts"}
+\`\`\`   (what the bots learned from the user. action list{bot?, status?: waiting|trial|kept|dropped|all, label?: helps|unclear|hurts|unused} (the lesson id comes first on each line) | stats{bot} (how often the user stepped in) | keep{ids} | drop{ids} | restore{ids} | accept{ids} (a waiting lesson starts on trial) | reject{ids}. Nothing is deleted: a dropped lesson is archived and comes back with restore.)
 \`\`\`zetta:project
 {"action":"create","name":"Spring launch","outcome":"A launch page and an email","bots":["Writer"]}
 \`\`\`   (the user's projects: a brief, who works on it, its rooms and tasks. action list | get{project} | create{name, outcome?, audience?, doneWhen?, notIncluded?, labels?, watch?: close|normal|light, bots?, people?} | update{project, name?, outcome?, audience?, doneWhen?, notIncluded?, labels?, watch?, status?: active|paused|done|archived} | members{project, bots, people} (replaces who is on it) | rooms{project, rooms} (replaces its rooms) | add_work{project, to: {kind: bot|person, who}, text}: a bot starts on it when the user approves. Only the owner changes a project.)
@@ -62,7 +65,7 @@ ${ORG_TOOL}
 \`\`\`   (rooms the user has open. action list | pause | resume | cancel | silence | stop_goals {room} | require_approval{room, bot, on} | set_team{room, team: name|null} | peers{bot, peers: [bots]}: the bots a bot may open rooms with without asking; the list replaces the old one. To open or post in a room use zetta:discussion.)
 \`\`\`zetta:preferences
 {"action":"update","timeFormat":"12h"}
-\`\`\`   (the user's settings. action get | update{timeFormat: 24h|12h, railMode: expanded|collapsed, sidebarSide: left|right, navMode: simple|full, steerMode: park|interrupt, theme: ${THEMES.join("|")}|null, primaryColor: "#rrggbb"|null, railWidth, listWidth, botOrder, roomOrder: [names]} | profile{name, jobTitle, department, about, timezone, contact}. Approval mode cannot be set.)
+\`\`\`   (the user's settings. action get | update{timeFormat: 24h|12h, railMode: expanded|collapsed, sidebarSide: left|right, navMode: simple|full, theme: ${THEMES.join("|")}|null, primaryColor: "#rrggbb"|null, railWidth, listWidth, botOrder, roomOrder: [names]} | profile{name, jobTitle, department, about, timezone, contact}. Approval mode cannot be set.)
 \`\`\`zetta:conversation
 {"action":"archive","conversation":"Old plan"}
 \`\`\`   (the user's chats. action list{bot?, archived?} | start{bot} | rename{conversation, title} | pin | unpin | favorite | unfavorite | archive | unarchive | remove {conversation: title or id from list}. remove deletes the chat and its messages.)

@@ -9,8 +9,9 @@ import type { ActiveActor } from "../identity/access";
 /**
  * "Stop" means one thing wherever it is asked: the Stop button, the word typed in the chat ("stop", "para"), and later the room and
  * routine controls. Stopping a chat ends the reply that is running AND everything that would otherwise carry the work on behind the
- * person's back: the messages that waited (they are held, shown, and sent again only when the person says so), the bot's followed
- * tasks, the goal loops, and the rooms this chat opened that are still working.
+ * person's back: the messages the bot had not read yet (they stay in the chat as what was said, and nothing answers them on its own;
+ * the bot sees them as earlier messages when the person writes again), the bot's followed tasks, the goal loops, and the rooms this
+ * chat opened that are still working.
  *
  * "Pause everything" is not this: it must bring everything back on resume, so it keeps its own path (`setAgentsState`).
  */
@@ -42,8 +43,8 @@ export type StopWorkDeps = {
 export type Stopped = {
   /** A reply was running and was ended. */
   cancelled: boolean;
-  /** Waiting messages that are now held (message ids, oldest first). */
-  held: string[];
+  /** Messages the bot had not read yet, which nothing will answer now (message ids, oldest first). */
+  unread: string[];
   /** Goal loops that were ended. */
   loops: number;
   /** Rooms opened from this chat that were working and are now silent. */
@@ -90,15 +91,15 @@ export function createStopWork(d: StopWorkDeps) {
     },
     /** Stops the work of one chat. The caller has already checked that the actor may use the conversation. */
     async conversation(actor: ActiveActor, conversationId: string): Promise<Stopped> {
-      // Held first: the reply that is about to end kicks the queue, and it must find nothing to run.
-      const held = await d.db
-        .update(chatQueue)
-        .set({ status: "held", reasonCode: "stopped" })
+      // Their place in line goes first: the reply that is about to end kicks the queue, and it must find nothing to run. The messages
+      // themselves stay. `sent` rows were written to the running bot but not read by it (see `streamCli`).
+      const unread = await d.db
+        .delete(chatQueue)
         .where(
           and(
             eq(chatQueue.conversationId, conversationId),
             eq(chatQueue.ownerUserId, actor.userId),
-            eq(chatQueue.status, "pending"),
+            inArray(chatQueue.status, ["pending", "sent"]),
           ),
         )
         .returning({ messageId: chatQueue.messageId, createdAt: chatQueue.createdAt });
@@ -127,7 +128,7 @@ export function createStopWork(d: StopWorkDeps) {
       d.changed(actor.userId, conversationId);
       return {
         cancelled,
-        held: held
+        unread: unread
           .toSorted((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
           .map((h) => h.messageId),
         loops,

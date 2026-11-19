@@ -38,6 +38,7 @@ import type { ChiefKind } from "./schemas";
 import { applyStyle, runStyle } from "./style";
 import { applyTask, runTaskRemove } from "./tasks";
 import { applyOrg, runOrg } from "./org";
+import { applyLessons, runLessons } from "./lessons";
 import { applyProject, runProject } from "./project";
 import { applyTeam, runTeam } from "./team";
 import type { Applied, ApplyCtx, ChiefCtx, ChiefDeps, ChiefPatch, Outcome } from "./types";
@@ -49,6 +50,7 @@ export {
   CHIEF_KINDS,
   CHIEF_PROPOSAL,
   adminBotMay,
+  ownBotMay,
   chiefOnlyMessage,
   isChiefCall,
   isChiefWrite,
@@ -81,6 +83,8 @@ export function createChief(deps: ChiefDeps) {
           return runTeam(ctx, args as never);
         case "org":
           return runOrg(ctx, args as never);
+        case "lessons":
+          return runLessons(ctx, args as never);
         case "project":
           return runProject(ctx, args as never);
         case "output_style":
@@ -149,6 +153,8 @@ export function createChief(deps: ChiefDeps) {
           return applyTeam(ctx, patch);
         case "org":
           return applyOrg(ctx, patch);
+        case "lessons":
+          return applyLessons(ctx, patch);
         // The card of a workflow's approval step: the click is the whole change. The waiting run wakes on its next tick (features/workflows.ts).
         case "workflow_gate":
           return undefined;

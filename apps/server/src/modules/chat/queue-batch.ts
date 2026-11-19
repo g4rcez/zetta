@@ -40,6 +40,43 @@ export function pickBatch(
   return { anchor: picked.at(-1)!, earlier: picked.slice(0, -1) };
 }
 
+/** A waiting message as `pickNotes` reads it. */
+export type NoteCandidate = {
+  /** Length of the text, for the size cap. */
+  size: number;
+  /** It needs a turn of its own: a picture, a file, picked memory or skills, a poll, another bot named in it, or a `/command`. */
+  ownTurn: boolean;
+};
+
+/**
+ * The waiting messages a running reply reads as notes: the oldest ones, in order, up to the size cap. It stops at the first message
+ * that needs a turn of its own, so a later message is never read before an earlier one. A first message over the cap is still taken:
+ * the turn after this one would get the same text.
+ */
+export function pickNotes<T extends NoteCandidate>(
+  waiting: readonly T[],
+  cap = BATCH_MAX_CHARS,
+): T[] {
+  const picked: T[] = [];
+  let chars = 0;
+  for (const w of waiting) {
+    if (w.ownTurn || picked.length >= BATCH_MAX_MESSAGES) break;
+    if (picked.length && chars + w.size > cap) break;
+    picked.push(w);
+    chars += w.size;
+  }
+  return picked;
+}
+
+/**
+ * A message that acts on its raw text when it starts a turn (see `converse`): a `/command`, "remember that ...", or another bot named
+ * in it. Read as a note, none of that would run, so it keeps a turn of its own.
+ */
+export const actsOnRawText = (content: string, otherBotNamed: boolean) =>
+  otherBotNamed ||
+  /^\/\S/.test(content.trim()) ||
+  /^remember(?: that|:)?\s+\S/i.test(content.trim());
+
 export type BatchMessage = { content: string; quote?: string | undefined };
 
 /** What the bot reads for a batch. One message is passed through untouched, so a single queued message reads exactly as it was typed. */

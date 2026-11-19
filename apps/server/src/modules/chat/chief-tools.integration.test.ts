@@ -655,23 +655,17 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
     const { say } = await chiefOf(A);
     await say(
       [
-        '```zetta:preferences\n{"action":"update","navMode":"full","steerMode":"interrupt","theme":null,"primaryColor":"#1A2B3C","railWidth":260}\n```',
+        '```zetta:preferences\n{"action":"update","navMode":"full","theme":null,"primaryColor":"#1A2B3C","railWidth":260}\n```',
       ],
       "simpler menu, my color, wider sidebar",
     );
     const [card] = await pending(A);
     // Only what changes is listed: the theme was already unset.
-    expect(card!.diff.map((d) => d.field)).toEqual([
-      "navMode",
-      "steerMode",
-      "railWidth",
-      "primaryColor",
-    ]);
+    expect(card!.diff.map((d) => d.field)).toEqual(["navMode", "railWidth", "primaryColor"]);
     expect((await prefs.get(actor)).navMode).toBe("simple");
     expect((await approve(A, card!.id)).json.status).toBe("approved");
     expect(await prefs.get(actor)).toMatchObject({
       navMode: "full",
-      steerMode: "interrupt",
       primaryColor: "#1a2b3c",
       railWidth: 260,
       approvalMode: "hold",

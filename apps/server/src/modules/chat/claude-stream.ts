@@ -8,7 +8,11 @@ export type CliProgress = {
 export type ClaudeActivity = CliProgress & { command?: string };
 /** The tool result of a Bash step arrived: the command is done. */
 export type ClaudeStepDone = { stepDone: string };
-export type ClaudeItem = string | ClaudeActivity | ClaudeStepDone;
+/** Live input only: the bot took the message written to it with this `uuid` (the CLI replays the line when the model reads it). */
+export type ClaudeRead = { read: string };
+/** Live input only: a point where the run can take another message: a tool call ended, or the bot finished an answer. */
+export type ClaudeBoundary = { boundary: "tool" | "answer" };
+export type ClaudeItem = string | ClaudeActivity | ClaudeStepDone | ClaudeRead | ClaudeBoundary;
 /** Token counts of a run, as Claude Code reports them in its `result` event. Counts only: no text. */
 export type TokenUsage = { input: number; cacheRead: number; cacheWrite: number; output: number };
 export const noUsage = (): TokenUsage => ({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 });
@@ -24,6 +28,12 @@ const EVENT_TYPES = new Set(["system", "assistant", "user", "result", "stream_ev
 const LINE_MAX = 1_048_576; // a verbose tool result can be huge; a line past this is dropped, not buffered
 const NOTE_MAX = 140;
 const ARG_MAX = 60;
+
+/**
+ * Live input only: what the bot answers at once to a message it took while working, when that message is a separate quick question.
+ * The body goes into the reply as soon as it is written, while the bot carries on (see `CLAUDE_LIVE_NOTE` in harness.ts).
+ */
+const SAY_BLOCK = /```zetta:say[ \t]*\r?\n([\s\S]*?)\r?\n?```/g;
 
 const asObj = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" ? (v as Record<string, unknown>) : {};
@@ -91,20 +101,45 @@ export function toolLabel(name: string, input: unknown): string {
  * the answer: it is sent only when a tool call follows. A run that printed no events (an old CLI, a start-up error) keeps its plain
  * text as the reply. Unknown event types are ignored, so a newer CLI loses labels but never the answer.
  */
-export function createClaudeStream() {
+export function createClaudeStream(opts: { live?: boolean } = {}) {
   let buf = "";
   let skipping = false;
   let note = "";
   let answered = false;
   const plain: string[] = [];
   const out: ClaudeItem[] = [];
-  const state: { failed: boolean; errorText: string; lastActivity: string; usage?: TokenUsage } = {
+  const state: {
+    failed: boolean;
+    errorText: string;
+    lastActivity: string;
+    /** The run started a tool call or finished an answer: from here on, starting it again would throw work away. */
+    worked: boolean;
+    usage?: TokenUsage;
+  } = {
     failed: false,
     errorText: "",
     lastActivity: "",
+    worked: false,
   };
 
   const bashSteps = new Set<string>();
+  // Reply text already sent on: a later piece starts after a blank line.
+  let wrote = false;
+  const text = (piece: string) => {
+    if (!piece.trim()) return;
+    out.push(wrote ? `\n\n${piece}` : piece);
+    wrote = true;
+  };
+  /** Sends on what the bot said in `zetta:say` blocks and returns the text without them. */
+  const withoutSay = (raw: string, send: boolean) =>
+    opts.live
+      ? raw
+          .replace(SAY_BLOCK, (_all, body: string) => {
+            if (send) text(body.trim());
+            return "";
+          })
+          .trim()
+      : raw;
   const activity = (label: string, step?: { id: string; command: string }) => {
     if (!label) return;
     if (label !== "Thinking") state.lastActivity = label;
@@ -121,15 +156,18 @@ export function createClaudeStream() {
       /* not JSON: plain text */
     }
     if (typeof ev.type !== "string" || !EVENT_TYPES.has(ev.type)) {
-      plain.push(line);
+      // With live input the CLI prints more kinds of lines (`command_lifecycle`, `rate_limit_event`): a JSON line with a type it
+      // does not know is never reply text there.
+      if (!opts.live || typeof ev.type !== "string") plain.push(line);
       return;
     }
     if (ev.type === "assistant") {
       const content = asObj(ev.message).content;
       for (const part of Array.isArray(content) ? content.map(asObj) : []) {
-        if (part.type === "text") note = str(part.text) || note;
+        if (part.type === "text") note = withoutSay(str(part.text), true) || note;
         else if (part.type === "thinking") activity("Thinking");
         else if (part.type === "tool_use") {
+          state.worked = true;
           if (note) activity(clip(note.split("\n")[0]!.trim(), NOTE_MAX));
           note = "";
           const id = str(part.id);
@@ -140,28 +178,40 @@ export function createClaudeStream() {
         }
       }
     } else if (ev.type === "user") {
+      // A message written to the run comes back when the bot takes it (`--replay-user-messages`): that is its read receipt.
+      if (ev.isReplay === true) {
+        if (opts.live && str(ev.uuid)) out.push({ read: str(ev.uuid) });
+        return;
+      }
       const content = asObj(ev.message).content;
+      let toolEnded = false;
       for (const part of Array.isArray(content) ? content.map(asObj) : []) {
         const id = str(part.tool_use_id);
+        if (part.type === "tool_result") toolEnded = true;
         if (part.type === "tool_result" && bashSteps.delete(id)) out.push({ stepDone: id });
       }
+      if (opts.live && toolEnded) out.push({ boundary: "tool" });
     } else if (ev.type === "result") {
-      answered = true;
+      state.worked = true;
       const usage = asObj(ev.usage);
       const count = (v: unknown) =>
         typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
-      state.usage = {
+      // A run that takes messages while it works answers more than once, and each result counts its own turn only.
+      state.usage ??= noUsage();
+      addUsage(state.usage, {
         input: count(usage.input_tokens),
         cacheRead: count(usage.cache_read_input_tokens),
         cacheWrite: count(usage.cache_creation_input_tokens),
         output: count(usage.output_tokens),
-      };
+      });
       const result = typeof ev.result === "string" ? ev.result : "";
       if (ev.is_error === true || (ev.subtype !== undefined && ev.subtype !== "success")) {
         state.failed = true;
         state.errorText = result;
-      } else if (result.trim()) out.push(result);
+      } else text(withoutSay(result, false));
+      answered = true;
       note = "";
+      if (opts.live) out.push({ boundary: "answer" });
     }
   };
 

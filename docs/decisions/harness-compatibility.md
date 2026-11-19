@@ -156,3 +156,21 @@ A long Claude Code turn showed only "Thinking · 3m 22s" because plain `claude -
 Every harness also reports "Still working" once after 40 s without new output (`heartbeatMs`). Only one heartbeat is sent per silence, so a real stall still reaches the slow-turn check.
 
 The Claude Agent SDK was not adopted: it runs the same CLI underneath, adds a dependency, and does not run inside the Docker image without a second spawn path. Reconsider it if Zetta needs in-process permission callbacks or mid-run interrupts. Other harnesses (Codex, OpenCode, Cursor, OMP) have their own JSON streams; parsing them is a separate change.
+
+## Amendment 2026-11-19: Claude Code takes a message while it works (stream-json input)
+
+Checked against the installed CLI 2.1.328 with `scripts/e2e/claude-live-input.ts` (report: `docs/verification/e2e/claude-live-input.md`). The command was `claude -p --input-format stream-json --output-format stream-json --verbose --replay-user-messages`, with `--session-id`, `--append-system-prompt` and `--mcp-config`, and the prompt as the first line on stdin.
+
+What the run showed:
+
+- A user line written while a Bash command runs is held until the command ends. The command is not cut. One `result` then answers both messages.
+- With `--replay-user-messages` every user line comes back on stdout with our `uuid` and `isReplay: true`. It is printed when the model takes the message (right after the tool result), not when stdin is read, so it works as a read receipt.
+- A line written after a `result` gets a new `result` from the same process. Each turn prints its own `system/init`.
+- A line written right before stdin closes is still answered; the process then exits with code 0.
+- `usage` in a `result` counts that turn only; `total_cost_usd` is cumulative.
+- `--resume <session>` works the same way with the prompt on stdin.
+- Line types a parser must expect besides `system`, `assistant`, `user` and `result`: `command_lifecycle`, `rate_limit_event`. They are JSON, so they must be ignored, never read as reply text.
+
+The same script then runs Zetta's own runner (`streamCli` with a `CliInbox`) against the CLI: a message poked in during a command is read after it with a receipt, and a separate quick question is answered in a `zetta:say` block while the remaining commands run.
+
+Not checked: the same under `docker run -i`, and the `interrupt` control request (not used: an early restart kills the process, see `docs/decisions/fluid-chat.md`).

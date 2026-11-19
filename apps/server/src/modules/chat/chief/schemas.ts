@@ -2,7 +2,7 @@ import { BOT_ROLE_MAX } from "@zetta/core/bot-role";
 import { isTimeZone, PROFILE_LIMITS, profileTextProblem } from "@zetta/core/person-profile";
 import { ORG_DESCRIPTION_MAX, ORG_RANKS, ORG_TITLE_MAX, ORG_UNIT_MAX } from "@zetta/core/org";
 import { PROJECT_BRIEF_MAX, PROJECT_STATUSES, PROJECT_WATCH } from "@zetta/db/schema/projects";
-import { NAV_MODES, SIDEBAR_LIMITS, STEER_MODES, THEMES } from "@zetta/db/schema/preferences";
+import { NAV_MODES, SIDEBAR_LIMITS, THEMES } from "@zetta/db/schema/preferences";
 import { OUTPUT_STYLE_KEYS, OUTPUT_STYLE_SCOPES } from "@zetta/db/schema/output-styles";
 import { TEAM_ROLE_COLORS, TEAM_ROLE_ICONS } from "@zetta/db/schema/teams";
 import { z } from "zod";
@@ -49,6 +49,7 @@ const schedule = {
   onceAt: z.string().datetime({ offset: true }).optional(),
 };
 
+const lessonIds = z.array(z.string().uuid()).min(1).max(20);
 export const chiefSchemas = {
   bot: z.discriminatedUnion("action", [
     z.strictObject({ action: z.literal("list") }),
@@ -112,6 +113,25 @@ export const chiefSchemas = {
     }),
     z.strictObject({ action: z.literal("rename"), folder: ref, name: bounded(80) }),
     z.strictObject({ action: z.literal("remove"), folder: ref }),
+  ]),
+  /**
+   * What the bots learned from their owner. list and stats read; the rest wait for the owner's approval, and nothing is deleted: a dropped
+   * lesson is archived and can be brought back. `ids` are lesson ids from list.
+   */
+  lessons: z.discriminatedUnion("action", [
+    z.strictObject({
+      action: z.literal("list"),
+      bot: z.string().uuid().optional(),
+      status: z.enum(["waiting", "trial", "kept", "dropped", "all"]).optional(),
+      label: z.enum(["helps", "unclear", "hurts", "unused"]).optional(),
+      limit: z.number().int().min(1).max(50).optional(),
+    }),
+    z.strictObject({ action: z.literal("stats"), bot: z.string().uuid() }),
+    z.strictObject({ action: z.literal("keep"), ids: lessonIds }),
+    z.strictObject({ action: z.literal("drop"), ids: lessonIds }),
+    z.strictObject({ action: z.literal("restore"), ids: lessonIds }),
+    z.strictObject({ action: z.literal("accept"), ids: lessonIds }),
+    z.strictObject({ action: z.literal("reject"), ids: lessonIds }),
   ]),
   /** The company chart: seats that report to seats, held by people or team bots. Only an administrator changes it. */
   org: z.discriminatedUnion("action", [
@@ -512,8 +532,6 @@ export const chiefSchemas = {
         sidebarSide: z.enum(["left", "right"]).optional(),
         /** "simple" hides the Advanced group of the sidebar. */
         navMode: z.enum(NAV_MODES).optional(),
-        /** What a message sent while a bot works does: wait for the reply, or interrupt it. */
-        steerMode: z.enum(STEER_MODES).optional(),
         /** The color theme, or null to follow the device. */
         theme: z.enum(THEMES).nullable().optional(),
         /** The main color as #rrggbb, or null for the theme's own. */

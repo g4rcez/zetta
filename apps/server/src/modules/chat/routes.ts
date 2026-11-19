@@ -43,11 +43,16 @@ import { createUIMessageStreamResponse } from "ai";
 import { toUIMessageStream } from "./ui-stream";
 import { accessFail, createGuardedRoute, fail, out, rejectUntrustedOrigin } from "../http-response";
 import { envNumber } from "../env-number";
+import { AVATAR_REF } from "@zetta/core/avatar";
+import { avatarOut } from "../avatars/out";
+import { AvatarRefError, resolveAvatar, type AvatarStore } from "../avatars/store";
 
 export type ChatServices = {
   access: ReturnType<typeof createIdentityAccess>;
   chat: ChatService;
   files?: FileStore;
+  /** Reads the pictures an avatar link points at, so a bot saved with the link it was given keeps its picture. */
+  avatars?: AvatarStore;
 };
 
 const uuid = z.string().uuid();
@@ -60,8 +65,16 @@ const newFolderBody = z.strictObject({
 });
 const renameFolderBody = z.strictObject({ name: z.string().trim().min(1).max(80) });
 /** Every bot the API returns says whether the caller may change it, so a client that keeps the returned bot (onboarding, settings) stays editable. */
-const editable = <B extends { ownerUserId: string } | undefined>(actor: { userId: string }, b: B) =>
-  b && { ...b, canEdit: b.ownerUserId === actor.userId };
+const editable = <B extends { ownerUserId: string; id: string; avatar?: unknown } | undefined>(
+  actor: { userId: string },
+  b: B,
+) =>
+  b && {
+    ...b,
+    // An uploaded picture is sent as a link, not as up to 300 KB of base64 in every list.
+    avatar: avatarOut("bot", b.id, b.avatar),
+    canEdit: b.ownerUserId === actor.userId,
+  };
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const botAvatar = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -71,10 +84,14 @@ const botAvatar = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     kind: z.literal("image"),
-    src: z
-      .string()
-      .max(300_000)
-      .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/),
+    src: z.union([
+      z
+        .string()
+        .max(300_000)
+        .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/),
+      // The link the server gave for a picture it already holds (a duplicated bot, an untouched avatar saved again).
+      z.string().regex(AVATAR_REF),
+    ]),
   }),
 ]);
 /** Per-user timestamps of recent setup-interview calls (each one runs the engine). */
@@ -255,7 +272,7 @@ const filePath = z.string().min(1).max(300);
 const startChat = z.strictObject({ botId: uuid });
 
 export function createChatRoutes(
-  { access, chat, files }: ChatServices,
+  { access, chat, files, avatars }: ChatServices,
   trustedOrigins: readonly string[],
 ) {
   const guarded = createGuardedRoute({ access, trustedOrigins, mapError });
@@ -474,6 +491,8 @@ export function createChatRoutes(
   }
   function mapError(error: unknown) {
     if (error instanceof AccessError) return accessFail(error);
+    if (error instanceof AvatarRefError)
+      return fail(400, "INVALID_AVATAR", "That picture is not available. Choose it again.");
     if (error instanceof ProposalExpiredError)
       return fail(410, "PROPOSAL_EXPIRED", "This request expired. Ask the bot to send it again.");
     if (error instanceof ProposalSelectionError)
@@ -610,10 +629,6 @@ export function createChatRoutes(
       ),
     )
     .post(
-      "/conversations/:id/interrupt",
-      guarded(async ({ actor, params }) => chat.interrupt(actor, parse(uuid, params.id))),
-    )
-    .post(
       "/conversations/:id/cancel",
       guarded(async ({ actor, params }) => ({
         cancelled: await chat.cancelTurn(actor, parse(uuid, params.id)),
@@ -694,12 +709,16 @@ export function createChatRoutes(
     )
     .post(
       "/bots",
-      guarded(
-        async ({ actor, body }) => ({
-          bot: editable(actor, await chat.createBot(actor, parse(botInput, body))),
-        }),
-        201,
-      ),
+      guarded(async ({ actor, body }) => {
+        const input = parse(botInput, body);
+        const avatar = await resolveAvatar(avatars, actor, input.avatar);
+        return {
+          bot: editable(
+            actor,
+            await chat.createBot(actor, avatar === undefined ? input : { ...input, avatar }),
+          ),
+        };
+      }, 201),
     )
     .post(
       "/bots/interview",
@@ -719,10 +738,16 @@ export function createChatRoutes(
       "/bots/:id",
       guarded(async ({ actor, body, params }) => {
         const v = parse(botPatch, body);
+        const avatar = await resolveAvatar(avatars, actor, v.patch.avatar);
         return {
           bot: editable(
             actor,
-            await chat.updateBot(actor, parse(uuid, params.id), v.expectedVersion, v.patch),
+            await chat.updateBot(
+              actor,
+              parse(uuid, params.id),
+              v.expectedVersion,
+              avatar === undefined ? v.patch : { ...v.patch, avatar },
+            ),
           ),
         };
       }),
@@ -932,7 +957,7 @@ export function createChatRoutes(
     .delete(
       "/bots/:id",
       guarded(async ({ actor, params }) => ({
-        bot: await chat.archiveBot(actor, parse(uuid, params.id)),
+        bot: editable(actor, await chat.archiveBot(actor, parse(uuid, params.id))),
       })),
     )
     .get(

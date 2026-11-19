@@ -24,6 +24,8 @@ import type { OutputStyles } from "../../output-styles/service";
 import type { ProfileStore } from "../../profile/store";
 import type { TaskStore } from "../../tasks/store";
 import type { OrgStore } from "../../org/store";
+import type { LessonView } from "../../learning/lessons";
+import type { LessonTools } from "../../learning/workflow-tool";
 import type { ProjectStore } from "../../projects/store";
 import type { ProjectWork } from "../../projects/work";
 import type { TeamStore } from "../../teams/store";
@@ -114,6 +116,13 @@ export type ChiefDeps = {
         OrgStore,
         "get" | "links" | "create" | "update" | "seat" | "move" | "remove" | "applyPreset"
       >
+    | undefined;
+  /** What the bots learned (modules/learning): reads answer at once, every change is a card. */
+  lessons?:
+    | {
+        tools: LessonTools;
+        list: (owner: string, q: { status: "all" }) => Promise<LessonView[]>;
+      }
     | undefined;
   outputStyles?: OutputStyles | undefined;
   artifacts?: ArtifactStore | undefined;

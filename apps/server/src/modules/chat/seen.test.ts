@@ -31,6 +31,10 @@ describe("seenInRoom", () => {
   });
   test("a turn skipped because a later turn of the bot covered it counts", () => {
     expect(seenInRoom(rows, [turn("u1", "dev", "skipped", "merged")]).get("u1")).toEqual(["dev"]);
+    // Read by the turn the bot was running when the post arrived.
+    expect(seenInRoom(rows, [turn("u1", "dev", "skipped", "read_in_turn")]).get("u1")).toEqual([
+      "dev",
+    ]);
   });
   test("queued, awaiting approval, cancelled and other skipped turns have not read it", () => {
     const seen = seenInRoom(rows, [

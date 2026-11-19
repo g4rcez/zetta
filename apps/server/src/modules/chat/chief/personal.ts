@@ -50,7 +50,6 @@ export async function runPreferences(ctx: ChiefCtx, a: ChiefArgs<"preferences">)
     "railMode",
     "sidebarSide",
     "navMode",
-    "steerMode",
     "railWidth",
     "listWidth",
   ] as const)

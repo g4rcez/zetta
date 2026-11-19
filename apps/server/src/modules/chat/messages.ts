@@ -76,6 +76,40 @@ export async function insertMessage(
     }
   }
 }
+/**
+ * Moves a reply that is still being written to the end of its conversation. A reply that reads a message sent after it started belongs
+ * below that message: the answer is then the last thing in the chat, and the next turn reads the two in the order they happened. Only a
+ * running row moves, and only when something came after it; a saved reply keeps its place.
+ */
+export async function moveToEnd(
+  db: Pick<Database, "update">,
+  conversationId: string,
+  messageId: string,
+  ownerUserId: string,
+) {
+  const top = sql`(select coalesce(max(${message.seq}), 0) from ${message} where ${message.conversationId} = ${conversationId})`;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const moved = await db
+        .update(message)
+        .set({ seq: sql`${top} + 1` })
+        .where(
+          and(
+            eq(message.id, messageId),
+            eq(message.conversationId, conversationId),
+            eq(message.status, "running"),
+            sql`${message.seq} < ${top}`,
+          ),
+        )
+        .returning({ id: message.id });
+      if (moved.length) events.publish([ownerUserId], topics.conversation(conversationId));
+      return moved.length > 0;
+    } catch (e) {
+      // A concurrent writer took the same number: read the top again.
+      if (sqlstate(e) !== "23505" || attempt >= 6) throw e;
+    }
+  }
+}
 export const MAX_MESSAGE = 60_000;
 export const clip = (text: string) =>
   text.length > MAX_MESSAGE ? `${text.slice(0, MAX_MESSAGE - 20)}\n…(truncated)` : text;

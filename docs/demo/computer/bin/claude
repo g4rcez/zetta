@@ -18,8 +18,17 @@ if (args[0] === "auth") {
   process.exit(0);
 }
 
-const prompt = args.at(-1) ?? "";
-const everything = args.join("\n");
+// A person's turn hands the prompt over on stdin, as one JSON line, and may write more lines while the run works (the server starts
+// the real CLI with `--input-format stream-json`; see docs/decisions/fluid-chat.md). The rounds after it still pass it as the last argument.
+const live = args.includes("--input-format");
+const stdin = live ? console[Symbol.asyncIterator]() : undefined;
+const userLine = (line: string) => {
+  const o = JSON.parse(line) as { uuid?: string; message?: { content?: unknown } };
+  return { uuid: o.uuid ?? "", said: typeof o.message?.content === "string" ? o.message.content : "" };
+};
+const first = stdin ? userLine(String((await stdin.next()).value ?? "{}")) : undefined;
+const prompt = first ? first.said : (args.at(-1) ?? "");
+const everything = `${args.join("\n")}\n${prompt}`;
 
 const log = /Steps you already took this turn \(oldest first\):\n([\s\S]*?)\n\nYour previous reply:/.exec(prompt)?.[1];
 const steps = (log ?? "").split("\n").filter(Boolean).length;
@@ -51,4 +60,14 @@ await Bun.sleep(1800);
 say({ type: "system", subtype: "init", session_id: "demo" });
 say({ type: "assistant", message: { content: [{ type: "thinking", thinking: "…" }] } });
 await Bun.sleep(2200);
+// The real CLI prints a message back when the bot takes it: that is the server's read receipt.
+if (first) say({ type: "user", isReplay: true, uuid: first.uuid, message: { role: "user", content: first.said } });
 say({ type: "result", subtype: "success", is_error: false, result: reply, session_id: "demo" });
+// A message written while this stand-in "worked" is taken now and gets a short answer of its own; the run ends when stdin closes.
+if (stdin)
+  for await (const line of { [Symbol.asyncIterator]: () => stdin }) {
+    if (!String(line).trim()) continue;
+    const later = userLine(String(line));
+    say({ type: "user", isReplay: true, uuid: later.uuid, message: { role: "user", content: later.said } });
+    say({ type: "result", subtype: "success", is_error: false, result: "Noted.", session_id: "demo" });
+  }

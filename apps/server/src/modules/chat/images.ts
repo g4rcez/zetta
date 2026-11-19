@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { dataDir } from "@zetta/core/zetta-home";
 import { dirname, join, resolve, sep } from "node:path";
 import { safeUser } from "../safe-user";
 
@@ -18,8 +18,7 @@ export const isImageType = (mime: string): mime is ImageType =>
   (IMAGE_TYPES as readonly string[]).includes(mime);
 
 /** Where uploaded images live. They are kept forever so chats can be restored with their pictures. */
-export const attachmentsRoot = () =>
-  process.env.ZETTA_ATTACHMENTS_ROOT || join(homedir(), ".zetta", "attachments");
+export const attachmentsRoot = () => process.env.ZETTA_ATTACHMENTS_ROOT || dataDir("attachments");
 
 /** The type the bytes really are (by magic number), or undefined when they are not a supported image. */
 export function sniffImage(b: Uint8Array): ImageType | undefined {

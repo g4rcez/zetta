@@ -6,6 +6,7 @@ import {
   type AgentProfile,
   HarnessError,
   claudeArgs,
+  claudeUserLine,
   codeDir,
   createLimiter,
   defaultLimiter,
@@ -18,11 +19,13 @@ import {
   harnessHome,
   harnessMessage,
   joinSystem,
+  liveInputOn,
   runCli,
   streamCli,
   CLAUDE_PROGRESS_NOTE,
   SYSTEM_FLAG_MAX_BYTES,
 } from "./harness";
+import { poke } from "./poke";
 
 async function script(body: string) {
   const dir = await mkdtemp(join(tmpdir(), "zetta-fake-"));
@@ -623,6 +626,191 @@ describe.skipIf(process.platform === "win32")("code access", () => {
     expect(out).toContain("author=dev");
     expect(out).toContain("--permission-mode acceptEdits");
     expect(await Bun.file(join(root, "alice", "kept")).exists()).toBe(true);
+  });
+});
+
+// A stand-in for `claude -p --input-format stream-json --replay-user-messages`: every line it reads from stdin comes back as a replay
+// with the same uuid, as the real CLI prints when the bot takes a message (scripts/e2e/claude-live-input.ts).
+const LIVE_FAKE = `
+take() {
+  uuid=$(printf '%s' "$1" | sed -n 's/.*"uuid":"\\([^"]*\\)".*/\\1/p')
+  said=$(printf '%s' "$1" | sed -n 's/.*"content":"\\([^"]*\\)".*/\\1/p')
+  printf '{"type":"user","isReplay":true,"uuid":"%s"}\\n' "$uuid"
+}
+answer() { printf '{"type":"result","subtype":"success","is_error":false,"result":"%s"}\\n' "$1"; }
+`;
+describe.skipIf(process.platform === "win32")("claude code live input", () => {
+  test("the argv has no prompt and asks for streamed input with replays; a line carries the uuid and the text", () => {
+    const argv = claudeArgs(
+      "the prompt",
+      null,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      undefined,
+      false,
+      true,
+    );
+    expect(argv).not.toContain("the prompt");
+    expect(argv.slice(-3)).toEqual(["--input-format", "stream-json", "--replay-user-messages"]);
+    expect(argv).toContain("stream-json");
+    expect(JSON.parse(claudeUserLine("u-1", 'say "hi"\nnow'))).toEqual({
+      type: "user",
+      message: { role: "user", content: 'say "hi"\nnow' },
+      parent_tool_use_id: null,
+      uuid: "u-1",
+    });
+    expect(claudeUserLine("u-1", "x").endsWith("\n")).toBe(true);
+    expect(liveInputOn()).toBe(true);
+  });
+
+  test("a container run keeps its stdin open only for live input", () => {
+    const cfg = {
+      bin: "docker",
+      engine: "docker",
+      image: "img",
+      network: "none",
+      pids: 1,
+      memory: "1g",
+      cpus: "1",
+    } as never;
+    expect(dockerArgs(cfg, { name: "n", argv: ["claude"], env: {}, stdin: true })).toContain("-i");
+    expect(dockerArgs(cfg, { name: "n", argv: ["claude"], env: {} })).not.toContain("-i");
+  });
+
+  test("a message sent while a command runs is written to the run, read after the command, and answered in the same reply", async () => {
+    const fake = await script(`${LIVE_FAKE}
+read -r line; take "$line"
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Deploying."},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"sleep 1","description":"Deploying"}}]}}'
+sleep 0.5
+echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}'
+read -r line; take "$line"
+echo '{"type":"command_lifecycle","state":"done"}'
+answer "Deployed. Also: $said"
+while read -r line; do take "$line"; answer "extra"; done`);
+    const abort = new AbortController();
+    const waiting: { id: string; text: string }[] = [];
+    const read: string[] = [];
+    let takes = 0;
+    let out = "";
+    for await (const chunk of streamCli({
+      harness: "claude-code",
+      prompt: "deploy the app",
+      model: null,
+      signal: abort.signal,
+      resolve: () => fake,
+      inbox: {
+        take: async () => {
+          takes++;
+          return waiting.splice(0);
+        },
+        read: (ids) => read.push(...ids),
+      },
+    })) {
+      if (typeof chunk === "string") out += chunk;
+      else if (chunk.activity === "Deploying") {
+        // The person writes while the command runs: the poke makes the run ask for it now.
+        waiting.push({ id: "01a1f43a-0000-7000-8000-000000000001", text: "use staging" });
+        poke(abort.signal);
+      }
+    }
+    expect(out).toBe("Deployed. Also: use staging");
+    expect(read).toEqual(["01a1f43a-0000-7000-8000-000000000001"]);
+    // Asked at the start, on the poke, after the command and after the answer; the last one found nothing and closed the input.
+    expect(takes).toBeGreaterThanOrEqual(3);
+  });
+
+  test("a message that arrives as the answer ends gets a second answer from the same run; then the input closes", async () => {
+    const fake = await script(`${LIVE_FAKE}
+read -r line; take "$line"
+answer "First."
+while read -r line; do take "$line"; answer "Second: $said"; done`);
+    const read: string[] = [];
+    let takes = 0;
+    const out = await runCli({
+      harness: "claude-code",
+      prompt: "one",
+      model: null,
+      signal: new AbortController().signal,
+      resolve: () => fake,
+      inbox: {
+        // Nothing waits at the start; one message is there when the first answer ends; nothing after the second.
+        take: async () =>
+          ++takes === 2 ? [{ id: "01a1f43a-0000-7000-8000-000000000002", text: "and two" }] : [],
+        read: (ids) => read.push(...ids),
+      },
+    });
+    expect(out).toBe("First.\n\nSecond: and two");
+    expect(read).toEqual(["01a1f43a-0000-7000-8000-000000000002"]);
+    expect(takes).toBe(3);
+  });
+
+  test("a message that is there before the run did anything ends the run as restarted, when the caller allows it", async () => {
+    // The stand-in "thinks" for a while before it answers: the message arrives during that.
+    const fake = await script(`${LIVE_FAKE}
+read -r line; take "$line"
+sleep 2
+answer "Too late."
+while read -r line; do take "$line"; answer "Second: $said"; done`);
+    const run = (restartEarly: boolean) => {
+      const read: string[] = [];
+      let takes = 0;
+      return runCli({
+        harness: "claude-code",
+        prompt: "one",
+        model: null,
+        signal: new AbortController().signal,
+        resolve: () => fake,
+        inbox: {
+          take: async () =>
+            ++takes === 1 ? [{ id: "01a1f43a-0000-7000-8000-000000000003", text: "two" }] : [],
+          read: (ids) => read.push(...ids),
+          restartEarly: () => restartEarly,
+        },
+      }).then(
+        (text) => ({ text, read }),
+        (e: HarnessError) => ({ text: `error:${e.code}`, read }),
+      );
+    };
+    const started = Date.now();
+    expect(await run(true)).toEqual({ text: "error:restarted", read: [] });
+    // It did not wait for the answer it was about to give.
+    expect(Date.now() - started).toBeLessThan(1500);
+    // Without leave to start again the message is handed to the run, which answers it after the first answer.
+    expect(await run(false)).toEqual({
+      text: "Too late.\n\nSecond: two",
+      read: ["01a1f43a-0000-7000-8000-000000000003"],
+    });
+  });
+
+  test("with ZETTA_CLAUDE_LIVE_INPUT=off the prompt is an argument again and nothing is written to the run", async () => {
+    const fake = await script(
+      `for last; do :; done; printf '{"type":"result","subtype":"success","is_error":false,"result":"arg=%s"}\\n' "$last"`,
+    );
+    process.env.ZETTA_CLAUDE_LIVE_INPUT = "off";
+    let takes = 0;
+    try {
+      const out = await runCli({
+        harness: "claude-code",
+        prompt: "plain",
+        model: null,
+        resolve: () => fake,
+        inbox: {
+          take: async () => {
+            takes++;
+            return [];
+          },
+          read: () => {},
+        },
+      });
+      expect(out).toBe("arg=plain");
+      expect(takes).toBe(0);
+    } finally {
+      delete process.env.ZETTA_CLAUDE_LIVE_INPUT;
+    }
   });
 });
 

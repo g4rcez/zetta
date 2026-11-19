@@ -151,6 +151,10 @@ const BY_CODE: Record<string, Entry> = {
     fix: "Open Studio > Computer, replace the key or password of the machine, and check the user name.",
   },
   CANCELLED: { why: "The action was cancelled.", fix: "Ask the bot again if you still want it." },
+  DENIED: {
+    why: "The person at that computer did not allow it (or did not answer in time).",
+    fix: "Do not retry the same thing. Ask the user to allow it in the Zetta desktop app on that computer.",
+  },
   REVOKED: {
     why: "Access to it was taken away.",
     fix: "Open Studio > Computer and start it again.",

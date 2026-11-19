@@ -14,6 +14,7 @@ const READS = new Set([
   "status",
   "suggestions",
   "works_with",
+  "stats",
 ]);
 
 /**
@@ -26,6 +27,17 @@ export const adminBotMay = (
   who: { ownerUserId: string },
   actor: { userId: string; isAdmin: boolean },
 ) => ADMIN_BOT_KINDS.has(kind) && actor.isAdmin && who.ownerUserId === actor.userId;
+/**
+ * Chief kinds whose reads any of the person's own bots may send too (not only the Chief and the administrator's bots). The lessons a bot
+ * follows are the person's own; every change still waits for the Chief and the person's approval.
+ */
+const OWN_BOT_READ_KINDS: ReadonlySet<string> = new Set(["lessons"]);
+export const ownBotMay = (
+  kind: string,
+  action: string,
+  who: { ownerUserId: string },
+  actor: { userId: string },
+) => OWN_BOT_READ_KINDS.has(kind) && READS.has(action) && who.ownerUserId === actor.userId;
 /** What a bot is told when it may not use a chief kind. */
 export const chiefOnlyMessage = (kind: string) =>
   ADMIN_BOT_KINDS.has(kind)

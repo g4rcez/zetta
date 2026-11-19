@@ -10,11 +10,12 @@ import {
   machine as machineTable,
   machineBot as machineBotTable,
 } from "@zetta/db/schema/features";
+import { device as deviceTable, deviceBot as deviceBotTable } from "@zetta/db/schema/devices";
 import { team as teamTable, teamRole } from "@zetta/db/schema/teams";
 import { raiseAttention } from "../features/attention";
 import { createKnowledge, renderNotes, type NotesSnapshot } from "../features/knowledge";
 import { applyRedaction, matches, safeRegex } from "../features/safety";
-import { pickedFirst, withBuiltinSkills } from "../bot-claude/profile";
+import { pickedFirst, withBuiltinSkills, withoutSkills } from "../bot-claude/profile";
 import { hostSkill, hostSkillFiles, type HostSkill } from "../bot-claude/host-skills";
 import { createBotClaude, skillsOf } from "../bot-claude/store";
 import { resolveOutputStyle } from "../output-styles/service";
@@ -37,6 +38,7 @@ import {
   SYSTEM_FLAG_MAX_BYTES,
   streamCli,
   type CliImage,
+  type CliInbox,
   type GitIdentity,
   type McpRun,
   type NativeHarness,
@@ -59,6 +61,12 @@ export type Used = {
   docs?: { docId: string; chunkId: string }[];
   /** Memory items listed for the bot (slugs). */
   items?: string[];
+  /** Memory items the bot read during the reply with `zetta:memory read` (ids). Added when the reply is saved. */
+  loaded?: { id: string }[];
+  /** Skills Claude Code reported loading during the reply, by name. Added when the reply is saved. */
+  skills?: string[];
+  /** The bot's lessons that were in the prompt (the ids of their memory items): what it learned from its owner (modules/learning). */
+  lessons?: { id: string }[];
   /** How much work Laya judged the message to ask for (only when the builtin Laya model is on and ready). */
   attention?: Attention;
 };
@@ -90,6 +98,12 @@ export type TurnRetrieval = {
   /** What the chat summary (chat/summary.ts) says of the part of this chat that no longer fits; read once per turn by the chat service. */
   summary?: string | undefined;
 };
+/**
+ * What a turn leaves out, for a test that asks "does this bot do better with what it knows?" (a paired saved-test run). `memory`: the
+ * notes, lessons, instructions and search hits, project notes, and the memory tool. `skills`: the person's own skills (Zetta's built-in
+ * ones stay). Internal only: no HTTP route sets it.
+ */
+export type WithoutItems = { memory: boolean; skills: boolean };
 /** userId is the requesting user: memory and instructions always come from them, never from the bot owner. */
 export type Turn = {
   signal?: AbortSignal | undefined;
@@ -106,6 +120,8 @@ export type Turn = {
   extraEnv?: Record<string, string> | undefined;
   /** Claude Code: the MCP servers this user bound to the bot (their tokens travel in `extraEnv`). */
   mcp?: McpRun | undefined;
+  /** Leaves memory and/or the person's skills out of this turn (see `WithoutItems`). */
+  without?: WithoutItems | undefined;
   /** Frozen memory for this conversation; without one (routines, workflows) the live stores are read. */
   notesSnapshot?: NotesSnapshot | undefined;
   /** Plugins this user bound to the bot (see integrations/plugins): tool list + call format. Built by the chat service. */
@@ -126,6 +142,8 @@ export type Turn = {
   resumeSession?: string | undefined;
   /** Called with the Claude Code session id when the run is one that can be resumed (a code directory), so the caller can record it. */
   onSession?: ((id: string) => void) | undefined;
+  /** What is sent to the bot while this run works. Only Claude Code can read it mid-run (see `CliInbox`); other engines ignore it. */
+  inbox?: CliInbox | undefined;
   /** Progress while a non-streaming run works: a step the bot took, or "Still working" after a silence. */
   onActivity?: ((label: string) => void) | undefined;
   /** Called with the token counts of each Claude Code process this turn starts (see TokenUsage). */
@@ -246,14 +264,12 @@ export function createTurnRunner(
     !dockerConfig() &&
     !process.env.ZETTA_HARNESS_HOME_ROOT;
   /** The bot's own Claude Code / Hermes settings. A lookup failure stops the run: falling back to defaults could grant more than the owner allowed. */
-  const claudeFor = async (b: Bot, picked?: readonly string[]) => {
+  const claudeFor = async (b: Bot, picked?: readonly string[], skillsOff = false) => {
     if (b.harness !== "claude-code" && b.harness !== "hermes") return {};
     // Every run also gets Zetta's own skills (recover from failure, long work, verify), next to the owner's. The chief gets the same
     // permissions as any other bot.
-    const profile = pickedFirst(
-      withBuiltinSkills(await botClaude.profile(b.id, { withFiles: true })),
-      picked,
-    );
+    const own = await botClaude.profile(b.id, { withFiles: true });
+    const profile = pickedFirst(withBuiltinSkills(skillsOff ? withoutSkills(own) : own), picked);
     if (b.harness !== "claude-code" || !picked?.length) return { profile };
     // A host skill the person picked is given to Claude Code as an installed skill, never as prompt text.
     const mine = new Set(profile.skills.map((k) => k.name));
@@ -350,6 +366,7 @@ export function createTurnRunner(
     prompt,
     parentMessageId,
     onUsed,
+    without,
     notesSnapshot,
     pluginTools,
     noCode,
@@ -400,16 +417,17 @@ export function createTurnRunner(
         : await Promise.all(
             (await activeProjectsOf(db, userId, b.id)).map(async (p) => ({
               ...p,
-              notes:
-                (await memory
-                  ?.browse?.({ userId, botId: b.id }, { projectId: p.id }, PROJECT_NOTES)
-                  .catch(() => [])) ?? [],
+              notes: without?.memory
+                ? []
+                : ((await memory
+                    ?.browse?.({ userId, botId: b.id }, { projectId: p.id }, PROJECT_NOTES)
+                    .catch(() => [])) ?? []),
             })),
           );
     // Where the bot sits in the company chart (its seat, its manager, its reports), or for the chief the top of the company. Like the
     // projects above, not with outside people in play.
     const orgText = fixture || noCode ? "" : await orgContextFor(db, userId, b).catch(() => "");
-    const [snap, pages, bots, vms, teams, roles, judged] = await Promise.all([
+    const [snapAll, pagesAll, bots, vms, teams, roles, judged] = await Promise.all([
       notesSnapshot ?? knowledge.snapshot(userId, b.id),
       // Not with outside people in play (noCode): the operator's notes must not reach them through the reply.
       fixture || !memory || noCode
@@ -457,6 +475,9 @@ export function createTurnRunner(
         : [],
       level,
     ]);
+    // A test that leaves memory out sees none of it: the notes, lessons and instructions, the search hits and (above) the project notes.
+    const snap: NotesSnapshot = without?.memory ? { user: [], notes: [] } : snapAll;
+    const pages = without?.memory ? [] : pagesAll;
     // The chief plans teams from this: which bot is good at what, with which skills, in which teams. Specialists keep the plain list.
     const chiefView = !fixture && b.kind === "chief" && !noCode;
     const roster = chiefView ? await loadChiefRoster(db, userId, bots) : "";
@@ -481,6 +502,22 @@ export function createTurnRunner(
             )
             .orderBy(asc(machineTable.createdAt))
         : [];
+    // Computers paired through the desktop app that the user shared with this bot: called like a machine (run and list only).
+    const devicesShared =
+      !fixture && !noCode && b.computerMode !== "off"
+        ? await db
+            .select({ name: deviceTable.name, platform: deviceTable.platform })
+            .from(deviceTable)
+            .innerJoin(deviceBotTable, eq(deviceBotTable.deviceId, deviceTable.id))
+            .where(
+              and(
+                eq(deviceTable.ownerUserId, userId),
+                isNull(deviceTable.revokedAt),
+                eq(deviceBotTable.botId, b.id),
+              ),
+            )
+            .orderBy(asc(deviceTable.createdAt))
+        : [];
     // Procedures (items tagged instruction) among the hits are shown in full, up to a few and a byte budget; the rest are loaded with zetta:memory read.
     const procedures: { id: string; title: string; content: string }[] = [];
     let procedureBytes = 0;
@@ -500,6 +537,7 @@ export function createTurnRunner(
         (m) => ({ id: m.id }),
       ),
       instructions: shownIds.map((id) => ({ id })),
+      ...(snap.lessons?.length ? { lessons: snap.lessons.map((l) => ({ id: l.id })) } : {}),
       ...(pages.length ? { items: pages.map((p) => p.slug) } : {}),
       ...(judged ? { attention: judged } : {}),
     });
@@ -525,10 +563,14 @@ export function createTurnRunner(
                 .join(", ") || "only the default one, created on first use"
             }`
           : "") +
-        (machines.length
-          ? `\n${MACHINE_TOOLS.trimStart()}\nThe user's machines (use the name): ${machines
-              .map((m) => `${m.name} (${m.kind}, ${m.username}@${m.host})`)
-              .join(", ")}`
+        (machines.length || devicesShared.length
+          ? `\n${MACHINE_TOOLS.trimStart()}\nThe user's machines (use the name): ${[
+              ...machines.map((m) => `${m.name} (${m.kind}, ${m.username}@${m.host})`),
+              ...devicesShared.map(
+                (d) =>
+                  `${d.name} (device, the user's own ${d.platform === "darwin" ? "Mac" : d.platform === "win32" ? "Windows PC" : "Linux computer"}: run and list only)`,
+              ),
+            ].join(", ")}`
           : "");
     const style = await resolveOutputStyle(db, b);
     // The stable half: it does not change between the rounds of one reply or between turns of the same bot, so Claude Code can cache it.
@@ -623,13 +665,13 @@ export function createTurnRunner(
     }
   }
   /** Starts the bot's profile lookup beside prompt preparation; a failure surfaces only if the run goes on (a hook stop never needed it). */
-  const lookupWhilePreparing = (b: Bot, picked?: readonly string[]) => {
-    const lookup = claudeFor(b, picked);
+  const lookupWhilePreparing = (b: Bot, picked?: readonly string[], skillsOff = false) => {
+    const lookup = claudeFor(b, picked, skillsOff);
     lookup.catch(() => {});
     return lookup;
   };
   async function run(turn: Turn): Promise<TurnResult> {
-    const lookup = lookupWhilePreparing(turn.bot, turn.skills);
+    const lookup = lookupWhilePreparing(turn.bot, turn.skills, turn.without?.skills);
     const p = await prepare(turn);
     if ("stop" in p) return p.stop;
     const reply = await call(
@@ -654,7 +696,7 @@ export function createTurnRunner(
   }
   /** Same pipeline, but yields reply text as it is produced, and progress lines (`{ activity }`) while the bot works. */
   async function* streamTurn(turn: Turn): AsyncGenerator<string | CliProgress, void> {
-    const lookup = lookupWhilePreparing(turn.bot, turn.skills);
+    const lookup = lookupWhilePreparing(turn.bot, turn.skills, turn.without?.skills);
     const p = await prepare(turn);
     if ("stop" in p) {
       yield p.stop.text;
@@ -692,7 +734,7 @@ export function createTurnRunner(
             userId: turn.userId,
             botId: x.id,
             ...(primary ? code : await codeFor(db, x, turn.userId, turn.noCode)),
-            ...(await (primary ? lookup : claudeFor(x, turn.skills))),
+            ...(await (primary ? lookup : claudeFor(x, turn.skills, turn.without?.skills))),
             ...(turn.extraEnv ? { extraEnv: turn.extraEnv } : {}),
             ...(turn.mcp ? { mcp: turn.mcp } : {}),
             ...(turn.signal ? { signal: turn.signal } : {}),
@@ -701,6 +743,8 @@ export function createTurnRunner(
             ...(primary && sessionId
               ? { session: { id: sessionId, resume: Boolean(turn.resumeSession) } }
               : {}),
+            // The fallback harness has not seen what the main one already read, so only the main one takes messages mid-run.
+            ...(primary && turn.inbox && x.harness === "claude-code" ? { inbox: turn.inbox } : {}),
             ...(turn.onUsage ? { onUsage: turn.onUsage } : {}),
           });
         },

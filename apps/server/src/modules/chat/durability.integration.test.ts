@@ -33,22 +33,52 @@ suite("durable chat turns against compose postgres", () => {
   let runs = 0;
   const prompts: string[] = [];
   const sessions: ({ id: string; resume: boolean } | undefined)[] = [];
+  // What the stand-in does with a message handed to it while it "works" (only a Claude Code run gets an inbox): takes and reads it
+  // as the real CLI does, takes it and never reads it, or takes it, reads it and then breaks (once).
+  // `restart_once`: a message is there before the run did anything, and the caller allows starting again (see `restartEarly`).
+  let live: "read" | "never_read" | "fail_once" | "restart_once" = "read";
   // 6 chunks, 40ms apart, honours cancellation.
   const slowCli = async function* (t: {
     prompt: string;
     signal?: AbortSignal;
     session?: { id: string; resume: boolean };
+    inbox?: {
+      take(): Promise<{ id: string; text: string }[]>;
+      read(ids: string[]): void;
+      restartEarly?(): boolean;
+    };
   }) {
     runs++;
     prompts.push(t.prompt);
     sessions.push(t.session);
+    if (live === "restart_once" && t.inbox) {
+      await Bun.sleep(80);
+      if ((await t.inbox.take()).length && t.inbox.restartEarly?.()) {
+        live = "read";
+        throw new HarnessError("restarted");
+      }
+    }
     for (let i = 0; i < 6; i++) {
       if (t.signal?.aborted) throw new HarnessError("cancelled");
       await Bun.sleep(40);
       yield `part${i} `;
+      const got = (await t.inbox?.take()) ?? [];
+      if (!got.length || live === "never_read") continue;
+      t.inbox!.read(got.map((g) => g.id));
+      if (live === "fail_once") {
+        live = "read";
+        throw new HarnessError("failed");
+      }
+      yield `[read ${got.map((g) => g.text).join(", ")}] `;
     }
   };
-  const slowRun = createTurnRunner(db, (async () => "x") as never, slowCli as never);
+  // The rounds after the first answer (a tool round, or the round for messages sent while the bot worked) are plain calls.
+  const laterPrompts: string[] = [];
+  const laterCli = async (t: { prompt: string }) => {
+    laterPrompts.push(t.prompt);
+    return "more";
+  };
+  const slowRun = createTurnRunner(db, laterCli as never, slowCli as never);
   const chat = createChatService(
     db,
     slowRun,
@@ -336,6 +366,7 @@ suite("durable chat turns against compose postgres", () => {
     status: string;
     parentMessageId?: string | null;
     queue?: string;
+    meta?: { steer?: { replyId: string }; stop?: unknown } | null;
   };
   /** Waits until nothing is queued or running in the conversation, then returns its messages. */
   const drained = async (c: string): Promise<Row[]> => {
@@ -353,7 +384,7 @@ suite("durable chat turns against compose postgres", () => {
   const chatReq = (as: string, c: string, body: object) =>
     req(as, "POST", `/api/conversations/${c}/chat`, body);
 
-  test("messages sent while a turn runs are saved at once and answered together by one turn, in order", async () => {
+  test("messages sent while a turn runs are saved at once and read by the same reply, in order", async () => {
     const { c } = await setup(A);
     const first = await chatReq(A, c, { content: "FIRST" });
     const reader = first.body!.getReader();
@@ -365,106 +396,262 @@ suite("durable chat turns against compose postgres", () => {
     expect(await busy.text()).toContain('"type":"data-user-saved"');
     const pending = (await call(A, "GET", `/api/conversations/${c}/messages`)).json
       .messages as Row[];
+    expect(pending.filter((m) => m.role === "user").map((m) => m.content)).toEqual([
+      "FIRST",
+      "SECOND",
+      "THIRD",
+    ]);
+    laterPrompts.length = 0;
+    while (!(await reader.read()).done);
+    const msgs = await drained(c);
+    // No second turn and no second reply: the reply that was running read both before it closed, and now sits below them.
+    const replies = msgs.filter((m) => m.role === "assistant");
+    expect(replies.map((m) => [m.status, m.parentMessageId ?? null])).toEqual([["complete", null]]);
+    const reply = replies[0]!;
+    expect(msgs.map((m) => m.role)).toEqual(["user", "user", "user", "assistant"]);
+    expect(reply.seq).toBeGreaterThan(msgs.find((m) => m.content === "THIRD")!.seq);
+    expect(msgs.some((m) => m.queue)).toBe(false);
     expect(
-      pending.filter((m) => m.role === "user").map((m) => [m.content, m.queue ?? null]),
+      msgs.filter((m) => m.role === "user").map((m) => [m.content, m.meta?.steer?.replyId ?? null]),
     ).toEqual([
       ["FIRST", null],
-      ["SECOND", "pending"],
-      ["THIRD", "pending"],
+      ["SECOND", reply.id],
+      ["THIRD", reply.id],
     ]);
-    while (!(await reader.read()).done);
-    prompts.length = 0;
-    const before = runs;
-    const msgs = await drained(c);
-    // One turn answered both, on the main line, after the last of them: no thread, no second turn.
-    expect(runs - before).toBe(1);
-    const replies = msgs.filter((m) => m.role === "assistant");
-    expect(replies.map((m) => [m.status, m.parentMessageId ?? null])).toEqual([
-      ["complete", null],
-      ["complete", null],
-    ]);
-    const third = msgs.find((m) => m.content === "THIRD")!;
-    expect(replies[1]!.seq).toBeGreaterThan(third.seq);
-    expect(msgs.some((m) => m.queue)).toBe(false);
-    // The bot reads both messages once, oldest first, is told the later one wins, and still has what came before them.
-    expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain("Message 1 of 2:\nSECOND");
-    expect(prompts[0]).toContain("Message 2 of 2:\nTHIRD");
-    expect(prompts[0]).toContain("the latest instruction wins");
-    expect(prompts[0]!.split("SECOND").length - 1).toBe(1);
-    expect(prompts[0]!.split("THIRD").length - 1).toBe(1);
-    expect(prompts[0]).toContain("FIRST");
+    // What the bot had answered stays, and what it added follows.
+    expect(reply.content).toContain("part5");
+    expect(reply.content.trim().endsWith("more")).toBe(true);
+    // One extra round read both messages once, oldest first, with the request and the reply so far.
+    expect(laterPrompts).toHaveLength(1);
+    const prompt = laterPrompts[0]!;
+    expect(prompt).toContain("Original request:\nFIRST");
+    expect(prompt).toContain("Your reply so far (it stays as it is):\npart0");
+    expect(prompt).toContain("The user sent this while you worked");
+    expect(prompt.indexOf("- SECOND")).toBeGreaterThan(-1);
+    expect(prompt.indexOf("- THIRD")).toBeGreaterThan(prompt.indexOf("- SECOND"));
+    expect(prompt.split("SECOND").length - 1).toBe(1);
   });
 
-  test("a message sent while the batch is answered waits for the next turn", async () => {
+  test("a message that needs a turn of its own is answered after the reply, with what was sent after it", async () => {
     const { c } = await setup(A);
     const first = await chatReq(A, c, { content: "slow" });
     const reader = first.body!.getReader();
     await reader.read();
-    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "B1" });
+    // A `/command` acts on its raw text when it starts a turn, so it is never read as a note; LATER is not read before it.
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "/own turn" });
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "LATER" });
+    laterPrompts.length = 0;
     while (!(await reader.read()).done);
-    // The batch turn (B1) is running now: B2 is not part of it.
-    for (let i = 0; i < 100; i++) {
-      const [row] = await db.select().from(chatQueue).where(eq(chatQueue.conversationId, c));
-      if (row?.status === "running") break;
-      await Bun.sleep(10);
-    }
+    const msgs = await drained(c);
+    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
+      "complete",
+      "complete",
+    ]);
+    expect(msgs.some((m) => m.meta?.steer)).toBe(false);
+    expect(laterPrompts).toHaveLength(0);
+    // The second turn answers both, oldest first, and has the first reply as history.
+    const batch = prompts.at(-1)!;
+    expect(batch).toContain("Message 1 of 2:\n/own turn");
+    expect(batch).toContain("Message 2 of 2:\nLATER");
+    expect(batch).toContain("part5");
+  });
+
+  test("a reply that read a later message is still history for a message answered after it", async () => {
+    const { c } = await setup(A);
+    const first = await chatReq(A, c, { content: "slow" });
+    const reader = first.body!.getReader();
+    await reader.read();
+    // NOTE is read by the running reply, which then moves below it; "/after" waits for its own turn and is older than that reply.
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "NOTE" });
+    while (!(await reader.read()).done);
+    await drained(c);
+    const second = await chatReq(A, c, { content: "slow again" });
+    const reader2 = second.body!.getReader();
+    await reader2.read();
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "/after" });
     prompts.length = 0;
-    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "B2" });
+    while (!(await reader2.read()).done);
     const msgs = await drained(c);
     expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
       "complete",
       "complete",
       "complete",
     ]);
-    // B2's own turn reads B2 as typed (one message is never wrapped), with B1 and its answer as history.
-    const last = prompts.at(-1)!;
-    expect(last).toContain("B2");
-    expect(last).not.toContain("Message 1 of");
-    expect(last).toContain("B1");
+    // The turn for "/after" reads everything that was answered before it, in the order it happened.
+    const prompt = prompts.at(-1)!;
+    expect(prompt.indexOf("user: slow")).toBeGreaterThan(-1);
+    expect(prompt.indexOf("user: NOTE")).toBeGreaterThan(prompt.indexOf("user: slow"));
+    expect(prompt.indexOf("user: slow again")).toBeGreaterThan(prompt.indexOf("user: NOTE"));
+    expect(prompt.indexOf("assistant: part0")).toBeGreaterThan(prompt.indexOf("user: NOTE"));
   });
 
-  test("Stop ends the reply and holds the queued messages until the person sends or removes them", async () => {
+  test("a run the server started in a chat (a notice, a loop step) reads what the person sends while it works", async () => {
+    const { c } = await setup(A);
+    const actor = await access.requireActive(new Headers({ "x-test-user": A }));
+    laterPrompts.length = 0;
+    const { rec } = await chat.startTurn(actor, c, {
+      content: "Checking on the task",
+      notice: { prompt: "A task you follow moved. Carry on with it." },
+    });
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "NOTE-FOR-THE-STEP" });
+    await rec.finished;
+    const msgs = await drained(c);
+    const replies = msgs.filter((m) => m.role === "assistant");
+    expect(replies.map((m) => m.status)).toEqual(["complete"]);
+    expect(msgs.find((m) => m.content === "NOTE-FOR-THE-STEP")!.meta?.steer?.replyId).toBe(
+      replies[0]!.id,
+    );
+    expect(laterPrompts).toHaveLength(1);
+    expect(laterPrompts[0]).toContain("- NOTE-FOR-THE-STEP");
+    expect(await db.select().from(chatQueue).where(eq(chatQueue.conversationId, c))).toEqual([]);
+  });
+
+  const claudeChat = async () => {
+    const bot = (
+      await call(A, "POST", "/api/bots", { name: `L${uuidv7().slice(-4)}`, harness: "claude-code" })
+    ).json.bot.id as string;
+    return (await call(A, "POST", "/api/conversations", { botId: bot })).json.conversation
+      .id as string;
+  };
+
+  test("a run that reads messages while it works: the message is read by the running reply, with no extra round", async () => {
+    const c = await claudeChat();
+    const first = await chatReq(A, c, { content: "slow" });
+    const reader = first.body!.getReader();
+    await reader.read();
+    laterPrompts.length = 0;
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "LIVE-NOTE" });
+    let rest = "";
+    const dec = new TextDecoder();
+    for (let r = await reader.read(); !r.done; r = await reader.read()) rest += dec.decode(r.value);
+    const msgs = await drained(c);
+    const replies = msgs.filter((m) => m.role === "assistant");
+    expect(replies.map((m) => m.status)).toEqual(["complete"]);
+    expect(replies[0]!.content).toContain("[read LIVE-NOTE]");
+    expect(replies[0]!.content).toContain("part5");
+    // The run itself read it: no round before the reply closed, nothing left in the queue.
+    expect(laterPrompts).toHaveLength(0);
+    expect(await db.select().from(chatQueue).where(eq(chatQueue.conversationId, c))).toEqual([]);
+    const note = msgs.find((m) => m.content === "LIVE-NOTE")!;
+    expect(note.meta?.steer?.replyId).toBe(replies[0]!.id);
+    expect(replies[0]!.seq).toBeGreaterThan(note.seq);
+    // The page was told the moment the bot took it.
+    expect(rest).toContain('"type":"data-steer"');
+  });
+
+  test("a message that arrives before the bot did anything starts the run again: one answer to both", async () => {
+    const c = await claudeChat();
+    live = "restart_once";
+    try {
+      const first = await chatReq(A, c, { content: "FIRST-ASK" });
+      const reader = first.body!.getReader();
+      await reader.read();
+      const before = prompts.length;
+      laterPrompts.length = 0;
+      await call(A, "POST", `/api/conversations/${c}/queue`, { content: "SECOND-ASK" });
+      while (!(await reader.read()).done);
+      const msgs = await drained(c);
+      const replies = msgs.filter((m) => m.role === "assistant");
+      expect(replies.map((m) => m.status)).toEqual(["complete"]);
+      // The run that starts again has both messages in its prompt, the later one marked as added; its text is the whole reply.
+      const again = prompts.slice(before).at(-1)!;
+      expect(again).toContain("FIRST-ASK");
+      expect(again).toContain("The user sent more before you started working");
+      expect(again.trim().endsWith("- SECOND-ASK")).toBe(true);
+      expect(replies[0]!.content.split("part0").length - 1).toBe(1);
+      expect(laterPrompts).toHaveLength(0);
+      const second = msgs.find((m) => m.content === "SECOND-ASK")!;
+      expect(second.meta?.steer?.replyId).toBe(replies[0]!.id);
+      expect(replies[0]!.seq).toBeGreaterThan(second.seq);
+      expect(await db.select().from(chatQueue).where(eq(chatQueue.conversationId, c))).toEqual([]);
+    } finally {
+      live = "read";
+    }
+  });
+
+  test("a message written to a run that never took it is read before the reply closes", async () => {
+    const c = await claudeChat();
+    live = "never_read";
+    try {
+      const first = await chatReq(A, c, { content: "slow" });
+      const reader = first.body!.getReader();
+      await reader.read();
+      laterPrompts.length = 0;
+      await call(A, "POST", `/api/conversations/${c}/queue`, { content: "MISSED-NOTE" });
+      while (!(await reader.read()).done);
+      const msgs = await drained(c);
+      const replies = msgs.filter((m) => m.role === "assistant");
+      expect(replies.map((m) => m.status)).toEqual(["complete"]);
+      expect(replies[0]!.content).not.toContain("[read");
+      expect(laterPrompts).toHaveLength(1);
+      expect(laterPrompts[0]).toContain("- MISSED-NOTE");
+      expect(replies[0]!.content.trim().endsWith("more")).toBe(true);
+      expect(msgs.find((m) => m.content === "MISSED-NOTE")!.meta?.steer?.replyId).toBe(
+        replies[0]!.id,
+      );
+      expect(await db.select().from(chatQueue).where(eq(chatQueue.conversationId, c))).toEqual([]);
+    } finally {
+      live = "read";
+    }
+  });
+
+  test("a run that breaks after it took a message did not answer it: the next turn does", async () => {
+    const c = await claudeChat();
+    live = "fail_once";
+    try {
+      const first = await chatReq(A, c, { content: "slow" });
+      const reader = first.body!.getReader();
+      await reader.read();
+      await call(A, "POST", `/api/conversations/${c}/queue`, { content: "LOST-NOTE" });
+      while (!(await reader.read()).done);
+      const msgs = await drained(c);
+      expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
+        "failed",
+        "complete",
+      ]);
+      // The message is not marked as read by the reply that failed, and the turn after it was given the message.
+      expect(msgs.find((m) => m.content === "LOST-NOTE")!.meta?.steer).toBeUndefined();
+      expect(prompts.at(-1)!.trim().endsWith("LOST-NOTE")).toBe(true);
+      expect(await db.select().from(chatQueue).where(eq(chatQueue.conversationId, c))).toEqual([]);
+    } finally {
+      live = "read";
+    }
+  });
+
+  test("Stop ends the reply; messages the bot had not read stay in the chat and nothing answers them", async () => {
     const { c } = await setup(A);
     const first = await chatReq(A, c, { content: "slow" });
     const reader = first.body!.getReader();
     await reader.read();
-    const q1 = await call(A, "POST", `/api/conversations/${c}/queue`, { content: "Q1" });
-    const q2 = await call(A, "POST", `/api/conversations/${c}/queue`, { content: "Q2" });
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "Q1" });
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "Q2" });
+    laterPrompts.length = 0;
     expect((await call(A, "POST", `/api/conversations/${c}/cancel`)).json.cancelled).toBe(true);
     while (!(await reader.read()).done);
-    let msgs = await drained(c);
+    const msgs = await drained(c);
     expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual(["cancelled"]);
-    expect(msgs.filter((m) => m.queue).map((m) => [m.content, m.queue])).toEqual([
-      ["Q1", "held"],
-      ["Q2", "held"],
+    // Both messages are still there as what was said: no state, nothing to send or remove, and the bot never read them.
+    expect(msgs.filter((m) => m.role === "user").map((m) => [m.content, m.queue ?? null])).toEqual([
+      ["slow", null],
+      ["Q1", null],
+      ["Q2", null],
     ]);
-    // Nothing runs behind the person's back: a tick later the held messages are still held.
+    expect(msgs.some((m) => m.meta?.steer)).toBe(false);
+    expect(await db.select().from(chatQueue).where(eq(chatQueue.conversationId, c))).toEqual([]);
+    // Nothing runs behind the person's back: a tick later no answer has started.
     const before = runs;
     await chat.drainQueues();
     await Bun.sleep(100);
     expect(runs).toBe(before);
-    // Someone else cannot release it; the owner sends one and removes the other.
-    const id1 = q1.json.message.id as string;
-    const id2 = q2.json.message.id as string;
-    expect((await call(B, "POST", `/api/conversations/${c}/queue/${id1}/retry`)).status).toBe(404);
-    expect((await call(A, "DELETE", `/api/conversations/${c}/queue/${id2}`)).status).toBe(200);
-    expect((await call(A, "POST", `/api/conversations/${c}/queue/${id1}/retry`)).status).toBe(200);
-    msgs = await drained(c);
-    expect(msgs.some((m) => m.content === "Q2")).toBe(false);
-    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
-      "cancelled",
-      "complete",
-    ]);
-    expect(msgs.some((m) => m.queue)).toBe(false);
+    expect(laterPrompts).toHaveLength(0);
   });
 
-  test("a message sent after Stop is answered; it does not release what was held", async () => {
+  test("a message sent after Stop is answered, and the bot sees the unread ones as earlier messages", async () => {
     const { c } = await setup(A);
     const first = await chatReq(A, c, { content: "slow" });
     const reader = first.body!.getReader();
     await reader.read();
-    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "HELD" });
+    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "UNREAD-ONE" });
     await call(A, "POST", `/api/conversations/${c}/cancel`);
     while (!(await reader.read()).done);
     await drained(c);
@@ -472,65 +659,16 @@ suite("durable chat turns against compose postgres", () => {
     const next = await chatReq(A, c, { content: "NEW-REQUEST" });
     await next.text();
     const msgs = await drained(c);
-    expect(msgs.find((m) => m.content === "HELD")!.queue).toBe("held");
     expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
       "cancelled",
       "complete",
     ]);
     expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("user: UNREAD-ONE");
+    expect(prompts[0]!.trim().endsWith("NEW-REQUEST")).toBe(true);
   });
 
-  test("Send now interrupts the reply: the waiting message runs at once, continues the same session, and is told what was done", async () => {
-    const { c } = await setup(A);
-    const first = await chatReq(A, c, { content: "slow" });
-    const reader = first.body!.getReader();
-    await reader.read();
-    await call(A, "POST", `/api/conversations/${c}/queue`, { content: "use the other file" });
-    prompts.length = 0;
-    expect((await call(A, "POST", `/api/conversations/${c}/interrupt`)).json).toEqual({
-      interrupted: true,
-    });
-    expect((await call(B, "POST", `/api/conversations/${c}/interrupt`)).status).toBe(404);
-    while (!(await reader.read()).done);
-    const msgs = await drained(c);
-    // Nothing held: the interrupted reply is stopped and the message is answered.
-    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
-      "cancelled",
-      "complete",
-    ]);
-    expect(msgs.some((m) => m.queue)).toBe(false);
-    expect(prompts.at(-1)).toContain("interrupted you");
-    expect(prompts.at(-1)).toContain("use the other file");
-  });
-
-  test("with Interrupt chosen in preferences, a message sent while the bot works interrupts it and is read at once", async () => {
-    const { c } = await setup(A);
-    await db.$client.query(
-      "insert into user_preference (owner_user_id, steer_mode) values ($1, 'interrupt') on conflict (owner_user_id) do update set steer_mode = 'interrupt'",
-      [A],
-    );
-    try {
-      const first = await chatReq(A, c, { content: "slow" });
-      const reader = first.body!.getReader();
-      await reader.read();
-      prompts.length = 0;
-      await call(A, "POST", `/api/conversations/${c}/queue`, { content: "use the staging db" });
-      while (!(await reader.read()).done);
-      const msgs = await drained(c);
-      expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
-        "cancelled",
-        "complete",
-      ]);
-      expect(prompts.at(-1)).toContain("interrupted you");
-    } finally {
-      await db.$client.query(
-        "update user_preference set steer_mode = 'park' where owner_user_id = $1",
-        [A],
-      );
-    }
-  });
-
-  test('"para" typed while the bot works stops it: the reply ends, the waiting message is held, the word is not answered', async () => {
+  test('"para" typed while the bot works stops it: the reply ends, the waiting message is not answered, nor is the word', async () => {
     const { c } = await setup(A);
     const first = await chatReq(A, c, { content: "slow" });
     const reader = first.body!.getReader();
@@ -543,16 +681,16 @@ suite("durable chat turns against compose postgres", () => {
     while (!(await reader.read()).done);
     const msgs = await drained(c);
     await Bun.sleep(100);
-    // No run ever read the held message or the stop word (the first run may only just have started when the word arrived).
+    // No run ever read the waiting message or the stop word (the first run may only just have started when the word arrived).
     expect(prompts.slice(seen).some((p) => /ALSO-THIS|Para!/.test(p))).toBe(false);
     expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual(["cancelled"]);
-    expect(msgs.find((m) => m.content === "ALSO-THIS")!.queue).toBe("held");
-    const word = msgs.find((m) => m.content === "Para!")! as Row & { meta?: { stop?: unknown } };
+    expect(msgs.find((m) => m.content === "ALSO-THIS")!.queue).toBeUndefined();
+    const word = msgs.find((m) => m.content === "Para!")!;
     expect(word.queue).toBeUndefined();
-    expect(word.meta?.stop).toEqual({ held: 1, rooms: 0 });
+    expect(word.meta?.stop).toEqual({ unread: 1, rooms: 0 });
   });
 
-  test("a sentence that only contains a stop word is an ordinary queued message", async () => {
+  test("a sentence that only contains a stop word is an ordinary message: the running reply reads it", async () => {
     const { c } = await setup(A);
     const first = await chatReq(A, c, { content: "slow" });
     const reader = first.body!.getReader();
@@ -560,10 +698,8 @@ suite("durable chat turns against compose postgres", () => {
     await call(A, "POST", `/api/conversations/${c}/queue`, { content: "para o João revisar" });
     while (!(await reader.read()).done);
     const msgs = await drained(c);
-    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual([
-      "complete",
-      "complete",
-    ]);
+    expect(msgs.filter((m) => m.role === "assistant").map((m) => m.status)).toEqual(["complete"]);
+    expect(msgs.find((m) => m.content === "para o João revisar")!.meta?.steer).toBeDefined();
   });
 
   test('"stop" in an idle chat with nothing running is a message for the bot', async () => {

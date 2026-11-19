@@ -217,4 +217,141 @@ describe("tool labels", () => {
     addUsage(total, { input: 1, cacheRead: 200, cacheWrite: 0, output: 3 });
     expect(total).toEqual({ input: 11, cacheRead: 300, cacheWrite: 5, output: 23 });
   });
+
+  describe("live input: the run takes messages while it works", () => {
+    const result = (text: string, usage?: object) =>
+      line({ type: "result", subtype: "success", is_error: false, result: text, usage });
+
+    test("a message the bot took is reported by its uuid; the replay is never read as a tool result", () => {
+      const s = createClaudeStream({ live: true });
+      expect(
+        s.push(
+          line({
+            type: "user",
+            isReplay: true,
+            uuid: "01a1f43a-8dd0-7694-83e5-741019672e1f",
+            message: { role: "user", content: "use staging" },
+          }),
+        ),
+      ).toEqual([{ read: "01a1f43a-8dd0-7694-83e5-741019672e1f" }]);
+    });
+
+    test("the end of a tool call and the end of an answer are points where another message can go in", () => {
+      const s = createClaudeStream({ live: true });
+      const items = [
+        ...s.push(
+          assistant({ type: "tool_use", id: "t1", name: "Bash", input: { command: "make" } }),
+        ),
+        ...s.push(
+          line({
+            type: "user",
+            message: { content: [{ type: "tool_result", tool_use_id: "t1" }] },
+          }),
+        ),
+        ...s.push(result("Built.")),
+      ];
+      expect(items).toEqual([
+        { activity: "Running make", stepId: "t1", command: "make" },
+        { stepDone: "t1" },
+        { boundary: "tool" },
+        "Built.",
+        { boundary: "answer" },
+      ]);
+    });
+
+    test("a second answer of the same run follows the first after a blank line, and the token counts add up", () => {
+      const s = createClaudeStream({ live: true });
+      const text = [
+        ...s.push(result("Deployed to staging.", { input_tokens: 4, output_tokens: 10 })),
+        ...s.push(result("The meeting is at 3.", { input_tokens: 2, output_tokens: 6 })),
+        ...s.end(),
+      ]
+        .filter((i) => typeof i === "string")
+        .join("");
+      expect(text).toBe("Deployed to staging.\n\nThe meeting is at 3.");
+      expect(s.state.usage).toEqual({ input: 6, cacheRead: 0, cacheWrite: 0, output: 16 });
+    });
+
+    test("lines of a kind the parser does not know are never the reply, even when the run prints no result", () => {
+      const s = createClaudeStream({ live: true });
+      const items = [
+        ...s.push(line({ type: "command_lifecycle", state: "started" })),
+        ...s.push(line({ type: "rate_limit_event", rate_limit_info: {} })),
+        ...s.end(),
+      ];
+      expect(items).toEqual([]);
+      // Text that is not JSON is still kept: a start-up error must not vanish.
+      const plain = createClaudeStream({ live: true });
+      expect([...plain.push("something went wrong\n"), ...plain.end()]).toEqual([
+        "something went wrong\n",
+      ]);
+    });
+
+    test("a quick answer in a zetta:say block is reply text at once; the work note and the final answer do not repeat it", () => {
+      const s = createClaudeStream({ live: true });
+      const items = [
+        ...s.push(
+          assistant(
+            {
+              type: "text",
+              text: "```zetta:say\nThe meeting is at 3 pm.\n```\nNow the second build.",
+            },
+            { type: "tool_use", id: "t2", name: "Bash", input: { command: "make two" } },
+          ),
+        ),
+        ...s.push(
+          line({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: "```zetta:say\nThe meeting is at 3 pm.\n```\nBoth builds passed.",
+          }),
+        ),
+      ];
+      expect(items).toEqual([
+        "The meeting is at 3 pm.",
+        { activity: "Now the second build." },
+        { activity: "Running make", stepId: "t2", command: "make two" },
+        "\n\nBoth builds passed.",
+        { boundary: "answer" },
+      ]);
+    });
+
+    test("a reply that is only a zetta:say block is still an answer, and without live input the block is left as written", () => {
+      const s = createClaudeStream({ live: true });
+      expect(
+        [
+          ...s.push(assistant({ type: "text", text: "```zetta:say\nYes.\n```" })),
+          ...s.push(
+            line({
+              type: "result",
+              subtype: "success",
+              is_error: false,
+              result: "```zetta:say\nYes.\n```",
+            }),
+          ),
+        ].filter((i) => typeof i === "string"),
+      ).toEqual(["Yes."]);
+      const plain = createClaudeStream();
+      expect(
+        plain.push(
+          line({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: "```zetta:say\nYes.\n```",
+          }),
+        ),
+      ).toEqual(["```zetta:say\nYes.\n```"]);
+    });
+
+    test("without live input nothing changes: no receipts, no boundaries", () => {
+      const s = createClaudeStream();
+      expect([
+        ...s.push(line({ type: "user", isReplay: true, uuid: "u", message: { content: "x" } })),
+        ...s.push(line({ type: "user", message: { content: [{ type: "tool_result" }] } })),
+        ...s.push(result("Done.")),
+      ]).toEqual(["Done."]);
+    });
+  });
 });

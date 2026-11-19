@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { batchPrompt, joinPicks, pickBatch, type Waiting } from "./queue-batch";
+import {
+  actsOnRawText,
+  batchPrompt,
+  joinPicks,
+  pickBatch,
+  pickNotes,
+  type Waiting,
+} from "./queue-batch";
 
 const row = (id: string, thread: string | null = null, size = 10): Waiting => ({
   id,
@@ -88,5 +95,46 @@ describe("joinPicks", () => {
         { memoryIds: ["m1", "m2"], skills: ["review", 7] },
       ]),
     ).toEqual({ fileRefs: ["a.md", "b.md"], memoryIds: ["m1", "m2"], skills: ["review"] });
+  });
+});
+
+describe("pickNotes", () => {
+  const note = (id: string, size = 10, ownTurn = false) => ({ id, size, ownTurn });
+
+  test("nothing waits: nothing is taken", () => {
+    expect(pickNotes([])).toEqual([]);
+  });
+
+  test("the waiting messages are taken oldest first", () => {
+    expect(pickNotes([note("a"), note("b"), note("c")]).map((n) => n.id)).toEqual(["a", "b", "c"]);
+  });
+
+  test("it stops at a message that needs a turn of its own: a later one is never read before it", () => {
+    expect(pickNotes([note("a"), note("b", 10, true), note("c")]).map((n) => n.id)).toEqual(["a"]);
+    expect(pickNotes([note("a", 10, true), note("b")])).toEqual([]);
+  });
+
+  test("it stops at the size cap, and a first message over the cap is still taken", () => {
+    expect(pickNotes([note("a", 60), note("b", 60), note("c", 10)], 100).map((n) => n.id)).toEqual([
+      "a",
+    ]);
+    expect(pickNotes([note("a", 500), note("b", 10)], 100).map((n) => n.id)).toEqual(["a"]);
+  });
+});
+
+describe("actsOnRawText", () => {
+  test("a command, a thing to remember and another bot named in it keep a turn of their own", () => {
+    expect(actsOnRawText("/browse https://example.invalid", false)).toBe(true);
+    expect(actsOnRawText("  /anything", false)).toBe(true);
+    expect(actsOnRawText("Remember that the report is due on Friday", false)).toBe(true);
+    expect(actsOnRawText("remember: use tabs", false)).toBe(true);
+    expect(actsOnRawText("ask the other one too", true)).toBe(true);
+  });
+
+  test("ordinary text is read as a note", () => {
+    expect(actsOnRawText("use the staging database instead", false)).toBe(false);
+    expect(actsOnRawText("the path is /tmp/out and/or docs", false)).toBe(false);
+    expect(actsOnRawText("I remember that we agreed on tabs", false)).toBe(false);
+    expect(actsOnRawText("/ 2 is the half", false)).toBe(false);
   });
 });

@@ -417,6 +417,10 @@ export const messageFeedback = zetta.table(
 
 export const DRIVE_PROMPTS_PER_BOT = 10;
 export const DRIVE_RUN_STATUSES = ["running", "done", "failed"] as const;
+/** A paired run asks the same test twice: once as the bot is ("with"), once without its memory and its own skills ("without"). */
+export const DRIVE_VARIANTS = ["with", "without"] as const;
+/** Which answer of a pair the person preferred: the one with what the bot knows, the one without, or neither ("same"). */
+export const DRIVE_CHOICES = ["with", "without", "same"] as const;
 /** A question the owner wants to ask a bot again and again ("saved tests"): after changing its instructions, run them and compare. */
 export const botDrivePrompt = zetta.table(
   "bot_drive_prompt",
@@ -460,6 +464,12 @@ export const botDriveRun = zetta.table(
     /** The bot's answer. Null while it runs, or when it failed. */
     messageId: uuid("message_id").references(() => message.id, setNull),
     status: text("status", { enum: DRIVE_RUN_STATUSES }).default("running").notNull(),
+    /** Which side of a pair this run is. A run that is not part of a pair is "with": it ran as the bot is. */
+    variant: text("variant", { enum: DRIVE_VARIANTS }).default("with").notNull(),
+    /** Shared by the two runs of a pair; null for a run on its own. */
+    pairId: uuid("pair_id"),
+    /** The person's pick between the two answers of a pair, written on both runs; null until they choose. */
+    chosen: text("chosen", { enum: DRIVE_CHOICES }),
     /** A closed, person-readable reason when the run failed (never provider text). */
     error: text("error").default("").notNull(),
     createdAt: created(),
@@ -468,6 +478,8 @@ export const botDriveRun = zetta.table(
   (t) => [
     index("bot_drive_run_prompt_idx").on(t.promptId, t.createdAt),
     index("bot_drive_run_conversation_idx").on(t.conversationId),
+    index("bot_drive_run_pair_idx").on(t.pairId),
+    check("bot_drive_run_pair_check", sql`(${t.variant} = 'with' or ${t.pairId} is not null)`),
   ],
 );
 
@@ -902,6 +914,8 @@ export const auditEvent = zetta.table(
         "workflow_run",
         "decision",
         "connection",
+        // Background learning work (modules/learning): the daily lesson pass and the like. Its own kind, so it never counts as a bot's run.
+        "learning_run",
       ],
     }).notNull(),
     outcome: text("outcome", {

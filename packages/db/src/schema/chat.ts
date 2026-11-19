@@ -218,13 +218,24 @@ export const conversation = zetta.table(
     archived: boolean("archived").default(false).notNull(),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     /** Frozen notes prompt block per bot (profile and the bot's own notes), captured at the first turn so the prefix stays stable for the whole conversation. */
-    notesSnapshot:
-      jsonb("notes_snapshot").$type<
-        Record<
-          string,
-          { user: { id: string; content: string }[]; notes: { id: string; content: string }[] }
-        >
-      >(),
+    notesSnapshot: jsonb("notes_snapshot").$type<
+      Record<
+        string,
+        {
+          user: { id: string; content: string }[];
+          notes: { id: string; content: string }[];
+          /** Added later; a snapshot frozen before them has neither (see features/knowledge.ts `NotesSnapshot`). */
+          conventions?: { id: string; content: string };
+          lessons?: {
+            id: string;
+            content: string;
+            topic: string;
+            scope: "topic" | "always";
+          }[];
+          lessonsRev?: string;
+        }
+      >
+    >(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -309,7 +320,18 @@ export const messageRevision = zetta.table(
   ],
 );
 
-export const CHAT_QUEUE_STATUSES = ["pending", "running", "failed", "merged", "held"] as const;
+/**
+ * `sent`: written to the bot that is working, which has not read it yet (see `streamCli`); it goes back to `pending` if that run ends
+ * first. `held`: no longer written (a Stop used to hold waiting messages); old rows can still be sent or removed.
+ */
+export const CHAT_QUEUE_STATUSES = [
+  "pending",
+  "running",
+  "failed",
+  "merged",
+  "sent",
+  "held",
+] as const;
 export type ChatQueueStatus = (typeof CHAT_QUEUE_STATUSES)[number];
 
 /** A user message sent while its chat was busy: saved at once, answered in its thread when the turn before it ends. The row is deleted

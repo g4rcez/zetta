@@ -12,9 +12,16 @@ export type RailMode = (typeof RAIL_MODES)[number];
 /** "simple": the sidebar hides the Advanced group (Studio, Playground, Computer, Agenda). "full": everything. */
 export const NAV_MODES = ["simple", "full"] as const;
 export type NavMode = (typeof NAV_MODES)[number];
-/** A message sent while a bot works: waits for the reply to end ("park"), or interrupts it and is read at once ("interrupt"). */
+/**
+ * No longer read. It chose what a message sent while a bot works did: wait for the reply to end ("park") or interrupt it
+ * ("interrupt"). Now every such message reaches the bot while it works (docs/decisions/fluid-chat.md). The column stays so that no
+ * migration drops what people had set.
+ */
 export const STEER_MODES = ["park", "interrupt"] as const;
 export type SteerMode = (typeof STEER_MODES)[number];
+/** Whether a person who joined an installation still has to go through the first-run setup of their own Chief and engine. */
+export const MEMBER_ONBOARDING = ["pending", "done"] as const;
+export type MemberOnboarding = (typeof MEMBER_ONBOARDING)[number];
 export const SIDEBAR_SIDES = ["left", "right"] as const;
 export type SidebarSide = (typeof SIDEBAR_SIDES)[number];
 
@@ -63,6 +70,11 @@ export const userPreference = zetta.table(
     sidebarSide: text("sidebar_side", { enum: SIDEBAR_SIDES }).default("left").notNull(),
     /** New people start `simple`. The migration that changed this default first wrote an explicit `full` row for everyone who had none. */
     navMode: text("nav_mode", { enum: NAV_MODES }).default("simple").notNull(),
+    /** New accounts start `pending`: the web app sends them through the onboarding (Chief, engine, instructions) before the app. The migration
+     * that added it marked every existing person `done`. The installation admin has their own first-run flow, which also sets `done`. */
+    memberOnboarding: text("member_onboarding", { enum: MEMBER_ONBOARDING })
+      .default("pending")
+      .notNull(),
     steerMode: text("steer_mode", { enum: STEER_MODES }).default("park").notNull(),
     railWidth: integer("rail_width").default(SIDEBAR_LIMITS.railWidth.fallback).notNull(),
     listWidth: integer("list_width").default(SIDEBAR_LIMITS.listWidth.fallback).notNull(),

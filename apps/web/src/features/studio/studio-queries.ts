@@ -62,6 +62,16 @@ export type Machine = {
   botIds: string[];
   createdAt: string;
 };
+/** A computer paired through the Zetta desktop app: it connects to this server, and the bots you share it with can run work on it. */
+export type Device = {
+  id: string;
+  name: string;
+  platform: "darwin" | "linux" | "win32";
+  online: boolean;
+  lastSeenAt: string | null;
+  botIds: string[];
+  createdAt: string;
+};
 export type HostKeyCandidate = { key: string; type: string; fingerprint: string };
 export type ComputerSession = { profile: string; control: "agent" | "human"; url: string };
 export type ComputerProfile = {
@@ -96,6 +106,13 @@ export const computerQueries = {
       queryKey: ["computer", "machines"],
       queryFn: () =>
         call<{ machines: Machine[] }>("/api/computer/machines").then((r) => r.machines),
+    }),
+  devices: () =>
+    queryOptions({
+      queryKey: ["computer", "devices"],
+      queryFn: () => call<{ devices: Device[] }>("/api/devices").then((r) => r.devices),
+      // Who is online changes by itself: look again now and then while the page is open.
+      refetchInterval: 15_000,
     }),
   sessions: () =>
     queryOptions({

@@ -43,13 +43,14 @@ const node = z.discriminatedUnion("type", [
   }),
   // Reads the user's followed sources (RSS / web) into labelled text; failing sources are named, never invented.
   z.strictObject({ type: z.literal("sources"), next: id.optional(), retry }),
-  // Calls one tool of a plugin, an MCP server or an app, with the grants of `botId` (the same ones the bot has in chat). Arguments are
+  // Calls one tool of a plugin, an MCP server, an app or Zetta itself (`zetta`: the target `lessons`, to check what the bots learned), with
+  // the grants of `botId` (the same ones the bot has in chat). Arguments are
   // text; a string may hold {{input}}, {{prev}}, {{item}} and {{steps.<id>}}. A tool that changes something must come straight after an
   // `approval` step (checked when the workflow is saved), so the person says yes to that exact call before it runs.
   z.strictObject({
     type: z.literal("tool"),
     botId: z.string().uuid(),
-    kind: z.enum(["plugin", "mcp", "app"]),
+    kind: z.enum(["plugin", "mcp", "app", "zetta"]),
     target: z.string().min(1).max(100),
     tool: z.string().min(1).max(200),
     args: z.record(z.string().min(1).max(80), z.unknown()).optional(),
@@ -219,7 +220,7 @@ const OUTPUTS_KEPT = 40;
 /** One tool a `tool` step calls, with its arguments already filled in. */
 export type ToolCallSpec = {
   botId: string;
-  kind: "plugin" | "mcp" | "app";
+  kind: "plugin" | "mcp" | "app" | "zetta";
   target: string;
   tool: string;
   args: Record<string, unknown>;

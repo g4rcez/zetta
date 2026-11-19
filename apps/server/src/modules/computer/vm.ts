@@ -3,6 +3,7 @@ import { createSerializer } from "./serial";
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { installTag, isIsolated } from "@zetta/core/zetta-home";
 import type { Database } from "@zetta/db";
 import { and, asc, eq, ne } from "@zetta/db/query";
 import { computerVm } from "@zetta/db/schema/features";
@@ -182,6 +183,8 @@ export function vmDriversFrom(raw: string | undefined): DriverName[] {
     .filter((x): x is DriverName => (DRIVERS as readonly string[]).includes(x));
   return named.length ? [...new Set(named)] : ["cua"];
 }
+/** Marks a VM container with the installation that started it (only set when ZETTA_HOME isolates the installation). */
+const INSTALL_LABEL = "zetta.install";
 export function vmDockerArgs(d: VmDocker, o: { id: string; tokenFile: string; vncFile: string }) {
   return [
     "run",
@@ -190,6 +193,7 @@ export function vmDockerArgs(d: VmDocker, o: { id: string; tokenFile: string; vn
     container(o.id),
     "--label",
     "zetta.vm=1",
+    ...(isIsolated() ? ["--label", `${INSTALL_LABEL}=${installTag()}`] : []),
     "--cap-drop=ALL",
     "--security-opt=no-new-privileges",
     "--pids-limit",
@@ -1088,21 +1092,23 @@ export function createVmService({
      * previous one, seconds ago) is still driving keeps running: the next start reattaches to it, and the reaper stops it once idle.
      */
     async sweep() {
-      const r = await exec([
-        "ps",
-        "-a",
-        "--filter",
-        "label=zetta.vm=1",
-        "--format",
-        "{{.Names}}",
-      ]).catch(() => ({ code: 1, stdout: "" }));
-      const names =
-        r.code === 0
+      // Only this installation's VMs: an isolated one has its own label; one without ZETTA_HOME skips every VM that carries a label.
+      const list = async (filter: string) => {
+        const r = await exec(["ps", "-a", "--filter", filter, "--format", "{{.Names}}"]).catch(
+          () => ({ code: 1, stdout: "" }),
+        );
+        return r.code === 0
           ? r.stdout
               .split("\n")
               .map((x) => x.trim())
               .filter((x) => /^zetta-vm-[0-9a-f-]{36}$/.test(x))
-          : [];
+          : null;
+      };
+      const mine = isIsolated()
+        ? await list(`label=${INSTALL_LABEL}=${installTag()}`)
+        : await list("label=zetta.vm=1");
+      const others = isIsolated() || !mine ? [] : ((await list(`label=${INSTALL_LABEL}`)) ?? []);
+      const names = (mine ?? []).filter((n) => !others.includes(n));
       let stopped = 0;
       for (const n of names) {
         const id = n.slice("zetta-vm-".length);

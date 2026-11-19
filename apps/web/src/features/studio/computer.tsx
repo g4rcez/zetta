@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { VmPanel } from "./desktop";
+import { DevicesPanel } from "./devices";
 import { MachinesPanel } from "./machines";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Button, Input } from "@/components/ui";
@@ -282,6 +283,7 @@ export function Computer({ onError }: { onError: (m: string) => void }) {
         )}
         {caps?.desktop && <VmPanel onError={onError} />}
         <MachinesPanel onError={onError} />
+        <DevicesPanel onError={onError} />
         {!session ? (
           <Button size="sm" onClick={() => void start()}>
             Start browser

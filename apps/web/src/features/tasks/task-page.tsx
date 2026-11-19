@@ -685,7 +685,6 @@ function ThreadMessage({
           <time dateTime={message.createdAt}>{relativeTime(message.createdAt)}</time>
         )}
         {message.status === "running" && <Badge>Working</Badge>}
-        {message.queue === "pending" && <Badge>Queued</Badge>}
         {(message.status === "failed" || message.queue === "failed") && (
           <Badge tone="danger">Failed</Badge>
         )}

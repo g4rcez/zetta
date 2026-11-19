@@ -1,5 +1,6 @@
 import { browserPlacement, ownBrowserPlacement, validCdpPort, type InstallMode } from "./placement";
 import { uuidv7 } from "@zetta/core/uuid";
+import { containerPrefix } from "@zetta/core/zetta-home";
 import { containerUser, engineOf, tmpfsOwner, type Engine } from "../container-user";
 import { createSerializer } from "./serial";
 import { lookup } from "node:dns/promises";
@@ -44,6 +45,7 @@ export class ComputerError extends Error {
       | "HOST_KEY_CHANGED"
       | "AUTH_FAILED"
       | "UNREACHABLE"
+      | "DENIED"
       | "NAVIGATION_FAILED",
     /** Safe text for the bot and the user, e.g. Chromium's `net::ERR_*` code. Never a URL or a secret. */
     readonly detail?: string,
@@ -413,7 +415,7 @@ export function createComputerService({
         const egressDir = join(root, "egress");
         await mkdir(egressDir, { recursive: true });
         if (!allowPrivate) await egress.listenUnix(join(egressDir, "proxy.sock"));
-        container = `zetta-browser-${uuidv7()}`;
+        container = `${containerPrefix("browser")}${uuidv7()}`;
         const started = Bun.spawn(
           [
             docker.bin,
@@ -610,11 +612,14 @@ export function createComputerService({
       return 0;
     }
     try {
-      const p = Bun.spawn([docker.bin, "ps", "-q", "--filter", "name=zetta-browser-"], {
-        stdout: "pipe",
-        stderr: "ignore",
-        env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
-      });
+      const p = Bun.spawn(
+        [docker.bin, "ps", "-q", "--filter", `name=^${containerPrefix("browser")}`],
+        {
+          stdout: "pipe",
+          stderr: "ignore",
+          env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
+        },
+      );
       const ids = (await new Response(p.stdout as ReadableStream).text())
         .split(/\s+/)
         .filter((x) => /^[0-9a-f]{6,64}$/.test(x));

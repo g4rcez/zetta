@@ -28,6 +28,7 @@ const KIND: Record<string, string> = {
   workflow_run: "A workflow ran",
   decision: "A decision was made",
   connection: "An account changed",
+  learning_run: "A bot looked back at its work",
 };
 const OUTCOME: Record<string, string> = {
   ok: "worked",

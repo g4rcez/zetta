@@ -7,6 +7,7 @@ import { bot } from "@zetta/db/schema/chat";
 import { machine, machineBot } from "@zetta/db/schema/features";
 import { audit } from "../features/audit";
 import type { ConnectionsService } from "../connections/service";
+import type { DeviceService } from "../devices/service";
 import type { ActiveActor } from "../identity/access";
 import {
   fingerprintOf,
@@ -68,6 +69,8 @@ export type MachineDeps = {
   allowPrivate?: boolean;
   maxPerUser?: number;
   resolve?: (host: string) => Promise<string[]>;
+  /** Computers paired through the desktop app: a bot reaches them by name like a machine (run and list). */
+  devices?: Pick<DeviceService, "catalog" | "exec" | "has">;
 };
 
 export function createMachineService({
@@ -77,6 +80,7 @@ export function createMachineService({
   allowPrivate = false,
   maxPerUser = 20,
   resolve = async (h) => (await lookup(h, { all: true })).map((a) => a.address),
+  devices,
 }: MachineDeps) {
   const serial = createSerializer();
   const live = (userId: string) => and(eq(machine.ownerUserId, userId), isNull(machine.deletedAt));
@@ -301,14 +305,22 @@ export function createMachineService({
 
     /** What one bot may use, by name: no secret, no host key. Only the machines shared with that bot. */
     async catalog(userId: string, botId: string) {
-      return (
-        await db
-          .select({ r: machine })
-          .from(machine)
-          .innerJoin(machineBot, eq(machineBot.machineId, machine.id))
-          .where(and(live(userId), eq(machineBot.botId, botId)))
-          .orderBy(asc(machine.createdAt))
-      ).map(({ r }) => ({ name: r.name, kind: r.kind, target: `${r.username}@${r.host}` }));
+      const paired = devices ? await devices.catalog(userId, botId) : [];
+      return [
+        ...(
+          await db
+            .select({ r: machine })
+            .from(machine)
+            .innerJoin(machineBot, eq(machineBot.machineId, machine.id))
+            .where(and(live(userId), eq(machineBot.botId, botId)))
+            .orderBy(asc(machine.createdAt))
+        ).map(({ r }) => ({
+          name: r.name,
+          kind: r.kind as string,
+          target: `${r.username}@${r.host}`,
+        })),
+        ...paired,
+      ];
     },
 
     /**
@@ -319,9 +331,20 @@ export function createMachineService({
       a: ActiveActor,
       ref: string,
       op: Op,
-      ctx: { botId: string; signal?: AbortSignal },
+      ctx: { botId: string; botName?: string; signal?: AbortSignal },
     ): Promise<ExecResult & { machine: string }> {
-      const m = await owned(a.userId, ref);
+      const m = await owned(a.userId, ref).catch(async (e: unknown) => {
+        // Not a machine of theirs: a computer paired through the desktop app answers to the same call.
+        if (
+          devices &&
+          e instanceof ComputerError &&
+          e.code === "NOT_FOUND" &&
+          (await devices.has(a.userId, ref))
+        )
+          return null;
+        throw e;
+      });
+      if (!m) return devices!.exec(a, ref, op, ctx);
       const detail = `machine:${op.type}`;
       const [grant] = await db
         .select({ botId: machineBot.botId })

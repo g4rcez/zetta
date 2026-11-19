@@ -402,10 +402,11 @@ function Editor({
                   { value: "plugin", label: "Plugin" },
                   { value: "mcp", label: "MCP server" },
                   { value: "app", label: "App" },
+                  { value: "zetta", label: "Zetta (target: lessons)" },
                 ]}
               />
               <Input
-                title="Plugin id, MCP server name or app"
+                title="Plugin id, MCP server name, app, or lessons for Zetta"
                 value={selected.data.target ?? ""}
                 onChange={(e) => patch(selected.id, { target: e.target.value })}
               />

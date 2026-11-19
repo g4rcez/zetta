@@ -233,7 +233,7 @@ function SecretField({ kind, name, title }: { kind: MachineKind; name: string; t
 }
 
 /** The bots a machine is shared with, drawn as bots (avatar and name), or a plain sentence when there are none. */
-function SharedWith({ ids, bots }: { ids: string[]; bots: Bot[] }) {
+export function SharedWith({ ids, bots }: { ids: string[]; bots: Bot[] }) {
   const shared = bots.filter((b) => ids.includes(b.id));
   if (!shared.length)
     return (

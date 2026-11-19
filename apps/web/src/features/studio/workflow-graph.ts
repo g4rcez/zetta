@@ -13,7 +13,7 @@ export type NodeKind =
   | "for_each"
   | "item_end"
   | "end";
-export type ToolKind = "plugin" | "mcp" | "app";
+export type ToolKind = "plugin" | "mcp" | "app" | "zetta";
 export type NodeData = {
   kind: NodeKind;
   botId?: string;

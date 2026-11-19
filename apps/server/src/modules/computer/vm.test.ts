@@ -108,6 +108,7 @@ const agentDesktopReply = (command: string) =>
 /** Fake container CLI: tracks containers/volumes by name; `docker start` only works for an existing (stopped) container. */
 function fakeDocker() {
   const containers = new Map<string, "running" | "exited">();
+  const labels = new Map<string, string>();
   const volumes = new Set<string>();
   const log: string[][] = [];
   const images = new Map<string, string>();
@@ -119,6 +120,9 @@ function fakeDocker() {
     if (cmd === "run") {
       const n = args[args.indexOf("--name") + 1]!;
       containers.set(n, "running");
+      for (let i = 0; i < args.length - 1; i++)
+        if (args[i] === "--label" && args[i + 1]!.startsWith("zetta.install="))
+          labels.set(n, args[i + 1]!);
       images.set(n, image.current);
       volumes.add(n);
       return { code: 0, stdout: "id\n" };
@@ -146,7 +150,16 @@ function fakeDocker() {
         code: 0,
         stdout: args[2] === "zetta-agent-desktop" ? agentDesktopReply(args[3]!) : "",
       };
-    if (cmd === "ps") return { code: 0, stdout: [...containers.keys()].join("\n") };
+    if (cmd === "ps") {
+      // A `label=zetta.install` filter lists labelled containers (any value, or the one given); other filters list everything.
+      const filter = args[args.indexOf("--filter") + 1] ?? "";
+      const names = [...containers.keys()].filter((n) => {
+        if (filter === "label=zetta.install") return labels.has(n);
+        if (filter.startsWith("label=zetta.install=")) return labels.get(n) === filter.slice(6);
+        return true;
+      });
+      return { code: 0, stdout: names.join("\n") };
+    }
     if (cmd === "restart") {
       if (!containers.has(name)) return { code: 1, stdout: "" };
       containers.set(name, "running");
@@ -159,7 +172,7 @@ function fakeDocker() {
     if (cmd === "image") return { code: 0, stdout: `${image.current}\n` };
     return { code: 1, stdout: "" };
   };
-  return { exec, containers, volumes, log, image };
+  return { exec, containers, labels, volumes, log, image };
 }
 function fakeMcp() {
   const calls: { tool: string; args: Record<string, unknown>; token: string }[] = [];
@@ -627,6 +640,23 @@ describe("vm service (fake docker + fake spacesd)", () => {
     expect(await code(vm.keyboard("u", id, "-rules evil"))).toBe("INVALID");
     expect(await code(vm.paste("eve", id, "x"))).toBe("NOT_FOUND");
     await vm.closeAll();
+  });
+  test("sweep leaves the VMs of another installation alone", async () => {
+    const { vm, store, d } = await setup();
+    const { id } = await vm.start("u");
+    // The VM was started by an isolated installation (its container carries that installation's label).
+    d.labels.set(`zetta-vm-${id}`, "zetta.install=0123abcd");
+    const fresh = createVmService({
+      store,
+      docker,
+      exec: d.exec,
+      connect: fakeMcp().connect,
+      tokenRoot: "/tmp/unused",
+    });
+    expect(await fresh.sweep()).toBe(0);
+    expect(d.containers.get(`zetta-vm-${id}`)).toBe("running");
+    await vm.closeAll();
+    await fresh.closeAll();
   });
   test("sweep stops leftover VM containers and marks rows stopped", async () => {
     const { vm, store, d } = await setup();

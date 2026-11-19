@@ -1,10 +1,13 @@
 /**
  * Work kicks: "something is waiting for the worker". A kick runs the handlers of this process (only a process that runs work registers
- * any) and, over a link, tells the other instances. Without a kick the worker still finds the work on its 30 s tick.
+ * any) and, over a link, tells the other instances. Without a kick the worker still finds the work on its 30 s tick. A lost `poke`
+ * is found too: the message it announced is read before the running reply closes, or answered by the next turn.
  */
 import { uuidv7 } from "@zetta/core/uuid";
 
-export type WorkKind = "discussions" | "loop";
+/** `poke`: a person wrote in a conversation where a bot is working; the argument is the turn key (`<userId>:<conversationId>`). */
+export type WorkKind = "discussions" | "loop" | "poke";
+const KINDS: ReadonlySet<string> = new Set<WorkKind>(["discussions", "loop", "poke"]);
 export type WorkMessage = { v: 1; from: string; k: WorkKind; a?: string };
 export type WorkLink = { send(message: WorkMessage): void };
 
@@ -47,7 +50,7 @@ export function createWork(): Work {
     },
     receive(message) {
       const m = message as Partial<WorkMessage> | null;
-      if (!m || m.v !== 1 || m.from === id || (m.k !== "discussions" && m.k !== "loop")) return;
+      if (!m || m.v !== 1 || m.from === id || typeof m.k !== "string" || !KINDS.has(m.k)) return;
       run(m.k, typeof m.a === "string" ? m.a : undefined);
     },
   };

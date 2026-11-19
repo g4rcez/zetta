@@ -4,21 +4,19 @@ import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { and, asc, eq, inArray, or, sql } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
-import { bot, botRevision } from "@zetta/db/schema/chat";
+import { bot } from "@zetta/db/schema/chat";
 import { membership } from "@zetta/db/schema/identity";
 import { orgChart, orgPosition } from "@zetta/db/schema/org";
 import { userPreference } from "@zetta/db/schema/preferences";
 import { team } from "@zetta/db/schema/teams";
-import { snapshotBotConfig } from "../bots/bot-revision";
 import type { ActiveActor } from "../identity/access";
 import { buildOrgDraft, type OrgDraft, type OrgDraftChoices } from "./draft";
 import { readOrgLinks, type OrgLink } from "./links";
+import { avatarOut } from "../avatars/out";
 import { createPeopleDirectory } from "../people/directory";
 
 /** The most seats one chart holds: the canvas and the prompts stay readable, and one admin cannot fill the table. */
 export const ORG_MAX_POSITIONS = 300;
-/** A picture above this many characters is left out of the chart; the seat shows the initial instead. */
-const AVATAR_MAX = 20_000;
 
 /** Why an org rule refused a change. `safe` is shown to the person as it is. */
 export class OrgError extends Error {
@@ -48,6 +46,10 @@ export type OrgHolder =
       /** What the bot is for, in a few words; empty when its owner wrote none (the web falls back to the seat title). */
       role?: string;
       avatar: Avatar;
+      /** Not shared with the team (a private bot, or a personal chief): only its owner can talk to it, so for everyone else it is a name only. */
+      private: boolean;
+      /** The reader owns this bot. */
+      mine: boolean;
     };
 
 export type OrgPositionView = {
@@ -75,20 +77,19 @@ export type OrgView = {
   /** Only for the admin: who can be put in a seat and which of their own teams can be linked. */
   palette: {
     people: { userId: string; name: string; avatar: Avatar; title: string }[];
-    /** Bots shared with the team, and the admin's own private ones: a private bot is shared when the admin seats it. */
+    /** Bots shared with the team, and all of the admin's own (private ones and their personal chief): a private bot keeps its privacy in a seat. */
     bots: {
       id: string;
       name: string;
       description: string;
       avatar: Avatar;
       visibility: "private" | "team";
+      kind: "chief" | "specialist";
     }[];
     teams: { id: string; name: string }[];
   } | null;
 };
 
-const smallAvatar = (a: Avatar): Avatar =>
-  a && a.kind === "image" && a.src.length > AVATAR_MAX ? null : a;
 const ids = <T>(xs: (T | null)[]) => [...new Set(xs.filter((x): x is T => x !== null))];
 
 /**
@@ -188,7 +189,7 @@ export async function readOrg(
             kind: "person",
             userId: r.userId,
             name,
-            avatar: smallAvatar(avatarOf.get(r.userId) ?? null),
+            avatar: avatarOut("user", r.userId, avatarOf.get(r.userId)),
             jobTitle: jobTitleOf.get(r.userId) ?? "",
           },
           problem: null,
@@ -205,7 +206,9 @@ export async function readOrg(
         });
         if (!b) return out("bot_missing");
         if (b.archived) return out("bot_archived");
-        if (b.visibility !== "team" || b.kind !== "specialist") return out("bot_private");
+        // A private bot or a personal chief may hold a seat and stays private: the others see who holds it, not what it is.
+        const isPrivate = b.visibility !== "team" || b.kind !== "specialist";
+        const hidden = isPrivate && !mine;
         return {
           ...base,
           seat: "bot",
@@ -213,9 +216,11 @@ export async function readOrg(
             kind: "bot",
             botId: b.id,
             name: b.name,
-            description: b.description,
-            role: b.role,
-            avatar: smallAvatar(b.avatar),
+            description: hidden ? "" : b.description,
+            role: hidden ? "" : b.role,
+            avatar: avatarOut("bot", b.id, b.avatar),
+            private: isPrivate,
+            mine,
           },
           problem: null,
         };
@@ -332,13 +337,7 @@ export function createOrgStore(db: Database) {
   }
 
   /** Checks who may hold a seat and writes it. A private bot is shared with the team only when asked, and only by its owner. */
-  async function applyHolder(
-    tx: Tx,
-    a: ActiveActor,
-    positionId: string,
-    holder: OrgHolderInput,
-    shareBot?: OrgShareBot,
-  ) {
+  async function applyHolder(tx: Tx, a: ActiveActor, positionId: string, holder: OrgHolderInput) {
     if (holder.kind === "person") {
       const [m] = await tx
         .select({ id: membership.userId })
@@ -349,35 +348,9 @@ export function createOrgStore(db: Database) {
     if (holder.kind === "bot") {
       const [b] = await tx.select().from(bot).where(eq(bot.id, holder.botId));
       if (!b || b.archived) throw new OrgError("NOT_FOUND", "That bot is not available.");
-      if (b.kind !== "specialist")
-        throw new OrgError("INVALID", "A personal chief of staff cannot hold a seat.");
-      if (b.visibility !== "team") {
-        if (shareBot !== "team")
-          throw new OrgError(
-            "INVALID",
-            "A private bot cannot hold a seat. Share it with the team first.",
-          );
-        if (b.ownerUserId !== a.userId)
-          throw new OrgError("NOT_ALLOWED", "Only its owner can share this bot with the team.");
-        const [shared] = await tx
-          .update(bot)
-          .set({
-            visibility: "team",
-            version: sql`${bot.version} + 1`,
-            updatedAt: new Date(),
-          })
-          .where(eq(bot.id, b.id))
-          .returning();
-        await tx
-          .insert(botRevision)
-          .values({
-            botId: shared!.id,
-            version: shared!.version,
-            config: snapshotBotConfig(shared!),
-            changedByUserId: a.userId,
-          })
-          .onConflictDoNothing();
-      }
+      // A private bot, or a personal chief, keeps its privacy in a seat. Only its owner may seat it: nobody else can see it.
+      if ((b.visibility !== "team" || b.kind !== "specialist") && b.ownerUserId !== a.userId)
+        throw new OrgError("NOT_ALLOWED", "Only its owner can put a private bot in a seat.");
     }
     await tx
       .update(orgPosition)
@@ -413,15 +386,16 @@ export function createOrgStore(db: Database) {
             description: bot.description,
             avatar: bot.avatar,
             visibility: bot.visibility,
+            kind: bot.kind,
           })
           .from(bot)
           .where(
             and(
-              eq(bot.kind, "specialist"),
               eq(bot.archived, false),
               or(
-                eq(bot.visibility, "team"),
-                and(eq(bot.visibility, "private"), eq(bot.ownerUserId, a.userId)),
+                and(eq(bot.visibility, "team"), eq(bot.kind, "specialist")),
+                // All of the admin's own bots, private ones and the personal chief included.
+                eq(bot.ownerUserId, a.userId),
               ),
             ),
           )
@@ -440,10 +414,10 @@ export function createOrgStore(db: Database) {
         palette: {
           people: people.map((p) => ({
             ...p,
-            avatar: smallAvatar(p.avatar ?? null),
+            avatar: avatarOut("user", p.userId, p.avatar),
             title: titles.get(p.userId)?.title ?? "",
           })),
-          bots: bots.map((b) => ({ ...b, avatar: smallAvatar(b.avatar) })),
+          bots: bots.map((b) => ({ ...b, avatar: avatarOut("bot", b.id, b.avatar) })),
           teams,
         },
       };
@@ -481,8 +455,7 @@ export function createOrgStore(db: Database) {
           })
           .returning({ id: orgPosition.id });
         // The holder goes in the same transaction: a refused holder leaves no half-made seat behind.
-        if (v.holder && v.holder.kind !== "open")
-          await applyHolder(tx, a, created!.id, v.holder, v.shareBot);
+        if (v.holder && v.holder.kind !== "open") await applyHolder(tx, a, created!.id, v.holder);
       });
       return store.get(a);
     },
@@ -553,19 +526,13 @@ export function createOrgStore(db: Database) {
     },
 
     /**
-     * Puts a person or a bot in a seat, or empties it. Only team-visible specialist bots and active members can hold one; with
-     * `shareBot: "team"` the admin's own private bot is shared with the team first.
+     * Puts a person or a bot in a seat, or empties it. Active members and bots can hold one. A private bot or a personal chief keeps its
+     * privacy there, and only its owner can seat it.
      */
-    async seat(
-      a: ActiveActor,
-      expectedVersion: number,
-      id: string,
-      holder: OrgHolderInput,
-      shareBot?: OrgShareBot,
-    ) {
+    async seat(a: ActiveActor, expectedVersion: number, id: string, holder: OrgHolderInput) {
       await mutate(a, expectedVersion, async (tx, rows) => {
         find(rows, id);
-        await applyHolder(tx, a, id, holder, shareBot);
+        await applyHolder(tx, a, id, holder);
       });
       return store.get(a);
     },

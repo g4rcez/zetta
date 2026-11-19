@@ -50,15 +50,12 @@ type Shared = {
   onSelect: (id: string) => void;
 };
 
-/** Who holds the seat. The admin picks a person or a bot from one list; a private bot is shared with the team on the way in. */
+/** Who holds the seat. The admin picks a person or a bot from one list; a private bot stays private in the seat. */
 function HeldBy({ item, s }: { item: OrgPosition; s: Shared }) {
   const [picking, setPicking] = useState(false);
   const pick = (c: HolderChoice) =>
     void s
-      .run(
-        (v) => orgApi.seat(v, item.id, c.holder, c.shareBot),
-        c.shareBot ? "Shared with the team and seated" : "Seat updated",
-      )
+      .run((v) => orgApi.seat(v, item.id, c.holder), "Seat updated")
       .then((view) => view && setPicking(false));
   return (
     <Section title="Held by">
@@ -71,7 +68,6 @@ function HeldBy({ item, s }: { item: OrgPosition; s: Shared }) {
               palette={s.palette}
               current={holderOf(item)}
               busy={s.busy}
-              confirmLabel="Share and seat"
               allowOpen={item.seat !== "open" || !!item.problem}
               onPick={pick}
             />

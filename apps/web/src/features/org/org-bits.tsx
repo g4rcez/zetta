@@ -30,6 +30,9 @@ import { PersonIdentity } from "@/components/person-identity";
 import { cn } from "@zetta/ui/lib/utils";
 import type { OrgPosition, OrgProblem } from "./org-api";
 import { holderLine } from "./org-graph";
+import { useQuery } from "@tanstack/react-query";
+import type { AvatarValue as BotAvatarValue } from "@/components/bot-avatar";
+import { chatQueries } from "../chat/chat-queries";
 
 const GLYPHS: Record<OrgIcon, Icon> = {
   briefcase: BriefcaseIcon,
@@ -88,6 +91,18 @@ export function problemText(p: OrgProblem): string {
  * Whoever holds a seat, drawn by face: a person with their picture, a bot with its avatar and name (never a bare name), or a dashed
  * circle for a seat nobody holds.
  */
+/**
+ * The pictures of the bots this person can see, whole. The chart leaves out a large uploaded picture to stay small, so a seat would show
+ * the plain fallback for a bot whose picture the rest of the app shows: this hands back the full one by bot id.
+ */
+export function useBotAvatars(): (
+  botId: string,
+  fallback: BotAvatarValue | null,
+) => BotAvatarValue | null {
+  const bots = useQuery(chatQueries.bots()).data;
+  return (botId, fallback) => bots?.find((b) => b.id === botId)?.avatar ?? fallback;
+}
+
 export function SeatHolder({
   item,
   size = 24,
@@ -97,14 +112,26 @@ export function SeatHolder({
   size?: number;
   className?: string;
 }) {
+  const avatarOf = useBotAvatars();
   const h = item.holder;
   if (h?.kind === "bot")
     return (
       <BotIdentity
-        bot={{ id: h.botId, name: h.name, avatar: h.avatar }}
+        bot={{ id: h.botId, name: h.name, avatar: avatarOf(h.botId, h.avatar) }}
         size={size}
         // The seat title is already printed beside the holder, so it is not the fallback here.
-        sub={botRole({ role: h.role, description: h.description })}
+        sub={
+          h.private && !h.mine
+            ? "Private bot: only its owner can talk to it"
+            : botRole({ role: h.role, description: h.description })
+        }
+        trailing={
+          h.private ? (
+            <span className="shrink-0 rounded border px-1 text-xs font-normal text-muted-foreground">
+              {h.mine ? "Private to you" : "Private"}
+            </span>
+          ) : undefined
+        }
         className={className}
       />
     );

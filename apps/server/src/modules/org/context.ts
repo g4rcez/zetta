@@ -17,7 +17,11 @@ const line = (t: string, max = 200) =>
 
 /** Who holds a seat as a model should read it: a bot as a mention token (it can be mentioned), a person by name. */
 function holderText(p: OrgPositionView): string {
-  if (p.holder?.kind === "bot") return mentionToken("bot", p.holder.botId, p.holder.name);
+  // A private bot cannot be asked by anyone but its owner, so it is named, not mentioned.
+  if (p.holder?.kind === "bot")
+    return p.holder.private && !p.holder.mine
+      ? `${line(p.holder.name, 80)} (a private bot: do not ask it)`
+      : mentionToken("bot", p.holder.botId, p.holder.name);
   if (p.holder?.kind === "person") return line(p.holder.name, 80);
   return "an open seat";
 }

@@ -15,6 +15,10 @@ export type OrgHolder =
       /** What the bot is for, in a few words. Empty: the seat title tells (see `botRole`). */
       role?: string;
       avatar: BotAvatarValue | null;
+      /** Not shared with the team: only its owner can talk to it. Everyone else sees the name only. */
+      private?: boolean;
+      /** The reader owns this bot. */
+      mine?: boolean;
     };
 /** Why a seat reads as open although somebody was put in it. `mine`: the reader owns that bot. */
 export type OrgProblemCode = "member_removed" | "bot_private" | "bot_archived" | "bot_missing";
@@ -37,13 +41,14 @@ export type OrgPosition = {
 
 export type OrgPalette = {
   people: { userId: string; name: string; avatar: unknown; title?: string }[];
-  /** Bots shared with the team, and the admin's own private ones (a private bot is shared when the admin seats it). */
+  /** Bots shared with the team, and all of the admin's own (private ones and the personal chief): a seat does not make a bot public. */
   bots: {
     id: string;
     name: string;
     description: string;
     avatar: BotAvatarValue | null;
     visibility: "private" | "team";
+    kind?: "chief" | "specialist";
   }[];
   teams: { id: string; name: string }[];
 };
@@ -57,9 +62,6 @@ export type OrgView = {
   palette: OrgPalette | null;
 };
 
-/** `team`: a private bot picked for a seat is shared with the team in the same step. */
-export type OrgShareBot = "team";
-
 export type OrgCreate = {
   parentId?: string | null;
   templateKey?: string;
@@ -69,7 +71,6 @@ export type OrgCreate = {
   rank?: OrgRank;
   /** Who holds the new seat, written with the seat itself. */
   holder?: OrgHolderInput;
-  shareBot?: OrgShareBot;
 };
 export type OrgUpdate = {
   title?: string;
@@ -137,12 +138,10 @@ export const orgApi = {
       "POST",
       body(version, { parentId, ...(index !== undefined && { index }) }),
     ).then(org),
-  seat: (version: number, id: string, holder: OrgHolderInput, shareBot?: OrgShareBot) =>
-    call<{ org: OrgView }>(
-      `/api/org/positions/${id}/seat`,
-      "PUT",
-      body(version, { holder, ...(shareBot && { shareBot }) }),
-    ).then(org),
+  seat: (version: number, id: string, holder: OrgHolderInput) =>
+    call<{ org: OrgView }>(`/api/org/positions/${id}/seat`, "PUT", body(version, { holder })).then(
+      org,
+    ),
   remove: (version: number, id: string) =>
     call<{ org: OrgView }>(`/api/org/positions/${id}?expectedVersion=${version}`, "DELETE").then(
       org,

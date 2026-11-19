@@ -164,7 +164,8 @@ suite("company chart against postgres", () => {
     const botNames = admin.palette!.bots.map((b) => b.name);
     expect(botNames).toContain("Scribe");
     expect(botNames).not.toContain("Hidden");
-    expect(botNames).not.toContain("Zeta");
+    // The admin's own personal chief can be seated too.
+    expect(botNames).toContain("Zeta");
     expect(admin.palette!.teams.map((t) => t.id)).toEqual([adminTeam]);
     expect(await get(B)).toMatchObject({ canEdit: false, palette: null });
   });
@@ -240,7 +241,7 @@ suite("company chart against postgres", () => {
     expect((await get()).positions).toHaveLength(4);
   });
 
-  test("a person or a team bot holds a seat; a private bot, a chief and a stranger do not", async () => {
+  test("a person or a team bot holds a seat; another member's private bot and a stranger do not", async () => {
     const cto = seatOf(await get(), "CTO");
     const person = await write("PUT", `/api/org/positions/${cto.id}/seat`, {
       holder: { kind: "person", userId: B },
@@ -278,16 +279,11 @@ suite("company chart against postgres", () => {
       holder: { kind: "bot", botId: teamBot, name: "Scribe" },
     });
 
+    // Another member's private bot cannot be seated by the admin: only its owner can, and nobody else can even see it.
     const priv = await write("PUT", `/api/org/positions/${cfo.id}/seat`, {
       holder: { kind: "bot", botId: privateBot },
     });
-    expect(priv.error!.message).toBe(
-      "A private bot cannot hold a seat. Share it with the team first.",
-    );
-    const chief = await write("PUT", `/api/org/positions/${cfo.id}/seat`, {
-      holder: { kind: "bot", botId: chiefBot },
-    });
-    expect(chief.error!.message).toBe("A personal chief of staff cannot hold a seat.");
+    expect(priv.error!.message).toBe("Only its owner can put a private bot in a seat.");
     const stranger = await write("PUT", `/api/org/positions/${cfo.id}/seat`, {
       holder: { kind: "person", userId: D },
     });
@@ -295,49 +291,50 @@ suite("company chart against postgres", () => {
     expect(seatOf(await get(), "CFO").holder).toMatchObject({ botId: teamBot });
   });
 
-  test("the palette offers the admin's own private bots, and seating one shares it only when asked", async () => {
+  test("the palette offers the admin's own private bots and chief, and a seat keeps them private", async () => {
     const mine = await newBot(ADMIN, "Drafter", { visibility: "private" });
     try {
       const names = (await get()).palette!.bots;
       expect(names.find((b) => b.id === mine)).toMatchObject({ visibility: "private" });
+      expect(names.find((b) => b.id === chiefBot)).toMatchObject({ kind: "chief" });
       expect(names.find((b) => b.id === teamBot)).toMatchObject({ visibility: "team" });
-      // Another member's private bot stays out: only its owner can share it.
+      // Another member's private bot stays out: only its owner can seat it.
       expect(names.some((b) => b.id === privateBot)).toBe(false);
 
       const cfo = seatOf(await get(), "CFO");
       const path = `/api/org/positions/${cfo.id}/seat`;
       const before = (await db.select().from(bot).where(eq(bot.id, mine)))[0]!;
-      const refused = await write("PUT", path, { holder: { kind: "bot", botId: mine } });
-      expect(refused.error!.message).toBe(
-        "A private bot cannot hold a seat. Share it with the team first.",
-      );
-      expect((await db.select().from(bot).where(eq(bot.id, mine)))[0]!.visibility).toBe("private");
-
-      const shared = await write("PUT", path, {
-        holder: { kind: "bot", botId: mine },
-        shareBot: "team",
-      });
-      expect(shared.status).toBe(200);
-      expect(seatOf(shared.org, "CFO")).toMatchObject({
+      const seated = await write("PUT", path, { holder: { kind: "bot", botId: mine } });
+      expect(seated.status).toBe(200);
+      expect(seatOf(seated.org, "CFO")).toMatchObject({
         seat: "bot",
-        holder: { kind: "bot", botId: mine, name: "Drafter" },
+        holder: { kind: "bot", botId: mine, name: "Drafter", private: true, mine: true },
       });
+      // Nothing was shared: the bot is as private and as old as before.
       const after = (await db.select().from(bot).where(eq(bot.id, mine)))[0]!;
-      expect(after.visibility).toBe("team");
-      expect(after.version).toBe(before.version + 1);
-      const [revision] = await db.select().from(botRevision).where(eq(botRevision.botId, mine));
-      expect(revision).toMatchObject({ version: after.version, changedByUserId: ADMIN });
-      expect(revision!.config).toMatchObject({ visibility: "team" });
+      expect(after.visibility).toBe("private");
+      expect(after.version).toBe(before.version);
 
-      // A bot that belongs to somebody else is refused even when sharing is asked for, and stays private.
-      const other = await write("PUT", path, {
-        holder: { kind: "bot", botId: privateBot },
-        shareBot: "team",
+      // The personal chief can hold a seat too.
+      const chiefSeat = await write("PUT", path, { holder: { kind: "bot", botId: chiefBot } });
+      expect(seatOf(chiefSeat.org, "CFO")).toMatchObject({
+        holder: { botId: chiefBot, private: true, mine: true },
       });
-      expect(other.error!.message).toBe("Only its owner can share this bot with the team.");
-      expect((await db.select().from(bot).where(eq(bot.id, privateBot)))[0]!.visibility).toBe(
-        "private",
-      );
+
+      // Another member sees who holds the seat, not what the bot is for, and cannot talk to it.
+      await write("PUT", path, { holder: { kind: "bot", botId: mine } });
+      await db.update(bot).set({ description: "Secret job" }).where(eq(bot.id, mine));
+      const asMember = await (await get(B)).positions;
+      expect(asMember.find((p: { title: string }) => p.title === "CFO")!.holder).toMatchObject({
+        botId: mine,
+        private: true,
+        mine: false,
+        description: "",
+      });
+
+      // A bot that belongs to somebody else is refused, and stays private.
+      const other = await write("PUT", path, { holder: { kind: "bot", botId: privateBot } });
+      expect(other.error!.message).toBe("Only its owner can put a private bot in a seat.");
       await write("PUT", path, { holder: { kind: "bot", botId: teamBot } });
     } finally {
       await db.delete(botRevision).where(eq(botRevision.botId, mine));
@@ -365,9 +362,7 @@ suite("company chart against postgres", () => {
       title: "Ghost",
       holder: { kind: "bot", botId: privateBot },
     });
-    expect(refused.error!.message).toBe(
-      "A private bot cannot hold a seat. Share it with the team first.",
-    );
+    expect(refused.error!.message).toBe("Only its owner can put a private bot in a seat.");
     const view = await get();
     expect(view.positions.some((p) => p.title === "Ghost")).toBe(false);
     expect(view.positions).toHaveLength(count + 1);
@@ -468,7 +463,7 @@ suite("company chart against postgres", () => {
     expect(seatOf(off.org, "Head of technology").team).toBeNull();
   });
 
-  test("someone who left, and a bot that is private again, read as an open seat with a note", async () => {
+  test("someone who left, reads as an open seat with a note, and a bot that is private again keeps its seat as a private holder", async () => {
     const view = await get();
     const cto = seatOf(view, "Head of technology");
     const aide = seatOf(view, "Chief of staff");
@@ -490,14 +485,14 @@ suite("company chart against postgres", () => {
       holder: null,
       problem: { code: "member_removed", mine: false },
     });
-    expect(seatOf(asAdmin, "Chief of staff").problem).toMatchObject({
-      code: "bot_private",
-      was: "Painter",
-      mine: false,
+    // A bot that turns private keeps its seat, as a private holder: its owner sees "mine", everyone else a name only.
+    expect(seatOf(asAdmin, "Chief of staff")).toMatchObject({
+      seat: "bot",
+      problem: null,
+      holder: { name: "Painter", private: true, mine: false },
     });
-    // The owner of the bot is the one who sees "mine".
-    expect(seatOf(await get(B), "Chief of staff").problem).toMatchObject({
-      code: "bot_private",
+    expect(seatOf(await get(B), "Chief of staff").holder).toMatchObject({
+      private: true,
       mine: true,
     });
 

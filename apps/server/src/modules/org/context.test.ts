@@ -27,7 +27,15 @@ const seat = (
   }) as OrgPositionView;
 const ana = { kind: "person", userId: "u1", name: "Ana Souza", avatar: null } as const;
 const bot = (botId: string, name: string) =>
-  ({ kind: "bot", botId, name, description: "", avatar: null }) as const;
+  ({
+    kind: "bot",
+    botId,
+    name,
+    description: "",
+    avatar: null,
+    private: false,
+    mine: false,
+  }) as const;
 
 // CEO (Ana) ─ CTO (open) ─ Dev (BOT)
 //          └─ CFO (Rui, person)

@@ -1,5 +1,4 @@
 import { Alert } from "@g4rcez/components/alert";
-import { TreeStructureIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 
@@ -47,13 +46,16 @@ function Choice<T extends string>({
   onPick: (v: T) => void;
 }) {
   return (
-    <div role="group" aria-label={label} className="flex gap-1">
+    <div role="group" aria-label={label} className="flex gap-0.5 rounded-lg bg-muted/50 p-0.5">
       {options.map((o) => (
         <Button
           key={o}
           size="sm"
-          variant={value === o ? "default" : "outline"}
+          variant="ghost"
           aria-pressed={value === o}
+          className={
+            value === o ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+          }
           onClick={() => onPick(o)}
         >
           {names[o]}
@@ -134,38 +136,28 @@ export function OrganizationPage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b px-4 py-3 md:px-6">
-        <span
-          aria-hidden="true"
-          className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"
-        >
-          <TreeStructureIcon className="size-5" />
-        </span>
-        <div className="min-w-0 flex-1 basis-64">
-          <h1 className="text-2xl text-balance">Organization</h1>
-          <p className="text-sm text-pretty text-muted-foreground">
-            Who leads what, and who every person and bot reports to. Bots read their seat, and
-            escalation follows the chart.
-            {!canEdit && positions.length > 0 ? " Only the admin changes the chart." : ""}
-          </p>
-        </div>
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2 md:px-6">
+        <h1 className="text-lg font-semibold text-balance">Organization</h1>
+        {!canEdit && positions.length > 0 && (
+          <p className="text-xs text-muted-foreground">Only the admin changes the chart.</p>
+        )}
         {positions.length > 0 && (
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex items-end gap-2" onKeyDown={goNext}>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2" onKeyDown={goNext}>
               <Input
                 type="search"
                 title="Find a seat or a person"
                 hiddenLabel
                 placeholder="Find a seat or a person"
                 required={false}
-                container="min-w-48 sm:w-64"
+                container="min-w-40 sm:w-56"
                 value={state.q}
                 onChange={(e) => set({ q: e.target.value }, { replace: true })}
               />
               {state.q && (
                 <span
                   role="status"
-                  className="pb-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums"
+                  className="text-xs whitespace-nowrap text-muted-foreground tabular-nums"
                 >
                   {found.length === 0
                     ? "No match"

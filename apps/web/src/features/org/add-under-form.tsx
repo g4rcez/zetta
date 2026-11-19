@@ -77,11 +77,6 @@ function ChosenHolder({
           Change
         </Button>
       </div>
-      {choice.shareBot && bot && (
-        <p className="text-xs text-muted-foreground">
-          {bot.name} will be shared with the team when you add the seat.
-        </p>
-      )}
     </div>
   );
 }
@@ -138,7 +133,6 @@ export function AddUnderForm({
       rank,
       ...(templateKey && { templateKey }),
       ...(choice.holder.kind !== "open" && { holder: choice.holder }),
-      ...(choice.shareBot && { shareBot: choice.shareBot }),
     });
   };
   return (
@@ -156,13 +150,7 @@ export function AddUnderForm({
         {choice ? (
           <ChosenHolder choice={choice} palette={palette} onChange={() => setChoice(undefined)} />
         ) : (
-          <HolderPicker
-            palette={palette}
-            busy={busy}
-            confirmLabel="Share and choose"
-            allowOpen
-            onPick={pickHolder}
-          />
+          <HolderPicker palette={palette} busy={busy} allowOpen onPick={pickHolder} />
         )}
       </section>
       <form onSubmit={submit} aria-label="What the seat is" className="space-y-3">

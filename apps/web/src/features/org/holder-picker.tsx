@@ -1,15 +1,14 @@
 import { useState, type ReactNode } from "react";
 
 import { BotIdentity } from "@/components/bot-identity";
-import { Button, Input } from "@/components/ui";
+import { Input } from "@/components/ui";
 import { PersonIdentity } from "@/components/person-identity";
 import { cn } from "@zetta/ui/lib/utils";
-import type { OrgHolderInput, OrgPalette, OrgShareBot } from "./org-api";
+import { useBotAvatars } from "./org-bits";
+import type { OrgHolderInput, OrgPalette } from "./org-api";
 
-/** What was picked: who holds the seat, and whether a private bot is shared with the team for it. */
-export type HolderChoice = { holder: OrgHolderInput; shareBot?: OrgShareBot };
-
-type PaletteBot = OrgPalette["bots"][number];
+/** What was picked: who holds the seat. */
+export type HolderChoice = { holder: OrgHolderInput };
 
 const matches = (name: string, q: string) => !q || name.toLowerCase().includes(q);
 
@@ -76,42 +75,6 @@ function PrivateMark() {
   );
 }
 
-/** The question before a private bot goes into a seat: the bot is shared with the whole team first. */
-function ShareQuestion({
-  bot,
-  confirmLabel,
-  busy,
-  onConfirm,
-  onCancel,
-}: {
-  bot: PaletteBot;
-  confirmLabel: string;
-  busy: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={`Share ${bot.name} with the team`}
-      className="space-y-2 rounded-lg border border-warn/50 bg-card p-3 text-sm"
-    >
-      <p className="text-pretty">
-        Share <span className="font-medium">{bot.name}</span> with the team? Everyone in the team
-        can then see it and talk to it. A seat can only be held by a bot the team can see.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={busy} onClick={onConfirm}>
-          {confirmLabel}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 /**
  * Who can hold a seat: the people of the team and the bots, in one searchable list. The admin's own private bots are listed too; picking
  * one asks first, because seating it shares it with the team. Picking anything else is done at once.
@@ -120,7 +83,6 @@ export function HolderPicker({
   palette,
   current,
   busy,
-  confirmLabel,
   allowOpen,
   onPick,
 }: {
@@ -128,14 +90,12 @@ export function HolderPicker({
   /** Marked in the list; none when the seat does not exist yet. */
   current?: OrgHolderInput | undefined;
   busy: boolean;
-  /** The button that shares a private bot and picks it. */
-  confirmLabel: string;
   /** Offers "Leave it open". */
   allowOpen: boolean;
   onPick: (choice: HolderChoice) => void;
 }) {
+  const avatarOf = useBotAvatars();
   const [query, setQuery] = useState("");
-  const [asking, setAsking] = useState<string>();
   // People and bots are two short lists, not one long one: the bots are what most seats are for, so they must not hide under the people.
   const [tab, setTab] = useState<Tab>(current?.kind === "bot" ? "bots" : "people");
   const q = query.trim().toLowerCase();
@@ -144,7 +104,6 @@ export function HolderPicker({
   const showBots = !!q || tab === "bots";
   const people = palette.people.filter((p) => matches(p.name, q));
   const bots = palette.bots.filter((b) => matches(b.name, q));
-  const question = palette.bots.find((b) => b.id === asking);
   return (
     <div className="space-y-3">
       <Input
@@ -156,18 +115,6 @@ export function HolderPicker({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
-      {question && (
-        <ShareQuestion
-          bot={question}
-          confirmLabel={confirmLabel}
-          busy={busy}
-          onCancel={() => setAsking(undefined)}
-          onConfirm={() => {
-            setAsking(undefined);
-            onPick({ holder: { kind: "bot", botId: question.id }, shareBot: "team" });
-          }}
-        />
-      )}
       <div role="group" aria-label="Who can hold it" className="flex gap-1">
         <TabButton picked={tab === "people"} onPick={() => setTab("people")}>
           People ({palette.people.length})
@@ -217,17 +164,15 @@ export function HolderPicker({
                   key={b.id}
                   picked={current?.kind === "bot" && current.botId === b.id}
                   disabled={busy}
-                  onPick={() =>
-                    b.visibility === "private"
-                      ? setAsking(b.id)
-                      : onPick({ holder: { kind: "bot", botId: b.id } })
-                  }
+                  onPick={() => onPick({ holder: { kind: "bot", botId: b.id } })}
                 >
                   <BotIdentity
-                    bot={b}
+                    bot={{ ...b, avatar: avatarOf(b.id, b.avatar) }}
                     size={28}
                     sub={b.description}
-                    trailing={b.visibility === "private" ? <PrivateMark /> : undefined}
+                    trailing={
+                      b.visibility === "private" || b.kind === "chief" ? <PrivateMark /> : undefined
+                    }
                   />
                 </PickRow>
               ))}

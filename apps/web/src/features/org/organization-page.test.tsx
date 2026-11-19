@@ -263,21 +263,19 @@ test("the admin assigns a person from the panel; the write carries the version t
   ]);
 });
 
-test("a private bot is listed, and seating it asks to share it with the team first", async () => {
+test("a private bot is listed, and seating it keeps it private with no question", async () => {
   const host = await seatPage(S(3), true);
   await click(buttons(host, "Assign a person or a bot")[0]);
   await openBots(host);
   const drafter = buttons(host, "Drafter").find((b) => b.getAttribute("aria-pressed") !== null)!;
   expect(drafter.textContent).toContain("Private");
   await click(drafter);
-  // Nothing is written until the admin agrees.
-  expect(writes).toEqual([]);
-  expect(text(host)).toContain("Share Drafter with the team?");
-  await click(buttons(host, "Share and seat")[0]);
+  // One click seats it: there is no question about sharing, and nothing asks for `shareBot`.
+  expect(text(host)).not.toContain("with the team?");
   expect(writes).toEqual([
     {
       call: `PUT /api/org/positions/${S(3)}/seat`,
-      body: { expectedVersion: 4, holder: { kind: "bot", botId: PRIVATE_BOT }, shareBot: "team" },
+      body: { expectedVersion: 4, holder: { kind: "bot", botId: PRIVATE_BOT } },
     },
   ]);
 });
@@ -296,16 +294,6 @@ test("the picker shows people and bots as two lists, and a search looks in both"
   await typeInto(host.querySelector('aside input[type="search"]'), "draft");
   expect(rows().some((r) => r.includes("Drafter"))).toBe(true);
   expect(rows().some((r) => r.includes("Ana Souza"))).toBe(false);
-});
-
-test("cancelling the question leaves the private bot private and the seat as it was", async () => {
-  const host = await seatPage(S(3), true);
-  await click(buttons(host, "Assign a person or a bot")[0]);
-  await openBots(host);
-  await click(buttons(host, "Drafter").find((b) => b.getAttribute("aria-pressed") !== null));
-  await click(buttons(host, "Cancel")[0]);
-  expect(text(host)).not.toContain("Share Drafter with the team?");
-  expect(writes).toEqual([]);
 });
 
 test("adding a seat asks who first, then the role, and one write makes the seat and fills it", async () => {
@@ -349,20 +337,20 @@ test("a new seat can be left open, and then it is made without a holder", async 
   });
 });
 
-test("a private bot chosen for a new seat is shared when the seat is saved", async () => {
+test("a private bot chosen for a new seat is seated as it is, without sharing it", async () => {
   const host = await seatPage(S(2), true);
   await click(buttons(host, "Add a seat under this one")[0]);
   await openBots(host);
   await click(buttons(host, "Drafter").find((b) => b.getAttribute("aria-pressed") !== null));
-  await click(buttons(host, "Share and choose")[0]);
-  expect(writes).toEqual([]);
-  expect(text(host)).toContain("Drafter will be shared with the team when you add the seat.");
   const form = host.querySelector('section[aria-label="Add a seat under CTO"]')!;
   await typeInto(form.querySelector("input:not([type='search'])"), "Copy editor");
   await click(buttons(host, "Add seat")[0]);
-  expect(writes.at(-1)!.body).toMatchObject({
+  expect(writes.at(-1)!.body).toEqual({
+    expectedVersion: 4,
+    parentId: S(2),
+    title: "Copy editor",
+    rank: "member",
     holder: { kind: "bot", botId: PRIVATE_BOT },
-    shareBot: "team",
   });
 });
 
@@ -431,9 +419,13 @@ test("a branch folds away and comes back", async () => {
   expect(text(host)).toContain("Developer");
 });
 
-test("the top of the page says what the chart changes", async () => {
+test("the header is one quiet row: the title and the controls, with no explanatory paragraph", async () => {
+  current = view(true);
   const host = await organization({ view: "list" });
-  expect(text(host)).toContain("Bots read their seat, and escalation follows the chart.");
+  const header = host.querySelector("header")!;
+  expect(header.querySelector("h1")?.textContent).toBe("Organization");
+  expect(header.textContent).not.toContain("Bots read their seat");
+  expect(header.querySelector('[aria-label="How to draw it"]')).not.toBeNull();
 });
 
 const withSecondBot = () => [

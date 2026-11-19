@@ -40,6 +40,7 @@ export function keysFor(topic: string): { queryKey: Key; exact?: boolean }[] {
   if (topic === topics.bots) return [{ queryKey: ["bots"], exact: true }];
   // Saved tests, ratings and the numbers of one bot (the History, Saved tests and Performance sections of its settings).
   if (kind === "bot-quality" && id) return [{ queryKey: ["bot-quality"] }];
+  if (kind === "bot-learning" && id) return [{ queryKey: ["learning"] }];
   // The badge reads ["attention"] and the page ["catch-up"]: a decision card or an approval changes both.
   if (topic === topics.attention)
     return [

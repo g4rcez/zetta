@@ -1,6 +1,6 @@
 import { ActionHint } from "@/components/action-hint";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
@@ -15,6 +15,7 @@ import z from "zod";
 
 import { Button, Input, Progress } from "@/components/ui";
 import { Logo } from "@/components/logo";
+import { invalidateAuthGuard } from "@/lib/auth-guard";
 import { getIdentityError, identityClient } from "@/lib/identity-client";
 import { EngineStep, IdentityStep, InstructionsStep, type Draft } from "../bots/bot-onboarding";
 import { LayaSwitch } from "../studio/laya-switch";
@@ -23,6 +24,8 @@ import { reviewInstructions } from "../bots/instruction-review";
 import { FRESH_INTERVIEW, type InterviewState } from "../bots/interview-flow";
 import { call, chatClient, errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
+import { claudeApi } from "../claude/claude-api";
+import { orgQueries } from "../org/org-api";
 import { type AvatarValue } from "@/components/bot-avatar";
 import { installationApi, installationQueries, type NetworkMode } from "./installation-api";
 import { isOnboardingStep, PRE_ACCOUNT_STEPS, type OnboardingStep } from "./steps";
@@ -49,7 +52,7 @@ const STEPS: readonly { id: StepId; title: string; question: string; lede: strin
   {
     id: "identity",
     title: "Chief",
-    question: "Meet your Chief",
+    question: "Meet Zetta, the Chief.",
     lede: "Your Chief is your personal chief of staff. Give it a name and a face.",
   },
   {
@@ -72,11 +75,28 @@ const STEPS: readonly { id: StepId; title: string; question: string; lede: strin
   },
 ] as const;
 type StepId = OnboardingStep;
+/** A person who joined an existing installation sets up only their own Chief and engine: the server-wide steps belong to the admin. */
+const MEMBER_STEPS: readonly StepId[] = ["identity", "engine", "instructions"];
 
 const STORE = "zetta.onboarding";
 type Stored = { key: string; mode: NetworkMode; url: string };
 // Only this tab's sessionStorage, so a refresh keeps the pre-account answers; it is cleared once the account exists.
+/** The setup key in an address like `/onboarding#key=...` (the desktop app opens its own server that way), or "". */
+export function keyFromHash(hash: string): string {
+  const key = new URLSearchParams(hash.replace(/^#/, "")).get("key");
+  return key?.trim() ?? "";
+}
 function readStored(): Stored {
+  const fromHash = typeof window === "undefined" ? "" : keyFromHash(window.location.hash);
+  if (fromHash) {
+    // Taken from the address once, then kept for this tab only; the address no longer shows it.
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    const stored: Stored = { key: fromHash, mode: "local", url: "" };
+    try {
+      sessionStorage.setItem(STORE, JSON.stringify(stored));
+    } catch {}
+    return stored;
+  }
   try {
     const raw: unknown = JSON.parse(sessionStorage.getItem(STORE) ?? "null");
     if (raw && typeof raw === "object") {
@@ -119,6 +139,7 @@ const accountSchema = z
 const draftOf = (b: Bot): Draft => ({
   name: b.name,
   description: b.description,
+  role: b.role ?? "",
   harness: b.harness,
   model: b.model ?? "",
   personality: b.personality,
@@ -136,6 +157,13 @@ export function InstallOnboarding() {
     return isOnboardingStep(step) ? step : undefined;
   });
   const [step, setStep] = useState<StepId | null>(null);
+  const [member, setMember] = useState(false);
+  // A person who joined a company that drew its chart picks their Chief's role from the chart's own titles.
+  const orgView = useQuery({ ...orgQueries.get(), enabled: member }).data;
+  const roleChoices = useMemo(
+    () => [...new Set((orgView?.positions ?? []).map((p) => p.title.trim()).filter(Boolean))],
+    [orgView],
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
@@ -150,6 +178,8 @@ export function InstallOnboarding() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [chief, setChief] = useState<Bot>();
+  /** Claude Code's reasoning effort for the Chief; empty = its default. Saved with the Chief, which is the first moment it exists. */
+  const [effort, setEffort] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [avatar, setAvatar] = useState<AvatarValue | null>(null);
   const [interview, setInterview] = useState<InterviewState>(FRESH_INTERVIEW);
@@ -187,7 +217,20 @@ export function InstallOnboarding() {
       const status = await identityClient.status();
       if (status.state === "active") {
         const installation = await qc.fetchQuery({ ...installationQueries.get(), staleTime: 0 });
-        if (!status.isAdmin || installation.onboarding === "done")
+        if (!status.isAdmin) {
+          const { preferences } = await call<{ preferences: { memberOnboarding?: string } }>(
+            "/api/preferences",
+          );
+          if (preferences.memberOnboarding !== "pending")
+            return void navigate({ to: "/chat/{-$chatId}", replace: true });
+          await loadChief();
+          if (alive) {
+            setMember(true);
+            show(requested && MEMBER_STEPS.includes(requested) ? requested : "identity");
+          }
+          return;
+        }
+        if (installation.onboarding === "done")
           return void navigate({ to: "/chat/{-$chatId}", replace: true });
         await loadChief();
         if (alive)
@@ -279,6 +322,7 @@ export function InstallOnboarding() {
         avatar,
         name: draft.name.trim(),
         description: draft.description,
+        role: (draft.role ?? "").trim(),
         harness: draft.harness,
         model: draft.model.trim() || null,
         personality: draft.personality,
@@ -287,15 +331,32 @@ export function InstallOnboarding() {
         outputStyleId: draft.outputStyleId,
       });
       setChief(saved);
+      if (draft.harness === "claude-code") {
+        const current = await claudeApi.get(saved.id);
+        if ((current.config.effort ?? "") !== effort)
+          await claudeApi.save(saved.id, { ...current.config, effort: effort || null });
+      }
       void qc.invalidateQueries({ queryKey: chatQueries.bots().queryKey, exact: true });
-      go("plugins");
+      if (member) await finishMember(saved);
+      else go("plugins");
     });
+
+  // The account's own setup is done: remember it so the guard stops sending this person here, then open the Chief.
+  async function finishMember(bot: Bot) {
+    await call("/api/preferences", "PATCH", { memberOnboarding: "done" });
+    invalidateAuthGuard();
+    await qc.invalidateQueries({ queryKey: ["preferences"] });
+    await navigate({ to: "/chat/{-$chatId}", search: { bot: bot.id } });
+  }
 
   const finish = () =>
     run(async () => {
       await installationApi.patch({ onboarding: "done" });
       // A new installation starts with the simple sidebar; Preferences > Display shows everything.
-      await call("/api/preferences", "PATCH", { navMode: "simple" }).catch(() => undefined);
+      await call("/api/preferences", "PATCH", {
+        navMode: "simple",
+        memberOnboarding: "done",
+      }).catch(() => undefined);
       await navigate({ to: "/chat/{-$chatId}", search: chief ? { bot: chief.id } : {} });
     });
 
@@ -313,9 +374,12 @@ export function InstallOnboarding() {
     );
   }
 
-  const index = STEPS.findIndex((s) => s.id === step);
-  const current = STEPS[index]!;
-  const wide = index >= 3;
+  const list = member ? STEPS.filter((s) => MEMBER_STEPS.includes(s.id)) : STEPS;
+  const index = list.findIndex((s) => s.id === step);
+  const current = list[index]!;
+  const afterAccount = !PRE_ACCOUNT_STEPS.includes(step);
+  const firstAfterAccount = list.findIndex((s) => !PRE_ACCOUNT_STEPS.includes(s.id));
+  const wide = afterAccount;
   const nameMissing = !draft?.name.trim();
 
   return (
@@ -328,10 +392,10 @@ export function InstallOnboarding() {
         <div className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">{current.title}</span>
           <span className="tabular-nums">
-            {index + 1} of {STEPS.length}
+            {index + 1} of {list.length}
           </span>
         </div>
-        <Progress label="Onboarding progress" min={1} max={STEPS.length} value={index + 1} />
+        <Progress label="Onboarding progress" min={1} max={list.length} value={index + 1} />
         <h1
           key={step}
           autoFocus
@@ -520,9 +584,12 @@ export function InstallOnboarding() {
             avatar={avatar}
             setAvatar={setAvatar}
             kind="chief"
+            roleChoices={roleChoices}
           />
         )}
-        {draft && step === "engine" && <EngineStep draft={draft} set={patchDraft} />}
+        {draft && step === "engine" && (
+          <EngineStep draft={draft} set={patchDraft} effort={effort} setEffort={setEffort} />
+        )}
         {draft && step === "instructions" && (
           <InstructionsStep
             draft={draft}
@@ -540,8 +607,8 @@ export function InstallOnboarding() {
           </div>
         )}
 
-        {index >= 3 && (
-          <Nav back={index > 3 ? () => go(STEPS[index - 1]!.id) : undefined}>
+        {afterAccount && (
+          <Nav back={index > firstAfterAccount ? () => go(list[index - 1]!.id) : undefined}>
             {step === "identity" && (
               <Button type="button" disabled={nameMissing} onClick={() => go("engine")}>
                 Continue
@@ -556,7 +623,7 @@ export function InstallOnboarding() {
             )}
             {step === "instructions" && (
               <Button type="button" disabled={busy || nameMissing} onClick={() => void saveChief()}>
-                {busy ? "Saving…" : "Save my Chief"}
+                {busy ? "Saving…" : member ? "Save and start chatting" : "Save my Chief"}
                 <ArrowRightIcon />
               </Button>
             )}

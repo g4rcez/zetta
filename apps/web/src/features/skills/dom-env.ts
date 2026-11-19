@@ -1,6 +1,9 @@
 import { afterAll } from "bun:test";
 import { Window } from "happy-dom";
 
+/** The happy-dom window, typed as a browser window so its nodes and events fit the DOM types React and the app use. */
+export type TestWindow = typeof globalThis & { happyDOM: Window["happyDOM"] };
+
 const GLOBALS = [
   "window",
   "document",
@@ -24,7 +27,7 @@ const GLOBALS = [
  * Bun runs every test file in one process, so the globals are put back when the file is done. Call it at the top of the file, before
  * anything from the app is imported.
  */
-export function setupDom() {
+export function setupDom(): TestWindow {
   const win = new Window();
   const saved = GLOBALS.map(
     (key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const,
@@ -67,5 +70,5 @@ export function setupDom() {
       else delete (globalThis as Record<string, unknown>)[key];
     }
   });
-  return win;
+  return win as unknown as TestWindow;
 }

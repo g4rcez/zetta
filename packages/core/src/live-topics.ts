@@ -11,6 +11,8 @@ export const topics = {
   bots: "bots",
   /** A bot's saved tests ran or changed, or a reply of it was rated: its History, Saved tests and Performance sections refetch. */
   botQuality: (botId: string) => `bot-quality:${botId}`,
+  /** A bot's lessons or the reading of its chats changed (a lesson started, was kept or dropped, a reading ended): its Lessons section refetches. */
+  botLearning: (botId: string) => `bot-learning:${botId}`,
   attention: "attention",
   routines: "routines",
   /** A workflow run paused, woke or ended (also by itself, on a timer or after a card was answered): the run list refetches. */

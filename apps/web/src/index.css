@@ -287,6 +287,12 @@ html.dark {
   --var-page-calendar-today-background-hover: var(--accent);
 }
 
+/* @g4rcez/components 7.2.2: .__button sets min-inline-size:min-content with nowrap, so a calendar pill
+   with a long title grows past its day column. Let the pill shrink to its column and ellipsize. */
+.__page-calendar-event-pill__button.__button {
+  min-inline-size: 0;
+}
+
 /* Chat (features/chat): all rules are prefixed .chat- */
 .chat-code {
   position: relative;
@@ -544,4 +550,37 @@ html.dark,
   .sidebar-swap {
     animation-name: sidebar-swap-fade;
   }
+}
+
+/* Safe space after a field. Every library field is a <fieldset class="__input-field__fieldset"> with an unlayered `margin: 0`, which beats the
+   layered `space-y-*` utilities, so a button under a field sat flush against it. Restore the space-y step for fields. Keep one line per step. */
+.space-y-0\.5 > .__input-field__fieldset:not(:last-child) {
+  margin-block-end: calc(var(--spacing)*0.5);
+}
+.space-y-1 > .__input-field__fieldset:not(:last-child) {
+  margin-block-end: calc(var(--spacing)*1);
+}
+.space-y-1\.5 > .__input-field__fieldset:not(:last-child) {
+  margin-block-end: calc(var(--spacing)*1.5);
+}
+.space-y-2 > .__input-field__fieldset:not(:last-child) {
+  margin-block-end: calc(var(--spacing)*2);
+}
+.space-y-2\.5 > .__input-field__fieldset:not(:last-child) {
+  margin-block-end: calc(var(--spacing)*2.5);
+}
+.space-y-3 > .__input-field__fieldset:not(:last-child) {
+  margin-block-end: calc(var(--spacing)*3);
+}
+.space-y-4 > .__input-field__fieldset:not(:last-child) {
+  margin-block-end: calc(var(--spacing)*4);
+}
+.space-y-5 > .__input-field__fieldset:not(:last-child) {
+  margin-block-end: calc(var(--spacing)*5);
+}
+.space-y-6 > .__input-field__fieldset:not(:last-child) {
+  margin-block-end: calc(var(--spacing)*6);
+}
+.space-y-8 > .__input-field__fieldset:not(:last-child) {
+  margin-block-end: calc(var(--spacing)*8);
 }

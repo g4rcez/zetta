@@ -39,8 +39,9 @@ export type Preferences = {
   sidebarSide: SidebarSide;
   /** "simple" hides the Advanced group of the sidebar. */
   navMode: "simple" | "full";
+  /** `pending` until a new account finished the onboarding of its own Chief and engine. */
+  memberOnboarding: "pending" | "done";
   /** A message sent while a bot works: waits for the reply ("park") or interrupts it ("interrupt"). */
-  steerMode: "park" | "interrupt";
   railWidth: number;
   listWidth: number;
   /** How hours show everywhere in the app. */
@@ -72,7 +73,8 @@ export const SIDEBAR_LIMITS = {
 const DEFAULTS: Preferences = {
   railMode: "expanded",
   navMode: "simple",
-  steerMode: "park",
+  // `done` until the server answers: the route guard, not this default, sends a new account to the onboarding.
+  memberOnboarding: "done",
   sidebarSide: DEFAULT_SIDEBAR_SIDE,
   railWidth: SIDEBAR_LIMITS.railWidth.fallback,
   listWidth: SIDEBAR_LIMITS.listWidth.fallback,

@@ -251,11 +251,16 @@ suite("profile against compose postgres", () => {
   });
 
   test("a preset and an uploaded image are kept, and null clears the picture", async () => {
-    for (const avatar of [PRESET, IMAGE]) {
-      const res = await call(A, "PATCH", "/api/profile", { avatar });
-      expect(res.status).toBe(200);
-      expect((await profile(A)).avatar).toEqual(avatar);
-    }
+    const res = await call(A, "PATCH", "/api/profile", { avatar: PRESET });
+    expect(res.status).toBe(200);
+    expect((await profile(A)).avatar).toEqual(PRESET);
+    // An uploaded picture is sent as a link to the stored file, not as base64 (see avatars.integration.test.ts).
+    const uploaded = await call(A, "PATCH", "/api/profile", { avatar: IMAGE });
+    expect(uploaded.status).toBe(200);
+    expect((await profile(A)).avatar).toMatchObject({
+      kind: "image",
+      src: expect.stringMatching(new RegExp(`^/api/avatars/user/${A}\\?v=[a-z0-9]+$`)),
+    });
     expect((await profile(B)).avatar).toBeNull();
     await call(A, "PATCH", "/api/profile", { avatar: null });
     expect((await profile(A)).avatar).toBeNull();

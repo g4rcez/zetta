@@ -5,13 +5,9 @@ import { user } from "@zetta/db/schema/auth";
 import { membership } from "@zetta/db/schema/identity";
 import { orgPosition } from "@zetta/db/schema/org";
 import { userPreference } from "@zetta/db/schema/preferences";
+import { avatarOut } from "../avatars/out";
 
 type Avatar = (typeof userPreference.$inferSelect)["avatar"];
-
-/** A picture above this many characters is left out of a list; the row shows the initial instead (a list may hold many people). */
-const AVATAR_MAX = 20_000;
-const smallAvatar = (a: Avatar | null | undefined): Avatar =>
-  a && a.kind === "image" && a.src.length > AVATAR_MAX ? null : (a ?? null);
 
 /**
  * What the installation's members may read about each other. There is no email: a member sees names, pictures and the lines a person
@@ -70,7 +66,7 @@ export function createPeopleDirectory(db: Pick<Database, "select">) {
         {
           userId: r.userId,
           name: r.name,
-          avatar: smallAvatar(r.avatar),
+          avatar: avatarOut("user", r.userId, r.avatar),
           jobTitle: r.jobTitle ?? "",
           title: personTitle(r.jobTitle, seats.get(r.userId)),
           department: r.department ?? "",

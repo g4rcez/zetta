@@ -1,9 +1,10 @@
-import { isAvatarValue, type AvatarValue } from "@zetta/core/avatar";
+import { isAvatarWire, type AvatarValue } from "@zetta/core/avatar";
 import { isTimeZone, PROFILE_LIMITS, profileTextProblem } from "@zetta/core/person-profile";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { accessFail, createGuardedRoute, fail } from "../http-response";
 import { AccessError, type createIdentityAccess } from "../identity/access";
+import { AvatarRefError, resolveAvatar, type AvatarStore } from "../avatars/store";
 import type { PeopleDirectory } from "../people/directory";
 import type { ProfileStore } from "./store";
 
@@ -14,6 +15,8 @@ export type ProfileServices = {
   people: PeopleDirectory;
   /** The id of the session the request belongs to, so the list can say "this device". */
   currentSessionId: (headers: Headers) => Promise<string | undefined>;
+  /** Reads the pictures an avatar link points at. */
+  avatars?: AvatarStore;
 };
 
 /** A profile line: trimmed, at most `max` characters, plain text. `multiline` keeps line breaks (the "about" text). */
@@ -47,18 +50,21 @@ const patch = z.strictObject({
     .max(80)
     .refine((s) => !/\p{Cc}/u.test(s))
     .optional(),
-  avatar: z.custom<AvatarValue>(isAvatarValue).nullable().optional(),
+  // An uploaded picture may come back as the link the server gave for it (see `resolveAvatar`).
+  avatar: z.custom<AvatarValue>(isAvatarWire).nullable().optional(),
 });
 
 function mapError(e: unknown) {
   if (e instanceof AccessError) return accessFail(e);
+  if (e instanceof AvatarRefError)
+    return fail(400, "INVALID_AVATAR", "That picture is not available. Choose it again.");
   if (e instanceof z.ZodError)
     return fail(400, "INVALID_REQUEST", "Check the details and try again.");
   return fail(500, "UNAVAILABLE", "Something went wrong. Please retry.");
 }
 
 export function createProfileRoutes(
-  { access, profile, people, currentSessionId }: ProfileServices,
+  { access, profile, people, currentSessionId, avatars }: ProfileServices,
   trustedOrigins: readonly string[],
 ): Elysia {
   const g = createGuardedRoute({
@@ -80,9 +86,16 @@ export function createProfileRoutes(
       )
       .patch(
         "/profile",
-        g(async ({ actor: { actor }, body }) => ({
-          profile: await profile.update(actor, patch.parse(body)),
-        })),
+        g(async ({ actor: { actor }, body }) => {
+          const input = patch.parse(body);
+          const avatar = await resolveAvatar(avatars, actor, input.avatar);
+          return {
+            profile: await profile.update(
+              actor,
+              avatar === undefined ? input : { ...input, avatar },
+            ),
+          };
+        }),
       )
       // The members of this installation, with the lines each one wrote about themselves. No email. `q` narrows by name, title, department.
       .get(

@@ -73,7 +73,6 @@ suite("layout preferences against compose postgres", () => {
     expect(await read(ids[0]!)).toEqual({
       railMode: "expanded",
       navMode: "simple",
-      steerMode: "park",
       sidebarSide: "left",
       railWidth: 224,
       listWidth: 320,
@@ -95,7 +94,6 @@ suite("layout preferences against compose postgres", () => {
     expect(await read(ids[0]!)).toEqual({
       railMode: "collapsed",
       navMode: "simple",
-      steerMode: "park",
       sidebarSide: "left",
       railWidth: 260,
       listWidth: 400,
@@ -112,7 +110,6 @@ suite("layout preferences against compose postgres", () => {
     expect(await read(ids[1]!)).toEqual({
       railMode: "expanded",
       navMode: "simple",
-      steerMode: "park",
       sidebarSide: "left",
       railWidth: 224,
       listWidth: 320,

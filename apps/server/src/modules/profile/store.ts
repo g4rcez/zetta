@@ -1,4 +1,5 @@
-import { parseAvatar, type AvatarValue } from "@zetta/core/avatar";
+import type { AvatarValue } from "@zetta/core/avatar";
+import { avatarOut } from "../avatars/out";
 import type { ProfileLines } from "@zetta/core/person-profile";
 import type { Database } from "@zetta/db";
 import { and, desc, eq, gt } from "@zetta/db/query";
@@ -42,7 +43,7 @@ export function createProfileStore(db: Database) {
     return {
       name: row.name,
       email: row.email,
-      avatar: parseAvatar(row.avatar),
+      avatar: avatarOut("user", a.userId, row.avatar),
       jobTitle: row.jobTitle ?? "",
       department: row.department ?? "",
       about: row.about ?? "",

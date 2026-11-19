@@ -7,8 +7,8 @@ import {
   type ApprovalMode,
   type RailMode,
   type SidebarSide,
+  type MemberOnboarding,
   type NavMode,
-  type SteerMode,
   type Theme,
   type TimeFormat,
 } from "@zetta/db/schema/preferences";
@@ -19,7 +19,8 @@ export type Preferences = {
   railMode: RailMode;
   sidebarSide: SidebarSide;
   navMode: NavMode;
-  steerMode: SteerMode;
+  /** `pending` until the person finished the first-run setup of their own Chief and engine (new accounts only). */
+  memberOnboarding: MemberOnboarding;
   railWidth: number;
   listWidth: number;
   timeFormat: TimeFormat;
@@ -42,7 +43,7 @@ export function createPreferenceStore(db: Database) {
     railMode: r.railMode,
     sidebarSide: r.sidebarSide,
     navMode: r.navMode,
-    steerMode: r.steerMode,
+    memberOnboarding: r.memberOnboarding,
     railWidth: r.railWidth,
     listWidth: r.listWidth,
     timeFormat: r.timeFormat,
@@ -68,7 +69,7 @@ export function createPreferenceStore(db: Database) {
             railMode: "expanded",
             sidebarSide: "left",
             navMode: "simple",
-            steerMode: "park",
+            memberOnboarding: "pending",
             railWidth: SIDEBAR_LIMITS.railWidth.fallback,
             listWidth: SIDEBAR_LIMITS.listWidth.fallback,
             timeFormat: "24h",

@@ -3,7 +3,13 @@ import { z } from "zod";
 import { BotNameError, FallbackError, ModelError } from "../chat/service";
 import { accessFail, createGuardedRoute, fail } from "../http-response";
 import { AccessError, type createIdentityAccess } from "../identity/access";
-import { drivePromptInput, feedbackInput, QualityError, type BotQuality } from "./service";
+import {
+  driveChoiceInput,
+  drivePromptInput,
+  feedbackInput,
+  QualityError,
+  type BotQuality,
+} from "./service";
 
 export type BotQualityServices = {
   access: ReturnType<typeof createIdentityAccess>;
@@ -112,6 +118,19 @@ export function createBotQualityRoutes(
         const body = z.strictObject({ promptId: uuid.optional() }).parse(c.body ?? {});
         return quality.run(c.actor, id(c), body.promptId);
       }, 202),
+    )
+    .post(
+      "/bots/:id/drive/compare",
+      g(async (c) => {
+        const body = z.strictObject({ promptId: uuid }).parse(c.body ?? {});
+        return quality.compare(c.actor, id(c), body.promptId);
+      }, 202),
+    )
+    .post(
+      "/bots/:id/drive/pairs/:pairId/choose",
+      g(async (c) =>
+        quality.choose(c.actor, id(c), uuid.parse(c.params.pairId), driveChoiceInput.parse(c.body)),
+      ),
     )
     .get(
       "/bots/:id/revisions",

@@ -20,6 +20,8 @@ const iso = (daysAgo: number) => new Date(now - daysAgo * 86_400_000).toISOStrin
 const sent: { path: string; method: string; body: any }[] = [];
 let ratings: Record<string, { rating: string; reason: string }> = {};
 let driveRuns: any[] = [];
+let drivePair: any = null;
+const PAIR = "00000000-0000-7000-8000-0000000000f1";
 globalThis.fetch = (async (input: URL | string, init?: RequestInit) => {
   const url = new URL(String(input));
   const path = `${url.pathname}${url.search}`;
@@ -57,8 +59,14 @@ globalThis.fetch = (async (input: URL | string, init?: RequestInit) => {
     return Response.json({
       bot: { id: BOT, name: "Q", version: 3 },
       limit: 10,
-      prompts: [{ id: P1, title: "Greeting", prompt: "Say hello", runs: driveRuns }],
+      prompts: [
+        { id: P1, title: "Greeting", prompt: "Say hello", runs: driveRuns, pair: drivePair },
+      ],
     });
+  if (path === `/api/bots/${BOT}/drive/compare`)
+    return Response.json({ started: 2, pairId: PAIR, botVersion: 3 }, { status: 202 });
+  if (path === `/api/bots/${BOT}/drive/pairs/${PAIR}/choose`)
+    return Response.json({ pairId: PAIR, chosen: body.choice });
   if (path === `/api/bots/${BOT}/drive/run`)
     return Response.json({ started: 1, botVersion: 3 }, { status: 202 });
   if (path === `/api/bots/${BOT}/drive/prompts`)
@@ -237,6 +245,79 @@ test("saved tests show the answers of the last two versions side by side and run
     body: { promptId: P1 },
   });
   await unmount();
+});
+
+const side = (answer: string, status = "done") => ({
+  id: `s-${answer}`,
+  status,
+  error: "",
+  answer: status === "done" ? answer : null,
+  conversationId: null,
+});
+
+test("compare asks the same question with and without memory; the two answers sit side by side and the pick is one call", async () => {
+  sent.length = 0;
+  driveRuns = [];
+  drivePair = null;
+  const { SavedTestsSection } = await import("./sections");
+  const first = await mount(
+    <SavedTestsSection bot={bot} onBotChange={() => {}} notify={() => {}} />,
+  );
+  expect(text()).not.toContain("Which is better?");
+  await press("Compare without memory");
+  expect(sent.at(-1)).toEqual({
+    path: `/api/bots/${BOT}/drive/compare`,
+    method: "POST",
+    body: { promptId: P1 },
+  });
+  await first.unmount();
+
+  // While the pair runs, the sides say so and the pick is not offered yet.
+  drivePair = {
+    pairId: PAIR,
+    createdAt: iso(0),
+    chosen: null,
+    with: side("Refunds take 5 days, per your policy."),
+    without: side("", "running"),
+  };
+  const running = await mount(
+    <SavedTestsSection bot={bot} onBotChange={() => {}} notify={() => {}} />,
+  );
+  expect(text()).toContain("With what it knows");
+  expect(text()).toContain("Without memory and skills");
+  expect(text()).toContain("Refunds take 5 days, per your policy.");
+  expect(text()).toContain("Running…");
+  expect(text()).not.toContain("Which is better?");
+  expect((button("Running…") as HTMLButtonElement | undefined)?.disabled).toBe(true);
+  await running.unmount();
+
+  // Both done: the pick is offered, and each choice is one call.
+  drivePair = { ...drivePair, without: side("Refunds are processed.") };
+  const done = await mount(
+    <SavedTestsSection bot={bot} onBotChange={() => {}} notify={() => {}} />,
+  );
+  expect(text()).toContain("Refunds are processed.");
+  expect(text()).toContain("Which is better?");
+  sent.length = 0;
+  await press("About the same");
+  expect(sent.at(-1)).toEqual({
+    path: `/api/bots/${BOT}/drive/pairs/${PAIR}/choose`,
+    method: "POST",
+    body: { choice: "same" },
+  });
+  await press("With what it knows");
+  expect(sent.at(-1)!.body).toEqual({ choice: "with" });
+  await done.unmount();
+
+  // Once chosen, it says what was picked and offers nothing more.
+  drivePair = { ...drivePair, chosen: "without" };
+  const picked = await mount(
+    <SavedTestsSection bot={bot} onBotChange={() => {}} notify={() => {}} />,
+  );
+  expect(text()).toContain("You picked the answer without what it knows.");
+  expect(text()).not.toContain("Which is better?");
+  await picked.unmount();
+  drivePair = null;
 });
 
 test("a running saved test says so and cannot be started twice", async () => {

@@ -26,7 +26,29 @@ export type DriveRun = {
   answer: string | null;
   conversationId: string | null;
 };
-export type DrivePrompt = { id: string; title: string; prompt: string; runs: DriveRun[] };
+/** One side of a paired test: the same question asked as the bot is ("with") or without its memory and its own skills ("without"). */
+export type PairSide = {
+  id: string;
+  status: "running" | "done" | "failed";
+  error: string;
+  answer: string | null;
+  conversationId: string | null;
+};
+export type PairChoice = "with" | "without" | "same";
+export type DrivePair = {
+  pairId: string;
+  createdAt: string;
+  chosen: PairChoice | null;
+  with: PairSide | null;
+  without: PairSide | null;
+};
+export type DrivePrompt = {
+  id: string;
+  title: string;
+  prompt: string;
+  runs: DriveRun[];
+  pair: DrivePair | null;
+};
 export type Drive = {
   bot: { id: string; name: string; version: number };
   limit: number;
@@ -88,6 +110,16 @@ export const qualityApi = {
     }),
   removePrompt: (botId: string, id: string) =>
     call<{ removed: boolean }>(`/api/bots/${botId}/drive/prompts/${id}`, "DELETE"),
+  compare: (botId: string, promptId: string) =>
+    call<{ started: number; pairId: string }>(`/api/bots/${botId}/drive/compare`, "POST", {
+      promptId,
+    }),
+  choose: (botId: string, pairId: string, choice: PairChoice) =>
+    call<{ pairId: string; chosen: PairChoice }>(
+      `/api/bots/${botId}/drive/pairs/${pairId}/choose`,
+      "POST",
+      { choice },
+    ),
   run: (botId: string, promptId?: string) =>
     call<{ started: number; botVersion: number }>(
       `/api/bots/${botId}/drive/run`,

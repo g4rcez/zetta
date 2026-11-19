@@ -11,7 +11,7 @@ Three constraints hold for every part: it is cheap in tokens (the daily reading 
 
 ## Lessons come from a batch, never from one message
 
-- Once a day per bot (`learning:batch` ticker; **Run now** on the bot's page, one hour apart), Zetta reads that day's chats of the **owner** with the bot: only `chat` conversations, never rooms or inbound chats, and never a user row the server wrote. A bot with fewer than 6 owner messages that day is skipped, and one owner reads at most 10 bots a day. The chats with the most signal come first (corrections, stops, steers, thumbs with a reason).
+- Once a day per bot (`learning:batch` ticker; **Run now** on the bot's page, one hour apart), Zetta reads that day's chats of the **owner** with the bot: only `chat` conversations, never rooms or inbound chats, and never a user row the server wrote. A bot with fewer than 6 owner messages that day is skipped, and one owner reads at most 10 bots a day. The chats with the most signal come first (corrections, stops, messages added while the bot worked, thumbs with a reason).
 - One call to the owner's Chief engine returns at most 8 candidates with a quote each. The engine's claims are never trusted: **Zetta checks them without a model** (`learning/validate.ts`).
   - The quote must exist word for word in a message the owner wrote. A quote in a code fence, a blockquote, an attachment, a message over 4,000 characters, or anything from a web page, a file, another bot or a tool is refused.
   - The text passes the same manipulation and secret screens as every memory write.
@@ -23,7 +23,7 @@ Three constraints hold for every part: it is cheap in tokens (the daily reading 
 
 - Lessons have a block of their own in the prompt ("YOUR LESSONS", at most 1,000 characters and 12 entries, trial first), so they never crowd out the bot's own notes. The notes are frozen per chat; the block is rebuilt when the bot's lessons change (`lessonsRev`), at the cost of one prompt-cache miss.
 - Tables `item_use` (which memory item or skill was in front of a reply: `shown`, `relevant`, `loaded` or `always`) and `reply_outcome` (one verdict per reply). Only `relevant` and `loaded` count; a lesson is `relevant` when its topic overlaps the message or the reply, or when it applies to every reply. A listed search hit that the bot never opened is not a use.
-- A reply's verdict is a pure function of what was stored: a thumb down, a stop, a steer or a correction on the next message are bad; a thumb up, a done task, a carried-on chat or a pick in a paired test are good. "Send now" and a restart are neutral. A late rating judges the reply again.
+- A reply's verdict is a pure function of what was stored: a thumb down, a stop, a correction sent while the reply was written (`steered`) or a correction on the next message are bad; a thumb up, a done task, a carried-on chat or a pick in a paired test are good. A message that only adds to the request while the bot works says nothing against the reply (see `fluid-chat.md`). A restart is neutral, and so is a reply an older "Send now" cut off. A late rating judges the reply again.
 - Search ranks with recency (down to 0.85) and what happened after the item was used (within plus or minus 10%), and hides an item that a current item replaces with a `supersedes` link. `score`, which orders the notes block, is never changed by usefulness.
 
 ## Check: the trial, the ranking and the tidy-up

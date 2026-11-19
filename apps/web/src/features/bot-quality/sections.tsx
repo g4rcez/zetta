@@ -13,8 +13,11 @@ import {
   qualityApi,
   qualityQueries,
   type BotConfigSnapshot,
+  type DrivePair,
   type DrivePrompt,
   type DriveRun,
+  type PairChoice,
+  type PairSide,
   type Revision,
 } from "./bot-quality-api";
 
@@ -248,21 +251,99 @@ function RunAnswer({ run, label }: { run: DriveRun | undefined; label: string })
   );
 }
 
+function PairAnswer({ side, label }: { side: PairSide | null; label: string }) {
+  return (
+    <div className="min-w-0 flex-1 basis-56 space-y-1 rounded border p-2">
+      <p className="text-xs font-medium">{label}</p>
+      {!side || side.status === "running" ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {side ? "Running…" : "Waiting…"}
+        </p>
+      ) : side.status === "failed" ? (
+        <p role="alert" className="text-xs text-destructive">
+          {side.error || "It did not finish."}
+        </p>
+      ) : (
+        <p className="max-h-60 overflow-auto text-sm whitespace-pre-wrap">{side.answer}</p>
+      )}
+    </div>
+  );
+}
+
+const PICKED: Record<PairChoice, string> = {
+  with: "You picked the answer with what it knows.",
+  without: "You picked the answer without what it knows.",
+  same: "You said they are about the same.",
+};
+
+/** The same question asked with and without what the bot knows: two answers side by side, and which one is better. */
+function PairPanel({
+  pair,
+  busy,
+  onChoose,
+}: {
+  pair: DrivePair;
+  busy: boolean;
+  onChoose: (choice: PairChoice) => void;
+}) {
+  const finished = [pair.with, pair.without].every((s) => s && s.status === "done");
+  return (
+    <section
+      aria-label="With and without what it knows"
+      className="space-y-2 rounded-lg border p-2"
+    >
+      <div className="flex flex-wrap gap-2">
+        <PairAnswer side={pair.with} label="With what it knows" />
+        <PairAnswer side={pair.without} label="Without memory and skills" />
+      </div>
+      {pair.chosen ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {PICKED[pair.chosen]}
+        </p>
+      ) : finished ? (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          role="group"
+          aria-label="Which is better?"
+        >
+          <span className="text-xs text-muted-foreground">Which is better?</span>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => onChoose("with")}>
+            With what it knows
+          </Button>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => onChoose("without")}>
+            Without
+          </Button>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => onChoose("same")}>
+            About the same
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function PromptCard({
   prompt,
   botVersion,
   busy,
   onRun,
+  onCompare,
+  onChoose,
   onRemove,
 }: {
   prompt: DrivePrompt;
   botVersion: number;
   busy: boolean;
   onRun: () => void;
+  onCompare: () => void;
+  onChoose: (pairId: string, choice: PairChoice) => void;
   onRemove: () => void;
 }) {
   const [latest, before] = prompt.runs;
-  const running = prompt.runs.some((r) => r.status === "running");
+  const pairRunning = [prompt.pair?.with, prompt.pair?.without].some(
+    (s) => s?.status === "running",
+  );
+  const running = pairRunning || prompt.runs.some((r) => r.status === "running");
   return (
     <li className="space-y-2 rounded-lg border p-3">
       <div className="flex flex-wrap items-start gap-2">
@@ -273,6 +354,9 @@ function PromptCard({
         <Button size="sm" variant="secondary" disabled={busy || running} onClick={onRun}>
           <PlayIcon aria-hidden="true" />
           {running ? "Running…" : "Run"}
+        </Button>
+        <Button size="sm" variant="outline" disabled={busy || running} onClick={onCompare}>
+          Compare without memory
         </Button>
         <ActionHint label="Remove this saved test">
           <Button
@@ -296,6 +380,13 @@ function PromptCard({
         />
         <RunAnswer run={before} label={before ? `Version ${before.botVersion}` : "Before"} />
       </div>
+      {prompt.pair && (
+        <PairPanel
+          pair={prompt.pair}
+          busy={busy}
+          onChoose={(choice) => onChoose(prompt.pair!.pairId, choice)}
+        />
+      )}
     </li>
   );
 }
@@ -336,6 +427,10 @@ export function SavedTestsSection({ bot }: SectionProps) {
               botVersion={bot.version}
               busy={busy}
               onRun={() => void act(() => qualityApi.run(bot.id, p.id))}
+              onCompare={() => void act(() => qualityApi.compare(bot.id, p.id))}
+              onChoose={(pairId, choice) =>
+                void act(() => qualityApi.choose(bot.id, pairId, choice))
+              }
               onRemove={() => void act(() => qualityApi.removePrompt(bot.id, p.id))}
             />
           ))}
@@ -386,7 +481,9 @@ export function SavedTestsSection({ bot }: SectionProps) {
       )}
       <p className="text-xs text-pretty text-muted-foreground">
         Each run uses the bot as it is now, in a chat that is not in your lists. It can use the
-        bot's tools, so keep the questions to things that are safe to ask again.
+        bot's tools, so keep the questions to things that are safe to ask again. Compare asks twice:
+        as the bot is, and without its memory and its own skills. Your pick counts for or against
+        what the bot knows.
       </p>
     </div>
   );
@@ -440,7 +537,7 @@ function PeriodStats({ botId, days }: { botId: string; days: 7 | 30 }) {
         title="Had to step in"
         items={[
           ["Answers you stopped", s.stepIn.cancelledReplies],
-          ["Times you steered it", s.stepIn.steered],
+          ["Messages you added while it worked", s.stepIn.steered],
           ["Changes it asked you to approve", s.stepIn.approvalCards],
           ["Times it needed you", s.stepIn.askedYou],
           ["Good answers", s.feedback.up],

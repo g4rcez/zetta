@@ -1,4 +1,5 @@
 import { topics } from "@zetta/core/live-topics";
+import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { and, asc, desc, eq, gte, inArray, isNull, sql } from "@zetta/db/query";
 import { bot, botRevision, conversation, message } from "@zetta/db/schema/chat";
@@ -8,6 +9,7 @@ import {
   botDriveRun,
   configProposal,
   attentionItem,
+  DRIVE_CHOICES,
   DRIVE_PROMPTS_PER_BOT,
   FEEDBACK_REASON_MAX,
   messageFeedback,
@@ -20,7 +22,9 @@ import type { ActiveActor } from "../identity/access";
 import { events } from "../events/bus";
 import { TurnBusyError } from "../chat/turns";
 import type { ChatService } from "../chat/service";
+import type { WithoutItems } from "../chat/pipeline";
 import type { SkillReviewService } from "../memory/skill-review";
+import type { Learning } from "../learning";
 
 /** A failure with a sentence for the person. `code` picks the HTTP status in routes.ts. */
 export class QualityError extends Error {
@@ -36,12 +40,15 @@ export type QualityDeps = {
   chat: Pick<ChatService, "createConversation" | "startTurn" | "updateBot">;
   /** A thumb down may teach the bot (autolearn); absent in tests that do not need it. */
   skillReview?: Pick<SkillReviewService, "afterDownvote"> | undefined;
+  /** A rating, or a pick in a paired test, judges the reply again (modules/learning); absent in tests that do not need it. */
+  learning?: Pick<Learning, "outcomes"> | undefined;
 };
 
 export const feedbackInput = z.strictObject({
   rating: z.enum(["up", "down"]),
   reason: z.string().trim().max(FEEDBACK_REASON_MAX).default(""),
 });
+export const driveChoiceInput = z.strictObject({ choice: z.enum(DRIVE_CHOICES) });
 export const drivePromptInput = z.strictObject({
   title: z.string().trim().min(1).max(80),
   prompt: z.string().trim().min(1).max(4000),
@@ -174,8 +181,50 @@ export function createBotQuality(db: Database, deps: QualityDeps) {
     return b;
   }
 
+  type DriveRow = {
+    id: string;
+    status: "running" | "done" | "failed";
+    error: string;
+    createdAt: Date;
+    answer: string | null;
+    conversationId: string | null;
+    variant: "with" | "without";
+    pairId: string | null;
+    chosen: "with" | "without" | "same" | null;
+  };
+  /** The newest pair among the runs of one test, with each side's answer (cut to the length the page shows). */
+  function pairOf(rows: readonly DriveRow[]) {
+    const newest = rows.find((r) => r.pairId);
+    if (!newest) return null;
+    const side = (variant: "with" | "without") => {
+      const r = rows.find((x) => x.pairId === newest.pairId && x.variant === variant);
+      return r
+        ? {
+            id: r.id,
+            status: r.status,
+            error: r.error,
+            answer: r.answer ? r.answer.slice(0, ANSWER_CHARS) : null,
+            conversationId: r.conversationId,
+          }
+        : null;
+    };
+    return {
+      pairId: newest.pairId!,
+      createdAt: newest.createdAt,
+      chosen: newest.chosen,
+      with: side("with"),
+      without: side("without"),
+    };
+  }
+
   /** Runs one saved test in its own chat and records the answer. Never throws: a failed run is a row. */
-  async function execute(actor: ActiveActor, runId: string, botId: string, prompt: string) {
+  async function execute(
+    actor: ActiveActor,
+    runId: string,
+    botId: string,
+    prompt: string,
+    without?: WithoutItems,
+  ) {
     let conversationId: string | undefined;
     try {
       const conv = await deps.chat.createConversation(actor, botId);
@@ -189,6 +238,7 @@ export function createBotQuality(db: Database, deps: QualityDeps) {
       const { follow } = await deps.chat.startTurn(actor, conversationId, {
         content: prompt,
         history: "previous_turn",
+        ...(without ? { withoutItems: without } : {}),
       });
       let saved: { id: string; status: string } | undefined;
       for await (const { event } of follow()) if (event.type === "message") saved = event.message;
@@ -257,6 +307,8 @@ export function createBotQuality(db: Database, deps: QualityDeps) {
         void deps.skillReview
           ?.afterDownvote({ ownerUserId: actor.userId, replyId: messageId, note: reason })
           .catch(() => undefined);
+      // A rating, even a late one, judges the reply again: what its items did is read from this (modules/learning).
+      void deps.learning?.outcomes.resolve(messageId, { force: true }).catch(() => undefined);
       touch(actor.userId, m.botId, m.conversationId);
       return { messageId, rating: v.rating, reason };
     },
@@ -272,6 +324,8 @@ export function createBotQuality(db: Database, deps: QualityDeps) {
         )
         .returning({ botId: messageFeedback.botId });
       if (row?.botId) touch(actor.userId, row.botId);
+      if (row)
+        void deps.learning?.outcomes.resolve(messageId, { force: true }).catch(() => undefined);
       return { cleared: Boolean(row) };
     },
 
@@ -605,6 +659,9 @@ export function createBotQuality(db: Database, deps: QualityDeps) {
               finishedAt: botDriveRun.finishedAt,
               answer: message.content,
               conversationId: botDriveRun.conversationId,
+              variant: botDriveRun.variant,
+              pairId: botDriveRun.pairId,
+              chosen: botDriveRun.chosen,
             })
             .from(botDriveRun)
             .leftJoin(message, eq(message.id, botDriveRun.messageId))
@@ -627,9 +684,11 @@ export function createBotQuality(db: Database, deps: QualityDeps) {
           title: p.title,
           prompt: p.prompt,
           runs: runs
-            .filter((r) => r.promptId === p.id)
+            .filter((r) => r.promptId === p.id && !r.pairId)
             .slice(0, 3)
             .map((r) => ({ ...r, answer: r.answer ? r.answer.slice(0, ANSWER_CHARS) : null })),
+          // The latest pair of this test: the same question with and without what the bot knows, and which the person preferred.
+          pair: pairOf(runs.filter((r) => r.promptId === p.id)),
         })),
       };
     },
@@ -752,6 +811,113 @@ export function createBotQuality(db: Database, deps: QualityDeps) {
         }
       })();
       return { started: rows.length, botVersion: b.version };
+    },
+
+    /**
+     * Asks one saved test twice, one after the other: as the bot is, and without its memory and its own skills. The two answers sit side
+     * by side for the person to pick from (`choose`). Zetta's built-in skills stay on both sides, so only what the bot learned is left out.
+     */
+    async compare(actor: ActiveActor, botId: string, promptId: string) {
+      const b = await ownBot(actor, botId);
+      if (b.archived) throw new QualityError("NOT_FOUND", "No such bot.");
+      if (b.harness === "fixture" || b.harness === "decision")
+        throw new QualityError(
+          "INVALID",
+          "This bot has no engine that writes answers, so there is nothing to compare.",
+        );
+      const [p] = await db
+        .select()
+        .from(botDrivePrompt)
+        .where(
+          and(
+            eq(botDrivePrompt.id, promptId),
+            eq(botDrivePrompt.botId, botId),
+            eq(botDrivePrompt.ownerUserId, actor.userId),
+          ),
+        );
+      if (!p) throw new QualityError("NOT_FOUND", "No such saved test.");
+      const [running] = await db
+        .select({ id: botDriveRun.id })
+        .from(botDriveRun)
+        .where(
+          and(
+            eq(botDriveRun.botId, botId),
+            eq(botDriveRun.ownerUserId, actor.userId),
+            eq(botDriveRun.status, "running"),
+            gte(botDriveRun.createdAt, new Date(Date.now() - 15 * 60_000)),
+          ),
+        )
+        .limit(1);
+      if (running)
+        throw new QualityError("BUSY", "The saved tests of this bot are already running.");
+      const pairId = uuidv7();
+      const rows = await db
+        .insert(botDriveRun)
+        .values(
+          (["with", "without"] as const).map((variant) => ({
+            promptId: p.id,
+            botId,
+            ownerUserId: actor.userId,
+            botVersion: b.version,
+            variant,
+            pairId,
+          })),
+        )
+        .returning({ id: botDriveRun.id, variant: botDriveRun.variant });
+      touch(actor.userId, botId);
+      void (async () => {
+        // One after the other: two engine runs at once would only slow both down, and the second must not see the first's chat.
+        for (const r of rows)
+          await execute(
+            actor,
+            r.id,
+            botId,
+            p.prompt,
+            r.variant === "without" ? { memory: true, skills: true } : undefined,
+          );
+      })();
+      return { started: rows.length, pairId, botVersion: b.version };
+    },
+
+    /**
+     * The person's pick between the two answers of a pair. "with" and "without" are the person's own word on the reply that had the bot's
+     * memory and skills, and count for or against what it used (the strongest signal there is); "same" changes nothing.
+     */
+    async choose(
+      actor: ActiveActor,
+      botId: string,
+      pairId: string,
+      input: z.infer<typeof driveChoiceInput>,
+    ) {
+      const { choice } = driveChoiceInput.parse(input);
+      await ownBot(actor, botId);
+      const runs = await db
+        .select({
+          id: botDriveRun.id,
+          variant: botDriveRun.variant,
+          status: botDriveRun.status,
+          messageId: botDriveRun.messageId,
+        })
+        .from(botDriveRun)
+        .where(
+          and(
+            eq(botDriveRun.pairId, pairId),
+            eq(botDriveRun.botId, botId),
+            eq(botDriveRun.ownerUserId, actor.userId),
+          ),
+        );
+      const withRun = runs.find((r) => r.variant === "with");
+      if (!withRun || runs.length !== 2) throw new QualityError("NOT_FOUND", "No such comparison.");
+      if (runs.some((r) => r.status !== "done" || !r.messageId))
+        throw new QualityError("INVALID", "Wait until both answers are finished.");
+      await db
+        .update(botDriveRun)
+        .set({ chosen: choice })
+        .where(and(eq(botDriveRun.pairId, pairId), eq(botDriveRun.ownerUserId, actor.userId)));
+      if (choice !== "same")
+        await deps.learning?.outcomes.adopt(withRun.messageId!).catch(() => undefined);
+      touch(actor.userId, botId);
+      return { pairId, chosen: choice };
     },
 
     // ---- version history -----------------------------------------------------------------------------------------------------

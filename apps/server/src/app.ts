@@ -1,3 +1,6 @@
+import { webStaticRoutes } from "./modules/web-static/routes";
+import { createDesktopLinkRoutes } from "./modules/desktop-link/routes";
+import { createDeviceRoutes, type DeviceServices } from "./modules/devices/routes";
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 import { createAuthMiddleware, type BetterAuthInstance } from "evlog/better-auth";
@@ -28,9 +31,16 @@ import { createAppsRoutes, type AppsServices } from "./modules/apps/routes";
 import { createSearchRoutes, type SearchServices } from "./modules/search/routes";
 import { createPreferenceRoutes, type PreferenceServices } from "./modules/preferences/routes";
 import { createProfileRoutes, type ProfileServices } from "./modules/profile/routes";
+import { createAvatarRoutes, type AvatarServices } from "./modules/avatars/routes";
 import { createTaskRoutes, type TaskServices } from "./modules/tasks/routes";
 import { createCatchUpRoutes, type CatchUpServices } from "./modules/catch-up/routes";
 import { createBotQualityRoutes, type BotQualityServices } from "./modules/bot-quality/routes";
+import {
+  createLearningRoutes,
+  createLessonRoutes,
+  type LearningServices,
+  type LessonServices,
+} from "./modules/learning/routes";
 import { createTranscribeRoutes, type TranscribeServices } from "./modules/transcribe/routes";
 import { createOrgRoutes, type OrgServices } from "./modules/org/routes";
 import { createProjectRoutes, type ProjectServices } from "./modules/projects/routes";
@@ -64,9 +74,12 @@ export type CreateAppOptions = {
   projects?: ProjectServices;
   org?: OrgServices;
   botQuality?: BotQualityServices;
+  learning?: LearningServices;
+  lessons?: LessonServices;
   transcribe?: TranscribeServices;
   preferences?: PreferenceServices;
   profile?: ProfileServices;
+  avatars?: AvatarServices;
   search?: SearchServices;
   knowledge?: KnowledgeServices;
   memory?: MemoryServices;
@@ -89,6 +102,12 @@ export type CreateAppOptions = {
   desktopOrigins: readonly string[];
   /** Optional; without it evlog writes plain console logs. */
   drain?: EvlogElysiaOptions["drain"];
+  /** A built web app (`apps/web/dist`) to serve at the root, so one address holds the UI and the API. Without it `GET /` answers `OK`. */
+  webDist?: string;
+  /** The link the desktop app uses to give this server a way into the owner's other Zetta server, with the secret that guards it. */
+  desktopLink?: { link: Parameters<typeof createDesktopLinkRoutes>[0]; token: string };
+  /** Computers paired through the desktop app (see modules/devices). */
+  devices?: DeviceServices;
   /** `api` refuses the requests only the worker can serve (see worker-only.ts). Default `all`: one process does everything. */
   role?: Role;
   /** Readiness for a load balancer: true when this instance can serve (the database answers). `GET /readyz` is 503 otherwise. */
@@ -112,9 +131,12 @@ export function createApp({
   projects,
   org,
   botQuality,
+  learning,
+  lessons,
   transcribe,
   preferences,
   profile,
+  avatars,
   search,
   knowledge,
   memory,
@@ -135,6 +157,9 @@ export function createApp({
   desktopOrigins,
   drain,
   role = "all",
+  webDist,
+  desktopLink,
+  devices,
   ready,
 }: CreateAppOptions) {
   // Telemetry must never receive private auth/driver exceptions. Authorization
@@ -183,6 +208,8 @@ export function createApp({
       .use(role === "api" ? (workerOnlyGuard() as unknown as Elysia) : new Elysia())
       .use(healthRoutes(ready) as unknown as Elysia)
       .use(metaRoutes(webOrigin, apiOrigin) as unknown as Elysia)
+      // Preset pictures are public files; uploaded ones need `avatars` (a signed-in member).
+      .use(createAvatarRoutes(avatars) as unknown as Elysia)
       .all("/api/auth/*", async (context) => {
         const { request, status, server } = context;
         if (["POST", "GET"].includes(request.method)) {
@@ -193,6 +220,16 @@ export function createApp({
       })
       .use(zettaMcp ? createZettaMcpRoutes(zettaMcp, auth.handler) : new Elysia())
       .use(runTools ? createRunToolRoutes(runTools) : new Elysia())
+      .use(
+        devices
+          ? (createDeviceRoutes(devices, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
+        desktopLink
+          ? (createDesktopLinkRoutes(desktopLink.link, desktopLink.token) as unknown as Elysia)
+          : new Elysia(),
+      )
       .use(identity ? createIdentityRoutes(identity, [webOrigin, ...desktopOrigins]) : new Elysia())
       .use(
         installation
@@ -248,6 +285,16 @@ export function createApp({
           : new Elysia(),
       )
       .use(
+        learning
+          ? (createLearningRoutes(learning, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
+        lessons
+          ? (createLessonRoutes(lessons, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
         transcribe
           ? (createTranscribeRoutes(transcribe, [
               webOrigin,
@@ -294,6 +341,10 @@ export function createApp({
       .use(
         botClaude ? createBotClaudeRoutes(botClaude, [webOrigin, ...desktopOrigins]) : new Elysia(),
       )
-      .get("/", () => "OK")
+      .use(
+        webDist
+          ? (webStaticRoutes(webDist) as unknown as Elysia)
+          : (new Elysia().get("/", () => "OK") as unknown as Elysia),
+      )
   );
 }

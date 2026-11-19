@@ -8,7 +8,8 @@
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import * as ort from "onnxruntime-node";
+// Types only: the runtime is loaded when the model is, so a server that never runs Laya (the desktop app's own) starts without its native binding.
+import type * as ort from "onnxruntime-node";
 import { Tokenizer } from "@huggingface/tokenizers";
 import {
   buildSequence,
@@ -54,6 +55,7 @@ export class Laya {
     /** where the bundle was loaded from */
     readonly modelDir: string,
     readonly variant: LayaVariant,
+    private readonly rt: typeof ort,
   ) {}
 
   static async load(opts: LayaOptions = {}): Promise<Laya> {
@@ -81,12 +83,16 @@ export class Laya {
       pad: opts.ids?.pad ?? id(spec.tokens.pad),
       maskTok: spec.tokens.mask,
     };
-    const session = await ort.InferenceSession.create(path.join(modelDir, spec.model), {
+    const loaded = await import("onnxruntime-node");
+    const rt = (
+      "InferenceSession" in loaded ? loaded : (loaded as { default: unknown }).default
+    ) as typeof ort;
+    const session = await rt.InferenceSession.create(path.join(modelDir, spec.model), {
       executionProviders: opts.executionProviders ?? ["cpu"],
       graphOptimizationLevel: "all",
       ...opts.sessionOptions,
     });
-    return new Laya(session, tok, config, ids, modelDir, variant);
+    return new Laya(session, tok, config, ids, modelDir, variant, rt);
   }
 
   private readonly encode = (text: string): number[] =>
@@ -147,11 +153,11 @@ export class Laya {
     });
 
     const out = await this.session.run({
-      input_ids: new ort.Tensor("int64", inputIds, [n, L]),
-      attention_mask: new ort.Tensor("int64", attention, [n, L]),
-      marker_pos: new ort.Tensor("int64", markerPos, [n, K]),
-      marker_mask: new ort.Tensor("bool", markerMask, [n, K]),
-      qtype: new ort.Tensor("int64", qtype, [n]),
+      input_ids: new this.rt.Tensor("int64", inputIds, [n, L]),
+      attention_mask: new this.rt.Tensor("int64", attention, [n, L]),
+      marker_pos: new this.rt.Tensor("int64", markerPos, [n, K]),
+      marker_mask: new this.rt.Tensor("bool", markerMask, [n, K]),
+      qtype: new this.rt.Tensor("int64", qtype, [n]),
     });
     const logits = floatLogits(out["logits"]?.data);
     const act = actProbabilities(VARIANTS[this.variant].act, out[VARIANTS[this.variant].act], n);

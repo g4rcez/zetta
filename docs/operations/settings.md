@@ -44,7 +44,25 @@ Postgres connection string. Leave it empty to use the Postgres that ships inside
 
 Optional · not secret
 
-Folder for Zetta's local state, including the embedded database (default ~/.zetta).
+Folder for Zetta's local state, including the embedded database (default ~/.zetta). When it is set, the installation is isolated: files, artifacts, code, caches and container names all live under (or carry a tag of) this folder, and nothing is read from or written to ~/.zetta.
+
+### `ZETTA_PG_ARCHIVE`, `ZETTA_MIGRATIONS_DIR`
+
+Optional · not secret
+
+Where a packaged install keeps the Postgres runtime archive and the SQL migrations, when they are not at their checkout locations. The desktop app sets both. Leave them empty in a checkout.
+
+### `ZETTA_DESKTOP_LINK_TOKEN`
+
+Optional · secret: kept encrypted or out of logs, never shown
+
+The secret the desktop app that runs this server shares with it (at least 32 characters). With it set, the app can link this server to the owner's other Zetta server through /api/desktop/remotes, from this computer only. Leave it empty on any other install.
+
+### `ZETTA_WEB_DIST`
+
+Optional · not secret
+
+A built web app (apps/web/dist) for the server to serve at its own address, next to /api. Leave it empty when a web server such as the Docker install's nginx serves the UI. The desktop app sets it for the server it runs.
 
 ### `ZETTA_SETUP_KEY`
 
@@ -345,6 +363,12 @@ Features. ZETTA_LAYA_PRELOAD=0 loads the Laya model on first use instead of at b
 Optional · not secret
 
 Lessons (modules/learning). ZETTA_LESSON_BATCH=off stops the daily reading of chats for lessons for everyone (a person can also turn it off in Lessons). ZETTA_LIGHT_RUNS=on makes background work that only reads text (the daily reading) run Claude Code without the person's own settings, MCP servers and tools, which costs far fewer tokens; off until measured against the full run.
+
+### `ZETTA_CLAUDE_LIVE_INPUT`
+
+Optional · not secret
+
+Claude Code reads a message sent while it works (docs/decisions/fluid-chat.md). ZETTA_CLAUDE_LIVE_INPUT=off turns that off: the message is then read when the run ends, as on the other engines. On by default.
 
 ### `ZETTA_MCP_ALLOWLIST`, `ZETTA_MCP_MEMBER_STDIO`
 

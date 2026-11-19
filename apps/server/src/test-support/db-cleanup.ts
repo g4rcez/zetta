@@ -31,6 +31,12 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
   // Members, and the project links of tasks and rooms, go with the project (cascade / set null).
   await q("delete from project where owner_user_id = any($1)");
   for (const t of [
+    "item_use",
+    "reply_outcome",
+    "learning_finding",
+    "bot_lesson",
+    "learning_run",
+    "learning_policy",
     "memory_job",
     "memory_source",
     "memory_revision",

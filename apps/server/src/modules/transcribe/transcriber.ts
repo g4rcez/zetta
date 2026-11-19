@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { dataDir } from "@zetta/core/zetta-home";
 import { join } from "node:path";
 
 /** Why a recording could not be turned into text. `safe` is a sentence for the person. */
@@ -105,7 +106,7 @@ export function createLocalTranscriber(
             opts.cacheDir ??
             process.env.ZETTA_TRANSCRIBE_MODEL_DIR ??
             process.env.ZETTA_EMBEDDING_MODEL_DIR ??
-            join(homedir(), ".cache", "zetta", "models");
+            dataDir("cache/models", join(homedir(), ".cache", "zetta", "models"));
           const asr = await pipeline(
             "automatic-speech-recognition",
             process.env.ZETTA_TRANSCRIBE_MODEL ?? TRANSCRIBE_MODEL,

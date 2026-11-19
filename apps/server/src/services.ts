@@ -7,6 +7,10 @@ import { createAuth, mcpResource } from "@zetta/auth";
 import { createDb } from "@zetta/db";
 import { type ResolvedDatabase, resolveDatabase } from "@zetta/db/embedded/resolve";
 import { eq, sql } from "@zetta/db/query";
+import { installationIdentity } from "@zetta/db/schema/identity";
+import { createDesktopLink } from "./modules/desktop-link/service";
+import { createDeviceHub } from "./modules/devices/hub";
+import { createDeviceService } from "./modules/devices/service";
 import { connection as connectionTable } from "@zetta/db/schema/connections";
 
 import { ENV, desktopOrigins } from "./env.server";
@@ -55,6 +59,19 @@ import { createTranscribe } from "./modules/transcribe/service";
 import { createConfiguredTranscriber, NO_KEY } from "./modules/transcribe/configured";
 import { createLocalTranscriber } from "./modules/transcribe/transcriber";
 import { createSkillReview } from "./modules/memory/skill-review";
+import { createLearning } from "./modules/learning";
+import { createUsefulness } from "./modules/learning/usefulness";
+import { createLessons } from "./modules/learning/lessons";
+import { createBatch } from "./modules/learning/batch";
+import { createTrial } from "./modules/learning/trial";
+import { createFindings } from "./modules/learning/findings";
+import { createTidy } from "./modules/learning/tidy";
+import { createForget } from "./modules/learning/forget";
+import { createProgress } from "./modules/learning/progress";
+import { createLessonTools } from "./modules/learning/workflow-tool";
+import { createLessonWorkflow } from "./modules/learning/workflow-template";
+import { withTokenAudit } from "./modules/learning/cli";
+import { runCli } from "./modules/chat/harness";
 import { createAnalyzerFor } from "./modules/bots/import/analyze";
 import { createGrokSource } from "./modules/bots/import/grok-source";
 import { createBotImport } from "./modules/bots/import/service";
@@ -76,6 +93,7 @@ import { currentBuild } from "./modules/updates/build-info";
 import { syncUpdateCard } from "./modules/updates/card";
 import { createUpdateChecker } from "./modules/updates/checker";
 import { createProfileStore } from "./modules/profile/store";
+import { createAvatarStore } from "./modules/avatars/store";
 import { createTaskStore } from "./modules/tasks/store";
 import { createOneShot } from "./modules/chat/one-shot";
 import { createOrgStore } from "./modules/org/store";
@@ -110,6 +128,7 @@ import { createSpeechReader } from "./modules/installation/speech";
 import { createPushReader } from "./modules/installation/push";
 import { SPEECH_KEY_ENV } from "@zetta/core/speech";
 import { topics } from "@zetta/core/live-topics";
+import { dataDir } from "@zetta/core/zetta-home";
 import { events } from "./modules/events/bus";
 import { work } from "./modules/events/work";
 import { runsWork } from "./role";
@@ -204,7 +223,9 @@ export const eventServices = { access: identity.access, bus: events };
 import { createFileStore } from "./modules/chat/files";
 
 // Authorized server files live under ZETTA_FILES_ROOT (me/<userId>/… private, shared/… team-readable).
-const files = createFileStore(process.env.ZETTA_FILES_ROOT ?? `${process.cwd()}/.zetta-files`);
+const files = createFileStore(
+  process.env.ZETTA_FILES_ROOT ?? dataDir("files", `${process.cwd()}/.zetta-files`),
+);
 const decisions = createDecisionService();
 // Laya is a builtin plugin, on by default: the installation setting decides (an administrator can turn it off). The first boot downloads the weights.
 // ZETTA_LAYA_PRELOAD=0 loads it on first use instead of at boot.
@@ -300,7 +321,7 @@ const vms =
         vmOn: Boolean(vmDocker),
         install: installed.networkMode,
         ...(hostDesktop ? { host: hostDesktop } : {}),
-        tokenRoot: process.env.ZETTA_VM_TOKEN_ROOT ?? `${process.cwd()}/.zetta-vm`,
+        tokenRoot: process.env.ZETTA_VM_TOKEN_ROOT ?? dataDir("vm", `${process.cwd()}/.zetta-vm`),
         maxPerUser: num(process.env.ZETTA_VM_MAX_PER_USER),
         maxRunningPerUser: num(process.env.ZETTA_VM_MAX_RUNNING_PER_USER),
         maxRunning: num(process.env.ZETTA_VM_MAX_RUNNING),
@@ -323,7 +344,7 @@ const computer = createComputerService({
   install: installed.networkMode,
   docker: dockerBrowserConfig(),
   db,
-  root: process.env.ZETTA_BROWSER_ROOT ?? `${process.cwd()}/.zetta-browser`,
+  root: process.env.ZETTA_BROWSER_ROOT ?? dataDir("browser", `${process.cwd()}/.zetta-browser`),
   executablePath: process.env.ZETTA_CHROMIUM_PATH,
 });
 
@@ -350,12 +371,16 @@ for (let attempt = 1; !connectionStore && attempt <= 5; attempt++) {
   }
 }
 const connections = createConnectionsService(db, connectionStore);
+// Computers paired through the desktop app: they connect here, and a bot calls them like a machine.
+const deviceHub = createDeviceHub();
+const devices = createDeviceService({ db, hub: deviceHub });
 // Machines (ssh, sftp, ftp) a bot reaches through the server. Secrets live in `connections`; this needs no state of its own.
 const machines = createMachineService({
   db,
   connections,
   runner: createMachineRunner(),
   allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+  devices,
 });
 /**
  * The speech-to-text key of the whole installation. An administrator saves it as a connection of their own (sealed like any other); the
@@ -436,6 +461,7 @@ const tasks = createTaskStore(db);
 const projects = createProjectStore(db);
 const org = createOrgStore(db);
 const profileStore = createProfileStore(db);
+const avatarStore = createAvatarStore(db);
 const artifacts = createArtifactStore(db);
 const loops = createLoopStore(db);
 const discussions = createDiscussionStore(db, files, loops);
@@ -482,6 +508,13 @@ mcp.plugins.onConnected(async (actor, id) => {
 const skillsLibrary = createSkills(db);
 // Autolearn: after a correction or a method that worked, a review may save what the bot learned as one of its own skills.
 export const skillReview = createSkillReview(db, skillsLibrary);
+/** What each reply had in front of it and whether the person had to step in afterwards (modules/learning). */
+export const learning = createLearning(db);
+/** The lessons of the bots (modules/learning): built early because the Chief's `zetta:lessons` block and the chat prompt use them. */
+export const lessons = createLessons(db, { memory });
+export const lessonProgress = createProgress(db);
+// The `lessons` tool of a workflow's `zetta` step, and of the Chief's `zetta:lessons` block (modules/learning/workflow-tool.ts).
+const lessonTools = createLessonTools({ lessons, progress: lessonProgress });
 /** Speech to text on this machine (modules/transcribe): the web microphone, and voice notes of outside people (inbound). */
 export const transcriber = createConfiguredTranscriber({
   settings: () => installation.load(),
@@ -547,6 +580,7 @@ const grokSource = createGrokSource();
 const botImportAnalyzer = createAnalyzerFor(db);
 export const chatServices = {
   access: identity.access,
+  avatars: avatarStore,
   chat: createChatService(
     db,
     turnRunner,
@@ -561,7 +595,14 @@ export const chatServices = {
     vms,
     agenda,
     {
-      afterTurn: (t) => Promise.all([skillReview.afterTurn(t), chatSummaries.afterTurn(t)]),
+      // Lessons come from the daily pass over the chats, never from one message (modules/learning/batch.ts): a correction no longer
+      // starts a skill review of its own.
+      afterTurn: (t) => {
+        void inboundRef.current?.deliverConversation(t.conversationId).catch(() => {});
+        return chatSummaries.afterTurn(t);
+      },
+      learning,
+      lessons: { tools: lessonTools, list: (owner, q) => lessons.list(owner, q) },
       summaries: chatSummaries,
       install: installed.networkMode,
       discussions,
@@ -633,6 +674,10 @@ features.workflows.useTools({
     const actor = await issueBackgroundActor(membershipLookup, userId);
     if (!actor) throw new Error("owner_inactive");
     if (c.kind === "plugin") return mcp.plugins.callTool(actor, c.botId, c.target, c.tool, c.args);
+    if (c.kind === "zetta") {
+      if (c.target !== "lessons") throw new Error("unknown_target");
+      return lessonTools.call(userId, c.tool, c.args);
+    }
     if (c.kind === "mcp") return mcp.callTool(actor, c.botId, c.target, c.tool, c.args);
     const r = await apps.call(actor, {
       app: c.target,
@@ -647,6 +692,7 @@ features.workflows.useTools({
     );
   },
   async effect(userId, c) {
+    if (c.kind === "zetta") return c.target === "lessons" ? lessonTools.effect(c.tool) : "write";
     if (c.kind === "plugin")
       return getPlugin(c.target)?.tools?.find((t) => t.name === c.tool)?.effect === "read"
         ? "read"
@@ -917,6 +963,15 @@ const discussionWorker = createDiscussionWorker(
 );
 discussions.onEnqueue = () => work.kick("discussions");
 if (runsWork) work.on("discussions", () => discussionWorker.kick());
+// A person's post in a room reaches the bots working there now. The route may be served by a process that runs no turns, so the
+// poke travels as a work kick to the one that does.
+discussions.onPersonPost = (userId, conversationId) =>
+  work.kick("poke", `${userId}:${conversationId}`);
+if (runsWork)
+  work.on("poke", (key) => {
+    const at = key?.indexOf(":") ?? -1;
+    if (key && at > 0) chatServices.chat.poke(key.slice(0, at), key.slice(at + 1));
+  });
 export const discussionServices = {
   access: identity.access,
   store: discussions,
@@ -933,6 +988,26 @@ export const featureServices = { access: identity.access, features };
 export const decisionServices = { access: identity.access, decisions };
 export const computerServices = { access: identity.access, computer, vms, machines };
 export const integrationServices = { access: identity.access, mcp, sources };
+// Only when the desktop app that runs this server started it with a link token (ZETTA_DESKTOP_LINK_TOKEN): see modules/desktop-link.
+const desktopLinkToken = process.env.ZETTA_DESKTOP_LINK_TOKEN?.trim();
+export const desktopLinkServices =
+  desktopLinkToken && desktopLinkToken.length >= 32
+    ? {
+        token: desktopLinkToken,
+        link: createDesktopLink({
+          db,
+          connections,
+          mcp,
+          admin: async () => {
+            const [row] = await db
+              .select({ id: installationIdentity.adminUserId })
+              .from(installationIdentity)
+              .where(eq(installationIdentity.id, 1));
+            return row?.id ? issueBackgroundActor(membershipLookup, row.id) : null;
+          },
+        }),
+      }
+    : undefined;
 export const taskServices = { access: identity.access, tasks, work: workActions };
 export const projectServices = {
   access: identity.access,
@@ -944,7 +1019,7 @@ export const orgServices = { access: identity.access, org };
 export const transcribeServices = { access: identity.access, transcribe };
 export const botQualityServices = {
   access: identity.access,
-  quality: createBotQuality(db, { chat: chatServices.chat, skillReview }),
+  quality: createBotQuality(db, { chat: chatServices.chat, learning }),
 };
 export const catchUpServices = {
   access: identity.access,
@@ -968,11 +1043,13 @@ export const preferenceServices = {
 export const profileServices = {
   access: identity.access,
   profile: profileStore,
+  avatars: avatarStore,
   people: createPeopleDirectory(db),
   // The session lookup is memoized per request, so this adds no query.
   currentSessionId: async (headers: Headers) =>
     (await auth.api.getSession({ headers }))?.session.id,
 };
+export const avatarServices = { access: identity.access, avatars: avatarStore };
 export const knowledgeServices = { access: identity.access, knowledge: companyKnowledge };
 export const memoryServices = {
   access: identity.access,
@@ -980,6 +1057,25 @@ export const memoryServices = {
   jobs: memoryJobs,
   graph: createMemoryGraph(db),
   assist: createMemoryAssist(db, { memory }),
+};
+/** Which memory items and skills are worth keeping (modules/learning/usefulness.ts). */
+export const learningServices = {
+  access: identity.access,
+  usefulness: createUsefulness(db, { memory, skills: skillsLibrary }),
+};
+/** What bots learned from their owners: the daily pass over the chats, and the trial that keeps or drops them (modules/learning). */
+export const lessonBatch = createBatch(db, { lessons, cli: withTokenAudit(db, runCli, "batch") });
+export const lessonTrial = createTrial(db, { lessons });
+export const lessonFindings = createFindings(db, { lessons, memory });
+export const lessonTidy = createTidy(db, { lessons, findings: lessonFindings });
+export const lessonForget = createForget(db, { lessons });
+export const lessonServices = {
+  access: identity.access,
+  lessons,
+  batch: lessonBatch,
+  findings: lessonFindings,
+  progress: lessonProgress,
+  workflow: createLessonWorkflow(db, { save: (a, v) => features.workflows.save(a, v) }),
 };
 export const searchServices = { access: identity.access, search: createSearch(db) };
 export const artifactServices = { access: identity.access, artifacts };
@@ -1012,6 +1108,14 @@ export const playgroundServices = {
   containers: playgroundContainers,
 };
 export const appsServices = { access: identity.access, apps };
+export const deviceServices = {
+  access: identity.access,
+  devices,
+  hub: deviceHub,
+  auth,
+  resource: mcpResource(authConfig),
+  actorFor: (userId: string) => issueBackgroundActor(membershipLookup, userId),
+};
 export const zettaMcpServices = {
   auth,
   resource: mcpResource(authConfig),
@@ -1024,6 +1128,7 @@ export const zettaMcpServices = {
   tasks,
   outputStyles: outputStyleServices.styles,
   org,
+  lessons: { tools: lessonTools },
   audit: (ownerUserId: string, event: Parameters<typeof audit>[2]) => audit(db, ownerUserId, event),
 };
 export const agendaServices = {

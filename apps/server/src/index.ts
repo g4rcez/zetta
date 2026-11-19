@@ -16,10 +16,12 @@ import {
   projectServices,
   orgServices,
   botQualityServices,
+  learningServices,
   transcribeServices,
   catchUpServices,
   preferenceServices,
   profileServices,
+  avatarServices,
   searchServices,
   knowledgeServices,
   memoryServices,
@@ -39,6 +41,8 @@ import {
   teamServices,
   inboundServices,
   integrationServices,
+  desktopLinkServices,
+  deviceServices,
   decisionServices,
   featureServices,
   identity,
@@ -53,6 +57,13 @@ import {
   zettaMcpServices,
   apps,
   skillReview,
+  learning,
+  lessons,
+  lessonBatch,
+  lessonTrial,
+  lessonTidy,
+  lessonForget,
+  lessonServices,
   chatSummaries,
   updateChecker,
 } from "./services";
@@ -83,6 +94,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const)
   );
 
 createApp({
+  webDist: process.env.ZETTA_WEB_DIST?.trim() || undefined,
   auth,
   identity,
   installation: installationServices,
@@ -98,10 +110,13 @@ createApp({
   projects: projectServices,
   org: orgServices,
   botQuality: botQualityServices,
+  learning: learningServices,
+  lessons: lessonServices,
   transcribe: transcribeServices,
   catchUp: catchUpServices,
   preferences: preferenceServices,
   profile: profileServices,
+  avatars: avatarServices,
   search: searchServices,
   knowledge: knowledgeServices,
   memory: memoryServices,
@@ -117,6 +132,8 @@ createApp({
   apps: appsServices,
   zettaMcp: zettaMcpServices,
   runTools: computerServices.vms,
+  desktopLink: desktopLinkServices,
+  devices: deviceServices,
   webOrigin: ENV.ZETTA_SERVER_URL,
   apiOrigin: ENV.ZETTA_SERVER_URL,
   desktopOrigins: trustedExtraOrigins,
@@ -205,6 +222,11 @@ if (runsWork) {
     void background.run("memory:sources", () => memoryServices.memory.checkSources());
     void background.run("memory:jobs", () => memoryServices.jobs.tick());
     void background.run("skills:review", () => skillReview.tick());
+    void background.run("learning:outcomes", () => learning.outcomes.tick());
+    void background.run("learning:trial", () => lessonTrial.tick());
+    void background.run("learning:batch", () => lessonBatch.tick());
+    void background.run("learning:forget", () => lessonForget.tick());
+    void background.run("learning:tidy", () => lessonTidy.tick());
     void background.run("workflows:resume", () => featureServices.features.workflows.tick());
     void background.run("chat:summaries", () => chatSummaries.tick());
     void background.run("rooms", () => discussionServices.worker.tick());
@@ -232,6 +254,22 @@ if (runsWork) {
       .backfillFiles(skillServices.market)
       .catch((e) =>
         console.error(`skills: backfill failed name=${(e as Error | undefined)?.name ?? typeof e}`),
+      );
+  }
+
+  // The record of which memory items past replies used (modules/learning), built from what replies already hold. Once per process, and
+  // it picks up where it stopped: a reply that already has a verdict is skipped.
+  const learningBoot = globalThis as { zettaLearningBackfill?: boolean };
+  if (!learningBoot.zettaLearningBackfill) {
+    learningBoot.zettaLearningBackfill = true;
+    void learning.backfill
+      .run()
+      // The skills a bot learned before lessons existed become lessons too, so the page shows everything it learned.
+      .then(() => lessons.backfillSkills())
+      .catch((e) =>
+        console.error(
+          `learning: backfill failed name=${(e as Error | undefined)?.name ?? typeof e}`,
+        ),
       );
   }
 

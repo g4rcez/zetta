@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
-import { homedir } from "node:os";
+import { containerPrefix, dataDir } from "@zetta/core/zetta-home";
 import { basename, join } from "node:path";
 import { containerUser, engineOf, tmpfsOwner, type Engine } from "../container-user";
 import { LANGUAGES, PLAYGROUND_LIMITS, type Cli } from "./languages";
@@ -39,8 +39,8 @@ export function containerConfig(env: NodeJS.ProcessEnv = process.env): Container
   return {
     bin,
     engine: engineOf(bin, env),
-    runsDir: env.ZETTA_PLAYGROUND_DIR ?? join(homedir(), ".zetta", "playground"),
-    prefix: "zetta-playground-",
+    runsDir: env.ZETTA_PLAYGROUND_DIR ?? dataDir("playground", undefined, env),
+    prefix: containerPrefix("playground", env),
     memory: env.ZETTA_PLAYGROUND_MEMORY ?? "1g",
     cpus: env.ZETTA_PLAYGROUND_CPUS ?? "2",
     pids: envNumber(env.ZETTA_PLAYGROUND_PIDS, 256),
@@ -261,7 +261,7 @@ export function createContainerRunner(c: ContainerConfig) {
       "ps",
       "-a",
       "--filter",
-      `name=${c.prefix}`,
+      `name=^${c.prefix}`,
       "--format",
       "{{.Names}}",
     ]);

@@ -29,7 +29,7 @@ Everything else, including the polled reads (`/api/bots`, `/api/conversations`, 
 ## How instances stay in step
 
 - **Events.** A change published on one instance reaches the open streams on the others over Postgres `NOTIFY` (`ZETTA_EVENT_BUS=pg`, the default for `api` and `worker`). Each instance holds one `LISTEN` connection. NOTIFY loses what happens while that connection is down, so after a reconnect every open page refetches (`resync` topic). If a page's stream reconnects, it refetches too.
-- **Kicks.** When a request on an `api` queues work for the worker (a room turn, a goal loop), it sends a kick over the same channel. Without it the worker finds the work on its 30 s tick.
+- **Kicks.** When a request on an `api` queues work for the worker (a room turn, a goal loop), it sends a kick over the same channel. Without it the worker finds the work on its 30 s tick. A person's post in a room also sends a `poke` kick, so a bot that is working there reads the post at its next step; a lost poke costs nothing, because the post is read before the bot's reply closes or by its own turn (see `docs/decisions/fluid-chat.md`).
 - **Files.** Attachments, artifacts and files must be on a volume every instance mounts at the same paths (`ZETTA_FILES_ROOT`, `ZETTA_ATTACHMENTS_ROOT`, `ZETTA_ARTIFACTS_ROOT`). The compose file uses one named volume.
 - **Sessions.** Better Auth sessions are in Postgres. The load balancer must set the client address in the header named by `ZETTA_TRUSTED_IP_HEADER` (the last entry counts).
 

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { constants, createReadStream, createWriteStream } from "node:fs";
 import { chmod, mkdir, open, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { dataDir } from "@zetta/core/zetta-home";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -22,8 +22,7 @@ export const artifactsQuota = () => envNumber(process.env.ZETTA_ARTIFACTS_QUOTA,
 export const MAX_INLINE_BYTES = 256 * 1024;
 
 /** Where artifacts live. Kept forever, like chat images. */
-export const artifactsRoot = () =>
-  process.env.ZETTA_ARTIFACTS_ROOT || join(homedir(), ".zetta", "artifacts");
+export const artifactsRoot = () => process.env.ZETTA_ARTIFACTS_ROOT || dataDir("artifacts");
 
 /** Absolute path of a stored artifact. Content-addressed per user: the same bytes are stored once. */
 export const artifactPath = (userId: string, sha256: string, root = artifactsRoot()) =>

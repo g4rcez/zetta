@@ -38,7 +38,10 @@ export interface DownloadOptions {
 export function defaultCacheDir(): string {
   return (
     process.env.LAYA_CACHE ??
-    path.join(process.env.XDG_CACHE_HOME ?? path.join(homedir(), ".cache"), "receptron-laya")
+    // An isolated Zetta (ZETTA_HOME set) keeps the model inside its folder, not in the user's global cache.
+    (process.env.ZETTA_HOME?.trim()
+      ? path.join(process.env.ZETTA_HOME.trim(), "cache", "laya")
+      : path.join(process.env.XDG_CACHE_HOME ?? path.join(homedir(), ".cache"), "receptron-laya"))
   );
 }
 

@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { dataDir } from "@zetta/core/zetta-home";
 import { join } from "node:path";
 
 /** Turns text into vectors that are close when the meaning is close, across languages. `query` and `passage` use the model's two prefixes. */
@@ -77,7 +78,7 @@ export function createLocalEmbedder(
           env.cacheDir =
             opts.cacheDir ??
             process.env.ZETTA_EMBEDDING_MODEL_DIR ??
-            join(homedir(), ".cache", "zetta", "models");
+            dataDir("cache/models", join(homedir(), ".cache", "zetta", "models"));
           const fe = await pipeline("feature-extraction", EMBEDDING_MODEL, { dtype: "q8" });
           return async (texts: string[]) =>
             (await fe(texts, { pooling: "mean", normalize: true })).tolist() as number[][];

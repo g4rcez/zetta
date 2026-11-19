@@ -1703,6 +1703,32 @@ suite("operator memory against compose postgres", () => {
     expect(await level("ba-bot")).toBe("edit");
   });
 
+  test("needs work: a person confirms an old item without a new version, and the checks name the status of each item", async () => {
+    await memory.write(A, { slug: "nw-old", title: "Old rule", content: "an old rule" }, person);
+    await memory.write(
+      A,
+      { slug: "nw-stale", title: "Stale rule", content: "a doubted rule" },
+      person,
+    );
+    await memory.setStatus(A, "nw-stale", "stale", person);
+    await q(
+      "update memory_item set updated_at = now() - interval '200 days' where owner_user_id = $1 and slug = 'nw-old'",
+      [A],
+    );
+    const before = await memory.checks(A);
+    expect(before.old.map((p) => p.slug)).toContain("nw-old");
+    expect(before.stale.find((p) => p.slug === "nw-stale")?.status).toBe("stale");
+    const version = (await memory.read(A, "nw-old"))!.page.version;
+    const r = await memory.confirm(A, "nw-old", person);
+    expect(r.page.version).toBe(version); // no new version: the text did not change
+    expect((await memory.checks(A)).old.map((p) => p.slug)).not.toContain("nw-old");
+    // Deleting is archiving: the item leaves the checks, and setting it back brings it in again.
+    await memory.setStatus(A, "nw-stale", "archived", person);
+    expect((await memory.checks(A)).stale.map((p) => p.slug)).not.toContain("nw-stale");
+    await memory.setStatus(A, "nw-stale", "stale", person);
+    expect((await memory.checks(A)).stale.map((p) => p.slug)).toContain("nw-stale");
+  });
+
   test("bot access, suggest: a bot's write, patch and append wait for the owner and add up; upkeep still applies", async () => {
     await memory.write(
       A,
@@ -2555,6 +2581,49 @@ suite("operator memory against compose postgres", () => {
     }
   });
 
+  test("a paired test's bare side cannot read, search or save memory with zetta:memory", async () => {
+    const created = (await call(A, "POST", "/api/bots", { name: "Bare" })).json.bot as {
+      id: string;
+    };
+    const c = (await call(A, "POST", "/api/conversations", { botId: created.id })).json.conversation
+      .id as string;
+    const actor = (await issueBackgroundActor(async () => ({ isAdmin: false }), A))!;
+    await memory.write(
+      A,
+      { slug: "bare-secret", title: "Bare secret", content: "ZEBRA-FINDING stays hidden." },
+      { by: "user" },
+    );
+    const turn = async (key: string, without?: { memory: boolean; skills: boolean }) => {
+      const { follow } = await chat.startTurn(actor, c, {
+        content: "Look it up",
+        clientRequestId: key,
+        history: "previous_turn",
+        ...(without ? { withoutItems: without } : {}),
+      });
+      let saved = "";
+      for await (const { event } of follow())
+        if (event.type === "message") saved = event.message.content;
+      return saved;
+    };
+    const read = '```zetta:memory\n{"action":"read","slug":"bare-secret"}\n```';
+    const write =
+      '```zetta:memory\n{"action":"write","slug":"bare-saved","title":"Bare saved","content":"nope"}\n```';
+    script = [read, "Done."];
+    await turn("bare-0"); // as the bot is: the read works
+    expect(prompts.at(-1)).toContain("ZEBRA-FINDING stays hidden.");
+    script = [read, "Done."];
+    await turn("bare-1", { memory: true, skills: true });
+    expect(prompts.at(-1)).toContain("Memory is not available in this test.");
+    expect(prompts.at(-1)).not.toContain("ZEBRA-FINDING");
+    script = [write];
+    await turn("bare-2", { memory: true, skills: true });
+    expect(await memory.read(A, "bare-saved")).toBeUndefined();
+    // Leaving out only the skills leaves memory as it was.
+    script = [read, "Done."];
+    await turn("bare-3", { memory: false, skills: true });
+    expect(prompts.at(-1)).toContain("ZEBRA-FINDING stays hidden.");
+  });
+
   test("memory jobs in chat: memory writes apply after outside content, and every other kind of write still asks", async () => {
     const created = (await call(A, "POST", "/api/bots", { name: "Reader" })).json.bot as {
       id: string;
@@ -2616,5 +2685,131 @@ suite("operator memory against compose postgres", () => {
     expect((await open()).filter((x) => x.slug === "mj-mine")).toMatchObject([
       { content: "my words, edited" },
     ]);
+  });
+
+  test("no automatic rewrites: a background write over an item that exists becomes a suggestion, new items, patch and append still apply", async () => {
+    const botId = (
+      await q(
+        "insert into bot (owner_user_id, kind, visibility, name, slug, harness) values ($1, 'specialist', 'private', 'Rewriter', $2, 'claude-code') returning id",
+        [A, `rewriter-${uuidv7().slice(-8)}`],
+      )
+    ).rows[0].id as string;
+    await memory.write(
+      A,
+      { slug: "nr-keep", title: "Keep", content: "line one", botAccess: "edit" },
+      person,
+    );
+    const run = (a: Parameters<typeof runMemoryTool>[4]) =>
+      runMemoryTool(memory, A, botId, undefined, a, { rewrite: "refused" });
+
+    const rewrite = await run({
+      action: "write",
+      slug: "nr-keep",
+      title: "Keep",
+      content: "a whole new text",
+    });
+    expect(rewrite.saved).toBeUndefined();
+    expect(rewrite.result).toContain("sent to the owner as a suggestion");
+    expect((await memory.read(A, "nr-keep"))!.page.content).toBe("line one");
+    expect((await open()).filter((x) => x.slug === "nr-keep")).toMatchObject([
+      { content: "a whole new text", botId },
+    ]);
+
+    // A new topic, a small patch and an appended line are not rewrites.
+    expect(
+      (await run({ action: "write", slug: "nr-new", title: "New", content: "fresh" })).saved,
+    ).toMatchObject({ slug: "nr-new", created: true });
+    await run({ action: "patch", slug: "nr-keep", match: "line one", content: "line one, edited" });
+    await run({ action: "append", slug: "nr-keep", content: "line two" });
+    expect((await memory.read(A, "nr-keep"))!.page.content).toBe("line one, edited\nline two");
+    // The default still lets a bot (or a person approving a card) write over an item.
+    await runMemoryTool(memory, A, botId, undefined, {
+      action: "write",
+      slug: "nr-keep",
+      title: "Keep",
+      content: "approved text",
+    });
+    expect((await memory.read(A, "nr-keep"))!.page.content).toBe("approved text");
+  });
+
+  test("no automatic rewrites: the learn job writes new items and patches, but a whole new text for an existing item waits for its owner", async () => {
+    const jobs = createMemoryJobs(db, {
+      memory,
+      lookup: async () => ({ isAdmin: false }),
+      run: async () => ({
+        text: 'Saving.\n```zetta:memory\n{"action":"write","slug":"nr-job-old","title":"Old","content":"replaced by the job"}\n```\n```zetta:memory\n{"action":"write","slug":"nr-job-new","title":"New","howto":"when new","tags":["gotcha"],"content":"a new fact"}\n```',
+        stopped: false,
+      }),
+    });
+    const worker = (
+      await q(
+        "insert into bot (owner_user_id, kind, visibility, name, slug, harness) values ($1, 'specialist', 'private', 'Learner', $2, 'claude-code') returning id",
+        [A, `nrjob-${uuidv7().slice(-8)}`],
+      )
+    ).rows[0].id as string;
+    const chatId = (
+      await q(
+        "insert into conversation (owner_user_id, bot_id, title) values ($1, $2, 'Work') returning id",
+        [A, worker],
+      )
+    ).rows[0].id as string;
+    await q(
+      "insert into message (conversation_id, owner_user_id, seq, role, content) values ($1, $2, 1, 'user', 'do the thing'), ($1, $2, 2, 'assistant', 'done')",
+      [chatId, A],
+    );
+    await memory.write(
+      A,
+      { slug: "nr-job-old", title: "Old", content: "the original text", botAccess: "edit" },
+      person,
+    );
+    await q(
+      "insert into task (owner_user_id, title, status, bot_id, conversation_id) values ($1, 'Do the thing', 'done', $2, $3)",
+      [A, worker, chatId],
+    );
+    const now = Date.now();
+    await jobs.tick(new Date(now));
+    await jobs.tick(new Date(now + 3 * 60_000));
+    await jobs.tick(new Date(now + 6 * 60_000));
+    expect((await memory.read(A, "nr-job-old"))!.page.content).toBe("the original text");
+    expect((await open()).filter((x) => x.slug === "nr-job-old")).toMatchObject([
+      { content: "replaced by the job", botId: worker },
+    ]);
+    expect((await memory.read(A, "nr-job-new"))!.page.content).toBe("a new fact");
+  });
+
+  test("no automatic rewrites in chat: during a memory job a whole new text for an item that exists, and an archive, wait as cards", async () => {
+    const created = (await call(A, "POST", "/api/bots", { name: "Tidier" })).json.bot as {
+      id: string;
+    };
+    const c = (await call(A, "POST", "/api/conversations", { botId: created.id })).json.conversation
+      .id as string;
+    const actor = (await issueBackgroundActor(async () => ({ isAdmin: false }), A))!;
+    await memory.write(
+      A,
+      { slug: "nrc-text", title: "Text", content: "first", botAccess: "edit" },
+      person,
+    );
+    await memory.write(
+      A,
+      { slug: "nrc-gone", title: "Gone", content: "old", botAccess: "edit" },
+      person,
+    );
+    script = [
+      '```zetta:memory\n{"action":"write","slug":"nrc-text","title":"Text","content":"second"}\n```\n```zetta:memory\n{"action":"archive","slug":"nrc-gone"}\n```\n```zetta:memory\n{"action":"write","slug":"nrc-fresh","title":"Fresh","content":"made now"}\n```',
+    ];
+    const { follow } = await chat.startTurn(actor, c, {
+      content: "Fix my memory",
+      clientRequestId: "nrc-1",
+      memoryJob: { sources: [] },
+    });
+    for await (const _ of follow());
+    expect((await memory.read(A, "nrc-text"))!.page.content).toBe("first");
+    expect((await memory.read(A, "nrc-gone"))!.page.status).toBe("current");
+    expect((await memory.read(A, "nrc-fresh"))!.page.content).toBe("made now"); // new items still apply
+    const cards = await q(
+      "select patch->'args'->>'slug' as slug from config_proposal where owner_user_id = $1 and kind = 'create_memory_item' and patch->'args'->>'slug' in ('nrc-text', 'nrc-gone') order by slug",
+      [A],
+    );
+    expect(cards.rows.map((r) => r.slug)).toEqual(["nrc-gone", "nrc-text"]);
   });
 });

@@ -6,6 +6,7 @@ import { topics } from "@zetta/core/live-topics";
 import { z } from "zod";
 
 import { firstObject } from "../chat/bot-interview";
+import { looksLikeCorrection } from "../learning/corrections";
 import { runCli, type NativeHarness, type RunCli } from "../chat/harness";
 import { events } from "../events/bus";
 import type { createSkills } from "../skills/service";
@@ -13,8 +14,9 @@ import type { createSkills } from "../skills/service";
 /**
  * Autolearn. After a reply in which the person corrected the bot, stopped it and steered it, or that finished a long piece of work, a
  * background review reads that part of the chat and decides whether the bot learned something worth keeping: a method that worked, or
- * what the person wants done differently next time. If so it saves a new skill of the bot's own, or revises one of the bot's own
- * learned skills. The reply gets a receipt ("Created skill X" / "Revised skill X") with View and Undo.
+ * what the person wants done differently next time. If so it saves a new skill of the bot's own, or suggests a new text for one of the
+ * bot's own learned skills (the person saves it from the receipt: a background review never replaces a text by itself). The reply gets
+ * a receipt ("Created skill X" / "Suggests skill X") with View and Undo or Save.
  *
  * What it never does: touch a skill written by the person, one installed from GitHub, another bot's, or one the person edited; run
  * for turns Zetta started (routines, loops, check-ins), rooms or outside people; read its own receipts; or save more than its limits.
@@ -23,11 +25,7 @@ import type { createSkills } from "../skills/service";
 /** Only these harnesses load skills (see bot-claude/store.ts profile). */
 export const SKILL_HARNESSES = new Set(["claude-code", "hermes"]);
 
-const CORRECTION =
-  /^\s*(no\b|nope\b|wrong\b|not (like )?that|that'?s (not|wrong)|actually\b|instead\b|i said\b|i meant\b|you should\b|don'?t\b|do not\b|stop doing\b|next time\b|from now on\b|always\b|never\b|n[aã]o[,.! ]|errado|na verdade|em vez|ao inv[eé]s|eu disse|eu quis dizer|voc[eê] deveria|n[aã]o fa[cç]a|da pr[oó]xima vez|a partir de agora|sempre\b|nunca\b)/i;
-
-/** True when a message reads as the person correcting or steering the bot. */
-export const looksLikeCorrection = (text: string) => CORRECTION.test(text);
+export { looksLikeCorrection };
 
 /** Work with at least this many steps counts as "a method that worked", worth a look even without a correction. */
 export const LONG_WORK_STEPS = 8;
@@ -222,21 +220,15 @@ export function createSkillReview(db: Database, skills: Skills, deps: { cli?: Ru
           );
         if (n >= REVISIONS_PER_DAY)
           return finish(r.id, { status: "done", outcome: "none", detail: "revised enough today" });
-        if (b.autoLearn === "suggest") {
-          await receipt(r, target, "suggested");
-          return finish(r.id, {
-            status: "done",
-            outcome: "none",
-            skillId: target.id,
-            detail: JSON.stringify(d),
-          });
-        }
-        const s = await skills.reviseLearned(r.ownerUserId, b.id, target.id, {
-          body: d.body,
-          ...(d.description ? { description: d.description } : {}),
+        // Never a whole new text from background work, whatever the bot's learning setting: the person saves it from the receipt
+        // (`applySuggested`). Rewriting a lesson again and again is what makes a bot worse (docs/decisions/lessons.md).
+        await receipt(r, target, "suggested");
+        return finish(r.id, {
+          status: "done",
+          outcome: "none",
+          skillId: target.id,
+          detail: JSON.stringify(d),
         });
-        await receipt(r, s, "revised");
-        return finish(r.id, { status: "done", outcome: "revised", skillId: s.id });
       }
       if (b.autoLearn === "suggest") {
         await receipt(r, { id: r.id, name: d.name }, "suggested");

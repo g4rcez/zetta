@@ -200,6 +200,13 @@ const QUERY_EMBED_MS = 2500,
   MAX_DISTANCE = 0.2,
   CANDIDATES = 20,
   RRF_K = 60;
+// Ranking beyond the match (see `rank`): an old item counts for RECENCY_FLOOR of a fresh one, fading over RECENCY_DAYS; what happened
+// after the replies that used an item moves it by at most USE_SWING, and `USE_SMOOTHING` imaginary neutral results keep a few good or
+// bad ones from moving it much (3 good and no bad: +3.7%; 30 good and no bad: +8.6%).
+const RECENCY_FLOOR = 0.85,
+  RECENCY_DAYS = 180,
+  USE_SWING = 0.1,
+  USE_SMOOTHING = 5;
 const CHECK_EVERY_MS = 5 * 60_000,
   CHECKS_PER_TICK = 50,
   OLD_DAYS = 90;
@@ -1488,15 +1495,23 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
 
   /**
    * The items the reader may see that best fit `text`. Three rankings are fused (reciprocal rank): keywords in title, howto and content;
-   * words that are tags; and the nearest chunks by meaning. The fused rank is scaled by the item's score (x0.5 at 0, x1.5 at 100).
-   * Archived items are left out. Each hit lists a few linked items. `filter` narrows the items before ranking; `explain` adds, for each
-   * hit, which rankings found it and the best passage (the nearest chunk, or the words in context).
+   * words that are tags; and the nearest chunks by meaning. The fused rank is scaled by the item's score (x0.5 at 0, x1.5 at 100), by how
+   * recently it changed (x0.85 for an old item up to x1, fading over about six months) and by what happened after the replies that used
+   * it (x0.9 to x1.1: a few good or bad results barely move it, see `USE_SMOOTHING`). Nothing here asks a model.
+   * Archived items are left out, and so is an item that a current item of the same owner replaces with a `supersedes` link: it stays in
+   * the memory, and the person's own search (`superseded: "show"`) still finds it. Each hit lists a few linked items. `filter` narrows
+   * the items before ranking; `explain` adds, for each hit, which rankings found it and the best passage (the nearest chunk, or the
+   * words in context).
    */
   async function rank(
     reader: MemoryReader,
     text: string,
     k: number,
-    o: { filter?: MemoryFilter | undefined; explain?: boolean } = {},
+    o: {
+      filter?: MemoryFilter | undefined;
+      explain?: boolean;
+      superseded?: "hide" | "show";
+    } = {},
   ): Promise<{ hits: (MemoryHit & Partial<Explained>)[]; meaning: boolean }> {
     const q = text.trim().slice(0, 500);
     if (!q) return { hits: [], meaning: false };
@@ -1567,8 +1582,23 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
           memory_item.bot_access as "botAccess",
           case when memory_item.owner_user_id = ${userId} then 'own' else 'shared' end as access,
           case when memory_item.owner_user_id = ${userId} then null else u.name end as "ownerName" ${extra}
-        from fused f join memory_item on memory_item.id = f.id join "user" u on u.id = memory_item.owner_user_id, qq
-        order by f.s * (0.5 + memory_item.score / 100.0) desc limit ${k}`);
+        from fused f join memory_item on memory_item.id = f.id join "user" u on u.id = memory_item.owner_user_id
+          left join lateral (
+            select count(*) filter (where ro.outcome = 'good')::float as g, count(*) filter (where ro.outcome = 'bad')::float as b
+              from item_use iu join reply_outcome ro on ro.message_id = iu.message_id
+             where iu.ref_kind = 'memory' and iu.ref_id = memory_item.id and iu.exposure in ('relevant', 'loaded')
+               and iu.created_at > now() - interval '90 days') uf on true, qq
+        where ${
+          o.superseded === "show"
+            ? sql`true`
+            : sql`not exists (select 1 from memory_link l join memory_item s on s.id = l.from_page_id
+                where l.relation = 'supersedes' and l.to_slug = memory_item.slug and s.id <> memory_item.id
+                  and s.owner_user_id = memory_item.owner_user_id and s.status = 'current' and ${visibleTo(reader, "s")})`
+        }
+        order by f.s * (0.5 + memory_item.score / 100.0)
+          * (${RECENCY_FLOOR} + ${1 - RECENCY_FLOOR} * exp(-extract(epoch from now() - memory_item.updated_at) / 86400.0 / ${RECENCY_DAYS}))
+          * (1 + ${USE_SWING} * (coalesce(uf.g, 0) - coalesce(uf.b, 0)) / (coalesce(uf.g, 0) + coalesce(uf.b, 0) + ${USE_SMOOTHING}))
+          desc limit ${k}`);
       return rows as unknown as (Omit<MemoryHit, "neighbors"> & {
         kw?: boolean;
         tg?: boolean;
@@ -1647,7 +1677,8 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
     filter: MemoryFilter = {},
     k = 50,
   ): Promise<{ hits: MemoryHitExplained[]; meaning: boolean }> {
-    const r = await rank(reader, text, k, { filter, explain: true });
+    // A person's own search shows what a newer item replaced too: they may be looking for exactly that.
+    const r = await rank(reader, text, k, { filter, explain: true, superseded: "show" });
     return { hits: r.hits as MemoryHitExplained[], meaning: r.meaning };
   }
 
@@ -1878,7 +1909,11 @@ export function createMemory(db: Database, deps: { embedder?: Embedder } = {}) {
       links.flatMap((l) => (existing.has(l.target) ? [l.slug, l.target] : [])),
     );
     const old = Date.now() - OLD_DAYS * 86_400_000;
-    const brief = (p: (typeof pages)[number]) => ({ slug: p.slug, title: p.title });
+    const brief = (p: (typeof pages)[number]) => ({
+      slug: p.slug,
+      title: p.title,
+      status: p.status,
+    });
     const [{ n } = { n: 0 }] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(memorySuggestion)

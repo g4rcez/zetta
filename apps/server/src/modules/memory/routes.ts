@@ -386,10 +386,21 @@ export function createMemoryRoutes(
           return { jobId: j.id, status: j.status, conversationId: j.conversationId };
         }),
       ) as never;
+  // Confirming an item as still true: its own route, for the same reason as the ingest routes.
+  const mountConfirm = (n: "memory" | "wiki"): Elysia =>
+    new Elysia({ prefix: "/api", normalize: false }).post(
+      `/${n}/:slug/confirm`,
+      g(async (c) => {
+        const r = await memory.confirm(c.owner, slug.parse(c.params.slug), user);
+        return { slug: r.page.slug, version: r.page.version, status: r.page.status };
+      }),
+    ) as never;
   const routes = new Elysia({ normalize: false })
     .use(mount("memory"))
     .use(mount("wiki"))
     .use(mountIngest("memory"))
-    .use(mountIngest("wiki"));
+    .use(mountIngest("wiki"))
+    .use(mountConfirm("memory"))
+    .use(mountConfirm("wiki"));
   return routes as never;
 }

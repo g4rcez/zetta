@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotIdentity } from "@/components/bot-identity";
@@ -9,13 +9,14 @@ import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
 import { relativeTime } from "../shared/relative-time";
 import { ApiError, call } from "../chat/chat-client";
-import { Badge, Empty, Loading } from "../shared/ui";
+import { Badge, ConfirmButton, Empty, Loading } from "../shared/ui";
 import { Fold } from "./fold";
 import { useAction } from "./use-action";
 import { path, memoryQueries, type Bot, type Brief, type Checks, type Problem } from "./memory-api";
 import { savedSlugs } from "./memory-health";
 
 const SHOWN = 6;
+type Deleted = { slug: string; title: string; status: "current" | "stale" };
 /** What a review job is called in "Background work". */
 const JOB_LABEL: Record<Problem, string> = {
   all: "Fixing what needs work",
@@ -71,6 +72,38 @@ function ItemLink({ brief }: { brief: Brief }) {
       {brief.title}
     </Link>
   );
+}
+
+/** Deleting is archiving: bots stop reading the item and the checks skip it, and the item page can restore it. */
+function DeleteItem({ title, onConfirm }: { title: string; onConfirm: () => Promise<void> }) {
+  return (
+    <span className="ms-auto">
+      <ConfirmButton
+        size="xs"
+        label="Delete"
+        question={`Delete “${title}”? You can undo it right after.`}
+        confirmLabel="Delete"
+        onConfirm={onConfirm}
+      />
+    </span>
+  );
+}
+
+/** What the last delete removed, with the way back. */
+function UndoBar({ title, onUndo }: { title: string; onUndo: () => void }) {
+  return (
+    <p role="status" className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="line-clamp-1 break-words">Deleted “{title}”.</span>
+      <Button size="xs" variant="outline" onClick={onUndo}>
+        Undo
+      </Button>
+    </p>
+  );
+}
+
+/** The row of actions of one item; the delete sits at the far end. */
+function RowActions({ children }: { children: ReactNode }) {
+  return <span className="flex flex-wrap items-center gap-x-3 gap-y-1">{children}</span>;
 }
 
 const JOB_STATUS = {
@@ -178,6 +211,7 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
   const data = checks.data;
   const failed = checks.isError;
   const { run, feedback } = useAction();
+  const [deleted, setDeleted] = useState<Deleted>();
   if (failed && !data)
     return (
       <Fold title="Needs work">
@@ -218,6 +252,22 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
   const setStatus = (slug: string, status: string, done: string) =>
     run(() => call(path(slug), "PATCH", { status }), done);
   const small = "shrink-0";
+  const confirmItem = (slug: string) =>
+    run(() => call(`${path(slug)}/confirm`, "POST"), "Marked current.");
+  const remove = (b: Brief) =>
+    run(async () => {
+      await call(path(b.slug), "PATCH", { status: "archived" });
+      setDeleted({
+        slug: b.slug,
+        title: b.title,
+        status: b.status === "stale" ? "stale" : "current",
+      });
+    }, "");
+  const undo = (d: Deleted) =>
+    run(async () => {
+      await call(path(d.slug), "PATCH", { status: d.status });
+      setDeleted(undefined);
+    }, "Restored.");
   return (
     <Fold title="Needs work" count={total}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -234,6 +284,7 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
           />
         )}
       </div>
+      {deleted && <UndoBar title={deleted.title} onUndo={() => void undo(deleted)} />}
       {total === 0 && <Empty>Nothing to fix.</Empty>}
       <Group
         title="Links to missing items"
@@ -292,12 +343,8 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
         {c.stale.slice(0, SHOWN).map((b) => (
           <Row key={b.slug}>
             <ItemLink brief={b} />
-            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <Button
-                size="xs"
-                variant="outline"
-                onClick={() => void setStatus(b.slug, "current", "Marked current.")}
-              >
+            <RowActions>
+              <Button size="xs" variant="outline" onClick={() => void confirmItem(b.slug)}>
                 Still true
               </Button>
               <Link
@@ -308,7 +355,8 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
               >
                 Tidy with help
               </Link>
-            </span>
+              <DeleteItem title={b.title} onConfirm={() => remove(b)} />
+            </RowActions>
           </Row>
         ))}
       </Group>
@@ -328,7 +376,10 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
         {c.old.slice(0, SHOWN).map((b) => (
           <Row key={b.slug}>
             <ItemLink brief={b} />
-            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <RowActions>
+              <Button size="xs" variant="outline" onClick={() => void confirmItem(b.slug)}>
+                Still true
+              </Button>
               <Button
                 size="xs"
                 variant="outline"
@@ -344,7 +395,8 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
               >
                 Review
               </Link>
-            </span>
+              <DeleteItem title={b.title} onConfirm={() => remove(b)} />
+            </RowActions>
           </Row>
         ))}
       </Group>
@@ -364,14 +416,17 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
         {c.unlinked.slice(0, SHOWN).map((b) => (
           <Row key={b.slug}>
             <ItemLink brief={b} />
-            <Link
-              to="/memory/$slug"
-              params={{ slug: b.slug }}
-              search={{ edit: "1", assist: "links" } as never}
-              className={`${small} text-xs underline`}
-            >
-              Suggest links
-            </Link>
+            <RowActions>
+              <Link
+                to="/memory/$slug"
+                params={{ slug: b.slug }}
+                search={{ edit: "1", assist: "links" } as never}
+                className={`${small} text-xs underline`}
+              >
+                Suggest links
+              </Link>
+              <DeleteItem title={b.title} onConfirm={() => remove(b)} />
+            </RowActions>
           </Row>
         ))}
       </Group>
@@ -391,6 +446,9 @@ export function HealthPanel({ bots }: { bots: Bot[] | undefined }) {
         {c.unsourced.slice(0, SHOWN).map((b) => (
           <Row key={b.slug}>
             <ItemLink brief={b} />
+            <RowActions>
+              <DeleteItem title={b.title} onConfirm={() => remove(b)} />
+            </RowActions>
           </Row>
         ))}
       </Group>

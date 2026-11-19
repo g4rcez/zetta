@@ -111,7 +111,8 @@ suite("autolearn: a correction becomes a skill of the bot's own", () => {
       expect.objectContaining({ kind: "skill", text: "sales-exports", learn: "created" }),
     ]);
 
-    // A later lesson revises it; the owner's undo goes back to the version before.
+    // A later lesson only SUGGESTS a new text, even with autolearn on auto: a background review never replaces a text by itself. The
+    // person saves it from the receipt; their undo goes back to the version before.
     await db.delete(skillReview).where(eq(skillReview.botId, b.id)); // skip the half-hour debounce
     await say("user", "Actually, also sort by date");
     const reply2 = await say("assistant", "Sorted.");
@@ -122,10 +123,15 @@ suite("autolearn: a correction becomes a skill of the bot's own", () => {
     });
     expect((await turn())?.reason).toBe("corrected");
     await review.tick();
+    const [untouched] = await db.select().from(skill).where(eq(skill.id, s!.id));
+    expect(untouched!.body).not.toContain("Sort rows by date");
+    expect(untouched!.version).toBe(1);
+    expect((await receipts(reply2.id))[0]).toMatchObject({ learn: "suggested" });
+    const [pending] = await db.select().from(skillReview).where(eq(skillReview.replyId, reply2.id));
+    const applied = await review.applySuggested(A, pending!.id);
+    expect(applied?.version).toBe(2);
     const [after] = await db.select().from(skill).where(eq(skill.id, s!.id));
     expect(after!.body).toContain("Sort rows by date");
-    expect(after!.version).toBe(2);
-    expect((await receipts(reply2.id))[0]).toMatchObject({ learn: "revised" });
     await skills.undoLearned(A, s!.id);
     const [undone] = await db.select().from(skill).where(eq(skill.id, s!.id));
     expect(undone!.body).not.toContain("Sort rows by date");

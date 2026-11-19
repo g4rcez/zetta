@@ -158,7 +158,7 @@ export type Suggestions = {
     createdAt: string;
   }[];
 };
-export type Brief = { slug: string; title: string };
+export type Brief = { slug: string; title: string; status?: Status };
 /** What the screen found in a source before a bot read it (the passages are quotes of the text). */
 export type Screen = {
   verdict: "clean" | "suspicious" | "hostile";

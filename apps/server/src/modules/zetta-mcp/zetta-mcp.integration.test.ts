@@ -14,6 +14,10 @@ import { createChatService } from "../chat/service";
 import { audit } from "../features/audit";
 import { createMembershipLookup, issueBackgroundActor } from "../identity/access";
 import { createOrgStore } from "../org/store";
+import { createLessons } from "../learning/lessons";
+import { createProgress } from "../learning/progress";
+import { createLessonTools } from "../learning/workflow-tool";
+import { createMemory } from "../memory/service";
 import { createOutputStyles } from "../output-styles/service";
 import { createTaskStore } from "../tasks/store";
 
@@ -121,6 +125,12 @@ suite("Zetta MCP server: OAuth 2.1 sign-in and tools against compose postgres", 
         chat: createChatService(db),
         outputStyles: createOutputStyles(db),
         org: createOrgStore(db),
+        lessons: {
+          tools: createLessonTools({
+            lessons: createLessons(db, { memory: createMemory(db) }),
+            progress: createProgress(db),
+          }),
+        },
         audit: (owner, event) => audit(db, owner, event),
         mcp: {} as never,
         connections: {} as never,
@@ -409,6 +419,27 @@ suite("Zetta MCP server: OAuth 2.1 sign-in and tools against compose postgres", 
       const text = (r.content as { text: string }[])[0]!.text;
       return { isError: r.isError === true, text, json: r.isError ? undefined : JSON.parse(text) };
     };
+
+  test("lessons: any member reads what their bots learned, changing it is a write, and only their own lessons can be named", async () => {
+    const client = await connect(await writeToken());
+    const call = caller(client);
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    for (const tool of ["list_lessons", "get_lessons_progress", "change_lessons"])
+      expect(names).toContain(tool);
+    expect((await call("list_lessons")).json).toEqual({ lessons: "No lessons match." });
+    // A bot that is not the member's is not found, and a lesson that is not theirs is "not done", never a change.
+    expect(
+      (await call("get_lessons_progress", { bot: "0194f0aa-1111-7000-8000-00000000000a" })).isError,
+    ).toBe(true);
+    const changed = await call("change_lessons", {
+      action: "drop",
+      ids: ["0194f0aa-1111-7000-8000-00000000000a"],
+    });
+    expect(changed.json.result).toContain(": not done (");
+    expect((await call("change_lessons", { action: "drop", ids: [] })).isError).toBe(true);
+    expect((await call("list_lessons", { label: "wrong" })).isError).toBe(true);
+    await client.close();
+  });
 
   test("a member who is not the administrator reads the company chart and gets no tool to change it", async () => {
     await adminIs(otherId);

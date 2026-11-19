@@ -14,9 +14,11 @@ Work runs on the server. Closing or reconnecting the browser is not a cancellati
 
 ## Add to a task, correct it, or stop it
 
-You can keep writing while a bot works. Each message is saved at once and waits. When the reply in progress ends, the bot reads everything that waited together, oldest first, and answers once. A later message can therefore correct or cancel an earlier one: "send it to Ana", then "no, to Bruno" sends it to Bruno. A message that waits can be removed before it is read.
+You can keep writing while a bot works, as you would to a person. Each message is saved at once and reaches the bot while it works: it reads the message at its next step, after the command it is running ends, and one answer covers everything you sent. A later message can therefore correct or cancel an earlier one: "send it to Ana", then "no, to Bruno" sends it to Bruno. If you ask something unrelated, a Claude Code bot answers it at once and carries on. If you write again before the bot has done anything, it starts over with all your messages together. A message shows a read mark once the bot has taken it.
 
-To stop the work, press Stop or type it: "stop", "cancel that", "para", "pode parar". The word alone is the Stop button; a sentence that only contains it ("stop the dev server and restart it") is an ordinary message. Stop ends the reply in progress, pauses the tasks the bot was being called back for, ends its goal loops, and silences rooms that chat opened that were still working. Messages that waited are held, not thrown away and not run behind your back: each shows "Send now" and "Remove".
+Two things work differently. A bot on an engine other than Claude Code reads your message when its current run ends, not at its next step. A message with a picture, a file, picked skills or another bot named in it is answered right after the current reply; it says so under the message.
+
+To stop the work, press Stop or type it: "stop", "cancel that", "para", "pode parar". The word alone is the Stop button; a sentence that only contains it ("stop the dev server and restart it") is an ordinary message. Stop ends the reply in progress, pauses the tasks the bot was being called back for, ends its goal loops, and silences rooms that chat opened that were still working. Messages the bot had not read yet stay in the chat and are not answered behind your back. When you write again, the bot sees them as earlier messages.
 
 ## Read the outcome, not just the status
 
@@ -35,7 +37,7 @@ Sidebar, activity, and kanban use the same source-linked attention model. The ka
 
 | What you see         | What it means                                 | What it does not mean                   |
 | -------------------- | --------------------------------------------- | --------------------------------------- |
-| Queued or working    | Execution is pending or active                | You must take action.                   |
+| Working              | Execution is active                           | You must take action.                   |
 | Needs input          | A task needs a specific answer or human step  | Any reply authorizes unrelated changes. |
 | Blocked              | A prerequisite or operation prevents progress | Every previous step failed.             |
 | Configuration review | A proposed change awaits a decision           | Reading the proposal approves it.       |

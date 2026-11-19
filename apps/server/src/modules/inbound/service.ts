@@ -19,11 +19,13 @@ import {
   type InboundFilter,
 } from "../integrations/plugins/registry";
 import type { Plugins } from "../integrations/plugins/service";
+import { insertMessage } from "../chat/messages";
 import { TurnBusyError, type ChatService } from "../chat/service";
 import { AgentsPausedError, agentsPaused } from "../preferences/agents-state";
 import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
 
 type Route = typeof inboundRoute.$inferSelect;
+type Thread = typeof inboundThread.$inferSelect;
 type Event = typeof inboundEvent.$inferSelect;
 export type InboundPlugins = Pick<
   Plugins,
@@ -83,6 +85,14 @@ You answer outside people on the user's behalf, following your own instructions.
 {"plugin":${JSON.stringify(plugin)},"tool":${JSON.stringify(replyTool)},"args":{${JSON.stringify(replyArg)}:${JSON.stringify(chat)},"text":"..."}}
 \`\`\`
 You can only reply to this chat. If the request needs other bots (for example a developer to fix a bug), open a room with them, give them the full context, and tell the person you are working on it. If a person must decide something, use zetta:handoff. Never share secrets or the user's private data.`;
+}
+
+/** More messages of the same outside chat, for a bot that is already answering it: data only (the reply template is in its prompt). */
+export function inboundLater(
+  events: readonly Pick<Event, "fromName" | "text" | "at">[],
+  nonce = uuidv7().slice(-8),
+) {
+  return `<<<DATA-${nonce}\n${events.map((e) => `${defuse(e.fromName || "Someone")} (${clock(e.at.getTime())} UTC): ${defuse(e.text)}`).join("\n")}\nDATA-${nonce}>>>`;
 }
 
 /**
@@ -317,6 +327,74 @@ export function createInbound(
     return Number(n);
   }
 
+  /** What a turn shows in the conversation for the outside messages it answers. */
+  const shown = (label: string, t: Thread, events: readonly Event[]) =>
+    `📥 ${label} · ${t.chatName || t.chatKey} (outside ${events.length === 1 ? "person" : "people"}):\n${events.map((e) => `${e.fromName || "Someone"}: ${e.text}`).join("\n")}`.slice(
+      0,
+      60_000,
+    );
+  const overCap = async (t: Thread, r: Route) =>
+    (await recentTurns(eq(inboundEvent.threadId, t.id))) >= CAPS.perChat ||
+    (await recentTurns(eq(inboundEvent.routeId, r.id))) >= CAPS.perRoute;
+  /**
+   * What the outside chat sent while the bot was already answering it: the pending events become one more message of the
+   * conversation, read by the reply that is running (`replyId`), instead of waiting for a turn of their own. It counts toward the
+   * hourly caps like a turn; past a cap nothing is taken, and the next delivery skips the events and tells the owner as usual.
+   */
+  async function claimLater(t: Thread, r: Route, label: string, replyId: string) {
+    const pending = await db
+      .select({ id: inboundEvent.id })
+      .from(inboundEvent)
+      .where(and(eq(inboundEvent.threadId, t.id), eq(inboundEvent.status, "pending")))
+      .orderBy(asc(inboundEvent.at))
+      .limit(20);
+    if (!pending.length || !r.enabled || (await overCap(t, r))) return [];
+    return db.transaction(async (tx) => {
+      const claimed = await tx
+        .update(inboundEvent)
+        .set({ status: "delivered", attempts: sql`${inboundEvent.attempts} + 1` })
+        .where(
+          and(
+            inArray(
+              inboundEvent.id,
+              pending.map((e) => e.id),
+            ),
+            eq(inboundEvent.status, "pending"),
+          ),
+        )
+        .returning();
+      if (!claimed.length) return [];
+      const events = claimed.sort((x, y) => x.at.getTime() - y.at.getTime());
+      const row = await insertMessage(tx, t.conversationId, {
+        ownerUserId: r.ownerUserId,
+        role: "user",
+        content: shown(label, t, events),
+        clientRequestId: `inbound:${events[0]!.id}`,
+        meta: {
+          inbound: {
+            plugin: r.pluginId,
+            label,
+            chat: t.chatKey,
+            chatName: t.chatName || t.chatKey,
+            eventIds: events.map((e) => e.id),
+          },
+          // Read by the reply that was running when it arrived (as a person's own late message is, see chat/service.ts).
+          steer: { replyId, at: Date.now() },
+        },
+      });
+      await tx
+        .update(inboundEvent)
+        .set({ messageId: row.id })
+        .where(
+          inArray(
+            inboundEvent.id,
+            events.map((e) => e.id),
+          ),
+        );
+      return [{ id: row.id, text: inboundLater(events) }];
+    });
+  }
+
   /** One outside chat: its pending events become one turn (the bot reads them together). */
   async function deliverThread(threadId: string) {
     const [t] = await db.select().from(inboundThread).where(eq(inboundThread.id, threadId));
@@ -340,10 +418,7 @@ export function createInbound(
     if (!a || !inbound) return;
     // Paused agents: the outside messages stay pending, unclaimed, and are delivered on the first pass after "resume".
     if (await agentsPaused(db, r.ownerUserId)) return;
-    if (
-      (await recentTurns(eq(inboundEvent.threadId, t.id))) >= CAPS.perChat ||
-      (await recentTurns(eq(inboundEvent.routeId, r.id))) >= CAPS.perRoute
-    ) {
+    if (await overCap(t, r)) {
       await db.update(inboundEvent).set({ status: "skipped" }).where(inArray(inboundEvent.id, ids));
       await raiseAttention(db, r.ownerUserId, {
         kind: "inbound_rate",
@@ -369,11 +444,7 @@ export function createInbound(
       .returning();
     if (!claimed.length) return;
     const events = claimed.sort((x, y) => x.at.getTime() - y.at.getTime());
-    const content =
-      `📥 ${inbound.label} · ${t.chatName || t.chatKey} (outside ${events.length === 1 ? "person" : "people"}):\n${events.map((e) => `${e.fromName || "Someone"}: ${e.text}`).join("\n")}`.slice(
-        0,
-        60_000,
-      );
+    const content = shown(inbound.label, t, events);
     try {
       const { rec } = await chat.startTurn(a, t.conversationId, {
         content,
@@ -393,6 +464,7 @@ export function createInbound(
             t.chatName || t.chatKey,
             events,
           ),
+          later: (replyId) => claimLater(t, r, inbound.label, replyId),
         },
       });
       const user = rec.events.find((e) => e.type === "user");
@@ -673,6 +745,17 @@ export function createInbound(
         .catch(() => "invalid" as const);
       if (verdict === "wake") void this.wake(userId, pluginId).catch(() => {});
       return verdict;
+    },
+    /**
+     * A turn ended in this conversation. If it is an outside chat, what arrived too late for that turn to read is delivered now
+     * instead of on the next pass, so the person outside does not wait up to half a minute for nothing.
+     */
+    async deliverConversation(conversationId: string) {
+      const [t] = await db
+        .select({ id: inboundThread.id })
+        .from(inboundThread)
+        .where(eq(inboundThread.conversationId, conversationId));
+      if (t) await deliverThread(t.id);
     },
     /**
      * The channel's server says new messages arrived for this user (push). Makes the user's route due now and runs a pass, so the bot

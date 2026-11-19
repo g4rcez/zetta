@@ -25,6 +25,7 @@ import {
   orgVersion,
 } from "../org/inputs";
 import { OrgError, type OrgStore, type OrgView } from "../org/store";
+import type { LessonTools } from "../learning/workflow-tool";
 
 /**
  * Zetta's own MCP server: external AI clients (Claude Code, Cursor, …) act as one member through the same services as the web app, so
@@ -43,6 +44,8 @@ export type ZettaMcpServices = {
     OrgStore,
     "get" | "links" | "create" | "update" | "move" | "seat" | "remove" | "applyPreset"
   >;
+  /** What the member's bots learned (modules/learning): any member reads their own, a change needs the write scope. */
+  lessons: { tools: LessonTools };
   /** Records a write the client made on the member's behalf (best effort, never throws). */
   audit: (ownerUserId: string, event: Parameters<typeof audit>[2]) => Promise<void>;
 };
@@ -157,7 +160,7 @@ function botView(actor: ActiveActor, b: Bot) {
 
 /** One server per request: it acts only as `actor`. */
 export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveActor) {
-  const { chat, mcp, connections, features, memory, tasks, outputStyles, org } = services;
+  const { chat, mcp, connections, features, memory, tasks, outputStyles, org, lessons } = services;
   /** Runs a write and records it. The audit row names the tool and the thing changed, never the content. */
   async function runWrite(
     tool: string,
@@ -190,7 +193,7 @@ export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveAc
     {
       instructions:
         "Zetta runs AI bots for a team. Use these tools to inspect the signed-in member's bots, chats, integrations, connections, " +
-        "routines, workflows, output styles, memory, tasks and the company chart (who leads what, and who each person and bot reports to). " +
+        "routines, workflows, output styles, memory, what the bots learned (lessons), tasks and the company chart (who leads what, and who each person and bot reports to). " +
         "Only the administrator gets the tools that change the chart. Bots shared with the team are listed with canEdit=false. " +
         "Tools that change something need the write scope and are recorded in the member's activity log.",
     },
@@ -526,6 +529,54 @@ export function createZettaMcpServer(services: ZettaMcpServices, actor: ActiveAc
         }),
     );
   }
+
+  server.registerTool(
+    "list_lessons",
+    {
+      title: "List what the bots learned",
+      description:
+        "The lessons the member's bots follow, one line each: id | status | what happened after it was used | text. By default the ones in use (on trial or kept); `status` asks for waiting or dropped ones, `label` for the ones that hurt, help or were not used.",
+      inputSchema: z.object({
+        bot: uuid.optional(),
+        status: z.enum(["waiting", "trial", "kept", "dropped", "all"]).optional(),
+        label: z.enum(["helps", "unclear", "hurts", "unused"]).optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+      ...READ,
+    },
+    (args) => run(async () => ({ lessons: await lessons.tools.call(actor.userId, "list", args) })),
+  );
+
+  server.registerTool(
+    "get_lessons_progress",
+    {
+      title: "Is a bot getting better?",
+      description:
+        "How often the member had to step in after a bot's replies (stopped, redirected, corrected or rated down) in the last four weeks against the four before, and how many lessons are on trial, kept, dropped or waiting.",
+      inputSchema: z.object({ bot: uuid }),
+      ...READ,
+    },
+    (args) =>
+      run(async () => ({ progress: await lessons.tools.call(actor.userId, "stats", args) })),
+  );
+
+  server.registerTool(
+    "change_lessons",
+    {
+      title: "Keep, drop or bring back lessons",
+      description:
+        "Changes up to 20 lessons by id (from list_lessons): keep (after its trial), drop (archives it, nothing is deleted), restore (a dropped one comes back on trial), accept (a waiting one starts on trial) or reject (a waiting one is turned down).",
+      inputSchema: z.object({
+        action: z.enum(["keep", "drop", "restore", "accept", "reject"]),
+        ids: z.array(uuid).min(1).max(20),
+      }),
+      ...WRITE,
+    },
+    ({ action, ids }) =>
+      runWrite("change_lessons", async () => ({
+        result: await lessons.tools.call(actor.userId, action, { ids }),
+      })),
+  );
 
   server.registerTool(
     "get_org_chart",

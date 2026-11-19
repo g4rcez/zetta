@@ -1,7 +1,7 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
-import { and, eq } from "@zetta/db/query";
+import { and, asc, eq, inArray } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { bot, conversation, message } from "@zetta/db/schema/chat";
 import { discussion } from "@zetta/db/schema/discussions";
@@ -61,9 +61,13 @@ suite("inbound channels against compose postgres", () => {
     runs.push({ bot: t.bot.name, prompt: t.prompt, noCode: t.noCode, extraTools: t.extraTools });
     return replies[t.bot.name]?.shift() ?? "ok";
   };
+  /** While set, the first answer of a turn does not come: it stands for a bot that is still working. */
+  let hold: Promise<void> | undefined;
   const fakeRun = Object.assign(async (t: never) => ({ text: reply(t), stopped: false }), {
     stream: async function* (t: never) {
-      yield reply(t);
+      const text = reply(t);
+      await hold;
+      yield text;
     },
   });
   let bound = true;
@@ -539,6 +543,55 @@ suite("inbound channels against compose postgres", () => {
     await settle(t!.conversationId);
   });
 
+  test("what the same outside chat sends while the bot answers is read by that answer: one reply, no second turn", async () => {
+    let open!: () => void;
+    hold = new Promise<void>((done) => (open = done));
+    const before = runs.length;
+    try {
+      inbox = [ev("k-late-1", "is the shop open today?", "c-late", "Lia")];
+      await inbound.tick(new Date(Date.now() + 6_000_000));
+      // The bot is working on it when the second message comes in: the chat is busy, so no turn starts for it.
+      inbox = [ev("k-late-2", "and on Sunday?", "c-late", "Lia")];
+      await inbound.tick(new Date(Date.now() + 7_200_000));
+      expect(
+        (await db.select().from(inboundEvent).where(eq(inboundEvent.key, "k-late-2")))[0]!.status,
+      ).toBe("pending");
+    } finally {
+      open();
+      hold = undefined;
+    }
+    const [t] = await db.select().from(inboundThread).where(eq(inboundThread.chatKey, "c-late"));
+    await settle(t!.conversationId);
+    // The answer that was running got one more round with the new message, as data from outside people.
+    const mine = runs.slice(before).filter((r) => r.bot === "Support");
+    expect(mine).toHaveLength(2);
+    expect(mine[1]!.prompt).toContain("Outside people sent this while you worked");
+    expect(mine[1]!.prompt).toMatch(
+      /<<<DATA-[0-9a-f]{8}\nLia \(\d\d:\d\d UTC\): and on Sunday\?\nDATA-/,
+    );
+    const late = await db
+      .select()
+      .from(inboundEvent)
+      .where(inArray(inboundEvent.key, ["k-late-1", "k-late-2"]));
+    expect(late.map((e) => e.status)).toEqual(["delivered", "delivered"]);
+    // Both messages are in the conversation, each with its events, and the one reply sits below them.
+    const msgs = await db
+      .select()
+      .from(message)
+      .where(eq(message.conversationId, t!.conversationId))
+      .orderBy(asc(message.seq));
+    expect(msgs.map((m) => m.role)).toEqual(["user", "user", "assistant"]);
+    expect(msgs[1]!.content).toContain("and on Sunday?");
+    expect((msgs[1]!.meta as { steer?: { replyId: string } }).steer?.replyId).toBe(msgs[2]!.id);
+    expect(late.find((e) => e.key === "k-late-2")!.messageId).toBe(msgs[1]!.id);
+    // Nothing is left to answer: the next pass starts no turn.
+    const after = runs.length;
+    inbox = [];
+    await inbound.tick(new Date(Date.now() + 8_400_000));
+    await settle(t!.conversationId);
+    expect(runs.length).toBe(after);
+  });
+
   test("a Slack push is checked with the person's own secret, answered as Slack wants, and its messages are stored once per message", async () => {
     const sign = (raw: string) => {
       const stamp = String(Math.floor(Date.now() / 1000));
@@ -582,15 +635,13 @@ suite("inbound channels against compose postgres", () => {
       ),
     ).toBe("invalid");
 
-    await db
-      .insert(inboundRoute)
-      .values({
-        ownerUserId: A,
-        botId: support.id,
-        pluginId: "slack",
-        enabled: true,
-        pollEverySeconds: 3600,
-      });
+    await db.insert(inboundRoute).values({
+      ownerUserId: A,
+      botId: support.id,
+      pluginId: "slack",
+      enabled: true,
+      pollEverySeconds: 3600,
+    });
     expect(await push(dm)).toEqual({ status: 200, body: { ok: true } });
     // Slack retries what it did not hear back on: the same message is kept once.
     expect(await push(dm)).toEqual({ status: 200, body: { ok: true } });

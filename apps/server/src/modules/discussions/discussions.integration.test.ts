@@ -83,7 +83,11 @@ suite("group discussions against compose postgres", () => {
   /** A bot with a gate here does not answer until the gate opens: it stands for a long task. */
   const gates: Record<string, Promise<void>> = {};
   const fakeRun = Object.assign(async (t: never) => ({ text: reply(t), stopped: false }), {
-    stream: async function* (t: { bot: { name: string }; signal?: AbortSignal }) {
+    stream: async function* (t: {
+      bot: { name: string };
+      signal?: AbortSignal;
+      inbox?: { take(): Promise<{ id: string; text: string }[]>; read(ids: string[]): void };
+    }) {
       const text = reply(t as never);
       // A gate holds the run like a long command would; aborting the turn (the watchdog does) ends it.
       const aborted = new Promise<void>((done) =>
@@ -91,7 +95,12 @@ suite("group discussions against compose postgres", () => {
       );
       await Promise.race([gates[t.bot.name], aborted]);
       if (t.signal?.aborted) return;
-      yield text;
+      // A run that reads messages while it works (only a Claude Code bot gets an inbox) takes what was posted for it meanwhile.
+      const got = (await t.inbox?.take()) ?? [];
+      if (got.length) t.inbox!.read(got.map((g) => g.id));
+      yield got.length
+        ? `${text} [read while working: ${got.map((g) => g.text).join(" | ")}]`
+        : text;
     },
   });
   const features = createFeaturesService(db, fakeRun as never);
@@ -668,7 +677,7 @@ suite("group discussions against compose postgres", () => {
     ).toHaveLength(0);
   });
 
-  test("posts sent while a bot answers are answered by its next turn, all together, not one turn each", async () => {
+  test("posts sent to a bot while it answers are read by that answer before it closes, not by a turn each", async () => {
     const q1 = await makeBot(A, "Quick1");
     const q2 = await makeBot(A, "Quick2");
     let open!: () => void;
@@ -692,10 +701,69 @@ suite("group discussions against compose postgres", () => {
     await draining;
     await worker.drain();
     const mine = runs.slice(before).filter((r) => r.bot === "Quick1");
-    // The first answer, then ONE answer for both later posts (it reads the whole transcript).
+    // The first answer, then ONE more round of the same turn for both later posts. The turns those posts queued end as read.
     expect(mine).toHaveLength(2);
+    expect(mine[1]!.prompt).toContain("The user sent this while you worked");
     expect(mine[1]!.prompt).toContain("wait");
     expect(mine[1]!.prompt).toContain("actually send it to Bruno");
+    const turnsOf = await db
+      .select({ status: discussionTurn.status, reason: discussionTurn.reasonCode })
+      .from(discussionTurn)
+      .where(and(eq(discussionTurn.discussionId, roomId), eq(discussionTurn.botId, q1.id)));
+    expect(turnsOf.map((t) => `${t.status}:${t.reason ?? ""}`).sort()).toEqual([
+      "done:",
+      "skipped:read_in_turn",
+      "skipped:read_in_turn",
+    ]);
+    // One reply of the bot in the room, below the posts it read.
+    const posts = await messagesOf(
+      A,
+      (await call(A, "GET", `/api/discussions/${roomId}`)).json.discussion.conversationId,
+    );
+    expect(posts.filter((m) => m.role === "assistant")).toHaveLength(1);
+    expect(posts.at(-1)!.role).toBe("assistant");
+  });
+
+  test("a bot that reads messages while it works takes a post addressed to it at once: no extra round, no second turn", async () => {
+    const live = await makeBot(A, "LiveOne", { harness: "claude-code" });
+    let open!: () => void;
+    gates.LiveOne = new Promise<void>((done) => (open = done));
+    const before = runs.length;
+    const roomId = (
+      await call(A, "POST", "/api/discussions", {
+        title: "Live room",
+        goal: "x",
+        members: [{ bot: live.id }],
+        firstMessage: "@LiveOne deploy the app",
+      })
+    ).json.discussion.id as string;
+    const draining = worker.drain();
+    for (let i = 0; i < 200 && !runs.slice(before).some((r) => r.bot === "LiveOne"); i++)
+      await Bun.sleep(10);
+    await call(A, "POST", `/api/discussions/${roomId}/messages`, {
+      content: "@LiveOne use staging",
+    });
+    open();
+    delete gates.LiveOne;
+    await draining;
+    await worker.drain();
+    // One run: the post reached it while it worked, so there was no round for it and its own turn never started.
+    expect(runs.slice(before).filter((r) => r.bot === "LiveOne")).toHaveLength(1);
+    const turnsOf = await db
+      .select({ status: discussionTurn.status, reason: discussionTurn.reasonCode })
+      .from(discussionTurn)
+      .where(and(eq(discussionTurn.discussionId, roomId), eq(discussionTurn.botId, live.id)));
+    expect(turnsOf.map((t) => `${t.status}:${t.reason ?? ""}`).sort()).toEqual([
+      "done:",
+      "skipped:read_in_turn",
+    ]);
+    const posts = await messagesOf(
+      A,
+      (await call(A, "GET", `/api/discussions/${roomId}`)).json.discussion.conversationId,
+    );
+    expect(posts.map((m) => m.role)).toEqual(["user", "user", "assistant"]);
+    expect(posts.at(-1)!.content).toContain("[read while working: A person: ");
+    expect(posts.at(-1)!.content).toContain("use staging");
   });
 
   test("outside content: turns of one bot wait behind one card, approving it runs them all, declining skips them all", async () => {

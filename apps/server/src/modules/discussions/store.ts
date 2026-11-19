@@ -129,6 +129,7 @@ export function createDiscussionStore(
   loops?: Pick<LoopStore, "start" | "active" | "activeAll" | "kick" | "setStatus">,
 ) {
   let onEnqueue: (() => void) | undefined;
+  let onPersonPost: ((ownerUserId: string, conversationId: string) => void) | undefined;
   const claude = createBotClaude(db);
   const visible = (a: ActiveActor) => or(eq(bot.ownerUserId, a.userId), eq(bot.visibility, "team"));
 
@@ -495,6 +496,10 @@ export function createDiscussionStore(
   const store = {
     set onEnqueue(fn: (() => void) | undefined) {
       onEnqueue = fn;
+    },
+    /** Called when a person posts in a room, so the bots that are working there read the post now (see chat/poke.ts). */
+    set onPersonPost(fn: ((ownerUserId: string, conversationId: string) => void) | undefined) {
+      onPersonPost = fn;
     },
     peerIds,
     async peers(a: ActiveActor, botId: string) {
@@ -1188,6 +1193,7 @@ export function createDiscussionStore(
         return { row, n };
       });
       if (res.n) onEnqueue?.();
+      onPersonPost?.(d.ownerUserId, d.conversationId);
       return res.row;
     },
     /**
@@ -2031,6 +2037,42 @@ export function createDiscussionStore(
         if (out !== "again") return out;
       }
       return undefined;
+    },
+    /** Of these posts, the ones that queued a reply turn for `botId` that still waits: the posts addressed to it that it has not answered. */
+    async waitingPosts(discussionId: string, botId: string, messageIds: readonly string[]) {
+      if (!messageIds.length) return new Set<string>();
+      const rows = await db
+        .select({ id: discussionTurn.triggerMessageId })
+        .from(discussionTurn)
+        .where(
+          and(
+            eq(discussionTurn.discussionId, discussionId),
+            eq(discussionTurn.botId, botId),
+            eq(discussionTurn.status, "queued"),
+            eq(discussionTurn.kind, "reply"),
+            inArray(discussionTurn.triggerMessageId, [...messageIds]),
+          ),
+        );
+      return new Set(rows.flatMap((r) => (r.id ? [r.id] : [])));
+    },
+    /**
+     * The running turn of `botId` read these posts while it worked and answered them: the turns they queued for the same bot would
+     * answer them a second time, so they end as read. Called while that turn is still running, so none of them can start meanwhile.
+     */
+    async skipRead(discussionId: string, botId: string, messageIds: readonly string[]) {
+      if (!messageIds.length) return;
+      await db
+        .update(discussionTurn)
+        .set({ status: "skipped", reasonCode: "read_in_turn", finishedAt: new Date() })
+        .where(
+          and(
+            eq(discussionTurn.discussionId, discussionId),
+            eq(discussionTurn.botId, botId),
+            eq(discussionTurn.status, "queued"),
+            eq(discussionTurn.kind, "reply"),
+            inArray(discussionTurn.triggerMessageId, [...messageIds]),
+          ),
+        );
     },
     /** Whether a queued turn could be claimed now (tests and diagnostics). */
     async hasRunnable() {

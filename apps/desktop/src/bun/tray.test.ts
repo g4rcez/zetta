@@ -23,6 +23,7 @@ function setup() {
     openLauncher: () => calls.push("launcher"),
     openServer: (id) => calls.push(`server:${id}`),
     quit: () => calls.push("quit"),
+    togglePause: () => calls.push("pause"),
   });
   return { calls, tray, fakeTray: fake.trays[0] as FakeTray };
 }
@@ -68,6 +69,26 @@ describe("the tray icon", () => {
     tray.setServers([]);
     expect(fakeTray.menu.map((item) => item.label)).toEqual(["Servers…", undefined, "Quit Zetta"]);
     expect(fakeTray.menu.some((item) => item.label === "Team")).toBe(false);
+  });
+});
+
+describe("sharing this computer", () => {
+  test("offers pause only while something is shared, and says what the next press does", () => {
+    const { tray, fakeTray, calls } = setup();
+    tray.setServers([]);
+    expect(fakeTray.menu.some((item) => item.action === "pause")).toBe(false);
+    tray.setSharing({ active: true, paused: false });
+    expect(fakeTray.menu.find((item) => item.action === "pause")?.label).toBe(
+      "Pause sharing this computer",
+    );
+    tray.setSharing({ active: true, paused: true });
+    expect(fakeTray.menu.find((item) => item.action === "pause")?.label).toBe(
+      "Resume sharing this computer",
+    );
+    fakeTray.click("pause");
+    expect(calls).toEqual(["pause"]);
+    tray.setSharing({ active: false, paused: false });
+    expect(fakeTray.menu.some((item) => item.action === "pause")).toBe(false);
   });
 });
 

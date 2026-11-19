@@ -12,6 +12,23 @@
         <h1>Zetta</h1>
         <p>Pick a server, or add the address of one.</p>
       </header>
+      <section id="approvals" aria-label="Waiting for you" aria-live="polite" hidden></section>
+      <section id="sharing" aria-label="Sharing this computer" hidden>
+        <div class="info">
+          <div class="name">Sharing this computer</div>
+          <div class="origin" id="sharing-state"></div>
+        </div>
+        <button id="sharing-toggle" class="quiet" type="button">Pause</button>
+      </section>
+      <section id="local" aria-label="This computer" hidden>
+        <div class="info">
+          <div class="name">This computer</div>
+          <div class="origin" id="local-state" role="status"></div>
+        </div>
+        <button id="local-open" class="primary" type="button">Open</button>
+        <button id="local-toggle" class="quiet" type="button">Stop</button>
+        <button id="local-log" class="quiet" type="button">Log</button>
+      </section>
       <ul id="servers" aria-label="Servers"></ul>
       <p id="empty" hidden>No server yet. Add the address of your Zetta server below.</p>
       <form id="add" autocomplete="off">

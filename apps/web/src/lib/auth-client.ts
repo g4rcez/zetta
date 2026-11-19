@@ -31,4 +31,6 @@ const customFetchImpl: typeof authFetch = async (input, init) => {
 export const authClient = createAuthClient({
   baseURL: new URL("/api/auth", getServerUrl(serverOrigin())).toString(),
   fetchOptions: { customFetchImpl, retry: 0 },
+  // The session only changes on sign-in or sign-out, which this app does itself; a 401 from any request sends the person to sign in.
+  sessionOptions: { refetchOnWindowFocus: false },
 });

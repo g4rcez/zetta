@@ -146,6 +146,7 @@ export const fake = {
   trays: [] as FakeTray[],
   rpcs: [] as FakeRpc[],
   removedViewIds: [] as number[],
+  shownInFolder: [] as string[],
   openedExternal: [] as string[],
   quits: 0,
   appMenu: undefined as unknown,
@@ -164,6 +165,7 @@ export const fake = {
     this.rpcs = [];
     this.removedViewIds = [];
     this.openedExternal = [];
+    this.shownInFolder = [];
     this.quits = 0;
     this.appMenu = undefined;
     this.channel = "stable";
@@ -191,6 +193,7 @@ const electrobunBun = {
     },
     openExternal: (url: string) => void fake.openedExternal.push(url),
     quit: () => void fake.quits++,
+    showItemInFolder: (path: string) => void fake.shownInFolder.push(path),
   },
   Updater: { localInfo: { channel: async () => fake.channel } },
   ApplicationMenu: { setApplicationMenu: (menu: unknown) => void (fake.appMenu = menu) },

@@ -1,5 +1,4 @@
 // Where the embedded Postgres lives on disk, and which runtime build it expects.
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 export const PG_VERSION = "18.6";
@@ -13,9 +12,7 @@ export const runtimePlatform = (platform: string = process.platform, arch: strin
 export const archiveName = (platform = runtimePlatform()) =>
   `pg-runtime-${RUNTIME_VERSION}-${platform}.tar.zst`;
 
-/** Zetta's local state folder: `ZETTA_HOME`, or `~/.zetta` (where code, artifacts and attachments already live). */
-export const zettaHome = (env: Record<string, string | undefined> = process.env) =>
-  env.ZETTA_HOME?.trim() || join(homedir(), ".zetta");
+export { zettaHome } from "@zetta/core/zetta-home";
 
 export type EmbeddedLayout = ReturnType<typeof embeddedLayout>;
 

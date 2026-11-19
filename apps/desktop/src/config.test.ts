@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import config from "../electrobun.config";
+import { resourcePaths } from "./bun/local-server";
 
 /**
  * The build contract: what the app is called, what it bundles, and that every file the windows, the tray and the launcher page ask for is
@@ -44,8 +45,21 @@ describe("the files it builds and copies", () => {
   });
 
   test("every file it copies into the app exists", () => {
-    for (const source of Object.keys(copy))
+    // `.resources` is staged by scripts/prepare-resources.ts before a build and is not in the repository.
+    for (const source of Object.keys(copy).filter((path) => !path.startsWith(".resources/")))
       expect({ source, exists: existsSync(join(root, source)) }).toEqual({ source, exists: true });
+  });
+
+  test("the server's files are copied to where the app looks for them", () => {
+    const shipped = resourcePaths("/app", "/app/bun");
+    const copiedTo = new Set(Object.values(copy).map((target) => `/app/${target}`));
+    for (const [key, path] of Object.entries(shipped)) {
+      if (key === "bun") continue;
+      expect({
+        key,
+        copied: [...copiedTo].some((dir) => path === dir || path.startsWith(`${dir}/`)),
+      }).toEqual({ key, copied: true });
+    }
   });
 
   test("the tray icon is a real PNG", () => {

@@ -97,6 +97,32 @@ export function createRegistry(file: string, now: () => Date = () => new Date())
       save();
       return { ...entry };
     },
+    /** The server this app runs on this computer: one entry, whose address follows the port it was given. */
+    setLocal(input: { name?: string; webOrigin: string; apiOrigin: string }): ServerEntry {
+      const webOrigin = normalizeOrigin(input.webOrigin);
+      const apiOrigin = normalizeOrigin(input.apiOrigin);
+      if (!webOrigin || !apiOrigin) throw new Error("INVALID_SERVER");
+      const existing = servers.find((entry) => entry.kind === "local");
+      if (existing) {
+        if (existing.webOrigin !== webOrigin || existing.apiOrigin !== apiOrigin) {
+          existing.webOrigin = webOrigin;
+          existing.apiOrigin = apiOrigin;
+          save();
+        }
+        return { ...existing };
+      }
+      const entry: ServerEntry = {
+        id: uuidv7(),
+        name: input.name?.trim().slice(0, 80) || "This computer",
+        kind: "local",
+        webOrigin,
+        apiOrigin,
+        lastOpenedAt: null,
+      };
+      servers = [entry, ...servers];
+      save();
+      return { ...entry };
+    },
     rename(id: string, name: string): boolean {
       const entry = servers.find((row) => row.id === id);
       if (!entry || !name.trim()) return false;

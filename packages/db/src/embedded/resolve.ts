@@ -12,8 +12,9 @@ export type EmbeddedSources = { archive: string; migrations: string };
 
 const sources = (): EmbeddedSources =>
   (globalThis as { zettaEmbeddedSources?: EmbeddedSources }).zettaEmbeddedSources ?? {
-    archive: checkoutArchive(),
-    migrations: checkoutMigrations(),
+    // A packaged app (the desktop app) ships both next to the built server and names them here; a checkout finds them from its own layout.
+    archive: process.env.ZETTA_PG_ARCHIVE?.trim() || checkoutArchive(),
+    migrations: process.env.ZETTA_MIGRATIONS_DIR?.trim() || checkoutMigrations(),
   };
 
 export async function startEmbeddedDatabase(

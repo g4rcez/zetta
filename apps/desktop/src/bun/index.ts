@@ -1,8 +1,16 @@
+import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import Electrobun, { ApplicationMenu, BrowserView, Updater, Utils } from "electrobun/bun";
 import type { LauncherRpc } from "../shared/launcher-rpc";
 import { discoverServer } from "./discovery";
+import { attachLocalServer } from "./local";
+import { createApprovals } from "./companion/approvals";
+import { createCompanion } from "./companion/client";
+import { createGrants } from "./companion/policy";
 import { createRegistry, sharesCookiesWith } from "./registry";
+import { createRemoteLink } from "./remote-link";
+import { createSecretBox, macKeychain } from "./secret-box";
+import { createTokenStore } from "./token-store";
 import { acquireInstanceLock } from "./single-instance";
 import { createTray } from "./tray";
 import { createWindows } from "./windows";
@@ -60,8 +68,37 @@ const launcherRpc = BrowserView.defineRPC<LauncherRpc>({
           sharesCookiesWith: sharesCookiesWith(registry.list(), server).map((other) => other.name),
         };
       },
-      openServer: ({ id }) => windows.openServer(id),
+      openServer: ({ id }) =>
+        windows.openServer(id, id === local?.entry()?.id ? local.openPath() : undefined),
+      localState: () => local?.server.state ?? null,
+      startLocal: async () => (local ? await local.server.start() : null),
+      stopLocal: async () => {
+        if (!local) return null;
+        await local.server.stop();
+        return local.server.state;
+      },
+      linkStates: () => remoteLink.states(),
+      connectRemote: ({ id }) => remoteLink.connect(id),
+      disconnectRemote: async ({ id }) => {
+        // Signing out of a server ends what its bots may do on this computer.
+        companion.forget(id);
+        return remoteLink.disconnect(id);
+      },
+      sharing: () => sharing(),
+      shareComputer: async ({ id, on }) => {
+        if (!on) return (companion.disable(id), true);
+        return companion.enable(id);
+      },
+      decideApproval: ({ id, decision }) => approvals.decide(id, decision),
+      setSharingPaused: ({ paused }) => (companion.setPaused(paused), true),
+      showLocalLog: () => {
+        if (!local) return false;
+        Utils.showItemInFolder(local.server.state.logFile);
+        return true;
+      },
       removeServer: ({ id }) => {
+        // The server this app runs is not on the list to remove: it is stopped from the launcher.
+        if (registry.get(id)?.kind === "local") return false;
         windows.closeServer(id);
         const removed = registry.remove(id);
         if (removed) servers.changed();
@@ -72,14 +109,101 @@ const launcherRpc = BrowserView.defineRPC<LauncherRpc>({
   },
 });
 
+/** The server this app runs on this computer (null when it is turned off). */
+const local = attachLocalServer({
+  registry,
+  changed: (state) => {
+    servers.changed();
+    // A server that just came up has none of the remote tokens: hand them over.
+    if (state.status === "running") {
+      remoteLink.localRestarted();
+      void remoteLink.tick();
+    }
+    try {
+      launcherRpc.send.localChanged(state);
+    } catch {
+      // The launcher window is not open: it reads the state when it opens.
+    }
+  },
+});
+
+// On macOS the file is sealed with a key kept in the Keychain; elsewhere (or if the Keychain refuses) it stays a private plain file.
+const tokenStore = createTokenStore(
+  join(Utils.paths.userData, "remote-tokens.json"),
+  undefined,
+  process.platform === "darwin" && !process.env.ZETTA_DESKTOP_NO_KEYCHAIN
+    ? createSecretBox(macKeychain())
+    : null,
+);
+
+/** Signs in to remote servers and lets this computer's own server use them (see remote-link.ts). */
+const remoteLink = createRemoteLink({
+  registry,
+  tokens: tokenStore,
+  // `ZETTA_DESKTOP_OPEN_LOG` (tests only): the sign-in address is appended to that file instead of opening a browser.
+  open: (url) =>
+    process.env.ZETTA_DESKTOP_OPEN_LOG
+      ? appendFileSync(process.env.ZETTA_DESKTOP_OPEN_LOG, `${url}\n`)
+      : Utils.openExternal(url),
+  clientId: process.env.ZETTA_DESKTOP_CLIENT_ID?.trim() || undefined,
+  local: () => {
+    const state = local?.server.state;
+    const token = local?.server.linkToken;
+    return state?.status === "running" && state.origin && token
+      ? { origin: state.origin, token }
+      : null;
+  },
+  onChange: () => {
+    try {
+      launcherRpc.send.linksChanged(remoteLink.states());
+    } catch {
+      // The launcher window is not open: it reads the states when it opens.
+    }
+  },
+});
+remoteLink.start();
+
+/** Lets remote servers' bots work on this computer, with the person here in charge (see companion/). */
+const sharing = () => ({
+  states: companion.states(),
+  paused: companion.paused,
+  pending: approvals.list(),
+});
+const tellLauncher = () => {
+  try {
+    launcherRpc.send.sharingChanged(sharing());
+  } catch {
+    // The launcher window is not open: it reads the state when it opens.
+  }
+  tray.setSharing({
+    active: Object.values(companion.states()).some((s) => s.enabled),
+    paused: companion.paused,
+  });
+};
+const approvals = createApprovals({ onChange: tellLauncher });
+const companion = createCompanion({
+  registry,
+  tokens: tokenStore,
+  grants: createGrants(join(Utils.paths.userData, "companion-grants.json")),
+  approvals,
+  accessToken: (id) => remoteLink.freshAccessToken(id),
+  // A request waits for the person: bring the launcher forward, where the question is.
+  attention: () => windows.showLauncher(),
+  onChange: tellLauncher,
+});
+
 const windows = createWindows({ registry, launcherRpc });
 const tray = createTray({
   openLauncher: () => windows.showLauncher(),
   openServer: (id) => windows.openServer(id),
+  togglePause: () => companion.setPaused(!companion.paused),
   quit: () => {
+    companion.stop();
     windows.beginQuit();
     lock.release();
-    Utils.quit();
+    // The server (and the Postgres inside it) stops first; the app quits when it has, or after a few seconds.
+    if (local) void local.server.stop().finally(() => Utils.quit());
+    else Utils.quit();
   },
 });
 
@@ -95,12 +219,14 @@ const servers = {
   },
 };
 servers.changed();
+companion.start();
 
 focusRunning = () => windows.focusAny();
 Electrobun.events.on("reopen", () => windows.focusAny());
 Electrobun.events.on("before-quit", () => {
   windows.beginQuit();
   lock.release();
+  if (local) void local.server.stop();
 });
 
 // macOS only: without an application menu the standard shortcuts (copy, paste, quit) do nothing in the web pages.
@@ -138,7 +264,25 @@ const known = registry
   .list()
   .sort((a, b) => (b.lastOpenedAt ?? "").localeCompare(a.lastOpenedAt ?? ""));
 const first = known[0];
-if (first && (first.lastOpenedAt || known.length === 1)) windows.openServer(first.id);
-else windows.showLauncher();
+const resumes = Boolean(first && (first.lastOpenedAt || known.length === 1));
+// A local server entry is opened below, when the server answers; opening its address now would show an error page.
+const resumesLocal = resumes && Boolean(local) && first?.kind === "local";
+if (resumes && !resumesLocal && first) windows.openServer(first.id);
+else if (!resumesLocal) windows.showLauncher();
+
+// The local server starts in the background; its window opens when it answers, if it is where the person left off (or is the first run).
+if (local) {
+  const lastWasLocal = first?.kind === "local" && Boolean(first.lastOpenedAt);
+  const fresh = known.length === 0;
+  void local.server.start().then((state) => {
+    const entry = local.entry();
+    if (state.status !== "running" || !entry) {
+      windows.showLauncher();
+      return;
+    }
+    if (lastWasLocal || fresh || !entry.lastOpenedAt)
+      windows.openServer(entry.id, local.openPath());
+  });
+}
 
 console.log("Zetta desktop started.");

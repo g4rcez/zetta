@@ -26,6 +26,12 @@ export default {
       "src/launcher/index.html": "views/launcher/index.html",
       "src/launcher/index.css": "views/launcher/index.css",
       "../web/public/icons/icon-192.png": "views/assets/tray.png",
+      // The server the app runs on this computer (staged by scripts/prepare-resources.ts): built server and its packages, the web app, the
+      // Postgres runtime and the migrations. src/bun/local-server.ts finds them next to the app's code.
+      ".resources/server": "server",
+      ".resources/web": "web",
+      ".resources/pg": "pg",
+      ".resources/db": "db",
     },
     mac: {
       bundleCEF: true,

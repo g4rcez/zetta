@@ -5,11 +5,12 @@
   "scripts": {
     "start": "electrobun dev",
     "dev:hmr": "bun scripts/dev.ts",
-    "build": "electrobun build",
-    "build:stable": "electrobun build --env=stable",
-    "build:canary": "electrobun build --env=canary",
+    "build": "bun scripts/prepare-resources.ts && electrobun build",
+    "build:stable": "bun scripts/prepare-resources.ts && electrobun build --env=stable",
+    "build:canary": "bun scripts/prepare-resources.ts && electrobun build --env=canary",
     "test": "bun test src",
-    "check-types": "electrobun prepare && tsc --noEmit"
+    "check-types": "electrobun prepare && tsc --noEmit",
+    "prepare:resources": "bun scripts/prepare-resources.ts"
   },
   "dependencies": {
     "@zetta/core": "workspace:*"

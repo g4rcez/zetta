@@ -51,6 +51,8 @@ let exit: ReturnType<typeof spyOn>;
 let log: ReturnType<typeof spyOn>;
 
 beforeEach(() => {
+  // These tests are about the launcher, the list and the windows; the server the app runs on this computer has its own tests.
+  process.env.ZETTA_DESKTOP_LOCAL = "off";
   fake.reset();
   log = spyOn(console, "log").mockImplementation(() => {});
   // A second launch ends the process: here it throws, so the entry point stops where it would have.

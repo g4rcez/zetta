@@ -1848,7 +1848,19 @@ suite("group discussions against compose postgres", () => {
       await deleted;
       const reply = store.afterReply(room!, mem.id, last!.content, last!.id);
       // With the room row locked the reply waits for the delete; without it the reply finishes at once and queues its turn.
-      await Promise.race([reply, Bun.sleep(300)]);
+      // No clock: wait until Postgres reports a backend blocked on a lock (the reply), or until the reply has finished (the bug).
+      let finished = false;
+      void reply.then(
+        () => (finished = true),
+        () => (finished = true),
+      );
+      while (!finished) {
+        const blocked = await db.$client.query(
+          "select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' limit 1",
+        );
+        if (blocked.rows.length) break;
+        await new Promise<void>((r) => setImmediate(r));
+      }
       commit();
       await delete_;
       await reply;

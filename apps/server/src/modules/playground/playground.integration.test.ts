@@ -7,7 +7,10 @@ import { Elysia } from "elysia";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess } from "../identity/access";
 import { createPlaygroundRoutes } from "./routes";
+import { emptyResult } from "./run-folder";
+import { hostRunner } from "./runner-host";
 import { createPlayground } from "./service";
+import type { Runner } from "./types";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -39,6 +42,17 @@ const bash = (script: string) => ({
   files: [{ path: "main.sh", content: script }],
 });
 
+/** A script that starts with `#hold` never touches the OS: it stays "running" until it is cancelled, so no test waits on real time. */
+const heldRunner: Runner = (_spec, signal) =>
+  new Promise((resolve) => {
+    if (signal.aborted) return resolve(emptyResult("cancelled", "test"));
+    signal.addEventListener("abort", () => resolve(emptyResult("cancelled", "test")), {
+      once: true,
+    });
+  });
+const hostOrHeld: Runner = (spec, signal) =>
+  spec.files[0]?.content.startsWith("#hold") ? heldRunner(spec, signal) : hostRunner(spec, signal);
+
 suite("playground", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
   const access = createIdentityAccess(
@@ -53,7 +67,10 @@ suite("playground", () => {
     async () => ({ isAdmin: false }),
   );
   const app = new Elysia().use(
-    createPlaygroundRoutes({ access, playground: createPlayground(db) }, [ORIGIN]),
+    createPlaygroundRoutes(
+      { access, playground: createPlayground(db, { runners: { host: hostOrHeld } }) },
+      [ORIGIN],
+    ),
   );
   async function call(as: string, method: string, path: string, body?: unknown) {
     const res = await app.handle(
@@ -171,7 +188,9 @@ suite("playground", () => {
     const slow = await finished(A, (await start(A, id, { timeoutMs: 1000 })).json.run.id);
     expect(slow).toMatchObject({ status: "timeout", exitCode: null });
 
-    const going = await start(A, id, { timeoutMs: 60_000 });
+    const held = (await call(A, "POST", "/api/playgrounds", bash("#hold\n"))).json.playground
+      .id as string;
+    const going = await start(A, held, { timeoutMs: 60_000 });
     expect(
       (await call(A, "POST", `/api/playground-runs/${going.json.run.id}/cancel`)).json,
     ).toEqual({ cancelled: true });
@@ -179,7 +198,7 @@ suite("playground", () => {
   });
 
   test("a person has two runs at once; the third is refused until one ends", async () => {
-    const id = (await call(A, "POST", "/api/playgrounds", bash("sleep 30\n"))).json.playground
+    const id = (await call(A, "POST", "/api/playgrounds", bash("#hold\n"))).json.playground
       .id as string;
     const one = await start(A, id, { timeoutMs: 60_000 });
     const two = await start(A, id, { timeoutMs: 60_000 });

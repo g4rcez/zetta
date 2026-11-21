@@ -148,6 +148,18 @@ suite("a bot plans its work as a task with subtasks", () => {
         script = replies;
         prompts.length = 0;
         await call("POST", `/api/conversations/${c}/messages`, { content });
+        // The POST returns while the bot's rounds still run, and they share `script` and `prompts` with the next test. Wait until the
+        // chat is idle (a state, not a time) so a test never starts on the tail of the one before it.
+        for (
+          let i = 0;
+          i < 400 &&
+          (await chatSvc.isBusy(
+            (await issueBackgroundActor(async () => ({ isAdmin: false }) as never, A))!,
+            c,
+          ));
+          i++
+        )
+          await new Promise<void>((r) => setTimeout(r, 25));
       },
     };
   };
@@ -289,6 +301,7 @@ suite("a bot plans its work as a task with subtasks", () => {
 
   test("a card raised before tasks stopped waiting still runs its task call when it is approved", async () => {
     const { bot, c } = await setup();
+    prompts.length = 0;
     const made = await call("POST", "/api/tasks", { title: "Held by an old card" });
     const boardId = made.json.task.id as string;
     const [card] = await db
@@ -311,6 +324,22 @@ suite("a bot plans its work as a task with subtasks", () => {
     const decided = await call("POST", `/api/proposals/${card!.id}/decision`, { approve: true });
     expect(decided.json).toMatchObject({ status: "approved" });
     expect((await board()).find((t) => t.id === boardId)!.status).toBe("done");
+    // Approving wakes the bot in this chat after the response. Let that turn finish here, or it lands in the next test's `prompts` and
+    // `script` (they are shared). The wait is on a state: the wake prompt arrived and the chat is idle again.
+    for (
+      let i = 0;
+      i < 400 &&
+      !(
+        prompts.some((x) => x.includes("The user approved")) &&
+        !(await chatSvc.isBusy(
+          (await issueBackgroundActor(async () => ({ isAdmin: false }) as never, A))!,
+          c,
+        ))
+      );
+      i++
+    )
+      await new Promise<void>((r) => setTimeout(r, 25));
+    expect(prompts.some((x) => x.includes("The user approved"))).toBe(true);
   });
 
   test("a task with an open step cannot be closed, and the bot is told which", async () => {
@@ -714,6 +743,15 @@ suite("a bot plans its work as a task with subtasks", () => {
           fence("task", { action: "update", id: p.id, progress }),
         ].join("\n");
       };
+      // The turn that just ended is still closing: its end puts the task on "quiet" (next check in the future) and frees the chat. Wait for
+      // that state, not for a time, or the quiet write can land after the due time below and push the check back.
+      const settled = (id: string) =>
+        waitFor(
+          async () =>
+            !(await chatSvc.isBusy((await actor())!, c)) &&
+            +(await fresh(id)).task.nextCheckAt! > Date.now() + QUIET_MS - 10_000,
+        );
+      await settled(parent.id);
       script = [doStep(0, "Note A written."), "Wrote note A."];
       prompts.length = 0;
       await db.$client.query(
@@ -737,6 +775,7 @@ suite("a bot plans its work as a task with subtasks", () => {
       expect(labels.map((r) => r.content)).toContain("↻ Continuing: Two notes");
       // Second check finishes the work; the done check agrees (fake check says met), so the bot may close the task.
       verdict = '{"met":true,"reason":""}';
+      await settled(parent.id);
       script = [
         async () =>
           [

@@ -648,6 +648,11 @@ export type DockerConfig = {
   /** Unset means Docker. Set from the binary when the config is built (see engineOf). */
   engine?: Engine;
 };
+/** The live-output wrapper is a `.sh` file: it runs on a POSIX host, or inside the container whatever the host is. */
+export function supportsLiveShell(platform: NodeJS.Platform, inDocker: boolean): boolean {
+  return inDocker || platform !== "win32";
+}
+
 /** `ZETTA_HARNESS_RUNTIME=docker` runs every harness turn in a throwaway, hardened container instead of on the host. */
 export function dockerConfig(env: NodeJS.ProcessEnv = process.env): DockerConfig | undefined {
   if (env.ZETTA_HARNESS_RUNTIME !== "docker") return undefined;
@@ -1005,10 +1010,11 @@ export const streamCli: StreamCli = async function* ({
     )
       pluginDir = await writePluginDir(profile.files);
     // Claude Code only: the wrapper copies what its commands print into this folder while they run, so the chat can show it live. The
-    // folder is removed with the run; nothing is stored. A prefix the caller set is left alone. Not on Windows: the wrapper is a .sh file.
+    // folder is removed with the run; nothing is stored. A prefix the caller set is left alone. Not on a Windows host without Docker:
+    // the wrapper is a .sh file. In Docker it runs inside the container, so a Windows host keeps live output.
     if (
       harness === "claude-code" &&
-      process.platform !== "win32" &&
+      supportsLiveShell(process.platform, !!docker) &&
       !extraEnv?.CLAUDE_CODE_SHELL_PREFIX
     ) {
       try {

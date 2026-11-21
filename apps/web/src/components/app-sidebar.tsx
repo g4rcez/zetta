@@ -10,6 +10,7 @@ import {
   PauseIcon,
   PlayIcon,
   SidebarSimpleIcon,
+  SunIcon,
   UserIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -620,7 +621,12 @@ export function AppSidebar({
           <RailHint
             collapsed={collapsed}
             label="Theme"
-            icon={<MoonIcon className="size-4" aria-hidden="true" />}
+            icon={
+              <span className="relative grid size-4 place-items-center" aria-hidden="true">
+                <SunIcon className="size-4 dark:hidden" />
+                <MoonIcon className="hidden size-4 dark:block" />
+              </span>
+            }
           >
             <div className={cn(!collapsed && "min-w-0 flex-1")}>
               <ModeToggle rail={rail} />

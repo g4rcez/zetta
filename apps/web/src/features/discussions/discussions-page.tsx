@@ -63,6 +63,7 @@ import { pollEvery } from "@/lib/query-policy";
 import { chatQueries } from "../chat/chat-queries";
 import { useRooms, useSidebarData, useTeams } from "../chat/sidebar-data";
 import { BotAvatar } from "@/components/bot-avatar";
+import { StatusHint } from "@/components/status-hint";
 import { BotsContext } from "@/components/bot-identity";
 import { Drawer } from "@/components/drawer";
 import { ComputerActivity } from "../computer/computer-activity";
@@ -215,12 +216,14 @@ function PageHeader({
             to="/teams/$teamId/settings"
             params={{ teamId: team.teamId }}
             search={{ room: team.roomId }}
-            aria-label={`${title} settings`}
+            aria-label={`${title} team settings`}
             className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-0.5 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
           >
             {icon}
             <h2 className="truncate font-heading text-base font-medium leading-tight">{title}</h2>
-            <UsersIcon aria-label="Team" className="size-3.5 shrink-0 text-muted-foreground" />
+            <StatusHint label="Team">
+              <UsersIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            </StatusHint>
             <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
           </Link>
         ) : (

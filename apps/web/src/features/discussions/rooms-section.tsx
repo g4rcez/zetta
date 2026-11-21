@@ -1,4 +1,5 @@
 import { ActionHint } from "@/components/action-hint";
+import { StatusHint } from "@/components/status-hint";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   ArrowDownIcon,
@@ -60,35 +61,27 @@ const IDLE = "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-s
 function Signal({ signal }: { signal: RoomSignal }) {
   if (signal === "needs-you")
     return (
-      <span
-        role="img"
-        aria-label="Needs you"
-        className="size-2 shrink-0 rounded-full bg-attention"
-      />
+      <StatusHint label="Needs you">
+        <span className="size-2 shrink-0 rounded-full bg-attention" />
+      </StatusHint>
     );
   if (signal === "working")
     return (
-      <CircleNotchIcon
-        role="img"
-        aria-label="A bot is working"
-        className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin"
-      />
+      <StatusHint label="A bot is working">
+        <CircleNotchIcon className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin" />
+      </StatusHint>
     );
   if (signal === "queued")
     return (
-      <HourglassIcon
-        role="img"
-        aria-label="Waiting for a turn"
-        className="size-3.5 shrink-0 text-muted-foreground"
-      />
+      <StatusHint label="Waiting for a turn">
+        <HourglassIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      </StatusHint>
     );
   if (signal === "paused")
     return (
-      <PauseIcon
-        role="img"
-        aria-label="Paused"
-        className="size-3.5 shrink-0 text-muted-foreground"
-      />
+      <StatusHint label="Paused">
+        <PauseIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      </StatusHint>
     );
   return null;
 }

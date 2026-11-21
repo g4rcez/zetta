@@ -12,6 +12,7 @@ import { pollEvery } from "@/lib/query-policy";
 import { useState } from "react";
 
 import { cn } from "@zetta/ui/lib/utils";
+import { StatusHint } from "@/components/status-hint";
 
 import { useRoutineAttention, useRoutineUnreadChats } from "../attention/summary";
 import { call } from "../chat/chat-client";
@@ -64,38 +65,52 @@ function useRoutineRows() {
 function StatusMark({ status, needsYou }: { status: Status; needsYou: boolean }) {
   // A decision waiting in Inbox outlives the run status (a recovery run resets it), so it keeps the warning, except while the run spins.
   if (needsYou && status !== "running" && !NEEDS_YOU.includes(status))
-    return <WarningIcon role="img" aria-label="Needs you" className={cn(mark, "text-attention")} />;
+    return (
+      <StatusHint label="Needs you">
+        <WarningIcon className={cn(mark, "text-attention")} />
+      </StatusHint>
+    );
   switch (status) {
     case "running":
       return (
-        <CircleNotchIcon
-          role="img"
-          aria-label="Running"
-          className={cn(mark, "motion-safe:animate-spin")}
-        />
+        <StatusHint label="Running">
+          <CircleNotchIcon className={cn(mark, "motion-safe:animate-spin")} />
+        </StatusHint>
       );
     case "failed":
     case "interrupted":
     case "blocked":
       return (
-        <WarningIcon
-          role="img"
-          aria-label={
+        <StatusHint
+          label={
             status === "failed"
               ? "Last run failed"
               : status === "blocked"
                 ? "Blocked"
                 : "Interrupted"
           }
-          className={cn(mark, "text-attention")}
-        />
+        >
+          <WarningIcon className={cn(mark, "text-attention")} />
+        </StatusHint>
       );
     case "paused":
-      return <PauseIcon role="img" aria-label="Paused" className={mark} />;
+      return (
+        <StatusHint label="Paused">
+          <PauseIcon className={mark} />
+        </StatusHint>
+      );
     case "completed":
-      return <CheckIcon role="img" aria-label="Completed" className={mark} />;
+      return (
+        <StatusHint label="Completed">
+          <CheckIcon className={mark} />
+        </StatusHint>
+      );
     default:
-      return <ClockIcon role="img" aria-label="Scheduled" className={mark} />;
+      return (
+        <StatusHint label="Scheduled">
+          <ClockIcon className={mark} />
+        </StatusHint>
+      );
   }
 }
 
@@ -115,7 +130,10 @@ function RoutineRow({
   const body = (
     <>
       <StatusMark status={status} needsYou={needsYou} />
-      <span className={cn("min-w-0 flex-1 truncate", (current || unread) && "font-medium")}>
+      <span
+        title={r.conversationId ? r.title : `${r.title} (no runs yet)`}
+        className={cn("min-w-0 flex-1 truncate", (current || unread) && "font-medium")}
+      >
         {r.title}
       </span>
       {unread && (
@@ -136,20 +154,13 @@ function RoutineRow({
           search={{}}
           data-chat-row
           aria-current={current ? "page" : undefined}
-          title={r.title}
           className={cls}
         >
           {body}
         </Link>
       ) : (
         // No run yet, so no chat yet: the row opens the routine itself.
-        <Link
-          to="/routines"
-          search={{ routine: r.id }}
-          data-chat-row
-          title={`${r.title} (no runs yet)`}
-          className={cls}
-        >
+        <Link to="/routines" search={{ routine: r.id }} data-chat-row className={cls}>
           {body}
         </Link>
       )}

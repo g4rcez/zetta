@@ -22,6 +22,7 @@ import {
   liveInputOn,
   runCli,
   streamCli,
+  supportsLiveShell,
   CLAUDE_PROGRESS_NOTE,
   SYSTEM_FLAG_MAX_BYTES,
 } from "./harness";
@@ -819,4 +820,17 @@ import { test as osTest, expect as osExpect } from "bun:test";
 osTest("killGroup is safe for missing processes on every platform branch", () => {
   osExpect(() => killGroup(2 ** 22 + 12345, "linux")).not.toThrow();
   osExpect(() => killGroup(2 ** 22 + 12345, "win32")).not.toThrow(); // taskkill is absent here; the failure must be swallowed
+});
+
+describe("supportsLiveShell", () => {
+  test("a POSIX host runs the live-output wrapper", () => {
+    expect(supportsLiveShell("darwin", false)).toBe(true);
+    expect(supportsLiveShell("linux", false)).toBe(true);
+  });
+  test("a Windows host without Docker does not set CLAUDE_CODE_SHELL_PREFIX", () => {
+    expect(supportsLiveShell("win32", false)).toBe(false);
+  });
+  test("a Windows host that runs the bot in Docker keeps it, the .sh runs in the container", () => {
+    expect(supportsLiveShell("win32", true)).toBe(true);
+  });
 });

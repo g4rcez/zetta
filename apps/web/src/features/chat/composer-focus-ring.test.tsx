@@ -39,6 +39,8 @@ test("composer icon buttons take keyboard focus and carry the 2px --ring focus-v
     const cls = b.className.split(/\s+/);
     // :focus-visible only, so a mouse click shows no ring; the colour is the --ring token.
     expect(cls).toContain("focus-visible:outline-2");
+    // `outline-none` (the base) sets the outline style to none; without `outline-solid` the 2px width would draw nothing.
+    expect(cls).toContain("focus-visible:outline-solid");
     expect(cls).toContain("focus-visible:outline-ring");
     expect(cls).toContain("focus-visible:outline-offset-2");
     expect(cls).not.toContain("outline-none!");

@@ -20,6 +20,8 @@ The load balancer sends these requests to the worker (`apps/server/src/worker-on
 - `POST /api/proposals/:id/decision` (an approval can restart a stopped turn), `/api/bots/:id/onboarding/*`.
 - Anything that runs a CLI, model or container in the request: `POST /api/(workflows|routines)/:id/run`, `POST /api/bots/interview`, `POST /api/memory-assist` (also its old name `/api/wiki-assist`), `/api/harnesses`, `/api/decisions/*`.
 - Computers and VNC: `/api/computer/*` (including the WebSocket).
+- Spoken calls: `POST /api/voice/ticket` and the WebSocket `GET /api/voice/socket` (the one-time ticket is in the memory of the process that serves the socket, and the call runs the bot's turn). `GET /api/voice/capabilities` can be served by any `api`.
+- Phone calls: the provider's webhook `POST /api/phone/webhook`, its audio socket `GET /api/phone/stream` and the person's `POST /api/phone/calls/:id/hangup`, because the call and the bot's turn live in one process. Installation keys (`PUT /api/connections/(transcribe|speech|mail|phone)-key`) are sealed to one process's key and go to the worker too.
 - `/api/inbound/*` (plugin hooks).
 - `POST /api/routines/hook/:triggerId` (a routine webhook starts the run in the worker).
 - Sealed credentials and plugin sign-in: `GET /api/connections/transport-key`, `POST /api/connections`, `POST /api/plugins`, `PUT /api/plugins/:id/config`, `/api/plugins/:id/(test|connect|disconnect|callback)`. The key a browser seals a secret to is generated in the memory of one process, and a sealed body that reaches another instance is refused with 409.

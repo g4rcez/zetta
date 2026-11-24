@@ -41,7 +41,7 @@ _Demo video (62 s): mention two bots in a chat with your chief, read their answe
 
 _Demo video (1 min 54 s): the Zetta dashboard, not only the computer's screen. A bot reads example.com, follows a link and opens the GitHub sign-in page on its own Linux computer. The chat shows a live card with the screen and each step; **Watch live** opens the full console. The bot does not type passwords, so it asks a person to **Take over**: the person types a dummy username and password into the sign-in page (they go to the computer, not into the chat) and **hands back**, and the bot carries on. Then Studio > Computer switches the computer's driver from **Cua** to **agent-desktop** and the same steps run again. The bot replies are scripted by a stand-in `claude` command, so no model is called. Waits (a computer starting, a bot working) are shortened. Select the image to open the full video (mp4)._
 
-Pick the driver per computer in Studio > Computer; the operator offers it with `ZETTA_VM_DRIVERS=cua,agent-desktop` ([setup](docs/operations/runtime-modes.md#desktop-computers-vms)). To record it yourself, build `docker/desktop`, run `docs/demo/computer/stack.sh up` (its own database, server and web app on other ports, with fake data), `bun docs/demo/computer/record.ts browse`, and then `docs/demo/build-vm-demo.ts` on the result (it needs `ffmpeg` and ImageMagick; the usage is in its header).
+Pick the driver per computer in Studio > Computer; an administrator offers it in Studio > Server settings (`vmDrivers`) ([setup](docs/operations/runtime-modes.md#desktop-computers-vms)). To record it yourself, build `docker/desktop`, run `docs/demo/computer/stack.sh up` (its own database, server and web app on other ports, with fake data), `bun docs/demo/computer/record.ts browse`, and then `docs/demo/build-vm-demo.ts` on the result (it needs `ffmpeg` and ImageMagick; the usage is in its header).
 
 ### Two computers: Debian and Ubuntu
 
@@ -49,7 +49,7 @@ Pick the driver per computer in Studio > Computer; the operator offers it with `
 
 _Demo video (1 min 12 s): in Studio > Computer a second computer (Ubuntu 24.04, driven by **agent-desktop**) is created beside the default one (Debian 13, driven by **Cua**). One bot is then asked in chat to open a terminal on each and run `uname -a` and `grep PRETTY_NAME /etc/os-release`; the chat shows a live card per computer, and **Watch live** opens each terminal. Both are containers, so `uname -a` prints the same host kernel on both; the os-release line tells them apart. The bot replies are scripted (no model call). Select the image to open the full video (mp4)._
 
-A new computer is a name, a **system** and a **driver**, chosen in Studio > Computer. The list shows Linux (Debian 13, Ubuntu 24.04), Windows and macOS: the Linux ones work, and Windows and macOS say why they cannot (a Linux container cannot run them; macOS would only be the server's own desktop). The Ubuntu computer is a desktop with a terminal and no browser, because Ubuntu ships Chromium only as a snap, which does not run in a container. The operator turns it on with `ZETTA_VM_OS=debian,ubuntu` and builds its image ([setup](docs/operations/runtime-modes.md#desktop-computers-vms)). To record it yourself, run `docs/demo/computer/stack.sh up` (with `ZETTA_VM_IMAGE_UBUNTU` naming the Ubuntu image) and `bun docs/demo/computer/record.ts machines`, then `docs/demo/build-vm-demo.ts <dir> machines`.
+A new computer is a name, a **system** and a **driver**, chosen in Studio > Computer. The list shows Linux (Debian 13, Ubuntu 24.04), Windows and macOS: the Linux ones work, and Windows and macOS say why they cannot (a Linux container cannot run them; macOS would only be the server's own desktop). The Ubuntu computer is a desktop with a terminal and no browser, because Ubuntu ships Chromium only as a snap, which does not run in a container. An administrator turns it on in Studio > Server settings (`vmOs`) and builds its image ([setup](docs/operations/runtime-modes.md#desktop-computers-vms)). To record it yourself, run `docs/demo/computer/stack.sh up` (with `ZETTA_VM_IMAGE_UBUNTU` naming the Ubuntu image) and `bun docs/demo/computer/record.ts machines`, then `docs/demo/build-vm-demo.ts <dir> machines`.
 
 ### The Chief builds a team
 
@@ -176,7 +176,7 @@ The integration vision includes:
 - Slack and Discord
 - Sentry, Cloudflare and Linear
 - Home Assistant and Pi-hole
-- Bitwarden and 1Password
+- Bitwarden, 1Password and OpenBao
 
 Use supported MCP servers or installed CLI integrations, with a focused adapter per integration where needed. Verify compatibility, purpose, permissions and OAuth scopes. Listing an app here does not claim that a connector exists or make every bespoke connector a v1 release requirement. The marketplace remains later work; connected-app configuration is in v1.
 

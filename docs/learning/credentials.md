@@ -214,6 +214,10 @@ Be clear about these limits.
 - We checked that the tests can fail: removing the owner from the wrap AAD fails a unit test, and skipping the backfill fails the database test.
 - The database tests only run when `ZETTA_CHAT_TEST_DATABASE_URL` points to a database named `zetta_test`. Use a disposable database.
 
+## Credentials that stay in a password manager
+
+Zetta's connections store (above) does not change when a user prefers to keep logins in a password manager. The `1password`, `bitwarden` and `openbao` plugins use the vault only as a source: their connection settings are sealed like any plugin config, the user shares chosen items, and the server types a value into a matching https page without the model ever seeing it. OpenBao's HTTP API is compatible with HashiCorp Vault's, so the `openbao` plugin also reaches a Vault server. The decision record is [credential-vaults](../decisions/credential-vaults.md).
+
 ## Next steps
 
 1. Deployment-key rotation (needs the retired key id column described above).

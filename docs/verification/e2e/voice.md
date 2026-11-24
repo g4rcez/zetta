@@ -12,6 +12,6 @@ Script: `scripts/e2e/voice.ts`. Needs: macOS, network for the first model downlo
 
 ## Notes
 
-- Portuguese came back about half right on synthetic voices with the small model: usable to get the idea of a voice note, not a transcript to rely on. A larger model can be set with ZETTA_TRANSCRIBE_MODEL (not tried here).
+- Portuguese came back about half right on synthetic voices with the small model: usable to get the idea of a voice note, not a transcript to rely on. A larger model can be set in Studio > Voice (not tried here).
 - The clip is synthetic speech from the machine's own voice, so accents, noise and a real microphone are not covered.
 - The browser microphone path (recording and resampling) is checked in a real browser with a fake input device, not here.

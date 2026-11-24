@@ -288,18 +288,24 @@ A theme passes when all these pairs pass. The current values pass. The lowest te
 
 ### Sidebar structure
 
+The sidebar has two layouts (`components/sidebar-layout.ts`): **workspace** (a team: more than one member, or chosen by hand) and **personal** (a solo account). This is the workspace layout. Everything is in view and grouped by purpose; no group opens or closes, so every destination is one click away. The personal layout keeps its grid of five daily pages and its "More" group.
+
 From top to bottom:
 
-1. **Top row.** The Zetta mark (home), then search (`⌘K`, the command palette) and new chat with the open bot (or the chief).
-2. **Fixed block.** Inbox (the attention model: needs input, blocked, new results; amber count), Tasks (the kanban), Routines (unread runs count).
-3. **Filter.** One field that filters rooms, bots and chats.
-4. **Rooms.** Group discussions where several bots and people share one conversation ("rooms" is the product's word for them). Rows start with `#`; the Chief's help and permission rooms sit apart under "Bot issues".
-5. **Bots.** The heading has a clock toggle that lists every chat by time instead of by bot, and a `+` menu (New chat, New bot, New folder, New room). Favorites come first, then the chief, pinned first and not movable, then the other bots in the user's order, grouped by folder when the user has folders. Each bot row expands to "New chat" and its five most recent chats, then "Show N more". Hover or focus shows "New chat" (`+`) and a menu (`⋯`: New chat, Move up, Move down, Settings) on the row.
-6. **Library.** What bots know and can use: Teams, Organization (the company chart at `/organization`: who leads what and who each person and bot reports to), Memory (the explorer at `/memory`, one page per item at `/memory/<slug>`; the old `/wiki` addresses redirect), Skills, Plugins, Apps, Artifacts. Open by default.
-7. **Advanced.** Building and oversight tools: Studio, Agenda, Playground, Computer. Closed by default; open while one of its pages is shown. Hidden in Simple navigation (`user_preference.nav_mode: simple | full`, Preferences > Display); new installs start Simple, existing accounts stay Full. Home is the Zetta mark at the top, not a row.
-8. **Footer.** Theme, Collapse, and the account menu (name, email, sign out).
+1. **Top row.** The Zetta mark (the Overview page, named "Zetta overview"), the layout switch ("Show the personal sidebar"), search (`⌘K`, the command palette) and new chat with the open bot (or the chief).
+2. **Main.** A `nav` named "Main" with the five daily pages: Inbox (the attention model: needs input, blocked, new results; amber count), Tasks (the kanban), Projects, Routines (unread runs count) and Calendar. They are not hidden by the filter.
+3. **Filter.** One field, "Filter the sidebar". It matches bot names, room names, the routines shown and the destination names below; a section with no match is hidden; a section whose heading matches shows all its links. A polite live region says "N matches". The text is local and transient (not in the URL).
+4. **Workspace.** A `nav` named "Workspace" that scrolls (the footer stays in place). Its sections are static headings (`h3`), each with a list named by its heading. Order:
+   - **Bots.** The chief, the pinned bots (or the sidebar's own pick), capped at five, and "All bots (N)". `+` creates a chat, bot or room; the checklist button chooses the pinned bots.
+   - **Rooms.** `#` rows in the user's order (drag, or `Alt+↑`/`Alt+↓`), "All rooms", and `+`. **Bot issues** (the Chief's help and permission rooms) appears under it only when there are some.
+   - **Routines needing you.** Only the routines that failed, are blocked or wait for a person; nothing when none. The page itself is the Routines link in Main.
+   - **People:** Teams, Organization, People.
+   - **Knowledge:** Memory, Skills, Lessons, Artifacts.
+   - **Tools:** Plugins, Apps, Mail.
+   - **Build:** Studio, Playground, Computer. Hidden in Simple navigation (`user_preference.nav_mode: simple | full`, Preferences > Display).
+5. **Footer.** Theme, pause agents, collapse, the update mark and the account menu.
 
-A group heading toggles its group; the open or closed state is kept in the browser.
+Each destination appears once (Bots is the section above, so there is no Bots link). Keyboard: Tab goes through the header, the five links, the filter, the rows and the footer. In the Workspace nav `↑`, `↓`, `Home` and `End` move between rows (bots, rooms, routines and destinations). Section names are one-line changes in `PURPOSES` (`components/app-sidebar.tsx`); the research plan in `docs/research/sidebar-navigation.md` tests them.
 
 ### Bot order
 
@@ -311,11 +317,12 @@ A group heading toggles its group; the open or closed state is kept in the brows
 
 Motion uses `motion` (`motion/react`). It confirms a cause; it never decorates.
 
-- **Durations:** 150ms for hover and press feedback (CSS, the Tailwind default), 160ms for expand and collapse, 200ms for panels and sheets. Exits are faster than entries. Nothing that answers an input takes more than 200ms.
+- **Durations:** 150ms for hover and press feedback (`--duration-fast`), 180ms for a layout swap (`--duration-base`), 120ms for a group fading in, 200ms for panels and sheets. Exits are faster than entries. Nothing that answers an input takes more than 200ms.
+- **Tokens:** `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`, `--duration-fast`, `--duration-base` live in `apps/web/src/index.css`; the sidebar classes (`.sidebar-swap`, `.nav-reveal`) use them.
 - **Reorder:** a spring (stiffness about 600, damping about 40) on `layout`. The dragged row lifts with a Float shadow while it is dragged.
-- **Expand / collapse:** the chats of a bot enter with opacity and a 4px `y` shift; the rows below move with `layout`. Do not animate `height`.
+- **Expand / collapse:** a group that opens (the personal "More") appears at once and its rows fade in over 120ms; closing is instant. Do not animate `height`. The workspace sidebar has no groups to open.
 - **Only `transform` and `opacity`.** Never animate width, height, top, left, margin or padding.
-- **Reduced motion:** with `prefers-reduced-motion` (`useReducedMotion`), layout changes are instant and only opacity fades remain.
+- **Reduced motion:** with `prefers-reduced-motion`, layout changes are instant and only opacity fades remain; the sidebar's fade-in, loading pulse and theme icon swap do nothing at all (`motion-reduce:` variants and a media query).
 
 ## Elevation & Depth
 

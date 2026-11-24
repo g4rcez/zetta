@@ -16,12 +16,22 @@ Example service to add to your own compose file (commented on purpose):
 ```
 
 1. Start WAHA, then install **WhatsApp (WAHA)** in Studio > Plugins with base URL `http://127.0.0.1:3010`, the API key and session `default`.
-2. A localhost/private WAHA is blocked by the same SSRF policy as MCP servers; the administrator must enable private networks (`allowPrivate`).
+2. A localhost/private WAHA that **a person types** in the plugin is blocked by the same SSRF policy as MCP servers; the administrator must turn on **Let the server call private network addresses** in Studio > Server settings (the setting `allowPrivateNetwork`; it applies at once, no restart).
 3. Use **Pair** on the installed plugin and scan the QR code in WhatsApp > Linked devices.
 4. Sending is off. Set `Allow sending` to `yes` (optionally with a send allowlist) to let bots message; sends are capped at 1000 characters, 5/minute and 30/hour.
 5. Incoming message text is untrusted data and is sanitised and truncated before bots see it.
 
-> A WAHA container on localhost or a private network is reachable only when the server runs with `ZETTA_ALLOW_PRIVATE_NETWORK=1` (it also relaxes the same check for MCP servers).
+> A WAHA container a person types in the plugin on localhost or a private network is reachable only while the setting `allowPrivateNetwork` is on (it also relaxes the same check for MCP servers). The administrator's own shared server (below) is not checked against it.
+
+## One WAHA server for everybody
+
+The administrator can set up the WAHA server once so that people only scan a QR code and type no address or key. In **Studio > Plugins > WhatsApp > Server for everyone**:
+
+- **Server address**: stored as the setting `wahaUrl`. Empty means the built-in address, `http://127.0.0.1:3010`. An upgrader's `ZETTA_WAHA_URL` is imported once at the first start.
+- **Server key** (`X-Api-Key`): sealed in the browser, stored encrypted as an administrator's connection, never shown again. The key is **not** imported from `ZETTA_WAHA_API_KEY`: a secret needs an owning administrator, so the server only logs a warning while that variable is still set. Save the key in Studio, then remove the variable. The key is shared by everyone who uses WhatsApp here without their own server, so use a key made for this.
+- **Test** asks the server for its list of sessions (`GET /api/sessions`, from the WAHA sessions documentation) with the saved address and key, and says whether it answered and accepted the key.
+
+Which server a call goes to: the person's own address and key in the plugin settings come first; then the administrator's address and key; then the built-in address with no key. The administrator's key is only ever sent to the administrator's address (or the built-in one), never to a server a person typed. On this shared server each person gets a session named after their own user id. A change in Studio applies at the next call, with no restart. These settings are for people only: the Chief and other bots cannot read or change the key (see `docs/decisions/bot-parity.md`).
 
 ## Instant incoming messages (push)
 

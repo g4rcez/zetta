@@ -17,7 +17,7 @@ From the client feedback plan (`plans/feedback.md`, items F and M).
 - **Version** is the commit and the commit date, stamped by `install.sh` into the server image (`ZETTA_BUILD_COMMIT`, `ZETTA_BUILD_DATE`). A source checkout asks git at start; anything else is `unknown`. `buildInfo()` is a pure helper.
 - **Check**: one plain `GET` of the landing site's `changelog.json` a day, by the process that runs work. No identifier. The newest day in the list is compared with the day of the build: `current | behind | unknown`. The result lives in memory (no table fits without a migration), so a restart checks again.
 - **Endpoint**: `GET /api/installation/version`, for a signed-in person. `/api/meta` is untouched and has no version.
-- **Switch**: `installation_settings.update_check` (`on | off`), in Studio > Decisions and the installation form the Chief opens; `ZETTA_UPDATE_CHECK=off` of the operator wins.
+- **Switch**: `installation_settings.update_check` (`on | off`), in Studio > Server settings and the installation form the Chief opens; `ZETTA_UPDATE_CHECK=off` of the operator wins.
 - **Card**: one `update_available` Catch up card for the administrator, one at a time, closed when the build is current or the check is turned off. Dismissed for a version, it does not come back for that version.
 - Operator notes: `docs/operations/upgrade.md`.
 

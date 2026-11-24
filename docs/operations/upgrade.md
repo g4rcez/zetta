@@ -48,10 +48,10 @@ One plain `GET` of that address. It has no body, no cookies, no query string and
 
 ## How to turn it off
 
-- **Administrator:** Studio > Decisions > **Check for updates**, or ask the Chief to open the installation settings. Off sends nothing, hides the mark and closes the card.
+- **Administrator:** Studio > Server settings > **Check for updates**, or ask the Chief to open the installation settings. Off sends nothing, hides the mark and closes the card.
 - **Operator:** set `ZETTA_UPDATE_CHECK=off` in `apps/server/.env`. It wins over the setting, and Studio says so.
 
-To read the list from another address (a mirror, for example), set `ZETTA_UPDATE_FEED` to an `https://` address with the same JSON shape. It must not be on a private network unless `ZETTA_ALLOW_PRIVATE_NETWORK=1` is set, as for every other address an administrator types.
+To read the list from another address (a mirror, for example), set `ZETTA_UPDATE_FEED` to an `https://` address with the same JSON shape. It must not be on a private network unless the setting `allowPrivateNetwork` is on (Studio > Server settings), as for every other address an administrator types.
 
 ## Not included
 

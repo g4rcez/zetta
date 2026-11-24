@@ -11,4 +11,4 @@ Script: `scripts/e2e/light-run-compare.ts`. Needs: the Claude CLI installed and 
 
 ## Notes
 
-- Switch the default of ZETTA_LIGHT_RUNS to on only when every check here is green on this machine and on a second one.
+- Switch the default of the setting lightRuns to on only when every check here is green on this machine and on a second one.

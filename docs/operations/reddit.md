@@ -2,7 +2,7 @@
 
 The `reddit` plugin lets bots read your Reddit account (feed, saved, upvoted, your posts and comments, inbox) and browse or search Reddit. If you allow it, bots can also post, comment, vote, edit, save, join subreddits and send messages as you. It uses Reddit's own [OAuth2](https://github.com/reddit-archive/reddit/wiki/OAuth2) flow and the Data API (`oauth.reddit.com`), with **your own Reddit app**. There is no MCP server and no server-wide key.
 
-1. On Reddit open [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) > _create another app_, pick **web app**, and set the redirect uri to `<ZETTA_SERVER_URL>/api/plugins/reddit/callback` (override the base with `REDDIT_OAUTH_REDIRECT_BASE`). Reddit may have to approve new Data API apps before they work.
+1. On Reddit open [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) > _create another app_, pick **web app**, and set the redirect uri to `<ZETTA_SERVER_URL>/api/plugins/reddit/callback` (the base is `ZETTA_OAUTH_REDIRECT_BASE` when it is set, else `ZETTA_SERVER_URL`; the old `REDDIT_OAUTH_REDIRECT_BASE` is gone). Reddit may have to approve new Data API apps before they work.
 2. Studio > Plugins > **Reddit** > Install. Paste the app's client id (the string under its name) and its secret. Both are stored encrypted for your account. Change them later under **Settings**, which disconnects the account.
 3. On the installed card, tick what bots may do, choose the switches, and press **Connect with Reddit**. Pressing **Update permissions** later only goes back to Reddit when you add a permission.
 4. Under **Bots**, enable the plugin for the bots that may use it.

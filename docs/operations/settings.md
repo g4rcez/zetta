@@ -106,35 +106,11 @@ Optional · not secret
 
 Extra root certificate Bun trusts, for a local CA such as mkcert's (`bun run certs` copies it to .certs/rootCA.pem), when the server calls an HTTPS service signed by it. Bun reads it only at process start: `bun dev` passes it from here, other launchers must export it.
 
-### `ZETTA_WAHA_URL`, `ZETTA_WAHA_API_KEY`
-
-Optional · some are secret
-
-WhatsApp (WAHA) server that users pair with a QR code. Default URL: http://127.0.0.1:3010. Key: the container's WAHA_API_KEY.
-
-### `ZETTA_TRANSCRIBE_API_KEY`
-
-Optional · secret: kept encrypted or out of logs, never shown
-
-Speech to text (modules/transcribe). The provider, model and language are chosen in Studio > Decisions. Key: an administrator saves it there (sealed, stored encrypted); this variable is the operator's own, used only when no key was saved. ZETTA_TRANSCRIBE=off turns speech to text off.
-
-### `ZETTA_SPEECH_API_KEY`
-
-Optional · secret: kept encrypted or out of logs, never shown
-
-Speech out (text to speech): the provider, model and voice are chosen in Studio. Key: an administrator saves it there (sealed, stored encrypted); this variable is the operator's own, used only when no key was saved. The `browser` provider needs no key.
-
 ### `ZETTA_DB_POOL_MAX`
 
 Optional · not secret
 
 Max connections in the app's Postgres pool (default 20). Keep the sum over all server instances below Postgres's max_connections.
-
-### `ZETTA_ALLOW_PRIVATE_NETWORK`
-
-Optional · not secret
-
-Set to 1 to let the server call addresses on this computer or on your network: a speech server, a WhatsApp (WAHA) server or an update feed on the LAN. Off by default, because anyone who can enter an address in a plugin could otherwise point the server at your network.
 
 ### `ZETTA_BUILD_COMMIT`, `ZETTA_BUILD_DATE`
 
@@ -146,7 +122,7 @@ Which version this server is: the commit it was built from and that commit's dat
 
 Optional · not secret
 
-The daily "newer version" check (docs/operations/upgrade.md). ZETTA_UPDATE_CHECK=off turns it off for the whole server and wins over the setting in Studio > Decisions. ZETTA_UPDATE_FEED replaces the changelog address (https; a private network needs ZETTA_ALLOW_PRIVATE_NETWORK=1).
+The daily "newer version" check (docs/operations/upgrade.md). ZETTA_UPDATE_CHECK=off turns it off for the whole server and wins over the setting in Studio > Server settings. ZETTA_UPDATE_FEED replaces the changelog address (https; a private network needs the setting allowPrivateNetwork).
 
 ### `ZETTA_DESKTOP_RUNTIME`
 
@@ -154,17 +130,11 @@ Optional · not secret
 
 Per-user Linux desktops ("VMs"): `docker` runs docker/desktop per VM.
 
-### `ZETTA_VM_DRIVERS`
+### `ZETTA_VM_IMAGE_UBUNTU`
 
 Optional · not secret
 
-Drivers a person may pick for a desktop VM, comma separated (default: cua). `agent-desktop` is the other one (it ships in the same image).
-
-### `ZETTA_VM_OS`, `ZETTA_VM_IMAGE_UBUNTU`
-
-Optional · not secret
-
-Systems a person may pick for a new desktop VM, comma separated (default: debian). `ubuntu` is a desktop with a terminal and no browser; its image must be built (docker/desktop, see its Dockerfile) and is named by ZETTA_VM_IMAGE_UBUNTU (default zetta-desktop-ubuntu:latest).
+The image of an Ubuntu desktop (docker/desktop, see its Dockerfile; it must be built before Ubuntu computers can be offered). Default: zetta-desktop-ubuntu:latest.
 
 ### `ZETTA_VM_IMAGE`
 
@@ -178,17 +148,17 @@ Optional · not secret
 
 Container CLI for VMs (default docker); e.g. /opt/podman/bin/podman.
 
-### `ZETTA_AGENT_BROWSER_BIN`, `ZETTA_VM_MAX_PER_USER`, `ZETTA_VM_MAX_RUNNING_PER_USER`, `ZETTA_VM_MAX_RUNNING`
+### `ZETTA_AGENT_BROWSER_BIN`
 
-Optional · some are secret
+Optional · secret: kept encrypted or out of logs, never shown
 
 Path to the agent-browser binary that drives host-mode browser sessions. Default: node_modules/.bin/agent-browser, then PATH. Needed when the server runs as a compiled binary. Browser containers (ZETTA_BROWSER_RUNTIME=docker) have no network of their own: they reach the internet only through the server's egress proxy.
 
-### `ZETTA_CODE_ROOT`, `ZETTA_CODE_ACCESS`
+### `ZETTA_CODE_ROOT`
 
 Optional · not secret
 
-Code access for bots: where each user's persistent code directory lives (default ~/.zetta/code), and `off` to disable code access for every bot. Docker harness runs mount the code directory at /work. Bot runs have no time limit; only Stop ends them.
+Code access for bots: where each user's persistent code directory lives (default ~/.zetta/code). Docker harness runs mount the code directory at /work. Bot runs have no time limit; only Stop ends them.
 
 ### `ZETTA_HARNESS_SLOT_MS`
 
@@ -196,17 +166,11 @@ Optional · not secret
 
 How long a bot run holds a concurrency slot (default 120000 ms). The slot limits how many runs start at once, not how long they last.
 
-### `ZETTA_HOST_SKILLS`
+### `ZETTA_EMBEDDING_MODEL_DIR`
 
 Optional · not secret
 
-Skills in the server user's home (~/.claude/skills and ~/.agents/skills) can be picked with `/` in the chat for every bot. Set `on` to allow it. Off by default: the folders belong to one OS user, so every person who can chat with a bot would see them.
-
-### `ZETTA_EMBEDDING_MODEL_DIR`, `ZETTA_EMBEDDING`
-
-Optional · not secret
-
-Company knowledge: where the local embedding model is cached (default ~/.cache/zetta/models). Set ZETTA_EMBEDDING=off for keyword search only.
+Company knowledge: where the local embedding model is cached (default ~/.cache/zetta/models).
 
 ### `ZETTA_FILES_ROOT`
 
@@ -225,12 +189,6 @@ Chat attachments (default ~/.zetta/attachments).
 Optional · not secret
 
 Artifacts that people and bots publish (default ~/.zetta/artifacts).
-
-### `ZETTA_ARTIFACTS_QUOTA`
-
-Optional · not secret
-
-Total bytes one person may keep as artifacts (default 5 GB). Nothing is deleted to make room: a publish over the limit is refused.
 
 ### `ZETTA_CLAUDE_PLUGIN_ROOT`
 
@@ -274,12 +232,6 @@ Optional · not secret
 
 Gives every person their own HOME for each agent CLI, so their logins and sessions are not shared. Unset: everyone uses the login of the server user.
 
-### `ZETTA_HARNESS_MAX`, `ZETTA_HARNESS_MAX_PER_USER`, `ZETTA_HARNESS_WAIT_MS`
-
-Optional · not secret
-
-How many bot runs go at once (default 8 in total, 4 per person) and how long a run waits for a free slot (default 300000 ms).
-
 ### `ZETTA_BROWSER_RUNTIME`, `ZETTA_BROWSER_IMAGE`, `ZETTA_BROWSER_CPUS`, `ZETTA_BROWSER_MEMORY`, `ZETTA_BROWSER_PIDS`, `ZETTA_CHROMIUM_PATH`
 
 Optional · not secret
@@ -322,11 +274,11 @@ Optional · not secret
 
 How often the live-updates stream sends a keep-alive, in milliseconds (default 30000). Lower it when a proxy closes idle streams.
 
-### `ZETTA_ROOM_CONCURRENCY`, `ZETTA_ROOM_STUCK_MS`
+### `ZETTA_ROOM_STUCK_MS`
 
 Optional · not secret
 
-Room turns that run at once (default 4), and how long a room turn may go without progress before it counts as stuck (default 600000 ms).
+How long a room turn may go without progress before it counts as stuck (default 600000 ms).
 
 ### `ZETTA_INTERNAL_URL`
 
@@ -352,32 +304,32 @@ Optional · not secret
 
 The base of the return addresses that plugins with OAuth (Google, Reddit...) use. Default: ZETTA_SERVER_URL.
 
-### `ZETTA_LAYA_PRELOAD`, `ZETTA_MEMORY_LEARN`, `ZETTA_WIKI_LEARN`
+### `ZETTA_LAYA_PRELOAD`
 
 Optional · not secret
 
-Features. ZETTA_LAYA_PRELOAD=0 loads the Laya model on first use instead of at boot. ZETTA_MEMORY_LEARN=off stops bots from learning into memory on their own (ZETTA_WIKI_LEARN is its old name).
+Features. ZETTA_LAYA_PRELOAD=0 loads the Laya model on first use instead of at boot.
 
-### `ZETTA_LESSON_BATCH`, `ZETTA_LIGHT_RUNS`
-
-Optional · not secret
-
-Lessons (modules/learning). ZETTA_LESSON_BATCH=off stops the daily reading of chats for lessons for everyone (a person can also turn it off in Lessons). ZETTA_LIGHT_RUNS=on makes background work that only reads text (the daily reading) run Claude Code without the person's own settings, MCP servers and tools, which costs far fewer tokens; off until measured against the full run.
-
-### `ZETTA_CLAUDE_LIVE_INPUT`
+### `ZETTA_TRANSCRIBE_MODEL_DIR`
 
 Optional · not secret
 
-Claude Code reads a message sent while it works (docs/decisions/fluid-chat.md). ZETTA_CLAUDE_LIVE_INPUT=off turns that off: the message is then read when the run ends, as on the other engines. On by default.
+Where the local speech-to-text model (Whisper) is downloaded to (default ~/.cache/zetta/models; copy the files there to work offline).
 
-### `ZETTA_MCP_ALLOWLIST`, `ZETTA_MCP_MEMBER_STDIO`
-
-Optional · not secret
-
-Local (stdio) MCP servers: ZETTA_MCP_ALLOWLIST lists the ones an administrator allows, separated by `;`, each a command with its arguments separated by spaces (no shell). ZETTA_MCP_MEMBER_STDIO=1 (the default) lets members, not only the administrator, run them.
-
-### `ZETTA_TRANSCRIBE`, `ZETTA_TRANSCRIBE_MODEL`, `ZETTA_TRANSCRIBE_LANGUAGE`, `ZETTA_TRANSCRIBE_MODEL_DIR`
+### `ZETTA_SPEECH_MODEL_DIR`
 
 Optional · not secret
 
-Speech to text on the server. ZETTA_TRANSCRIBE=off turns it off. The local provider uses ZETTA_TRANSCRIBE_MODEL (a Whisper model), a language passed to it for voice notes (ZETTA_TRANSCRIBE_LANGUAGE) and keeps the downloaded model in ZETTA_TRANSCRIBE_MODEL_DIR (default ~/.cache/zetta/models; copy the files there to work offline).
+Where the local text-to-speech model (Kokoro) is downloaded to (default: the speech-to-text model folder; copy the files there to work offline).
+
+### `ZETTA_TEST_GREENMAIL`
+
+Optional · not secret
+
+Test infrastructure only, not a server setting: set to 1 to run the mail tests against a GreenMail container (modules/mail/greenmail-setup.ts).
+
+### `ZETTA_GREENMAIL_IMAGE`
+
+Optional · not secret
+
+Test infrastructure only, not a server setting: the image of that GreenMail container.

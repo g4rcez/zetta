@@ -98,7 +98,13 @@ const Summary = ({ status }: { status: Status }) =>
 
 const SECTIONS = studioTabs.filter(
   (t) =>
-    t.slug !== "overview" && t.slug !== "invites" && t.slug !== "plugins" && t.slug !== "computer",
+    t.slug !== "overview" &&
+    t.slug !== "invites" &&
+    t.slug !== "plugins" &&
+    t.slug !== "computer" &&
+    t.slug !== "phone" &&
+    t.slug !== "voice" &&
+    t.slug !== "settings",
 );
 
 /** Each section in one line: what it is for, and its state now. The state is derived; there is nothing to fill in. */

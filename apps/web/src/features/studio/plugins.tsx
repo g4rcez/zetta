@@ -1,28 +1,45 @@
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 
 import { Button, Input } from "@/components/ui";
 import { PluginIcon } from "../plugins/plugin-icon";
 import { probeKey, StatusBadge, useProbes } from "../plugins/plugin-parts";
 import { CATEGORY_LABEL, usePlugins, type PluginMeta } from "../plugins/plugins-api";
+import { identityQueries } from "../identity/identity-queries";
+import { PLUGINS_WITH_SERVER_SETUP } from "../plugins/plugin-server-section";
 import { Empty } from "../shared/ui";
+import {
+  filterPlugins,
+  pluginCounts,
+  PLUGIN_STATUS_LABEL,
+  PLUGIN_STATUSES,
+  withPluginsSearch,
+  type PluginsSearch,
+} from "./plugins-filters";
 
-type Status = "installed" | "available" | "all";
-const STATUS_LABEL: Record<Status, string> = {
-  installed: "Installed",
-  available: "Available",
-  all: "All",
-};
-
-/** Studio > Plugins: one filterable list of every plugin; installed ones carry a tag and their status. Installing and configuring happen on the plugin's own page. */
-export function Plugins({ onError }: { onError: (m: string) => void }) {
+/**
+ * Studio > Plugins: one filterable list of every plugin; installed ones carry a tag and their status. Installing and configuring happen on
+ * the plugin's own page. The filters are the caller's: the Studio tab keeps them in the address, the setup flow in its own state.
+ */
+export function Plugins({
+  onError,
+  search,
+  setSearch,
+}: {
+  onError: (m: string) => void;
+  search: PluginsSearch;
+  /** Typing in the search replaces the address entry; choosing a status or a category adds one. */
+  setSearch: (next: PluginsSearch, how: "push" | "replace") => void;
+}) {
   const { catalog, installed } = usePlugins(onError);
   const { probes, probe } = useProbes();
   const navigate = useNavigate();
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
-  const [status, setStatus] = useState<Status>("installed");
+  const { data: identity } = useQuery(identityQueries.status());
+  const admin = identity?.state === "active" && identity.isAdmin;
+  const status = search.status ?? "installed";
+  const category = search.category ?? "all";
   const byId = useMemo(() => new Map((catalog ?? []).map((c) => [c.id, c])), [catalog]);
   const installedIds = useMemo(() => new Set((installed ?? []).map((i) => i.id)), [installed]);
   const open = (m: PluginMeta) =>
@@ -37,25 +54,13 @@ export function Plugins({ onError }: { onError: (m: string) => void }) {
     }
   }, [installed, byId, probes, probe]);
 
-  const isInstalled = (m: PluginMeta) => !!m.always || installedIds.has(m.id);
   const categories = useMemo(
     () => ["all", ...new Set((catalog ?? []).map((c) => c.category))],
     [catalog],
   );
-  const counts: Record<Status, number> = {
-    installed: (catalog ?? []).filter(isInstalled).length,
-    available: (catalog ?? []).filter((c) => !isInstalled(c)).length,
-    all: (catalog ?? []).length,
-  };
-  const needle = query.trim().toLowerCase();
-  const shown = (catalog ?? [])
-    .filter(
-      (c) =>
-        (status === "all" || isInstalled(c) === (status === "installed")) &&
-        (category === "all" || c.category === category) &&
-        `${c.name} ${c.description} ${c.id}`.toLowerCase().includes(needle),
-    )
-    .sort((a, b) => Number(isInstalled(b)) - Number(isInstalled(a)));
+  const counts = pluginCounts(catalog ?? [], installedIds);
+  const needle = (search.q ?? "").trim();
+  const shown = filterPlugins(catalog ?? [], installedIds, search);
 
   return (
     <section aria-label="Plugins" className="space-y-4">
@@ -64,20 +69,20 @@ export function Plugins({ onError }: { onError: (m: string) => void }) {
           title="Search"
           hiddenLabel
           container="min-w-48 flex-1"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={search.q ?? ""}
+          onChange={(e) => setSearch(withPluginsSearch(search, { q: e.target.value }), "replace")}
           placeholder="Sentry, GitHub, browser..."
         />
         <div role="group" aria-label="Status" className="flex gap-1">
-          {(Object.keys(STATUS_LABEL) as Status[]).map((s) => (
+          {PLUGIN_STATUSES.map((s) => (
             <Button
               key={s}
               size="sm"
               variant={status === s ? "default" : "outline"}
               aria-pressed={status === s}
-              onClick={() => setStatus(s)}
+              onClick={() => setSearch(withPluginsSearch(search, { status: s }), "push")}
             >
-              {STATUS_LABEL[s]} <span className="tabular-nums opacity-70">{counts[s]}</span>
+              {PLUGIN_STATUS_LABEL[s]} <span className="tabular-nums opacity-70">{counts[s]}</span>
             </Button>
           ))}
         </div>
@@ -89,7 +94,7 @@ export function Plugins({ onError }: { onError: (m: string) => void }) {
             size="sm"
             variant={category === c ? "secondary" : "ghost"}
             aria-pressed={category === c}
-            onClick={() => setCategory(c)}
+            onClick={() => setSearch(withPluginsSearch(search, { category: c }), "push")}
           >
             {c === "all" ? "All categories" : (CATEGORY_LABEL[c] ?? c)}
           </Button>
@@ -110,22 +115,23 @@ export function Plugins({ onError }: { onError: (m: string) => void }) {
             const hasTeam = (installed ?? []).some((i) => i.id === m.id && i.sharing === "team");
             // The status shown is the user's own configuration, or the team's when that is all there is.
             const p = probes[probeKey(m.id, hasMine ? "mine" : "team")];
-            const done = isInstalled(m);
+            const done = installedIds.has(m.id);
             return (
               <div key={m.id} className="flex flex-col gap-2 rounded-lg border bg-card p-4">
                 <div className="flex items-center gap-2">
                   <PluginIcon id={m.id} name={m.icon} className="size-6 shrink-0" />
                   <span className="min-w-0 flex-1 truncate font-medium">{m.name}</span>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {m.always ? (
+                    {m.builtin && (
                       <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
                         Built in
                       </span>
-                    ) : done ? (
+                    )}
+                    {done ? (
                       <>
                         {hasMine && (
                           <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
-                            Installed
+                            {m.builtin ? "Active" : "Installed"}
                           </span>
                         )}
                         {hasTeam && (
@@ -167,16 +173,22 @@ export function Plugins({ onError }: { onError: (m: string) => void }) {
                   ) : (
                     <span />
                   )}
-                  {m.always ? (
-                    <span className="text-xs text-muted-foreground">On for every bot</span>
-                  ) : done ? (
+                  {done ? (
                     <Button size="sm" variant="outline" onClick={() => open(m)}>
                       Manage
                     </Button>
                   ) : (
-                    <Button size="sm" onClick={() => open(m)}>
-                      Install
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {/* A built-in plugin with settings for the whole server: the administrator reaches them before activating it. */}
+                      {m.builtin && admin && PLUGINS_WITH_SERVER_SETUP.has(m.id) && (
+                        <Button size="sm" variant="outline" onClick={() => open(m)}>
+                          Manage
+                        </Button>
+                      )}
+                      <Button size="sm" onClick={() => open(m)}>
+                        {m.builtin ? "Activate" : "Install"}
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>

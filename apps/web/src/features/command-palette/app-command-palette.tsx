@@ -17,6 +17,9 @@ import {
   SunDimIcon,
   FlowArrowIcon,
   PauseIcon,
+  GearSixIcon,
+  MicrophoneIcon,
+  PhoneIcon,
   PlayIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
@@ -59,6 +62,9 @@ const STUDIO_ICONS: Partial<Record<StudioTab, PhosphorIcon>> = {
   decisions: ScalesIcon,
   accounts: KeyIcon,
   snapshots: CameraIcon,
+  phone: PhoneIcon,
+  voice: MicrophoneIcon,
+  settings: GearSixIcon,
   activity: PulseIcon,
 };
 

@@ -14,11 +14,13 @@ import {
 } from "../onboarding/installation-api";
 
 const PROVIDER_OPTIONS: { value: TranscribeProvider; label: string }[] = [
+  { value: "off", label: "Off (no recording or voice note is turned into text)" },
   { value: "local", label: "This server (a Whisper model, nothing leaves the machine)" },
   { value: "openai", label: "OpenAI" },
   { value: "compatible", label: "Another provider (an address that works like OpenAI's)" },
 ];
 const PROVIDER_NAME: Record<TranscribeProvider, string> = {
+  off: "nobody",
   local: "this server",
   openai: "OpenAI",
   compatible: "another provider",
@@ -26,14 +28,13 @@ const PROVIDER_NAME: Record<TranscribeProvider, string> = {
 const KEY_NOTE: Record<Installation["transcribeKey"], string> = {
   none: "No key saved.",
   set: "A key is saved. It is stored encrypted and is never shown again.",
-  operator: "No key saved here: the key the operator set on the server is used.",
   unavailable:
     "The saved key cannot be read any more (the administrator who saved it may have left). Enter it again.",
 };
 
 /** Where recordings go for a choice: the words the page puts next to it, so nobody turns it on by surprise. */
 export function destinationOf(provider: TranscribeProvider, baseUrl: string) {
-  if (provider === "local") return undefined;
+  if (provider === "off" || provider === "local") return undefined;
   if (provider === "openai") return "api.openai.com";
   try {
     return new URL(baseUrl).host || "that address";
@@ -100,10 +101,11 @@ export function TranscribeForm({
     setDraft((d) => ({ ...d, ...patch }));
   };
   const dirty = !sameDraft(draft, draftOfSettings(saved));
-  const remote = draft.provider !== "local";
+  const remote = draft.provider === "openai" || draft.provider === "compatible";
+  const off = draft.provider === "off";
   const current = draftOfSettings(saved);
   const keyState = saved.transcribeKey ?? "none";
-  const savedRemote = current.provider !== "local";
+  const savedRemote = current.provider === "openai" || current.provider === "compatible";
   const destination = destinationOf(draft.provider, draft.baseUrl);
   const needsAddress = draft.provider === "compatible" && !draft.baseUrl.trim();
 
@@ -156,11 +158,14 @@ export function TranscribeForm({
       <section className="space-y-1" aria-label="Speech to text">
         <h3 className="text-sm font-medium">Speech to text</h3>
         <Note>
-          Recordings are turned into text by {PROVIDER_NAME[current.provider]}
-          {destinationOf(current.provider, current.baseUrl)
-            ? ` (${destinationOf(current.provider, current.baseUrl)})`
-            : ""}
-          . Ask your administrator to change this.
+          {current.provider === "off"
+            ? "Speech to text is off: no recording or voice note is turned into text."
+            : `Recordings are turned into text by ${PROVIDER_NAME[current.provider]}${
+                destinationOf(current.provider, current.baseUrl)
+                  ? ` (${destinationOf(current.provider, current.baseUrl)})`
+                  : ""
+              }.`}{" "}
+          Ask your administrator to change this.
         </Note>
       </section>
     );
@@ -174,9 +179,15 @@ export function TranscribeForm({
         required={false}
         value={draft.provider}
         options={PROVIDER_OPTIONS}
-        onChange={(e) => set({ provider: e.target.value as TranscribeProvider })}
+        // A model name belongs to one kind of provider (a Hugging Face repository here, `whisper-1` there): it is cleared with the choice.
+        onChange={(e) => set({ provider: e.target.value as TranscribeProvider, model: "" })}
       />
-      {destination ? (
+      {off ? (
+        <Note>
+          No recording or voice note is turned into text. The microphone button says it is off, a
+          voice note reaches the bot as "(voice note)", and voice mode is off.
+        </Note>
+      ) : destination ? (
         <Note role="note">
           Recordings from the microphone and voice notes from outside people are sent to{" "}
           {destination}. Their rules apply to that audio.
@@ -198,28 +209,46 @@ export function TranscribeForm({
           onChange={(e) => set({ baseUrl: e.target.value })}
         />
       )}
-      {remote && (
+      {!off && (
         <Input
           title="Model"
           name="transcribeModel"
           autoComplete="off"
           value={draft.model}
-          placeholder={draft.provider === "openai" ? "whisper-1 (default)" : "whisper-1"}
+          placeholder={
+            remote
+              ? draft.provider === "openai"
+                ? "whisper-1 (default)"
+                : "whisper-1"
+              : "Xenova/whisper-small (default, about 250 MB)"
+          }
           onChange={(e) => set({ model: e.target.value })}
         />
       )}
-      <Input
-        title="Language of the recordings"
-        name="transcribeLanguage"
-        autoComplete="off"
-        value={draft.language}
-        placeholder="Empty: the language of each person's browser"
-        onChange={(e) => set({ language: e.target.value })}
-      />
-      <Note>
-        A code or a name: pt, es, French… The microphone uses the person's browser language; this
-        one serves voice notes, which have none. Whisper assumes English when it is not told.
-      </Note>
+      {!remote && !off && (
+        <Note>
+          For Portuguese, onnx-community/whisper-large-v3-turbo reads more words right (about 1.1 GB
+          once, about three times slower). A model from Hugging Face is downloaded the first time it
+          is used.
+        </Note>
+      )}
+      {!off && (
+        <>
+          <Input
+            title="Language of the recordings"
+            name="transcribeLanguage"
+            autoComplete="off"
+            value={draft.language}
+            placeholder="Empty: the language of each person's browser"
+            onChange={(e) => set({ language: e.target.value })}
+          />
+          <Note>
+            A code or a name: pt, es, French… The microphone uses the person's browser language;
+            this one serves voice notes, which have none. Whisper assumes English when it is not
+            told.
+          </Note>
+        </>
+      )}
 
       {remote && (
         <div className="space-y-2">

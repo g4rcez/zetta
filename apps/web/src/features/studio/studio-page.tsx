@@ -1,9 +1,12 @@
 import {
   PulseIcon as ActivityIcon,
   ChatTeardropTextIcon,
+  GearSixIcon,
   GitBranchIcon,
   KeyIcon,
   DevicesIcon,
+  MicrophoneIcon,
+  PhoneIcon,
   PlugIcon,
   SignpostIcon,
   UsersIcon,
@@ -25,19 +28,31 @@ import { Alert } from "@g4rcez/components/alert";
 // Each tab is its own chunk: opening Studio no longer downloads every tab (the workflow canvas alone pulls in @xyflow/react).
 const Accounts = lazy(() => import("./accounts").then((m) => ({ default: m.Accounts })));
 import { parseActivityView } from "./activity-view";
+import { parsePhoneSearch, type PhoneSearch } from "../phone/phone-filters";
+import { parsePluginsSearch, type PluginsSearch } from "./plugins-filters";
+import { parseSettingsSearch, type SettingsSearch } from "./settings-filters";
 const Activity = lazy(() => import("./activity").then((m) => ({ default: m.Activity })));
 const Computer = lazy(() => import("./computer").then((m) => ({ default: m.Computer })));
 const Invites = lazy(() => import("./invites").then((m) => ({ default: m.Invites })));
+const Voice = lazy(() => import("./voice").then((m) => ({ default: m.Voice })));
 const Decisions = lazy(() => import("./decisions").then((m) => ({ default: m.Decisions })));
 const Overview = lazy(() => import("./overview").then((m) => ({ default: m.Overview })));
 const Plugins = lazy(() => import("./plugins").then((m) => ({ default: m.Plugins })));
 const Snapshots = lazy(() => import("./snapshots").then((m) => ({ default: m.Snapshots })));
 const Workflows = lazy(() => import("./workflows").then((m) => ({ default: m.Workflows })));
+const PhoneNumbersPage = lazy(() =>
+  import("../phone/phone-admin").then((m) => ({ default: m.PhoneNumbersPage })),
+);
+const ServerSettingsPage = lazy(() =>
+  import("./server-settings").then((m) => ({ default: m.ServerSettingsPage })),
+);
 const OutputStyles = lazy(() =>
   import("./output-styles").then((m) => ({ default: m.OutputStyles })),
 );
 
-const tabs = studioTabs.filter((t) => !isRailTab(t.slug)).map((t) => t.label);
+const allTabs = studioTabs.filter((t) => !isRailTab(t.slug));
+/** The sections an administrator alone sees in the side nav. */
+const ADMIN_TABS: readonly string[] = ["phone", "settings"];
 type Tab = (typeof studioTabs)[number]["label"];
 const ICON: Record<Tab, Icon> = {
   Overview: SquaresFourIcon,
@@ -49,6 +64,9 @@ const ICON: Record<Tab, Icon> = {
   Plugins: PlugIcon,
   "Team snapshots": UsersIcon,
   Invites: UserPlusIcon,
+  "Phone numbers": PhoneIcon,
+  Voice: MicrophoneIcon,
+  "Server settings": GearSixIcon,
   Activity: ActivityIcon,
 };
 const NO_BOTS: Bot[] = [];
@@ -60,6 +78,9 @@ export function StudioPage() {
   const navigate = useNavigate();
   const current = studioTabs.find((t) => t.slug === slug) ?? studioTabs[0];
   const tab: Tab = current.label;
+  const tabs = allTabs
+    .filter((t) => identity.isAdmin || !ADMIN_TABS.includes(t.slug))
+    .map((t) => t.label);
   const { data, error: botsError } = useQuery(chatQueries.bots());
   const bots = data ?? NO_BOTS;
   const [error, setError] = useState<string>();
@@ -86,6 +107,30 @@ export function StudioPage() {
     select(tabs[to]!);
     tabRefs.current[to]?.focus();
   };
+  const phoneSearch = parsePhoneSearch(search);
+  const setPhoneSearch = (next: PhoneSearch, how: "push" | "replace") =>
+    void navigate({
+      to: "/studio/$tab",
+      params: { tab: "phone" },
+      search: next,
+      replace: how === "replace",
+    });
+  const settingsSearch = parseSettingsSearch(search);
+  const setSettingsSearch = (next: SettingsSearch, how: "push" | "replace") =>
+    void navigate({
+      to: "/studio/$tab",
+      params: { tab: "settings" },
+      search: next,
+      replace: how === "replace",
+    });
+  const pluginsSearch = parsePluginsSearch(search);
+  const setPluginsSearch = (next: PluginsSearch, how: "push" | "replace") =>
+    void navigate({
+      to: "/studio/$tab",
+      params: { tab: "plugins" },
+      search: next,
+      replace: how === "replace",
+    });
   // The plugin catalog is a full-width page: no section nav, no width cap.
   const full = tab === "Plugins";
   return (
@@ -151,9 +196,26 @@ export function StudioPage() {
               {tab === "Decisions" && <Decisions onError={setError} />}
               {tab === "Accounts" && <Accounts onError={setError} />}
               {tab === "Computer" && <Computer onError={setError} />}
-              {tab === "Plugins" && <Plugins onError={setError} />}
+              {tab === "Plugins" && (
+                <Plugins onError={setError} search={pluginsSearch} setSearch={setPluginsSearch} />
+              )}
               {tab === "Team snapshots" && <Snapshots onError={setError} />}
               {tab === "Invites" && <Invites isAdmin={identity.isAdmin} />}
+              {tab === "Phone numbers" && (
+                <PhoneNumbersPage
+                  admin={identity.isAdmin}
+                  search={phoneSearch}
+                  setSearch={setPhoneSearch}
+                />
+              )}
+              {tab === "Voice" && <Voice />}
+              {tab === "Server settings" && (
+                <ServerSettingsPage
+                  admin={identity.isAdmin}
+                  search={settingsSearch}
+                  setSearch={setSettingsSearch}
+                />
+              )}
               {tab === "Activity" && (
                 <Activity
                   bots={bots}

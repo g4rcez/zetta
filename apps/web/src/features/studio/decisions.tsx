@@ -7,8 +7,6 @@ import { Button, Input } from "@/components/ui";
 import { call } from "../chat/chat-client";
 import { Badge } from "../shared/ui";
 import { LayaSwitch } from "./laya-switch";
-import { TranscribeSettings } from "./transcribe-settings";
-import { UpdateCheckSetting } from "./update-check-setting";
 import { DECISIONS_STATUS, decisionsQueries } from "./studio-queries";
 import { formText } from "../shared/form-data";
 
@@ -78,12 +76,6 @@ export function Decisions({ onError }: { onError: (m: string) => void }) {
         // Reset, not invalidate: the badge shows "checking" until the new state arrives.
         onChanged={() => void qc.resetQueries({ queryKey: DECISIONS_STATUS })}
       />
-      <div className="rounded-xl border bg-card p-5 xl:col-span-2">
-        <TranscribeSettings />
-      </div>
-      <div className="xl:col-span-2">
-        <UpdateCheckSetting onError={onError} />
-      </div>
       <AdvancedSection title="Try it on a sample" defaultOpen={false} className="xl:col-span-2">
         <form onSubmit={(e) => void decide(e)} className="space-y-3">
           {/* Plain on purpose: pasted external text (a ticket, an email), where `@` appears in addresses and handles. */}

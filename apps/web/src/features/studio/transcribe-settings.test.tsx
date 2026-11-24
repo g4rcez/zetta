@@ -94,6 +94,7 @@ async function submit(el: Element) {
 
 describe("where recordings go is said next to the choice", () => {
   test("the server's own model, OpenAI, and a custom address each have their words", () => {
+    expect(destinationOf("off", "")).toBeUndefined();
     expect(destinationOf("local", "")).toBeUndefined();
     expect(destinationOf("openai", "")).toBe("api.openai.com");
     expect(destinationOf("compatible", "https://api.groq.com/openai/v1")).toBe("api.groq.com");
@@ -103,13 +104,29 @@ describe("where recordings go is said next to the choice", () => {
 });
 
 describe("the speech-to-text settings of the installation", () => {
-  test("local: it says recordings stay on the server, and shows no key, model or address", async () => {
+  test("local: it says recordings stay on the server, and shows no key or address", async () => {
     const { el } = await mount(base());
     expect(el.textContent).toContain("Recordings stay on this server");
     expect(field(el, "transcribeKey")).toBeNull();
-    expect(field(el, "transcribeModel")).toBeNull();
     expect(field(el, "transcribeBaseUrl")).toBeNull();
     expect(button(el, /^Save$/).disabled).toBe(true);
+  });
+
+  test("local: the Whisper model can be chosen (a larger one for Portuguese)", async () => {
+    const { el, log } = await mount(base());
+    const model = field(el, "transcribeModel") as HTMLInputElement;
+    expect(model.placeholder).toContain("Xenova/whisper-small");
+    expect(el.textContent).toContain("whisper-large-v3-turbo");
+    await type(model, " onnx-community/whisper-large-v3-turbo ");
+    await submit(el);
+    expect(log.saved).toEqual([
+      {
+        transcribeProvider: "local",
+        transcribeModel: "onnx-community/whisper-large-v3-turbo",
+        transcribeLanguage: "",
+        transcribeBaseUrl: "",
+      },
+    ]);
   });
 
   test("choosing OpenAI says where recordings will go, and the save button names it", async () => {
@@ -169,8 +186,9 @@ describe("the speech-to-text settings of the installation", () => {
     const gone = await mount(base({ transcribeProvider: "openai", transcribeKey: "unavailable" }));
     expect(gone.el.textContent).toContain("cannot be read any more");
     expect(button(gone.el, /^Remove key$/)).toBeUndefined();
-    const operator = await mount(base({ transcribeProvider: "openai", transcribeKey: "operator" }));
-    expect(operator.el.textContent).toContain("the key the operator set on the server is used");
+    const none = await mount(base({ transcribeProvider: "openai", transcribeKey: "none" }));
+    expect(none.el.textContent).toContain("No key saved.");
+    expect(none.el.textContent).not.toContain("operator");
   });
 
   test("the test uses what is saved: it waits for a save, then shows the provider's sentence", async () => {
@@ -188,6 +206,39 @@ describe("the speech-to-text settings of the installation", () => {
     t.setTest({ ok: true });
     await click(button(t.el, /^Test$/));
     expect(said("status").join(" ")).toContain("It works");
+  });
+
+  test("Off: in plain words no recording or voice note is turned into text, and it is saved as `off`", async () => {
+    const { el, log } = await mount(base());
+    const select = field(el, "transcribeProvider") as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value).filter(Boolean)).toEqual([
+      "off",
+      "local",
+      "openai",
+      "compatible",
+    ]);
+    await choose(select, "off");
+    expect(el.textContent).toContain("No recording or voice note is turned into text");
+    expect(field(el, "transcribeKey")).toBeNull();
+    expect(field(el, "transcribeBaseUrl")).toBeNull();
+    expect(field(el, "transcribeModel")).toBeNull();
+    expect(field(el, "transcribeLanguage")).toBeNull();
+    expect(button(el, /^Save$/).disabled).toBe(false);
+    await submit(el);
+    expect(log.saved).toEqual([
+      {
+        transcribeProvider: "off",
+        transcribeModel: "",
+        transcribeLanguage: "",
+        transcribeBaseUrl: "",
+      },
+    ]);
+  });
+
+  test("a member reads that speech to text is off", async () => {
+    const { el } = await mount(base({ transcribeProvider: "off" }), false);
+    expect(el.textContent).toContain("Speech to text is off");
+    expect(el.querySelector("form")).toBeNull();
   });
 
   test("a member only reads where recordings go and cannot change it", async () => {

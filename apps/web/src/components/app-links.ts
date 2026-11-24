@@ -20,6 +20,7 @@ import {
   UserCircleIcon,
   RobotIcon,
   LightbulbIcon,
+  EnvelopeSimpleIcon,
 } from "@phosphor-icons/react";
 
 /** Main rail destinations, in rail order (the command palette binds Alt+1… to them in this order). Each `group` is one contiguous run, rendered as a labelled section. */
@@ -71,4 +72,6 @@ export const appLinks = [
   { to: "/bots", group: "Build", label: "Bots", icon: RobotIcon },
   // Last again, so the Alt+N hotkeys above do not move. The sidebar shows it under More, after Skills.
   { to: "/lessons", group: "Build", label: "Lessons", icon: LightbulbIcon },
+  // Last again. The sidebar shows it under More, after Memory.
+  { to: "/mail", group: "Work", label: "Mail", icon: EnvelopeSimpleIcon },
 ] as const;

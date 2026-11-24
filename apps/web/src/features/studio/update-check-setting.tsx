@@ -9,7 +9,7 @@ import { updatesQueries } from "../updates/updates-api";
 
 /**
  * "Check for updates": whether the server looks once a day for a newer version. Only an administrator changes it, and it is saved at once.
- * It sits with the other installation settings (Studio > Decisions, and the installation form the Chief opens).
+ * It sits with the other server settings (Studio > Server settings, and the installation form the Chief opens).
  */
 export function UpdateCheckSetting({ onError }: { onError: (message: string) => void }) {
   const qc = useQueryClient();

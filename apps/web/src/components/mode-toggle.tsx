@@ -61,8 +61,8 @@ export function ModeToggle({
   const icons = rail ? (
     <>
       <span className="relative grid size-4 shrink-0 place-items-center">
-        <SunIcon className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-        <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+        <SunIcon className="size-4 scale-100 rotate-0 transition-[transform,opacity] motion-reduce:transition-none dark:scale-0 dark:-rotate-90" />
+        <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-[transform,opacity] motion-reduce:transition-none dark:scale-100 dark:rotate-0" />
       </span>
       {rail === "expanded" ? (
         <>
@@ -76,8 +76,8 @@ export function ModeToggle({
     </>
   ) : (
     <>
-      <SunIcon className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-      <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+      <SunIcon className="size-4 scale-100 rotate-0 transition-[transform,opacity] motion-reduce:transition-none dark:scale-0 dark:-rotate-90" />
+      <MoonIcon className="absolute size-4 scale-0 rotate-90 transition-[transform,opacity] motion-reduce:transition-none dark:scale-100 dark:rotate-0" />
     </>
   );
   const trigger = rail ? (

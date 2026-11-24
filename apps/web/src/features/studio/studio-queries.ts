@@ -17,7 +17,7 @@ export function useLoadError(
   }, [error]);
 }
 
-/** What drives a computer: cua (the default) or agent-desktop. The operator decides which are offered (ZETTA_VM_DRIVERS). */
+/** What drives a computer: cua (the default) or agent-desktop. An administrator decides which are offered (Studio > Server settings, `vmDrivers`). */
 export type ComputerDriver = "cua" | "agent-desktop";
 /** The system a container computer runs. */
 export type ComputerOsId = "debian" | "ubuntu";

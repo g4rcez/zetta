@@ -20,6 +20,7 @@ import { getIdentityError, identityClient } from "@/lib/identity-client";
 import { EngineStep, IdentityStep, InstructionsStep, type Draft } from "../bots/bot-onboarding";
 import { LayaSwitch } from "../studio/laya-switch";
 import { Plugins } from "../studio/plugins";
+import type { PluginsSearch } from "../studio/plugins-filters";
 import { reviewInstructions } from "../bots/instruction-review";
 import { FRESH_INTERVIEW, type InterviewState } from "../bots/interview-flow";
 import { call, chatClient, errorMessage, type Bot } from "../chat/chat-client";
@@ -166,6 +167,8 @@ export function InstallOnboarding() {
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  // A setup step, not a page of its own: the plugin filters stay in this state, not in the address.
+  const [pluginsSearch, setPluginsSearch] = useState<PluginsSearch>({});
   const [notice, setNotice] = useState<string>();
 
   // The key is sent with the first sign-up and dropped afterwards.
@@ -603,7 +606,11 @@ export function InstallOnboarding() {
         {step === "plugins" && (
           <div className="space-y-4">
             <LayaSwitch onError={setError} submitLabel="Turn on Laya" />
-            <Plugins onError={setError} />
+            <Plugins
+              onError={setError}
+              search={pluginsSearch}
+              setSearch={(next) => setPluginsSearch(next)}
+            />
           </div>
         )}
 

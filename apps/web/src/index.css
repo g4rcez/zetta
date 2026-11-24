@@ -531,7 +531,14 @@ html.dark,
   display: none;
 }
 
-/* Switching the sidebar layout by hand: the new body eases in, 180ms, ease-out. With reduced motion it only fades. */
+/* Motion tokens for the sidebar. One curve (strong ease-out), two durations; only opacity and transform ever move. */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --duration-fast: 150ms;
+  --duration-base: 180ms;
+}
+
+/* Switching the sidebar layout by hand: the new body eases in over --duration-base. With reduced motion it only fades. */
 @keyframes sidebar-swap-in {
   from {
     opacity: 0;
@@ -544,11 +551,26 @@ html.dark,
   }
 }
 .sidebar-swap {
-  animation: sidebar-swap-in 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation: sidebar-swap-in var(--duration-base) var(--ease-out) both;
 }
 @media (prefers-reduced-motion: reduce) {
   .sidebar-swap {
     animation-name: sidebar-swap-fade;
+  }
+}
+
+/* A sidebar group that was just opened by hand: it appears at once (no height animation) and its rows fade in over 120ms. Nothing moves with reduced motion. */
+@keyframes nav-reveal-in {
+  from {
+    opacity: 0;
+  }
+}
+.nav-reveal {
+  animation: nav-reveal-in 120ms var(--ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-reveal {
+    animation: none;
   }
 }
 

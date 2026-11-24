@@ -13,8 +13,7 @@ import {
   SunIcon,
   UserIcon,
 } from "@phosphor-icons/react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { ActionHint } from "@/components/action-hint";
 import { cn } from "@zetta/ui/lib/utils";
 
@@ -65,6 +64,7 @@ const LIBRARY = [
   linkOf("Organization"),
   linkOf("People"),
   linkOf("Memory"),
+  linkOf("Mail"),
   linkOf("Skills"),
   linkOf("Lessons"),
   linkOf("Plugins"),
@@ -73,17 +73,16 @@ const LIBRARY = [
 ];
 const ADVANCED = [linkOf("Studio"), linkOf("Playground"), linkOf("Computer")];
 const MORE = [...LIBRARY, ...ADVANCED];
-// Workspace layout: the same pages, in sections a team reads at a glance.
-const WORKSPACE = [linkOf("Teams"), linkOf("Organization"), linkOf("People")];
-const LIBRARY_TEAM = [
-  linkOf("Bots"),
-  linkOf("Memory"),
-  linkOf("Skills"),
-  linkOf("Lessons"),
-  linkOf("Plugins"),
-  linkOf("Apps"),
-  linkOf("Artifacts"),
-];
+// Workspace layout: every destination in view, grouped by what a person comes to do. No group opens or closes. "Bots" has its own
+// section above (and "All bots"), so it is not repeated here. Build (ADVANCED) follows these unless navigation is Simple.
+const PURPOSES = [
+  { label: "People", links: [linkOf("Teams"), linkOf("Organization"), linkOf("People")] },
+  {
+    label: "Knowledge",
+    links: [linkOf("Memory"), linkOf("Skills"), linkOf("Lessons"), linkOf("Artifacts")],
+  },
+  { label: "Tools", links: [linkOf("Plugins"), linkOf("Apps"), linkOf("Mail")] },
+] as const;
 // Bots listed in the sidebar before "All bots": a team already has the page, a solo person lives in this list.
 const BOTS_PERSONAL = 6;
 const BOTS_WORKSPACE = 5;
@@ -366,7 +365,10 @@ function readGroup(label: string, fallback: boolean) {
   }
 }
 
-/** A labelled group of destinations that opens and closes, and opens by itself while one of its pages is shown. */
+/**
+ * A labelled group of destinations that opens and closes (the personal layout's "More"), and opens by itself while one of its pages
+ * is shown. Opening is instant; the rows fade in over 120ms (index.css ".nav-reveal"), and not at all with reduced motion.
+ */
 function NavGroup({
   label,
   links,
@@ -379,18 +381,20 @@ function NavGroup({
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const here = links.some((l) => isActive(l, pathname));
   const [open, setOpen] = useState(() => readGroup(label, defaultOpen) || here);
+  // The rows fade in only after a click that opens the group, never when the page loads with it open.
+  const [reveal, setReveal] = useState<"none" | "fade">("none");
   // Arriving on a page of the group opens it; a click on the button can still close it.
   useEffect(() => {
     if (here) setOpen(true);
   }, [here, pathname]);
   const shown = open;
-  const reduce = useReducedMotion();
   const toggle = () => {
     try {
       localStorage.setItem(GROUP_KEY(label), shown ? "closed" : "open");
     } catch {
       // Storage unavailable: the choice lasts for this session.
     }
+    setReveal(shown ? "none" : "fade");
     setOpen(!shown);
   };
   return (
@@ -412,26 +416,49 @@ function NavGroup({
           {label}
         </button>
       </div>
-      <AnimatePresence initial={false}>
-        {shown && (
-          <motion.ul
-            key="items"
-            initial={reduce ? false : { height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="space-y-px overflow-hidden"
-          >
-            {links.map((l) => (
-              <li key={l.label}>
-                <NavRow link={l} collapsed={false} />
-              </li>
-            ))}
-          </motion.ul>
-        )}
-      </AnimatePresence>
+      {shown && (
+        <ul className={cn("space-y-px", reveal === "fade" && "nav-reveal")}>
+          {links.map((l) => (
+            <li key={l.label}>
+              <NavRow link={l} collapsed={false} />
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
+}
+
+/** A heading and the destinations under it, always in view (the workspace layout). The list is named by the heading; its links are stops for the arrow keys (`data-walk`). */
+function NavSection({ label, links }: { label: string; links: readonly AppLink[] }) {
+  const headId = useId();
+  return (
+    <div>
+      <h3 id={headId} className="label-mono pt-3 pb-1 pl-2">
+        {label}
+      </h3>
+      <ul aria-labelledby={headId} data-walk className="space-y-px">
+        {links.map((l) => (
+          <li key={l.label}>
+            <NavRow link={l} collapsed={false} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** The workspace layout's destination sections. A section with no label that matches the filter (or no link that does) is hidden; a heading that matches shows all its links. */
+function WorkspaceSections({ query }: { query: string }) {
+  const simple = usePreferences().preferences.navMode === "simple";
+  const sections = simple ? PURPOSES : [...PURPOSES, { label: "Build", links: ADVANCED }];
+  return sections.map((section) => {
+    const byHeading = section.label.toLowerCase().includes(query);
+    const links = section.links.filter((l) => byHeading || l.label.toLowerCase().includes(query));
+    return links.length ? (
+      <NavSection key={section.label} label={section.label} links={links} />
+    ) : null;
+  });
 }
 
 /**
@@ -461,6 +488,7 @@ export function AppSidebar({
   const other: SidebarLayout = layout === "personal" ? "workspace" : "personal";
   const personal = !collapsed && layout === "personal";
   const OtherIcon = other === "workspace" ? BuildingsIcon : UserIcon;
+  const switchLabel = other === "workspace" ? "Show the team sidebar" : "Show the personal sidebar";
   return (
     <aside
       aria-label="Sidebar"
@@ -476,10 +504,10 @@ export function AppSidebar({
           collapsed ? "flex-col items-center py-2" : "h-12 items-center",
         )}
       >
-        <ActionHint label="Zetta home">
+        <ActionHint label="Zetta overview">
           <Link
             to="/"
-            aria-label="Zetta home"
+            aria-label="Zetta overview"
             className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 focus-visible:outline-2 focus-visible:outline-ring"
           >
             <Logo size={collapsed ? 24 : 20} tile />
@@ -489,7 +517,7 @@ export function AppSidebar({
         {!collapsed && (
           <RailHint
             collapsed={false}
-            label={`Switch to the ${other} layout`}
+            label={switchLabel}
             iconOnly
             expandedSide="bottom"
             icon={<OtherIcon className="size-4" aria-hidden="true" />}
@@ -500,7 +528,7 @@ export function AppSidebar({
                 setLayout(other);
                 setSwaps((n) => n + 1);
               }}
-              aria-label={`Switch to the ${other} layout`}
+              aria-label={switchLabel}
               className={iconButton}
             >
               <OtherIcon className="size-4" aria-hidden="true" />
@@ -588,17 +616,8 @@ export function AppSidebar({
           <SidebarTree
             botLimit={personal ? BOTS_PERSONAL : BOTS_WORKSPACE}
             botTiles={personal}
-            leading={
-              personal ? undefined : (
-                <>
-                  <NavGroup label="Workspace" links={WORKSPACE} defaultOpen />
-                  <NavGroup label="Library" links={LIBRARY_TEAM} defaultOpen />
-                  {preferences.navMode !== "simple" && (
-                    <NavGroup label="Build" links={ADVANCED} defaultOpen={false} />
-                  )}
-                </>
-              )
-            }
+            layout={personal ? "personal" : "workspace"}
+            {...(personal ? {} : { Leading: WorkspaceSections })}
           >
             {personal && (
               <NavGroup

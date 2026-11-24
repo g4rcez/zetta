@@ -38,6 +38,22 @@ export const studioTabs = [
     blurb:
       "Invite people to this server, cancel pending invitations and manage who is in each team.",
   },
+  {
+    slug: "phone",
+    label: "Phone numbers",
+    blurb:
+      "Connect Telnyx or Twilio, choose who can ask for numbers, and manage every number your bots have.",
+  },
+  {
+    slug: "voice",
+    label: "Voice",
+    blurb: "Speech to text and text to speech for chat, voice notes, calls and the phone.",
+  },
+  {
+    slug: "settings",
+    label: "Server settings",
+    blurb: "Limits, product switches and security policy of this server. Administrators only.",
+  },
   { slug: "activity", label: "Activity", blurb: "A privacy-safe trail of what your bots did." },
 ] as const;
 

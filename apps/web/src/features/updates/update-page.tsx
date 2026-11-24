@@ -101,7 +101,7 @@ function Verdict({ status }: { status: VersionStatus }) {
   return (
     <p role="status" className="text-sm text-pretty text-muted-foreground">
       {status.check === "off"
-        ? "The update check is off, so Zetta does not look for new versions. Turn it on in Studio > Decisions."
+        ? "The update check is off, so Zetta does not look for new versions. Turn it on in Studio > Server settings."
         : !status.build
           ? "This build carries no version stamp (it was not built by the installer), so Zetta cannot tell whether a newer one exists."
           : "Zetta could not read the list of changes yet. It tries again by itself."}

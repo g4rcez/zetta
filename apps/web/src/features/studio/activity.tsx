@@ -29,6 +29,7 @@ const KIND: Record<string, string> = {
   decision: "A decision was made",
   connection: "An account changed",
   learning_run: "A bot looked back at its work",
+  voice_call: "A voice call with a bot",
 };
 const OUTCOME: Record<string, string> = {
   ok: "worked",

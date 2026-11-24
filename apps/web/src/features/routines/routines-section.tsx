@@ -9,9 +9,10 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { pollEvery } from "@/lib/query-policy";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { cn } from "@zetta/ui/lib/utils";
+import type { SidebarLayout } from "@/components/sidebar-layout";
 import { StatusHint } from "@/components/status-hint";
 
 import { useRoutineAttention, useRoutineUnreadChats } from "../attention/summary";
@@ -168,8 +169,13 @@ function RoutineRow({
   );
 }
 
-/** The shared sidebar's routine list: one row per routine, opening its one chat, marked with the routine's current status. */
-export function RoutinesSection({ query }: { query: string }) {
+/**
+ * The shared sidebar's routine list: one row per routine, opening its one chat, marked with the routine's current status.
+ * The workspace layout has the Routines page one click away in the main block, so its list is static (no toggle) and shows only
+ * the routines that need a person.
+ */
+export function RoutinesSection({ query, layout }: { query: string; layout: SidebarLayout }) {
+  const headId = useId();
   const rows = useRoutineRows();
   const unreadChats = useRoutineUnreadChats();
   const attention = useRoutineAttention();
@@ -177,12 +183,15 @@ export function RoutinesSection({ query }: { query: string }) {
   const chatId = useRouterState({
     select: (s) => /^\/chat\/([^/]+)$/.exec(s.location.pathname)?.[1],
   });
-  const shown = (rows ?? []).filter((r) => r.title.toLowerCase().includes(query));
   const needsYou = (r: Row) => attention.has(r.id) || NEEDS_YOU.includes(statusOf(r));
+  const fixed = layout === "workspace";
+  const shown = (rows ?? []).filter(
+    (r) => r.title.toLowerCase().includes(query) && (!fixed || needsYou(r)),
+  );
   // Nothing to show: no routines yet, or a search that matches none.
   if (!shown.length) return null;
   // A search opens the section, so a match is never hidden.
-  const expanded = query ? true : open;
+  const expanded = fixed || query ? true : open;
   const toggle = () =>
     setOpen((o) => {
       try {
@@ -192,6 +201,29 @@ export function RoutinesSection({ query }: { query: string }) {
       }
       return !o;
     });
+  const rowList = (
+    <ul aria-labelledby={fixed ? headId : undefined} className="space-y-0.5">
+      {shown.map((r) => (
+        <RoutineRow
+          key={r.id}
+          r={r}
+          current={!!r.conversationId && r.conversationId === chatId}
+          unread={!!r.conversationId && unreadChats.has(r.conversationId)}
+          needsYou={attention.has(r.id)}
+        />
+      ))}
+    </ul>
+  );
+  if (fixed)
+    return (
+      <section aria-label="Routines needing you">
+        <h3 id={headId} className="label-mono flex items-center gap-1 pt-3 pb-1 pl-2">
+          <span className="truncate">Routines needing you</span>{" "}
+          <span className="tabular-nums">{shown.length}</span>
+        </h3>
+        {rowList}
+      </section>
+    );
   return (
     <section aria-label="Routines">
       <div className="flex items-center gap-1 pt-3 pb-1 pl-1">
@@ -219,19 +251,7 @@ export function RoutinesSection({ query }: { query: string }) {
           )}
         </button>
       </div>
-      {expanded && (
-        <ul className="space-y-0.5">
-          {shown.map((r) => (
-            <RoutineRow
-              key={r.id}
-              r={r}
-              current={!!r.conversationId && r.conversationId === chatId}
-              unread={!!r.conversationId && unreadChats.has(r.conversationId)}
-              needsYou={attention.has(r.id)}
-            />
-          ))}
-        </ul>
-      )}
+      {expanded && rowList}
     </section>
   );
 }

@@ -8,6 +8,17 @@ import { errorMessage } from "../chat/chat-client";
 import { useTeams } from "../chat/sidebar-data";
 import { teamsApi } from "./teams-api";
 
+/** The teams the sidebar lists as a room to start: a chief and one more bot, no live room yet, and a name that matches the filter. */
+export function teamRoomCandidates<T extends { id: string; name: string; members: unknown[] }>(
+  teams: readonly T[],
+  hasRoom: (teamId: string) => boolean,
+  query: string,
+) {
+  return teams.filter(
+    (t) => t.members.length > 1 && !hasRoom(t.id) && t.name.toLowerCase().includes(query),
+  );
+}
+
 /**
  * Sidebar rows for the teams that can hold a room (a chief and one more bot) and have no live room yet. Opening one starts the
  * team's room, where the chief answers first. A team with a live room is listed as that room instead.
@@ -31,22 +42,20 @@ export function TeamRoomRows({
       toast.error(errorMessage(e));
     }
   };
-  return teams
-    .filter((t) => t.members.length > 1 && !hasRoom(t.id) && t.name.toLowerCase().includes(query))
-    .map((t) => (
-      <li key={t.id}>
-        <button
-          type="button"
-          data-chat-row
-          onClick={() => void open(t.id)}
-          className={cn(
-            rowClass,
-            "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
-          )}
-        >
-          <HashIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate">{t.name}</span>
-        </button>
-      </li>
-    ));
+  return teamRoomCandidates(teams, hasRoom, query).map((t) => (
+    <li key={t.id}>
+      <button
+        type="button"
+        data-chat-row
+        onClick={() => void open(t.id)}
+        className={cn(
+          rowClass,
+          "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+        )}
+      >
+        <HashIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate">{t.name}</span>
+      </button>
+    </li>
+  ));
 }

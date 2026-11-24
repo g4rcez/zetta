@@ -149,7 +149,7 @@ try {
       return `${Math.round(ratio * 100)}% of the words from ${new URL(baseUrl).host} in ${((Date.now() - t0) / 1000).toFixed(1)} s`;
     });
   report.note(
-    "Portuguese came back about half right on synthetic voices with the small model: usable to get the idea of a voice note, not a transcript to rely on. A larger model can be set with ZETTA_TRANSCRIBE_MODEL (not tried here).",
+    "Portuguese came back about half right on synthetic voices with the small model: usable to get the idea of a voice note, not a transcript to rely on. A larger model can be set in Studio > Voice (not tried here).",
   );
   report.note(
     "The clip is synthetic speech from the machine's own voice, so accents, noise and a real microphone are not covered.",

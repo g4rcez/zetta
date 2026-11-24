@@ -284,7 +284,7 @@ try {
     await check(
       "The speech-to-text settings: a provider, a sealed key that is never shown again, and a test that works",
       async () => {
-        await page.goto(`${ORIGIN}/studio/decisions`);
+        await page.goto(`${ORIGIN}/studio/voice`);
         const form = page.locator('form[aria-label="Speech to text"]');
         await form.waitFor();
         await form.locator('[name="transcribeProvider"]').selectOption("compatible");
@@ -330,7 +330,7 @@ try {
           throw new Error(`transcribe: ${done.status} ${JSON.stringify(done.json).slice(0, 200)}`);
         if (providerSaw.at(-1)?.language !== "fr")
           throw new Error(`language ${String(providerSaw.at(-1)?.language)}`);
-        await page.goto(`${ORIGIN}/studio/decisions`);
+        await page.goto(`${ORIGIN}/studio/voice`);
         const form = page.locator('form[aria-label="Speech to text"]');
         await form.waitFor();
         await form.getByRole("button", { name: "Remove key" }).click();

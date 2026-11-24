@@ -1,12 +1,13 @@
 // Does a "light" engine run (no host plugins, skills, MCP servers or tools) answer the daily lessons reading as well as a plain run, for
 // fewer tokens? The same prompt goes through the real Claude CLI N times each way; what counts is the tokens and how much of the answer
-// is the same. The default (`ZETTA_LIGHT_RUNS`) only changes when the light side wins on both (docs/decisions/lessons.md).
+// is the same. The default (the setting `lightRuns`) only changes when the light side wins on both (docs/decisions/lessons.md).
 // Costs 2 x N small model calls on the account the Claude CLI is signed in to (N is 3 unless ZETTA_E2E_RUNS says otherwise).
 //   bun scripts/e2e/light-run-compare.ts
 import { runCli, type CliInput } from "../../apps/server/src/modules/chat/harness";
 import { batchPrompt } from "../../apps/server/src/modules/learning/transcript";
 import { parseCandidates } from "../../apps/server/src/modules/learning/validate";
 import { jaccard, tokens } from "../../apps/server/src/modules/learning/text";
+import { createTestSettings } from "../../apps/server/src/modules/settings/testing";
 import { createReport } from "./report";
 
 const report = createReport(
@@ -39,8 +40,9 @@ const prompt = batchPrompt("Support helper", transcript, []);
 
 type Side = { tokens: number[]; texts: Set<string>[]; failures: number };
 async function side(light: boolean): Promise<Side> {
-  // `light` is only honoured while this variable is on, so the plain side runs with it off.
-  process.env.ZETTA_LIGHT_RUNS = light ? "on" : "off";
+  // `light` is only honoured while the setting `lightRuns` is on, so the plain side runs with it off.
+  const flags = createTestSettings();
+  await flags.set("lightRuns", light ? "on" : "off");
   const out: Side = { tokens: [], texts: [], failures: 0 };
   for (let i = 0; i < N; i++) {
     let total = 0;
@@ -49,6 +51,7 @@ async function side(light: boolean): Promise<Side> {
       prompt,
       model: "haiku",
       timeoutMs: 240_000,
+      settings: flags.service,
       onUsage: (u) => (total += u.input + u.cacheRead + u.cacheWrite + u.output),
       ...(light ? { light: "on" as const } : {}),
     };
@@ -94,6 +97,6 @@ await report.check("the candidates are mostly the same (at least 80% overlap)", 
   return `${Math.round(overlap * 100)}% of the candidates match`;
 });
 report.note(
-  "Switch the default of ZETTA_LIGHT_RUNS to on only when every check here is green on this machine and on a second one.",
+  "Switch the default of the setting lightRuns to on only when every check here is green on this machine and on a second one.",
 );
 process.exit(report.finish("the Claude CLI installed and signed in"));

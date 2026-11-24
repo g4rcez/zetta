@@ -28,4 +28,7 @@ export const snapshotBotConfig = (r: typeof bot.$inferSelect) => ({
   summaryMaxChars: r.summaryMaxChars,
   summaryGapBytes: r.summaryGapBytes,
   chatSearchLimit: r.chatSearchLimit,
+  // Added with spoken calls (2026-11-23). Older revisions lack them.
+  voice: r.voice,
+  voiceLanguage: r.voiceLanguage,
 });

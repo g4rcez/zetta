@@ -2,17 +2,24 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { PluginFile } from "../chat/harness";
+import { readSetting, type SettingsReader } from "../settings/service";
 import { FILE_LIMITS, LIMITS, noInjection, skillName } from "./profile";
 
 /**
  * Skills that sit in the home of the user running the server. `claude` (~/.claude/skills) is read by Claude Code on its own;
  * `agents` (~/.agents/skills) is the folder other agent tools share, which Claude Code does not read.
- * Off unless ZETTA_HOST_SKILLS=on: the folders belong to one OS user, and every person who can chat with a bot would see them.
+ * Off unless the setting `hostSkills` is on (Studio > Server settings; read on every call): the folders belong to one OS user, and every person who can chat with a bot would see them.
  */
 export type HostRoot = "claude" | "agents";
 /** `dir` is the absolute folder of the skill. The text of the skill is never kept here: the harness loads the skill itself. */
 export type HostSkill = { name: string; description: string; root: HostRoot; dir: string };
-type Options = { home?: string; env?: NodeJS.ProcessEnv };
+type Options = {
+  home?: string;
+  /** Where the setting `hostSkills` is read. Without it the registry default (off) counts. */
+  settings?: SettingsReader;
+  /** The platform environment, for the HOME folder only. */
+  env?: NodeJS.ProcessEnv;
+};
 
 const ROOTS: readonly (readonly [HostRoot, string])[] = [
   ["claude", ".claude/skills"],
@@ -50,10 +57,11 @@ export function parseSkillFile(text: string): { description: string; body: strin
  * The skills in the home folders, `claude` first: a name found in both is listed once, from the folder Claude Code reads.
  * Nothing when the feature is off. A folder that is missing, a name that is not a valid skill name and a file that cannot be read are skipped.
  */
-export async function hostSkills({ env = process.env, ...rest }: Options = {}): Promise<
+export async function hostSkills({ env = process.env, settings, ...rest }: Options = {}): Promise<
   HostSkill[]
 > {
-  if (env.ZETTA_HOST_SKILLS !== "on") return [];
+  // The organization id is passed here when workspaces exist.
+  if ((await readSetting(settings, "hostSkills")) !== "on") return [];
   // The same HOME the harness hands to the CLI.
   const home = rest.home ?? (env.HOME || homedir());
   const seen = new Set<string>();

@@ -21,9 +21,18 @@ export const NEVER_REMEMBERED = new Set([
 
 /**
  * Chief tools whose changes are never remembered, whatever the action: one rule would cover every action of the tool. The company chart is
- * shared by everyone and an administrator's choice each time (adding a seat and removing one are not the same decision).
+ * shared by everyone and an administrator's choice each time (adding a seat and removing one are not the same decision). A mailbox: which
+ * bot reads the person's mail, and disconnecting it, are decisions about one mailbox each time. A server setting changes the behaviour of the whole
+ * installation: each one is its own decision.
  */
-export const NEVER_REMEMBERED_TOOLS = new Set(["org", "team:people", "workflow_gate"]);
+export const NEVER_REMEMBERED_TOOLS = new Set([
+  "org",
+  "team:people",
+  "workflow_gate",
+  "mailbox",
+  "phone",
+  "setting",
+]);
 
 /** What narrows a broad kind: the tool of a chief action, the call kinds of a held bot action. Empty for the other kinds. */
 export function actionKeyOf(kind: string, patch: unknown): string {

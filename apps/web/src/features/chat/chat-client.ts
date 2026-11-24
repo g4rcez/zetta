@@ -39,6 +39,9 @@ export type Bot = {
   summaryMaxChars?: number | null;
   summaryGapBytes?: number | null;
   chatSearchLimit?: number | null;
+  /** The speech provider's own voice for this bot, and the language it speaks; null or missing uses the installation's. Kept on the server. */
+  voice?: string | null;
+  voiceLanguage?: string | null;
   codeAccess?: boolean;
   commitIdentity?: CommitIdentity;
   commitEmail?: string | null;
@@ -123,6 +126,8 @@ export type BotPatch = Partial<{
   summaryMaxChars: number | null;
   summaryGapBytes: number | null;
   chatSearchLimit: number | null;
+  voice: string | null;
+  voiceLanguage: string | null;
   codeAccess: boolean;
   commitIdentity: CommitIdentity;
   commitEmail: string | null;
@@ -189,6 +194,7 @@ export const NEVER_REMEMBERED_TOOLS: ReadonlySet<string> = new Set([
   "org",
   "team:people",
   "workflow_gate",
+  "mailbox",
 ]);
 /** The key the server narrows a chief card by (chat/approval-rules.ts `actionKeyOf`). */
 const chiefKeyOf = (patch: Record<string, unknown> | undefined) =>
@@ -305,6 +311,14 @@ export type MessageMeta = {
     }[];
   };
   receipts?: Receipt[];
+  /** A phone call a bot placed, reported by the server: how it went and the chat that holds its words. */
+  phone?: {
+    callId: string;
+    outgoing?: boolean;
+    outcome?: "done" | "declined" | "no_answer" | "voicemail" | "failed";
+    seconds?: number;
+    conversationId?: string | null;
+  };
   plan?: PlanStep[];
   /** A message sent while a bot worked, read by that bot at its next step (`replyId` is the reply that used it) instead of getting its own answer. */
   steer?: { replyId: string; at: number };
@@ -534,6 +548,9 @@ export const stepOutputUrl = (conversationId: string, stepId: string) =>
     serverOrigin(),
   ).toString();
 
+/** What a chat shown beside a page tells the server about that page: the mail conversation that is open. Ids only. */
+export type ChatContext = { kind: "mail"; mailboxId: string; conversationId: string };
+
 export const chatClient = {
   bots: () => call<{ bots: Bot[] }>("/api/bots").then((r) => r.bots),
   /** What the person can pick for this bot with `/`: names and descriptions, no instructions. */
@@ -613,6 +630,7 @@ export const chatClient = {
       fileRefs?: string[];
       memoryIds?: string[];
       skills?: string[];
+      context?: ChatContext;
     },
   ) =>
     call<{ message: Message }>(`/api/conversations/${id}/queue`, "POST", body).then(

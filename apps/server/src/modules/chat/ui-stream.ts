@@ -13,6 +13,7 @@ export type ChatDataParts = {
   computer: { messageId: string; botId: string; vm: { id: string; name: string } };
   "computer-step": { messageId: string; vmId: string; step: string; at: number };
   activity: { messageId: string; label: string; at: number; stepId?: string };
+  progress: { messageId: string; label: string; text: string; percent?: number; at: number };
   artifact: { messageId: string; id: string; title: string; at: number };
   steer: { messageId: string; noteIds: string[] };
   plan: {
@@ -89,6 +90,19 @@ export function toUIMessageStream(events: AsyncIterable<ChatEvent>) {
               label: ev.label,
               at: ev.at,
               ...(ev.stepId ? { stepId: ev.stepId } : {}),
+            },
+          });
+        else if (ev.type === "progress")
+          // A reading, not a step: with an id, each one replaces the last part instead of adding another.
+          writer.write({
+            type: "data-progress",
+            id: `progress:${ev.messageId}`,
+            data: {
+              messageId: ev.messageId,
+              label: ev.label,
+              text: ev.text,
+              at: ev.at,
+              ...(ev.percent !== undefined ? { percent: ev.percent } : {}),
             },
           });
         else if (ev.type === "steer")

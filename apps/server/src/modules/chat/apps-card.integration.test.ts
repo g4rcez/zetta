@@ -10,7 +10,7 @@ import { createApps } from "../apps/service";
 import { createFeaturesService } from "../features/service";
 import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
 import { configureApps } from "../integrations/plugins/apps";
-import { world } from "../integrations/plugins/test-world";
+import { activate, world } from "../integrations/plugins/test-world";
 import { createChatService } from "./service";
 
 /**
@@ -154,6 +154,8 @@ suite("a bot calls an app, against compose postgres", () => {
     await db.$client.query("update bot set onboarded = true where id = $1", [bot.id]);
     const conv = (await call("POST", "/api/conversations", { botId: bot.id })).json.conversation
       .id as string;
+    // Built in, but not on by default: the person activates Apps for the bot. What the bot may call is still the apps it was given.
+    await activate(plugins, USER, "apps", bot.id);
     if (grant) {
       const actor = (await issueBackgroundActor(lookup, USER))!;
       await apps.setBotApps(actor, bot.id, [

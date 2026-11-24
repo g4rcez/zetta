@@ -21,7 +21,6 @@ import {
   SidebarSimpleIcon,
   UsersIcon,
 } from "@phosphor-icons/react";
-import { useProfile } from "@/features/preferences/profile-api";
 import { BotsContext } from "@/components/bot-identity";
 import { LatestChatsContext } from "@/components/bot-tag";
 import { motion, useReducedMotion } from "motion/react";
@@ -36,7 +35,6 @@ import { cn } from "@zetta/ui/lib/utils";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotCurrentTask, BotStatusDot, BotStatusLabel } from "@/components/bot-status";
 import { ResizeHandle, toWidth } from "@/components/resize-handle";
-import { authClient } from "@/lib/auth-client";
 import {
   setChatKeepAwake,
   useChatKeepAwake,
@@ -66,20 +64,24 @@ import { useQuotedPage } from "./use-quoted-page";
 import { lastEditable } from "./message-edit";
 import { quoteChip, quoteFields } from "./quote-selection";
 import { SetupActionsContext, type SetupActions } from "./setup-actions";
-import type { Author } from "./message-row";
+import { PhoneLiveCalls } from "../phone/live-calls";
 import { ProposalsPanel } from "./proposals-panel";
 import { LoopBanner, useGoalLoop } from "./loop-banner";
 import { SlowTurnCard, useTurnState } from "./slow-turn-card";
 import { useBotStatus } from "../bots/status";
 import { runSlowTurnCommand, slowTurnCommand } from "./slow-turn";
 import { PublishDialog } from "./publish-dialog";
-import { toggleReaction } from "./reactions";
 import { pollEvery } from "@/lib/query-policy";
 import { chatQueries } from "./chat-queries";
 import { useSidebarData } from "./sidebar-data";
 import { ThreadPanel } from "./thread-panel";
 import { draftKey } from "./use-draft";
 import { useZettaChat } from "./use-zetta-chat";
+import { useAuthorOf } from "./use-author-of";
+import { useFollowQueued } from "./use-follow-queued";
+import { useReactions } from "./use-reactions";
+import { useVoiceCall } from "../voice/use-voice-call";
+import { VoicePanel, type VoiceControl } from "../voice/voice-panel";
 import { Alert } from "@g4rcez/components/alert";
 import { saveLocal } from "@/lib/local-storage";
 import { discussionsQueries } from "../discussions/discussions-api";
@@ -126,7 +128,6 @@ export function ChatPage() {
   const search = useSearch({ from: "/_auth/chat/{-$chatId}" });
   const params = useParams({ from: "/_auth/chat/{-$chatId}" });
   const navigate = useNavigate();
-  const { data: session } = authClient.useSession();
   const { bots, refreshBots, chats, setChats, chatsLoaded, loadChats } = useSidebarData();
   const qc = useQueryClient();
   const [error, setError] = useState<string>();
@@ -297,18 +298,7 @@ export function ChatPage() {
   // A message the running reply did not read is answered by a turn the server starts when that reply ends: follow that answer live
   // and refresh until none waits.
   const waiting = saved.some((m) => m.queue === "pending" || m.queue === "running");
-  const follow = useRef(main);
-  follow.current = main;
-  useEffect(() => {
-    if (!chatId || !waiting || main.busy) return;
-    follow.current.reattach();
-    const t = setInterval(() => {
-      if (document.hidden) return; // a hidden tab catches up when it is visible again
-      void reload(chatId);
-      follow.current.reattach();
-    }, 2_000);
-    return () => clearInterval(t);
-  }, [chatId, waiting, main.busy, reload]);
+  useFollowQueued(chatId, waiting, main, reload);
   const goal = useGoalLoop(
     chatId,
     () => main.reattach(),
@@ -324,32 +314,24 @@ export function ChatPage() {
     main.busy || botStatus === "working" || botStatus === "planning",
   );
   const current = bots.find((b) => b.id === botId);
-  const meName = session?.user.name ?? "You",
-    meImage = session?.user.image,
-    meAvatar = useProfile(Boolean(session)).data?.avatar;
-  // Author objects are cached so memoized rows see the same one on every render; the cache resets when its inputs change.
-  const authorOf = useMemo(() => {
-    const cache = new Map<string, Author>();
-    const once = (key: string, make: () => Author) => {
-      let a = cache.get(key);
-      if (!a) cache.set(key, (a = make()));
-      return a;
-    };
-    return (row: Row): Author => {
-      // Outside people writing through a channel plugin are not the signed-in user.
-      if (row.role === "user" && row.meta?.inbound) {
-        const { label, chatName } = row.meta.inbound;
-        return once(`in:${label}:${chatName}`, () => ({ name: `${label} · ${chatName}` }));
-      }
-      if (row.role === "user")
-        return once("me", () => ({ name: meName, image: meImage, avatar: meAvatar }));
-      const id = row.botId ?? botId;
-      return once(`bot:${id}:${row.botName ?? ""}`, () => {
-        const bot = bots.find((b) => b.id === id);
-        return { name: bot?.name ?? row.botName ?? "Bot", bot };
-      });
-    };
-  }, [bots, botId, meName, meImage, meAvatar]);
+  // A spoken call is held in a plain chat only; the server saves what is said as messages, so the page just refreshes the chat.
+  const voice = useVoiceCall({
+    conversationId: chatId,
+    kind: openChatRow?.kind,
+    botId,
+    onActivity: () => void (chatId && reload(chatId)),
+  });
+  const voicePlace = voice.availability === "on";
+  const voiceIdle = voice.view.phase === "idle" || voice.view.phase === "ended";
+  const voiceControl: VoiceControl | undefined =
+    voice.call && voicePlace
+      ? {
+          call: voiceIdle ? "idle" : "active",
+          botName: current?.name,
+          onToggle: () => (voiceIdle ? void voice.call?.start() : voice.call?.end()),
+        }
+      : undefined;
+  const authorOf = useAuthorOf(bots, botId);
 
   const rows = useMemo(() => transcriptRows(saved, main.rows), [saved, main.rows]);
   const thread = threadId
@@ -439,21 +421,7 @@ export function ChatPage() {
     () => ({ say: (text) => void sendRef.current({ text, attachmentIds: [], fileRefs: [] }) }),
     [],
   );
-  const setReactions = (id: string, reactions: Message["reactions"]) =>
-    qc.setQueryData<Message[]>(chatQueries.messages(chatId ?? "").queryKey, (l) =>
-      l?.map((m) => (m.id === id ? { ...m, reactions } : m)),
-    );
-  async function toggleReact(m: Row, emoji: string) {
-    const before = m.reactions ?? [],
-      wasMine = before.some((r) => r.emoji === emoji && r.mine);
-    setReactions(m.id, toggleReaction(before, emoji));
-    try {
-      await (wasMine ? chatClient.unreact(m.id, emoji) : chatClient.react(m.id, emoji));
-    } catch (e) {
-      setReactions(m.id, before);
-      fail(e);
-    }
-  }
+  const toggleReact = useReactions(chatId, fail);
   const { pins, pinnedIds, setPinned } = usePins(chatId, fail);
   const polls = usePollActions(chatId, fail);
   // Stable identity: memoized rows must not re-render because the page did. Handlers read the latest closure through a ref.
@@ -900,6 +868,7 @@ export function ChatPage() {
               </FeedbackProvider>
             </SetupActionsContext.Provider>
             <div className="w-full shrink-0 space-y-2 px-4 pb-4">
+              <PhoneLiveCalls conversationId={chatId} />
               <ProposalsPanel
                 conversationId={chatId}
                 proposals={proposals}
@@ -940,6 +909,7 @@ export function ChatPage() {
                 />
               )}
               {botId && <ComputerActivity botId={botId} botName={current?.name} />}
+              {voice.call && voicePlace && <VoicePanel call={voice.call} view={voice.view} />}
               {roomChat ? (
                 <div
                   role="status"
@@ -960,6 +930,7 @@ export function ChatPage() {
                 <DraftComposer
                   memory
                   polls
+                  voice={voiceControl}
                   skillBots={botId ? [botId] : []}
                   replyTo={
                     quoting &&

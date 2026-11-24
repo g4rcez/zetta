@@ -252,7 +252,12 @@ describe("chief creation tools", () => {
     // Raised from 35_800 to 36_200 on purpose (2026-11-15): the new workflow steps (tool, approval, wait, for_each, retry) in the zetta:workflow line (~330).
     // Raised from 36_200 to 36_300 on purpose (2026-11-16): `role` on zetta:bot update (~30).
     // Raised from 36_300 to 36_800 on purpose (2026-11-18): the zetta:lessons line (~390) lets the Chief read and change what the bots learned.
-    expect(chief.length).toBeLessThan(36_800);
+    // Raised from 36_800 to 37_100 on purpose (2026-11-22): the zetta:mailbox line (~430) lets the Chief list, hand out, rename, connect (a form) and disconnect mailboxes.
+    // Raised from 37_100 to 37_400 on purpose (2026-11-22): give_address and senders on the zetta:mailbox line (~190) let the Chief give a bot its own address.
+    // Raised from 37_400 to 38_000 on purpose (2026-11-23): the zetta:phone line (~560) lets the Chief ask for, change and release a bot's phone number.
+    // Raised from 38_000 to 38_200 on purpose (2026-11-23): attach and reassign on the zetta:phone line (~120) let an administrator give a bot a number the account owns.
+    // Raised from 38_200 to 38_600 on purpose (2026-11-23): the zetta:setting line (~400) lets an administrator's Chief read and change server settings.
+    expect(chief.length).toBeLessThan(38_600);
     expect(toolPreamble("off", false, false)).not.toContain("next_wave");
   });
   test("every bot is told that [suggest only] items change by suggestion and [read only] items not at all", () => {

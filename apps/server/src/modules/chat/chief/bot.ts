@@ -56,6 +56,8 @@ const FIELDS = [
   "summaryMaxChars",
   "summaryGapBytes",
   "chatSearchLimit",
+  "voice",
+  "voiceLanguage",
 ] as const;
 
 export async function runBot(ctx: ChiefCtx, a: ChiefArgs<"bot">): Promise<Outcome> {
@@ -69,7 +71,7 @@ export async function runBot(ctx: ChiefCtx, a: ChiefArgs<"bot">): Promise<Outcom
     if ("error" in r) return r;
     const b = r.hit;
     return {
-      read: `bot.get:\n${JSON.stringify({ ...summary(b), role: b.role, shownAs: botRole(b), description: b.description, personality: b.personality, instructions: b.instructions, commitIdentity: b.commitIdentity, commitEmail: b.commitEmail, requiredConnections: b.requiredConnections, contextBytes: b.contextBytes, summaryMode: b.summaryMode, summaryMaxChars: b.summaryMaxChars, summaryGapBytes: b.summaryGapBytes, chatSearchLimit: b.chatSearchLimit })}`,
+      read: `bot.get:\n${JSON.stringify({ ...summary(b), role: b.role, shownAs: botRole(b), description: b.description, personality: b.personality, instructions: b.instructions, commitIdentity: b.commitIdentity, commitEmail: b.commitEmail, requiredConnections: b.requiredConnections, contextBytes: b.contextBytes, summaryMode: b.summaryMode, summaryMaxChars: b.summaryMaxChars, summaryGapBytes: b.summaryGapBytes, chatSearchLimit: b.chatSearchLimit, voice: b.voice, voiceLanguage: b.voiceLanguage })}`,
     };
   }
   const r = pick(bots, a.bot, (b) => b.name, "bot");

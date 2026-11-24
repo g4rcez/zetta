@@ -124,3 +124,100 @@ test("buildAnswer types numbers, keeps booleans and leaves blank optional fields
   expect(buildAnswer(fields, { title: "x", points: "many" })).toEqual({ missing: "Points" });
   expect(buildAnswer(fields, { title: "   " })).toEqual({ missing: "Title" });
 });
+
+test("a mail shows the mailbox, the recipients, the subject and the full text with its line breaks; Approve sends nothing by itself", async () => {
+  const long = Array.from({ length: 60 }, (_, i) => `Line ${i + 1}`).join("\n");
+  const calls: unknown[][] = [];
+  const v = await render(
+    approval({
+      tool: "mailbox.mail_reply",
+      message: "Send this mail from ana@example.invalid. It goes out in your name.",
+      input: "From: ana@example.invalid",
+      mail: {
+        from: "ana@example.invalid",
+        to: ["rui@example.invalid", "bia@example.invalid"],
+        subject: "Re: Planning",
+        text: long,
+      },
+    }),
+    (...a) => calls.push(a),
+  );
+  const text = v.host.textContent ?? "";
+  expect(text).toContain("wants to send a mail");
+  expect(text).toContain("ana@example.invalid");
+  expect(text).toContain("rui@example.invalid, bia@example.invalid");
+  expect(text).toContain("Re: Planning");
+  expect(text).toContain("Send this mail from ana@example.invalid");
+  const body = v.host.querySelector("pre")!;
+  expect(body.textContent).toBe(long);
+  // Long text scrolls inside the card, and the line breaks are kept.
+  expect(body.className).toContain("max-h-64");
+  expect(body.className).toContain("overflow-auto");
+  expect(body.className).toContain("whitespace-pre-wrap");
+  expect(calls).toEqual([]);
+  await v.press("Approve");
+  expect(calls).toEqual([[true]]);
+  await v.unmount();
+});
+
+test("a phone call shows the number formatted, the country, the longest, what happens on a machine and the briefing; Approve places nothing by itself", async () => {
+  const calls: unknown[][] = [];
+  const v = await render(
+    approval({
+      tool: "phone.phone_call",
+      message: "Place this phone call to +12025550123 (United States).",
+      input: "To: +12025550123",
+      phone: {
+        to: "+12025550123",
+        country: "US",
+        briefing: "Confirm the table for two at 3pm.\nSay the name is Ana.",
+        maxMinutes: 5,
+        voicemail: "hang_up",
+      },
+    }),
+    (...a) => calls.push(a),
+  );
+  const text = v.host.textContent ?? "";
+  expect(text).toContain("wants to make a phone call");
+  expect(text).toContain("+1 (202) 555-0123");
+  expect(text).toContain("United States");
+  expect(text).toContain("5 minutes");
+  expect(text).toContain("Hang up");
+  expect(text).toContain("Confirm the table for two at 3pm.");
+  expect(text).toContain("automated assistant");
+  // No cost line when the server knows no rate.
+  expect(text).not.toContain("a minute");
+  expect(
+    v.host.querySelector('pre[aria-label="What the call will say and ask"]')!.textContent,
+  ).toContain("\n");
+  expect(calls).toEqual([]);
+  expect(v.buttons().map((b) => b.textContent)).toEqual(["Decline", "Approve"]);
+  await v.press("Approve");
+  expect(calls).toEqual([[true]]);
+  await v.unmount();
+});
+
+test("a phone call shows the cost when the server gives a rate, and the voicemail message when one is left", async () => {
+  const v = await render(
+    approval({
+      tool: "phone.phone_call",
+      message: "",
+      phone: {
+        to: "+551155550123",
+        country: "BR",
+        briefing: "Hi",
+        maxMinutes: 1,
+        voicemail: "leave_message",
+        costPerMinute: "0.05 USD",
+      },
+    }),
+    () => {},
+  );
+  const text = v.host.textContent ?? "";
+  expect(text).toContain("+55 11 5555-0123");
+  expect(text).toContain("1 minute");
+  expect(text).not.toContain("1 minutes");
+  expect(text).toContain("About 0.05 USD a minute");
+  expect(text).toContain("Leave the message");
+  await v.unmount();
+});

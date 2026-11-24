@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { serverOrigin } from "@/lib/server-origin";
 import { refreshBotStatus } from "../bots/status";
-import { cancelTurn, chatClient } from "./chat-client";
+import { cancelTurn, chatClient, type ChatContext } from "./chat-client";
 import { liveRows, reuseRows, summaryOf, type Row, type ZettaUIMessage } from "./chat-rows";
 
 type Extras = {
@@ -19,6 +19,8 @@ type Extras = {
   fileRefs?: string[];
   memoryIds?: string[];
   skills?: string[];
+  /** The page the chat sits beside, as the server checks it. */
+  context?: ChatContext;
 };
 const url = (path: string) => new URL(path, serverOrigin()).toString();
 
@@ -84,6 +86,7 @@ export function useZettaChat({
               ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
               ...(extras.memoryIds?.length ? { memoryIds: extras.memoryIds } : {}),
               ...(extras.skills?.length ? { skills: extras.skills } : {}),
+              ...(extras.context ? { context: extras.context } : {}),
             },
           };
         },
@@ -220,6 +223,7 @@ export function useZettaChat({
           ...(extras.fileRefs?.length ? { fileRefs: extras.fileRefs } : {}),
           ...(extras.memoryIds?.length ? { memoryIds: extras.memoryIds } : {}),
           ...(extras.skills?.length ? { skills: extras.skills } : {}),
+          ...(extras.context ? { context: extras.context } : {}),
         });
         await handlers.current.onSettled(id);
         return;

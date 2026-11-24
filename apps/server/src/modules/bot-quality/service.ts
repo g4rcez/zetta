@@ -106,6 +106,8 @@ const restorable = z
     summaryMaxChars: z.number().int().nullable(),
     summaryGapBytes: z.number().int().nullable(),
     chatSearchLimit: z.number().int().nullable(),
+    voice: z.string().nullable(),
+    voiceLanguage: z.string().nullable(),
   })
   .partial();
 export type BotConfigSnapshot = z.infer<typeof restorable>;
@@ -149,6 +151,8 @@ export const snapshotOfBot = (r: typeof bot.$inferSelect): BotConfigSnapshot => 
   summaryMaxChars: r.summaryMaxChars,
   summaryGapBytes: r.summaryGapBytes,
   chatSearchLimit: r.chatSearchLimit,
+  voice: r.voice,
+  voiceLanguage: r.voiceLanguage,
 });
 
 const ANSWER_CHARS = 4000;

@@ -4,6 +4,7 @@ import { botClaudeAsset, botClaudeConfig } from "@zetta/db/schema/bot-claude";
 import { botSkill, skill, skillFile } from "@zetta/db/schema/skills";
 import { dockerConfig, type AgentProfile } from "../chat/harness";
 import { hostSkills } from "./host-skills";
+import type { SettingsReader } from "../settings/service";
 import {
   assetInput,
   buildProfile,
@@ -47,7 +48,7 @@ const toConfig = (r: typeof botClaudeConfig.$inferSelect): Config => ({
 });
 
 /** Per-bot Claude Code settings and the skills/agents installed for that bot. Callers check that the person owns the bot. */
-export function createBotClaude(db: Database) {
+export function createBotClaude(db: Database, deps: { settings?: SettingsReader } = {}) {
   const configRow = async (botId: string) =>
     (await db.select().from(botClaudeConfig).where(eq(botClaudeConfig.botId, botId)))[0];
   const assetRows = (botId: string) =>
@@ -79,6 +80,8 @@ export function createBotClaude(db: Database) {
           .orderBy(asc(skillFile.path))
       : [];
   return {
+    /** Where the setting `hostSkills` is read when skills are listed (see `skillsOf`). */
+    settings: deps.settings,
     async get(botId: string) {
       const [c, a] = await Promise.all([configRow(botId), assetRows(botId)]);
       return { config: c ? toConfig(c) : DEFAULT_CONFIG, assets: a.map(toAsset) };
@@ -205,7 +208,7 @@ export async function skillsOf(claude: BotClaude, bot: { id: string; harness: st
   if (bot.harness === "fixture" || bot.harness === "decision") return own;
   if (bot.harness !== "claude-code" && dockerConfig()) return own;
   const taken = new Set(own.map((k) => k.name));
-  const host = (await hostSkills())
+  const host = (await hostSkills({ settings: claude.settings }))
     .filter((k) => !taken.has(k.name))
     .map(({ name, description }) => ({ name, description, source: "host" as const }));
   return [...own, ...host];

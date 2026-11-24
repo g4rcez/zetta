@@ -13,12 +13,15 @@ import {
 } from "../onboarding/installation-api";
 import { InvitationManager } from "../identity/invitation-manager";
 import { LayaSwitch } from "../studio/laya-switch";
+import { BotMailSettings } from "../studio/bot-mail-settings";
+import { PhoneSetupLink } from "../phone/phone-setup";
 import { TranscribeSettings } from "../studio/transcribe-settings";
 import { UpdateCheckSetting } from "../studio/update-check-setting";
 import { MAIL_PRESETS } from "../studio/sources";
 import { call, sendSealed } from "./chat-client";
 import { errorMessage } from "./chat-client";
 import type { FormCardData } from "./form-card-data";
+import { MailConnectCard } from "../mail/mail-connect-card";
 import { RoutineTriggers } from "../routines/routine-triggers";
 import { formText } from "../shared/form-data";
 
@@ -100,6 +103,11 @@ const FORM: Record<
       />
     ),
   },
+  mailbox: {
+    title: () => "Connect a mailbox",
+    done: () => "Connected. The password is stored encrypted and will not be shown again.",
+    body: (p) => <MailConnectCard {...p} />,
+  },
   connection: {
     title: (d) => `Add a ${d.prefill.provider ?? ""} key`,
     done: () => "Saved. The key is stored encrypted and will not be shown again.",
@@ -172,6 +180,8 @@ function InstallationForm({ onCancel }: Props) {
     <div className="space-y-4">
       <LayaSwitch onError={setError} />
       <TranscribeSettings />
+      <BotMailSettings />
+      <PhoneSetupLink />
       <UpdateCheckSetting onError={setError} />
       <NetworkMode onError={setError} />
       {error && <Alert theme="danger">{error}</Alert>}

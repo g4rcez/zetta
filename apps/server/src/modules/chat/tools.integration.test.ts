@@ -13,6 +13,8 @@ import { createFeaturesService } from "../features/service";
 import { createMemory } from "../memory/service";
 import { ComputerError } from "../computer/service";
 import { createDbVmStore, createVmService } from "../computer/vm";
+import { settingDefault } from "@zetta/core/settings";
+import type { SettingsReader } from "../settings/service";
 import { createLoopDriver, createLoopStore } from "./loops";
 
 describe("parseTools", () => {
@@ -90,7 +92,10 @@ suite("bot tools against compose postgres", () => {
     store: vmStore,
     docker: { bin: "docker", image: "x", memory: "1g", cpus: "1", pids: 64, shm: "64m" },
     tokenRoot: `${process.env.TMPDIR ?? "/tmp"}/zetta-vm-it`,
-    maxPerUser: 2,
+    // The setting vmMaxPerUser is 2; everything else is the registry default.
+    settings: {
+      get: async (key) => (key === "vmMaxPerUser" ? 2 : settingDefault(key)),
+    } as SettingsReader,
     exec: async (args) => ({
       code: args[0] === "start" ? 1 : 0,
       stdout: args[0] === "port" ? "127.0.0.1:1\n" : "",

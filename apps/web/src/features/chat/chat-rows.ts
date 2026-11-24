@@ -13,6 +13,7 @@ export type ZettaData = {
   computer: { messageId: string; botId?: string; vm: { id: string; name: string } };
   "computer-step": { messageId: string; vmId: string; step: string; at: number };
   activity: { messageId: string; label: string; at: number; stepId?: string };
+  progress: { messageId: string; label: string; text: string; percent?: number; at: number };
   artifact: { messageId: string; id: string; title: string; at: number };
   plan: { messageId: string; steps: PlanStep[] };
   steer: { messageId: string; noteIds: string[] };
@@ -27,6 +28,10 @@ export type Row = Message & {
   streaming?: boolean;
   /** What the bot is doing right now between text chunks (a tool call, waiting on the model). */
   activity?: string;
+  /** When the latest real step began (not the "Still working" heartbeat): a progress reading older than this belongs to a finished step. */
+  activityAt?: number;
+  /** How far a long plugin call is (a download, a transcription): the latest reading. Live only. Read it with `currentProgress`. */
+  progress?: { label: string; text: string; percent?: number; at: number };
   /** Every step the bot reported this turn, oldest first. Saved replies keep it in `meta.timeline`. */
   timeline?: { at: number; label: string; stepId?: string }[];
   /** The checklist the bot announced this turn. Saved replies keep it in `meta.plan`. */
@@ -36,6 +41,12 @@ export type Row = Message & {
   /** Only on the row a page hands to `onQuote`: the part of the message the person selected (Quote selection). */
   quoteSelection?: string;
 };
+/**
+ * The progress of the step that is running now, or undefined. A reading is current only while nothing newer has started: when the
+ * bot moves on to its next step the reading is that of a step that is over.
+ */
+export const currentProgress = (r: Row) =>
+  r.progress && r.progress.at >= (r.activityAt ?? 0) ? r.progress : undefined;
 /** Computers a bot used on this message: announced live while it works, then kept in the saved receipts. */
 export const computersOf = (r: Row) => {
   const seen = new Map((r.computers ?? []).map((c) => [c.id, c]));
@@ -123,6 +134,8 @@ export function liveRows(
         const target = rows.find((r) => r.id === p.data.messageId) ?? current;
         if (target) {
           target.activity = p.data.label;
+          if (!p.data.label.startsWith("Still working"))
+            target.activityAt = Math.max(target.activityAt ?? 0, p.data.at);
           // A step with an id is its own entry even when the label repeats (two `cd` in a row are two commands).
           if (
             p.data.label !== "Thinking" &&
@@ -137,6 +150,16 @@ export function liveRows(
               },
             ];
         }
+      } else if (p.type === "data-progress") {
+        // One part that the server keeps replacing, so it can sit before a later step: `currentProgress` decides by time, not by place.
+        const target = rows.find((r) => r.id === p.data.messageId) ?? current;
+        if (target)
+          target.progress = {
+            label: p.data.label,
+            text: p.data.text,
+            at: p.data.at,
+            ...(p.data.percent !== undefined ? { percent: p.data.percent } : {}),
+          };
       } else if (p.type === "data-plan") {
         const target = rows.find((r) => r.id === p.data.messageId) ?? current;
         if (target) target.plan = p.data.steps;

@@ -39,6 +39,9 @@ import { applyStyle, runStyle } from "./style";
 import { applyTask, runTaskRemove } from "./tasks";
 import { applyOrg, runOrg } from "./org";
 import { applyLessons, runLessons } from "./lessons";
+import { applyMailbox, runMailbox } from "./mailbox";
+import { applyPhone, runPhone } from "./phone";
+import { applySetting, runSetting } from "./setting";
 import { applyProject, runProject } from "./project";
 import { applyTeam, runTeam } from "./team";
 import type { Applied, ApplyCtx, ChiefCtx, ChiefDeps, ChiefPatch, Outcome } from "./types";
@@ -85,6 +88,12 @@ export function createChief(deps: ChiefDeps) {
           return runOrg(ctx, args as never);
         case "lessons":
           return runLessons(ctx, args as never);
+        case "mailbox":
+          return runMailbox(ctx, args as never);
+        case "phone":
+          return runPhone(ctx, args as never);
+        case "setting":
+          return runSetting(ctx, args as never);
         case "project":
           return runProject(ctx, args as never);
         case "output_style":
@@ -158,6 +167,12 @@ export function createChief(deps: ChiefDeps) {
         // The card of a workflow's approval step: the click is the whole change. The waiting run wakes on its next tick (features/workflows.ts).
         case "workflow_gate":
           return undefined;
+        case "mailbox":
+          return applyMailbox(ctx, patch);
+        case "phone":
+          return applyPhone(ctx, patch);
+        case "setting":
+          return applySetting(ctx, patch);
         case "project":
           return applyProject(ctx, patch);
         case "output_style":

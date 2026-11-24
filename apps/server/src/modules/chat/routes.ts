@@ -24,6 +24,7 @@ import { IMAGE_TYPES } from "./images";
 import { DocumentError } from "./extract";
 import { MAX_PINS, PinLimitError } from "./pins";
 import { MessageEditError } from "./message-edit";
+import { MailContextError, mailContextBody } from "../mail/context";
 import { QUOTE_EXCERPT, QuoteExcerptError } from "./messages";
 import { MAX_LABEL, MAX_OPTIONS, MIN_OPTIONS, POLL_MODES, PollError } from "./polls";
 import { interviewInput, interviewTurn } from "./bot-interview";
@@ -44,6 +45,7 @@ import { toUIMessageStream } from "./ui-stream";
 import { accessFail, createGuardedRoute, fail, out, rejectUntrustedOrigin } from "../http-response";
 import { envNumber } from "../env-number";
 import { AVATAR_REF } from "@zetta/core/avatar";
+import { SPEECH_NAME_PATTERN } from "@zetta/core/speech";
 import { avatarOut } from "../avatars/out";
 import { AvatarRefError, resolveAvatar, type AvatarStore } from "../avatars/store";
 
@@ -147,6 +149,22 @@ const botInput = z.strictObject({
     .optional(),
   summaryGapBytes: z.number().int().min(SUMMARY_GAP_MIN).max(SUMMARY_GAP_MAX).nullable().optional(),
   chatSearchLimit: z.number().int().min(1).max(CHAT_SEARCH_LIMIT_MAX).nullable().optional(),
+  /** The provider's own voice name or id (empty clears it: the installation's voice applies), and the language it speaks. */
+  voice: z
+    .string()
+    .trim()
+    .max(100)
+    .regex(SPEECH_NAME_PATTERN)
+    .transform((v) => v || null)
+    .nullable()
+    .optional(),
+  voiceLanguage: z
+    .string()
+    .trim()
+    .max(35)
+    .transform((v) => v || null)
+    .nullable()
+    .optional(),
   codeAccess: z.boolean().optional(),
   commitIdentity: z.enum(["git-config", "bot", "account", "custom"]).optional(),
   commitEmail: z.email().max(254).nullable().optional(),
@@ -217,6 +235,8 @@ const sendBody = z.strictObject({
   /** The old name of `memoryIds`: older clients still send it. */
   wikiIds: z.array(uuid).max(5).optional(),
   skills: z.array(skillName).max(5).optional(),
+  /** The mail conversation open next to this chat (the inbox panel): ids only, checked by the server. */
+  context: mailContextBody.optional(),
 });
 /** A message may be only pictures or files, but never empty. */
 const hasBody = (v: {
@@ -227,8 +247,11 @@ const hasBody = (v: {
 const send = sendBody
   .refine(hasBody)
   .refine((v) => !v.quoteExcerpt || !!v.quotedMessageId)
-  .transform(({ wikiIds, ...v }) => ({
+  .transform(({ wikiIds, context, ...v }) => ({
     ...v,
+    ...(context && {
+      mailContext: { mailboxId: context.mailboxId, conversationId: context.conversationId },
+    }),
     ...((v.memoryIds ?? wikiIds) && { memoryIds: v.memoryIds ?? wikiIds }),
   }));
 const conversationPatch = z.strictObject({
@@ -520,6 +543,12 @@ export function createChatRoutes(
         error.code === "NOT_FOUND" ? 404 : error.code === "NOT_ALLOWED" ? 403 : 400,
         `MESSAGE_${error.code}`,
         error.safe,
+      );
+    if (error instanceof MailContextError)
+      return fail(
+        422,
+        "MAIL_CONTEXT",
+        "The mail conversation next to this chat is not available to this bot any more. Open it again.",
       );
     if (error instanceof PinLimitError)
       return fail(
@@ -1096,6 +1125,7 @@ export function createChatRoutes(
           fileRefs: v.fileRefs,
           memoryIds: v.memoryIds,
           skills: v.skills,
+          mailContext: v.mailContext,
           clientRequestId: v.clientRequestId,
         });
       }, 201),

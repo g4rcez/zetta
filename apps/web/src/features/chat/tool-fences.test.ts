@@ -21,7 +21,7 @@ describe("stripToolFences", () => {
     expect(stripToolFences('Starting.\n```zetta:plan\n{"st')).toBe("Starting.");
   });
   it("removes a company chart or project block, finished or still being written", () => {
-    for (const kind of ["org", "project"]) {
+    for (const kind of ["org", "project", "mailbox"]) {
       expect(stripToolFences(`Done.\n\`\`\`zetta:${kind}\n{"action":"list"}\n\`\`\``)).toBe(
         "Done.",
       );

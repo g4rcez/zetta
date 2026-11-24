@@ -49,7 +49,7 @@ const BY_CODE: Record<string, Entry> = {
   },
   BLOCKED_URL: {
     why: "That address is not allowed.",
-    fix: "Use a public address. Private or local addresses need the administrator to enable private networks (ZETTA_ALLOW_PRIVATE_NETWORK=1).",
+    fix: "Use a public address. Private or local addresses need the administrator to enable private networks in Studio > Server settings.",
   },
   AUTH: {
     why: "The service rejected the saved credentials.",
@@ -99,7 +99,7 @@ const BY_CODE: Record<string, Entry> = {
   // MCP servers
   STDIO_NOT_ALLOWED: {
     why: "That local command is not on the administrator's allowlist.",
-    fix: "Ask the administrator to allow it (ZETTA_MCP_ALLOWLIST).",
+    fix: "Ask the administrator to allow it (Studio > Server settings > Allowed local MCP commands).",
   },
   // computer (browser, desktop, VM)
   UNAVAILABLE: {

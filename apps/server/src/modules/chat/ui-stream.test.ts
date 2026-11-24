@@ -49,6 +49,42 @@ async function chunks(events: ChatEvent[] | (() => AsyncGenerator<ChatEvent>)) {
 }
 
 describe("toUIMessageStream", () => {
+  test("progress readings share one part id, so each replaces the last", async () => {
+    const out = await chunks([
+      {
+        type: "progress",
+        messageId: "m1",
+        botId: "b",
+        label: "Running youtube · download",
+        text: "Downloading video · 10%",
+        percent: 10,
+        at: 1,
+      },
+      {
+        type: "progress",
+        messageId: "m1",
+        botId: "b",
+        label: "Running youtube · download",
+        text: "Looking for captions",
+        at: 2,
+      },
+    ]);
+    const parts = out.filter((c) => c.type === "data-progress");
+    expect(parts).toHaveLength(2);
+    expect(parts[0]!.id).toBe("progress:m1");
+    expect(parts[1]!.id).toBe("progress:m1");
+    expect(parts[0]!.transient).toBeUndefined();
+    expect(parts[0]!.data).toEqual({
+      messageId: "m1",
+      label: "Running youtube · download",
+      text: "Downloading video · 10%",
+      at: 1,
+      percent: 10,
+    });
+    // No percent known: the key is absent, not undefined.
+    expect(parts[1]!.data).not.toHaveProperty("percent");
+  });
+
   test("two speakers become successive data-speaker segments of one assistant message", async () => {
     const user = row("u1", "user", "@a @b hi", 1);
     const a = row("m1", "assistant", "hello from a", 2, "bot-a");

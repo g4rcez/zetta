@@ -16,6 +16,7 @@ import { createTurnRunner } from "./chat/pipeline";
 import { createMemory } from "./memory/service";
 import { createFeaturesService } from "./features/service";
 import { createIdentityAccess } from "./identity/access";
+import { createTestSettings } from "./settings/testing";
 
 /**
  * RFC-067: representative v1 journeys end to end through the HTTP API. The model is a scripted fake wired into the REAL turn
@@ -58,7 +59,16 @@ suite("v1 user journeys", () => {
     yield script.shift() ?? "OK";
   };
   const memory = createMemory(db);
-  const run = createTurnRunner(db, cli as never, stream as never, memory);
+  const hostSettings = createTestSettings();
+  const run = createTurnRunner(
+    db,
+    cli as never,
+    stream as never,
+    memory,
+    undefined,
+    undefined,
+    hostSettings.service,
+  );
   const features = createFeaturesService(db, run);
   const chat = createChatService(
     db,
@@ -73,7 +83,7 @@ suite("v1 user journeys", () => {
     undefined,
     undefined,
     undefined,
-    { memory },
+    { memory, settingsReader: hostSettings.service },
   );
   const app = createApp({
     auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
@@ -259,7 +269,7 @@ suite("v1 user journeys", () => {
       "host-shared",
       "---\ndescription: In the shared folder\n---\nshared steps",
     );
-    const was = { home: process.env.HOME, on: process.env.ZETTA_HOST_SKILLS };
+    const was = { home: process.env.HOME };
     const mk = async (name: string, harness: string) => {
       const b = (await call("POST", "/api/bots", { name, harness })).json.bot;
       await db.$client.query("update bot set onboarded = true where id = $1", [b.id]);
@@ -273,18 +283,28 @@ suite("v1 user journeys", () => {
     try {
       process.env.HOME = home;
       const [claude, plain] = [await mk("HostClaude", "claude-code"), await mk("HostPlain", "pi")];
-      // Off by default: nothing is listed and a pick is refused.
-      delete process.env.ZETTA_HOST_SKILLS;
+      // Off by default (the setting hostSkills): nothing is listed and a pick is refused.
+      await hostSettings.unset("hostSkills");
       expect((await call("GET", `/api/bots/${plain.id}/skills`)).json).toEqual({ skills: [] });
       expect((await say(plain, ["host-native"])).status).toBe(404);
-
+      // The old variable has no effect: the stored value (here: none, so off) decides.
       process.env.ZETTA_HOST_SKILLS = "on";
+      expect((await call("GET", `/api/bots/${plain.id}/skills`)).json).toEqual({ skills: [] });
+      delete process.env.ZETTA_HOST_SKILLS;
+
+      await hostSettings.set("hostSkills", "on");
       expect((await call("GET", `/api/bots/${plain.id}/skills`)).json).toEqual({
         skills: [
           { name: "host-native", description: "In the Claude folder", source: "host" },
           { name: "host-shared", description: "In the shared folder", source: "host" },
         ],
       });
+      // Turned off again, the list is empty at once, and back on it is full: no restart in between.
+      await hostSettings.set("hostSkills", "off");
+      expect((await call("GET", `/api/bots/${plain.id}/skills`)).json).toEqual({ skills: [] });
+      expect((await say(plain, ["host-native"])).status).toBe(404);
+      await hostSettings.set("hostSkills", "on");
+      expect((await call("GET", `/api/bots/${plain.id}/skills`)).json.skills).toHaveLength(2);
       // Claude Code reads ~/.claude/skills on its own: it is named, and nothing is installed or sent.
       expect((await say(claude, ["host-native"])).status).toBe(201);
       expect(prompts.at(-1)).toContain(
@@ -310,8 +330,8 @@ suite("v1 user journeys", () => {
     } finally {
       if (was.home === undefined) delete process.env.HOME;
       else process.env.HOME = was.home;
-      if (was.on === undefined) delete process.env.ZETTA_HOST_SKILLS;
-      else process.env.ZETTA_HOST_SKILLS = was.on;
+      delete process.env.ZETTA_HOST_SKILLS;
+      await hostSettings.unset("hostSkills");
       await rm(home, { recursive: true, force: true });
     }
   });

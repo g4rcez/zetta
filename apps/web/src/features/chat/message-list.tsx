@@ -18,6 +18,7 @@ import { BotsContext } from "@/components/bot-identity";
 import type { Bot, Revision } from "./chat-client";
 import { groupMessages, type Row } from "./chat-rows";
 import { repoByRow } from "./github-refs";
+import { PhoneCallNote } from "../phone/call-note";
 import { MessageRow, type Author } from "./message-row";
 import { QuoteSelection } from "./quote-selection";
 import type { Pin } from "./chat-client";
@@ -168,7 +169,10 @@ const Line = memo(function Line({
         messageId={row.id}
         className={recent ? "[content-visibility:visible]" : undefined}
       >
-        {row.role === "system" ? (
+        {row.role === "system" && row.meta?.phone?.outgoing ? (
+          // The outcome of a call a bot placed for this chat: the summary and a link to the call's own chat.
+          <PhoneCallNote content={row.content} phone={row.meta.phone} />
+        ) : row.role === "system" ? (
           // A loop step the server started (modules/chat/loops.ts): a quiet marker, not a message someone wrote.
           <div role="note" className="my-2 flex justify-center px-4">
             <span className="max-w-full truncate rounded-full border bg-muted/50 px-3 py-0.5 text-xs text-muted-foreground">

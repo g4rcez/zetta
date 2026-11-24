@@ -54,3 +54,16 @@ test("the routine triggers card is read, with the routine it is about", () => {
     prefill: { routineId: "r1", routineTitle: "Digest", status: "paused" },
   });
 });
+
+test("the mailbox form is drawn, with the address and the owner bot the chief suggested and nothing else", () => {
+  expect(
+    parseFormCard(
+      '{"form":"mailbox","botId":null,"botName":null,"prefill":{"address":"ana@example.invalid","ownerBotId":"b1"}}',
+    ),
+  ).toEqual({
+    form: "mailbox",
+    botId: null,
+    botName: null,
+    prefill: { address: "ana@example.invalid", ownerBotId: "b1" },
+  });
+});

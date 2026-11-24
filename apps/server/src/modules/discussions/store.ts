@@ -36,6 +36,7 @@ import { hasUniqueViolation } from "../pg-error";
 import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
 import { STUCK_MS, type StuckReason } from "./watchdog";
 import { insertProposal } from "../chat/proposals";
+import type { SettingsReader } from "../settings/service";
 
 type Bot = typeof bot.$inferSelect;
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -127,10 +128,12 @@ export function createDiscussionStore(
   db: Database,
   files?: Pick<FileStore, "readWithHash">,
   loops?: Pick<LoopStore, "start" | "active" | "activeAll" | "kick" | "setStatus">,
+  /** Where the setting `hostSkills` is read when the skills of a bot are checked. */
+  settings?: SettingsReader,
 ) {
   let onEnqueue: (() => void) | undefined;
   let onPersonPost: ((ownerUserId: string, conversationId: string) => void) | undefined;
-  const claude = createBotClaude(db);
+  const claude = createBotClaude(db, { settings });
   const visible = (a: ActiveActor) => or(eq(bot.ownerUserId, a.userId), eq(bot.visibility, "team"));
 
   async function loadOwned(a: ActiveActor, id: string) {

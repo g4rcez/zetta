@@ -1,3 +1,6 @@
+import type { Provisioning } from "../../mail/provision";
+import type { PhoneService } from "../../phone/service";
+import type { SettingsService } from "../../settings/service";
 import type { Database } from "@zetta/db";
 import type { bot } from "@zetta/db/schema/chat";
 
@@ -9,6 +12,7 @@ import type { Mcp } from "../../integrations/mcp";
 import type { AgendaScheduler } from "../../agenda/scheduler";
 import type { AgendaService } from "../../agenda/service";
 import type { ConnectionsService } from "../../connections/service";
+import type { MailService } from "../../mail/service";
 import type { InboundService } from "../../inbound/service";
 import type { Sources } from "../../integrations/sources";
 import type { Knowledge } from "../../knowledge/service";
@@ -124,6 +128,31 @@ export type ChiefDeps = {
         list: (owner: string, q: { status: "all" }) => Promise<LessonView[]>;
       }
     | undefined;
+  /** The person's mailboxes (modules/mail): the Chief reads them and, with a card, changes the owner bot and the name, or disconnects one. */
+  mail?: Pick<MailService, "list" | "update" | "remove"> | undefined;
+  /** Bot e-mail addresses (modules/mail/provision.ts): whether they are offered, and giving a bot one. */
+  provisioning?: Pick<Provisioning, "offered" | "giveAddress"> | undefined;
+  /** Bot phone numbers (modules/phone): the Chief reads them and, with a card, asks for, changes or releases one; an administrator approves requests. */
+  phone?:
+    | Pick<
+        PhoneService,
+        | "offer"
+        | "get"
+        | "request"
+        | "release"
+        | "update"
+        | "list"
+        | "approve"
+        | "reject"
+        | "attach"
+        | "reassign"
+        | "assignableBots"
+        | "addOptout"
+        | "calls"
+      >
+    | undefined;
+  /** Server settings (modules/settings): administrators only; the Chief reads them and, with a card, changes one that is not security policy. */
+  settings?: Pick<SettingsService, "list" | "set" | "unset"> | undefined;
   outputStyles?: OutputStyles | undefined;
   artifacts?: ArtifactStore | undefined;
   tasks?: TaskStore | undefined;

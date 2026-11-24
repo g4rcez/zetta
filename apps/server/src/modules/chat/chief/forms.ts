@@ -9,6 +9,7 @@ export const FORMS = [
   "installation",
   "source_login",
   "routine_triggers",
+  "mailbox",
 ] as const;
 export type FormName = (typeof FORMS)[number];
 export type FormCardBody = {

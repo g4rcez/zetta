@@ -44,6 +44,7 @@ import { EmojiPicker } from "./emoji-picker";
 import { computersOf, type Row } from "./chat-rows";
 import { elapsed, friendly, isGeneric, useNow, WorkTimeline } from "./work-timeline";
 import { VmCard } from "./vm-card";
+import { ListenButton } from "../voice/listen-button";
 import { SeenMark } from "./seen-mark";
 import { MoreActions } from "./message-actions";
 import { canEditRow, EditedMark, MessageEditor } from "./message-edit";
@@ -295,6 +296,9 @@ function HoverBar({
         </ActionHint>
       )}
       <CopyButton text={row.content} label="Copy message" className="!size-7 [&_svg]:!size-3.5" />
+      {row.role === "assistant" && !row.streaming && (
+        <ListenButton id={row.id} text={row.content} botId={row.botId ?? undefined} />
+      )}
       {onEdit && (
         <ActionHint label="Edit">
           <Button size="icon-xs" variant="ghost" aria-label="Edit" onClick={onEdit}>

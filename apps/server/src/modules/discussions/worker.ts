@@ -5,7 +5,7 @@ import { issueBackgroundActor, type MembershipLookup } from "../identity/access"
 import { instanceId } from "../runtime/instance";
 import type { ChatService } from "../chat/service";
 import type { Claimed, DiscussionStore } from "./store";
-import { envNumber } from "../env-number";
+import { readSetting, type SettingsReader } from "../settings/service";
 import {
   GRACE_MS,
   STUCK_MS,
@@ -16,12 +16,10 @@ import {
   type LiveTurn,
 } from "./watchdog";
 
-/** At most this many room turns run at once (one per room); the harness allows the same number of runs per person. */
-const concurrency = () => envNumber(process.env.ZETTA_ROOM_CONCURRENCY, 4);
-
 /**
  * Runs queued discussion turns in the background: on the server's 30s tick and right after something is queued (`kick`). At most
- * `concurrency` turns at once and one per room: claimNext checks that in the database, and claims are made one at a time here so two
+ * `concurrency` turns at once (the setting `roomConcurrency`, read before each claim: a lowered limit never stops a running turn, a raised one
+ * lets the next pump claim more) and one per room: claimNext checks that in the database, and claims are made one at a time here so two
  * claims never both see a room as idle (this server assumes it is the only instance, like the routine scheduler).
  * A turn woken by the person's own post skips that limit (lane "user"): the person gets an answer at once, as a new instance, even when
  * the bots are busy. Those turns are bounded only by the harness limiter.
@@ -32,14 +30,26 @@ export function createDiscussionWorker(
   store: DiscussionStore,
   chat: Pick<ChatService, "runDiscussionTurn">,
   lookup: MembershipLookup,
-  opts: { concurrency?: number; stuckMs?: number; graceMs?: number } = {},
+  opts: {
+    concurrency?: number;
+    stuckMs?: number;
+    graceMs?: number;
+    /** Where `roomConcurrency` is read. Without it the registry default counts. */
+    settings?: SettingsReader;
+  } = {},
 ) {
   let running = 0,
     userRunning = 0,
     lastSweep = 0,
     lastPurge = 0,
     claiming: Promise<unknown> = Promise.resolve();
-  const limit = () => opts.concurrency ?? concurrency();
+  // The organization id is passed here when workspaces exist.
+  // A database that cannot be read right now leaves the registry default, so a pump never fails on it.
+  const limit = async () =>
+    opts.concurrency ??
+    (await readSetting(opts.settings, "roomConcurrency").catch(() =>
+      readSetting(undefined, "roomConcurrency"),
+    ));
   const name = async (botId: string) =>
     (await db.select({ name: bot.name }).from(bot).where(eq(bot.id, botId)))[0]?.name ?? "A bot";
   const claim = (lane: "any" | "user" = "any") => {
@@ -110,7 +120,8 @@ export function createDiscussionWorker(
   /** Fills free slots with claimed turns; each slot keeps pulling until the queue is empty. */
   async function pump() {
     await pumpUser();
-    while (running < limit()) {
+    // The check and the increment run together after the read, so two pumps never both take the last place.
+    for (let max = await limit(); running < max; max = await limit()) {
       running++;
       const c = await claim();
       if (!c) {

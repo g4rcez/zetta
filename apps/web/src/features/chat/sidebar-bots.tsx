@@ -1,4 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useId } from "react";
 import {
   RobotIcon as BotIcon,
   ChatCircleIcon,
@@ -359,11 +360,16 @@ export function SidebarBots({
   });
   const loading = !chatsLoaded && bots.length === 0;
   const Item = tiles ? BotTile : BotRow;
+  const headId = useId();
   const avatarSize = tileAvatarSize(preferences.railWidth);
+  // The workspace layout hides the section when the filter finds no bot, as it does the destination sections.
+  if (query && shown.length === 0 && !tiles) return null;
   return (
     <section aria-label="Bots">
       <div className="flex items-center gap-1 pt-3 pb-1 pl-2">
-        <h3 className="label-mono">Bots</h3>
+        <h3 id={headId} className="label-mono">
+          Bots
+        </h3>
         <SidebarBotChooser botId={botId} />
         <Menu
           asChild
@@ -401,11 +407,14 @@ export function SidebarBots({
       {loading && (
         <ul role="status" aria-label="Loading bots" className="space-y-1">
           {[0, 1, 2].map((i) => (
-            <li key={i} className="h-7 animate-pulse rounded-md bg-sidebar-accent" />
+            <li
+              key={i}
+              className="h-7 animate-pulse rounded-md motion-reduce:animate-none bg-sidebar-accent"
+            />
           ))}
         </ul>
       )}
-      <ul className={tiles ? "grid grid-cols-3 gap-1" : "space-y-px"}>
+      <ul aria-labelledby={headId} className={tiles ? "grid grid-cols-3 gap-1" : "space-y-px"}>
         {shown.map((b) => (
           <Item
             key={b.id}
@@ -439,6 +448,8 @@ export function SidebarBots({
         <Link
           to="/bots"
           search={{}}
+          // The workspace list is walked with the arrow keys; "All bots" is a stop on it but not a match for the filter count.
+          {...(tiles ? {} : { "data-chat-row": "", "data-extra": "" })}
           className="mt-0.5 flex h-7 items-center rounded-md px-2 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
         >
           All bots ({total})

@@ -7,6 +7,7 @@ import {
   PencilSimpleIcon,
   PushPinIcon,
   SmileyIcon,
+  SpeakerHighIcon,
   ThumbsDownIcon,
   ThumbsUpIcon,
   type Icon,
@@ -20,6 +21,8 @@ import { rateable, useFeedback } from "../bot-quality/feedback";
 import { useCopy } from "../shared/use-copy";
 import type { Row } from "./chat-rows";
 import { EmojiPicker } from "./emoji-picker";
+import { useListenEnabled } from "../voice/listen-button";
+import { getBotVoice, toggleListen } from "../voice/speech-player";
 
 const ignoreCopyFailure = () => {};
 
@@ -72,6 +75,28 @@ function SheetRate({ row, onDone }: { row: Row; onDone: () => void }) {
         Bad answer
       </SheetItem>
     </>
+  );
+}
+
+/** "Listen" in the sheet of a bot's message, when text to speech is on. The reading goes on after the sheet closes. */
+function SheetListen({ row, onDone }: { row: Row; onDone: () => void }) {
+  const enabled = useListenEnabled();
+  if (!enabled || row.role !== "assistant" || row.streaming || !row.content.trim()) return null;
+  return (
+    <SheetItem
+      icon={SpeakerHighIcon}
+      onClick={() => {
+        onDone();
+        void toggleListen(
+          row.id,
+          row.content,
+          row.botId ? getBotVoice(row.botId) : undefined,
+          row.botId ?? undefined,
+        );
+      }}
+    >
+      Listen
+    </SheetItem>
   );
 }
 
@@ -171,6 +196,7 @@ export function MoreActions({
               Edit
             </SheetItem>
           )}
+          <SheetListen row={row} onDone={close} />
           <SheetRate row={row} onDone={close} />
           {row.role === "assistant" && (
             <SheetItem icon={BookmarkSimpleIcon} onClick={then(onSaveToMemory)}>

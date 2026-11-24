@@ -162,3 +162,59 @@ test("a running reply read from the saved row shows its steps and what the bot d
   expect(text).toContain("Running bun test");
   await act(async () => root.unmount());
 });
+
+// A long plugin call (a download, a transcription) says how far it is: the running step shows the line and a bar.
+const withProgress = async (
+  progress: { label: string; text: string; percent?: number; at: number } | undefined,
+  working: boolean,
+  activityAt = 1_000,
+) => {
+  const { WorkTimeline } = await import("./work-timeline");
+  const host = win.document.createElement("div");
+  win.document.body.append(host);
+  const root = createRoot(host as unknown as Element);
+  const r = {
+    id: "r1",
+    createdAt: "2026-11-06T10:00:00.000Z",
+    timeline: [
+      { at: 0, label: "Step 1" },
+      { at: 1_000, label: "plugin youtube.download" },
+    ],
+    activityAt,
+    ...(progress ? { progress } : {}),
+  };
+  await act(async () => root.render(<WorkTimeline row={r as never} working={working} />));
+  return { host, unmount: () => act(async () => root.unmount()) };
+};
+const reading = {
+  label: "plugin youtube.download",
+  text: "Downloading video · 45% · 1.20MiB/s",
+  percent: 45,
+  at: 2_000,
+};
+
+test("the running step shows how far a long plugin call is, with a bar", async () => {
+  const { host, unmount } = await withProgress(reading, true);
+  expect(host.textContent).toContain("Downloading video · 45% · 1.20MiB/s");
+  const bar = host.querySelector("[aria-valuenow]")!;
+  expect(bar.getAttribute("aria-valuenow")).toBe("45");
+  await unmount();
+});
+
+test("a reading with no percent shows the line and no bar", async () => {
+  const { host, unmount } = await withProgress({ ...reading, percent: undefined }, true);
+  expect(host.textContent).toContain("Downloading video");
+  expect(host.querySelector("[aria-valuenow]")).toBeNull();
+  await unmount();
+});
+
+test("a reading of a step that is over, or of a finished turn, shows nothing", async () => {
+  const over = await withProgress(reading, true, 3_000);
+  expect(over.host.textContent).not.toContain("Downloading video");
+  expect(over.host.querySelector("[aria-valuenow]")).toBeNull();
+  await over.unmount();
+  const done = await withProgress(reading, false);
+  expect(done.host.textContent).not.toContain("Downloading video");
+  expect(done.host.querySelector("[aria-valuenow]")).toBeNull();
+  await done.unmount();
+});

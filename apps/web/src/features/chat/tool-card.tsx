@@ -3,6 +3,7 @@ import { ShieldWarningIcon } from "@phosphor-icons/react";
 
 import { BotIdentity } from "@/components/bot-identity";
 import { Button, Checkbox, Input } from "@/components/ui";
+import { countryName, formatPhone } from "../phone/format";
 import { relativeTime } from "../shared/relative-time";
 import type { Bot } from "./chat-client";
 
@@ -16,6 +17,17 @@ export type PausedCallPatch = {
     tool: string;
     message: string;
     input?: string;
+    /** A mail the call sends, in full (the mailbox plugin): shown as a mail, not as JSON. */
+    mail?: { from: string; to: string[]; subject: string; text: string };
+    /** A phone call the approval places (the phone plugin): shown as a call, not as JSON. `costPerMinute` only when the server knows a rate. */
+    phone?: {
+      to: string;
+      country: string;
+      briefing: string;
+      maxMinutes: number;
+      voicemail: "hang_up" | "leave_message";
+      costPerMinute?: string;
+    };
     fields?: {
       key: string;
       label: string;
@@ -73,6 +85,8 @@ export function ToolPauseCard({
   onDecide: (approve: boolean, answer?: FormAnswer) => void;
 }) {
   const { pause } = patch;
+  const mail = pause.mail;
+  const phone = pause.phone;
   const fields = pause.fields ?? [];
   const [values, setValues] = useState<Record<string, string | boolean>>({});
   const [problem, setProblem] = useState<string>();
@@ -94,15 +108,77 @@ export function ToolPauseCard({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <ShieldWarningIcon className="text-warn" aria-hidden="true" />
         {asker && <BotIdentity bot={asker as Bot} size={24} className="w-auto flex-none" />}
-        <span>{input ? "needs an answer for" : "asks to run"}</span>
-        <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{pause.tool}</code>
+        {mail ? (
+          <span>wants to send a mail</span>
+        ) : phone ? (
+          <span>wants to make a phone call</span>
+        ) : (
+          <>
+            <span>{input ? "needs an answer for" : "asks to run"}</span>
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{pause.tool}</code>
+          </>
+        )}
       </div>
       {pause.message && (
         <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
           {pause.message}
         </p>
       )}
-      {!input && pause.input && (
+      {mail && (
+        <div className="space-y-2">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+            <dt className="text-muted-foreground">From</dt>
+            <dd className="min-w-0 break-words">{mail.from}</dd>
+            <dt className="text-muted-foreground">To</dt>
+            <dd className="min-w-0 break-words">{mail.to.join(", ")}</dd>
+            <dt className="text-muted-foreground">Subject</dt>
+            <dd className="min-w-0 break-words">{mail.subject}</dd>
+          </dl>
+          <pre
+            tabIndex={0}
+            aria-label="The text of the mail"
+            className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/60 p-2 font-sans text-sm"
+          >
+            {mail.text}
+          </pre>
+        </div>
+      )}
+      {phone && (
+        <div className="space-y-2">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+            <dt className="text-muted-foreground">Number</dt>
+            <dd className="min-w-0 break-words font-medium">{formatPhone(phone.to)}</dd>
+            <dt className="text-muted-foreground">Country</dt>
+            <dd className="min-w-0 break-words">{countryName(phone.country)}</dd>
+            <dt className="text-muted-foreground">Longest</dt>
+            <dd className="min-w-0">
+              {phone.maxMinutes} {phone.maxMinutes === 1 ? "minute" : "minutes"}
+            </dd>
+            {phone.costPerMinute && (
+              <>
+                <dt className="text-muted-foreground">Cost</dt>
+                <dd className="min-w-0">About {phone.costPerMinute} a minute</dd>
+              </>
+            )}
+            <dt className="text-muted-foreground">If a machine answers</dt>
+            <dd className="min-w-0">
+              {phone.voicemail === "leave_message" ? "Leave the message" : "Hang up"}
+            </dd>
+          </dl>
+          <pre
+            tabIndex={0}
+            aria-label="What the call will say and ask"
+            className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/60 p-2 font-sans text-sm"
+          >
+            {phone.briefing}
+          </pre>
+          <p className="text-xs text-muted-foreground">
+            The other person hears an automated assistant calling on your behalf. The call is not
+            recorded.
+          </p>
+        </div>
+      )}
+      {!mail && !phone && !input && pause.input && (
         <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/60 p-2 text-xs">
           {pause.input}
         </pre>

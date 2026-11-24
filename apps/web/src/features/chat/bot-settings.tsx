@@ -30,6 +30,9 @@ import "../code/register";
 import "../computer/register";
 import "../discussions/register";
 import "../inbound/register";
+import "../mail/register"; // the bot's own e-mail address
+import "../voice/register"; // the voice of the Listen button
+import "../phone/register"; // the bot's phone number
 import "../plugins/register";
 import "../bot-quality/register"; // history, saved tests and the numbers of a bot
 import "../learning/register"; // what the bot learned from you: its lessons
@@ -467,6 +470,7 @@ export const BOT_TABS = [
       "personality",
       "chat-memory",
       "output-style",
+      "voice",
       "origin",
       "teams",
       "peers",
@@ -478,7 +482,11 @@ export const BOT_TABS = [
     label: "Skills and learning",
     ids: ["claude", "learning", "lessons", "hooks", "decision"],
   },
-  { id: "plugins", label: "Plugins", ids: ["plugins", "accounts", "inbound", "database"] },
+  {
+    id: "plugins",
+    label: "Plugins",
+    ids: ["plugins", "accounts", "inbound", "bot-address", "database"],
+  },
   { id: "routines", label: "Routines", ids: ["routines"] },
   { id: "computer", label: "Computer", ids: ["code", "computer"] },
   { id: "approvals", label: "Approvals", ids: ["approvals"] },

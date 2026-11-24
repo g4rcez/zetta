@@ -43,6 +43,7 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@zetta/ui/components/input-group";
 import { withTranscript } from "./audio";
 import { MicButton } from "./microphone";
+import { VoiceButton, type VoiceControl } from "../voice/voice-panel";
 import { ActionHint } from "@/components/action-hint";
 import {
   NEW_POLL,
@@ -150,12 +151,14 @@ export function Composer({
   onStop,
   onError,
   autoFocus,
+  focusToken,
   minimal,
   memory,
   skillBots = [],
   replyTo,
   onEditLast,
   polls = false,
+  voice,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -168,6 +171,8 @@ export function Composer({
   onStop?: () => void;
   onError: (e: unknown) => void;
   autoFocus?: boolean;
+  /** Moves the caret into the box (at the end of its text) each time this number changes. */
+  focusToken?: number | undefined;
   /** Turn on the `/` picker: only for screens whose submit forwards `memoryIds`. */
   memory?: boolean;
   /** Bots whose skills the `/` picker lists (the chat's bot; in a room, its members). Needs `memory`, since both share the picker. */
@@ -181,6 +186,8 @@ export function Composer({
   onEditLast?: (() => void) | undefined;
   /** Offer the poll tool: the box's text becomes the question and the person writes the options. Only for screens whose submit forwards `poll`. */
   polls?: boolean;
+  /** The Voice button next to the microphone. Only a plain chat with a bot, and only when voice is set up. */
+  voice?: VoiceControl | undefined;
 }) {
   const qc = useQueryClient();
   const input = useRef<EditorView>(null);
@@ -200,6 +207,9 @@ export function Composer({
   useEffect(() => {
     if (replyId) input.current?.focus();
   }, [replyId]);
+  useEffect(() => {
+    if (focusToken) input.current?.focus();
+  }, [focusToken]);
   const [fileRefs, setFileRefs] = useState<string[]>([]);
   const [poll, setPoll] = useState<PollDraft>();
   const [picker, setPicker] = useState<{
@@ -832,6 +842,7 @@ export function Composer({
                 onText={(t) => onChange(withTranscript(latestValue.current, t))}
                 onError={onError}
               />
+              {voice && <VoiceButton {...voice} />}
               <input
                 ref={file}
                 type="file"

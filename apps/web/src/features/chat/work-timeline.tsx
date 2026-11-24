@@ -9,7 +9,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@zetta/ui/lib/utils";
 
 import type { Message, PlanStep } from "./chat-client";
-import type { Row } from "./chat-rows";
+import { Progress } from "@/components/ui";
+import { currentProgress, type Row } from "./chat-rows";
 import { Disclosure } from "./disclosure";
 import { StepOutput } from "./step-output";
 
@@ -130,6 +131,8 @@ type Item = {
   stepId?: string | undefined;
   state: StepState;
   detail?: string | undefined;
+  /** How far the running step is (0-100), for a long plugin call that reports it. */
+  percent?: number | undefined;
   time?: string | undefined;
 };
 
@@ -213,19 +216,25 @@ export function WorkTimeline({
         : undefined;
   // A reply read from the saved row (no live stream attached) keeps its current activity in `meta.activity`.
   const activity = row.activity ?? row.meta?.activity;
-  const live = isGeneric(activity) ? undefined : friendly(activity);
+  // A long plugin call says how far it is: that line is what the bot is doing now, and the bar sits under its step.
+  const progress = working ? currentProgress(row) : undefined;
+  const live = progress?.text ?? (isGeneric(activity) ? undefined : friendly(activity));
   const items: Item[] = plan
     ? planStates(plan, working, row.status).map((state, i) => ({
         key: plan[i]!.id,
         label: plan[i]!.title,
         state,
         detail: working && state === "running" ? live : undefined,
+        percent: working && state === "running" ? progress?.percent : undefined,
       }))
     : stepStates(steps.length, working, row.status).map((state, i) => ({
         key: `${steps[i]!.at}:${i}`,
         label: friendly(steps[i]!.label) ?? "",
         stepId: steps[i]!.stepId,
         state,
+        // Only the step that is running has a reading.
+        detail: state === "running" ? progress?.text : undefined,
+        percent: state === "running" ? progress?.percent : undefined,
         time: `+${elapsed(steps[i]!.at - first)}`,
       }));
   const count = plan
@@ -300,6 +309,9 @@ export function WorkTimeline({
                 it.label
               )}
               {it.detail && <span className="block text-muted-foreground">{it.detail}</span>}
+              {it.percent !== undefined && (
+                <Progress className="mt-1 w-56 max-w-full" label={it.label} value={it.percent} />
+              )}
               {it.stepId && working && stepOutputUrl && opened === it.stepId && (
                 <StepOutput url={stepOutputUrl(it.stepId) ?? ""} label={it.label} />
               )}

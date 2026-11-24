@@ -5,6 +5,8 @@ import { PROJECT_BRIEF_MAX, PROJECT_STATUSES, PROJECT_WATCH } from "@zetta/db/sc
 import { NAV_MODES, SIDEBAR_LIMITS, THEMES } from "@zetta/db/schema/preferences";
 import { OUTPUT_STYLE_KEYS, OUTPUT_STYLE_SCOPES } from "@zetta/db/schema/output-styles";
 import { TEAM_ROLE_COLORS, TEAM_ROLE_ICONS } from "@zetta/db/schema/teams";
+import { SETTING_GROUPS } from "@zetta/core/settings";
+import { SPEECH_NAME_PATTERN } from "@zetta/core/speech";
 import { z } from "zod";
 
 import { decisionConfigSchema } from "../routing";
@@ -80,6 +82,22 @@ export const chiefSchemas = {
         summaryMaxChars: z.number().int().min(500).max(6000).nullable().optional(),
         summaryGapBytes: z.number().int().min(500).max(20000).nullable().optional(),
         chatSearchLimit: z.number().int().min(1).max(10).nullable().optional(),
+        /** The speech provider's own voice name or id ("" or null: the installation's voice), and the language it speaks ("pt-BR"). */
+        voice: z
+          .string()
+          .trim()
+          .max(100)
+          .regex(SPEECH_NAME_PATTERN)
+          .transform((v) => v || null)
+          .nullable()
+          .optional(),
+        voiceLanguage: z
+          .string()
+          .trim()
+          .max(35)
+          .transform((v) => v || null)
+          .nullable()
+          .optional(),
       })
       .refine((v) => Object.keys(v).length > 2, { message: "give at least one field to change" }),
     z.strictObject({
@@ -132,6 +150,95 @@ export const chiefSchemas = {
     z.strictObject({ action: z.literal("restore"), ids: lessonIds }),
     z.strictObject({ action: z.literal("accept"), ids: lessonIds }),
     z.strictObject({ action: z.literal("reject"), ids: lessonIds }),
+  ]),
+  /**
+   * The person's mailboxes. list and get read (never a password, never a message). assign, label and remove are cards. connect opens a
+   * form: the address, servers and password are typed in the browser and sealed there. There is no way to turn sending on or off, to read
+   * a password or to set one: those stay with the person.
+   */
+  mailbox: z.discriminatedUnion("action", [
+    z.strictObject({ action: z.literal("list") }),
+    z.strictObject({ action: z.literal("get"), mailbox: ref }),
+    z.strictObject({
+      action: z.literal("connect"),
+      address: z.string().trim().max(320).optional(),
+      label: z.string().trim().max(120).optional(),
+      bot: ref.optional(),
+    }),
+    /** `bot` is a name or id; null (or the Chief) leaves the mailbox with the Chief. */
+    z.strictObject({ action: z.literal("assign"), mailbox: ref, bot: ref.nullable() }),
+    z.strictObject({ action: z.literal("label"), mailbox: ref, label: z.string().trim().max(120) }),
+    z.strictObject({ action: z.literal("remove"), mailbox: ref }),
+    /** A bot's own e-mail address (only where the administrator set up bot addresses): a card, then the address is made. */
+    z.strictObject({ action: z.literal("give_address"), bot: ref }),
+    /** Who may write to a bot's own address: addresses or @domains, replacing the list. */
+    z.strictObject({
+      action: z.literal("senders"),
+      mailbox: ref,
+      senders: z.array(z.string().trim().min(1).max(320)).max(200),
+    }),
+  ]),
+  /**
+   * A bot's phone number (modules/phone). get and list read (list is for administrators). request, release, settings, approve, reject, attach,
+   * reassign and optout are cards. The keypad PIN has no action here on purpose: it is typed in the bot's settings and the model never sees it.
+   */
+  phone: z.discriminatedUnion("action", [
+    z.strictObject({ action: z.literal("get"), bot: ref }),
+    z.strictObject({
+      action: z.literal("request"),
+      bot: ref,
+      country: z.string().trim().length(2),
+      area_code: z.string().trim().max(6).optional(),
+      /** Telnyx or Twilio; left out, the server's default provider. */
+      provider: z.enum(["telnyx", "twilio"]).optional(),
+    }),
+    z.strictObject({ action: z.literal("release"), bot: ref }),
+    z.strictObject({
+      action: z.literal("settings"),
+      bot: ref,
+      inbound: z.enum(["anyone", "owner_only", "off"]).optional(),
+      outbound: z.enum(["on", "off"]).optional(),
+      owner_number: z.string().trim().max(32).nullable().optional(),
+    }),
+    z.strictObject({ action: z.literal("list") }),
+    /** Call history (a read): who was called or called, how it went, how long. Never what was said. */
+    z.strictObject({
+      action: z.literal("calls"),
+      bot: ref.optional(),
+      limit: z.number().int().min(1).max(50).optional(),
+    }),
+    z.strictObject({ action: z.literal("approve"), bot: ref }),
+    z.strictObject({ action: z.literal("reject"), bot: ref }),
+    /** An administrator gives a bot a number the provider account already holds, or moves a number to another bot. */
+    z.strictObject({
+      action: z.literal("attach"),
+      bot: ref,
+      number: z.string().trim().min(1).max(32),
+      provider: z.enum(["telnyx", "twilio"]).optional(),
+    }),
+    z.strictObject({
+      action: z.literal("reassign"),
+      number: z.string().trim().min(1).max(64),
+      bot: ref,
+    }),
+    z.strictObject({ action: z.literal("optout"), number: z.string().trim().min(1).max(32) }),
+  ]),
+  /**
+   * Server settings (modules/settings), administrators only. list and get read. set and reset are cards. A security-policy key is refused
+   * by set and reset (a person changes it in Studio > Server settings). A switch is the text "on" or "off".
+   */
+  setting: z.discriminatedUnion("action", [
+    z.strictObject({
+      action: z.literal("list"),
+      group: z.enum(Object.keys(SETTING_GROUPS) as [string, ...string[]]).optional(),
+    }),
+    z.strictObject({ action: z.literal("get"), key: bounded(80) }),
+    z.strictObject({
+      action: z.literal("set"),
+      key: bounded(80),
+      value: z.union([z.string().max(20_000), z.number(), z.array(z.string().max(2000)).max(256)]),
+    }),
+    z.strictObject({ action: z.literal("reset"), key: bounded(80) }),
   ]),
   /** The company chart: seats that report to seats, held by people or team bots. Only an administrator changes it. */
   org: z.discriminatedUnion("action", [

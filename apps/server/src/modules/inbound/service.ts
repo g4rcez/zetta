@@ -1,6 +1,6 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
-import { and, asc, eq, gt, gte, inArray, lt, sql } from "@zetta/db/query";
+import { and, asc, eq, gt, gte, inArray, isNull, lt, sql } from "@zetta/db/query";
 import { bot, conversation } from "@zetta/db/schema/chat";
 import { inboundEvent, inboundRoute, inboundThread } from "@zetta/db/schema/inbound";
 import { defuse } from "../discussions/prompt";
@@ -572,7 +572,7 @@ export function createInbound(
     const due = await db.execute<{
       id: string;
     }>(sql`update inbound_route set next_poll_at = ${now}::timestamptz + make_interval(secs => poll_every_seconds)
-      where id in (select id from inbound_route where enabled and next_poll_at <= ${now} order by next_poll_at limit ${ROUTES_PER_TICK} for update skip locked) returning id`);
+      where id in (select id from inbound_route where enabled and mailbox_id is null and next_poll_at <= ${now} order by next_poll_at limit ${ROUTES_PER_TICK} for update skip locked) returning id`);
     const ids = (
       (due as unknown as { rows?: { id: string }[] }).rows ?? (due as unknown as { id: string }[])
     ).map((r) => r.id);
@@ -597,7 +597,7 @@ export function createInbound(
         await db
           .select()
           .from(inboundRoute)
-          .where(eq(inboundRoute.ownerUserId, a.userId))
+          .where(and(eq(inboundRoute.ownerUserId, a.userId), isNull(inboundRoute.mailboxId)))
           .orderBy(asc(inboundRoute.createdAt)),
       );
     },
@@ -667,6 +667,7 @@ export function createInbound(
         })
         .onConflictDoUpdate({
           target: [inboundRoute.ownerUserId, inboundRoute.pluginId],
+          targetWhere: isNull(inboundRoute.mailboxId),
           set: {
             botId,
             enabled: v.enabled,
@@ -706,6 +707,17 @@ export function createInbound(
       await deliver();
       const [cur] = await db.select().from(inboundRoute).where(eq(inboundRoute.id, r.id));
       return { added: added ?? 0, route: (await view([cur!]))[0]! };
+    },
+    /**
+     * Mail the mailbox poller stored for a provisioned mailbox (modules/mail): events go in like polled ones (once per key, with the same
+     * caps and framing) and the owner bot's turn starts at once. The route is the mailbox's own; a route that is off takes nothing.
+     */
+    async ingestMailbox(routeId: string, events: InboundEvent[]) {
+      const [route] = await db.select().from(inboundRoute).where(eq(inboundRoute.id, routeId));
+      if (!route || !route.enabled || !route.mailboxId || !events.length) return 0;
+      const added = await store(route, events);
+      if (added > 0) void this.tick().catch(() => {});
+      return added;
     },
     /**
      * A push from a channel's server, with the raw body it sent. The plugin checks the signature against this user's own configuration;

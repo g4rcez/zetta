@@ -7,6 +7,7 @@ import {
   HarnessError,
   claudeArgs,
   claudeUserLine,
+  cliWith,
   codeDir,
   createLimiter,
   defaultLimiter,
@@ -27,6 +28,7 @@ import {
   SYSTEM_FLAG_MAX_BYTES,
 } from "./harness";
 import { poke } from "./poke";
+import { createTestSettings } from "../settings/testing";
 
 async function script(body: string) {
   const dir = await mkdtemp(join(tmpdir(), "zetta-fake-"));
@@ -641,7 +643,7 @@ take() {
 answer() { printf '{"type":"result","subtype":"success","is_error":false,"result":"%s"}\\n' "$1"; }
 `;
 describe.skipIf(process.platform === "win32")("claude code live input", () => {
-  test("the argv has no prompt and asks for streamed input with replays; a line carries the uuid and the text", () => {
+  test("the argv has no prompt and asks for streamed input with replays; a line carries the uuid and the text", async () => {
     const argv = claudeArgs(
       "the prompt",
       null,
@@ -665,7 +667,7 @@ describe.skipIf(process.platform === "win32")("claude code live input", () => {
       uuid: "u-1",
     });
     expect(claudeUserLine("u-1", "x").endsWith("\n")).toBe(true);
-    expect(liveInputOn()).toBe(true);
+    expect(await liveInputOn()).toBe(true);
   });
 
   test("a container run keeps its stdin open only for live input", () => {
@@ -787,18 +789,20 @@ while read -r line; do take "$line"; answer "Second: $said"; done`);
     });
   });
 
-  test("with ZETTA_CLAUDE_LIVE_INPUT=off the prompt is an argument again and nothing is written to the run", async () => {
+  const liveSetup = async () => {
     const fake = await script(
       `for last; do :; done; printf '{"type":"result","subtype":"success","is_error":false,"result":"arg=%s"}\\n' "$last"`,
     );
-    process.env.ZETTA_CLAUDE_LIVE_INPUT = "off";
+    const settings = createTestSettings();
     let takes = 0;
-    try {
+    const ask = async () => {
+      takes = 0;
       const out = await runCli({
         harness: "claude-code",
         prompt: "plain",
         model: null,
         resolve: () => fake,
+        settings: settings.service,
         inbox: {
           take: async () => {
             takes++;
@@ -807,11 +811,106 @@ while read -r line; do take "$line"; answer "Second: $said"; done`);
           read: () => {},
         },
       });
-      expect(out).toBe("arg=plain");
-      expect(takes).toBe(0);
+      return { out, takes };
+    };
+    return { settings, ask };
+  };
+
+  test("with the setting claudeLiveInput off the prompt is an argument again and nothing is written to the run; turned on again, the next run is live, with no restart", async () => {
+    const { settings, ask } = await liveSetup();
+    await settings.set("claudeLiveInput", "off");
+    expect(await ask()).toEqual({ out: "arg=plain", takes: 0 });
+    await settings.set("claudeLiveInput", "on");
+    const live = await ask();
+    expect(live.out).toBe("arg=--replay-user-messages");
+    expect(live.takes).toBeGreaterThan(0);
+    await settings.set("claudeLiveInput", "off");
+    expect(await ask()).toEqual({ out: "arg=plain", takes: 0 });
+    await settings.unset("claudeLiveInput");
+    expect((await ask()).takes).toBeGreaterThan(0); // the registry default is on
+  });
+
+  test("the old variable ZETTA_CLAUDE_LIVE_INPUT has no effect: the stored value wins, and without one the default does", async () => {
+    const { settings, ask } = await liveSetup();
+    const was = process.env.ZETTA_CLAUDE_LIVE_INPUT;
+    try {
+      process.env.ZETTA_CLAUDE_LIVE_INPUT = "off";
+      expect((await ask()).takes).toBeGreaterThan(0); // nothing stored: the default (on), not the variable
+      await settings.set("claudeLiveInput", "on");
+      expect((await ask()).takes).toBeGreaterThan(0);
+      process.env.ZETTA_CLAUDE_LIVE_INPUT = "on";
+      await settings.set("claudeLiveInput", "off");
+      expect(await ask()).toEqual({ out: "arg=plain", takes: 0 }); // the stored off wins over the variable's on
     } finally {
-      delete process.env.ZETTA_CLAUDE_LIVE_INPUT;
+      if (was === undefined) delete process.env.ZETTA_CLAUDE_LIVE_INPUT;
+      else process.env.ZETTA_CLAUDE_LIVE_INPUT = was;
     }
+  });
+
+  const lightSetup = async () => {
+    const fake = await script(
+      `case " $* " in *" --disable-slash-commands "*) r=light;; *) r=full;; esac; printf '{"type":"result","subtype":"success","is_error":false,"result":"%s"}\\n' "$r"`,
+    );
+    const settings = createTestSettings();
+    const ask = () =>
+      runCli({
+        harness: "claude-code",
+        prompt: "read this",
+        model: null,
+        light: "on",
+        resolve: () => fake,
+        settings: settings.service,
+      });
+    return { settings, ask };
+  };
+
+  test("the setting lightRuns decides whether a light run is light, and a change applies to the next run", async () => {
+    const { settings, ask } = await lightSetup();
+    expect(await ask()).toBe("full"); // the default is off
+    await settings.set("lightRuns", "on");
+    expect(await ask()).toBe("light");
+    await settings.set("lightRuns", "off");
+    expect(await ask()).toBe("full");
+    await settings.set("lightRuns", "on");
+    await settings.unset("lightRuns");
+    expect(await ask()).toBe("full");
+  });
+
+  test("the old variable ZETTA_LIGHT_RUNS has no effect", async () => {
+    const { settings, ask } = await lightSetup();
+    const was = process.env.ZETTA_LIGHT_RUNS;
+    try {
+      process.env.ZETTA_LIGHT_RUNS = "on";
+      expect(await ask()).toBe("full"); // nothing stored: the default (off), not the variable
+      await settings.set("lightRuns", "off");
+      expect(await ask()).toBe("full");
+      process.env.ZETTA_LIGHT_RUNS = "off";
+      await settings.set("lightRuns", "on");
+      expect(await ask()).toBe("light"); // the stored on wins over the variable's off
+    } finally {
+      if (was === undefined) delete process.env.ZETTA_LIGHT_RUNS;
+      else process.env.ZETTA_LIGHT_RUNS = was;
+    }
+  });
+
+  test("cliWith hands the settings to every run it starts", async () => {
+    const settings = createTestSettings();
+    await settings.set("lightRuns", "on");
+    const fake = await script(
+      `case " $* " in *" --disable-slash-commands "*) r=light;; *) r=full;; esac; printf '{"type":"result","subtype":"success","is_error":false,"result":"%s"}\\n' "$r"`,
+    );
+    const cli = cliWith(settings.service);
+    const input = {
+      harness: "claude-code" as const,
+      prompt: "p",
+      model: null,
+      light: "on" as const,
+      resolve: () => fake,
+    };
+    expect(await cli.run(input)).toBe("light");
+    let streamed = "";
+    for await (const chunk of cli.stream(input)) if (typeof chunk === "string") streamed += chunk;
+    expect(streamed).toBe("light");
   });
 });
 

@@ -22,6 +22,10 @@ import { createTaskStore } from "../tasks/store";
 import { createDiscussionStore } from "../discussions/store";
 import { createTeamStore } from "../teams/store";
 import { createMemory } from "../memory/service";
+import type { MailboxDriver } from "../mail/driver";
+import { createMailHarness } from "../mail/routes-harness";
+import { createMailboxStore } from "../mail/store";
+import { createProvisioning } from "../mail/provision";
 import { topics } from "@zetta/core/live-topics";
 import { events } from "../events/bus";
 import { createLoopStore } from "./loops";
@@ -64,6 +68,26 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
   const teamStore = createTeamStore(db, discussions);
   const outputStyles = createOutputStyles(db);
   const tasks = createTaskStore(db);
+  // Mail: the real service and store over the test database, with a mail server that accepts everything and sends nothing.
+  const mailDriver: MailboxDriver = {
+    check: async () => {},
+    listConversations: async () => ({ conversations: [] }),
+    getConversation: async () => ({ id: "x", subject: "x", messages: [] }),
+    getAttachment: async () => ({ fileName: "x", contentType: "x", bytes: new Uint8Array() }),
+    getAttachments: async () => new Map(),
+    send: async () => ({ messageId: "x", copy: "provider" }),
+  };
+  const mailHarness = createMailHarness(db, { driverFor: () => mailDriver });
+  // Bot e-mail addresses: on or off at will, on a domain of the test's own.
+  let addressesOffered = false;
+  const provisioning = createProvisioning({
+    db,
+    store: createMailboxStore(db),
+    reader: {
+      enabled: async () =>
+        addressesOffered ? { on: true, domain: "bots.example.invalid" } : { on: false, domain: "" },
+    },
+  });
   let artifacts: ReturnType<typeof createArtifactStore>;
   let chatSvc: ReturnType<typeof createChatService>;
   let app: ReturnType<typeof createApp>;
@@ -113,6 +137,8 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
         botClaude: createBotClaude(db),
         skills: { skills: createSkills(db), market: {} as never },
         memory: createMemory(db),
+        mail: mailHarness.mail,
+        provisioning,
       },
     );
     app = createApp({
@@ -1385,5 +1411,284 @@ suite("the chief changes the user's setup, one approved card at a time", () => {
     );
     expect(await pending(A)).toEqual([]);
     expect(prompts.join("\n")).toContain('a skill called "main-playbook" already exists');
+  });
+
+  describe("the chief and the person's mailboxes", () => {
+    const servers = {
+      imapHost: "imap.example.invalid",
+      imapPort: 993,
+      smtpHost: "smtp.example.invalid",
+      smtpPort: 587,
+      user: "ana@example.invalid",
+    };
+    const store = createMailboxStore(db);
+    const rowOf = async (as: string, id: string) =>
+      (await store.list((await actorOf(as))!)).find((m) => m.id === id);
+    const connect = async (as: string, address: string) =>
+      mailHarness.mail.connect((await actorOf(as))!, {
+        address,
+        label: "Work",
+        servers,
+        password: "synthetic-only-secret",
+      });
+
+    test("list and get answer at once, with no password and no message; another person's mailbox is not found", async () => {
+      const own = await connect(A, "ana@example.invalid");
+      const foreign = await connect(B, "bia@example.invalid");
+      const { say } = await chiefOf(A);
+      prompts.length = 0;
+      await say(
+        [
+          '```zetta:mailbox\n{"action":"list"}\n```',
+          `\`\`\`zetta:mailbox\n{"action":"get","mailbox":"${own.id}"}\n\`\`\``,
+        ],
+        "which mailboxes do I have",
+      );
+      const seen = prompts.join("\n");
+      expect(seen).toContain("ana@example.invalid");
+      expect(seen).toContain('"sending":"on"');
+      expect(seen).not.toContain("synthetic-only");
+      expect(seen).not.toContain("bia@example.invalid");
+      expect(await pending(A)).toEqual([]);
+      for (const ref of [foreign.id, "bia@example.invalid"]) {
+        prompts.length = 0;
+        await say([`\`\`\`zetta:mailbox\n{"action":"get","mailbox":"${ref}"}\n\`\`\``], "show it");
+        expect(prompts.join("\n")).toContain("no mailbox called");
+        expect(prompts.join("\n")).not.toContain("imapHost");
+      }
+      await say(
+        [`\`\`\`zetta:mailbox\n{"action":"remove","mailbox":"${foreign.id}"}\n\`\`\``],
+        "remove it",
+      );
+      expect(await pending(A)).toEqual([]);
+      expect(await rowOf(B, foreign.id)).toBeDefined();
+    });
+
+    test("assign, label and remove are cards: nothing changes until the click, and the click changes exactly that", async () => {
+      const box = await connect(A, "work@example.invalid");
+      const helper = (await call(A, "POST", "/api/bots", { name: "Inbox helper" })).json.bot as {
+        id: string;
+      };
+      const { say } = await chiefOf(A);
+
+      await say(
+        [
+          `\`\`\`zetta:mailbox\n{"action":"assign","mailbox":"work@example.invalid","bot":"Inbox helper"}\n\`\`\``,
+        ],
+        "let the inbox helper have my work mail",
+      );
+      expect((await rowOf(A, box.id))?.botId).toBeNull();
+      const [assign] = await pending(A);
+      expect(assign!.patch.title).toContain("Inbox helper");
+      // Through the card, so the title the service keeps beside the patch cannot be taken for data.
+      expect((await approve(A, assign!.id)).json.status).toBe("approved");
+      expect((await rowOf(A, box.id))?.botId).toBe(helper.id);
+
+      await say(
+        [`\`\`\`zetta:mailbox\n{"action":"assign","mailbox":"${box.id}","bot":null}\n\`\`\``],
+        "give it back to you",
+      );
+      await approve(A, (await pending(A))[0]!.id);
+      expect((await rowOf(A, box.id))?.botId).toBeNull();
+
+      await say(
+        [`\`\`\`zetta:mailbox\n{"action":"label","mailbox":"${box.id}","label":"Billing"}\n\`\`\``],
+        "call it Billing",
+      );
+      expect((await rowOf(A, box.id))?.label).toBe("Work");
+      await approve(A, (await pending(A))[0]!.id);
+      expect((await rowOf(A, box.id))?.label).toBe("Billing");
+
+      await say(
+        [`\`\`\`zetta:mailbox\n{"action":"remove","mailbox":"Billing"}\n\`\`\``],
+        "disconnect it",
+      );
+      const [removal] = await pending(A);
+      expect(removal!.diff.map((d) => d.field)).toEqual(["disconnect"]);
+      expect(await rowOf(A, box.id)).toBeDefined();
+      await approve(A, removal!.id);
+      expect(await rowOf(A, box.id)).toBeUndefined();
+      // The saved password went with it.
+      expect(mailHarness.revoked.length).toBeGreaterThan(0);
+    });
+
+    test("a card is not remembered by Always allow, and a bot owned by someone else cannot be assigned", async () => {
+      const box = await connect(A, "late@example.invalid");
+      const foreignBot = (await call(B, "POST", "/api/bots", { name: "Foreign helper" })).json
+        .bot as { id: string };
+      const { say } = await chiefOf(A);
+      prompts.length = 0;
+      await say(
+        [
+          `\`\`\`zetta:mailbox\n{"action":"assign","mailbox":"${box.id}","bot":"${foreignBot.id}"}\n\`\`\``,
+        ],
+        "give it to the foreign helper",
+      );
+      expect(prompts.join("\n")).toContain("no bot called");
+      expect(await pending(A)).toEqual([]);
+      await say(
+        [`\`\`\`zetta:mailbox\n{"action":"label","mailbox":"${box.id}","label":"Late"}\n\`\`\``],
+        "rename it",
+      );
+      const [card] = await pending(A);
+      const rules = await call(A, "POST", `/api/proposals/${card!.id}/decision`, {
+        approve: true,
+        remember: "bot",
+      });
+      expect(rules.json.status).toBe("approved");
+      const chiefId = (await bots(A)).find((b) => (b as { kind?: string }).kind === "chief")!.id;
+      expect(
+        ((await call(A, "GET", `/api/bots/${chiefId}/approval-rules`)).json.rules as unknown[])
+          .length,
+      ).toBe(0);
+      await say(
+        [`\`\`\`zetta:mailbox\n{"action":"remove","mailbox":"${box.id}"}\n\`\`\``],
+        "remove it",
+      );
+      expect(await pending(A)).toHaveLength(1);
+      await approve(A, (await pending(A))[0]!.id);
+    });
+
+    test("connect opens a form with no password in it; the chief is told it never sees one, and nothing is proposed", async () => {
+      const helper = (await call(A, "POST", "/api/bots", { name: "Connect helper" })).json.bot as {
+        id: string;
+      };
+      const { say } = await chiefOf(A);
+      prompts.length = 0;
+      const before = (await store.list((await actorOf(A))!)).length;
+      const reply = await say(
+        [
+          `\`\`\`zetta:mailbox\n{"action":"connect","address":"new@example.invalid","label":"New","bot":"Connect helper"}\n\`\`\``,
+        ],
+        "connect my new mailbox, password is hunter2-synthetic",
+      );
+      expect(reply).toContain("zetta:form-card");
+      const card = JSON.parse(/zetta:form-card\n(.*)\n```/.exec(reply)![1]!);
+      expect(card).toMatchObject({
+        form: "mailbox",
+        botId: null,
+        prefill: { address: "new@example.invalid", label: "New", ownerBotId: helper.id },
+      });
+      // The model could be sent a password in the chat text; whatever it said, the card carries none.
+      expect(JSON.stringify(card)).not.toContain("hunter2");
+      expect(reply).not.toContain("hunter2");
+      expect(prompts.join("\n")).toContain("You never see the password");
+      expect(await pending(A)).toEqual([]);
+      expect((await store.list((await actorOf(A))!)).length).toBe(before);
+      // The form takes no password and no switch for sending from the chief: those arguments are refused.
+      for (const extra of ['"password":"x"', '"sealed":{}', '"sending":"on"']) {
+        prompts.length = 0;
+        const refused = await say(
+          [
+            `\`\`\`zetta:mailbox\n{"action":"connect","address":"x@example.invalid",${extra}}\n\`\`\``,
+          ],
+          "connect it",
+        );
+        expect(refused).not.toContain("zetta:form-card");
+      }
+    });
+
+    test("give_address is a card, and the click makes one address for the bot; where none is offered it says so", async () => {
+      const helper = (await call(A, "POST", "/api/bots", { name: "Addressed helper" })).json
+        .bot as {
+        id: string;
+      };
+      const { say } = await chiefOf(A);
+      addressesOffered = false;
+      prompts.length = 0;
+      await say(
+        [`\`\`\`zetta:mailbox\n{"action":"give_address","bot":"Addressed helper"}\n\`\`\``],
+        "give the helper an address",
+      );
+      expect(prompts.join("\n")).toContain("does not hand out e-mail addresses");
+      expect(await pending(A)).toEqual([]);
+
+      addressesOffered = true;
+      await say(
+        [`\`\`\`zetta:mailbox\n{"action":"give_address","bot":"Addressed helper"}\n\`\`\``],
+        "give the helper an address",
+      );
+      expect(
+        (await store.list((await actorOf(A))!)).filter((m) => m.kind === "provisioned"),
+      ).toEqual([]);
+      const [card] = await pending(A);
+      expect(card!.patch.title).toContain("Addressed helper");
+      expect((await approve(A, card!.id)).json.status).toBe("approved");
+      const made = (await store.list((await actorOf(A))!)).filter((m) => m.kind === "provisioned");
+      expect(made).toHaveLength(1);
+      expect(made[0]).toMatchObject({ botId: helper.id, sending: "on" });
+      expect(made[0]!.address).toMatch(/@bots\.example\.invalid$/);
+
+      // A second ask says the bot already has one; the Chief itself has none.
+      prompts.length = 0;
+      await say(
+        [`\`\`\`zetta:mailbox\n{"action":"give_address","bot":"Addressed helper"}\n\`\`\``],
+        "again",
+      );
+      expect(prompts.join("\n")).toContain("already has an address");
+      addressesOffered = false;
+    });
+
+    test("senders is a card that replaces the list of a bot's own address, and refuses any other kind", async () => {
+      addressesOffered = true;
+      const helper = (await call(A, "POST", "/api/bots", { name: "Senders helper" })).json.bot as {
+        id: string;
+      };
+      const own = await provisioning.giveAddress((await actorOf(A))!, helper.id);
+      const { say } = await chiefOf(A);
+      await say(
+        [
+          `\`\`\`zetta:mailbox\n{"action":"senders","mailbox":"${own.id}","senders":["Ana@Example.invalid","@partner.example.invalid"]}\n\`\`\``,
+        ],
+        "let Ana and the partner write to it",
+      );
+      expect((await rowOf(A, own.id))?.allowedSenders).toEqual([]);
+      await approve(A, (await pending(A))[0]!.id);
+      // The card keeps the list sorted, lower case, without repeats.
+      expect((await rowOf(A, own.id))?.allowedSenders).toEqual([
+        "@partner.example.invalid",
+        "ana@example.invalid",
+      ]);
+
+      const plain = await connect(A, "plain-senders@example.invalid");
+      prompts.length = 0;
+      await say(
+        [
+          `\`\`\`zetta:mailbox\n{"action":"senders","mailbox":"${plain.id}","senders":["a@example.invalid"]}\n\`\`\``,
+        ],
+        "set senders",
+      );
+      expect(prompts.join("\n")).toContain("only a bot's own address");
+      expect(await pending(A)).toEqual([]);
+      addressesOffered = false;
+    });
+
+    test("the sending switch and the password cannot be reached through the chief; another bot gets no mailbox tool at all", async () => {
+      const box = await connect(A, "sendcheck@example.invalid");
+      await db.$client.query("update mailbox set sending = 'off' where id = $1", [box.id]);
+      const { say } = await chiefOf(A);
+      for (const body of [
+        `{"action":"label","mailbox":"${box.id}","label":"Q","sending":"on"}`,
+        `{"action":"assign","mailbox":"${box.id}","bot":null,"sending":"on"}`,
+        `{"action":"sending","mailbox":"${box.id}","value":"on"}`,
+        `{"action":"password","mailbox":"${box.id}"}`,
+        `{"action":"get","mailbox":"${box.id}","password":true}`,
+      ])
+        await say([`\`\`\`zetta:mailbox\n${body}\n\`\`\``], "turn sending on");
+      expect(await pending(A)).toEqual([]);
+      expect((await rowOf(A, box.id))?.sending).toBe("off");
+
+      const helper = (await call(A, "POST", "/api/bots", { name: "Plain helper" })).json.bot as {
+        id: string;
+      };
+      const c = (await call(A, "POST", "/api/conversations", { botId: helper.id })).json
+        .conversation.id as string;
+      script = [`\`\`\`zetta:mailbox\n{"action":"remove","mailbox":"${box.id}"}\n\`\`\``];
+      prompts.length = 0;
+      await call(A, "POST", `/api/conversations/${c}/messages`, { content: "remove my mail" });
+      expect(prompts.join("\n")).toContain("only the chief can do this");
+      expect(await pending(A)).toEqual([]);
+      expect(await rowOf(A, box.id)).toBeDefined();
+    });
   });
 });

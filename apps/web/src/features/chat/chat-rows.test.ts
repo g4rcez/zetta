@@ -4,6 +4,7 @@ import { readUIMessageStream, type UIMessageChunk } from "ai";
 import type { Message } from "./chat-client";
 
 import {
+  currentProgress,
   dayLabel,
   groupMessages,
   liveRows,
@@ -198,6 +199,78 @@ describe("liveRows", () => {
       { at: 1000, label: "Running cd", stepId: "toolu_1" },
       { at: 2000, label: "Running cd", stepId: "toolu_2" },
     ]);
+  });
+});
+
+describe("plugin progress", () => {
+  const act = (label: string, at: number) =>
+    ({ type: "data-activity", data: { messageId: "m1", label, at } }) as const;
+  const prog = (text: string, at: number, percent?: number) =>
+    ({
+      type: "data-progress",
+      id: "progress:m1",
+      data: { messageId: "m1", label: "Running youtube · download", text, at, percent },
+    }) as const;
+  const turn = (...parts: ZettaUIMessage["parts"]): ZettaUIMessage[] => [
+    {
+      id: "a1",
+      role: "assistant",
+      parts: [
+        { type: "data-speaker", id: "m1", data: { messageId: "m1", botName: "Chief" } },
+        ...parts,
+      ],
+    },
+  ];
+
+  test("a reading newer than the step that is running is its progress", () => {
+    const row = liveRows(
+      turn(act("Running youtube · download", 1000), prog("Downloading video · 45%", 2000, 45)),
+    )[0]!;
+    expect(currentProgress(row)).toEqual({
+      label: "Running youtube · download",
+      text: "Downloading video · 45%",
+      percent: 45,
+      at: 2000,
+    });
+  });
+
+  test("a reading without a percent has no percent key", () => {
+    const row = liveRows(turn(act("Running youtube · download", 1000), prog("Starting", 2000)))[0]!;
+    expect(currentProgress(row)).not.toHaveProperty("percent");
+  });
+
+  test("when the bot moves on, the reading belongs to a step that is over", () => {
+    const row = liveRows(
+      turn(
+        act("Running youtube · download", 1000),
+        prog("Downloading video · 99%", 2000, 99),
+        act("Thinking", 3000),
+      ),
+    )[0]!;
+    expect(currentProgress(row)).toBeUndefined();
+  });
+
+  test("the heartbeat is not a new step", () => {
+    const row = liveRows(
+      turn(
+        act("Running youtube · download", 1000),
+        prog("Downloading video · 45%", 2000, 45),
+        act("Still working (30s)", 3000),
+      ),
+    )[0]!;
+    expect(currentProgress(row)?.percent).toBe(45);
+  });
+
+  // The server keeps replacing one part, so the latest reading can sit before the activity of a second call that began earlier.
+  test("order of the parts does not matter, only time", () => {
+    const row = liveRows(
+      turn(
+        act("Running youtube · job", 1000),
+        prog("Transcribing · 30%", 5000, 30),
+        act("Running youtube · job", 4000),
+      ),
+    )[0]!;
+    expect(currentProgress(row)?.text).toBe("Transcribing · 30%");
   });
 });
 

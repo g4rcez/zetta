@@ -19,19 +19,28 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import { Reorder, useDragControls, useReducedMotion } from "motion/react";
-import { useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useCallback,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import { cn } from "@zetta/ui/lib/utils";
 
+import type { SidebarLayout } from "@/components/sidebar-layout";
 import { MENU_DANGER, Menu, MenuItem, MenuSeparator, Modal } from "@/components/ui";
 import { saveLocal } from "@/lib/local-storage";
 import { toast } from "@/lib/notify";
 import { refreshAttention } from "../attention/summary";
 import { moveInGroup, placeGroup } from "../chat/bot-order";
 import { errorMessage } from "../chat/chat-client";
-import { useRooms } from "../chat/sidebar-data";
+import { useRooms, useTeams } from "../chat/sidebar-data";
 import { usePreferences } from "../preferences/preferences";
-import { TeamRoomRows } from "../teams/team-chats";
+import { TeamRoomRows, teamRoomCandidates } from "../teams/team-chats";
 import { discussionsApi, type DiscussionListItem } from "./discussions-api";
 import { groupRooms, orderRooms, roomLabel, roomSignal, type RoomSignal } from "./rooms";
 import { shownProgress } from "./room-progress";
@@ -86,23 +95,42 @@ function Signal({ signal }: { signal: RoomSignal }) {
   return null;
 }
 
+/** A section heading. With `onToggle` it is a button that opens and closes the section; without it (the workspace layout) it is plain text. */
 function Head({
+  id,
   title,
   count,
   open,
   onToggle,
   action,
 }: {
+  id: string;
   title: string;
   count?: number;
   open: boolean;
-  onToggle: () => void;
+  onToggle?: (() => void) | undefined;
   action?: ReactNode;
 }) {
+  if (!onToggle)
+    return (
+      <div className="flex items-center gap-1 pt-3 pb-1 pl-2">
+        <h3 id={id} className="label-mono flex min-w-0 flex-1 items-center gap-1">
+          <span className="truncate">{title}</span>
+          {count ? (
+            <>
+              {" "}
+              <span className="tabular-nums">{count}</span>
+            </>
+          ) : null}
+        </h3>
+        {action}
+      </div>
+    );
   return (
     <div className="flex items-center gap-1 pt-3 pb-1 pl-1">
       <button
         type="button"
+        id={id}
         aria-expanded={open}
         onClick={onToggle}
         className="label-mono flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-0.5 text-left hover:text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-ring"
@@ -330,12 +358,16 @@ const icon = "size-4 shrink-0 text-muted-foreground";
  * The shared sidebar's room lists, Slack style: the user's rooms as `#` rows, and the Chief's help and permission rooms (made to
  * solve a bot's issue) kept apart under "Bot issues", closed by default.
  */
-export function RoomsSection({ query }: { query: string }) {
+export function RoomsSection({ query, layout }: { query: string; layout: SidebarLayout }) {
   const { rooms, reload } = useRooms();
   const { preferences, set: setPreferences } = usePreferences();
   const dragging = useRef(false);
   const [announcement, setAnnouncement] = useState("");
   const [sections, setSections] = useState(readSections);
+  const roomsId = useId();
+  const issuesId = useId();
+  // The workspace layout shows every list open and has no toggles; the saved open state belongs to the personal layout.
+  const fixed = layout === "workspace";
   const selected = useRouterState({
     select: (s) =>
       s.location.pathname === "/rooms" ? (s.location.search as { id?: string }).id : undefined,
@@ -352,6 +384,7 @@ export function RoomsSection({ query }: { query: string }) {
   const shownRooms = ordered.filter(matches);
   const shownIssues = issues.filter(matches);
   const teamsWithRoom = useMemo(() => new Set(live.map((d) => d.teamId)), [live]);
+  const teams = useTeams();
   const toggle = (key: keyof Sections) =>
     setSections((s) => {
       const next = { ...s, [key]: !s[key] };
@@ -359,8 +392,8 @@ export function RoomsSection({ query }: { query: string }) {
       return next;
     });
   // A search opens everything, so a match is never hidden inside a closed section.
-  const roomsOpen = query ? true : sections.rooms;
-  const issuesOpen = query ? true : sections.issues;
+  const roomsOpen = fixed || query ? true : sections.rooms;
+  const issuesOpen = fixed || query ? true : sections.issues;
   const onAction = useRoomActions(selected, reload);
   const ids = ordered.map((d) => d.id);
   const saveGroup = (next: string[]) =>
@@ -375,13 +408,20 @@ export function RoomsSection({ query }: { query: string }) {
   // A search lists a part of the rooms, so dragging would place the wrong neighbours: it waits for the full list, like the bots.
   const canReorder = !query && ids.length > 1;
   const waiting = issues.filter((d) => roomSignal(d) === "needs-you").length;
+  // The workspace layout hides a section the filter finds nothing in, as it does the destination sections.
+  const noMatch =
+    fixed &&
+    !!query &&
+    shownRooms.length === 0 &&
+    teamRoomCandidates(teams, (id) => teamsWithRoom.has(id), query).length === 0;
   return (
     <>
-      <section aria-label="Rooms">
+      <section aria-label="Rooms" hidden={noMatch}>
         <Head
+          id={roomsId}
           title="Rooms"
           open={roomsOpen}
-          onToggle={() => toggle("rooms")}
+          onToggle={fixed ? undefined : () => toggle("rooms")}
           action={
             <ActionHint label="New room">
               <Link
@@ -401,6 +441,7 @@ export function RoomsSection({ query }: { query: string }) {
               <Reorder.Group
                 axis="y"
                 as="ul"
+                aria-labelledby={fixed ? roomsId : undefined}
                 values={ids}
                 onReorder={saveGroup}
                 className="space-y-0.5"
@@ -418,7 +459,7 @@ export function RoomsSection({ query }: { query: string }) {
                 ))}
               </Reorder.Group>
             ) : (
-              <ul className="space-y-0.5">
+              <ul aria-labelledby={fixed ? roomsId : undefined} className="space-y-0.5">
                 {shownRooms.map((d) => (
                   <RoomRow
                     key={d.id}
@@ -431,17 +472,18 @@ export function RoomsSection({ query }: { query: string }) {
                 ))}
               </ul>
             )}
-            <ul className="space-y-0.5">
+            <ul aria-labelledby={fixed ? roomsId : undefined} className="space-y-0.5">
               <TeamRoomRows hasRoom={(id) => teamsWithRoom.has(id)} query={query} rowClass={ROW} />
               {rooms && !query && live.length === 0 && (
                 <li className="px-2 py-1 text-xs text-muted-foreground">
                   No rooms yet. Start one with +.
                 </li>
               )}
-              <li>
+              <li hidden={fixed && !!query}>
                 <Link
                   to="/rooms"
                   search={{}}
+                  {...(fixed ? { "data-chat-row": "", "data-extra": "" } : {})}
                   aria-current={onList ? "page" : undefined}
                   className={cn(ROW, onList ? "bg-sidebar-accent font-medium text-primary!" : IDLE)}
                 >
@@ -459,16 +501,17 @@ export function RoomsSection({ query }: { query: string }) {
       {issues.length > 0 && (!query || shownIssues.length > 0) && (
         <section aria-label="Bot issues">
           <Head
+            id={issuesId}
             title="Bot issues"
             count={issues.length}
             open={issuesOpen}
-            onToggle={() => toggle("issues")}
+            onToggle={fixed ? undefined : () => toggle("issues")}
           />
           {waiting > 0 && !issuesOpen && (
             <p className="px-2 pb-1 text-xs text-muted-foreground">{waiting} need you</p>
           )}
           {issuesOpen && (
-            <ul className="space-y-0.5">
+            <ul aria-labelledby={fixed ? issuesId : undefined} className="space-y-0.5">
               {shownIssues.map((d) => (
                 <RoomRow
                   key={d.id}

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { codeAccessOn } from "./code-access";
 import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { and, asc, eq, isNull, ne } from "@zetta/db/query";
@@ -18,6 +19,7 @@ import { applyRedaction, matches, safeRegex } from "../features/safety";
 import { pickedFirst, withBuiltinSkills, withoutSkills } from "../bot-claude/profile";
 import { hostSkill, hostSkillFiles, type HostSkill } from "../bot-claude/host-skills";
 import { createBotClaude, skillsOf } from "../bot-claude/store";
+import type { SettingsReader } from "../settings/service";
 import { resolveOutputStyle } from "../output-styles/service";
 import { activeProjectsOf } from "../projects/auto-join";
 import { orgContextFor } from "../org/context";
@@ -163,7 +165,7 @@ export const currentTimeLine = (now = new Date()) =>
   `Current time: ${now.toISOString().slice(0, 16)}Z (UTC). Resolve relative dates such as "tomorrow at 9" from it and the user's timezone when you know it.`;
 
 /**
- * `ZETTA_CODE_ACCESS=off` is the operator's kill switch; otherwise the bot owner's `codeAccess` setting decides. Fixture bots never run code.
+ * The setting `codeAccess` (and an open network without Docker, see settings/code-access.ts) is the administrator's kill switch; otherwise the bot owner's `codeAccess` setting decides. Fixture bots never run code.
  * A bot someone else shared with the team never runs code for the asker: its instructions and permissions are the owner's, while the
  * code directory (clones, files, tokens) would be the asker's.
  */
@@ -178,7 +180,7 @@ export const codeEnabled = (
   b.codeAccess &&
   b.harness !== "fixture" &&
   b.harness !== "decision" &&
-  process.env.ZETTA_CODE_ACCESS !== "off";
+  codeAccessOn();
 /** Who this bot's commits are signed as (see GitIdentity). `account` is the owner's Zetta name and email: `codeEnabled` only lets the owner run it. */
 const identityOf = async (db: Database, b: Bot, userId: string): Promise<GitIdentity> => {
   const own = { name: b.name, email: botEmail(b.name) };
@@ -250,9 +252,11 @@ export function createTurnRunner(
   attention?: AttentionService,
   /** The whole answer of a decision-only bot (harness `decision`): no AI is called. Without it the bot sends the fallback text. */
   decide?: (b: Bot, text: string, userId?: string) => Promise<string>,
+  /** Where the setting `hostSkills` is read, on every run. The live-input and light-run switches are read by `stream` (see `cliWith`). */
+  settings?: SettingsReader,
 ) {
   const knowledge = createKnowledge(db);
-  const botClaude = createBotClaude(db);
+  const botClaude = createBotClaude(db, { settings });
   const membership = createMembershipLookup(db);
   /**
    * Claude Code loads a host skill (bot-claude/host-skills.ts) by itself only from ~/.claude/skills, and only when the run shares the
@@ -273,7 +277,9 @@ export function createTurnRunner(
     if (b.harness !== "claude-code" || !picked?.length) return { profile };
     // A host skill the person picked is given to Claude Code as an installed skill, never as prompt text.
     const mine = new Set(profile.skills.map((k) => k.name));
-    const host = await Promise.all(picked.filter((n) => !mine.has(n)).map((n) => hostSkill(n)));
+    const host = await Promise.all(
+      picked.filter((n) => !mine.has(n)).map((n) => hostSkill(n, { settings })),
+    );
     const files = await Promise.all(
       host.filter((k) => k !== undefined && !hostNative(b, k)).map((k) => hostSkillFiles(k!)),
     );
@@ -293,7 +299,9 @@ export function createTurnRunner(
     const source = new Map((await skillsOf(botClaude, b)).map((k) => [k.name, k.source]));
     const own = picked.filter((n) => source.get(n) === "bot");
     const host = (
-      await Promise.all(picked.filter((n) => source.get(n) === "host").map((n) => hostSkill(n)))
+      await Promise.all(
+        picked.filter((n) => source.get(n) === "host").map((n) => hostSkill(n, { settings })),
+      )
     ).filter((k) => k !== undefined);
     const claude = b.harness === "claude-code";
     const load = claude

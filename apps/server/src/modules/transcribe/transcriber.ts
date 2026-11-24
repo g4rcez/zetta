@@ -31,9 +31,16 @@ export type Transcriber = {
   /** `language` is a BCP 47 tag or its first part ("pt-BR", "pt"): Whisper assumes English when it is not told. */
   transcribe(
     pcm: Float32Array,
-    opts?: { signal?: AbortSignal; language?: string },
+    opts?: { signal?: AbortSignal; language?: string; model?: string },
   ): Promise<string>;
 };
+
+/**
+ * A Whisper model chosen by an operator is a Hugging Face repository (`owner/name`). Anything else (a provider's name such as `whisper-1`,
+ * left in the field from an earlier choice) is ignored by the model that runs on this server.
+ */
+export const localModelOf = (name: string | undefined) =>
+  name && /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(name) ? name : undefined;
 
 /**
  * The small model, not the base one: tried on Portuguese speech, `base` was unusable and `small` close. About 250 MB once.
@@ -86,59 +93,59 @@ const DEADLINE_MS = 120_000;
 /**
  * The speech model runs inside the server process (ONNX through @huggingface/transformers, like the embedding model): no API key, and
  * the audio never leaves the machine. The files download once into ZETTA_TRANSCRIBE_MODEL_DIR (default ~/.cache/zetta/models; pre-seed
- * it for an offline server; ZETTA_TRANSCRIBE_MODEL picks another Whisper model). It loads on first use and works on one recording at a
- * time; others wait their turn. ZETTA_TRANSCRIBE=off turns it off.
+ * it for an offline server). The model is the installation's `transcribe_model` (Studio > Voice; empty means the default). It
+ * loads on first use and works on one recording at a time; others wait their turn. The provider `off` is decided before it gets here.
  */
 export function createLocalTranscriber(
   opts: {
     cacheDir?: string;
+    /** A Whisper ONNX repository, instead of the default. */
+    model?: string;
     recognizer?: (pcm: Float32Array, language?: string) => Promise<string>;
   } = {},
 ): Transcriber {
-  let recognizer: Promise<(pcm: Float32Array, language?: string) => Promise<string>> | undefined;
+  type Recognizer = (pcm: Float32Array, language?: string) => Promise<string>;
+  // One model in memory at a time: choosing another drops the one that was loaded.
+  let loaded: { model: string; recognizer: Promise<Recognizer> } | undefined;
   let turn: Promise<unknown> = Promise.resolve();
-  const load = () => {
-    recognizer ??= opts.recognizer
-      ? Promise.resolve(opts.recognizer)
-      : (async () => {
-          const { pipeline, env } = await import("@huggingface/transformers");
-          env.cacheDir =
-            opts.cacheDir ??
-            process.env.ZETTA_TRANSCRIBE_MODEL_DIR ??
-            process.env.ZETTA_EMBEDDING_MODEL_DIR ??
-            dataDir("cache/models", join(homedir(), ".cache", "zetta", "models"));
-          const asr = await pipeline(
-            "automatic-speech-recognition",
-            process.env.ZETTA_TRANSCRIBE_MODEL ?? TRANSCRIBE_MODEL,
-            { dtype: "q8" },
-          );
-          return async (pcm: Float32Array, language?: string) => {
-            const out = (await asr(pcm, {
-              chunk_length_s: 30,
-              stride_length_s: 5,
-              task: "transcribe",
-              ...(language ? { language } : {}),
-              // A pass of 30 seconds is about 120 words; this stops a runaway loop on one word.
-              max_new_tokens: 220,
-              no_repeat_ngram_size: 6,
-            })) as { text?: string } | { text?: string }[];
-            return (
-              Array.isArray(out) ? out.map((o) => o.text ?? "").join(" ") : (out.text ?? "")
-            ).trim();
-          };
-        })().catch((e) => {
-          recognizer = undefined;
-          throw e;
-        }); // a failed download is tried again on the next recording
-    return recognizer;
+  const load = (asked?: string) => {
+    const model = localModelOf(asked) ?? opts.model ?? TRANSCRIBE_MODEL;
+    if (loaded?.model !== model) loaded = undefined;
+    const recognizer = (loaded ??= {
+      model,
+      recognizer: opts.recognizer
+        ? Promise.resolve(opts.recognizer)
+        : (async () => {
+            const { pipeline, env } = await import("@huggingface/transformers");
+            env.cacheDir =
+              opts.cacheDir ??
+              process.env.ZETTA_TRANSCRIBE_MODEL_DIR ??
+              process.env.ZETTA_EMBEDDING_MODEL_DIR ??
+              dataDir("cache/models", join(homedir(), ".cache", "zetta", "models"));
+            const asr = await pipeline("automatic-speech-recognition", model, { dtype: "q8" });
+            return async (pcm: Float32Array, language?: string) => {
+              const out = (await asr(pcm, {
+                chunk_length_s: 30,
+                stride_length_s: 5,
+                task: "transcribe",
+                ...(language ? { language } : {}),
+                // A pass of 30 seconds is about 120 words; this stops a runaway loop on one word.
+                max_new_tokens: 220,
+                no_repeat_ngram_size: 6,
+              })) as { text?: string } | { text?: string }[];
+              return (
+                Array.isArray(out) ? out.map((o) => o.text ?? "").join(" ") : (out.text ?? "")
+              ).trim();
+            };
+          })().catch((e) => {
+            if (loaded?.model === model) loaded = undefined; // a failed download is tried again on the next recording
+            throw e;
+          }),
+    });
+    return recognizer.recognizer;
   };
   return {
     async transcribe(pcm, o) {
-      if (process.env.ZETTA_TRANSCRIBE === "off")
-        throw new TranscribeError(
-          "DISABLED",
-          "Turning speech into text is switched off on this server.",
-        );
       if (pcm.length > MAX_SAMPLES)
         throw new TranscribeError("TOO_LONG", "A recording can be up to 5 minutes.");
       // One recording at a time: the model uses most of the machine, and a second one would only make both slow.
@@ -146,13 +153,9 @@ export function createLocalTranscriber(
         if (o?.signal?.aborted) throw new TranscribeError("FAILED", "The recording was cancelled.");
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
-          const run = await load();
+          const run = await load(o?.model);
           return await Promise.race([
-            run(
-              pcm,
-              whisperLanguage(o?.language) ??
-                whisperLanguage(process.env.ZETTA_TRANSCRIBE_LANGUAGE),
-            ),
+            run(pcm, whisperLanguage(o?.language)),
             new Promise<never>((_, reject) => {
               timer = setTimeout(
                 () =>

@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { Elysia } from "elysia";
 import { createIdentityAccess } from "../identity/access";
+import { createConfiguredTranscriber } from "./configured";
 import { decodeAudio, hasDecoder, pcm16ToFloat32 } from "./decode";
 import { createTranscribeRoutes } from "./routes";
 import { createTranscribe } from "./service";
 import {
   createLocalTranscriber,
+  localModelOf,
   whisperLanguage,
   MAX_SAMPLES,
   SAMPLE_RATE,
@@ -38,10 +40,36 @@ describe("pcm16ToFloat32", () => {
   });
 });
 
-describe("the local transcriber", () => {
-  afterEach(() => {
-    delete process.env.ZETTA_TRANSCRIBE;
+describe("the Whisper model chosen for the model that runs on this server", () => {
+  test("only a Hugging Face repository is taken; a provider's model name is ignored", () => {
+    expect(localModelOf("onnx-community/whisper-large-v3-turbo")).toBe(
+      "onnx-community/whisper-large-v3-turbo",
+    );
+    expect(localModelOf("whisper-1")).toBeUndefined();
+    expect(localModelOf("")).toBeUndefined();
+    expect(localModelOf(undefined)).toBeUndefined();
+    expect(localModelOf("../etc/passwd")).toBeUndefined();
+    expect(localModelOf("a/b/c")).toBeUndefined();
   });
+  test("the installation's model reaches the local transcriber, with the language", async () => {
+    const asked: unknown[] = [];
+    const t = createConfiguredTranscriber({
+      settings: async () => ({
+        transcribeProvider: "local",
+        transcribeModel: "onnx-community/whisper-large-v3-turbo",
+        transcribeLanguage: "pt",
+        transcribeBaseUrl: "",
+        transcribeConnectionId: null,
+      }),
+      local: { transcribe: async (_pcm, o) => (asked.push(o), "ok") },
+      key: async () => undefined,
+    });
+    expect(await t.transcribe(new Float32Array(10))).toBe("ok");
+    expect(asked).toEqual([{ language: "pt", model: "onnx-community/whisper-large-v3-turbo" }]);
+  });
+});
+
+describe("the local transcriber", () => {
   const sec = (n: number) => new Float32Array(SAMPLE_RATE * n);
 
   test("it loads the model once, works on one recording at a time and keeps the order", async () => {
@@ -75,7 +103,7 @@ describe("the local transcriber", () => {
     expect(loaded).toBe(3);
   });
 
-  test("it can be switched off, refuses more than five minutes, and turns a model failure into a sentence without stopping the next one", async () => {
+  test("it refuses more than five minutes, and turns a model failure into a sentence without stopping the next one", async () => {
     let n = 0;
     const t = createLocalTranscriber({
       recognizer: async () => (++n === 1 ? Promise.reject(new Error("onnx exploded")) : "fine"),
@@ -85,8 +113,16 @@ describe("the local transcriber", () => {
     await expect(t.transcribe(new Float32Array(MAX_SAMPLES + 1))).rejects.toMatchObject({
       code: "TOO_LONG",
     });
+  });
+
+  test("the removed variable has no effect on the local model (the provider `off` is decided before it)", async () => {
+    const t = createLocalTranscriber({ recognizer: async () => "heard" });
     process.env.ZETTA_TRANSCRIBE = "off";
-    await expect(t.transcribe(sec(1))).rejects.toMatchObject({ code: "DISABLED" });
+    try {
+      expect(await t.transcribe(sec(1))).toBe("heard");
+    } finally {
+      delete process.env.ZETTA_TRANSCRIBE;
+    }
   });
 
   test("a recording that was cancelled before its turn is not run", async () => {
@@ -115,6 +151,38 @@ describe("the transcribe service", () => {
     expect(seen).toEqual([[0.5, -0.5]]);
     expect(text.startsWith("hello world xxx")).toBe(true);
     expect(text.length).toBe(8000);
+  });
+});
+
+describe("speech to text switched off (the provider `off`)", () => {
+  const off = () => {
+    const ran: string[] = [];
+    const t = createConfiguredTranscriber({
+      settings: async () => ({
+        transcribeProvider: "off",
+        transcribeModel: "",
+        transcribeLanguage: "",
+        transcribeBaseUrl: "",
+        transcribeConnectionId: null,
+      }),
+      local: { transcribe: async () => (ran.push("local"), "heard") },
+      key: async () => (ran.push("key"), Buffer.from("sk-test")),
+    });
+    return { svc: createTranscribe(t), ran };
+  };
+  test("the microphone and the voice notes both get the sentence, and nothing runs, not even a key lookup", async () => {
+    const { svc, ran } = off();
+    const mic = await svc.fromPcm(pcm16(1, 2)).catch((e) => e);
+    expect(mic).toBeInstanceOf(TranscribeError);
+    expect(mic).toMatchObject({
+      code: "DISABLED",
+      safe: "Turning speech into text is switched off on this server.",
+    });
+    // A voice note: the decoder is not needed to get the answer in the failing case, but the same error is what the poller catches, so
+    // the event arrives as "(voice note)" (inbound.integration.test.ts).
+    const note = await svc.fromAudio(new Uint8Array([1, 2, 3, 4])).catch((e) => e);
+    expect(note).toBeInstanceOf(TranscribeError);
+    expect(ran).toEqual([]);
   });
 });
 
@@ -209,7 +277,7 @@ describe("the language the speech is in", () => {
     expect(whisperLanguage("")).toBeUndefined();
     expect(whisperLanguage(undefined)).toBeUndefined();
   });
-  test("the recording's language reaches the model, and the server's default is used when it sends none", async () => {
+  test("the recording's language reaches the model; the removed variable gives no default", async () => {
     const seen: (string | undefined)[] = [];
     const t = createLocalTranscriber({
       recognizer: async (_pcm, language) => (seen.push(language), "ok"),
@@ -223,6 +291,6 @@ describe("the language the speech is in", () => {
     } finally {
       delete process.env.ZETTA_TRANSCRIBE_LANGUAGE;
     }
-    expect(seen).toEqual(["portuguese", undefined, "spanish", "french"]);
+    expect(seen).toEqual(["portuguese", undefined, undefined, "french"]);
   });
 });

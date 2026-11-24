@@ -79,7 +79,6 @@ const remote = (
 beforeEach(() => {
   seen.length = 0;
   reply = () => Response.json({ text: " hello there " });
-  delete process.env.ZETTA_TRANSCRIBE;
 });
 
 describe("the recording sent to a provider", () => {
@@ -207,16 +206,13 @@ describe("what goes wrong is said in fixed sentences", () => {
     expect(seen).toHaveLength(0);
     expect(r.wiped()).toBe(true);
   });
-  test("it can be switched off for the whole server, and a cancelled call stops", async () => {
+  test("a cancelled call stops, and the removed variable changes nothing", async () => {
     process.env.ZETTA_TRANSCRIBE = "off";
-    expect(
-      (
-        await remote()
-          .t.transcribe(pcm())
-          .catch((x) => x)
-      ).code,
-    ).toBe("DISABLED");
-    delete process.env.ZETTA_TRANSCRIBE;
+    try {
+      expect(await remote().t.transcribe(pcm())).toBe("hello there");
+    } finally {
+      delete process.env.ZETTA_TRANSCRIBE;
+    }
     const ctl = new AbortController();
     const p = remote({ baseUrl: base("/slow") })
       .t.transcribe(pcm(), { signal: ctl.signal })
@@ -267,6 +263,34 @@ describe("the transcriber the server uses chooses by the installation's settings
     settings = { ...settings, transcribeProvider: "local" };
     expect(await configured.transcribe(pcm())).toBe("from the server model");
     expect(calls).toEqual(["local:-", "local:-"]);
+  });
+
+  test("`off` refuses every recording with the sentence, whatever else is saved, and the removed variable does not matter", async () => {
+    settings = {
+      ...settings,
+      transcribeProvider: "off",
+      transcribeBaseUrl: "",
+      transcribeConnectionId: "c1",
+    };
+    const e = (await configured.transcribe(pcm()).catch((x) => x)) as TranscribeError;
+    expect(e.code).toBe("DISABLED");
+    expect(e.safe).toBe("Turning speech into text is switched off on this server.");
+    expect(calls).toEqual([]);
+    expect(seen).toHaveLength(0);
+    // With the variable at the opposite value the saved provider still wins.
+    process.env.ZETTA_TRANSCRIBE = "on";
+    try {
+      expect((await configured.transcribe(pcm()).catch((x) => x)).code).toBe("DISABLED");
+    } finally {
+      delete process.env.ZETTA_TRANSCRIBE;
+    }
+    settings = { ...settings, transcribeProvider: "local" };
+    process.env.ZETTA_TRANSCRIBE = "off";
+    try {
+      expect(await configured.transcribe(pcm())).toBe("from the server model");
+    } finally {
+      delete process.env.ZETTA_TRANSCRIBE;
+    }
   });
 
   test("OpenAI has its own address; the call's language wins over the installation's, which is the default", async () => {

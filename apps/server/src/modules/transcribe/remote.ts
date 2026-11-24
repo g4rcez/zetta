@@ -1,10 +1,11 @@
 import { assertPublicUrl } from "../computer/service";
+import { privateAllowed, type PrivateNetwork } from "../settings/private-network";
 import { languageCode, SAMPLE_RATE, TranscribeError, type Transcriber } from "./transcriber";
 
 /**
  * Speech to text through a provider that speaks OpenAI's `/audio/transcriptions`: OpenAI itself, or any server that copies it (Groq, a
  * self-hosted Whisper server). The recording leaves this machine for that address, so the administrator chooses it on purpose (Studio >
- * Decisions) and the page says so.
+ * Voice) and the page says so.
  *
  * Safety: the address goes through the same private-network rule as every address a person types (`assertPublicUrl`, unless the
  * administrator allowed private networks); redirects are refused so the key cannot follow one; the key is read only for the call and
@@ -59,7 +60,7 @@ function failFor(status: number) {
   if (status === 401 || status === 403)
     return new TranscribeError(
       "PROVIDER_AUTH",
-      "The speech-to-text provider did not accept the API key. Check it in Studio > Decisions.",
+      "The speech-to-text provider did not accept the API key. Check it in Studio > Voice.",
     );
   if (status === 429)
     return new TranscribeError(
@@ -82,25 +83,21 @@ export function createRemoteTranscriber(deps: {
   resolve: () => Promise<RemoteSettings>;
   /** The default language when the call names none. */
   defaultLanguage?: () => string | undefined;
-  allowPrivate?: boolean;
+  /** Private addresses: a fixed answer, or a function asked at every recording (the setting `allowPrivateNetwork`). */
+  allowPrivate?: PrivateNetwork;
   fetch?: typeof fetch;
   deadlineMs?: number;
 }): Transcriber {
   const doFetch = deps.fetch ?? fetch;
   return {
     async transcribe(pcm, o) {
-      if (process.env.ZETTA_TRANSCRIBE === "off")
-        throw new TranscribeError(
-          "DISABLED",
-          "Turning speech into text is switched off on this server.",
-        );
       const wav = encodeWav(pcm);
       if (wav.byteLength > MAX_WAV_BYTES)
         throw new TranscribeError("TOO_LONG", "A recording can be up to 5 minutes.");
       const cfg = await deps.resolve();
       try {
         const url = transcriptionsUrl(cfg.baseUrl);
-        if (!deps.allowPrivate)
+        if (!(await privateAllowed(deps.allowPrivate)))
           await assertPublicUrl(url).catch(() => {
             throw new TranscribeError(
               "NOT_CONFIGURED",

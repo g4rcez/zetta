@@ -3,13 +3,66 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui";
-import { errorMessage } from "../chat/chat-client";
+import { ApiError, errorMessage } from "../chat/chat-client";
 import { usePluginApi, usePluginScope } from "./plugins-api";
 import { Modal } from "../shared/ui";
 import { Alert } from "@g4rcez/components/alert";
+import { Step, Steps } from "@g4rcez/components/step";
 
 type Phase = "checking" | "connected" | "scan" | "error";
-const STEPS = ["Reach WAHA", "Scan the QR code", "Session working"];
+const STEPS = ["Reach WAHA", "Key accepted", "Scan the QR code", "Session working"];
+
+/** The step that failed and what to do about it, from the code the server answers (see `wahaRaw` in the WhatsApp plugin). */
+function failure(e: unknown): { step: number; hint: string } {
+  const code = e instanceof ApiError ? e.code : "";
+  if (code === "AUTH")
+    return {
+      step: 1,
+      hint: "WAHA is running but refused the key. An administrator saves the key of the WAHA server (its WAHA_API_KEY) in Studio > Plugins > WhatsApp > Server for everyone, then press Try again.",
+    };
+  if (code === "BLOCKED_URL")
+    return {
+      step: 0,
+      hint: "A local address you typed is blocked. An administrator turns on Let the server call private network addresses in Studio > Server settings, or clears the address under Advanced to use the shared server.",
+    };
+  if (code === "BAD_URL")
+    return {
+      step: 0,
+      hint: "The WAHA address is not a valid http(s) address. Fix it under Advanced.",
+    };
+  return {
+    step: 0,
+    hint: "Nothing answered at the WAHA address. Start the WAHA container (default http://127.0.0.1:3010) and press Try again.",
+  };
+}
+
+/** The library Steps: done steps are checked, the current one is active, and the one that failed shows the error mark. `step` is 0-based. */
+function PairingSteps({ step, failed }: { step: number; failed: number | undefined }) {
+  const current = Math.min(step, STEPS.length - 1) + 1;
+  return (
+    <Steps currentStep={current} steps={STEPS.length}>
+      {STEPS.map((title, i) => (
+        <Step
+          key={title}
+          step={i + 1}
+          currentStep={current}
+          title={title}
+          type="button"
+          tabIndex={-1}
+          status={
+            step >= STEPS.length || i < step
+              ? "complete"
+              : i === failed
+                ? "error"
+                : i === step
+                  ? "active"
+                  : "inactive"
+          }
+        />
+      ))}
+    </Steps>
+  );
+}
 
 /** Pairing step for the WhatsApp (WAHA) plugin: the server fetches the QR (the API key never reaches the browser) and returns it as a data URL. The dialog polls the session so the user sees live feedback. */
 export function WhatsappPairing({
@@ -65,25 +118,21 @@ export function WhatsappPairing({
     if (statusState === "connected") finish();
   }, [statusState, finish]);
 
-  const step = phase === "connected" ? 3 : phase === "scan" ? 1 : phase === "error" ? 0 : 0;
+  const failed = pairing.error ? failure(pairing.error) : undefined;
+  // WAHA answered and took the key as soon as a QR code (or a working session) comes back; the scan is the current step until then.
+  const step = phase === "connected" ? 4 : phase === "scan" ? 2 : failed ? failed.step : 0;
   return (
     <Modal title="Pair WhatsApp" onClose={onClose}>
       <div className="space-y-3">
-        <ol aria-label="Pairing progress" className="flex items-center gap-2 text-xs">
-          {STEPS.map((s, i) => (
-            <li
-              key={s}
-              aria-current={i === step ? "step" : undefined}
-              className={`flex-1 rounded-md border px-2 py-1 text-center ${i < step ? "border-primary bg-accent text-foreground" : i === step ? (phase === "error" ? "border-destructive text-destructive" : "border-primary font-medium") : "text-muted-foreground"}`}
-            >
-              {i < step ? "✓ " : ""}
-              {s}
-            </li>
-          ))}
-        </ol>
+        <p role="status" className="sr-only">
+          {phase === "connected"
+            ? "All steps done"
+            : `Step ${Math.min(step + 1, STEPS.length)} of ${STEPS.length}: ${STEPS[Math.min(step, STEPS.length - 1)]}`}
+        </p>
+        <PairingSteps step={step} failed={failed?.step} />
         {phase === "connected" ? (
           <Alert theme="success">WhatsApp is connected. Bots can now use it.</Alert>
-        ) : (
+        ) : phase === "error" ? null : (
           <p className="text-muted-foreground">
             Open WhatsApp on your phone, go to Linked devices, choose Link a device and scan the
             code. This window updates by itself once the scan works.
@@ -106,14 +155,19 @@ export function WhatsappPairing({
             {message}
           </p>
         )}
-        {error && <Alert theme="danger">{error}</Alert>}
+        {error && (
+          <Alert theme="danger">
+            <p>{error}</p>
+            {failed && <p className="mt-1 text-xs">{failed.hint}</p>}
+          </Alert>
+        )}
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="outline" onClick={onClose}>
             {phase === "connected" ? "Done" : "Close"}
           </Button>
           {phase !== "connected" && (
             <Button size="sm" loading={busy} disabled={busy} onClick={() => void pairing.refetch()}>
-              {qr ? "Refresh code" : "Show QR code"}
+              {qr ? "Refresh code" : error ? "Try again" : "Show QR code"}
             </Button>
           )}
         </div>

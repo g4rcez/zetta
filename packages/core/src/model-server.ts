@@ -154,7 +154,7 @@ function classifyHost(host: string): HostKind {
  *   unspecified, multicast and reserved addresses.
  * - Loopback and the local network (`localhost`, 127.0.0.1, 192.168.x.x, 10.x.x.x, a Tailscale 100.64/10 address, a one-word host name
  *   such as `ollama`) are allowed only with `allowLocal`: the owner of the server (an administrator) or an operator who set
- *   ZETTA_ALLOW_PRIVATE_NETWORK=1. A member of somebody else's server must not point the server at its own network.
+ *   the setting `allowPrivateNetwork`. A member of somebody else's server must not point the server at its own network.
  * - `http` is allowed only to a local address, where the traffic never leaves the network. A public host needs `https`, because the
  *   key and the conversation travel to it.
  *

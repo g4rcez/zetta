@@ -7,11 +7,26 @@
  */
 
 /**
+ * Speech to text (the mirror of speech out): `off` turns it off (no recording or voice note is turned into text), `local` runs the
+ * server's own Whisper model, `openai` and `compatible` send the recording to a provider (with a sealed key).
+ */
+export const TRANSCRIBE_PROVIDERS = ["off", "local", "openai", "compatible"] as const;
+export type TranscribeProvider = (typeof TRANSCRIBE_PROVIDERS)[number];
+
+/**
  * `off`: no "Listen" button and no voice mode answers aloud. `browser`: the device's own speech engine speaks (no setup, nothing is sent
- * to Zetta or to a provider by Zetta). `openai`: OpenAI's /audio/speech. `compatible`: any server that speaks the same API
+ * to Zetta or to a provider by Zetta). `local`: a voice that runs inside the server (no key, nothing leaves the machine; one model download
+ * of about 100 MB; English, Spanish and Brazilian Portuguese; works on a phone call too). `openai`: OpenAI's /audio/speech. `compatible`: any server that speaks the same API
  * (`speechBaseUrl`). `elevenlabs`: ElevenLabs.
  */
-export const SPEECH_PROVIDERS = ["off", "browser", "openai", "compatible", "elevenlabs"] as const;
+export const SPEECH_PROVIDERS = [
+  "off",
+  "browser",
+  "local",
+  "openai",
+  "compatible",
+  "elevenlabs",
+] as const;
 export type SpeechProvider = (typeof SPEECH_PROVIDERS)[number];
 
 /**
@@ -19,6 +34,9 @@ export type SpeechProvider = (typeof SPEECH_PROVIDERS)[number];
  * text leaves the page by itself. `off` would hide the feature until an administrator finds the setting.
  */
 export const DEFAULT_SPEECH_PROVIDER: SpeechProvider = "browser";
+
+/** The provider whose model runs inside the server: no key, no address, and it can speak on a phone call (unlike `browser`). */
+export const speechIsLocal = (p: SpeechProvider) => p === "local";
 
 /** Providers that run on a server the installation reaches: they need a key (sealed) and cost something. */
 export const SPEECH_REMOTE_PROVIDERS = ["openai", "compatible", "elevenlabs"] as const;
@@ -36,8 +54,6 @@ export const SPEECH_NAME_PATTERN = /^[A-Za-z0-9._:/-]*$/;
 /** The sealed key of the installation's speech provider: a `connection` of this provider, saved with this transport purpose. */
 export const SPEECH_KEY_CONNECTION_PROVIDER = "speech";
 export const SPEECH_KEY_PURPOSE = "installation.speech-key";
-/** The operator's own key, used only when no key was saved (like ZETTA_TRANSCRIBE_API_KEY). */
-export const SPEECH_KEY_ENV = "ZETTA_SPEECH_API_KEY";
 
 export type SpeechSettings = {
   speechProvider: SpeechProvider;

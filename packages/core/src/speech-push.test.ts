@@ -12,19 +12,38 @@ import {
   DEFAULT_SPEECH_SETTINGS,
   normalizeSpeechSettings,
   SPEECH_PROVIDERS,
+  speechIsLocal,
   speechIsRemote,
   speechSettingsIssue,
 } from "./speech";
 
 describe("speech settings", () => {
   test("the default needs no setup and the list is in the contract order", () => {
-    expect(SPEECH_PROVIDERS).toEqual(["off", "browser", "openai", "compatible", "elevenlabs"]);
+    expect(SPEECH_PROVIDERS).toEqual([
+      "off",
+      "browser",
+      "local",
+      "openai",
+      "compatible",
+      "elevenlabs",
+    ]);
     expect(DEFAULT_SPEECH_PROVIDER).toBe("browser");
     expect(DEFAULT_SPEECH_SETTINGS.speechProvider).toBe("browser");
     expect(speechSettingsIssue(DEFAULT_SPEECH_SETTINGS)).toBeNull();
   });
   test("only the providers that call a server are remote", () => {
     expect(SPEECH_PROVIDERS.filter(speechIsRemote)).toEqual(["openai", "compatible", "elevenlabs"]);
+  });
+  test("local runs inside the server: no key, no address, not remote", () => {
+    const local = { ...DEFAULT_SPEECH_SETTINGS, speechProvider: "local" as const };
+    expect(speechIsLocal("local")).toBe(true);
+    expect(SPEECH_PROVIDERS.filter(speechIsLocal)).toEqual(["local"]);
+    expect(speechIsRemote("local")).toBe(false);
+    expect(speechSettingsIssue(local)).toBeNull();
+    expect(
+      normalizeSpeechSettings({ ...local, speechBaseUrl: "https://tts.example.invalid/v1" })
+        .speechBaseUrl,
+    ).toBe("");
   });
   test("compatible needs its address; the other providers drop one", () => {
     const base = { ...DEFAULT_SPEECH_SETTINGS, speechProvider: "compatible" as const };

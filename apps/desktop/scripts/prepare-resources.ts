@@ -40,10 +40,10 @@ const serverPackage = JSON.parse(readFileSync(join(root, "apps/server/package.js
 
 /**
  * Packages the app does not ship. The workspace ones are inside the built server already. The speech and embedding models (and their native
- * runtime) are far larger than the rest together, and the server falls back to keyword search and off-by-default transcription without them;
+ * runtime, and the phonemizer of the local voice) are far larger than the rest together, and the server falls back to keyword search and off-by-default transcription without them;
  * the browser automation CLI downloads its own browser. A server on a computer that wants them is the Docker install.
  */
-const NOT_SHIPPED = new Set(["@huggingface/transformers", "agent-browser"]);
+const NOT_SHIPPED = new Set(["@huggingface/transformers", "espeak-ng", "agent-browser"]);
 
 const platformKey = `${process.platform}-${process.arch}`;
 const archive = join(root, "packages/db/.pg-runtime", archiveName(platformKey));

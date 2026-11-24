@@ -11,6 +11,7 @@ import playwright from "./assets/logos/playwright.svg";
 import postgresql from "./assets/logos/postgresql.svg";
 import onepassword from "./assets/logos/1password.svg";
 import bitwarden from "./assets/logos/bitwarden.svg";
+import openbao from "./assets/logos/openbao.svg";
 import context7 from "./assets/logos/context7.png";
 import chromeDevtools from "./assets/logos/chrome-devtools.png";
 import google from "./assets/logos/google.svg";
@@ -146,6 +147,7 @@ export const LOGOS = {
   PostgreSQL: { src: postgresql.src },
   "1Password": { src: onepassword.src },
   Bitwarden: { src: bitwarden.src },
+  OpenBao: { src: openbao.src },
   Context7: { src: context7.src },
   "Chrome DevTools": { src: chromeDevtools.src },
   Pi: { src: pi.src },

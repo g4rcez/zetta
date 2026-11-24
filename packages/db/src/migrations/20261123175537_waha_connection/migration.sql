@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."installation_settings" ADD COLUMN "waha_connection_id" uuid;

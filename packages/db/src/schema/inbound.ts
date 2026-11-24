@@ -8,12 +8,14 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
+import { mailbox } from "./mail";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 const owner = () =>
@@ -34,6 +36,11 @@ export const inboundRoute = zetta.table(
       .notNull()
       .references(() => bot.id, restrict),
     pluginId: text("plugin_id").notNull(),
+    /**
+     * Set for the route of one provisioned mailbox (modules/mail): its mail is stored by the mailbox poller, not polled through a
+     * plugin, and each mailbox has its own route. Null for every plugin channel (one route per person and plugin).
+     */
+    mailboxId: uuid("mailbox_id").references(() => mailbox.id, restrict),
     enabled: boolean("enabled").default(true).notNull(),
     filter: jsonb("filter")
       .$type<{ direct: boolean; groups: boolean; chats: string[] }>()
@@ -50,7 +57,12 @@ export const inboundRoute = zetta.table(
   },
   (t) => [
     index("inbound_route_bot_id_idx").on(t.botId),
-    unique("inbound_route_owner_plugin").on(t.ownerUserId, t.pluginId),
+    uniqueIndex("inbound_route_owner_plugin_unique")
+      .on(t.ownerUserId, t.pluginId)
+      .where(sql`${t.mailboxId} is null`),
+    uniqueIndex("inbound_route_mailbox_unique")
+      .on(t.mailboxId)
+      .where(sql`${t.mailboxId} is not null`),
     index("inbound_route_due_idx").on(t.enabled, t.nextPollAt),
     check("inbound_route_interval_check", sql`${t.pollEverySeconds} >= 20`),
   ],

@@ -130,6 +130,10 @@ export const bot = zetta.table(
       .notNull(),
     summaryMaxChars: integer("summary_max_chars"),
     summaryGapBytes: integer("summary_gap_bytes"),
+    // The voice of a spoken call and of the Listen button: the speech provider's own voice name or id, and the language it speaks ("pt-BR").
+    // Null: the installation's. Kept on the server because a phone call has no browser to remember it.
+    voice: text("voice"),
+    voiceLanguage: text("voice_language"),
     // How many hits `zetta:chats` returns for this bot by default, and at most (null: SEARCH_LIMIT_DEFAULT of modules/search/service.ts).
     chatSearchLimit: integer("chat_search_limit"),
     // Code access the owner granted this bot: a persistent per-user code directory where it can run git, edit files and push. On by default.
@@ -173,6 +177,11 @@ export const bot = zetta.table(
     check(
       "bot_summary_gap_bytes_check",
       sql`${table.summaryGapBytes} is null or ${table.summaryGapBytes} between 500 and 20000`,
+    ),
+    check("bot_voice_check", sql`${table.voice} is null or length(${table.voice}) <= 100`),
+    check(
+      "bot_voice_language_check",
+      sql`${table.voiceLanguage} is null or length(${table.voiceLanguage}) <= 35`,
     ),
     check(
       "bot_chat_search_limit_check",

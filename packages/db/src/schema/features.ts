@@ -916,6 +916,10 @@ export const auditEvent = zetta.table(
         "connection",
         // Background learning work (modules/learning): the daily lesson pass and the like. Its own kind, so it never counts as a bot's run.
         "learning_run",
+        // A spoken call with a bot (modules/voice): one row when it starts and one when it ends. Ids and a closed reason only.
+        "voice_call",
+        // A server setting changed or reset in Studio (modules/settings): the key in `subject_id`, `set` or `reset` in `detail`. Never the value.
+        "setting",
       ],
     }).notNull(),
     outcome: text("outcome", {

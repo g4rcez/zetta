@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."mailbox" DROP CONSTRAINT "mailbox_kind_check", ADD CONSTRAINT "mailbox_kind_check" CHECK ("kind" in ('imap', 'google', 'microsoft', 'provisioned'));

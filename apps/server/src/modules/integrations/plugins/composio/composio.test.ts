@@ -144,7 +144,7 @@ beforeEach(() => {
   connected = true;
   status = 200;
   now = 1_000_000;
-  process.env.COMPOSIO_REDIRECT_BASE = "https://zetta.test";
+  process.env.ZETTA_OAUTH_REDIRECT_BASE = "https://zetta.test";
   configureComposioForTests({ apiBase: fake.url.origin, now: () => now });
 });
 

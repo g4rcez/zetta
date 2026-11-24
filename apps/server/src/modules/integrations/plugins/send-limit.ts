@@ -14,6 +14,12 @@ export function createSendLimit({ perHour, perMin }: { perHour: number; perMin?:
       log.set(key, recent);
       return true;
     },
+    /** Whether `allow` would accept now. Records nothing. */
+    wouldAllow(key: string, now = Date.now()) {
+      const recent = (log.get(key) ?? []).filter((t) => now - t < 3_600_000);
+      if (recent.length >= perHour) return false;
+      return perMin === undefined || recent.filter((t) => now - t < 60_000).length < perMin;
+    },
     /** Test helper. */
     reset: () => log.clear(),
   };

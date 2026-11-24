@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { b64u, sha } from "../oauth2";
+import { b64u, redirectBase, sha } from "../oauth2";
 import { PluginError, type PluginContext, type PluginStatus } from "../registry";
 import { expectRedirect, resetLoopback } from "./loopback";
 
@@ -126,7 +126,7 @@ export const settings = (config: Readonly<Record<string, string>> = {}): GoogleS
   ...defaults,
   clientId: config.clientId || undefined,
   clientSecret: config.clientSecret || undefined,
-  redirectBase: process.env.GOOGLE_OAUTH_REDIRECT_BASE || process.env.ZETTA_SERVER_URL || undefined,
+  redirectBase: redirectBase() || undefined,
   ...overrides,
 });
 export const redirectUri = (s = settings()) =>
@@ -266,7 +266,9 @@ export function accountCtx(ctx: PluginContext, email: string): PluginContext {
     botId: ctx.botId,
     get config() {
       const out: Record<string, string> = {};
-      for (const k of ["clientId", "clientSecret"]) if (ctx.config[k]) out[k] = ctx.config[k]!;
+      // clientType too: refreshing a token of a Desktop client must not demand the web redirect base.
+      for (const k of ["clientId", "clientSecret", "clientType"])
+        if (ctx.config[k]) out[k] = ctx.config[k]!;
       for (const [k, v] of Object.entries(
         readAccounts(ctx.config).find((a) => a.email === email) ?? { email },
       ))

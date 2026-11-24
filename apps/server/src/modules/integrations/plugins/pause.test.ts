@@ -55,7 +55,8 @@ registerPlugin({
   fields: [],
   tools,
   pausing,
-  always: { available: async (botId) => botId === "bot-yes" },
+  builtin: true,
+  gate: { available: async (botId) => botId === "bot-yes" },
 });
 
 const a = actor("u1");
@@ -127,9 +128,10 @@ describe("an installed plugin", () => {
   });
 });
 
-describe("a built-in plugin (no install, no binding)", () => {
-  test("resumes for a bot it is available to, not for another", async () => {
+describe("a built-in plugin (activated, and checked by its own gate)", () => {
+  test("resumes for a bot its gate lets in, not for another", async () => {
     const { plugins } = world();
+    await plugins.install(a, "pause-builtin", {}, ["bot-yes", "bot-no"]);
     seen.length = 0;
     expect(await plugins.resumeTool(a, "bot-yes", "pause-builtin", "apr_1", accept, "ask")).toBe(
       "resumed",
@@ -142,7 +144,19 @@ describe("a built-in plugin (no install, no binding)", () => {
 
   test("a call that pauses carries its tool here too", async () => {
     const { plugins } = world();
+    await plugins.install(a, "pause-builtin", {}, ["bot-yes"]);
     const e = await plugins.callTool(a, "bot-yes", "pause-builtin", "ask", {}).catch((x) => x);
     expect((e as PluginPause).pluginTool).toBe("ask");
+  });
+
+  test("it is not on by default: before it is activated for the bot, a call and a resume are refused", async () => {
+    const { plugins } = world();
+    await expect(plugins.callTool(a, "bot-yes", "pause-builtin", "ask", {})).rejects.toMatchObject({
+      code: "NOT_BOUND",
+      safe: "pause-builtin is not turned on for this bot.",
+    });
+    await expect(
+      plugins.resumeTool(a, "bot-yes", "pause-builtin", "apr_1", accept, "ask"),
+    ).rejects.toMatchObject({ code: "NOT_BOUND" });
   });
 });

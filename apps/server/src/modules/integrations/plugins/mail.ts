@@ -1,6 +1,15 @@
 import { uiToText } from "@zetta/render/chat-text";
 import { simpleParser } from "mailparser";
-import { assertPublicUrl } from "../../computer/service";
+import {
+  assertMailHosts,
+  configureMailPolicy,
+  imapOptions,
+  isMailHost,
+  MailConnectError,
+  mailFailure,
+  smtpOptions,
+  type MailServer,
+} from "../../mail/imap-connect";
 import {
   PluginError,
   registerPlugin,
@@ -30,11 +39,8 @@ import { clean, requiredText } from "./untrusted";
  * rate limited, plain text. Hosts go through the same address policy as MCP servers and WhatsApp (no private networks unless the
  * administrator allowed them).
  */
-let policy = { allowPrivate: false };
-/** Called once by the MCP service with its own `allowPrivate` option. */
-export const configureMail = (p: { allowPrivate?: boolean }) => {
-  policy = { allowPrivate: Boolean(p.allowPrivate) };
-};
+/** Called once by the MCP service with its own `allowPrivate` option (the address policy lives in `mail/imap-connect.ts`). */
+export const configureMail = configureMailPolicy;
 
 const MAX_SOURCE = 400_000;
 const MAX_TEXT = 1700;
@@ -42,16 +48,8 @@ const MAX_SEND = 20_000;
 const SEND_PER_MIN = 5;
 const SEND_PER_HOUR = 20;
 const FETCH_PER_POLL = 30;
-const HOST = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/i;
 
-type MailCfg = {
-  imapHost: string;
-  imapPort: number;
-  smtpHost: string;
-  smtpPort: number;
-  user: string;
-  password: string;
-};
+type MailCfg = MailServer;
 type Cursor = { v: 1; uidValidity: string; lastUid: number };
 /** One message as the mailbox hands it over: its uid and the first bytes of its source. */
 export type RawMail = { uid: number; source: Uint8Array };
@@ -80,7 +78,7 @@ const cfgOf = (c: PluginContext): MailCfg => {
   };
   const host = (k: string) => {
     const h = need(k).toLowerCase();
-    if (!HOST.test(h) || h.length > 253)
+    if (!isMailHost(h))
       throw new PluginError("INVALID_FIELD", `"${clean(h, 40)}" is not a mail server name.`);
     return h;
   };
@@ -96,28 +94,15 @@ const cfgOf = (c: PluginContext): MailCfg => {
 
 /** The mail servers are typed by the person: the same address policy as every other user-supplied host. */
 async function assertHosts(cfg: MailCfg) {
-  if (policy.allowPrivate) return;
-  for (const h of [cfg.imapHost, cfg.smtpHost])
-    await assertPublicUrl(`https://${h}`).catch(() => {
-      throw new PluginError(
-        "BLOCKED_URL",
-        "That mail server address is not allowed (private addresses must be enabled by the administrator).",
-      );
-    });
+  await assertMailHosts([cfg.imapHost, cfg.smtpHost]).catch((e) => {
+    throw asPluginError(e);
+  });
 }
 
 const real: Mailer = {
   async fetch(cfg, after, limit) {
     const { ImapFlow } = await import("imapflow");
-    const client = new ImapFlow({
-      host: cfg.imapHost,
-      port: cfg.imapPort,
-      secure: cfg.imapPort === 993,
-      auth: { user: cfg.user, pass: cfg.password },
-      logger: false,
-      socketTimeout: 20_000,
-      greetingTimeout: 10_000,
-    });
+    const client = new ImapFlow(imapOptions(cfg, { socketTimeout: 20_000 }));
     client.on("error", () => {});
     await client.connect();
     try {
@@ -148,17 +133,14 @@ const real: Mailer = {
   },
   async send(cfg, mail) {
     const nodemailer = await import("nodemailer");
-    const transport = nodemailer.createTransport({
-      host: cfg.smtpHost,
-      port: cfg.smtpPort,
-      secure: cfg.smtpPort === 465,
-      auth: { user: cfg.user, pass: cfg.password },
-      connectionTimeout: 15_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 20_000,
-      disableFileAccess: true,
-      disableUrlAccess: true,
-    });
+    const transport = nodemailer.createTransport(
+      smtpOptions(cfg, {
+        connectionTimeout: 15_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 20_000,
+        locked: true,
+      }),
+    );
     try {
       const info = await transport.sendMail({
         from: mail.from,
@@ -173,26 +155,12 @@ const real: Mailer = {
   },
   async check(cfg) {
     const { ImapFlow } = await import("imapflow");
-    const client = new ImapFlow({
-      host: cfg.imapHost,
-      port: cfg.imapPort,
-      secure: cfg.imapPort === 993,
-      auth: { user: cfg.user, pass: cfg.password },
-      logger: false,
-      socketTimeout: 15_000,
-      greetingTimeout: 10_000,
-    });
+    const client = new ImapFlow(imapOptions(cfg, { socketTimeout: 15_000 }));
     client.on("error", () => {});
     await client.connect();
     await client.logout().catch(() => undefined);
     const nodemailer = await import("nodemailer");
-    const t = nodemailer.createTransport({
-      host: cfg.smtpHost,
-      port: cfg.smtpPort,
-      secure: cfg.smtpPort === 465,
-      auth: { user: cfg.user, pass: cfg.password },
-      connectionTimeout: 15_000,
-    });
+    const t = nodemailer.createTransport(smtpOptions(cfg, { connectionTimeout: 15_000 }));
     try {
       await t.verify();
     } finally {
@@ -206,25 +174,15 @@ export const configureMailer = (m: Mailer | undefined) => {
   mailer = m ?? real;
 };
 
+const PLUGIN_AUTH_FIX =
+  "Check them (Gmail and Outlook need an app password) and install the plugin again.";
+/** The plugin's own error type for a failure the shared mail code described. */
+const asPluginError = (e: MailConnectError) => new PluginError(e.code, e.safe, e.fix);
+
 /** Mapped to what the person can act on, never the server's own words (they can hold the user name or the address). */
 function mailError(e: unknown, what: string): never {
   if (e instanceof PluginError) throw e;
-  const code = String((e as { code?: unknown; responseStatus?: unknown })?.code ?? "");
-  const auth =
-    /AUTH|EAUTH/i.test(code) || (e as { authenticationFailed?: boolean })?.authenticationFailed;
-  if (auth)
-    throw new PluginError(
-      "AUTH",
-      "The mail server did not accept the user name and password.",
-      "Check them (Gmail and Outlook need an app password) and install the plugin again.",
-    );
-  if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ESOCKET|EDNS/i.test(code))
-    throw new PluginError(
-      "UNREACHABLE",
-      `The mail server could not be reached to ${what}.`,
-      "Check the server name and port.",
-    );
-  throw new PluginError("MAIL_ERROR", `The mail server refused to ${what}.`);
+  throw asPluginError(mailFailure(e, what, PLUGIN_AUTH_FIX));
 }
 
 /** The addresses or domains the person allowed (`ana@example.com`, `@example.com`, `example.com`), lower case. */

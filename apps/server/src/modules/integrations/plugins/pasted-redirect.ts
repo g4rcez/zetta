@@ -17,7 +17,7 @@ export function pastedParams(text: string): URLSearchParams {
   if (!params.get("state") || !(params.get("code") || params.get("error")))
     throw new PluginError(
       "PASTE_INVALID",
-      "That is not the address Google ended on.",
+      "That is not the address the sign-in page ended on.",
       "Copy the whole address from the browser bar of the page that did not load, and paste it here.",
     );
   return params;

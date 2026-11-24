@@ -1,5 +1,7 @@
 import { uiToText } from "@zetta/render/chat-text";
+import { DEFAULT_WAHA_URL } from "@zetta/core/waha";
 import { assertPublicUrl } from "../../computer/service";
+import { privateAllowed, type PrivateNetwork } from "../../settings/private-network";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   PluginError,
@@ -23,16 +25,28 @@ import { clean } from "./untrusted";
  * Auth is the `X-Api-Key` header. It is added server-side only and never returned to the browser.
  *
  * SSRF: the base URL is user supplied. We apply the SAME policy as MCP servers and private sources: `assertPublicUrl` unless the
- * operator enabled `allowPrivate` for the integrations module (a localhost WAHA is the normal self-hosted case, so that switch must
- * be on for it). The platform passes its flag with `configureWhatsapp`; the user cannot loosen it. Redirects are never followed.
+ * administrator turned on the setting `allowPrivateNetwork` (a localhost WAHA is the normal self-hosted case, so that switch must
+ * be on for it). The platform passes the policy with `configureWhatsapp` and it is asked at every call; the user cannot loosen it.
+ * Redirects are never followed.
  *
  * Safety: incoming WhatsApp text is untrusted (prompt injection) so it is sanitised, truncated and wrapped as data. Sending is off
  * unless the user sets `allowSend` to "yes", is length and rate capped, and can be limited to an allowlist of chats.
  */
-let policy = { allowPrivate: false };
-/** Called once by the MCP service with its own `allowPrivate` option. */
-export const configureWhatsapp = (p: { allowPrivate?: boolean }) => {
-  policy = { allowPrivate: Boolean(p.allowPrivate) };
+/**
+ * The WhatsApp server the administrator shares: its address (the setting `wahaUrl`, empty meaning the built-in default) and its API key
+ * (a sealed connection; the bytes are zeroed by the reader here once copied into the header). Read at every call, so a change in Studio
+ * applies at once.
+ */
+export type WahaInstallation = () => Promise<{ url: string; key: Buffer | undefined }>;
+let policy: { allowPrivate: PrivateNetwork; installation?: WahaInstallation } = {
+  allowPrivate: false,
+};
+/** Called once by the MCP service with its own `allowPrivate` option (a function asked at every call, or a fixed answer in tests) and the shared server. */
+export const configureWhatsapp = (p: {
+  allowPrivate?: PrivateNetwork;
+  installation?: WahaInstallation;
+}) => {
+  policy = { allowPrivate: p.allowPrivate ?? false, installation: p.installation };
 };
 
 // WAHA can take ~30s to answer chats/contacts right after pairing while it syncs.
@@ -44,18 +58,13 @@ const TIMEOUT_MS = 45_000,
 const SEND_PER_MIN = 5,
   SEND_PER_HOUR = 30;
 
-// The administrator provides the WAHA server (ZETTA_WAHA_URL / ZETTA_WAHA_API_KEY; default: the bundled container) so a user only scans the QR code.
-// A user-typed address under "Advanced" overrides it and goes through the private-network policy; the administrator's own address does not.
-const DEFAULT_WAHA_URL = "http://127.0.0.1:3010";
+// The administrator provides the WAHA server (Studio > Plugins > WhatsApp > Server for everyone: the setting `wahaUrl` and a sealed key; default: the bundled
+// container) so a user only scans the QR code. A user-typed address under "Advanced" overrides it and goes through the private-network
+// policy; the administrator's own address does not. Order: the person's own plugin config, then the installation's address and key, then
+// the built-in address with no key. The installation's key is only ever sent to the installation's address, never to a person's own server.
 const ownServer = (c: PluginContext) => !(c.config.baseUrl ?? "").trim();
-const apiKeyOf = (c: PluginContext) =>
-  (c.config.apiKey ?? "").trim() || (ownServer(c) ? (process.env.ZETTA_WAHA_API_KEY ?? "") : "");
-const base = (c: PluginContext) => {
-  const raw = (
-    (c.config.baseUrl ?? "").trim() ||
-    process.env.ZETTA_WAHA_URL ||
-    DEFAULT_WAHA_URL
-  ).replace(/\/+$/, "");
+const normalizeBase = (text: string) => {
+  const raw = text.replace(/\/+$/, "");
   try {
     const u = new URL(raw);
     if (!/^https?:$/.test(u.protocol)) throw 0;
@@ -64,6 +73,66 @@ const base = (c: PluginContext) => {
     throw new PluginError("BAD_URL", "The WAHA address is not a valid http(s) URL.");
   }
 };
+/** The address and key of the server this call goes to, resolved now. */
+async function target(c: PluginContext): Promise<{ base: string; apiKey: string }> {
+  const typed = (c.config.baseUrl ?? "").trim();
+  const personKey = (c.config.apiKey ?? "").trim();
+  if (typed) return { base: normalizeBase(typed), apiKey: personKey };
+  let shared: Awaited<ReturnType<WahaInstallation>> = { url: "", key: undefined };
+  if (policy.installation) {
+    try {
+      shared = await policy.installation();
+    } catch {
+      throw new PluginError(
+        "UNREACHABLE",
+        "The settings of the WhatsApp server could not be read. Try again in a moment.",
+      );
+    }
+  }
+  const apiKey = personKey || (shared.key ? shared.key.toString("utf8") : "");
+  shared.key?.fill(0);
+  return { base: normalizeBase(shared.url.trim() || DEFAULT_WAHA_URL), apiKey };
+}
+/** Asks the shared server for its list of sessions (documented: GET /api/sessions) with the saved address and key. For the Studio Test button. */
+export async function checkInstallationServer(): Promise<{ ok: boolean; message: string }> {
+  let shared: Awaited<ReturnType<WahaInstallation>> = { url: "", key: undefined };
+  try {
+    if (policy.installation) shared = await policy.installation();
+  } catch {
+    return { ok: false, message: "The settings of the WhatsApp server could not be read." };
+  }
+  const apiKey = shared.key ? shared.key.toString("utf8") : "";
+  shared.key?.fill(0);
+  let base: string;
+  try {
+    base = normalizeBase(shared.url.trim() || DEFAULT_WAHA_URL);
+  } catch {
+    return { ok: false, message: "The saved address is not a valid http(s) address." };
+  }
+  try {
+    const res = await fetch(`${base}/api/sessions`, {
+      headers: { Accept: "application/json", ...(apiKey ? { "X-Api-Key": apiKey } : {}) },
+      redirect: "manual",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.status === 401 || res.status === 403)
+      return {
+        ok: false,
+        message: apiKey
+          ? "The server answered but did not accept the saved key."
+          : "The server answered but wants a key. Save the key of the server.",
+      };
+    if (res.status >= 300) return { ok: false, message: `The server answered ${res.status}.` };
+    return {
+      ok: true,
+      message: apiKey
+        ? "The server answers and accepts the saved key."
+        : "The server answers. No key is saved, so it must not ask for one.",
+    };
+  } catch {
+    return { ok: false, message: "The server could not be reached at the saved address." };
+  }
+}
 // On the administrator's shared WAHA server every user gets a session named after their own user id, whatever the form says: a typed name
 // could otherwise point at another member's paired number (read their chats, send as them). On a server the user brought, the name is theirs.
 const sessionName = (c: PluginContext) =>
@@ -77,8 +146,9 @@ async function wahaRaw(
   path: string,
   init: { method?: string; body?: unknown; accept?: string } = {},
 ): Promise<unknown> {
-  const url = base(c) + path;
-  if (!policy.allowPrivate && !ownServer(c))
+  const { base, apiKey } = await target(c);
+  const url = base + path;
+  if (!ownServer(c) && !(await privateAllowed(policy.allowPrivate)))
     await assertPublicUrl(url).catch(() => {
       throw new PluginError(
         "BLOCKED_URL",
@@ -86,7 +156,6 @@ async function wahaRaw(
       );
     });
   const headers: Record<string, string> = { Accept: init.accept ?? "application/json" };
-  const apiKey = apiKeyOf(c);
   if (apiKey) headers["X-Api-Key"] = apiKey;
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   let res: Response;
@@ -105,7 +174,7 @@ async function wahaRaw(
     throw new PluginError(
       "AUTH",
       "WhatsApp could not be reached with this server's WAHA key.",
-      "Ask the administrator to set ZETTA_WAHA_API_KEY to the key of the WAHA server and restart Zetta.",
+      "Ask the administrator to save the key of the WAHA server in Studio > Plugins > WhatsApp > Server for everyone.",
     );
   if (res.status >= 300) throw new PluginError("WAHA_ERROR", `WAHA answered ${res.status}.`);
   const text = await res.text();
@@ -121,8 +190,9 @@ async function wahaRaw(
 const MAX_AUDIO = 10 * 1024 * 1024;
 /** The bytes of one file WAHA serves (a downloaded voice note), through the same address policy and key as every other call. */
 async function wahaBytes(c: PluginContext, path: string) {
-  const url = base(c) + path;
-  if (!policy.allowPrivate && !ownServer(c))
+  const { base, apiKey } = await target(c);
+  const url = base + path;
+  if (!ownServer(c) && !(await privateAllowed(policy.allowPrivate)))
     await assertPublicUrl(url).catch(() => {
       throw new PluginError(
         "BLOCKED_URL",
@@ -130,7 +200,6 @@ async function wahaBytes(c: PluginContext, path: string) {
       );
     });
   const headers: Record<string, string> = { Accept: "*/*" };
-  const apiKey = apiKeyOf(c);
   if (apiKey) headers["X-Api-Key"] = apiKey;
   let res: Response;
   try {
@@ -157,7 +226,7 @@ async function wahaBytes(c: PluginContext, path: string) {
 const RECOVER_COOLDOWN_MS = 120_000;
 const lastRecovery = new Map<string, number>();
 async function recover(c: PluginContext): Promise<boolean> {
-  const key = `${base(c)}|${session(c)}`,
+  const key = `${(await target(c)).base}|${session(c)}`,
     now = Date.now();
   if (now - (lastRecovery.get(key) ?? 0) < RECOVER_COOLDOWN_MS) return false;
   lastRecovery.set(key, now);
@@ -538,7 +607,8 @@ const def: PluginDef = {
       label: "WAHA base URL",
       kind: "url",
       optional: true,
-      placeholder: "http://127.0.0.1:3010",
+      // Not the address itself: the catalog is an API answer, and a value that an `.env` file also holds makes varlock refuse it.
+      placeholder: "Empty: the WhatsApp server of this Zetta",
       help: "Private addresses such as localhost require the administrator to enable private networks.",
     },
     {
@@ -583,8 +653,8 @@ const def: PluginDef = {
     },
   ],
   async install(ctx) {
-    const u = base(ctx);
-    if (!policy.allowPrivate && !ownServer(ctx))
+    const u = (await target(ctx)).base;
+    if (!ownServer(ctx) && !(await privateAllowed(policy.allowPrivate)))
       await assertPublicUrl(u).catch(() => {
         throw new PluginError(
           "BLOCKED_URL",

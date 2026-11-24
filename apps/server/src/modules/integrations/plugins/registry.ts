@@ -14,14 +14,19 @@
  *   - Handlers receive the decrypted config only for the duration of one call, through `ctx.config`. Use `ctx.setConfig(next)` to
  *     persist refreshed state (OAuth tokens, session ids); it re-seals and revokes the previous secret.
  *   - A bot may call a plugin only when the calling user bound it to that bot (`bot_integration`); ownership is re-checked per call.
- *   - Exception: `always` plugins (native, no fields) are built in. Nothing is installed or bound; `always.available(botId)` decides per call
- *     and tool handlers get `ctx.botId` with an empty config (no built-in plugin uses this today).
+ *   - Built-in plugins (`builtin`) ship with Zetta and need no configuration, but they are NOT on by default: the person activates one
+ *     (an install with nothing to fill in) and chooses the bots, exactly like any other plugin. A built-in plugin may also have a `gate`:
+ *     extra conditions checked on every call and prompt (mail switched on, a phone call in progress), on top of the binding.
  *
  * Handlers must throw `PluginError(code, safe, fix)`: `safe` says what went wrong and `fix` what the USER can do about it. Both are shown to the
  * user (as a callout in the chat) and to the bot, so write them for a person and never include secrets. Common codes (AUTH, NEEDS_AUTH, TIMEOUT,
  * RATE_LIMITED, ...) get a default `fix` from chat/explain.ts when you leave it out. Anything that is not a PluginError is reported as unexpected.
  * Tool results are strings (objects are JSON-stringified) and are truncated to 8000 characters.
  */
+import type { MailGate } from "../../chat/mail-policy";
+import type { PhoneGate } from "../../chat/phone-policy";
+import type { PluginTurn } from "./turn";
+
 export type PluginFieldKind = "text" | "password" | "url" | "textarea" | "select" | "languages";
 /** One entry of the config schema. The install dialog in the web app is generated from these. */
 export type PluginField = {
@@ -66,7 +71,24 @@ export type PluginContext = {
   botId?: string;
   /** The real user the request ran as. `userId` is `team:<id>` for a team configuration; a flow that finishes later needs the person. */
   actorUserId?: string;
+  /** Where the call comes from (tool calls of a built-in plugin only). Absent means "none": a plugin that needs a place must refuse. */
+  turn?: PluginTurn;
+  /** Built-in mailbox plugin only: the server's decision point for a send (see chat/mail-policy.ts). Absent: a send always waits for a card. */
+  mailGate?: MailGate;
+  /** Built-in phone plugin only: the server's decision point for an outgoing call (see chat/phone-policy.ts). Absent: a call always waits for a card. */
+  phoneGate?: PhoneGate;
+  /** The chat the call comes from (an id the server resolved). The outcome of a call is reported there. */
+  conversationId?: string;
+  /** Shows the person a note in the chat (not the bot): what was sent in their name, in full. Absent when nobody is watching. */
+  show?: (markdown: string) => void;
+  /**
+   * Tells the chat how far a long call has got ("Downloading", 45%). It only matters while the call is running: the chat stops listening
+   * when the call returns, so a background job keeps the latest one it was given and a later call replaces it. Absent when nobody is watching.
+   */
+  progress?: (p: PluginProgress) => void;
 };
+/** One line of progress for the chat: a short text, and how much is done (0-100) when that is known. */
+export type PluginProgress = { text: string; percent?: number };
 export type JsonSchema = {
   type: "object";
   properties?: Record<string, unknown>;
@@ -76,8 +98,13 @@ export type JsonSchema = {
 export type PluginTool = {
   name: string; // ^[a-zA-Z0-9_.-]{1,64}$
   description: string;
-  /** "read" tools only fetch; anything else (the default) may change or send something. Bots answering outside people may only read. */
-  effect?: "read" | "write";
+  /**
+   * "read" tools only fetch; anything else (the default) may change or send something. Bots answering outside people may only read.
+   * "send" tools put something in front of other people in the person's name (mail): a kind of write that can never be taken back. Every
+   * test that asks "is this a read?" treats a "send" tool as a write, and the server decides on each call whether it goes out at once or
+   * waits for a card (chat/mail-policy.ts).
+   */
+  effect?: "read" | "write" | "send";
   inputSchema: JsonSchema;
   handler(
     ctx: PluginContext,
@@ -229,12 +256,21 @@ export type PluginDef = {
   credentials?: PluginCredentials;
   /** Channel plugins only: lets a bot answer new outside messages (see PluginInbound). */
   inbound?: PluginInbound;
-  /** Built in and on for every bot (no install, fields or binding). `available` is checked on every call and prompt. */
-  always?: {
-    available(botId: string, userId?: string): Promise<boolean>;
+  /**
+   * Ships with Zetta and needs no configuration: native, and every field optional and not secret. It is not on by default: the person
+   * activates it and chooses the bots, like any plugin. The web app shows it as "Built in".
+   */
+  builtin?: boolean;
+  /** Extra conditions of a built-in plugin, checked on every call and prompt after the bot's binding. */
+  gate?: {
+    /** `turn` says where the call or prompt comes from (see turn.ts); most plugins ignore it. */
+    available(botId: string, userId?: string, turn?: PluginTurn): Promise<boolean>;
+    /** What a refused call says when `available` is false and "switched off" would mislead (written for a person; no secrets). */
+    refusal?: { safe: string; fix: string };
     /** Extra prompt text for this bot (no secrets). */ prompt?(
       botId: string,
       userId?: string,
+      turn?: PluginTurn,
     ): Promise<string>;
   };
 };
@@ -271,6 +307,16 @@ export type PluginPauseInfo = {
   message: string;
   /** The exact input of the call (approval) as JSON text, already cut. */
   input?: string;
+  /** A mail the call sends, in full, so the card can show it as a mail (from, to, subject, text). Only the mailbox plugin sets it. */
+  mail?: { from: string; to: string[]; subject: string; text: string };
+  /** A phone call the approval places, in full, so the card can show it as a call. Only the phone plugin sets it. */
+  phone?: {
+    to: string;
+    country: string;
+    briefing: string;
+    maxMinutes: number;
+    voicemail: "hang_up" | "leave_message";
+  };
   /** The form (mode "input"): one entry per field. */
   fields?: {
     key: string;
@@ -309,8 +355,11 @@ export function registerPlugin(def: PluginDef): PluginDef {
   if (!ID.test(def.id)) throw new Error(`invalid plugin id: ${def.id}`);
   if (def.kind === "mcp" && !def.mcp) throw new Error(`mcp plugin ${def.id} needs "mcp"`);
   if (def.kind === "native" && !def.tools) throw new Error(`native plugin ${def.id} needs "tools"`);
-  if (def.always && (def.kind !== "native" || def.fields.length))
-    throw new Error(`always-on plugin ${def.id} must be native without fields`);
+  if (def.builtin && (def.kind !== "native" || def.fields.some((f) => !f.optional || f.secret)))
+    throw new Error(
+      `built-in plugin ${def.id} must be native with only optional, non-secret fields`,
+    );
+  if (def.gate && !def.builtin) throw new Error(`plugin ${def.id} has a gate but is not built in`);
   if (def.inbound && !def.tools?.some((t) => t.name === def.inbound!.reply.tool))
     throw new Error(`inbound plugin ${def.id} needs its reply tool`);
   for (const t of def.tools ?? [])
@@ -346,7 +395,7 @@ export const pluginMeta = (d: PluginDef) => ({
   notes: d.notes ?? null,
   guide: d.guide?.() ?? [],
   credentials: Boolean(d.credentials),
-  always: Boolean(d.always),
+  builtin: Boolean(d.builtin),
   inbound: d.inbound ? { label: d.inbound.label } : null,
   tools: (d.tools ?? []).map((t) => ({ name: t.name, description: t.description })),
 });

@@ -7,7 +7,7 @@ export const actor = (userId: string, isAdmin = false) => ({ userId, isAdmin }) 
  * In-memory stand-ins for the MCP service (rows + bindings) and the sealed connection store, enforcing per-user isolation like the real ones.
  * `ghLoggedIn` is what the fake server-side gh CLI login reports (default: not logged in).
  */
-export function world(opts: { ghLoggedIn?: boolean } = {}) {
+export function world(opts: { ghLoggedIn?: boolean; db?: unknown } = {}) {
   let n = 0;
   const servers: {
     id: string;
@@ -154,7 +154,7 @@ export function world(opts: { ghLoggedIn?: boolean } = {}) {
   };
   return {
     plugins: createPlugins(
-      {} as never,
+      (opts.db ?? {}) as never,
       connections as never,
       () => mcp,
       async () => opts.ghLoggedIn ?? false,
@@ -163,4 +163,23 @@ export function world(opts: { ghLoggedIn?: boolean } = {}) {
     servers,
     bindings,
   };
+}
+
+/**
+ * Activates a built-in plugin for a bot, as the person does in Studio: nothing to fill in. The first activation installs it; a later
+ * one binds the same install to one more bot.
+ */
+export async function activate(
+  plugins: ReturnType<typeof world>["plugins"],
+  userId: string,
+  id: string,
+  botId: string,
+) {
+  const a = actor(userId);
+  try {
+    await plugins.install(a, id, {}, [botId]);
+  } catch (e) {
+    if ((e as { code?: string }).code !== "ALREADY_INSTALLED") throw e;
+    await plugins.setBinding(a, botId, id, true);
+  }
 }

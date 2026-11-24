@@ -9,7 +9,7 @@ const actor = { userId: "owner", isAdmin: true } as never;
 
 describe("the reader of a sealed installation key", () => {
   const secrets = new Map([["c1", "sk-test-0123456789"]]);
-  const reader = (o: { owner?: string | undefined; member?: boolean; operator?: string } = {}) =>
+  const reader = (o: { owner?: string | undefined; member?: boolean } = {}) =>
     createInstallationKeyReader({
       owner: async (id) => (secrets.has(id) ? (o.owner ?? "owner") : undefined),
       actorFor: async () => (o.member === false ? null : actor),
@@ -21,14 +21,20 @@ describe("the reader of a sealed installation key", () => {
           return Buffer.from(s);
         },
       } as never,
-      operatorKey: () => o.operator,
     });
 
-  test("no connection recorded: none, or the operator's own key", async () => {
+  test("no connection recorded: no key, and the removed key variables are not a source", async () => {
     expect(await reader().state(null)).toBe("none");
     expect(await reader().secret(null)).toBeUndefined();
-    expect(await reader({ operator: "op-key" }).state(null)).toBe("operator");
-    expect((await reader({ operator: "op-key" }).secret(null))?.toString()).toBe("op-key");
+    process.env.ZETTA_TRANSCRIBE_API_KEY = "sk-test-from-env";
+    process.env.ZETTA_SPEECH_API_KEY = "sk-test-from-env";
+    try {
+      expect(await reader().state(null)).toBe("none");
+      expect(await reader().secret(null)).toBeUndefined();
+    } finally {
+      delete process.env.ZETTA_TRANSCRIBE_API_KEY;
+      delete process.env.ZETTA_SPEECH_API_KEY;
+    }
   });
   test("a saved key is read through its owner", async () => {
     expect(await reader().state("c1")).toBe("set");

@@ -11,14 +11,17 @@ import { assertPublicUrl, ComputerError } from "../computer/service";
 import type { ConnectionsService } from "../connections/service";
 import { audit, auditToolDetail } from "../features/audit";
 import type { McpRun } from "../chat/harness";
+import { privateAllowed, type PrivateNetwork } from "../settings/private-network";
+import { readSetting, type SettingsReader } from "../settings/service";
 import { AccessError, type ActiveActor } from "../identity/access";
 import { catalogStdio } from "./plugins/catalog";
 import { getPlugin } from "./plugins/registry";
 import { toolAllowed } from "./tool-access";
 import { configureMail } from "./plugins/mail"; // importing registers the plugin
-import { configureWhatsapp } from "./plugins/whatsapp"; // importing registers the plugin
+import { configureWhatsapp, type WahaInstallation } from "./plugins/whatsapp"; // importing registers the plugin
 import { configureHomeAssistant } from "./plugins/homeassistant"; // importing registers the plugin
 import "./plugins/google"; // importing registers the plugin
+import "./plugins/microsoft"; // importing registers the plugin
 import "./plugins/slack";
 import "./plugins/telegram"; // importing registers the plugin
 import "./plugins/reddit"; // importing registers the plugin
@@ -31,9 +34,14 @@ import "./plugins/obsidian"; // importing registers the plugin (local installs)
 import "./plugins/apple"; // importing registers the plugin (local installs on macOS)
 import "./plugins/canva"; // importing registers the plugin
 import "./plugins/figma"; // importing registers the plugin
+import "./plugins/ytdlp"; // importing registers the plugin (yt-dlp: the computer's own, or a checked copy in Zetta's folder)
+import "./plugins/video-transcribe"; // importing registers the plugin (a video link or file to text: captions first, else the server's speech to text)
 import "./plugins/ics"; // importing registers the plugin
 import "./plugins/apps"; // importing registers the plugin
-import { configureVault } from "./plugins/vault"; // importing registers 1Password and Bitwarden
+import "./plugins/mailbox"; // importing registers the plugin (read access to the person's mailboxes)
+import "./plugins/botmail"; // importing registers the plugin (a bot's own address answers the people it allowed)
+import "../phone/live"; // importing registers the plugin (the two tools an outside caller's phone turn has)
+import { configureVault } from "./plugins/vault"; // importing registers 1Password, Bitwarden and OpenBao
 import {
   createPlugins,
   NATIVE_URL_PREFIX,
@@ -67,16 +75,22 @@ const CALL_MS = 20_000,
 export type StdioEntry = { command: string; args: string[] };
 export type McpOptions = {
   callMs?: number;
-  allowPrivate?: boolean;
+  /** Private addresses: a fixed answer (tests), or a function asked at every check (the setting `allowPrivateNetwork`). */
+  allowPrivate?: PrivateNetwork;
+  /** The shared WhatsApp server (the setting `wahaUrl` and its sealed key), read when the WhatsApp plugin makes a call. */
+  wahaServer?: WahaInstallation;
   stdioAllowlist?: StdioEntry[];
   connect?: McpConnect;
-  /** Lets members, not only the administrator, run local (stdio) servers. Default: ZETTA_MCP_MEMBER_STDIO=1. */
+  /** Lets members, not only the administrator, run local (stdio) servers. Without it the setting `mcpMemberStdio` decides, on every call. */
   memberStdio?: boolean;
+  /** Where the settings `mcpMemberStdio` and `mcpAllowlist` are read, on every call (a change in Studio applies at once). */
+  settings?: SettingsReader;
 };
-/** ZETTA_MCP_ALLOWLIST: entries separated by `;`, each a space-separated argv (no shell), e.g. `/usr/bin/npx -y chrome-devtools-mcp@latest --headless`. */
-export const parseAllowlist = (raw = process.env.ZETTA_MCP_ALLOWLIST ?? ""): StdioEntry[] =>
-  raw
-    .split(";")
+/** Entries separated by `;`, each a space-separated argv (no shell), e.g. `/usr/bin/npx -y chrome-devtools-mcp@latest --headless`. */
+export const parseAllowlist = (raw = ""): StdioEntry[] => parseAllowlistEntries(raw.split(";"));
+/** The setting `mcpAllowlist`: one entry per item, each a space-separated argv (no shell). */
+export const parseAllowlistEntries = (entries: readonly string[]): StdioEntry[] =>
+  entries
     .map((e) => e.trim().split(/\s+/).filter(Boolean))
     .filter((a) => a.length > 0)
     .map(([command, ...args]) => ({ command: command!, args }));
@@ -103,16 +117,22 @@ const defaultConnect: McpConnect = async (s, authorization) => {
 /**
  * MCP integration (RFC-042/043/044). Servers belong to one user and are bound to bots per user. Every operation opens a fresh
  * session, applies a deadline, and always closes it. Local stdio servers run only for commands the administrator allowlisted
- * (ZETTA_MCP_ALLOWLIST); HTTP servers must be public addresses. Secrets come from the sealed connection store at call time.
+ * (the setting `mcpAllowlist`); HTTP servers must be public addresses. Secrets come from the sealed connection store at call time.
  */
 export function createMcp(db: Database, connections?: ConnectionsService, opts: McpOptions = {}) {
-  // Catalog entries are the only built-in local commands; the administrator may add more with ZETTA_MCP_ALLOWLIST.
-  const allow = opts.stdioAllowlist ?? [...catalogStdio(), ...parseAllowlist()];
+  // Catalog entries are the only built-in local commands; the administrator may add more with the setting `mcpAllowlist`, read on every
+  // call, so a change in Studio applies without a restart. The organization id is passed here when workspaces exist.
+  const allowed = async (): Promise<StdioEntry[]> =>
+    opts.stdioAllowlist ?? [
+      ...catalogStdio(),
+      ...parseAllowlistEntries(await readSetting(opts.settings, "mcpAllowlist")),
+    ];
   const connect = opts.connect ?? defaultConnect;
   // A local server is a process on the host with the server's OS user (browsers that can reach the host network and files), outside the
   // address policy. Only the administrator who runs the server may use one, unless they open it to members.
-  const memberStdio = opts.memberStdio ?? process.env.ZETTA_MCP_MEMBER_STDIO === "1";
-  const stdioOk = (a: ActiveActor) => a.isAdmin || memberStdio;
+  const stdioOk = async (a: ActiveActor) =>
+    a.isAdmin ||
+    (opts.memberStdio ?? (await readSetting(opts.settings, "mcpMemberStdio")) === "on");
   /** A server the user may change: their own, or the team's when they are the administrator. */
   const owned = async (a: ActiveActor, id: string) => {
     const [s] = await db.select().from(mcpServer).where(eq(mcpServer.id, id));
@@ -138,7 +158,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
   async function prepare(a: ActiveActor, s: Server) {
     if (s.url?.startsWith(NATIVE_URL_PREFIX)) throw new McpError("INVALID"); // in-process plugins have no MCP session
     // A team server was added by the administrator, who chose to let members use it.
-    if (s.transport === "stdio" && s.sharing !== "team" && !stdioOk(a))
+    if (s.transport === "stdio" && s.sharing !== "team" && !(await stdioOk(a)))
       throw new McpError("STDIO_NOT_ALLOWED");
     let auth: string | undefined;
     if (s.connectionId) {
@@ -151,7 +171,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       secret.fill(0);
     }
     // Re-validate the address at call time (the registration-time check can be outdated by a DNS change).
-    if (s.transport === "http" && !opts.allowPrivate)
+    if (s.transport === "http" && !(await privateAllowed(opts.allowPrivate)))
       await assertPublicUrl(s.url!).catch(() => {
         throw new McpError("BLOCKED_URL");
       });
@@ -239,9 +259,9 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
       .where(and(eq(botIntegration.botId, botId), eq(botIntegration.ownerUserId, a.userId)));
 
   let core!: McpCore;
-  configureWhatsapp({ allowPrivate: opts.allowPrivate }); // same private-address policy as MCP servers
+  configureWhatsapp({ allowPrivate: opts.allowPrivate, installation: opts.wahaServer }); // same private-address policy as MCP servers
   configureMail({ allowPrivate: opts.allowPrivate });
-  configureVault({ allowPrivate: Boolean(opts.allowPrivate) }); // 1Password Connect servers follow it too
+  configureVault({ allowPrivate: opts.allowPrivate ?? false }); // 1Password Connect servers and OpenBao follow it too
   configureHomeAssistant({ allowPrivate: opts.allowPrivate }); // a Home Assistant server is normally on the LAN
   const plugins = createPlugins(db, connections, () => core);
   const api = {
@@ -259,14 +279,14 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
     ) {
       if (v.transport === "http") {
         if (!v.url) throw new McpError("INVALID");
-        if (!opts.allowPrivate)
+        if (!(await privateAllowed(opts.allowPrivate)))
           await assertPublicUrl(v.url).catch((e) => {
             throw e instanceof ComputerError ? new McpError("BLOCKED_URL") : e;
           });
       } else if (
-        !stdioOk(a) ||
+        !(await stdioOk(a)) ||
         !v.command ||
-        !allow.some(
+        !(await allowed()).some(
           (e) => e.command === v.command && JSON.stringify(e.args) === JSON.stringify(v.args ?? []),
         )
       )
@@ -376,7 +396,7 @@ export function createMcp(db: Database, connections?: ConnectionsService, opts: 
             return undefined;
           if (i.toolsMode === "selected" && !i.allowedTools.length) return undefined;
           if (
-            !opts.allowPrivate &&
+            !(await privateAllowed(opts.allowPrivate)) &&
             !(await assertPublicUrl(s.url).then(
               () => true,
               () => false,

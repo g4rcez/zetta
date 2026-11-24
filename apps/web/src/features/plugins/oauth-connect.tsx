@@ -5,7 +5,7 @@ import { errorMessage } from "../chat/chat-client";
 import { pluginsApi, type PluginTest } from "./plugins-api";
 
 /** Plugins with their own sign-in panel; every other OAuth plugin gets the generic one below. */
-export const CUSTOM_OAUTH = new Set(["google", "reddit", "composio"]);
+export const CUSTOM_OAUTH = new Set(["google", "microsoft", "reddit", "composio"]);
 
 /**
  * Connect / Disconnect for a plugin that signs in with OAuth through the shared server flow (integrations/plugins/oauth2.ts): the

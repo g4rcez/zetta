@@ -30,7 +30,8 @@ export type PluginMeta = {
   /** Numbered setup steps; empty when the plugin has none. */
   guide: string[];
   credentials: boolean;
-  /** Built in and on for every bot: nothing to install. */ always?: boolean;
+  /** Ships with Zetta and needs no configuration. Not on by default: the person activates it and chooses the bots. */
+  builtin?: boolean;
   tools: { name: string; description: string }[];
 };
 /** `private`: your own configuration. `team`: the workspace's one, set up by the administrator and used by every member. */

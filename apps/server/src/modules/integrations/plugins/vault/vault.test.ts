@@ -266,6 +266,37 @@ describe("Bitwarden", () => {
     ).catch((x) => x)) as PluginError;
     expect(e.code).toBe("AUTH");
   });
+  test("bw 2026.10 wording: a wrong master password, client secret or client id are AUTH; http servers are refused up front", async () => {
+    // stderr texts captured from the real CLI against a Vaultwarden server
+    for (const [step, stderr] of [
+      ["unlock", "ERROR bitwarden_crypto::keys::master_key: error=The decryption operation failed"],
+      ["login", "Incorrect client_secret"],
+      ["login", "Invalid client_id"],
+    ] as const) {
+      resetBitwardenSessions();
+      answer = (argv) =>
+        argv[1] === "status"
+          ? { stdout: '{"status":"unauthenticated"}' }
+          : argv[1] === step
+            ? { code: 1, stderr }
+            : { stdout: "" };
+      const e = (await BITWARDEN.install!(
+        ctx({ clientId: "user.abc", clientSecret: "cs", masterPassword: "nope" }),
+      ).catch((x) => x)) as PluginError;
+      expect(e.code).toBe("AUTH");
+    }
+    calls.length = 0;
+    const http = (await BITWARDEN.install!(
+      ctx({
+        clientId: "user.abc",
+        clientSecret: "cs",
+        masterPassword: "pw",
+        serverUrl: "http://vault.example.invalid",
+      }),
+    ).catch((x) => x)) as PluginError;
+    expect(http.code).toBe("INVALID_FIELD");
+    expect(calls).toHaveLength(0);
+  });
   test("Secrets Manager: secrets are offered as passwords, values dropped from listings", async () => {
     answer = (argv, env) => {
       expect(env.BWS_ACCESS_TOKEN).toBe("0.tok");

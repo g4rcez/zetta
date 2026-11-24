@@ -14,7 +14,7 @@ suite("speech-to-text settings of the installation", () => {
   const db = createDb({ DATABASE_URL: url ?? "postgresql://unused@localhost/unused" } as never);
   const installation = createInstallationService(db);
   let transcriber: Transcriber = { transcribe: async () => "" };
-  let keyState: "none" | "set" | "operator" | "unavailable" = "none";
+  let keyState: "none" | "set" | "unavailable" = "none";
   let allowPrivate = false;
   const calls: string[] = [];
   const access = createIdentityAccess(

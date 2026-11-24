@@ -224,7 +224,7 @@ beforeEach(() => {
   over18 = true;
   submitErrors = [];
   resetRedditLimits();
-  process.env.REDDIT_OAUTH_REDIRECT_BASE = "https://zetta.test";
+  process.env.ZETTA_OAUTH_REDIRECT_BASE = "https://zetta.test";
   configureRedditForTests({
     authUrl: `${base}/auth`,
     tokenUrl: `${base}/token`,

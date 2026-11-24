@@ -15,8 +15,10 @@ import { ComposioConnect } from "./composio-connect";
 import { CUSTOM_OAUTH, OAuthConnect } from "./oauth-connect";
 import { GithubAuth, type GithubMethod } from "./github-auth";
 import { GoogleConnect } from "./google-connect";
+import { MicrosoftConnect } from "./microsoft-connect";
 import { FieldInput, probeKey, StatusBadge, useProbes, type Probe } from "./plugin-parts";
 import { PluginIcon } from "./plugin-icon";
+import { PluginServerSection } from "./plugin-server-section";
 import {
   CATEGORY_LABEL,
   PluginScopeProvider,
@@ -60,17 +62,23 @@ function InstallForm({
   const [local, setLocal] = useState<string>();
   const [method, setMethod] = useState<GithubMethod>("cli");
   const github = meta.id === "github";
+  // A built-in plugin needs nothing filled in: activating it is choosing the bots. Its optional settings come after, on its page.
+  const builtin = Boolean(meta.builtin);
+  const verb = builtin ? "Activate" : "Install";
   // GitHub asks for a token only when the person picks the token method; the CLI method installs without one.
-  const fields = github
-    ? method === "token"
-      ? meta.fields.map((f) => ({ ...f, optional: false }))
-      : []
-    : meta.fields;
+  const fields = builtin
+    ? []
+    : github
+      ? method === "token"
+        ? meta.fields.map((f) => ({ ...f, optional: false }))
+        : []
+      : meta.fields;
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const config: Record<string, string> = {};
-    for (const field of meta.fields) config[field.key] = String(f.get(field.key) ?? "").trim();
+    if (!builtin)
+      for (const field of meta.fields) config[field.key] = String(f.get(field.key) ?? "").trim();
     setBusy(true);
     setLocal(undefined);
     try {
@@ -84,7 +92,7 @@ function InstallForm({
   }
   return (
     <Panel
-      title={`Install ${meta.name}${scope === "team" ? " for the team" : ""}`}
+      title={`${verb} ${meta.name}${scope === "team" ? " for the team" : ""}`}
       {...(scope === "team"
         ? {
             description: `One configuration for the whole workspace: every member's bots can use it with every tool, through this one account.`,
@@ -94,7 +102,7 @@ function InstallForm({
       <form
         onSubmit={(e) => void submit(e)}
         className="space-y-3 text-sm"
-        aria-label={`Install ${meta.name}`}
+        aria-label={`${verb} ${meta.name}`}
       >
         {meta.transport === "stdio" && (
           <p className="text-xs text-muted-foreground">
@@ -117,7 +125,9 @@ function InstallForm({
         )}
         {bots.length > 0 && (
           <fieldset className="space-y-2">
-            <legend className="mb-1 text-xs font-medium">Let these bots use it (optional)</legend>
+            <legend className="mb-1 text-xs font-medium">
+              {builtin ? "Choose the bots that may use it" : "Let these bots use it (optional)"}
+            </legend>
             {bots.map((b) => (
               <ToggleCard
                 key={b.id}
@@ -144,7 +154,7 @@ function InstallForm({
             Cancel
           </Button>
           <Button type="submit" size="sm" loading={busy} disabled={busy}>
-            Install
+            {verb}
           </Button>
         </div>
       </form>
@@ -392,6 +402,9 @@ function ConnectionSection({
         {canManage && meta.id === "google" && (
           <GoogleConnect probe={p} onChanged={onTest} onError={onError} />
         )}
+        {canManage && meta.id === "microsoft" && (
+          <MicrosoftConnect probe={p} onChanged={onTest} onError={onError} />
+        )}
         {canManage && meta.id === "reddit" && (
           <RedditConnect probe={p} onChanged={onTest} onError={onError} />
         )}
@@ -536,7 +549,7 @@ export function PluginPage({ pluginId, isAdmin }: { pluginId: string; isAdmin: b
                   <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
                     {CATEGORY_LABEL[meta.category] ?? meta.category}
                   </span>
-                  {meta.always && (
+                  {meta.builtin && (
                     <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-foreground">
                       Built in
                     </span>
@@ -555,96 +568,91 @@ export function PluginPage({ pluginId, isAdmin }: { pluginId: string; isAdmin: b
                 )}
               </div>
             </header>
-            {meta.always ? (
-              <p className="text-sm text-muted-foreground">
-                {meta.notes ?? "Built in, on for every bot."}
-              </p>
-            ) : (
-              <>
-                <ScopeSwitch
-                  scope={scope}
-                  onChange={setPicked}
-                  haveMine={Boolean(mine)}
-                  haveTeam={Boolean(team)}
-                />
-                {!current ? (
-                  !canManage ? (
-                    <Empty>The administrator has not set up {meta.name} for the team yet.</Empty>
-                  ) : meta.id === "telegram" ? (
-                    <TelegramInstall
-                      meta={meta}
-                      bots={bots}
-                      onClose={toList}
-                      onDone={() => void reload()}
-                    />
-                  ) : meta.id === "whatsapp" ? (
-                    <WhatsappInstall
-                      meta={meta}
-                      bots={bots}
-                      onClose={toList}
-                      onInstalled={() => {
-                        void reload();
-                        setPairing(true);
-                      }}
-                    />
-                  ) : (
-                    <InstallForm
+            <>
+              <ScopeSwitch
+                scope={scope}
+                onChange={setPicked}
+                haveMine={Boolean(mine)}
+                haveTeam={Boolean(team)}
+              />
+              {!current ? (
+                !canManage ? (
+                  <Empty>The administrator has not set up {meta.name} for the team yet.</Empty>
+                ) : meta.id === "telegram" ? (
+                  <TelegramInstall
+                    meta={meta}
+                    bots={bots}
+                    onClose={toList}
+                    onDone={() => void reload()}
+                  />
+                ) : meta.id === "whatsapp" ? (
+                  <WhatsappInstall
+                    meta={meta}
+                    bots={bots}
+                    onClose={toList}
+                    onInstalled={() => {
+                      void reload();
+                      setPairing(true);
+                    }}
+                  />
+                ) : (
+                  <InstallForm
+                    key={scope}
+                    meta={meta}
+                    bots={bots}
+                    onCancel={toList}
+                    onDone={() => void reload()}
+                  />
+                )
+              ) : (
+                <>
+                  {scope === "team" && !canManage && (
+                    <p className="text-xs text-muted-foreground">
+                      Set up by the administrator for the whole workspace. Your bots can use it with
+                      every tool; only the administrator can change it.
+                    </p>
+                  )}
+                  <ConnectionSection
+                    meta={meta}
+                    canManage={canManage}
+                    probe={probes[probeKey(pluginId, scope)]}
+                    onTest={() => void probe(pluginId, scope)}
+                    onPair={() => setPairing(true)}
+                    onError={setError}
+                  />
+                  {canManage && meta.fields.length > 0 && (
+                    <SettingsForm
                       key={scope}
                       meta={meta}
-                      bots={bots}
-                      onCancel={toList}
-                      onDone={() => void reload()}
+                      hasToken={Boolean(current.hasSecret)}
+                      onSaved={() => {
+                        void reload();
+                        void probe(pluginId, scope);
+                      }}
                     />
-                  )
-                ) : (
-                  <>
-                    {scope === "team" && !canManage && (
-                      <p className="text-xs text-muted-foreground">
-                        Set up by the administrator for the whole workspace. Your bots can use it
-                        with every tool; only the administrator can change it.
-                      </p>
-                    )}
-                    <ConnectionSection
-                      meta={meta}
-                      canManage={canManage}
-                      probe={probes[probeKey(pluginId, scope)]}
-                      onTest={() => void probe(pluginId, scope)}
-                      onPair={() => setPairing(true)}
-                      onError={setError}
-                    />
-                    {canManage && meta.fields.length > 0 && (
-                      <SettingsForm
-                        key={scope}
-                        meta={meta}
-                        hasToken={Boolean(current.hasSecret)}
-                        onSaved={() => {
-                          void reload();
-                          void probe(pluginId, scope);
-                        }}
+                  )}
+                  <BotsSection meta={meta} bots={bots} onError={setError} />
+                  {canManage && (
+                    <Panel
+                      title="Remove"
+                      description={
+                        scope === "team"
+                          ? `Disconnects ${meta.name} from every member's bots and deletes the team's saved settings.`
+                          : `Disconnects ${meta.name} from every bot and deletes its saved settings.`
+                      }
+                    >
+                      <ConfirmButton
+                        label="Remove"
+                        question={`Remove ${scope === "team" ? "the team's " : ""}${meta.name}?`}
+                        confirmLabel="Remove"
+                        onConfirm={remove}
                       />
-                    )}
-                    <BotsSection meta={meta} bots={bots} onError={setError} />
-                    {canManage && (
-                      <Panel
-                        title="Remove"
-                        description={
-                          scope === "team"
-                            ? `Disconnects ${meta.name} from every member's bots and deletes the team's saved settings.`
-                            : `Disconnects ${meta.name} from every bot and deletes its saved settings.`
-                        }
-                      >
-                        <ConfirmButton
-                          label="Remove"
-                          question={`Remove ${scope === "team" ? "the team's " : ""}${meta.name}?`}
-                          confirmLabel="Remove"
-                          onConfirm={remove}
-                        />
-                      </Panel>
-                    )}
-                  </>
-                )}
-              </>
-            )}
+                    </Panel>
+                  )}
+                </>
+              )}
+            </>
+            <PluginServerSection pluginId={meta.id} isAdmin={isAdmin} />
           </PluginScopeProvider>
         )}
       </div>

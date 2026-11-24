@@ -1,11 +1,31 @@
+import { MAIL_KEY_CONNECTION_PROVIDER, MAIL_KEY_PURPOSE } from "@zetta/core/mail-provision";
+import {
+  PHONE_KEY_CONNECTION_PROVIDER,
+  PHONE_KEY_PURPOSE,
+  PHONE_TWILIO_KEY_CONNECTION_PROVIDER,
+  PHONE_TWILIO_KEY_PURPOSE,
+} from "@zetta/core/phone";
 import { COMPATIBLE_PROVIDER } from "@zetta/core/model-server";
+import { WAHA_KEY_CONNECTION_PROVIDER, WAHA_KEY_PURPOSE } from "@zetta/core/waha";
+import { SPEECH_KEY_CONNECTION_PROVIDER, SPEECH_KEY_PURPOSE } from "@zetta/core/speech";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import { ConnectionsUnavailableError, PROVIDERS, type ConnectionsService } from "./service";
 
-/** `plugin`, `machine`, `transcribe`, `speech` and `push` connections hold secrets managed by the Plugins tab, the Computer tab and the installation settings; they are neither listed nor user-creatable here. */
-const MANAGED = ["plugin", "machine", "transcribe", "speech", "push"];
+/** `plugin`, `machine`, `transcribe`, `speech`, `push` and `mailbox` connections hold secrets managed by the Plugins tab, the Computer tab, the installation settings and the mailbox routes; they are neither listed nor user-creatable here. */
+const MANAGED = [
+  "plugin",
+  "machine",
+  "transcribe",
+  "speech",
+  "push",
+  "mailbox",
+  "mailprovider",
+  "phone",
+  "phonetwilio",
+  "waha",
+];
 /**
  * `compatible` (a model on the person's own server) is the person's own and is listed here, so it can be revoked, but it cannot be created
  * here: it needs an address and a model name, which only its own route takes (the address rule decides what may be saved).
@@ -22,12 +42,31 @@ export type ConnectionServices = {
   connections: ConnectionsService;
   /** The speech-to-text key of the installation: where its connection is recorded (see transcribe/configured.ts). */
   transcribeKey?: { set(connectionId: string | null): Promise<void> };
+  /** The text-to-speech key of the installation: where its connection is recorded (installation/speech.ts). */
+  speechKey?: { set(connectionId: string | null): Promise<void> };
+  /** The key of bot e-mail addresses: where its connection is recorded (mail/provider-config.ts). */
+  mailKey?: { set(connectionId: string | null): Promise<void> };
+  /** The key of the phone provider: where its connection is recorded (phone/config.ts). */
+  phoneKey?: { set(connectionId: string | null): Promise<void> };
+  /** The Auth Token of the Twilio account: where its connection is recorded. */
+  phoneTwilioKey?: { set(connectionId: string | null): Promise<void> };
+  /** The key of the shared WhatsApp server (WAHA): where its connection is recorded. */
+  wahaKey?: { set(connectionId: string | null): Promise<void> };
 };
 const uuid = z.string().uuid();
 const key = z.string().regex(/^[a-z0-9_-]{1,32}$/);
 
 export function createConnectionRoutes(
-  { access, connections, transcribeKey }: ConnectionServices,
+  {
+    access,
+    connections,
+    transcribeKey,
+    speechKey,
+    mailKey,
+    phoneKey,
+    phoneTwilioKey,
+    wahaKey,
+  }: ConnectionServices,
   trustedOrigins: readonly string[],
   keyring: TransportKeyring = transportKeyring,
 ) {
@@ -147,6 +186,138 @@ export function createConnectionRoutes(
         g(async (c) => {
           if (!c.actor.isAdmin || !transcribeKey) throw new AccessError("ACCESS_DENIED");
           await transcribeKey.set(null);
+          return { ok: true };
+        }),
+      )
+      // The text-to-speech key of the installation: the same, for the speech provider the administrator chose.
+      .put(
+        "/connections/speech-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !speechKey) throw new AccessError("ACCESS_DENIED");
+          const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
+          const { secret } = z
+            .strictObject({ secret: z.string().min(8).max(8000) })
+            .parse(await keyring.open(sealed, { userId: c.userId, purpose: SPEECH_KEY_PURPOSE }));
+          const made = await connections.create(c.actor, {
+            provider: SPEECH_KEY_CONNECTION_PROVIDER,
+            label: "Text to speech",
+            secret,
+          });
+          await speechKey.set(made.id);
+          return { ok: true };
+        }),
+      )
+      .delete(
+        "/connections/speech-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !speechKey) throw new AccessError("ACCESS_DENIED");
+          await speechKey.set(null);
+          return { ok: true };
+        }),
+      )
+      // The key of bot e-mail addresses: the same, for the mail provider the administrator chose.
+      .put(
+        "/connections/mail-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !mailKey) throw new AccessError("ACCESS_DENIED");
+          const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
+          const { secret } = z
+            .strictObject({ secret: z.string().min(8).max(8000) })
+            .parse(await keyring.open(sealed, { userId: c.userId, purpose: MAIL_KEY_PURPOSE }));
+          const made = await connections.create(c.actor, {
+            provider: MAIL_KEY_CONNECTION_PROVIDER,
+            label: "Bot e-mail addresses",
+            secret,
+          });
+          await mailKey.set(made.id);
+          return { ok: true };
+        }),
+      )
+      .delete(
+        "/connections/mail-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !mailKey) throw new AccessError("ACCESS_DENIED");
+          await mailKey.set(null);
+          return { ok: true };
+        }),
+      )
+      // The key of the phone provider (numbers and calls for bots): the same, administrator only.
+      .put(
+        "/connections/phone-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !phoneKey) throw new AccessError("ACCESS_DENIED");
+          const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
+          const { secret } = z
+            .strictObject({ secret: z.string().min(8).max(8000) })
+            .parse(await keyring.open(sealed, { userId: c.userId, purpose: PHONE_KEY_PURPOSE }));
+          const made = await connections.create(c.actor, {
+            provider: PHONE_KEY_CONNECTION_PROVIDER,
+            label: "Phone numbers",
+            secret,
+          });
+          await phoneKey.set(made.id);
+          return { ok: true };
+        }),
+      )
+      .delete(
+        "/connections/phone-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !phoneKey) throw new AccessError("ACCESS_DENIED");
+          await phoneKey.set(null);
+          return { ok: true };
+        }),
+      )
+      // The Auth Token of the Twilio account: the same, with its own connection so Telnyx and Twilio can both be set up.
+      .put(
+        "/connections/phone-twilio-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !phoneTwilioKey) throw new AccessError("ACCESS_DENIED");
+          const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
+          const { secret } = z
+            .strictObject({ secret: z.string().min(8).max(8000) })
+            .parse(
+              await keyring.open(sealed, { userId: c.userId, purpose: PHONE_TWILIO_KEY_PURPOSE }),
+            );
+          const made = await connections.create(c.actor, {
+            provider: PHONE_TWILIO_KEY_CONNECTION_PROVIDER,
+            label: "Phone numbers (Twilio)",
+            secret,
+          });
+          await phoneTwilioKey.set(made.id);
+          return { ok: true };
+        }),
+      )
+      .delete(
+        "/connections/phone-twilio-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !phoneTwilioKey) throw new AccessError("ACCESS_DENIED");
+          await phoneTwilioKey.set(null);
+          return { ok: true };
+        }),
+      )
+      // The key of the WhatsApp server every person shares: the same, administrator only. Sealed in the browser, never returned.
+      .put(
+        "/connections/waha-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !wahaKey) throw new AccessError("ACCESS_DENIED");
+          const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
+          const { secret } = z
+            .strictObject({ secret: z.string().min(1).max(8000) })
+            .parse(await keyring.open(sealed, { userId: c.userId, purpose: WAHA_KEY_PURPOSE }));
+          const made = await connections.create(c.actor, {
+            provider: WAHA_KEY_CONNECTION_PROVIDER,
+            label: "WhatsApp server",
+            secret,
+          });
+          await wahaKey.set(made.id);
+          return { ok: true };
+        }),
+      )
+      .delete(
+        "/connections/waha-key",
+        g(async (c) => {
+          if (!c.actor.isAdmin || !wahaKey) throw new AccessError("ACCESS_DENIED");
+          await wahaKey.set(null);
           return { ok: true };
         }),
       )

@@ -90,33 +90,23 @@ describe("whatsapp plugin", () => {
     });
   });
   test("with no address or key stored, it uses the administrator's WAHA server", async () => {
-    const saved = { url: process.env.ZETTA_WAHA_URL, key: process.env.ZETTA_WAHA_API_KEY };
-    process.env.ZETTA_WAHA_URL = url;
-    process.env.ZETTA_WAHA_API_KEY = "k3y";
-    configureWhatsapp({ allowPrivate: false });
-    try {
-      expect(
-        await WHATSAPP.status!({ userId: "u1", config: {}, setConfig: async () => {} }),
-      ).toEqual({ state: "connected" });
-      expect(calls[0]!.key).toBe("k3y");
-      // On the shared server the session is named after the user; the form's session name is ignored.
-      expect(calls[0]!.path).toBe("/api/sessions/ubb82030dbc2bcaba32a90bf2");
-      calls.length = 0;
-      await WHATSAPP.status!({
-        userId: "u2",
-        config: { session: "default" },
-        setConfig: async () => {},
-      });
-      expect(calls[0]!.path).toBe("/api/sessions/u6ca202c88e549dff68c09bfa");
-    } finally {
-      for (const [name, value] of [
-        ["ZETTA_WAHA_URL", saved.url],
-        ["ZETTA_WAHA_API_KEY", saved.key],
-      ] as const) {
-        if (value === undefined) delete process.env[name];
-        else process.env[name] = value;
-      }
-    }
+    configureWhatsapp({
+      allowPrivate: false,
+      installation: async () => ({ url, key: Buffer.from("k3y") }),
+    });
+    expect(await WHATSAPP.status!({ userId: "u1", config: {}, setConfig: async () => {} })).toEqual(
+      { state: "connected" },
+    );
+    expect(calls[0]!.key).toBe("k3y");
+    // On the shared server the session is named after the user; the form's session name is ignored.
+    expect(calls[0]!.path).toBe("/api/sessions/ubb82030dbc2bcaba32a90bf2");
+    calls.length = 0;
+    await WHATSAPP.status!({
+      userId: "u2",
+      config: { session: "default" },
+      setConfig: async () => {},
+    });
+    expect(calls[0]!.path).toBe("/api/sessions/u6ca202c88e549dff68c09bfa");
   });
   test("connect returns the QR as a data URL and starts a stopped session", async () => {
     sessionStatus = "STOPPED";

@@ -53,7 +53,7 @@ export function createIntegrationRoutes(
                 : 400,
         e.code,
         e.code === "STDIO_NOT_ALLOWED"
-          ? "Local commands are for the administrator (or members, when ZETTA_MCP_MEMBER_STDIO=1) and must be listed in ZETTA_MCP_ALLOWLIST."
+          ? "Local commands are for the administrator (or members, when the administrator allows it in Studio > Server settings) and must be on the allowed list there."
           : e.code === "BLOCKED_URL"
             ? "That address is not allowed."
             : e.code === "NOT_BOUND"

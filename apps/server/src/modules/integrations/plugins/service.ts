@@ -5,6 +5,19 @@ import { AccessError, type ActiveActor } from "../../identity/access";
 import type { ConnectionsService } from "../../connections/service";
 import { toolAllowed, type ToolAccess } from "../tool-access";
 import { originAllowed } from "./credentials";
+import type { PluginTurn } from "./turn";
+import type { MailGate } from "../../chat/mail-policy";
+import type { PhoneGate } from "../../chat/phone-policy";
+
+/** What the chat service adds to the context of one call: the server's decision points for mail and phone, a way to show the person what was sent, and a progress callback. */
+export type ToolExtra = {
+  mailGate?: MailGate;
+  phoneGate?: PhoneGate;
+  conversationId?: string;
+  show?: (markdown: string) => void;
+  /** Live progress of a long call, shown in the chat while it runs (see `PluginContext.progress`). Any plugin may use it. */
+  progress?: PluginContext["progress"];
+};
 import {
   getPlugin,
   listPlugins,
@@ -269,21 +282,22 @@ export function createPlugins(
       throw new PluginError("NOT_BOUND", "That plugin is not connected to this bot any more.");
     return s;
   }
-  /** The context a tool call or its resume runs with: a built-in plugin has no configuration, any other uses the bot's binding. */
+  /** The context a tool call or its resume runs with: the install the bot is bound to (a built-in plugin has an empty configuration). */
   const toolCtx = async (
     a: ActiveActor,
     d: PluginDef,
     binding: { id: string } | undefined,
     botId: string,
-  ): Promise<PluginContext> =>
-    d.always
-      ? {
-          userId: a.userId,
-          botId,
-          config: {},
-          setConfig: () => Promise.reject(new PluginError("FAILED")),
-        }
-      : ctxFor(a, d, await boundRow(a, binding!), undefined, botId);
+    turn?: PluginTurn,
+    extra?: ToolExtra,
+  ): Promise<PluginContext> => {
+    const ctx = await ctxFor(a, d, await boundRow(a, binding!), undefined, botId);
+    // Assigned, not spread: `config` is a getter that `setConfig` keeps current, and a copy would freeze it.
+    // A built-in plugin also learns where the call comes from; the server's decision points (mail, phone) and the progress callback
+    // are only ever given to the plugin that uses them.
+    if (d.builtin) ctx.turn = turn;
+    return Object.assign(ctx, extra);
+  };
   const withDeadline = async <T>(work: Promise<T>): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -363,6 +377,19 @@ export function createPlugins(
       return ctxFor(a, d, s);
     },
     /**
+     * Internal (the mail module's Gmail mailboxes): the context of the person's OWN installation of a native plugin, never the team's, or
+     * undefined when they have none. Never exposed through routes.
+     */
+    async ownContextFor(a: ActiveActor, id: string): Promise<PluginContext | undefined> {
+      try {
+        const { d, s } = await installed(a, id);
+        return await ctxFor(a, d, s);
+      } catch (e) {
+        if (e instanceof AccessError) return undefined; // not installed
+        throw e;
+      }
+    },
+    /**
      * Internal (the chat fast path): the context of a native plugin for one bot and one tool, or undefined when the plugin is not
      * bound to the bot, the bot may not use the tool, or the bot holds both the user's own and the team's configuration. Never exposed through routes.
      */
@@ -375,8 +402,7 @@ export function createPlugins(
       try {
         const d = getPlugin(id);
         const binding = pickBinding(await mcp().bound(a, botId), id);
-        if (!d || d.kind !== "native" || d.always || !binding || !toolAllowed(binding, tool))
-          return undefined;
+        if (!d || d.kind !== "native" || !binding || !toolAllowed(binding, tool)) return undefined;
         return await ctxFor(a, d, await boundRow(a, binding), undefined, botId);
       } catch {
         return undefined;
@@ -412,12 +438,6 @@ export function createPlugins(
     ) {
       const d = def(id);
       adminOnly(a, scope);
-      if (d.always)
-        throw new PluginError(
-          "BUILT_IN",
-          `${d.name} is built in and already on for every bot.`,
-          "Manage it in each bot's settings.",
-        );
       if (await mcp().serverByName(a, id, scope))
         throw new PluginError("ALREADY_INSTALLED", "That plugin is already installed.");
       const clean = fieldValues(d, config);
@@ -698,7 +718,7 @@ export function createPlugins(
      */
     async setupInfo(a: ActiveActor, botId: string, id: string, scope: Scope = "mine") {
       const d = getPlugin(id);
-      if (!d || d.always) throw new AccessError("NOT_FOUND");
+      if (!d) throw new AccessError("NOT_FOUND");
       const there = (await this.list(a)).some(
         (p) => p.id === id && p.sharing === (scope === "team" ? "team" : "private"),
       );
@@ -731,7 +751,7 @@ export function createPlugins(
      */
     async botSettings(a: ActiveActor, id: string) {
       const d = getPlugin(id);
-      if (!d || d.always) throw new AccessError("NOT_FOUND");
+      if (!d) throw new AccessError("NOT_FOUND");
       const own = await installed(a, id).catch(() => undefined);
       if (!own) return { name: d.name, installed: false as const, settings: [] };
       const ctx = await ctxFor(a, d, own.s);
@@ -749,7 +769,7 @@ export function createPlugins(
      */
     async proposeSettings(a: ActiveActor, id: string, settings: Record<string, string>) {
       const d = getPlugin(id);
-      if (!d || d.always) throw new AccessError("NOT_FOUND");
+      if (!d) throw new AccessError("NOT_FOUND");
       const { s } = await installed(a, id);
       const editable = new Map(
         d.fields.filter((f) => f.botEditable && !f.secret).map((f) => [f.key, f]),
@@ -806,6 +826,10 @@ export function createPlugins(
       tool: string,
       args: Record<string, unknown>,
       config?: Scope,
+      /** Where the call comes from (see turn.ts). A built-in plugin that needs it refuses when it is absent. */
+      turn?: PluginTurn,
+      /** Built-in plugins only: what the chat service hands a tool that sends (see ToolExtra). */
+      extra?: ToolExtra,
     ) {
       const outcome = (o: "ok" | "failed" | "timeout" | "denied") =>
         audit(db, a.userId, {
@@ -815,21 +839,30 @@ export function createPlugins(
           detail: auditToolDetail("plugin", tool),
         });
       const d = getPlugin(id);
-      if (d?.always && !(await d.always.available(botId, a.userId).catch(() => false)))
+      const binding = d ? pickBinding(await mcp().bound(a, botId), id, config) : undefined;
+      // A built-in plugin is not on by default: the person activates it and chooses the bots. Then its own gate (mail switched on, a call
+      // in progress) is checked on every call.
+      if (d?.builtin && !binding)
         throw new PluginError(
           "NOT_BOUND",
-          `${d.name} is switched off for this bot.`,
-          `Open the bot's settings and switch ${d.name} back on.`,
+          `${d.name} is not turned on for this bot.`,
+          `Activate ${d.name} in Studio > Plugins and choose this bot.`,
         );
-      const binding =
-        d && !d.always ? pickBinding(await mcp().bound(a, botId), id, config) : undefined;
+      if (d?.gate && !(await d.gate.available(botId, a.userId, turn).catch(() => false))) {
+        await outcome("denied");
+        throw new PluginError(
+          "NOT_BOUND",
+          d.gate.refusal?.safe ?? `${d.name} is switched off for this bot.`,
+          d.gate.refusal?.fix ?? `Open the bot's settings and switch ${d.name} back on.`,
+        );
+      }
       if (binding && githubWithoutToken(binding))
         throw new PluginError(
           "USE_GH",
           "GitHub has no token here, so its tools are off. Use the gh command instead.",
           "Run gh in the shell, for example gh pr list -R owner/repo or gh issue list -R owner/repo. Do not call GitHub tools again.",
         );
-      if (!d || d.kind !== "native" || (!d.always && !binding))
+      if (!d || d.kind !== "native" || !binding)
         throw new PluginError("NOT_BOUND", "That plugin is not connected to this bot.");
       if (binding && !toolAllowed(binding, tool)) {
         await outcome("denied");
@@ -844,7 +877,7 @@ export function createPlugins(
       const missing = (t.inputSchema.required ?? []).filter((k) => args[k] === undefined);
       if (missing.length) throw new PluginError("INVALID_ARGS", `Missing: ${missing.join(", ")}`);
       try {
-        const ctx = await toolCtx(a, d, binding, botId);
+        const ctx = await toolCtx(a, d, binding, botId, turn, extra);
         const out = render(await withDeadline(t.handler(ctx, args)));
         await outcome("ok");
         return out;
@@ -883,9 +916,11 @@ export function createPlugins(
         throw new PluginError("NOT_SUPPORTED", "That plugin does not pause for approval.");
       if (!d.tools?.some((t) => t.name === pluginTool))
         throw new PluginError("UNKNOWN_TOOL", "That plugin has no such tool.");
-      // A built-in plugin has no binding: the bot is checked by the plugin itself. Any other needs this user's binding.
-      const binding = d.always ? undefined : pickBinding(await mcp().bound(a, botId), id, config);
-      if (d.always ? !(await d.always.available(botId, a.userId).catch(() => false)) : !binding)
+      // Every plugin needs this user's binding; a built-in one is also checked by its own gate.
+      const binding = pickBinding(await mcp().bound(a, botId), id, config);
+      // The card was answered by the person themselves, in their own session: that is "chat" for a built-in plugin that asks where a call comes from.
+      const at = d.builtin ? ("chat" as const) : undefined;
+      if (!binding || (d.gate && !(await d.gate.available(botId, a.userId, at).catch(() => false))))
         throw new PluginError("NOT_BOUND", "That plugin is not connected to this bot any more.");
       if (answer.action === "accept" && binding && !toolAllowed(binding, pluginTool)) {
         await outcome("denied");
@@ -896,7 +931,7 @@ export function createPlugins(
         );
       }
       try {
-        const ctx = await toolCtx(a, d, binding, botId);
+        const ctx = await toolCtx(a, d, binding, botId, at);
         const out = render(await withDeadline(d.pausing.resume(ctx, requestId, answer)));
         await outcome("ok");
         return out;
@@ -999,21 +1034,23 @@ export function createPlugins(
       }
     },
     /** Prompt section describing the plugins THIS user bound to the bot (empty when none). Contains no secrets. */
-    async promptFor(a: ActiveActor, botId: string): Promise<string> {
+    async promptFor(a: ActiveActor, botId: string, turn?: PluginTurn): Promise<string> {
       const bound = await mcp().bound(a, botId);
       type Section = { line: string; kind: "native" | "remote" | "cli"; vault: boolean };
       const sections = await Promise.all(
         listPlugins().map(async (d): Promise<Section | undefined> => {
-          if (d.always) {
-            if (!(await d.always.available(botId, a.userId).catch(() => false))) return undefined;
-            const extra = await d.always.prompt?.(botId, a.userId).catch(() => undefined);
+          const bs = bound.filter((x) => x.name === d.id);
+          if (d.gate) {
+            // A built-in plugin is in the prompt only once it is bound to this bot and its own gate lets it in.
+            if (!bs.length || !(await d.gate.available(botId, a.userId, turn).catch(() => false)))
+              return undefined;
+            const extra = await d.gate.prompt?.(botId, a.userId, turn).catch(() => undefined);
             return {
               kind: "native",
               vault: false,
               line: `- ${d.id} (${d.name}): ${d.description}${extra ? `\n    ${extra}` : ""}\n${toolLines(d)}`,
             };
           }
-          const bs = bound.filter((x) => x.name === d.id);
           if (!bs.length) return undefined;
           const vault = Boolean(d.credentials);
           const both = bs.length > 1;
@@ -1056,9 +1093,7 @@ export function createPlugins(
         native = found.some((x) => x.kind === "native"),
         remote = found.some((x) => x.kind === "remote"),
         vault = found.some((x) => x.vault);
-      const setup = setupPrompt(
-        listPlugins().filter((d) => !d.always && !bound.some((b) => b.name === d.id)),
-      );
+      const setup = setupPrompt(listPlugins().filter((d) => !bound.some((b) => b.name === d.id)));
       if (!lines.length) return setup;
       return [
         `Plugins connected to you by this user (the user's own accounts; use only when needed):`,

@@ -24,6 +24,7 @@ const STATE_TTL_MS = 10 * 60_000;
 export const b64u = (b: Buffer) => b.toString("base64url");
 export const sha = (s: string) => createHash("sha256").update(s).digest();
 
+/** The public origin of every OAuth callback: `ZETTA_OAUTH_REDIRECT_BASE`, else the server address. The one place it is read. */
 export const redirectBase = () =>
   (process.env.ZETTA_OAUTH_REDIRECT_BASE || process.env.ZETTA_SERVER_URL || "").replace(/\/+$/, "");
 export const redirectUri = (p: OAuthProvider) => `${redirectBase()}/api/plugins/${p.id}/callback`;

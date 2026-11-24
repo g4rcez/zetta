@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { b64u, sha } from "../oauth2";
+import { b64u, redirectBase, sha } from "../oauth2";
 import { PluginError, type PluginContext, type PluginStatus } from "../registry";
 import { clean } from "../untrusted";
 
@@ -68,7 +68,7 @@ export const settings = (config: Readonly<Record<string, string>> = {}): RedditS
   ...defaults,
   clientId: config.clientId || undefined,
   clientSecret: config.clientSecret || undefined,
-  redirectBase: process.env.REDDIT_OAUTH_REDIRECT_BASE || process.env.ZETTA_SERVER_URL || undefined,
+  redirectBase: redirectBase() || undefined,
   userAgent: `server:zetta-plugin:1.0${config.username ? ` (by /u/${config.username})` : ""}`,
   ...overrides,
 });

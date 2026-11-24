@@ -1,6 +1,6 @@
 import { assertPublicUrl } from "../../../computer/service";
 import { PluginError, registerPlugin, type CredentialField, type PluginContext } from "../registry";
-import { clean, json, run, vaultFetch, vaultPolicy } from "./exec";
+import { clean, json, run, vaultAllowsPrivate, vaultFetch } from "./exec";
 import {
   itemRows,
   named,
@@ -143,13 +143,21 @@ function connectServer(c: PluginContext): VaultAdapter {
   const base = c.config.connectUrl!.trim().replace(/\/+$/, ""),
     token = c.config.connectToken!.trim();
   async function api<T>(path: string): Promise<T> {
-    if (!vaultPolicy().allowPrivate)
+    if (!(await vaultAllowsPrivate())) {
       await assertPublicUrl(base).catch(() => {
         throw new PluginError(
           "BLOCKED_URL",
           "That Connect server address is not allowed (private addresses must be enabled by the administrator).",
         );
       });
+      // Over plain http the token would cross the internet unprotected; only a private network may use it.
+      if (!/^https:\/\//i.test(base))
+        throw new PluginError(
+          "INVALID_FIELD",
+          "The Connect server address must start with https://.",
+          "Plain http is accepted only for a server on a private network, which the administrator must enable.",
+        );
+    }
     let res: Response;
     try {
       res = await vaultFetch(`${base}${path}`, {

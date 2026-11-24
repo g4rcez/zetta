@@ -36,7 +36,7 @@ suite("the apps plugin, against compose postgres", () => {
   const call = (userId: string, botId: string, tool: string, args: Record<string, unknown>) =>
     plugins.callTool(testActor(userId), botId, "apps", tool, args);
   let a: NonNullable<Awaited<ReturnType<typeof issueBackgroundActor>>>;
-  let botGranted: string, botBare: string, slug: string, otherSlug: string;
+  let botGranted: string, botBare: string, botOff: string, slug: string, otherSlug: string;
 
   async function publish(owner: NonNullable<typeof a>, title: string) {
     const [p] = await db
@@ -90,10 +90,14 @@ suite("the apps plugin, against compose postgres", () => {
     a = (await issueBackgroundActor(async () => ({ isAdmin: false }), A))!;
     botGranted = await mkBot(A, "Granted");
     botBare = await mkBot(A, "Bare");
+    botOff = await mkBot(A, "Off");
     slug = (await publish(a, "Plugin App")).slug;
     otherSlug = (await publish(a, "Not Given")).slug;
     const first = (await apps.list(a)).find((x) => x.slug === slug)!;
     await apps.setBotApps(a, botGranted, [first.id]);
+    await apps.setBotApps(a, botOff, [first.id]);
+    // Built in, but not on by default: the person activates it for the bots that may use it.
+    await plugins.install(testActor(A), "apps", {}, [botGranted, botBare]);
   });
   afterAll(async () => {
     await cleanupTestUsers(db, [A, B]);
@@ -101,11 +105,21 @@ suite("the apps plugin, against compose postgres", () => {
 
   test("the plugin is built in, and on only for a bot that was given an app", async () => {
     const d = getPlugin("apps")!;
-    expect(d.always && d.kind === "native").toBeTruthy();
-    expect(await d.always!.available(botGranted, A)).toBe(true);
-    expect(await d.always!.available(botBare, A)).toBe(false);
-    expect(await d.always!.available(botGranted, B)).toBe(false);
-    expect(await d.always!.available(botGranted, undefined)).toBe(false);
+    expect(d.builtin && d.gate && d.kind === "native").toBeTruthy();
+    expect(await d.gate!.available(botGranted, A)).toBe(true);
+    expect(await d.gate!.available(botBare, A)).toBe(false);
+    expect(await d.gate!.available(botGranted, B)).toBe(false);
+    expect(await d.gate!.available(botGranted, undefined)).toBe(false);
+  });
+
+  test("it is not on by default: a bot it was not activated for is refused, even with an app", async () => {
+    await expect(
+      call(A, botOff, "apps_call", { path: `apps.${slug}.greet` }),
+    ).rejects.toMatchObject({
+      code: "NOT_BOUND",
+      safe: "Apps is not turned on for this bot.",
+      fix: "Activate Apps in Studio > Plugins and choose this bot.",
+    });
   });
 
   test("a bare bot cannot use any tool of it", async () => {
@@ -115,7 +129,7 @@ suite("the apps plugin, against compose postgres", () => {
   });
 
   test("the bot's prompt lists only the apps it was given, with how each tool is guarded", async () => {
-    const prompt = await getPlugin("apps")!.always!.prompt!(botGranted, A);
+    const prompt = await getPlugin("apps")!.gate!.prompt!(botGranted, A);
     expect(prompt).toContain(`apps.${slug}.greet (query)`);
     expect(prompt).toContain(`apps.${slug}.items.remove (mutation, asks first)`);
     expect(prompt).not.toContain(otherSlug);

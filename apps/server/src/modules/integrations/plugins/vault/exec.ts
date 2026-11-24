@@ -1,9 +1,10 @@
 import { tmpdir } from "node:os";
 import { PluginError } from "../registry";
+import { privateAllowed, type PrivateNetwork } from "../../../settings/private-network";
 
 /**
  * Runs a password-manager CLI (`op`, `bw`, `bws`). Secrets travel ONLY in `env` (never argv, which other local users can read in the
- * process list); the child gets PATH/HOME plus that env, a neutral working directory, no stdin, a deadline and a bounded output.
+ * process list); the child gets PATH/HOME, the server's CA-trust variables (NODE_EXTRA_CA_CERTS, SSL_CERT_FILE/DIR) plus that env, a neutral working directory, no stdin, a deadline and a bounded output.
  * Output is never logged or put in an error: callers parse it and keep only metadata or the one value they need.
  */
 export type VaultExec = (
@@ -12,13 +13,17 @@ export type VaultExec = (
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
 const TIMEOUT_MS = 30_000,
   MAX_OUT = 8_000_000;
+/** Trust-store settings of the server process, passed on so a self-hosted server with a private CA (Vaultwarden, Connect) works. They name files, not secrets. */
+const TRUST_ENV = ["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR"] as const;
+const trustEnv = () =>
+  Object.fromEntries(TRUST_ENV.flatMap((k) => (process.env[k] ? [[k, process.env[k]!]] : [])));
 
 export const spawnExec: VaultExec = async (argv, env) => {
   let p: ReturnType<typeof Bun.spawn>;
   try {
     p = Bun.spawn(argv, {
       cwd: tmpdir(),
-      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env },
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...trustEnv(), ...env },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -43,18 +48,19 @@ export const spawnExec: VaultExec = async (argv, env) => {
 
 let current: VaultExec = spawnExec;
 let currentFetch: typeof fetch = fetch;
-let policy = { allowPrivate: false };
+let policy: PrivateNetwork = false;
 /** Test hook and platform policy: a fake CLI runner / fetch, and the same private-address switch the MCP service uses (for 1Password Connect). */
 export const configureVault = (o: {
   exec?: VaultExec;
   fetch?: typeof fetch;
-  allowPrivate?: boolean;
+  allowPrivate?: PrivateNetwork;
 }) => {
   if (o.exec) current = o.exec;
   if (o.fetch) currentFetch = o.fetch;
-  if (o.allowPrivate !== undefined) policy = { allowPrivate: o.allowPrivate };
+  if (o.allowPrivate !== undefined) policy = o.allowPrivate;
 };
-export const vaultPolicy = () => policy;
+/** May a vault adapter call a private address right now? Asked at every check, never remembered. */
+export const vaultAllowsPrivate = () => privateAllowed(policy);
 export const vaultFetch: typeof fetch = ((...a: Parameters<typeof fetch>) =>
   currentFetch(...a)) as typeof fetch;
 

@@ -245,7 +245,8 @@ export const appsPlugin: PluginDef = {
     "Tools published as apps in Zetta (code the user wrote or approved). Call them by path; changes ask the user first.",
   tools,
   pausing: { resume },
-  always: {
+  builtin: true,
+  gate: {
     async available(botId, userId) {
       if (!deps || !userId) return false;
       const actor = await deps.actorFor(userId);

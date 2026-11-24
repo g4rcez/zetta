@@ -15,7 +15,7 @@ const MODES: { id: SendMode; title: string; body: string }[] = [
   { id: "read", title: "Read only", body: "Bots can read your chats but never send a message." },
   { id: "send", title: "Read and send", body: "Bots can also send messages on your behalf." },
 ];
-/** Placeholder only: when the field stays empty the server uses its own WAHA (ZETTA_WAHA_URL / ZETTA_WAHA_API_KEY, default the bundled container). */
+/** Placeholder only: when the field stays empty the server uses its own WAHA (the address and key the administrator saved in Studio > Plugins > WhatsApp, default the bundled container). */
 const DEFAULT_URL = "http://127.0.0.1:3010";
 
 /** Simple WhatsApp install: choose read-only or send, then scan the QR code. The WAHA server details stay behind "Advanced". */

@@ -33,6 +33,11 @@ export const PROVIDER_ENV: Record<string, string> = {
 // jev, email and x have no CLI env var: their secrets are only used server-side (decision adapter, mailbox and X source readers).
 // transcribe: the speech-to-text provider key of the installation (see transcribe/configured.ts), saved by an administrator only.
 // speech: the same for speech out; push: the private VAPID key of the installation (docs/decisions/feedback-wave2-foundation.md).
+// mailbox: the IMAP and SMTP password of one connected mailbox (modules/mail), saved by the mailbox's own route only.
+// mailprovider: the key of the provider that hands out bot e-mail addresses (installation settings, administrator only).
+// phone: the key of the telephony provider that gives bots phone numbers (installation settings, administrator only).
+// phonetwilio: the Auth Token of the Twilio account (installation settings, administrator only), next to `phone` (Telnyx).
+// waha: the API key of the WhatsApp server every person shares (installation settings, administrator only).
 // compatible: a model on the person's own server (an address and a model name in `connection.config_base_url` and `config_model`, the key sealed, or the
 // COMPATIBLE_NO_KEY placeholder). It has no CLI environment variable: the engine setup reads it through `readCompatibleConfig`.
 export const PROVIDERS = [
@@ -45,6 +50,11 @@ export const PROVIDERS = [
   "transcribe",
   "speech",
   "push",
+  "mailbox",
+  "mailprovider",
+  "phone",
+  "phonetwilio",
+  "waha",
   COMPATIBLE_PROVIDER,
 ];
 

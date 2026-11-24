@@ -21,7 +21,7 @@ export function createSpeechReader(deps: {
 }) {
   return {
     settings: async (): Promise<SpeechSettings> => speechSettingsOf(await deps.load()),
-    /** Whether a key is there: none, a saved connection (still readable or not), or the operator's own (`ZETTA_SPEECH_API_KEY`). */
+    /** Whether a key is there: none, or a saved connection (still readable or not). */
     keyState: async (): Promise<InstallationKeyState> =>
       deps.key.state((await deps.load()).speechConnectionId),
     /** The key as bytes (the caller zeroes them), or undefined when there is none to use. */

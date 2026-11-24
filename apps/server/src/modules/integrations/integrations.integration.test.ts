@@ -14,6 +14,7 @@ import { sealedFor } from "../../test-support/sealed";
 import { createChatService } from "../chat/service";
 import { createIdentityAccess } from "../identity/access";
 import { createMcp } from "./mcp";
+import { createTestSettings } from "../settings/testing";
 import { createSources, parseFeed } from "./sources";
 import { createFeaturesService } from "../features/service";
 
@@ -238,6 +239,74 @@ suite("MCP integrations and sources against compose postgres", () => {
       ),
     ).toMatchObject({ name: "local-admin" });
   });
+  describe("local commands follow the settings mcpMemberStdio and mcpAllowlist", () => {
+    const admin = { userId: A, isAdmin: true };
+    const member = { userId: B, isAdmin: false };
+    const add = (m: ReturnType<typeof createMcp>, who: typeof admin, name: string) =>
+      m.addServer(who, { name, transport: "stdio", command: "/usr/bin/true" }).then(
+        () => "added",
+        (e) => (e as { code?: string }).code ?? String(e),
+      );
+    afterAll(() => db.$client.query("delete from mcp_server where owner_user_id = any($1)", [ids]));
+    const fresh = () => {
+      const settings = createTestSettings();
+      return { settings, mcp: createMcp(db, undefined, { connect, settings: settings.service }) };
+    };
+
+    test("the allowlist is read on every call: a command appears and disappears with no restart", async () => {
+      const { settings, mcp: m } = fresh();
+      expect(await add(m, admin, "al-1")).toBe("STDIO_NOT_ALLOWED"); // nothing stored: the default is an empty list
+      await settings.set("mcpAllowlist", ["/usr/bin/true"]);
+      expect(await add(m, admin, "al-2")).toBe("added");
+      await settings.set("mcpAllowlist", ["/usr/bin/false"]);
+      expect(await add(m, admin, "al-3")).toBe("STDIO_NOT_ALLOWED");
+      await settings.set("mcpAllowlist", ["/usr/bin/false", "/usr/bin/true"]);
+      expect(await add(m, admin, "al-4")).toBe("added");
+      await settings.unset("mcpAllowlist");
+      expect(await add(m, admin, "al-5")).toBe("STDIO_NOT_ALLOWED");
+    });
+
+    test("members are refused until the setting mcpMemberStdio is on, and again when it goes off", async () => {
+      const { settings, mcp: m } = fresh();
+      await settings.set("mcpAllowlist", ["/usr/bin/true"]);
+      expect(await add(m, member, "ms-1")).toBe("STDIO_NOT_ALLOWED"); // the default is off
+      await settings.set("mcpMemberStdio", "on");
+      expect(await add(m, member, "ms-2")).toBe("added");
+      await settings.set("mcpMemberStdio", "off");
+      expect(await add(m, member, "ms-3")).toBe("STDIO_NOT_ALLOWED");
+      expect(await add(m, admin, "ms-4")).toBe("added"); // the administrator never needed it
+    });
+
+    test("the old variables ZETTA_MCP_ALLOWLIST and ZETTA_MCP_MEMBER_STDIO have no effect", async () => {
+      const was = {
+        list: process.env.ZETTA_MCP_ALLOWLIST,
+        stdio: process.env.ZETTA_MCP_MEMBER_STDIO,
+      };
+      try {
+        process.env.ZETTA_MCP_ALLOWLIST = "/usr/bin/true";
+        process.env.ZETTA_MCP_MEMBER_STDIO = "1";
+        const { settings, mcp: m } = fresh();
+        // Set before the service was built, and still nothing allows it: no stored value, so the defaults count.
+        expect(await add(m, admin, "ev-1")).toBe("STDIO_NOT_ALLOWED");
+        await settings.set("mcpAllowlist", ["/usr/bin/true"]);
+        expect(await add(m, member, "ev-2")).toBe("STDIO_NOT_ALLOWED"); // the variable's 1 does not open it to members
+        // A stored list wins over the variable's.
+        process.env.ZETTA_MCP_ALLOWLIST = "/usr/bin/true";
+        await settings.set("mcpAllowlist", ["/usr/bin/false"]);
+        expect(await add(m, admin, "ev-3")).toBe("STDIO_NOT_ALLOWED");
+        process.env.ZETTA_MCP_MEMBER_STDIO = "0";
+        await settings.set("mcpAllowlist", ["/usr/bin/true"]);
+        await settings.set("mcpMemberStdio", "on");
+        expect(await add(m, member, "ev-4")).toBe("added"); // the stored on wins over the variable's 0
+      } finally {
+        if (was.list === undefined) delete process.env.ZETTA_MCP_ALLOWLIST;
+        else process.env.ZETTA_MCP_ALLOWLIST = was.list;
+        if (was.stdio === undefined) delete process.env.ZETTA_MCP_MEMBER_STDIO;
+        else process.env.ZETTA_MCP_MEMBER_STDIO = was.stdio;
+      }
+    });
+  });
+
   test("a team configuration can be bound by any member and is removed only by the administrator; a private one stays private", async () => {
     const admin = { userId: A, isAdmin: true },
       mate = { userId: B, isAdmin: false };

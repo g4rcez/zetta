@@ -188,7 +188,7 @@ beforeEach(() => {
   tokenMode = "ok";
   expiresIn = 3600;
   now = 1_000_000;
-  process.env.GOOGLE_OAUTH_REDIRECT_BASE = "https://zetta.test";
+  process.env.ZETTA_OAUTH_REDIRECT_BASE = "https://zetta.test";
   configureGoogleForTests({
     authUrl: `${base}/auth`,
     tokenUrl: `${base}/token`,
@@ -301,7 +301,7 @@ describe("google oauth", () => {
     const desktop = (start: Record<string, string> = {}) =>
       mkCtx("u1", { clientType: "desktop", ...start });
     test("works on any server address: no redirect base, loopback redirect_uri, paste step flagged", async () => {
-      delete process.env.GOOGLE_OAUTH_REDIRECT_BASE;
+      delete process.env.ZETTA_OAUTH_REDIRECT_BASE;
       delete process.env.ZETTA_SERVER_URL;
       const c = desktop();
       const r = (await plugin.connect!(c.ctx, { scopes: ["gmail.readonly"] })) as {
@@ -314,7 +314,7 @@ describe("google oauth", () => {
       expect((await plugin.status!(c.ctx)).state).toBe("needs-auth");
     });
     test("web client still needs a redirect base", async () => {
-      delete process.env.GOOGLE_OAUTH_REDIRECT_BASE;
+      delete process.env.ZETTA_OAUTH_REDIRECT_BASE;
       delete process.env.ZETTA_SERVER_URL;
       await expect(
         plugin.connect!(mkCtx().ctx, { scopes: ["gmail.readonly"] }),

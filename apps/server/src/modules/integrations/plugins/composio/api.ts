@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { redirectBase } from "../oauth2";
 import { PluginError, type PluginContext, type PluginStatus } from "../registry";
 import { str } from "../untrusted";
 
@@ -35,7 +36,7 @@ export const configureComposioForTests = (o: Partial<ComposioSettings>) => {
 };
 export const settings = (): ComposioSettings => ({
   ...defaults,
-  redirectBase: process.env.COMPOSIO_REDIRECT_BASE || process.env.ZETTA_SERVER_URL || undefined,
+  redirectBase: redirectBase() || undefined,
   ...overrides,
 });
 export const redirectUri = (s = settings()) =>

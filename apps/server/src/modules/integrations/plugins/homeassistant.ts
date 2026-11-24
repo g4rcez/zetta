@@ -1,5 +1,6 @@
 import { isLayaTag } from "@zetta/core/laya-languages";
 import { assertPublicUrl } from "../../computer/service";
+import { privateAllowed, type PrivateNetwork } from "../../settings/private-network";
 import {
   PluginError,
   registerPlugin,
@@ -14,13 +15,13 @@ import {
  * POST /api/conversation/process (Assist: HA's own local intent engine, no LLM).
  *
  * SSRF: the base URL is user supplied. Same policy as WhatsApp and MCP servers: `assertPublicUrl` unless the operator enabled
- * `allowPrivate`. A Home Assistant server is almost always on a LAN, so ZETTA_ALLOW_PRIVATE_NETWORK=1 is the normal case.
+ * `allowPrivate`. A Home Assistant server is almost always on a LAN, so the administrator normally turns on the setting `allowPrivateNetwork`.
  * Redirects are never followed, so the bearer token is only ever sent to the address the user typed.
  */
-let policy = { allowPrivate: false };
-/** Called once by the MCP service with its own `allowPrivate` option. */
-export const configureHomeAssistant = (p: { allowPrivate?: boolean }) => {
-  policy = { allowPrivate: Boolean(p.allowPrivate) };
+let policy: PrivateNetwork = false;
+/** Called once by the MCP service with its own `allowPrivate` option (a function asked at every request, or a fixed answer in tests). */
+export const configureHomeAssistant = (p: { allowPrivate?: PrivateNetwork }) => {
+  policy = p.allowPrivate ?? false;
 };
 
 const TIMEOUT_MS = 10_000,
@@ -52,12 +53,12 @@ export async function haFetch(
   init: { method?: string; body?: unknown } = {},
 ): Promise<unknown> {
   const url = base(c) + path;
-  if (!policy.allowPrivate)
+  if (!(await privateAllowed(policy)))
     await assertPublicUrl(url).catch(() => {
       throw new PluginError(
         "BLOCKED_URL",
         "That address is not allowed (private addresses must be enabled by the administrator).",
-        "Ask the administrator to set ZETTA_ALLOW_PRIVATE_NETWORK=1, or use a public https address.",
+        "Ask the administrator to allow private networks in Studio > Server settings, or use a public https address.",
       );
     });
   const token = (c.config.token ?? "").trim();
@@ -184,7 +185,7 @@ const def: PluginDef = {
   description:
     "Read the state of your smart home and control it through your own Home Assistant server.",
   notes:
-    "Needs a Home Assistant server that Zetta can reach. Home Assistant is usually on a private network, so the administrator must set ZETTA_ALLOW_PRIVATE_NETWORK=1. The token has the full power of your Home Assistant user. 'Fast control' answers simple commands without the AI: Zetta keeps a copy of your devices, areas and scenes (refreshed every 30 minutes), reads the command itself in English or Brazilian Portuguese (device names match with any case, accents or spaces), and calls the service. It can control any entity the token reaches, and it does nothing when it is not sure. Then, if the decision model (Laya) is on, Home Assistant's own Assist engine tries, and last the AI.",
+    "Needs a Home Assistant server that Zetta can reach. Home Assistant is usually on a private network, so the administrator must turn on the switch Let the server call private network addresses in Studio > Server settings. The token has the full power of your Home Assistant user. 'Fast control' answers simple commands without the AI: Zetta keeps a copy of your devices, areas and scenes (refreshed every 30 minutes), reads the command itself in English or Brazilian Portuguese (device names match with any case, accents or spaces), and calls the service. It can control any entity the token reaches, and it does nothing when it is not sure. Then, if the decision model (Laya) is on, Home Assistant's own Assist engine tries, and last the AI.",
   guide: () => [
     "In Home Assistant open your profile (bottom left) > Security > Long-lived access tokens > Create token.",
     "Copy the token now: Home Assistant shows it only once.",

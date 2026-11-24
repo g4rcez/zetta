@@ -2,6 +2,7 @@ import type { Database } from "@zetta/db";
 import { and, eq } from "@zetta/db/query";
 import { source } from "@zetta/db/schema/features";
 import { assertPublicUrl, ComputerError, type ComputerService } from "../computer/service";
+import { privateAllowed, type PrivateNetwork } from "../settings/private-network";
 import { AccessError, type ActiveActor } from "../identity/access";
 
 export class SourceError extends Error {
@@ -54,7 +55,7 @@ export type SourceConnections = {
   secretFor: (a: ActiveActor, id: string) => Promise<Uint8Array>;
 };
 export type SourceOptions = {
-  allowPrivate?: boolean;
+  allowPrivate?: PrivateNetwork;
   fetcher?: (url: string) => Promise<string>;
   connections?: SourceConnections;
   mailFetcher?: (cfg: MailConfig, password: string) => Promise<SourceItem[]>;
@@ -220,7 +221,7 @@ export function createSources(db: Database, computer?: ComputerService, opts: So
     }
   }
   async function guard(url: string) {
-    if (!opts.allowPrivate)
+    if (!(await privateAllowed(opts.allowPrivate)))
       await assertPublicUrl(url).catch((e) => {
         throw e instanceof ComputerError ? new SourceError("BLOCKED") : e;
       });

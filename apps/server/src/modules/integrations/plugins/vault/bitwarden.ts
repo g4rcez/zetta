@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assertPublicUrl } from "../../../computer/service";
 import { PluginError, registerPlugin, type CredentialField, type PluginContext } from "../registry";
-import { clean, json, run, vaultPolicy } from "./exec";
+import { clean, json, run, vaultAllowsPrivate } from "./exec";
 import {
   itemRows,
   named,
@@ -26,15 +26,22 @@ const BWS = "bws",
   SESSION_MS = 10 * 60_000;
 
 /** The CLIs call the configured server from this host, so it follows the same address policy as the 1Password Connect server. */
-async function guardServer(c: PluginContext) {
+async function guardServer(c: PluginContext, httpsOnly = false) {
   const url = c.config.serverUrl?.trim();
-  if (url && !vaultPolicy().allowPrivate)
+  if (url && !(await vaultAllowsPrivate()))
     await assertPublicUrl(url).catch(() => {
       throw new PluginError(
         "BLOCKED_URL",
         "That Bitwarden server address is not allowed (private addresses must be enabled by the administrator).",
       );
     });
+  // `bw` (checked with 2026.10.0) refuses http:// servers, even localhost, with a message this plugin cannot show.
+  if (url && httpsOnly && !/^https:\/\//i.test(url))
+    throw new PluginError(
+      "INVALID_FIELD",
+      "The Bitwarden server address must start with https:// (the Bitwarden CLI refuses plain http).",
+      "Put the self-hosted server behind HTTPS; for a private CA, start the Zetta server with NODE_EXTRA_CA_CERTS pointing to the CA file.",
+    );
 }
 
 // ---- Secrets Manager -------------------------------------------------------------------------------------------------------------------
@@ -138,12 +145,12 @@ function personal(c: PluginContext): VaultAdapter {
     );
   };
   async function bw(argv: string[], extra: Record<string, string> = {}) {
-    await guardServer(c);
+    await guardServer(c, true);
     const r = await run(BW, "Bitwarden CLI", argv, { ...base, ...extra });
     if (r.code === 0) return r.stdout;
     const why = r.stderr.toLowerCase();
     if (
-      /invalid master password|username or password is incorrect|invalid_client|invalid api key|not logged in|vault is locked|session key is invalid/.test(
+      /invalid master password|username or password is incorrect|invalid_client|invalid api key|incorrect client_secret|invalid client_id|decryption operation failed|not logged in|vault is locked|session key is invalid/.test(
         why,
       )
     )

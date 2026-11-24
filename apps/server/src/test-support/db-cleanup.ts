@@ -44,6 +44,8 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
     "knowledge_doc",
     "knowledge_source",
     "audit_event",
+    "voice_call",
+    "phone_number",
     "reaction",
     "attachment",
     "delegation",
@@ -80,6 +82,11 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
     "bot_peer",
   ])
     await q(`delete from ${t} where owner_user_id = any($1)`);
+  // A mailbox goes after what points at it: its stored mail and the routes above.
+  await q(
+    "delete from mailbox_message where mailbox_id in (select id from mailbox where owner_user_id = any($1))",
+  );
+  await q("delete from mailbox where owner_user_id = any($1)");
   for (const t of [
     "task",
     "agenda_item",

@@ -6,7 +6,8 @@ import { ComputerError } from "./modules/computer/service";
 import { createAuth, mcpResource } from "@zetta/auth";
 import { createDb } from "@zetta/db";
 import { type ResolvedDatabase, resolveDatabase } from "@zetta/db/embedded/resolve";
-import { eq, sql } from "@zetta/db/query";
+import { and, eq, sql } from "@zetta/db/query";
+import { bot } from "@zetta/db/schema/chat";
 import { installationIdentity } from "@zetta/db/schema/identity";
 import { createDesktopLink } from "./modules/desktop-link/service";
 import { createDeviceHub } from "./modules/devices/hub";
@@ -24,6 +25,14 @@ import { createChatService } from "./modules/chat/service";
 import { createDecisionService } from "./modules/decisions/service";
 import { createJevDecider } from "./modules/decisions/jev";
 import { createMcp } from "./modules/integrations/mcp";
+import { createMailboxStore } from "./modules/mail/store";
+import { createMailService } from "./modules/mail/service";
+import { createMessageStore } from "./modules/mail/messages";
+import { createMailProviderReader } from "./modules/mail/provider-config";
+import { createProvisioning, withProvisioning } from "./modules/mail/provision";
+import { createMailPoller } from "./modules/mail/poller";
+import { configureBotMail } from "./modules/integrations/plugins/botmail";
+import { createMailChat } from "./modules/mail/chat";
 import { createSources } from "./modules/integrations/sources";
 import { createConnectionStore } from "./modules/connections/store";
 import { createConnectionsService, PROVIDERS } from "./modules/connections/service";
@@ -35,13 +44,7 @@ import {
 import { createMachineRunner } from "./modules/computer/machine-runner";
 import { createMachineService } from "./modules/computer/machines";
 import { vmSecretsFrom } from "./modules/computer/vm-secrets";
-import {
-  createDbVmStore,
-  createVmService,
-  dockerVmConfig,
-  vmDriversFrom,
-  vmOsFrom,
-} from "./modules/computer/vm";
+import { createDbVmStore, createVmService, dockerVmConfig } from "./modules/computer/vm";
 import { createFeaturesService } from "./modules/features/service";
 import { createRoutinePollers } from "./modules/features/routine-pollers";
 import { getPlugin, PluginError } from "./modules/integrations/plugins/registry";
@@ -49,6 +52,7 @@ import { configureGoogleLoopback } from "./modules/integrations/plugins/google/l
 import { createAgenda } from "./modules/agenda/service";
 import { createLocalEmbedder } from "./modules/knowledge/embed";
 import { createKnowledge as createCompanyKnowledge } from "./modules/knowledge/service";
+import { hkdfSync } from "node:crypto";
 import { audit } from "./modules/features/audit";
 import { createOutputStyles } from "./modules/output-styles/service";
 import { createMarket } from "./modules/skills/market";
@@ -56,8 +60,20 @@ import { createSkills } from "./modules/skills/service";
 import { createBotQuality } from "./modules/bot-quality/service";
 import { createSummaries } from "./modules/chat/summary";
 import { createTranscribe } from "./modules/transcribe/service";
+import { createConfiguredSynthesizer } from "./modules/speech/configured";
 import { createConfiguredTranscriber, NO_KEY } from "./modules/transcribe/configured";
+import { configureVideoTranscribe } from "./modules/integrations/plugins/video-transcribe";
 import { createLocalTranscriber } from "./modules/transcribe/transcriber";
+import { createVoiceService } from "./modules/voice/service";
+import { createVoiceReadiness } from "./modules/voice/ready";
+import { createPhoneProviderReader } from "./modules/phone/config";
+import { createPhoneService, withPhoneHold } from "./modules/phone/service";
+import { createPhoneCalls } from "./modules/phone/calls";
+import { configurePhoneOut } from "./modules/phone/outbound";
+import { createOutboundFacts } from "./modules/phone/outbound-facts";
+import { phoneNumber as phoneNumberTable } from "@zetta/db/schema/phone";
+import { createReplayStore } from "./modules/phone/replay";
+import { instanceId } from "./modules/runtime/instance";
 import { createSkillReview } from "./modules/memory/skill-review";
 import { createLearning } from "./modules/learning";
 import { createUsefulness } from "./modules/learning/usefulness";
@@ -71,15 +87,21 @@ import { createProgress } from "./modules/learning/progress";
 import { createLessonTools } from "./modules/learning/workflow-tool";
 import { createLessonWorkflow } from "./modules/learning/workflow-template";
 import { withTokenAudit } from "./modules/learning/cli";
-import { runCli } from "./modules/chat/harness";
+import { cliWith } from "./modules/chat/harness";
 import { createAnalyzerFor } from "./modules/bots/import/analyze";
 import { createGrokSource } from "./modules/bots/import/grok-source";
 import { createBotImport } from "./modules/bots/import/service";
 import { createPlayground } from "./modules/playground/service";
-import { hostCodeFromEnv } from "./modules/playground/host-gate";
+import { createCodeAccess } from "./modules/settings/code-access";
+import { configureCodeAccess } from "./modules/chat/code-access";
+import { createPrivateNetworkPolicy } from "./modules/settings/private-network";
+import { checkInstallationServer } from "./modules/integrations/plugins/whatsapp";
 import { createAppAuthor } from "./modules/apps/author";
 import { createApps } from "./modules/apps/service";
 import { configureApps } from "./modules/integrations/plugins/apps";
+import { configureMailbox } from "./modules/integrations/plugins/mailbox";
+import { createGoogleMailAccess } from "./modules/integrations/plugins/google/mail-access";
+import { createMicrosoftMailAccess } from "./modules/integrations/plugins/microsoft/mail-access";
 import { containerConfig, createContainerRunner } from "./modules/playground/runner-container";
 import { createMemoryJobs } from "./modules/memory/jobs";
 import { createMemoryScreen } from "./modules/memory/screen";
@@ -118,15 +140,18 @@ import {
   createIdentityAccess,
   createMembershipLookup,
   issueBackgroundActor,
+  type ActiveActor,
 } from "./modules/identity/access";
 import { TurnBusyError } from "./modules/chat/turns";
 import { createFirstAccountSetup, createSetupState } from "./modules/identity/first-account";
 import { matchesConnectionKey } from "./modules/identity/setup-key";
 import { createInstallationService } from "./modules/installation/service";
+import { createSettingsService } from "./modules/settings/service";
+import { importEnvSettings } from "./modules/settings/import-env";
+import { importLegacyVoiceSettings } from "./modules/settings/import-legacy-voice";
 import { createInstallationKeyReader } from "./modules/connections/installation-key";
 import { createSpeechReader } from "./modules/installation/speech";
 import { createPushReader } from "./modules/installation/push";
-import { SPEECH_KEY_ENV } from "@zetta/core/speech";
 import { topics } from "@zetta/core/live-topics";
 import { dataDir } from "@zetta/core/zetta-home";
 import { events } from "./modules/events/bus";
@@ -152,23 +177,42 @@ const installation = createInstallationService(db, (s) =>
     languages: s.layaLanguages,
   }),
 );
+// Server settings (modules/settings): the typed values of the registry in `@zetta/core/settings`, stored in `zetta.setting`. A variable that an
+// administrator set before a setting moved to the database is imported once here; it writes only what is missing.
+export const settings = createSettingsService({
+  db,
+  audit: (userId, c) =>
+    void audit(db, userId, {
+      kind: "setting",
+      outcome: "ok",
+      subjectId: c.key,
+      detail: `${c.change}${c.scope === "organization" ? ":org" : ""}`,
+    }),
+});
+await importEnvSettings({ db, env: process.env });
+await importLegacyVoiceSettings({ db, env: process.env });
+// The synchronous readers (`peek`: code access) start with the rows in hand; a database that does not answer leaves them closed.
+await settings.warm().catch((e) => console.warn("settings could not be read at start:", e));
+/** May the server call private, loopback and link-local addresses? The setting `allowPrivateNetwork`, asked at every check; a failed read is a no. */
+export const privateNetwork = createPrivateNetworkPolicy(settings);
 // Network mode is read once at boot: it adds the public origin to every trusted-origin list and (in index.ts) opens the listener to the network.
 const installed = await installation.load();
 export const networkMode = installed.networkMode;
 // Plugins that act on this machine (Obsidian, Apple apps) work only on a local install.
 setInstallMode(installed.networkMode);
 // Code access on the host runs the CLI as the server's own OS user, so one member's bot could read another member's files, VM tokens and browser
-// profiles. Once Zetta is open to the network the CLI must run in the Docker runtime; ZETTA_CODE_ACCESS=host is the operator's explicit opt-out.
-if (
-  installed.networkMode === "network" &&
-  process.env.ZETTA_HARNESS_RUNTIME !== "docker" &&
-  process.env.ZETTA_CODE_ACCESS === undefined
-) {
-  process.env.ZETTA_CODE_ACCESS = "off";
+// profiles. Once Zetta is open to the network the CLI must run in the Docker runtime, so code is off there whatever the setting `codeAccess`
+// says (modules/settings/code-access.ts, decided at every call; nothing writes the process environment).
+export const codeAccess = createCodeAccess({
+  settings,
+  networkMode: () => installed.networkMode,
+  harnessRuntime: () => process.env.ZETTA_HARNESS_RUNTIME,
+});
+configureCodeAccess(codeAccess.allowed);
+if (installed.networkMode === "network" && process.env.ZETTA_HARNESS_RUNTIME !== "docker")
   console.warn(
-    "Code access is off: Zetta is open to the network and ZETTA_HARNESS_RUNTIME is not docker. Set ZETTA_HARNESS_RUNTIME=docker, or ZETTA_CODE_ACCESS=host to accept the risk.",
+    "Code access is off: Zetta is open to the network and ZETTA_HARNESS_RUNTIME is not docker. Set ZETTA_HARNESS_RUNTIME=docker to let bots run code.",
   );
-}
 /** `ZETTA_EXTRA_ORIGINS`: comma-separated https origins that may also sign in (for example a Tailscale address). Anything else is dropped. */
 const extraOrigins = (process.env.ZETTA_EXTRA_ORIGINS ?? "")
   .split(",")
@@ -236,7 +280,6 @@ decisions.setMode(installed.laya, {
 });
 // Persistent per-user VMs (docker/desktop image): enable with ZETTA_DESKTOP_RUNTIME=docker.
 const vmDocker = dockerVmConfig();
-const num = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
 // An `api` process has no VMs: the worker owns them and the load balancer sends every /api/computer request there.
 // This machine's own desktop (target "local"): only on a local install, through agent-desktop on the host (computer/placement.ts).
 /** Opens an address in the person's default browser, signed in as they are: macOS, Windows (`start` needs an empty title first), Linux. */
@@ -322,12 +365,8 @@ const vms =
         install: installed.networkMode,
         ...(hostDesktop ? { host: hostDesktop } : {}),
         tokenRoot: process.env.ZETTA_VM_TOKEN_ROOT ?? dataDir("vm", `${process.cwd()}/.zetta-vm`),
-        maxPerUser: num(process.env.ZETTA_VM_MAX_PER_USER),
-        maxRunningPerUser: num(process.env.ZETTA_VM_MAX_RUNNING_PER_USER),
-        maxRunning: num(process.env.ZETTA_VM_MAX_RUNNING),
-        allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
-        vmDrivers: vmDriversFrom(process.env.ZETTA_VM_DRIVERS),
-        vmOs: vmOsFrom(process.env.ZETTA_VM_OS),
+        settings,
+        allowPrivate: privateNetwork.allowed,
         secrets: vmSecretsFrom(
           () => connections,
           (userId) => issueBackgroundActor(membershipLookup, userId),
@@ -379,7 +418,7 @@ const machines = createMachineService({
   db,
   connections,
   runner: createMachineRunner(),
-  allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+  allowPrivate: privateNetwork.allowed,
   devices,
 });
 /**
@@ -395,8 +434,8 @@ const connectionOwner = async (id: string) =>
       .where(eq(connectionTable.id, id))
   )[0]?.owner;
 const transcribeKey = {
-  async state(id: string | null): Promise<"none" | "set" | "operator" | "unavailable"> {
-    if (!id) return process.env.ZETTA_TRANSCRIBE_API_KEY ? "operator" : "none";
+  async state(id: string | null): Promise<"none" | "set" | "unavailable"> {
+    if (!id) return "none";
     const owner = await connectionOwner(id);
     const actor = owner ? await issueBackgroundActor(membershipLookup, owner) : null;
     if (!actor) return "unavailable";
@@ -405,10 +444,7 @@ const transcribeKey = {
   },
   /** The key as bytes (the caller zeroes them), or undefined when there is none to use. */
   async secret(id: string | null): Promise<Buffer | undefined> {
-    if (!id) {
-      const operator = process.env.ZETTA_TRANSCRIBE_API_KEY;
-      return operator ? Buffer.from(operator) : undefined;
-    }
+    if (!id) return undefined;
     const owner = await connectionOwner(id);
     const actor = owner ? await issueBackgroundActor(membershipLookup, owner) : null;
     return actor ? Buffer.from(await connections.secretFor(actor, id)) : undefined;
@@ -436,17 +472,232 @@ const installationKeyDeps = {
   actorFor: (userId: string) => issueBackgroundActor(membershipLookup, userId),
   connections,
 };
-export const speechKey = createInstallationKeyReader({
-  ...installationKeyDeps,
-  operatorKey: () => process.env[SPEECH_KEY_ENV] || undefined,
-});
+export const speechKey = createInstallationKeyReader(installationKeyDeps);
 export const pushKey = createInstallationKeyReader(installationKeyDeps);
+/** The key of the WhatsApp server every person shares (Studio > Plugins > WhatsApp > Server for everyone): a sealed connection of an administrator, recorded in the installation settings. */
+export const wahaKey = createInstallationKeyReader(installationKeyDeps);
+/** The shared WhatsApp server as the WhatsApp plugin reads it at every call: the setting `wahaUrl` and the sealed key (bytes; the plugin zeroes them). */
+const wahaServer = async () => ({
+  url: await settings.get("wahaUrl"),
+  key: await wahaKey.secret((await installation.load()).wahaConnectionId),
+});
 export const speechReader = createSpeechReader({ load: () => installation.load(), key: speechKey });
 export const pushReader = createPushReader({ load: () => installation.load(), key: pushKey });
-export const connectionServices = { access: identity.access, connections, transcribeKey };
+/** The key of bot e-mail addresses (Studio > Plugins > Bot e-mail address): a sealed connection of an administrator, recorded in the installation settings. */
+export const mailKey = createInstallationKeyReader(installationKeyDeps);
+export const mailReader = createMailProviderReader({
+  load: () => installation.load(),
+  key: mailKey,
+});
+/** Points the installation at a new mail key (or none) and revokes the one it had, whoever saved it. Same as `transcribeKey.set`. */
+export const mailKeyAdmin = {
+  async set(id: string | null) {
+    const before = (await installation.load()).mailConnectionId;
+    await installation.update({ mailConnectionId: id });
+    if (!before || before === id) return;
+    const owner = await connectionOwner(before);
+    const actor = owner ? await issueBackgroundActor(membershipLookup, owner) : null;
+    const old = actor
+      ? (await connections.list(actor).catch(() => [])).find((c) => c.id === before)
+      : undefined;
+    if (actor && old?.state === "active")
+      await connections.revoke(actor, before, old.revision).catch(() => undefined);
+  },
+};
+/** The key of the phone provider (Studio > Phone numbers): a sealed connection of an administrator, recorded in the installation settings. */
+export const phoneKey = createInstallationKeyReader(installationKeyDeps);
+/** The Auth Token of the Twilio account (Studio > Phone numbers): its own sealed connection, so both providers can be set up at once. */
+export const phoneTwilioKey = createInstallationKeyReader(installationKeyDeps);
+export const phoneReader = createPhoneProviderReader({
+  load: () => installation.load(),
+  key: phoneKey,
+  twilioKey: phoneTwilioKey,
+});
+/** Points the installation at a new WhatsApp server key (or none) and revokes the one it had, whoever saved it. Same as `mailKeyAdmin.set`. */
+export const wahaKeyAdmin = {
+  async set(id: string | null) {
+    const before = (await installation.load()).wahaConnectionId;
+    await installation.update({ wahaConnectionId: id });
+    if (!before || before === id) return;
+    const owner = await connectionOwner(before);
+    const actor = owner ? await issueBackgroundActor(membershipLookup, owner) : null;
+    const old = actor
+      ? (await connections.list(actor).catch(() => [])).find((c) => c.id === before)
+      : undefined;
+    if (actor && old?.state === "active")
+      await connections.revoke(actor, before, old.revision).catch(() => undefined);
+  },
+};
+/** Points the installation at a new phone key (or none) and revokes the one it had, whoever saved it. Same as `mailKeyAdmin.set`. */
+export const phoneKeyAdmin = {
+  async set(id: string | null) {
+    const before = (await installation.load()).phoneConnectionId;
+    await installation.update({ phoneConnectionId: id });
+    if (!before || before === id) return;
+    const owner = await connectionOwner(before);
+    const actor = owner ? await issueBackgroundActor(membershipLookup, owner) : null;
+    const old = actor
+      ? (await connections.list(actor).catch(() => [])).find((c) => c.id === before)
+      : undefined;
+    if (actor && old?.state === "active")
+      await connections.revoke(actor, before, old.revision).catch(() => undefined);
+  },
+};
+/** Points the installation at a new Twilio Auth Token (or none) and revokes the one it had. Same as `phoneKeyAdmin.set`. */
+export const phoneTwilioKeyAdmin = {
+  async set(id: string | null) {
+    const before = (await installation.load()).phoneTwilioConnectionId;
+    await installation.update({ phoneTwilioConnectionId: id });
+    if (!before || before === id) return;
+    const owner = await connectionOwner(before);
+    const actor = owner ? await issueBackgroundActor(membershipLookup, owner) : null;
+    const old = actor
+      ? (await connections.list(actor).catch(() => [])).find((c) => c.id === before)
+      : undefined;
+    if (actor && old?.state === "active")
+      await connections.revoke(actor, before, old.revision).catch(() => undefined);
+  },
+};
+/** Phone numbers of bots (modules/phone): asking, approval, review, hold and release. Calls are a later step. */
+export const phone = createPhoneService({
+  db,
+  reader: phoneReader,
+  audit: async (e) => {
+    const [b] = e.botId
+      ? await db.select({ owner: bot.ownerUserId }).from(bot).where(eq(bot.id, e.botId))
+      : [];
+    const owner = e.actor ?? b?.owner;
+    if (owner)
+      await audit(db, owner, { kind: "connection", outcome: "ok", botId: e.botId, detail: e.kind });
+  },
+});
+/** Points the installation at a new text-to-speech key (or none) and revokes the one it had, whoever saved it. Same as `transcribeKey.set`. */
+export const speechKeyAdmin = {
+  async set(id: string | null) {
+    const before = (await installation.load()).speechConnectionId;
+    await installation.update({ speechConnectionId: id });
+    if (!before || before === id) return;
+    const owner = await connectionOwner(before);
+    const actor = owner ? await issueBackgroundActor(membershipLookup, owner) : null;
+    const old = actor
+      ? (await connections.list(actor).catch(() => [])).find((c) => c.id === before)
+      : undefined;
+    if (actor && old?.state === "active")
+      await connections.revoke(actor, before, old.revision).catch(() => undefined);
+  },
+};
+export const connectionServices = {
+  access: identity.access,
+  connections,
+  transcribeKey,
+  speechKey: speechKeyAdmin,
+  mailKey: mailKeyAdmin,
+  phoneKey: phoneKeyAdmin,
+  phoneTwilioKey: phoneTwilioKeyAdmin,
+  wahaKey: wahaKeyAdmin,
+};
+// Mailboxes: read live from the person's mail server, the password a sealed connection. Any instance may serve the reads (the IMAP pool is per process).
+const mailboxStore = createMailboxStore(db);
+// A Google account connected in the Google plugin is a mailbox too: its token is borrowed from the plugin per request, never copied (mail/drivers/google.ts).
+const mailMessages = createMessageStore(db);
+const mailService = createMailService({
+  store: mailboxStore,
+  secrets: connections,
+  // Bot addresses: the mail is in Postgres, the provider is the one the administrator chose (nothing without a key).
+  provisioned: {
+    messages: mailMessages,
+    provider: () => mailReader.provider(),
+    displayName: async (botId, fallback) => {
+      const [row] = botId
+        ? await db.select({ name: bot.name }).from(bot).where(eq(bot.id, botId))
+        : [];
+      return row?.name ?? fallback;
+    },
+  },
+  google: createGoogleMailAccess({
+    context: (a) => mcp.plugins.ownContextFor(a, "google"),
+  }),
+  // The same for an Outlook.com or Microsoft 365 account connected in the Microsoft plugin (mail/drivers/microsoft.ts).
+  microsoft: createMicrosoftMailAccess({
+    context: (a) => mcp.plugins.ownContextFor(a, "microsoft"),
+  }),
+});
+/** The mailbox rows with the Google accounts among them, for the readers that take a row (the bots' plugin, the MCP server). */
+const mailboxRows = {
+  list: async (a: ActiveActor, f: { botId?: string } = {}) =>
+    (await mailService.rows(a)).filter((m) => !f.botId || m.botId === f.botId),
+};
+/** Gives a bot its address when it is created and retires it when it is archived (best effort, outside the bot's own transaction). */
+export const mailProvisioning = createProvisioning({ db, store: mailboxStore, reader: mailReader });
+export const mailServices = {
+  access: identity.access,
+  mail: mailService,
+  provisioning: mailProvisioning,
+  chat: createMailChat({
+    db,
+    store: mailboxStore,
+    // The chat service is built further down; it is only used when a request arrives.
+    chiefOf: async (a) => {
+      const chief = await chatServices.chat.ensureChief(a);
+      if (!chief) throw new Error("No Chief for this person.");
+      return chief;
+    },
+    created: (a) => events.publish([a.userId], topics.conversations),
+  }),
+};
+// Bots read the mail of the mailboxes they own (the Chief: the unowned ones), only in a chat no one but the owner can read (mail/access.ts).
+configureMailbox({
+  store: mailboxRows,
+  mail: mailService,
+  // Signs the mail a card shows: derived from the installation key and the person, so a card nobody here signed sends nothing.
+  sealKey: (userId) =>
+    Buffer.from(
+      hkdfSync(
+        "sha256",
+        Buffer.from(ENV.ZETTA_CONNECTION_KEY, "base64"),
+        Buffer.alloc(0),
+        `zetta.mailbox.send-approval.v1:${userId}`,
+        32,
+      ),
+    ).toString("base64"),
+  // Closed tokens and ids only (the trail takes nothing else): the mailbox, the tool, what happened and how many people.
+  audit: (userId, e) =>
+    void audit(db, userId, {
+      kind: "tool_call",
+      outcome: e.outcome,
+      botId: e.botId,
+      subjectId: e.subjectId,
+      detail: e.detail,
+    }),
+  actorFor: (userId) => issueBackgroundActor(membershipLookup, userId),
+  async botOf(userId, botId) {
+    const [row] = await db
+      .select({ id: bot.id, kind: bot.kind, ownerUserId: bot.ownerUserId })
+      .from(bot)
+      .where(and(eq(bot.id, botId), eq(bot.ownerUserId, userId), eq(bot.archived, false)));
+    return row ?? null;
+  },
+});
+// The reply door of a bot's own address, offered only in the turns an allowed outside sender starts (plugins/botmail.ts).
+configureBotMail({
+  mail: mailService,
+  mailboxOf: (a, botId) => mailboxStore.provisionedOf(a, botId),
+  latestFrom: (mailboxId, address) => mailMessages.latestFrom(mailboxId, address),
+  actorFor: (userId) => issueBackgroundActor(membershipLookup, userId),
+  audit: (userId, e) =>
+    void audit(db, userId, {
+      kind: "tool_call",
+      outcome: e.outcome,
+      botId: e.botId,
+      subjectId: e.subjectId,
+      detail: e.detail,
+    }),
+});
 // Administrator opt-in: lets MCP servers and the WhatsApp (WAHA) plugin reach private/localhost addresses (e.g. a WAHA container). Off by default.
 const mcp = createMcp(db, connections, {
-  allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+  allowPrivate: privateNetwork.allowed,
+  wahaServer,
+  settings,
 });
 const jev = createJevDecider((a) => connections.jevSecret(a));
 const sources = createSources(db, computer, {
@@ -462,12 +713,12 @@ const projects = createProjectStore(db);
 const org = createOrgStore(db);
 const profileStore = createProfileStore(db);
 const avatarStore = createAvatarStore(db);
-const artifacts = createArtifactStore(db);
+const artifacts = createArtifactStore(db, undefined, settings);
 const loops = createLoopStore(db);
-const discussions = createDiscussionStore(db, files, loops);
+const discussions = createDiscussionStore(db, files, loops, settings);
 const teamStore = createTeamStore(db, discussions);
 // Company knowledge: the user's Drive documents, indexed in Postgres (see modules/knowledge).
-const embedder = createLocalEmbedder();
+const embedder = createLocalEmbedder({ settings });
 const companyKnowledge = createCompanyKnowledge(db, {
   plugins: mcp.plugins,
   lookup: membershipLookup,
@@ -477,14 +728,17 @@ const companyKnowledge = createCompanyKnowledge(db, {
 const memory = createMemory(db, { embedder });
 // Decision-only bots (harness "decision") answer from the chosen option's text; the actor is rebuilt from the turn's authenticated user id.
 const decisionRouting = createRouting(db, decisions, jev);
+// Claude Code live input, light runs and host skills are settings read on every run: the CLI functions carry the settings service.
+const harnessCli = cliWith(settings);
 const turnRunner = createTurnRunner(
   db,
-  undefined,
-  undefined,
+  harnessCli.run,
+  harnessCli.stream,
   memory,
   createAttention(decisions),
   (b, text, userId) =>
     decisionRouting.reply(b, text, userId ? { userId, isAdmin: false } : undefined),
+  settings,
 );
 // Bots learn from finished work and the chief reviews the memory, through the same turn runner as the chat.
 const memoryJobs = createMemoryJobs(db, {
@@ -495,6 +749,7 @@ const memoryJobs = createMemoryJobs(db, {
   // profile "memory" (the same guarded reader the chat's /browse uses).
   screen: createMemoryScreen(db),
   readPage: (owner, url) => computer.read(owner, "memory", url),
+  settings,
 });
 const agendaScheduler = createAgendaScheduler(db, mcp.plugins, membershipLookup);
 // "Agenda cannot sync" and "Company knowledge cannot read your Drive" cards stay until the next sync works: after Google is connected, sync now.
@@ -524,9 +779,20 @@ export const transcriber = createConfiguredTranscriber({
     if (!secret && id) throw NO_KEY;
     return secret;
   },
-  allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+  allowPrivate: privateNetwork.allowed,
 });
 export const transcribe = createTranscribe(transcriber);
+// The video transcription plugin sends a video's sound to the same recognizer, and reads the Voice switch on every call.
+configureVideoTranscribe({
+  transcriber,
+  speechOn: async () => (await installation.load()).transcribeProvider !== "off",
+});
+/** Text to speech (modules/speech): the "Listen" button of a bot message, and later the voice conversation. Read per call, like speech to text. */
+export const synthesizer = createConfiguredSynthesizer({
+  settings: () => speechReader.settings(),
+  key: () => speechReader.secret(),
+  allowPrivate: privateNetwork.allowed,
+});
 /**
  * The daily "newer version" check (modules/updates). Its ticker is in index.ts and only the process that runs work raises the Catch up card;
  * an `api` process answers from its own check when asked.
@@ -536,17 +802,22 @@ export const updateChecker = createUpdateChecker({
   feedUrl: process.env.ZETTA_UPDATE_FEED,
   operatorOff: process.env.ZETTA_UPDATE_CHECK === "off",
   mode: async () => (await installation.load()).updateCheck,
-  allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+  allowPrivate: privateNetwork.allowed,
   assertPublic: assertPublicUrl,
   ...(runsWork ? { onVerdict: (v) => syncUpdateCard(db, v) } : { lazy: true }),
 });
+export const settingsServices = { access: identity.access, settings };
 export const installationServices = {
   access: identity.access,
   installation,
   runningMode: installed.networkMode,
   transcriber,
   transcribeKey,
-  allowPrivate: process.env.ZETTA_ALLOW_PRIVATE_NETWORK === "1",
+  speech: { synthesizer, key: speechKey },
+  mail: { reader: mailReader, key: mailKey },
+  phone: { reader: phoneReader, key: phoneKey, twilioKey: phoneTwilioKey },
+  waha: { key: wahaKey, check: checkInstallationServer },
+  allowPrivate: privateNetwork.allowed,
   updates: updateChecker,
 };
 /** The rolling summary of long chats (chat/summary.ts); its refresh job runs on the ticker in index.ts. */
@@ -556,12 +827,12 @@ const playgroundContainers = containerConfigPlayground
   ? createContainerRunner(containerConfigPlayground)
   : undefined;
 const playgrounds = createPlayground(db, {
-  hostCode: hostCodeFromEnv,
+  hostCode: codeAccess.allowed,
   runners: playgroundContainers ? { container: playgroundContainers.run } : {},
 });
 // Zetta Apps: published code whose tools bots call through the built-in `apps` plugin (docs/decisions/apps.md).
 export const apps = createApps(db, {
-  hostCode: hostCodeFromEnv,
+  hostCode: codeAccess.allowed,
   runners: playgroundContainers ? { container: playgroundContainers.run } : {},
 });
 const appAuthor = createAppAuthor({ apps, playgrounds });
@@ -570,7 +841,7 @@ configureApps({
   actorFor: (userId) => issueBackgroundActor(membershipLookup, userId),
 });
 const outputStyles = createOutputStyles(db);
-const botClaude = createBotClaude(db);
+const botClaude = createBotClaude(db, { settings });
 const preferences = createPreferenceStore(db);
 // The incoming-message service needs the chat service, which needs it back for its chief tools: a late-bound reference.
 const inboundRef: { current?: ReturnType<typeof createInbound> } = {};
@@ -603,6 +874,11 @@ export const chatServices = {
       },
       learning,
       lessons: { tools: lessonTools, list: (owner, q) => lessons.list(owner, q) },
+      mail: mailService,
+      provisioning: mailProvisioning,
+      phone,
+      settings,
+      settingsReader: settings,
       summaries: chatSummaries,
       install: installed.networkMode,
       discussions,
@@ -694,6 +970,7 @@ features.workflows.useTools({
   async effect(userId, c) {
     if (c.kind === "zetta") return c.target === "lessons" ? lessonTools.effect(c.tool) : "write";
     if (c.kind === "plugin")
+      // Only "read" is a read: "write", "send" (mail in the person's name) and a tool with no effect all count as writes.
       return getPlugin(c.target)?.tools?.find((t) => t.name === c.tool)?.effect === "read"
         ? "read"
         : "write";
@@ -960,6 +1237,7 @@ const discussionWorker = createDiscussionWorker(
   discussions,
   chatServices.chat,
   membershipLookup,
+  { settings },
 );
 discussions.onEnqueue = () => work.kick("discussions");
 if (runsWork) work.on("discussions", () => discussionWorker.kick());
@@ -984,6 +1262,69 @@ export const inboundServices = {
   inbound: createInbound(db, mcp.plugins, chatServices.chat, membershipLookup, transcribe),
 };
 inboundRef.current = inboundServices.inbound;
+withProvisioning(chatServices.chat, mailProvisioning);
+/** An archived bot's number is held for 30 days (best effort, after the archive itself). */
+withPhoneHold(chatServices.chat, phone);
+/** Incoming phone calls (modules/phone/calls.ts): the provider's webhook and media socket. They run in the worker (worker-only.ts). */
+export const phoneCalls = createPhoneCalls({
+  db,
+  phone,
+  reader: phoneReader,
+  replay: createReplayStore(db),
+  chat: chatServices.chat,
+  lookup: membershipLookup,
+  transcriber,
+  synthesizer,
+  defaultLanguage: async () => (await installation.load()).transcribeLanguage || undefined,
+  instance: instanceId,
+});
+export const phoneServices = { access: identity.access, phone, calls: phoneCalls };
+/** Bots place calls from their own number (modules/phone/outbound.ts): the server decides each call, the person's card or request approves it. */
+configurePhoneOut({
+  facts: createOutboundFacts({ db, reader: phoneReader }),
+  place: phoneCalls.place,
+  // Signs the call a card shows: derived from the installation key and the person, so a card nobody here signed places nothing.
+  sealKey: (userId) =>
+    Buffer.from(
+      hkdfSync(
+        "sha256",
+        Buffer.from(ENV.ZETTA_CONNECTION_KEY, "base64"),
+        Buffer.alloc(0),
+        `zetta.phone.call-approval.v1:${userId}`,
+        32,
+      ),
+    ).toString("base64"),
+  offered: async (userId, botId) => {
+    if (!(await phoneReader.offer()).on) return false;
+    const rows = await db
+      .select({ id: phoneNumberTable.id })
+      .from(phoneNumberTable)
+      .where(
+        and(
+          eq(phoneNumberTable.botId, botId),
+          eq(phoneNumberTable.ownerUserId, userId),
+          eq(phoneNumberTable.status, "active"),
+          eq(phoneNumberTable.outbound, "on"),
+        ),
+      );
+    return rows.length > 0;
+  },
+  audit: (userId, e) =>
+    void audit(db, userId, {
+      kind: "voice_call",
+      outcome: e.outcome,
+      botId: e.botId,
+      detail: e.detail,
+    }),
+});
+/** The poller of bot addresses' mail; the ticker in index.ts runs it in the one process that does background work. */
+export const mailPoller = createMailPoller({
+  db,
+  store: mailboxStore,
+  messages: mailMessages,
+  reader: mailReader,
+  inbound: inboundServices.inbound,
+});
 export const featureServices = { access: identity.access, features };
 export const decisionServices = { access: identity.access, decisions };
 export const computerServices = { access: identity.access, computer, vms, machines };
@@ -1017,6 +1358,43 @@ export const projectServices = {
 };
 export const orgServices = { access: identity.access, org };
 export const transcribeServices = { access: identity.access, transcribe };
+export const speechServices = {
+  access: identity.access,
+  speech: synthesizer,
+  /** The voice saved on a bot: its owner's, or a team bot's (anyone who may talk to it may hear it). */
+  botVoice: async (userId: string, botId: string) => {
+    const [b] = await db
+      .select({
+        voice: bot.voice,
+        language: bot.voiceLanguage,
+        owner: bot.ownerUserId,
+        visibility: bot.visibility,
+      })
+      .from(bot)
+      .where(eq(bot.id, botId));
+    if (!b || (b.owner !== userId && b.visibility !== "team")) return undefined;
+    return { voice: b.voice || undefined, language: b.language || undefined };
+  },
+};
+/** Spoken conversations with a bot (modules/voice): the same chat service as a typed message, with speech in and out on the sides. */
+export const voice = createVoiceService({
+  db,
+  chat: chatServices.chat,
+  transcriber,
+  synthesizer,
+  ready: createVoiceReadiness({
+    settings: () => installation.load(),
+    transcribeKey: (id) => transcribeKey.state(id),
+    speechKey: () => speechReader.keyState(),
+  }),
+  defaultLanguage: async () => (await installation.load()).transcribeLanguage || undefined,
+  // The browser's own voice cannot be heard on a phone line: phone is offered only with a voice the server makes.
+  phoneOn: async () =>
+    (await phoneReader.offer()).on &&
+    ["local", "remote"].includes(await synthesizer.mode().catch(() => "off")),
+  instance: instanceId,
+});
+export const voiceServices = { access: identity.access, voice };
 export const botQualityServices = {
   access: identity.access,
   quality: createBotQuality(db, { chat: chatServices.chat, learning }),
@@ -1064,7 +1442,11 @@ export const learningServices = {
   usefulness: createUsefulness(db, { memory, skills: skillsLibrary }),
 };
 /** What bots learned from their owners: the daily pass over the chats, and the trial that keeps or drops them (modules/learning). */
-export const lessonBatch = createBatch(db, { lessons, cli: withTokenAudit(db, runCli, "batch") });
+export const lessonBatch = createBatch(db, {
+  lessons,
+  cli: withTokenAudit(db, harnessCli.run, "batch"),
+  settings,
+});
 export const lessonTrial = createTrial(db, { lessons });
 export const lessonFindings = createFindings(db, { lessons, memory });
 export const lessonTidy = createTidy(db, { lessons, findings: lessonFindings });
@@ -1129,6 +1511,9 @@ export const zettaMcpServices = {
   outputStyles: outputStyleServices.styles,
   org,
   lessons: { tools: lessonTools },
+  mailboxes: mailboxRows,
+  mail: mailService,
+  phone,
   audit: (ownerUserId: string, event: Parameters<typeof audit>[2]) => audit(db, ownerUserId, event),
 };
 export const agendaServices = {

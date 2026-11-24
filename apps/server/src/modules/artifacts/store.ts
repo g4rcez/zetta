@@ -5,14 +5,8 @@ import { and, asc, desc, eq, ne, sql } from "@zetta/db/query";
 import { artifact, type ArtifactKind } from "@zetta/db/schema/artifacts";
 import { routineRun } from "@zetta/db/schema/features";
 import { AccessError, type ActiveActor } from "../identity/access";
-import {
-  ArtifactFileError,
-  artifactPath,
-  artifactsQuota,
-  classify,
-  saveContent,
-  savePath,
-} from "./storage";
+import { readSetting, type SettingsReader } from "../settings/service";
+import { ArtifactFileError, artifactPath, classify, saveContent, savePath } from "./storage";
 
 export type Artifact = typeof artifact.$inferSelect;
 export type ArtifactSource = { path: string; codeDir: string } | { content: string };
@@ -34,7 +28,11 @@ const fileNameOf = (v: string) =>
     .replace(/[\u0000-\u001f"\\/]/g, "_")
     .slice(0, 200);
 
-export function createArtifactStore(db: Database, root?: string) {
+/**
+ * `settings` supplies `artifactsQuota`, the total bytes one person may keep (default 5 GB), read on every use. Nothing is deleted to make
+ * room: a publish over it is refused. Without it the registry default counts.
+ */
+export function createArtifactStore(db: Database, root?: string, settings?: SettingsReader) {
   const mine = (a: ActiveActor, id: string) =>
     and(eq(artifact.id, id), eq(artifact.ownerUserId, a.userId));
   return {
@@ -80,7 +78,8 @@ export function createArtifactStore(db: Database, root?: string) {
             .where(eq(artifact.ownerUserId, a.userId))
             .as("kept"),
         );
-      return { used: r?.used ?? 0, quota: artifactsQuota() };
+      // The organization id is passed here when workspaces exist.
+      return { used: r?.used ?? 0, quota: await readSetting(settings, "artifactsQuota") };
     },
     async setPinned(a: ActiveActor, id: string, pinned: boolean) {
       const [row] = await db

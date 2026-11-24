@@ -1,3 +1,4 @@
+import { privateAllowed, type PrivateNetwork } from "../settings/private-network";
 import {
   compareToFeed,
   parseFeed,
@@ -42,8 +43,8 @@ export type UpdateCheckerDeps = {
   mode: () => Promise<UpdateCheckMode>;
   fetch?: typeof fetch;
   now?: () => number;
-  /** Lifts the private-network check for an address the operator chose (ZETTA_ALLOW_PRIVATE_NETWORK). */
-  allowPrivate?: boolean;
+  /** Lifts the private-network check for an address the operator chose (the setting `allowPrivateNetwork`; a function is asked at every request). */
+  allowPrivate?: PrivateNetwork;
   /** Refuses (throws) an address on a private network. Only used for an address other than the default. */
   assertPublic?: (url: string) => Promise<void>;
   /** After a check finished, or when it was found off. The server raises or closes the administrator's card here. */
@@ -64,9 +65,10 @@ async function readFeed(
   let target = url;
   for (let hop = 0; hop <= MAX_HOPS; hop++) {
     const u = new URL(target);
-    if (u.protocol !== "https:" && !(d.allowPrivate && u.protocol === "http:"))
+    const priv = await privateAllowed(d.allowPrivate);
+    if (u.protocol !== "https:" && !(priv && u.protocol === "http:"))
       throw new FeedError("not https");
-    if (guarded && !d.allowPrivate && d.assertPublic) await d.assertPublic(target);
+    if (guarded && !priv && d.assertPublic) await d.assertPublic(target);
     const res = await d.fetch(target, {
       method: "GET",
       headers: { accept: "application/json" },

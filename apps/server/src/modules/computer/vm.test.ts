@@ -5,14 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NavigationError } from "./cdp";
 import { ComputerError } from "./service";
+import { settingDefault, type SettingKey, type SettingValue } from "@zetta/core/settings";
+import { createTestSettings } from "../settings/testing";
 import {
   compactTree,
   createVmService,
   formatRead,
   STILL_LOADING,
   vmDockerArgs,
-  vmDriversFrom,
-  vmOsFrom,
   type VmDocker,
   type McpCall,
   type VmExec,
@@ -194,7 +194,18 @@ function fakeMcp() {
   };
   return { connect, calls };
 }
-async function setup(opts: Partial<Parameters<typeof createVmService>[0]> = {}) {
+type VmSettings = Partial<{
+  [
+    K in "vmMaxPerUser" | "vmMaxRunningPerUser" | "vmMaxRunning" | "vmDrivers" | "vmOs"
+  ]: SettingValue<K>;
+}>;
+async function setup(
+  opts: Partial<Parameters<typeof createVmService>[0]> & { limits?: VmSettings } = {},
+) {
+  const { limits = {}, ...rest } = opts;
+  const settings = createTestSettings();
+  for (const [key, value] of Object.entries(limits))
+    await settings.set(key as SettingKey, value as never);
   const store = memoryStore(),
     d = fakeDocker(),
     m = fakeMcp(),
@@ -213,9 +224,10 @@ async function setup(opts: Partial<Parameters<typeof createVmService>[0]> = {}) 
       throw new Error("no DevTools in this test");
     },
     settle: async () => true,
-    ...opts,
+    settings: settings.service,
+    ...rest,
   });
-  return { vm, store, d, m, tokenRoot };
+  return { vm, store, d, m, tokenRoot, settings };
 }
 
 describe("vm service (fake docker + fake spacesd)", () => {
@@ -279,7 +291,7 @@ describe("vm service (fake docker + fake spacesd)", () => {
     await vm.closeAll();
   });
   test("a computer has a target and a driver; only allowed ones are accepted, and a running computer keeps its driver", async () => {
-    const { vm, d, m } = await setup({ vmDrivers: ["cua", "agent-desktop"] });
+    const { vm, d, m } = await setup({ limits: { vmDrivers: ["cua", "agent-desktop"] } });
     const made = await vm.create("alice", { name: "Work", driver: "agent-desktop" });
     expect([made.target, made.driver]).toEqual(["vm", "agent-desktop"]);
     expect((await vm.start("alice")).driver).toBe("cua");
@@ -291,7 +303,11 @@ describe("vm service (fake docker + fake spacesd)", () => {
     );
     expect(m.calls.length).toBe(spacesd);
     await vm.stop("alice", made.id);
-    expect(vm.options().targets).toEqual({ vm: ["cua", "agent-desktop"], local: [], cua: [] });
+    expect((await vm.options()).targets).toEqual({
+      vm: ["cua", "agent-desktop"],
+      local: [],
+      cua: [],
+    });
     // The server's own desktop is not offered yet.
     expect(await code(vm.create("alice", { name: "Mine", target: "local" }))).toBe("UNSUPPORTED");
     const def = (await vm.list("alice")).find((x) => x.kind === "default")!;
@@ -302,13 +318,8 @@ describe("vm service (fake docker + fake spacesd)", () => {
     expect((await vm.list("alice")).find((x) => x.id === def.id)!.driver).toBe("agent-desktop");
     await vm.closeAll();
   });
-  test("the operator's system list: known names only, debian when empty", () => {
-    expect(vmOsFrom(undefined)).toEqual(["debian"]);
-    expect(vmOsFrom("windows,nope")).toEqual(["debian"]);
-    expect(vmOsFrom("ubuntu, debian,ubuntu")).toEqual(["ubuntu", "debian"]);
-  });
   test("a computer runs the image of its system, and a system the operator did not offer is refused", async () => {
-    const { vm, d } = await setup({ vmOs: ["debian", "ubuntu"] });
+    const { vm, d } = await setup({ limits: { vmOs: ["debian", "ubuntu"] } });
     const ubuntu = await vm.create("alice", { name: "Ubuntu box", os: "ubuntu" });
     expect(ubuntu.os).toBe("ubuntu");
     await vm.start("alice", ubuntu.id);
@@ -326,18 +337,20 @@ describe("vm service (fake docker + fake spacesd)", () => {
     );
   });
   test("the list a person picks from has every system; Windows and macOS say why they are not available", async () => {
-    const { vm } = await setup({ vmOs: ["debian", "ubuntu"] });
-    expect(vm.options().os.map((o) => [o.id, o.family, o.available])).toEqual([
+    const { vm } = await setup({ limits: { vmOs: ["debian", "ubuntu"] } });
+    expect((await vm.options()).os.map((o) => [o.id, o.family, o.available])).toEqual([
       ["debian", "linux", true],
       ["ubuntu", "linux", true],
       ["windows", "windows", false],
       ["macos", "macos", false],
     ]);
-    expect(vm.options().os.find((o) => o.id === "windows")!.note).toContain("licence");
-    expect((await setup()).vm.options().os.find((o) => o.id === "ubuntu")!.available).toBe(false);
+    expect((await vm.options()).os.find((o) => o.id === "windows")!.note).toContain("licence");
+    expect((await (await setup()).vm.options()).os.find((o) => o.id === "ubuntu")!.available).toBe(
+      false,
+    );
   });
   test("a system without a browser starts without waiting for one and refuses browser actions", async () => {
-    const { vm, m } = await setup({ vmOs: ["debian", "ubuntu"] });
+    const { vm, m } = await setup({ limits: { vmOs: ["debian", "ubuntu"] } });
     const ubuntu = await vm.create("alice", { name: "Ubuntu box", os: "ubuntu" });
     const before = m.calls.length;
     await vm.start("alice", ubuntu.id);
@@ -353,14 +366,6 @@ describe("vm service (fake docker + fake spacesd)", () => {
     await vm.act("alice", ubuntu.id, "agent", { type: "key", key: "ctrl+l" }); // other input still works
     await vm.closeAll();
   });
-  test("the operator's driver list: known names only, cua when empty", () => {
-    expect(vmDriversFrom(undefined)).toEqual(["cua"]);
-    expect(vmDriversFrom("")).toEqual(["cua"]);
-    expect(vmDriversFrom("agent-desktop, cua,agent-desktop,nope")).toEqual([
-      "agent-desktop",
-      "cua",
-    ]);
-  });
   test("a driver the operator did not allow is refused", async () => {
     const { vm } = await setup();
     expect(await code(vm.create("alice", { name: "Work", driver: "agent-desktop" }))).toBe(
@@ -372,7 +377,9 @@ describe("vm service (fake docker + fake spacesd)", () => {
     await vm.closeAll();
   });
   test("caps: VMs per user (default included) and running VMs per user / in total", async () => {
-    const { vm } = await setup({ maxPerUser: 2, maxRunningPerUser: 1, maxRunning: 2 });
+    const { vm } = await setup({
+      limits: { vmMaxPerUser: 2, vmMaxRunningPerUser: 1, vmMaxRunning: 2 },
+    });
     const extra = await vm.create("alice", { name: "Bank", purpose: "statements", botId: null });
     expect(extra.kind).toBe("extra");
     expect(await code(vm.create("alice", { name: "Third" }))).toBe("LIMIT");
@@ -921,7 +928,7 @@ describe("remote Cua computer (a spacesd on another machine)", () => {
     expect(JSON.stringify(made)).not.toContain(TOKEN);
     expect(JSON.stringify(store.rows)).not.toContain(TOKEN);
     expect([...secrets.kept.values()].map((k) => k.secret)).toEqual([TOKEN]);
-    expect(vm.options().targets.cua).toEqual(["cua"]);
+    expect((await vm.options()).targets.cua).toEqual(["cua"]);
   });
 
   test("starting connects with the stored token, touches no container, and acting goes through that connection", async () => {
@@ -985,6 +992,32 @@ describe("remote Cua computer (a spacesd on another machine)", () => {
     ).toBe("ok");
   });
 
+  test("the private-address rule is read at every check: on, off, on again with no restart, and a read that fails refuses", async () => {
+    let allowed: boolean | "throw" = false;
+    const { vm } = await remote({
+      allowPrivate: async () => {
+        if (allowed === "throw") throw new Error("settings unreadable");
+        return allowed;
+      },
+    });
+    const add = () =>
+      code(
+        vm.createRemote("alice", { name: "Lab", endpoint: "http://10.0.0.5:3211", token: TOKEN }),
+      );
+    expect(await add()).toBe("INSECURE");
+    allowed = true;
+    expect(await add()).toBe("ok");
+    allowed = false;
+    expect(await add()).toBe("INSECURE");
+    allowed = "throw";
+    expect(await add()).toBe("INSECURE");
+    expect(
+      await code(
+        vm.createRemote("alice", { name: "X", endpoint: "https://10.0.0.5", token: TOKEN }),
+      ),
+    ).toBe("BLOCKED_URL");
+  });
+
   test("an address that has become private since it was saved is refused at start", async () => {
     const { vm, store } = await remote();
     const made = await vm.createRemote("alice", {
@@ -1019,7 +1052,7 @@ describe("remote Cua computer (a spacesd on another machine)", () => {
     expect(
       await code(vm.createRemote("alice", { name: "X", endpoint: ENDPOINT, token: TOKEN })),
     ).toBe("UNSUPPORTED");
-    expect(vm.options().targets.cua).toEqual([]);
+    expect((await vm.options()).targets.cua).toEqual([]);
     const withSecrets = await remote();
     const made = await withSecrets.vm.createRemote("alice", {
       name: "Office Mac",
@@ -1055,7 +1088,7 @@ describe("this machine's own desktop (target local)", () => {
       install: "network",
       host: { "agent-desktop": () => h.driver as never },
     });
-    expect(vm.options().targets.local).toEqual([]);
+    expect((await vm.options()).targets.local).toEqual([]);
     await expect(vm.create("alice", { name: "Mine", target: "local" })).rejects.toMatchObject({
       code: "UNSUPPORTED",
     });
@@ -1066,7 +1099,7 @@ describe("this machine's own desktop (target local)", () => {
       install: "local",
       host: { "agent-desktop": () => h.driver as never },
     });
-    expect(vm.options().targets.local).toEqual(["agent-desktop"]);
+    expect((await vm.options()).targets.local).toEqual(["agent-desktop"]);
     const made = await vm.create("alice", { name: "Mine", target: "local" });
     const before = d.log.length;
     expect((await vm.start("alice", made.id)).status).toBe("running");
@@ -1084,7 +1117,7 @@ describe("this machine's own desktop (target local)", () => {
       install: "local",
       host: { "agent-desktop": () => ad.driver as never, cua: () => cua.driver as never },
     });
-    expect(vm.options().targets.local).toEqual(["agent-desktop", "cua"]);
+    expect((await vm.options()).targets.local).toEqual(["agent-desktop", "cua"]);
     const made = await vm.create("alice", { name: "Mine via Cua", target: "local", driver: "cua" });
     await vm.start("alice", made.id);
     await vm.act("alice", made.id, "agent", { type: "launch", app: "Notes" });
@@ -1099,9 +1132,189 @@ describe("this machine's own desktop (target local)", () => {
       host: { "agent-desktop": () => h.driver as never },
       vmOn: false,
     });
-    expect(vm.options().targets.vm).toEqual([]);
+    expect((await vm.options()).targets.vm).toEqual([]);
     await expect(vm.create("alice", { name: "Box" })).rejects.toMatchObject({
       code: "UNSUPPORTED",
+    });
+  });
+});
+
+// The limits and lists are settings, read at each decision: a change applies to the next request with no restart, an old environment
+// variable does nothing, and a lowered limit never stops a computer that already runs.
+describe("vm limits and lists from the settings", () => {
+  const OLD_VARS = [
+    "ZETTA_VM_MAX_PER_USER",
+    "ZETTA_VM_MAX_RUNNING_PER_USER",
+    "ZETTA_VM_MAX_RUNNING",
+    "ZETTA_VM_DRIVERS",
+    "ZETTA_VM_OS",
+  ];
+  const withVars = async (values: Record<string, string>, run: () => Promise<void>) => {
+    const was = OLD_VARS.map((k) => [k, process.env[k]] as const);
+    try {
+      Object.assign(process.env, values);
+      await run();
+    } finally {
+      for (const [k, v] of was) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  };
+  const status = async (vm: Awaited<ReturnType<typeof setup>>["vm"], user: string) =>
+    (await vm.list(user)).map((x) => x.status);
+
+  test("computers per person: lower, raise and unset change the next create; existing ones stay", async () => {
+    const { vm, settings } = await setup();
+    await vm.create("alice", { name: "One" }); // the default (made on first use) + One = 2 of 4
+    await settings.set("vmMaxPerUser", 2);
+    expect(await code(vm.create("alice", { name: "Two" }))).toBe("LIMIT");
+    await settings.set("vmMaxPerUser", 3);
+    expect(await code(vm.create("alice", { name: "Two" }))).toBe("ok");
+    await settings.set("vmMaxPerUser", 1); // below what exists: nothing is removed
+    expect(await vm.list("alice")).toHaveLength(3);
+    expect(await code(vm.create("alice", { name: "Three" }))).toBe("LIMIT");
+    await settings.set("vmMaxPerUser", 0);
+    expect(await code(vm.create("alice", { name: "Three" }))).toBe("LIMIT");
+    await settings.unset("vmMaxPerUser"); // the registry default, 4
+    expect(await code(vm.create("alice", { name: "Three" }))).toBe("ok");
+    expect(await code(vm.create("alice", { name: "Four" }))).toBe("LIMIT");
+  });
+
+  test("running computers per person: raising lets a start through, lowering never stops a running one", async () => {
+    const { vm, settings } = await setup();
+    const extra = await vm.create("alice", { name: "Bank" });
+    await settings.set("vmMaxRunningPerUser", 1);
+    await vm.start("alice");
+    expect(await code(vm.start("alice", extra.id))).toBe("LIMIT");
+    await settings.set("vmMaxRunningPerUser", 2);
+    expect(await code(vm.start("alice", extra.id))).toBe("ok");
+    await settings.set("vmMaxRunningPerUser", 1);
+    expect(await status(vm, "alice")).toEqual(["running", "running"]); // still running
+    await vm.stop("alice", extra.id);
+    expect(await code(vm.start("alice", extra.id))).toBe("LIMIT"); // one runs, the limit is one
+    await settings.set("vmMaxRunningPerUser", 0);
+    expect(await code(vm.start("bob"))).toBe("LIMIT"); // 0 means none may start
+    await settings.unset("vmMaxRunningPerUser"); // the default, 2
+    expect(await code(vm.start("alice", extra.id))).toBe("ok");
+    await vm.closeAll();
+  });
+
+  test("running computers on the server: the limit is read at each start", async () => {
+    const { vm, settings } = await setup();
+    await settings.set("vmMaxRunning", 1);
+    await vm.start("alice");
+    expect(await code(vm.start("bob"))).toBe("LIMIT");
+    await settings.set("vmMaxRunning", 2);
+    expect(await code(vm.start("bob"))).toBe("ok");
+    await settings.set("vmMaxRunning", 1);
+    expect(await status(vm, "alice")).toEqual(["running"]);
+    expect(await status(vm, "bob")).toEqual(["running"]);
+    expect(await code(vm.start("carol"))).toBe("LIMIT");
+    await settings.unset("vmMaxRunning"); // the default, 6
+    expect(await code(vm.start("carol"))).toBe("ok");
+    await vm.closeAll();
+  });
+
+  test("the old limit variables have no effect, with or without a stored value", async () => {
+    await withVars(
+      {
+        ZETTA_VM_MAX_PER_USER: "1",
+        ZETTA_VM_MAX_RUNNING_PER_USER: "1",
+        ZETTA_VM_MAX_RUNNING: "1",
+      },
+      async () => {
+        const { vm, settings } = await setup();
+        // Nothing stored: the registry defaults (4, 2, 6).
+        expect(await code(vm.create("alice", { name: "Two" }))).toBe("ok");
+        expect(await code(vm.create("alice", { name: "Three" }))).toBe("ok");
+        await vm.start("alice");
+        expect(await code(vm.start("bob"))).toBe("ok"); // a total of 1 would refuse
+        await settings.set("vmMaxRunning", 3);
+        await settings.set("vmMaxRunningPerUser", 3);
+        await settings.set("vmMaxPerUser", 6);
+        process.env.ZETTA_VM_MAX_PER_USER = "1";
+        process.env.ZETTA_VM_MAX_RUNNING_PER_USER = "1";
+        process.env.ZETTA_VM_MAX_RUNNING = "1";
+        const mine = (await vm.list("alice")).map((x) => x.id);
+        expect(await code(vm.start("alice", mine[1]))).toBe("ok");
+        expect(await code(vm.create("alice", { name: "Four" }))).toBe("ok");
+        await vm.closeAll();
+      },
+    );
+  });
+
+  test("drivers on offer: the next create and start follow the list; the empty list offers nothing", async () => {
+    const { vm, settings } = await setup();
+    // Unset: the registry default, cua only.
+    expect(await code(vm.create("alice", { name: "Work", driver: "agent-desktop" }))).toBe(
+      "UNSUPPORTED",
+    );
+    expect((await vm.options()).targets.vm).toEqual(["cua"]);
+    await settings.set("vmDrivers", ["cua", "agent-desktop"]);
+    expect((await vm.options()).targets.vm).toEqual(["cua", "agent-desktop"]);
+    const made = await vm.create("alice", { name: "Work", driver: "agent-desktop" });
+    await settings.set("vmDrivers", ["cua"]);
+    expect((await vm.options()).targets.vm).toEqual(["cua"]);
+    // A computer keeps its driver: with the driver turned off it does not start under another one.
+    expect(await code(vm.start("alice", made.id))).toBe("UNSUPPORTED");
+    expect(await code(vm.setDriver("alice", made.id, "agent-desktop"))).toBe("UNSUPPORTED");
+    await settings.unset("vmDrivers");
+    expect((await vm.options()).targets.vm).toEqual(["cua"]);
+    await vm.closeAll();
+  });
+
+  test("an empty list of drivers or systems (an organization narrowed it to nothing): no new computer and no start, a clear error", async () => {
+    // The stored installation value cannot be empty; a narrowed organization value can. The reader here answers as that would.
+    const empty: Record<string, string[]> = { vmDrivers: [], vmOs: ["debian"] };
+    const { vm } = await setup({
+      settings: {
+        get: async (key: SettingKey) => empty[key] ?? settingDefault(key),
+      } as never,
+    });
+    expect((await vm.options()).targets.vm).toEqual([]);
+    await expect(vm.create("alice", { name: "Box" })).rejects.toMatchObject({
+      code: "UNSUPPORTED",
+      detail: "No driver is offered for computers right now.",
+    });
+    expect(await code(vm.create("alice", { name: "Box", driver: "cua" }))).toBe("UNSUPPORTED");
+    expect(await code(vm.start("alice"))).toBe("UNSUPPORTED"); // the default computer's driver is not offered either
+    empty.vmDrivers = ["cua"];
+    empty.vmOs = [];
+    expect((await vm.options()).os.every((o) => !o.available)).toBe(true);
+    await expect(vm.create("alice", { name: "Box" })).rejects.toMatchObject({
+      code: "UNSUPPORTED",
+      detail: "No system is offered for computers right now.",
+    });
+    empty.vmOs = ["debian"];
+    expect(await code(vm.create("alice", { name: "Box" }))).toBe("ok"); // back to normal at once
+    await vm.closeAll();
+  });
+
+  test("systems on offer follow the list", async () => {
+    const { vm, settings } = await setup();
+    expect(await code(vm.create("alice", { name: "U", os: "ubuntu" }))).toBe("UNSUPPORTED");
+    await settings.set("vmOs", ["debian", "ubuntu"]);
+    expect((await vm.options()).os.find((o) => o.id === "ubuntu")!.available).toBe(true);
+    expect(await code(vm.create("alice", { name: "U", os: "ubuntu" }))).toBe("ok");
+    await settings.set("vmOs", ["debian"]);
+    expect((await vm.options()).os.find((o) => o.id === "ubuntu")!.available).toBe(false);
+    expect(await code(vm.create("alice", { name: "U2", os: "ubuntu" }))).toBe("UNSUPPORTED");
+    await settings.unset("vmOs");
+    expect((await vm.options()).os.find((o) => o.id === "ubuntu")!.available).toBe(false);
+  });
+
+  test("the old variables ZETTA_VM_DRIVERS and ZETTA_VM_OS have no effect", async () => {
+    await withVars({ ZETTA_VM_DRIVERS: "agent-desktop", ZETTA_VM_OS: "ubuntu" }, async () => {
+      const { vm, settings } = await setup();
+      expect((await vm.options()).targets.vm).toEqual(["cua"]); // nothing stored: the default
+      expect((await vm.options()).os.find((o) => o.id === "ubuntu")!.available).toBe(false);
+      await settings.set("vmDrivers", ["cua", "agent-desktop"]);
+      await settings.set("vmOs", ["debian"]);
+      process.env.ZETTA_VM_DRIVERS = "cua";
+      process.env.ZETTA_VM_OS = "debian,ubuntu";
+      expect((await vm.options()).targets.vm).toEqual(["cua", "agent-desktop"]);
+      expect((await vm.options()).os.find((o) => o.id === "ubuntu")!.available).toBe(false);
     });
   });
 });

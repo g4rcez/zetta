@@ -8,6 +8,7 @@ import type { Database } from "@zetta/db";
 import { and, asc, eq, ne } from "@zetta/db/query";
 import { computerVm } from "@zetta/db/schema/features";
 import { assertPublicUrl, assertWebScheme, ComputerError, type Actor } from "./service";
+import { privateAllowed, type PrivateNetwork } from "../settings/private-network";
 import {
   NavigationError,
   navigatePage,
@@ -29,13 +30,8 @@ import { createAgentDesktopDriver } from "./drivers/agent-desktop";
 import { hasBrowser, osOptions, type OsId } from "./os";
 import { instanceId, recoverable } from "../runtime/instance";
 import { envNumber } from "../env-number";
-import {
-  DRIVERS,
-  Passthrough,
-  type DesktopDriver,
-  type DriverName,
-  type VmAction,
-} from "./drivers/types";
+import { readSetting, type SettingsReader } from "../settings/service";
+import { Passthrough, type DesktopDriver, type DriverName, type VmAction } from "./drivers/types";
 
 export { connectSpacesd, type McpCall, type VmConnect } from "./mcp-client";
 export { compactTree } from "./drivers/cua";
@@ -58,7 +54,7 @@ export type { VmAction } from "./drivers/types";
 // `owner_instance` is the server's own bookkeeping (see runtime/instance.ts), not part of a VM's record.
 export type VmRow = Omit<typeof computerVm.$inferSelect, "ownerInstance">;
 export type VmTarget = VmRow["target"];
-export { vmOsFrom, type OsId } from "./os";
+export type { OsId } from "./os";
 export type VmStore = {
   list(userId: string): Promise<VmRow[]>;
   get(userId: string, id: string): Promise<VmRow | undefined>;
@@ -174,14 +170,6 @@ export function dockerVmConfig(env: NodeJS.ProcessEnv = process.env): VmDocker |
     runtime: env.ZETTA_VM_RUNTIME || undefined,
     network: env.ZETTA_VM_NETWORK || undefined,
   };
-}
-/** `ZETTA_VM_DRIVERS=cua,agent-desktop`: the drivers an operator offers. Unknown names are dropped; empty means cua only. */
-export function vmDriversFrom(raw: string | undefined): DriverName[] {
-  const named = (raw ?? "")
-    .split(",")
-    .map((x) => x.trim())
-    .filter((x): x is DriverName => (DRIVERS as readonly string[]).includes(x));
-  return named.length ? [...new Set(named)] : ["cua"];
 }
 /** Marks a VM container with the installation that started it (only set when ZETTA_HOME isolates the installation). */
 const INSTALL_LABEL = "zetta.install";
@@ -323,15 +311,14 @@ export type VmOptions = {
   exec?: VmExec;
   connect?: VmConnect;
   tokenRoot: string;
-  maxPerUser?: number;
-  maxRunningPerUser?: number;
-  maxRunning?: number;
+  /**
+   * The limits and lists are the settings `vmMaxPerUser`, `vmMaxRunningPerUser`, `vmMaxRunning`, `vmDrivers` and `vmOs`, read at the moment of
+   * each decision (a lowered limit refuses new work and never stops a running computer). Without `settings` the registry defaults count.
+   */
+  settings?: SettingsReader;
   idleMs?: number;
-  allowPrivate?: boolean;
-  /** Drivers a person may pick for a VM (default: cua). agent-desktop joins once the image ships it. */
-  vmDrivers?: readonly DriverName[];
-  /** Systems a person may pick for a new computer (default: debian). Each needs its image built. */
-  vmOs?: readonly OsId[];
+  /** Private, loopback and link-local addresses: a fixed answer, or a function asked at every check (the setting `allowPrivateNetwork`). */
+  allowPrivate?: PrivateNetwork;
   /** Reads the page address and links over the DevTools port; injectable so tests do not need Chromium. */
   links?: (port: number) => Promise<PageLinks>;
   /** Opens an address over the DevTools port and waits for the load; injectable so tests do not need Chromium. */
@@ -369,14 +356,20 @@ export function createVmService({
   navigate = navigatePage,
   settle = settlePage,
   tokenRoot,
-  maxPerUser = 4,
-  maxRunningPerUser = 2,
-  maxRunning = 6,
+  settings,
   idleMs = 15 * 60_000,
-  allowPrivate = false,
-  vmDrivers = ["cua"],
-  vmOs = ["debian"],
+  allowPrivate: privateNetwork = false,
 }: VmOptions) {
+  const allowPrivate = () => privateAllowed(privateNetwork);
+  // The organization id is passed to each of these when workspaces exist (the per-person limits and the two lists narrow per organization).
+  const maxPerUser = async () => readSetting(settings, "vmMaxPerUser");
+  const maxRunningPerUser = async () => readSetting(settings, "vmMaxRunningPerUser");
+  const maxRunning = async () => readSetting(settings, "vmMaxRunning");
+  /** Drivers and systems on offer. An empty list (an organization narrowed it to nothing) offers none: no new computer, no start. */
+  const vmDrivers = async (): Promise<readonly DriverName[]> =>
+    (await readSetting(settings, "vmDrivers")) as readonly DriverName[]; // validated against the options
+  const vmOs = async (): Promise<readonly OsId[]> =>
+    (await readSetting(settings, "vmOs")) as readonly OsId[];
   const hostDrivers = (Object.keys(host ?? {}) as DriverName[]).filter((d) => host?.[d]);
   const hostOn =
     hostDrivers.length > 0 &&
@@ -520,17 +513,21 @@ export function createVmService({
     } catch {
       throw new ComputerError("INVALID");
     }
-    if (u.protocol !== "https:" && !(u.protocol === "http:" && allowPrivate))
+    const priv = await allowPrivate();
+    if (u.protocol !== "https:" && !(u.protocol === "http:" && priv))
       throw new ComputerError("INSECURE");
     if (u.username || u.password || u.search || u.hash || u.pathname !== "/")
       throw new ComputerError("INVALID");
-    if (!allowPrivate) await assertPublicUrl(u.href);
+    if (!priv) await assertPublicUrl(u.href);
     return u.origin;
   }
   /** A computer on another machine that runs cua-spacesd: connect with the stored bearer token. Nothing runs on this host. */
   async function startRemote(userId: string, row: VmRow) {
     if (!secrets || !row.endpoint || !row.connectionId) throw new ComputerError("UNSUPPORTED");
-    if ([...sessions.values()].filter((s) => s.userId === userId).length >= maxRunningPerUser)
+    if (
+      [...sessions.values()].filter((s) => s.userId === userId).length >=
+      (await maxRunningPerUser())
+    )
       throw new ComputerError("LIMIT");
     try {
       // Checked at every start: a name that pointed at a public address when it was saved may point somewhere private now.
@@ -620,11 +617,11 @@ export function createVmService({
       if (row.target === "local") return startLocal(userId, row);
       if (!vmOn) throw new ComputerError("UNSUPPORTED");
       // A computer keeps the driver it was given; if the operator has since turned that driver off, it does not start under another one.
-      if (!vmDrivers.includes(row.driver)) throw new ComputerError("UNSUPPORTED");
+      if (!(await vmDrivers()).includes(row.driver)) throw new ComputerError("UNSUPPORTED");
       const running = [...sessions.values()];
       if (
-        running.filter((s) => s.userId === userId).length >= maxRunningPerUser ||
-        running.length >= maxRunning
+        running.filter((s) => s.userId === userId).length >= (await maxRunningPerUser()) ||
+        running.length >= (await maxRunning())
       )
         throw new ComputerError("LIMIT");
       const dir = join(tokenRoot, row.id),
@@ -797,7 +794,7 @@ export function createVmService({
           if (!s.browser) throw new ComputerError("UNSUPPORTED"); // this system's image has no browser
           // The address is checked first, like browser sessions.
           assertWebScheme(action.url);
-          if (!allowPrivate) await assertPublicUrl(action.url);
+          if (!(await allowPrivate())) await assertPublicUrl(action.url);
           // Through the DevTools port the bot learns where the tab landed or why it did not. Typing in the address bar is blind: it
           // reports success when the keys went to another window, or while Chromium is still starting.
           const port = await devtools(s);
@@ -898,7 +895,8 @@ export function createVmService({
       },
     ) {
       if (!SAFE_NAME.test(v.name)) throw new ComputerError("INVALID");
-      if (v.os && !vmOs.includes(v.os)) throw new ComputerError("UNSUPPORTED");
+      const osOffered = await vmOs();
+      if (v.os && !osOffered.includes(v.os)) throw new ComputerError("UNSUPPORTED");
       // A VM, or this machine's own desktop on a local install (see placement.ts); the driver must be one the operator allows.
       if (v.target === "local") {
         if (!hostOn) throw new ComputerError("UNSUPPORTED");
@@ -907,11 +905,17 @@ export function createVmService({
       } else {
         if (v.target && v.target !== "vm") throw new ComputerError("UNSUPPORTED");
         if (!vmOn) throw new ComputerError("UNSUPPORTED");
-        if (v.driver && !vmDrivers.includes(v.driver)) throw new ComputerError("UNSUPPORTED");
+        const driversOffered = await vmDrivers();
+        if (v.driver && !driversOffered.includes(v.driver)) throw new ComputerError("UNSUPPORTED");
+        // An empty list offers nothing: no new computer, with or without a named driver or system.
+        if (!driversOffered.length)
+          throw new ComputerError("UNSUPPORTED", "No driver is offered for computers right now.");
+        if (!osOffered.length)
+          throw new ComputerError("UNSUPPORTED", "No system is offered for computers right now.");
       }
       return serial(userId, async () => {
         await store.ensureDefault(userId);
-        if ((await store.count(userId)) >= maxPerUser) throw new ComputerError("LIMIT");
+        if ((await store.count(userId)) >= (await maxPerUser())) throw new ComputerError("LIMIT");
         return view(await store.create(userId, v));
       });
     },
@@ -929,7 +933,7 @@ export function createVmService({
       const endpoint = await assertEndpoint(v.endpoint);
       return serial(userId, async () => {
         await store.ensureDefault(userId);
-        if ((await store.count(userId)) >= maxPerUser) throw new ComputerError("LIMIT");
+        if ((await store.count(userId)) >= (await maxPerUser())) throw new ComputerError("LIMIT");
         const connectionId = await secrets.create(userId, v.name, v.token);
         try {
           return view(
@@ -950,19 +954,20 @@ export function createVmService({
     /** Switches the driver of a stopped computer; a running one keeps the driver it started with. */
     async setDriver(userId: string, id: string, driver: DriverName) {
       const target = (await owned(userId, id)).target;
-      const allowed = target === "vm" ? vmDrivers : target === "local" && hostOn ? hostDrivers : [];
+      const allowed =
+        target === "vm" ? await vmDrivers() : target === "local" && hostOn ? hostDrivers : [];
       if (!allowed.includes(driver)) throw new ComputerError("UNSUPPORTED");
       if (sessions.has(id)) throw new ComputerError("LIMIT");
       await store.setDriver(userId, id, driver);
     },
     /** What a person may choose when they create or edit a computer. */
-    options: () => ({
+    options: async () => ({
       targets: {
-        vm: vmOn ? [...vmDrivers] : ([] as DriverName[]),
+        vm: vmOn ? [...(await vmDrivers())] : ([] as DriverName[]),
         local: hostOn ? [...hostDrivers] : ([] as DriverName[]),
         cua: secrets ? (["cua"] as DriverName[]) : ([] as DriverName[]),
       },
-      os: osOptions(vmOs),
+      os: osOptions(await vmOs()),
     }),
     /** Deleting destroys the container AND its home volume (sign-ins, downloads). The default VM is recreated empty on next use. */
     async remove(userId: string, id: string) {

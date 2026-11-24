@@ -20,6 +20,7 @@ import { createMemoryAssist } from "./assist";
 import { createMemoryGraph } from "./graph";
 import { createMemory, MemoryError } from "./service";
 import { runMemoryTool } from "./tool";
+import { createTestSettings } from "../settings/testing";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -863,6 +864,114 @@ suite("operator memory against compose postgres", () => {
     expect((await attention(A)).map((a) => a.title)).toContain(
       "Exporter updated your memory after finished work",
     );
+  });
+
+  test("the setting memoryLearn decides whether finished work is queued for learning, and a change applies on the next tick with no restart", async () => {
+    const settings = createTestSettings();
+    const jobs = createMemoryJobs(db, {
+      memory,
+      lookup: async () => ({ isAdmin: false }),
+      run: async () => ({ text: "", stopped: false }),
+      settings: settings.service,
+    });
+    const worker = (
+      await q(
+        "insert into bot (owner_user_id, kind, visibility, name, slug, harness) values ($1, 'specialist', 'private', 'Learner', $2, 'claude-code') returning id",
+        [A, `learner-${uuidv7().slice(-8)}`],
+      )
+    ).rows[0].id as string;
+    const chatId = (
+      await q(
+        "insert into conversation (owner_user_id, bot_id, title) values ($1, $2, 'Learn') returning id",
+        [A, worker],
+      )
+    ).rows[0].id as string;
+    const finished = async (title: string) =>
+      (
+        await q(
+          "insert into task (owner_user_id, title, status, bot_id, conversation_id) values ($1, $2, 'done', $3, $4) returning id",
+          [A, title, worker, chatId],
+        )
+      ).rows[0].id as string;
+    const queued = async (taskId: string) =>
+      (
+        await q(
+          "select count(*)::int as n from memory_job where source = 'task' and source_id = $1",
+          [taskId],
+        )
+      ).rows[0].n as number;
+    const now = new Date();
+    await settings.set("memoryLearn", "off");
+    const whileOff = await finished("Finished while learning is off");
+    await jobs.tick(now);
+    expect(await queued(whileOff)).toBe(0);
+    await settings.set("memoryLearn", "on");
+    await jobs.tick(now);
+    expect(await queued(whileOff)).toBe(1); // the same work is queued once the switch is on again
+    await settings.set("memoryLearn", "off");
+    const second = await finished("Finished while off again");
+    await jobs.tick(now);
+    expect(await queued(second)).toBe(0);
+    await settings.unset("memoryLearn");
+    await jobs.tick(now);
+    expect(await queued(second)).toBe(1); // the registry default is on
+    // Later tests tick too: leave no finished work of this bot behind to be queued or run.
+    await q("delete from memory_job where bot_id = $1", [worker]);
+    await q("delete from task where bot_id = $1", [worker]);
+  });
+
+  test("the old variables ZETTA_MEMORY_LEARN and ZETTA_WIKI_LEARN have no effect", async () => {
+    const was = { a: process.env.ZETTA_MEMORY_LEARN, b: process.env.ZETTA_WIKI_LEARN };
+    try {
+      process.env.ZETTA_MEMORY_LEARN = "off";
+      process.env.ZETTA_WIKI_LEARN = "off";
+      const settings = createTestSettings();
+      const jobs = createMemoryJobs(db, {
+        memory,
+        lookup: async () => ({ isAdmin: false }),
+        run: async () => ({ text: "", stopped: false }),
+        settings: settings.service,
+      });
+      const worker = (
+        await q(
+          "insert into bot (owner_user_id, kind, visibility, name, slug, harness) values ($1, 'specialist', 'private', 'Learner2', $2, 'claude-code') returning id",
+          [A, `learner-${uuidv7().slice(-8)}`],
+        )
+      ).rows[0].id as string;
+      const chatId = (
+        await q(
+          "insert into conversation (owner_user_id, bot_id, title) values ($1, $2, 'Learn2') returning id",
+          [A, worker],
+        )
+      ).rows[0].id as string;
+      const task = (
+        await q(
+          "insert into task (owner_user_id, title, status, bot_id, conversation_id) values ($1, 'Done with the variables off', 'done', $2, $3) returning id",
+          [A, worker, chatId],
+        )
+      ).rows[0].id as string;
+      const queued = async () =>
+        (
+          await q(
+            "select count(*)::int as n from memory_job where source = 'task' and source_id = $1",
+            [task],
+          )
+        ).rows[0].n as number;
+      await jobs.tick(new Date());
+      expect(await queued()).toBe(1); // nothing stored: the default (on), whatever the variables say
+      await q("delete from memory_job where bot_id = $1", [worker]);
+      process.env.ZETTA_MEMORY_LEARN = "on";
+      process.env.ZETTA_WIKI_LEARN = "on";
+      await settings.set("memoryLearn", "off");
+      await jobs.tick(new Date());
+      expect(await queued()).toBe(0); // the stored off wins over the variables' on
+      await q("delete from task where bot_id = $1", [worker]);
+    } finally {
+      if (was.a === undefined) delete process.env.ZETTA_MEMORY_LEARN;
+      else process.env.ZETTA_MEMORY_LEARN = was.a;
+      if (was.b === undefined) delete process.env.ZETTA_WIKI_LEARN;
+      else process.env.ZETTA_WIKI_LEARN = was.b;
+    }
   });
 
   test("phase 4 review: the chief fixes one group in a chat that no list shows, with the new upkeep actions", async () => {

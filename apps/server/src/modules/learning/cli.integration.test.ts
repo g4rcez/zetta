@@ -8,6 +8,7 @@ import { membership } from "@zetta/db/schema/identity";
 
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { claudeArgs, lightRunsOn, type CliInput } from "../chat/harness";
+import { createTestSettings } from "../settings/testing";
 import { withTokenAudit } from "./cli";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
@@ -46,17 +47,14 @@ describe("a light run (claudeArgs)", () => {
       expect(plain).not.toContain(f);
   });
 
-  test("is off until ZETTA_LIGHT_RUNS says on", () => {
-    const was = process.env.ZETTA_LIGHT_RUNS;
-    try {
-      delete process.env.ZETTA_LIGHT_RUNS;
-      expect(lightRunsOn()).toBe(false);
-      process.env.ZETTA_LIGHT_RUNS = "on";
-      expect(lightRunsOn()).toBe(true);
-    } finally {
-      if (was === undefined) delete process.env.ZETTA_LIGHT_RUNS;
-      else process.env.ZETTA_LIGHT_RUNS = was;
-    }
+  test("is off until the setting lightRuns says on, and follows a change with no restart", async () => {
+    const settings = createTestSettings();
+    expect(await lightRunsOn(settings.service)).toBe(false);
+    await settings.set("lightRuns", "on");
+    expect(await lightRunsOn(settings.service)).toBe(true);
+    await settings.set("lightRuns", "off");
+    expect(await lightRunsOn(settings.service)).toBe(false);
+    expect(await lightRunsOn()).toBe(false); // no service: the registry default
   });
 });
 

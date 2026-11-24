@@ -16,7 +16,9 @@ import { createChatRoutes, type ChatServices } from "./modules/chat/routes";
 import { createEventRoutes, type EventServices } from "./modules/events/routes";
 import { createComputerRoutes, type ComputerServices } from "./modules/computer/routes";
 import { createInstallationRoutes, type InstallationServices } from "./modules/installation/routes";
+import { createSettingsRoutes, type SettingsServices } from "./modules/settings/routes";
 import { createConnectionRoutes, type ConnectionServices } from "./modules/connections/routes";
+import { createMailRoutes, type MailServices } from "./modules/mail/routes";
 import { createIntegrationRoutes, type IntegrationServices } from "./modules/integrations/routes";
 import { createDecisionRoutes, type DecisionServices } from "./modules/decisions/routes";
 import { createFeatureRoutes, type FeatureServices } from "./modules/features/routes";
@@ -42,6 +44,9 @@ import {
   type LessonServices,
 } from "./modules/learning/routes";
 import { createTranscribeRoutes, type TranscribeServices } from "./modules/transcribe/routes";
+import { createSpeechRoutes, type SpeechServices } from "./modules/speech/routes";
+import { createVoiceRoutes, type VoiceServices } from "./modules/voice/routes";
+import { createPhoneRoutes, type PhoneServices } from "./modules/phone/routes";
 import { createOrgRoutes, type OrgServices } from "./modules/org/routes";
 import { createProjectRoutes, type ProjectServices } from "./modules/projects/routes";
 import { createArtifactRoutes, type ArtifactServices } from "./modules/artifacts/routes";
@@ -61,12 +66,14 @@ export type CreateAppOptions = {
   auth: AppAuth;
   identity?: IdentityServices;
   installation?: InstallationServices;
+  settings?: SettingsServices;
   chat?: ChatServices;
   events?: EventServices;
   features?: FeatureServices;
   decisions?: DecisionServices;
   computer?: ComputerServices;
   connections?: ConnectionServices;
+  mail?: MailServices;
   integrations?: IntegrationServices;
   agenda?: AgendaServices;
   tasks?: TaskServices;
@@ -77,6 +84,11 @@ export type CreateAppOptions = {
   learning?: LearningServices;
   lessons?: LessonServices;
   transcribe?: TranscribeServices;
+  speech?: SpeechServices;
+  /** Spoken conversations with a bot: ticket and WebSocket (modules/voice). */
+  voice?: VoiceServices;
+  /** Phone numbers of bots: request, approval, release, PIN (modules/phone). */
+  phone?: PhoneServices;
   preferences?: PreferenceServices;
   profile?: ProfileServices;
   avatars?: AvatarServices;
@@ -118,12 +130,14 @@ export function createApp({
   auth,
   identity,
   installation,
+  settings,
   chat,
   events,
   features,
   decisions,
   computer,
   connections,
+  mail,
   integrations,
   agenda,
   tasks,
@@ -134,6 +148,9 @@ export function createApp({
   learning,
   lessons,
   transcribe,
+  speech,
+  voice,
+  phone,
   preferences,
   profile,
   avatars,
@@ -236,6 +253,12 @@ export function createApp({
           ? createInstallationRoutes(installation, [webOrigin, ...desktopOrigins])
           : new Elysia(),
       )
+      // Typed as a plain Elysia: one more fully typed `.use` makes this chain too complex for the compiler.
+      .use(
+        settings
+          ? (createSettingsRoutes(settings, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
       .use(chat ? createChatRoutes(chat, [webOrigin, ...desktopOrigins]) : new Elysia())
       // Typed as a plain Elysia: one more fully typed `.use` makes this chain too complex for the compiler.
       .use(
@@ -251,6 +274,11 @@ export function createApp({
       .use(
         connections
           ? createConnectionRoutes(connections, [webOrigin, ...desktopOrigins])
+          : new Elysia(),
+      )
+      .use(
+        mail
+          ? (createMailRoutes(mail, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
           : new Elysia(),
       )
       .use(
@@ -300,6 +328,21 @@ export function createApp({
               webOrigin,
               ...desktopOrigins,
             ]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
+        speech
+          ? (createSpeechRoutes(speech, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
+        voice
+          ? (createVoiceRoutes(voice, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
+        phone
+          ? (createPhoneRoutes(phone, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
           : new Elysia(),
       )
       .use(

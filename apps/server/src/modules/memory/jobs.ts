@@ -16,6 +16,7 @@ import { defuse } from "../discussions/prompt";
 import { MemoryError, type Memory } from "./service";
 import { sanitize, type MemoryScreen } from "./screen";
 import { runMemoryTool } from "./tool";
+import { readSetting, type SettingsReader } from "../settings/service";
 
 type Job = typeof memoryJob.$inferSelect;
 /** The same turn runner the chat uses (chat/pipeline.ts), so the bot answers with its own engine, personality and memory. */
@@ -140,6 +141,8 @@ export function createMemoryJobs(
     screen?: MemoryScreen | undefined;
     /** Reads a web page as text for the owner (ingest by address). */
     readPage?: ((owner: string, url: string) => Promise<string>) | undefined;
+    /** Where the setting `memoryLearn` is read, each time the ticker looks for finished work. */
+    settings?: SettingsReader | undefined;
   },
 ) {
   let busy = false,
@@ -148,8 +151,8 @@ export function createMemoryJobs(
 
   /** Queues finished work of the last day once (a unique index keeps it to one job per task or loop). Chats only: never inbound or group transcripts. */
   async function enqueueFinished(now: Date) {
-    // ZETTA_WIKI_LEARN is the old name of the setting.
-    if ((process.env.ZETTA_MEMORY_LEARN ?? process.env.ZETTA_WIKI_LEARN) === "off") return;
+    // The organization id is passed here when workspaces exist.
+    if ((await readSetting(deps.settings, "memoryLearn")) === "off") return;
     const after = new Date(now.getTime() + SETTLE_MS);
     await db.$client.query(
       `insert into memory_job (owner_user_id, kind, source, source_id, bot_id, conversation_id, run_after)

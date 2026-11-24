@@ -1,10 +1,10 @@
 import type { Runner } from "./types";
 
 /**
- * The host runner starts a script as the server's own OS user, exactly like a bot's Bash. `ZETTA_CODE_ACCESS=off` (set by the operator,
- * or by services.ts when the install is open to the network and bots do not run in Docker) turns that off for bots, and so for people too.
+ * The host runner starts a script as the server's own OS user, exactly like a bot's Bash. The setting `codeAccess` being off, or an install
+ * open to the network where bots do not run in Docker (settings/code-access.ts), turns that off for bots, and so for people too. The
+ * gate is `hostCode` of `pickRunner`, built in services.ts from that policy.
  */
-export const hostCodeFromEnv = () => process.env.ZETTA_CODE_ACCESS !== "off";
 
 export type Picked = { runner: Runner } | { refused: "host_off" | "not_set_up" };
 

@@ -13,6 +13,7 @@ import { learningRun, type BotLessonRow, type LearningRunRow } from "@zetta/db/s
 import { firstObject } from "../chat/bot-interview";
 import { topics } from "@zetta/core/live-topics";
 import type { NativeHarness, RunCli } from "../chat/harness";
+import { readSetting, type SettingsReader } from "../settings/service";
 import { events } from "../events/bus";
 import { raiseAttention } from "../features/attention";
 import { LessonError, type Lessons } from "./lessons";
@@ -59,7 +60,13 @@ type PassResult = { run?: LearningRunRow; reason?: string; done?: Promise<Learni
 
 export function createBatch(
   db: Database,
-  deps: { lessons: Lessons; cli: RunCli; now?: () => Date },
+  deps: {
+    lessons: Lessons;
+    cli: RunCli;
+    now?: () => Date;
+    /** Where the setting `lessonBatch` (the installation switch above each person's own) is read, on every tick. */
+    settings?: SettingsReader;
+  },
 ) {
   const now = () => deps.now?.() ?? new Date();
   const dayOf = (d: Date) => d.toISOString().slice(0, 10);
@@ -411,7 +418,8 @@ export function createBatch(
      * has not been read today, its person lets the daily pass run, and it learns (`autoLearn` is not off). Most ticks find nothing.
      */
     async tick() {
-      if (busy || process.env.ZETTA_LESSON_BATCH === "off") return 0;
+      // The organization id is passed here when workspaces exist.
+      if (busy || (await readSetting(deps.settings, "lessonBatch")) === "off") return 0;
       busy = true;
       try {
         const at = now();

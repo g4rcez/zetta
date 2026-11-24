@@ -10,6 +10,7 @@ import { createApp } from "../../app";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess } from "../identity/access";
 import { createArtifactStore, type Artifact } from "./store";
+import { createTestSettings } from "../settings/testing";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -28,6 +29,7 @@ suite("artifacts against compose postgres", () => {
     },
     async () => ({ isAdmin: false }),
   );
+  const settings = createTestSettings();
   let root: string;
   let artifacts: ReturnType<typeof createArtifactStore>;
   let app: ReturnType<typeof createApp>;
@@ -42,7 +44,7 @@ suite("artifacts against compose postgres", () => {
 
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), "artifacts-it-"));
-    artifacts = createArtifactStore(db, root);
+    artifacts = createArtifactStore(db, root, settings.service);
     app = createApp({
       auth: { handler: () => new Response("n/a"), api: { getSession: async () => null } } as never,
       artifacts: { access, artifacts },
@@ -176,7 +178,7 @@ suite("artifacts against compose postgres", () => {
     const before = (
       (await (await call(ids[0]!, "GET", "/api/artifacts/usage")).json()) as { used: number }
     ).used;
-    process.env.ZETTA_ARTIFACTS_QUOTA = String(before + 100);
+    await settings.set("artifactsQuota", before + 100);
     try {
       await publish(ids[0]!, "y".repeat(50), "ok.txt", "Fits");
       await publish(ids[0]!, "y".repeat(50), "again.txt", "Same bytes again");
@@ -188,7 +190,52 @@ suite("artifacts against compose postgres", () => {
         code: "QUOTA",
       });
     } finally {
-      delete process.env.ZETTA_ARTIFACTS_QUOTA;
+      await settings.unset("artifactsQuota");
+    }
+  });
+  test("the quota is the setting: lowering and raising it changes the next publish, with no restart", async () => {
+    const usage = async () =>
+      (await (await call(ids[0]!, "GET", "/api/artifacts/usage")).json()) as {
+        used: number;
+        quota: number;
+      };
+    const { used } = await usage();
+    try {
+      await settings.set("artifactsQuota", used + 10);
+      expect((await usage()).quota).toBe(used + 10);
+      await expect(publish(ids[0]!, "q".repeat(40), "q1.txt", "Q1")).rejects.toMatchObject({
+        code: "QUOTA",
+      });
+      await settings.set("artifactsQuota", used + 1000);
+      expect((await usage()).quota).toBe(used + 1000);
+      await publish(ids[0]!, "q".repeat(40), "q1.txt", "Q1");
+      // Lowered below what the person already keeps: nothing is deleted, the next new file is refused.
+      await settings.set("artifactsQuota", 1);
+      expect((await usage()).used).toBeGreaterThan(1);
+      await expect(publish(ids[0]!, "r".repeat(8), "r1.txt", "R1")).rejects.toMatchObject({
+        code: "QUOTA",
+      });
+      await settings.unset("artifactsQuota");
+      expect((await usage()).quota).toBe(5 * 1024 ** 3); // the registry default
+      await publish(ids[0]!, "r".repeat(8), "r1.txt", "R1");
+    } finally {
+      await settings.unset("artifactsQuota");
+    }
+  });
+  test("the old variable ZETTA_ARTIFACTS_QUOTA has no effect", async () => {
+    const was = process.env.ZETTA_ARTIFACTS_QUOTA;
+    try {
+      process.env.ZETTA_ARTIFACTS_QUOTA = "1";
+      const usage = async () =>
+        (await (await call(ids[0]!, "GET", "/api/artifacts/usage")).json()) as { quota: number };
+      expect((await usage()).quota).toBe(5 * 1024 ** 3); // nothing stored: the default
+      await settings.set("artifactsQuota", 123456789);
+      process.env.ZETTA_ARTIFACTS_QUOTA = "2";
+      expect((await usage()).quota).toBe(123456789);
+    } finally {
+      await settings.unset("artifactsQuota");
+      if (was === undefined) delete process.env.ZETTA_ARTIFACTS_QUOTA;
+      else process.env.ZETTA_ARTIFACTS_QUOTA = was;
     }
   });
   test("a write needs a trusted origin", async () => {

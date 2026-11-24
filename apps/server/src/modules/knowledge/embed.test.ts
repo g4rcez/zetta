@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createLocalEmbedder } from "./embed";
+import { createTestSettings } from "../settings/testing";
 
 describe("embedding queue", () => {
   // A fake model that takes 40 ms per batch and records the order of the texts it saw.
@@ -37,5 +38,39 @@ describe("embedding queue", () => {
     await expect(late).rejects.toThrow("slow");
     await backlog;
     expect(order).not.toContain("query: too late");
+  });
+});
+
+describe("the setting embedding", () => {
+  const extractor = async (texts: string[]) => texts.map(() => [1]);
+
+  test("off refuses to embed, on embeds again, in the same process with no restart", async () => {
+    const settings = createTestSettings();
+    const e = createLocalEmbedder({ extractor, settings: settings.service });
+    expect(await e.embed(["a"], "query")).toEqual([[1]]); // the default is on
+    await settings.set("embedding", "off");
+    await expect(e.embed(["a"], "query")).rejects.toThrow("embedding disabled");
+    await settings.set("embedding", "on");
+    expect(await e.embed(["a"], "query")).toEqual([[1]]);
+    await settings.set("embedding", "off");
+    await settings.unset("embedding");
+    expect(await e.embed(["a"], "query")).toEqual([[1]]);
+  });
+
+  test("the old variable ZETTA_EMBEDDING has no effect", async () => {
+    const was = process.env.ZETTA_EMBEDDING;
+    try {
+      process.env.ZETTA_EMBEDDING = "off";
+      const settings = createTestSettings();
+      const e = createLocalEmbedder({ extractor, settings: settings.service });
+      expect(await e.embed(["a"], "query")).toEqual([[1]]); // nothing stored: the default, not the variable
+      expect(await createLocalEmbedder({ extractor }).embed(["a"], "query")).toEqual([[1]]);
+      process.env.ZETTA_EMBEDDING = "on";
+      await settings.set("embedding", "off");
+      await expect(e.embed(["a"], "query")).rejects.toThrow("embedding disabled"); // the stored off wins
+    } finally {
+      if (was === undefined) delete process.env.ZETTA_EMBEDDING;
+      else process.env.ZETTA_EMBEDDING = was;
+    }
   });
 });

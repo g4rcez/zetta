@@ -27,10 +27,22 @@ describe("isWorkerOnly", () => {
     ["GET", "/api/computer/vms"],
     ["POST", "/api/proposals/p1/decision"],
     ["GET", "/api/harnesses"],
+    ["POST", "/api/voice/ticket"],
+    ["GET", "/api/voice/socket"],
+    ["POST", "/api/phone/webhook"],
+    ["POST", "/api/phone/twilio/voice"],
+    ["POST", "/api/phone/twilio/status"],
+    ["GET", "/api/phone/stream"],
+    ["POST", "/api/phone/calls/c1/hangup"],
+    ["PUT", "/api/connections/phone-key"],
+    ["PUT", "/api/connections/phone-twilio-key"],
+    ["PUT", "/api/connections/waha-key"],
     ["GET", "/api/connections/transport-key"],
     ["POST", "/api/plugins"],
     ["PUT", "/api/plugins/telegram/config"],
     ["POST", "/api/plugins/telegram/connect"],
+    ["POST", "/api/mailboxes"],
+    ["PATCH", "/api/mailboxes/m1"],
   ])("%s %s needs the worker", (method, path) => {
     expect(isWorkerOnly(method, path)).toBe(true);
   });
@@ -42,6 +54,14 @@ describe("isWorkerOnly", () => {
     ["GET", "/api/routines"],
     ["DELETE", "/api/conversations/c1/queue/m1"],
     ["GET", "/api/proposals"],
+    ["GET", "/api/mailboxes"],
+    ["DELETE", "/api/mailboxes/m1"],
+    ["GET", "/api/mailboxes/m1/conversations/c1"],
+    ["GET", "/api/mailboxes/m1/conversations/c1/attachments/a1"],
+    ["GET", "/api/mail/detect"],
+    ["GET", "/api/voice/capabilities"],
+    ["GET", "/api/phone/health"],
+    ["GET", "/api/phone/offer"],
   ])("%s %s can be served by any instance", (method, path) => {
     expect(isWorkerOnly(method, path)).toBe(false);
   });
@@ -103,6 +123,7 @@ describe("docker/scale/Caddyfile", () => {
     section("worker_any"),
     section("worker_post"),
     section("worker_put"),
+    section("worker_patch"),
     section("worker_get"),
   ];
   const balancerSaysWorker = (method: string, path: string) =>
@@ -137,6 +158,25 @@ describe("docker/scale/Caddyfile", () => {
     ["GET", "/api/plugins/catalog"],
     ["GET", "/api/plugins"],
     ["GET", "/api/connections"],
+    ["POST", "/api/voice/ticket"],
+    ["GET", "/api/voice/socket"],
+    ["GET", "/api/voice/capabilities"],
+    ["POST", "/api/phone/webhook"],
+    ["POST", "/api/phone/twilio/voice"],
+    ["POST", "/api/phone/twilio/status"],
+    ["GET", "/api/phone/twilio/voice"],
+    ["PUT", "/api/connections/phone-key"],
+    ["PUT", "/api/connections/phone-twilio-key"],
+    ["PUT", "/api/connections/waha-key"],
+    ["GET", "/api/phone/stream"],
+    ["POST", "/api/phone/calls/c1/hangup"],
+    ["GET", "/api/phone/health"],
+    ["GET", "/api/phone/offer"],
+    ["POST", "/api/mailboxes"],
+    ["PATCH", "/api/mailboxes/m1"],
+    ["GET", "/api/mailboxes"],
+    ["DELETE", "/api/mailboxes/m1"],
+    ["GET", "/api/mailboxes/m1/conversations/c1/attachments/a1"],
   ])("%s %s is routed the same by the balancer and the server", (method, path) => {
     expect(balancerSaysWorker(method, path)).toBe(isWorkerOnly(method, path));
   });

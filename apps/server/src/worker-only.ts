@@ -10,6 +10,12 @@ type Rule = { methods?: readonly string[]; path: RegExp };
  */
 export const WORKER_ONLY: readonly Rule[] = [
   { path: /^\/api\/computer(\/|$)/ },
+  // A spoken call: the ticket lives in the memory of the process that serves the socket, and the call runs the bot's turn.
+  { path: /^\/api\/voice\/(ticket|socket)$/ },
+  // A phone call: the provider's events (Telnyx's webhook, Twilio's voice and status webhooks) and its audio socket reach the process that holds the call and runs the bot's turn.
+  { path: /^\/api\/phone\/(webhook|stream|twilio\/(voice|status))$/ },
+  // A person's "Hang up" on a call a bot placed: the call lives in the process that dialled it.
+  { methods: ["POST"], path: /^\/api\/phone\/calls\/[^/]+\/hangup$/ },
   { path: /^\/api\/harnesses$/ },
   { path: /^\/api\/inbound\// },
   // A webhook starts a run in the worker: the bot turn and its stream live in that process.
@@ -20,6 +26,14 @@ export const WORKER_ONLY: readonly Rule[] = [
   { methods: ["GET"], path: /^\/api\/connections\/transport-key$/ },
   { methods: ["POST"], path: /^\/api\/(connections|plugins)$/ },
   { methods: ["PUT"], path: /^\/api\/plugins\/[^/]+\/config$/ },
+  // An installation key (speech to text, text to speech, bot e-mail, phone, WhatsApp server) also arrives sealed to that key.
+  {
+    methods: ["PUT"],
+    path: /^\/api\/connections\/(transcribe|speech|mail|phone|phone-twilio|waha)-key$/,
+  },
+  // A mailbox's password arrives sealed to that same key (connecting one, or changing its password or servers).
+  { methods: ["POST"], path: /^\/api\/mailboxes$/ },
+  { methods: ["PATCH"], path: /^\/api\/mailboxes\/[^/]+$/ },
   { path: /^\/api\/bots\/[^/]+\/onboarding(\/|$)/ },
   { methods: ["POST"], path: /^\/api\/(workflows|routines)\/[^/]+\/run$/ },
   { methods: ["POST"], path: /^\/api\/(bots\/interview|(memory|wiki)-assist)$/ },

@@ -13,6 +13,7 @@ import type { CliInput } from "../chat/harness";
 import { createMemory } from "../memory/service";
 import { createBatch, RunError } from "./batch";
 import { createLessons } from "./lessons";
+import { createTestSettings } from "../settings/testing";
 
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -445,5 +446,62 @@ suite("the daily pass: chats in, candidate lessons out, every quote checked", ()
           .orderBy(desc(learningRun.startedAt))
       )[0]!.day,
     ).toBe(clock.toISOString().slice(0, 10));
+  });
+
+  describe("the setting lessonBatch is the installation switch above each person's own", () => {
+    const withSettings = () => {
+      const settings = createTestSettings();
+      const gated = createBatch(db, {
+        lessons,
+        now: () => clock,
+        settings: settings.service,
+        cli: async () => JSON.stringify({ candidates: [] }),
+      });
+      return { settings, gated };
+    };
+    const due = async () => {
+      const p = await person();
+      await p.talk(await p.chat(), "Keep the greeting formal.");
+      return p;
+    };
+    const ranFor = (id: string) =>
+      db.select().from(learningRun).where(eq(learningRun.ownerUserId, id));
+
+    test("off stops the daily reading, on starts it again, in the same process with no restart", async () => {
+      const { settings, gated } = withSettings();
+      const first = await due();
+      await settings.set("lessonBatch", "off");
+      for (let i = 0; i < 5; i++) expect(await gated.tick()).toBe(0);
+      expect(await ranFor(first.id)).toHaveLength(0);
+      await settings.set("lessonBatch", "on");
+      for (let i = 0; i < 20 && (await gated.tick()); i++);
+      expect(await ranFor(first.id)).toHaveLength(1);
+      await settings.set("lessonBatch", "off");
+      const second = await due();
+      for (let i = 0; i < 5; i++) expect(await gated.tick()).toBe(0);
+      expect(await ranFor(second.id)).toHaveLength(0);
+      await settings.unset("lessonBatch"); // the registry default is on
+      for (let i = 0; i < 20 && (await gated.tick()); i++);
+      expect(await ranFor(second.id)).toHaveLength(1);
+    });
+
+    test("the old variable ZETTA_LESSON_BATCH has no effect", async () => {
+      const was = process.env.ZETTA_LESSON_BATCH;
+      try {
+        process.env.ZETTA_LESSON_BATCH = "off";
+        const { settings, gated } = withSettings();
+        const one = await due();
+        for (let i = 0; i < 20 && (await gated.tick()); i++);
+        expect(await ranFor(one.id)).toHaveLength(1); // nothing stored: the default (on), not the variable
+        process.env.ZETTA_LESSON_BATCH = "on";
+        await settings.set("lessonBatch", "off");
+        const two = await due();
+        for (let i = 0; i < 5; i++) expect(await gated.tick()).toBe(0);
+        expect(await ranFor(two.id)).toHaveLength(0); // the stored off wins over the variable's on
+      } finally {
+        if (was === undefined) delete process.env.ZETTA_LESSON_BATCH;
+        else process.env.ZETTA_LESSON_BATCH = was;
+      }
+    });
   });
 });

@@ -27,15 +27,6 @@ const NOT_RUNNABLE: (Entry & { note: string })[] = [
 
 export const hasBrowser = (os: OsId) => RUNNABLE.find((o) => o.id === os)?.browser ?? false;
 
-/** `ZETTA_VM_OS=debian,ubuntu`: the systems an operator offers (the image for each must be built). Unknown names are dropped; empty means debian only. */
-export function vmOsFrom(raw: string | undefined): OsId[] {
-  const named = (raw ?? "")
-    .split(",")
-    .map((x) => x.trim())
-    .filter((x): x is OsId => (OS_IDS as readonly string[]).includes(x));
-  return named.length ? [...new Set(named)] : ["debian"];
-}
-
 /** The list a person picks from: every system, with whether it can be created now and why not. */
 export function osOptions(offered: readonly OsId[]) {
   return [
@@ -45,7 +36,9 @@ export function osOptions(offered: readonly OsId[]) {
       label: o.label,
       browser: o.browser,
       available: offered.includes(o.id),
-      ...(offered.includes(o.id) ? {} : { note: "Not turned on for this server (ZETTA_VM_OS)." }),
+      ...(offered.includes(o.id)
+        ? {}
+        : { note: "Not turned on for this server (Studio > Server settings)." }),
     })),
     ...NOT_RUNNABLE.map((o) => ({ ...o, browser: false, available: false })),
   ];

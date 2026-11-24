@@ -212,16 +212,20 @@ export function createComputerRoutes(
       )
       .get(
         "/capabilities",
-        g(async () => ({
-          ...computer.capabilities(),
-          desktop: Boolean(vms),
-          desktopBackend: vms ? "vm" : null,
-          targets: vms?.options().targets ?? { vm: [], local: [] },
-          os: vms?.options().os ?? [],
-          note: vms
-            ? "Each user has a persistent Linux desktop (Debian + Chromium); bots can ask for more. Browser sessions are separate."
-            : computer.capabilities().note,
-        })),
+        g(async () => {
+          // The drivers and systems on offer are the settings `vmDrivers` and `vmOs`, read now.
+          const offered = await vms?.options();
+          return {
+            ...computer.capabilities(),
+            desktop: Boolean(vms),
+            desktopBackend: vms ? "vm" : null,
+            targets: offered?.targets ?? { vm: [], local: [] },
+            os: offered?.os ?? [],
+            note: vms
+              ? "Each user has a persistent Linux desktop (Debian + Chromium); bots can ask for more. Browser sessions are separate."
+              : computer.capabilities().note,
+          };
+        }),
       )
       .get(
         "/vms",

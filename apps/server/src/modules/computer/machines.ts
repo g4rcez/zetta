@@ -9,6 +9,7 @@ import { audit } from "../features/audit";
 import type { ConnectionsService } from "../connections/service";
 import type { DeviceService } from "../devices/service";
 import type { ActiveActor } from "../identity/access";
+import { privateAllowed, type PrivateNetwork } from "../settings/private-network";
 import {
   fingerprintOf,
   type ExecResult,
@@ -66,7 +67,7 @@ export type MachineDeps = {
   connections: ConnectionsService;
   runner: MachineRunner;
   /** Same switch as the browser: private, loopback and link-local hosts stay blocked unless the operator allows them. */
-  allowPrivate?: boolean;
+  allowPrivate?: PrivateNetwork;
   maxPerUser?: number;
   resolve?: (host: string) => Promise<string[]>;
   /** Computers paired through the desktop app: a bot reaches them by name like a machine (run and list). */
@@ -77,7 +78,7 @@ export function createMachineService({
   db,
   connections,
   runner,
-  allowPrivate = false,
+  allowPrivate: privateNetwork = false,
   maxPerUser = 20,
   resolve = async (h) => (await lookup(h, { all: true })).map((a) => a.address),
   devices,
@@ -89,6 +90,7 @@ export function createMachineService({
   async function address(host: string): Promise<string> {
     if (!SAFE_HOST.test(host)) throw new ComputerError("INVALID");
     const h = host.toLowerCase();
+    const allowPrivate = await privateAllowed(privateNetwork);
     if (!allowPrivate && (h === "localhost" || /\.(localhost|local|internal)$/.test(h)))
       throw new ComputerError("BLOCKED_URL");
     const ips = isIP(h) ? [h] : await resolve(h).catch(() => []);

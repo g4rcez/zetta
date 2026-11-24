@@ -18,6 +18,9 @@ import {
   botQualityServices,
   learningServices,
   transcribeServices,
+  speechServices,
+  voiceServices,
+  phoneServices,
   catchUpServices,
   preferenceServices,
   profileServices,
@@ -37,6 +40,8 @@ import {
   db,
   computerServices,
   connectionServices,
+  mailPoller,
+  mailServices,
   discussionServices,
   teamServices,
   inboundServices,
@@ -47,6 +52,7 @@ import {
   featureServices,
   identity,
   installationServices,
+  settingsServices,
   eventServices,
   loopServices,
   taskFollowUp,
@@ -98,12 +104,14 @@ createApp({
   auth,
   identity,
   installation: installationServices,
+  settings: settingsServices,
   chat: chatServices,
   events: eventServices,
   features: featureServices,
   decisions: decisionServices,
   computer: computerServices,
   connections: connectionServices,
+  mail: mailServices,
   integrations: integrationServices,
   agenda: agendaServices,
   tasks: taskServices,
@@ -113,6 +121,9 @@ createApp({
   learning: learningServices,
   lessons: lessonServices,
   transcribe: transcribeServices,
+  speech: speechServices,
+  voice: voiceServices,
+  phone: phoneServices,
   catchUp: catchUpServices,
   preferences: preferenceServices,
   profile: profileServices,
@@ -181,6 +192,8 @@ if (runsWork) {
   async function recoverDead(boot: boolean) {
     const scope = await instance.recoveryScope(boot);
     await chatServices.chat.recoverInterrupted(scope);
+    // A spoken call whose server is gone cannot be live any more.
+    await voiceServices.voice.recover(scope);
     // A `bun --hot` reload keeps the instance id, so its own running turns are not "dead": the once-per-process guards only save work.
     await Promise.all([
       discussionServices.store.recover(scope),
@@ -231,6 +244,11 @@ if (runsWork) {
     void background.run("chat:summaries", () => chatSummaries.tick());
     void background.run("rooms", () => discussionServices.worker.tick());
     void background.run("inbound", () => inboundServices.inbound.tick());
+    void background.run("mail:bot-addresses", () => mailPoller.tick());
+    void background.run("phone:numbers", async () => {
+      await phoneServices.phone.syncPending();
+      await phoneServices.phone.releaseExpired();
+    });
     void background.run("loops", () => loopServices.driver.tick());
     void background.run("tasks:heartbeat", () => taskFollowUp.heartbeat.tick());
     void background.run("work:scan", () => workServices.scan.due());

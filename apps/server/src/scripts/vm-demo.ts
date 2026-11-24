@@ -23,6 +23,8 @@ import { join } from "node:path";
 import { ComputerError } from "../modules/computer/service";
 import { DRIVERS, type DriverName } from "../modules/computer/drivers/types";
 import { createVmService, dockerVmConfig, type VmRow, type VmStore } from "../modules/computer/vm";
+import { settingDefault, type SettingKey } from "@zetta/core/settings";
+import type { SettingsReader } from "../modules/settings/service";
 
 const mode = process.argv[2];
 const machines = mode === "machines";
@@ -100,8 +102,19 @@ const vms = createVmService({
   store,
   docker,
   tokenRoot: await mkdtemp(join(tmpdir(), "zetta-vm-demo-")),
-  vmDrivers: machines ? [...DRIVERS] : [driver],
-  vmOs: machines ? ["debian", "ubuntu"] : ["debian"],
+  // The demo offers what it needs: the settings vmDrivers and vmOs, everything else the registry default.
+  settings: {
+    get: async (key: SettingKey) =>
+      key === "vmDrivers"
+        ? machines
+          ? [...DRIVERS]
+          : [driver]
+        : key === "vmOs"
+          ? machines
+            ? ["debian", "ubuntu"]
+            : ["debian"]
+          : settingDefault(key),
+  } as SettingsReader,
 });
 
 const t0 = Date.now();
@@ -182,7 +195,7 @@ async function machinesDemo() {
   await shot(first.id, "debian-terminal");
 
   say("Create a second computer: Ubuntu 24.04, driven by agent-desktop");
-  const options = vms.options();
+  const options = await vms.options();
   console.log(
     `   systems offered: ${options.os.map((o) => `${o.label}${o.available ? "" : " (not available)"}`).join(", ")}`,
   );

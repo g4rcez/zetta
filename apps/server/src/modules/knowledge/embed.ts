@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { dataDir } from "@zetta/core/zetta-home";
 import { join } from "node:path";
+import { readSetting, type SettingsReader } from "../settings/service";
 
 /** Turns text into vectors that are close when the meaning is close, across languages. `query` and `passage` use the model's two prefixes. */
 export type Embedder = {
@@ -36,11 +37,16 @@ const BATCH = 8;
  * The embedding model runs inside the server process (ONNX/WASM through @huggingface/transformers): no API key, and no text leaves
  * the machine. The model files download once into ZETTA_EMBEDDING_MODEL_DIR (default ~/.cache/zetta/models); pre-seed that folder
  * for an offline server. It loads on first use and runs one batch at a time; a query goes ahead of queued passage batches, so bulk
- * indexing does not starve chat retrieval. ZETTA_EMBEDDING=off turns it off (keyword search only).
+ * indexing does not starve chat retrieval. The setting `embedding` (Studio > Server settings) turns it off (keyword search only), read on every call.
  */
 export function createLocalEmbedder(
-  opts: { cacheDir?: string; extractor?: (texts: string[]) => Promise<number[][]> } = {},
+  opts: {
+    cacheDir?: string;
+    extractor?: (texts: string[]) => Promise<number[][]>;
+    settings?: SettingsReader;
+  } = {},
 ): Embedder {
+  const settings = opts.settings;
   let extractor: Promise<(texts: string[]) => Promise<number[][]>> | undefined;
   let busy = false;
   const queries: (() => void)[] = [];
@@ -90,7 +96,9 @@ export function createLocalEmbedder(
   };
   return {
     async embed(texts, kind, opts) {
-      if (process.env.ZETTA_EMBEDDING === "off") throw new Error("embedding disabled");
+      // The organization id is passed here when workspaces exist.
+      if ((await readSetting(settings, "embedding")) === "off")
+        throw new Error("embedding disabled");
       const out: number[][] = [];
       for (let i = 0; i < texts.length; i += BATCH) {
         await acquire(kind, opts?.signal);

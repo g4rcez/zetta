@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vp dev",
+    "dev": "bun vite/dev.ts",
     "build": "vp build",
     "serve": "vp preview",
-    "start": "vp dev",
+    "start": "bun vite/dev.ts",
     "check-types": "vp build && tsc --noEmit",
     "env:generate": "varlock codegen"
   },

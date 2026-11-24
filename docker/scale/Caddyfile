@@ -1,14 +1,18 @@
 # Load balancer for docker-compose.scale.yml. Requests that need the worker (turns, harnesses, browsers, VMs) go to it; everything else
 # is spread over the api instances. The patterns below must match apps/server/src/worker-only.ts: worker-only.test.ts checks that they do.
 :3000 {
-	@worker_any path_regexp ^/api/(computer(/|$)|harnesses$|inbound/|decisions(/|$)|bots/[^/]+/onboarding(/|$)|plugins/[^/]+/(test|connect|disconnect|callback|complete)$)
+	@worker_any path_regexp ^/api/(computer(/|$)|voice/(ticket|socket)$|phone/(webhook|stream|twilio/(voice|status))$|phone/calls/[^/]+/hangup$|harnesses$|inbound/|decisions(/|$)|bots/[^/]+/onboarding(/|$)|plugins/[^/]+/(test|connect|disconnect|callback|complete)$)
 	@worker_post {
 		method POST
-		path_regexp ^/api/(workflows/[^/]+/run|routines/[^/]+/run|routines/hook/[^/]+|bots/interview|(memory|wiki)-assist|proposals/[^/]+/decision|conversations/[^/]+/(stream|chat|messages|queue|cancel|turn/wait)|conversations/[^/]+/queue/[^/]+/retry|connections|plugins)$
+		path_regexp ^/api/(workflows/[^/]+/run|routines/[^/]+/run|routines/hook/[^/]+|bots/interview|(memory|wiki)-assist|proposals/[^/]+/decision|conversations/[^/]+/(stream|chat|messages|queue|cancel|turn/wait)|conversations/[^/]+/queue/[^/]+/retry|connections|plugins|mailboxes)$
 	}
 	@worker_put {
 		method PUT
-		path_regexp ^/api/plugins/[^/]+/config$
+		path_regexp ^/api/(plugins/[^/]+/config|connections/(transcribe|speech|mail|phone|phone-twilio|waha)-key)$
+	}
+	@worker_patch {
+		method PATCH
+		path_regexp ^/api/mailboxes/[^/]+$
 	}
 	@worker_get {
 		method GET
@@ -27,6 +31,11 @@
 		}
 	}
 	handle @worker_put {
+		reverse_proxy worker:3000 {
+			flush_interval -1
+		}
+	}
+	handle @worker_patch {
 		reverse_proxy worker:3000 {
 			flush_interval -1
 		}

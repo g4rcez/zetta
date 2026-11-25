@@ -47,6 +47,8 @@ import notion from "./logos/notion.png";
 import obsidian from "./logos/obsidian.svg";
 import onepassword from "./logos/1password.svg";
 import openbao from "./logos/openbao.svg";
+import telnyx from "./logos/telnyx.png";
+import twilio from "./logos/twilio.png";
 import playwright from "./logos/playwright.svg";
 import postgresql from "./logos/postgresql.svg";
 import posthog from "./logos/posthog.svg";
@@ -114,6 +116,8 @@ const LOGOS: Record<string, { src: string; plate?: boolean; corners?: "round" | 
   "1password": { src: onepassword },
   bitwarden: { src: bitwarden },
   openbao: { src: openbao, corners: "none" },
+  telnyx: { src: telnyx },
+  twilio: { src: twilio },
   postgres: { src: postgresql },
   slack: { src: slack, corners: "none" },
   trello: { src: trello, corners: "none" },

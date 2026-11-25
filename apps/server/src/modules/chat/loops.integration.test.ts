@@ -239,4 +239,45 @@ suite("goal loops that retry failed steps against compose postgres", () => {
     expect(again.status).toBe("running");
     await loops.setStatus(A, loop.id, "cancelled");
   });
+
+  test("every change the person can see is told to the live channel, for the owner's chat", async () => {
+    const told: string[] = [];
+    loops.onChange = (conversationId, owner) => told.push(`${conversationId}:${owner}`);
+    try {
+      script = [async () => ({ status: "failed", error: "auth_required" })];
+      const loop = await newLoop(); // started
+      const chat = `${loop.conversationId}:${A}`;
+      expect(told).toContain(chat);
+      await waitFor(row(loop.id), (l) => l.status === "paused"); // the pause and the step count
+      const before = told.length;
+      expect(before).toBeGreaterThan(1);
+      script = [async () => ({ status: "failed", error: "timeout" })];
+      await loops.setStatus(A, loop.id, "running"); // resumed from the banner
+      expect(told.length).toBeGreaterThan(before);
+      const mid = told.length;
+      await loops.setStatus(A, loop.id, "cancelled"); // stopped from the banner
+      expect(told.length).toBeGreaterThan(mid);
+      expect(told.every((t) => t === chat)).toBe(true);
+      const quiet = told.length;
+      await loops.setStatus(A, loop.id, "cancelled"); // nothing changed: nothing to tell
+      expect(told.length).toBe(quiet);
+    } finally {
+      loops.onChange = undefined;
+    }
+  });
+
+  test("a hint that throws never breaks the write", async () => {
+    loops.onChange = () => {
+      throw new Error("bus down");
+    };
+    try {
+      script = [async () => ({ status: "failed", error: "auth_required" })];
+      const loop = await newLoop();
+      const paused = await waitFor(row(loop.id), (l) => l.status === "paused");
+      expect(paused.status).toBe("paused");
+      await loops.setStatus(A, loop.id, "cancelled");
+    } finally {
+      loops.onChange = undefined;
+    }
+  });
 });

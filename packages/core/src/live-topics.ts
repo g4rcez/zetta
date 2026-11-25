@@ -7,6 +7,10 @@ export const topics = {
   conversation: (id: string) => `conversation:${id}`,
   rooms: "rooms",
   discussion: (id: string) => `discussion:${id}`,
+  /** The running turn of a chat saved new steps or activity: its turn state refetches (a chat follows its stream for the rest). */
+  turn: (conversationId: string) => `turn:${conversationId}`,
+  /** A plugin's connection state changed on its server (for example a WhatsApp session got linked): its status and pairing queries refetch. */
+  pluginStatus: (pluginId: string) => `plugin-status:${pluginId}`,
   botStatus: "bot-status",
   bots: "bots",
   /** A bot's saved tests ran or changed, or a reply of it was rated: its History, Saved tests and Performance sections refetch. */

@@ -21,7 +21,7 @@ import {
 
 const POLL_MS = 15_000;
 
-/** The server's view of this chat's turn, read every 15 s while the tab is visible and a turn is `active` (otherwise once, and on focus).
+/** The server's view of this chat's turn. The live channel refetches it when the turn saves new steps (`turn:<id>`); a 15 s poll while a turn is `active` backs that up (otherwise once, and on focus).
  * It is the server's view, not the stream's: a turn can run on after the stream closed. */
 export function useTurnState(conversationId: string | undefined, active: boolean) {
   const query = useQuery({
@@ -32,7 +32,11 @@ export function useTurnState(conversationId: string | undefined, active: boolean
   });
   const { refetch } = query;
   const refresh = useCallback(async () => void (await refetch()), [refetch]);
-  return { state: conversationId ? query.data : undefined, refresh };
+  return {
+    state: conversationId ? query.data : undefined,
+    refresh,
+    updatedAt: query.dataUpdatedAt,
+  };
 }
 
 const minutes = (ms: number) => Math.max(1, Math.round(ms / 60_000));

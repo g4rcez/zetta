@@ -7,7 +7,9 @@ import { attentionItem, auditEvent, configProposal } from "@zetta/db/schema/feat
 import { membership } from "@zetta/db/schema/identity";
 import { task } from "@zetta/db/schema/tasks";
 import { message } from "@zetta/db/schema/chat";
+import { topics } from "@zetta/core/live-topics";
 import { createApp } from "../../app";
+import { events } from "../events/bus";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess } from "../identity/access";
 import { createChatService } from "./service";
@@ -291,6 +293,8 @@ suite("bot status against postgres", () => {
           conversation: { id: string };
         }
       ).conversation;
+      const told: string[] = [];
+      const off = events.subscribe(ids[0]!, (t) => told.push(t));
       const turn = await call(ids[0]!, "POST", `/api/conversations/${conv.id}/stream`, {
         content: "hello",
       });
@@ -308,6 +312,10 @@ suite("bot status against postgres", () => {
       // Still running, and the row already says what the bot did and does.
       expect(meta?.timeline?.map((t) => t.label)).toEqual(["Reading a.ts"]);
       expect(meta?.activity).toBe("Reading a.ts");
+      // A page that does not follow the stream is told to read the turn state again, and only that (a plain chat, not a room).
+      for (let i = 0; i < 40 && !told.includes(topics.turn(conv.id)); i++) await Bun.sleep(25);
+      off();
+      expect(told).toContain(topics.turn(conv.id));
       gates.first.open();
       gates.last.open();
       await until(ids[0]!, botId, "available");

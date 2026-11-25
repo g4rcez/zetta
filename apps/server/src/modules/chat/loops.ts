@@ -44,6 +44,18 @@ export function createLoopStore(db: Database) {
   const store = {
     /** Called after a loop starts or resumes (wired to the driver's kick in services.ts). */
     onStart: undefined as ((id: string) => void) | undefined,
+    /** Called after a write the person can see (status, progress, step count): wired to the live channel in services.ts. */
+    onChange: undefined as ((conversationId: string, ownerUserId: string) => void) | undefined,
+    /** Tells the live channel about the loops a write touched. Never throws: a missed hint is covered by the safety poll. */
+    changed(rows: Pick<GoalLoop, "conversationId" | "ownerUserId">[]) {
+      for (const r of rows) {
+        try {
+          store.onChange?.(r.conversationId, r.ownerUserId);
+        } catch {
+          // best effort
+        }
+      }
+    },
     async start(
       ownerUserId: string,
       v: {
@@ -60,7 +72,10 @@ export function createLoopStore(db: Database) {
         .insert(goalLoop)
         .values({ ownerUserId, ...v })
         .returning();
-      if (!tx) store.onStart?.(row!.id);
+      if (!tx) {
+        store.changed([row!]);
+        store.onStart?.(row!.id);
+      }
       return row!;
     },
     kick(id: string) {
@@ -162,7 +177,7 @@ export function createLoopStore(db: Database) {
       const lessons = lesson
         ? appendLesson((await store.get(id))?.lessons ?? "", lesson)
         : undefined;
-      await db
+      const rows = await db
         .update(goalLoop)
         .set({
           progress: summary,
@@ -170,7 +185,9 @@ export function createLoopStore(db: Database) {
           ...(lessons !== undefined ? { lessons } : {}),
           ...(kind === "done" ? { status: "done" as const, reason: null } : {}),
         })
-        .where(and(eq(goalLoop.id, id), eq(goalLoop.status, "running")));
+        .where(and(eq(goalLoop.id, id), eq(goalLoop.status, "running")))
+        .returning();
+      store.changed(rows);
     },
     /** The done check refused the bot's goal_done: the loop keeps going and the next step reads why (progress is unchanged, so it counts as a stall). */
     async refuseDone(id: string, reason: string) {
@@ -178,10 +195,12 @@ export function createLoopStore(db: Database) {
       if (!loop) return;
       // The step number keeps two refusals in a row distinct, so the driver keeps each one for the next step (see drive).
       const lastError = `step ${loop.iterations + 1}: your goal_done was refused by the done check: ${reason}`;
-      await db
+      const rows = await db
         .update(goalLoop)
         .set({ lastError: lastError.slice(0, 600), updatedAt: new Date() })
-        .where(and(eq(goalLoop.id, id), eq(goalLoop.status, "running")));
+        .where(and(eq(goalLoop.id, id), eq(goalLoop.status, "running")))
+        .returning();
+      store.changed(rows);
     },
     /** `quiet`: the loop waits for the Chief, not for the user, so no card is raised. */
     async pause(id: string, reason: string, quiet = false) {
@@ -190,6 +209,7 @@ export function createLoopStore(db: Database) {
         .set({ status: "paused", reason, updatedAt: new Date() })
         .where(and(eq(goalLoop.id, id), eq(goalLoop.status, "running")))
         .returning();
+      store.changed(row ? [row] : []);
       if (row && !quiet) {
         const [room] = await db
           .select({ id: discussion.id })
@@ -229,6 +249,7 @@ export function createLoopStore(db: Database) {
         })
         .where(and(eq(goalLoop.id, id), eq(goalLoop.status, "paused")))
         .returning();
+      store.changed(row ? [row] : []);
       if (row) store.onStart?.(row.id);
     },
     /** Owner actions from the banner. Resume clears the stall count so the loop gets a fresh run of attempts. */
@@ -250,6 +271,7 @@ export function createLoopStore(db: Database) {
           ),
         )
         .returning();
+      store.changed(row ? [row] : []);
       if (row && to === "running") store.onStart?.(row.id);
       return row;
     },
@@ -264,16 +286,20 @@ export function createLoopStore(db: Database) {
         reason?: string | null;
       },
     ) {
-      await db
+      const rows = await db
         .update(goalLoop)
         .set({ ...patch, updatedAt: new Date() })
-        .where(eq(goalLoop.id, id));
+        .where(eq(goalLoop.id, id))
+        .returning();
+      store.changed(rows);
     },
     async end(id: string, status: "cancelled" | "failed", reason: string) {
-      await db
+      const rows = await db
         .update(goalLoop)
         .set({ status, reason, updatedAt: new Date() })
-        .where(and(eq(goalLoop.id, id), inArray(goalLoop.status, ["running", "paused"])));
+        .where(and(eq(goalLoop.id, id), inArray(goalLoop.status, ["running", "paused"])))
+        .returning();
+      store.changed(rows);
     },
   };
   return store;

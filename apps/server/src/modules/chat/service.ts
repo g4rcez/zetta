@@ -4647,7 +4647,7 @@ export function createChatService(
     /**
      * The steps so far and the current activity go onto the running row, at most every few seconds. A client that follows the live stream
      * does not need them; one that reads the saved row (the page was opened mid-turn, the stream is not attached, too many turns run)
-     * would otherwise see "Thinking" until the end. A room page is told to read again; a chat follows its stream.
+     * would otherwise see "Thinking" until the end. A room page is told to read again; a chat is told to refresh its turn state.
      */
     const saveLive = (activity: string, force = false) => {
       const now = Date.now();
@@ -4664,7 +4664,11 @@ export function createChatService(
         })
         .where(and(eq(message.id, row.id), eq(message.status, "running")))
         .then(() => {
-          if (a.scope?.discussionId) events.publish([actor.userId], topics.conversation(a.convId));
+          // A room page reads the saved row again; a chat refreshes its turn state, and follows its stream for the rest.
+          events.publish(
+            [actor.userId],
+            a.scope?.discussionId ? topics.conversation(a.convId) : topics.turn(a.convId),
+          );
         })
         .catch(() => {});
     };

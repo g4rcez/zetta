@@ -63,6 +63,17 @@ describe("keysFor", () => {
     ]);
     expect(keysFor("bot-status")).toEqual([{ queryKey: ["bots", "status"], exact: true }]);
   });
+  test("a saved step of a running turn refreshes only the turn state, not the messages the stream is writing", () => {
+    expect(keysFor("turn:abc")).toEqual([
+      { queryKey: ["conversations", "abc", "turn"], exact: true },
+    ]);
+  });
+  test("a plugin's connection change refreshes the plugin queries and the WhatsApp pairing dialog", () => {
+    expect(keysFor("plugin-status:whatsapp")).toEqual([
+      { queryKey: ["plugins"] },
+      { queryKey: ["whatsapp-pairing"] },
+    ]);
+  });
   test("resync refreshes every query", () => {
     expect(keysFor("resync")).toEqual([{ queryKey: [] }]);
   });

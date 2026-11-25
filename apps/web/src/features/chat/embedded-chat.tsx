@@ -138,6 +138,7 @@ export function EmbeddedChat({
     saved.some((m) => m.queue === "pending" || m.queue === "running"),
     main,
     reload,
+    messagesQuery.dataUpdatedAt,
   );
   const rows = useMemo(() => transcriptRows(saved, main.rows), [saved, main.rows]);
   // A side panel always holds a plain chat with one bot, so a spoken call may be held here when voice is set up. The server saves

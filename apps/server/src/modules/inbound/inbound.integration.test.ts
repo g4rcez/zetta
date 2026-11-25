@@ -9,7 +9,9 @@ import { delegation } from "@zetta/db/schema/features";
 import { memoryItem } from "@zetta/db/schema/memory";
 import { inboundEvent, inboundRoute, inboundThread } from "@zetta/db/schema/inbound";
 import { membership } from "@zetta/db/schema/identity";
+import { topics } from "@zetta/core/live-topics";
 import { createApp } from "../../app";
+import { events } from "../events/bus";
 import { cleanupTestUsers } from "../../test-support/db-cleanup";
 import { createIdentityAccess, issueBackgroundActor } from "../identity/access";
 import { createChatService } from "../chat/service";
@@ -98,7 +100,11 @@ suite("inbound channels against compose postgres", () => {
     prepareInbound: async () => {},
     // The channel's signature check: a call carrying this header is genuine news for that user.
     verifyPush: async (_a: unknown, _id: string, headers: Headers) =>
-      headers.get("x-sig") === "ok" ? "wake" : "invalid",
+      headers.get("x-sig") === "ok"
+        ? "wake"
+        : headers.get("x-sig") === "status"
+          ? "status"
+          : "invalid",
     pollInbound: async (_a: unknown, id: string, cursor: unknown, o: never) =>
       getPlugin(id)!.inbound!.poll(
         { userId: "", config: {}, setConfig: async () => {} },
@@ -477,6 +483,27 @@ suite("inbound channels against compose postgres", () => {
     ]);
     await settle(t!.conversationId);
     slow = undefined;
+  });
+
+  test("a signed status doorbell tells only that user's open pages and polls nothing", async () => {
+    const seenA: string[] = [],
+      seenB: string[] = [];
+    const offA = events.subscribe(A, (t) => seenA.push(t)),
+      offB = events.subscribe(B, (t) => seenB.push(t));
+    try {
+      const before = polls.length;
+      expect(await inbound.push(A, PLUGIN, new Headers({ "x-sig": "status" }), "{}")).toBe(
+        "status",
+      );
+      expect(await inbound.push(A, PLUGIN, new Headers(), "{}")).toBe("invalid"); // not signed: no hint
+      await Bun.sleep(250); // the bus holds a publish for a moment so a transaction can commit
+      expect(seenA).toEqual([topics.pluginStatus(PLUGIN)]);
+      expect(seenB).toEqual([]);
+      expect(polls.length).toBe(before);
+    } finally {
+      offA();
+      offB();
+    }
   });
 
   test("deleting an outside chat removes its thread, events and messages; a new message opens a fresh chat", async () => {

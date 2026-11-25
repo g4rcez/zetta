@@ -204,7 +204,7 @@ export function ChatPage() {
 
   // A chat shows only the approvals raised in it: another bot's request, or the same bot's request in another chat or room, is
   // approved where it was asked. A chat not started yet holds the cards its bot raised before it had a conversation.
-  // Proposals also come from loops, routines and other chats, which send no stream part, so they are polled.
+  // Proposals also come from loops, routines and other chats, which send no stream part: the live channel tells the page, and a slow poll backs it up.
   const proposalsPlace = useMemo(
     () => (chatId ? { chatId, ...(roomId ? { roomId } : {}) } : { newChat: true }),
     [chatId, roomId],
@@ -214,7 +214,7 @@ export function ChatPage() {
   const proposalsQuery = useQuery({
     ...chatQueries.proposals(proposalsBot, proposalsPlace),
     enabled: !!botId,
-    // A stream part (`data-proposal`) and every settled turn already refresh this; the poll only catches loops and routines.
+    // A stream part (`data-proposal`), every settled turn and the live channel (`proposals`, published by every insert) refresh this; the poll is a safety net.
     refetchInterval: pollEvery(15_000, 15_000, false),
   });
   const proposals = botId ? (proposalsQuery.data ?? NO_PROPOSALS) : NO_PROPOSALS;
@@ -298,7 +298,7 @@ export function ChatPage() {
   // A message the running reply did not read is answered by a turn the server starts when that reply ends: follow that answer live
   // and refresh until none waits.
   const waiting = saved.some((m) => m.queue === "pending" || m.queue === "running");
-  useFollowQueued(chatId, waiting, main, reload);
+  useFollowQueued(chatId, waiting, main, reload, messagesQuery.dataUpdatedAt);
   const goal = useGoalLoop(
     chatId,
     () => main.reattach(),
@@ -313,6 +313,13 @@ export function ChatPage() {
     chatId,
     main.busy || botStatus === "working" || botStatus === "planning",
   );
+  // A turn that saves its steps while this page does not follow its stream (opened mid-turn, another tab): read the saved row again.
+  const turnSeen = useRef(turn.updatedAt);
+  useEffect(() => {
+    if (turnSeen.current === turn.updatedAt) return;
+    turnSeen.current = turn.updatedAt;
+    if (chatId && !main.busy && turn.state?.running) void reload(chatId);
+  }, [turn.updatedAt, turn.state?.running, main.busy, chatId, reload]);
   const current = bots.find((b) => b.id === botId);
   // A spoken call is held in a plain chat only; the server saves what is said as messages, so the page just refreshes the chat.
   const voice = useVoiceCall({

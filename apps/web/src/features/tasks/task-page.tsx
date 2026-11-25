@@ -1,3 +1,4 @@
+import { pollEvery } from "@/lib/query-policy";
 import { uuidv7 } from "@zetta/core/uuid";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -212,7 +213,8 @@ export function TaskDetail({
     ...tasksQueries.detail(id),
     placeholderData: initial,
     // While the server calls the bot back about this task, its progress and steps change without a click here.
-    refetchInterval: (q) => (q.state.data?.followUp === "auto" ? FOLLOW_POLL_MS : false),
+    refetchInterval: (q) =>
+      q.state.data?.followUp === "auto" ? pollEvery(FOLLOW_POLL_MS, false, true) : false,
   });
   const task: Task | null | undefined =
     taskQuery.isError && !taskQuery.data ? null : taskQuery.data;
@@ -224,7 +226,7 @@ export function TaskDetail({
     useQuery({
       ...tasksQueries.list(),
       select: (all) => stepsOf(all, id),
-      refetchInterval: task?.followUp === "auto" ? FOLLOW_POLL_MS : false,
+      refetchInterval: task?.followUp === "auto" ? pollEvery(FOLLOW_POLL_MS, false, true) : false,
     }).data ?? NO_STEPS;
   const [asking, setAsking] = useState(false);
   const [showAllLinks, setShowAllLinks] = useState(false);
@@ -243,7 +245,7 @@ export function TaskDetail({
     ...chatQueries.messages(conversationId ?? ""),
     enabled: !!conversationId,
     select: visible,
-    refetchInterval: (q) => (botHasTurn(q.state.data) ? POLL_MS : false),
+    refetchInterval: (q) => (botHasTurn(q.state.data) ? pollEvery(POLL_MS, false, true) : false),
   });
   const thread = threadQuery.data ?? NO_MESSAGES;
   const waitingOnBot = thread.length > 0 && !pendingAnswer(thread);

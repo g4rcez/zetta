@@ -23,6 +23,8 @@ import { insertMessage } from "../chat/messages";
 import { TurnBusyError, type ChatService } from "../chat/service";
 import { AgentsPausedError, agentsPaused } from "../preferences/agents-state";
 import { instanceId, recoverable, type RecoveryScope } from "../runtime/instance";
+import { events as liveEvents } from "../events/bus";
+import { topics } from "@zetta/core/live-topics";
 
 type Route = typeof inboundRoute.$inferSelect;
 type Thread = typeof inboundThread.$inferSelect;
@@ -756,6 +758,8 @@ export function createInbound(
         .verifyPush(a, pluginId, headers, raw)
         .catch(() => "invalid" as const);
       if (verdict === "wake") void this.wake(userId, pluginId).catch(() => {});
+      // The connection changed (a session got linked or lost): only a doorbell, the pages read the status through the normal route.
+      if (verdict === "status") liveEvents.publish([userId], topics.pluginStatus(pluginId));
       return verdict;
     },
     /**

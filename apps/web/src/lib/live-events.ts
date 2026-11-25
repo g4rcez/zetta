@@ -11,6 +11,11 @@ type Key = readonly unknown[];
 export function keysFor(topic: string): { queryKey: Key; exact?: boolean }[] {
   const [kind, id] = topic.split(":") as [string, string | undefined];
   if (kind === "conversation" && id) return [{ queryKey: ["conversations", id], exact: false }]; // messages, loops and turn of that chat
+  // The saved steps of a running turn changed: only the turn state refetches, so a client that follows the stream is not disturbed.
+  if (kind === "turn" && id) return [{ queryKey: ["conversations", id, "turn"], exact: true }];
+  // A plugin's server reported a new connection state (pairing finished, session lost): the plugin list, setup card and pairing dialog read it.
+  if (kind === "plugin-status" && id)
+    return [{ queryKey: ["plugins"] }, { queryKey: ["whatsapp-pairing"] }];
   if (topic === topics.conversations) return [{ queryKey: ["conversations", "list"], exact: true }];
   if (topic === topics.rooms)
     return [

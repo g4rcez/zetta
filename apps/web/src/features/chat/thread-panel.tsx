@@ -58,7 +58,7 @@ export function ThreadPanel({
   const all = [...replies, ...live];
   return (
     <section aria-label="Thread" className="flex h-full min-h-0 flex-col bg-background">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+      <header className="chat-gutter flex h-12 shrink-0 items-center gap-2 border-b">
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-bold leading-tight">Thread</h2>
           {bot && <p className="truncate text-xs text-muted-foreground"># {bot.name}</p>}
@@ -96,7 +96,7 @@ export function ThreadPanel({
             </div>
             <div
               role="separator"
-              className="my-2 flex items-center gap-3 px-4 text-xs text-muted-foreground"
+              className="chat-gutter my-2 flex items-center gap-3 text-xs text-muted-foreground"
             >
               <span>
                 {all.length} {all.length === 1 ? "reply" : "replies"}
@@ -106,7 +106,7 @@ export function ThreadPanel({
           </>
         }
       />
-      <div className="shrink-0 space-y-2 px-4 pb-4">
+      <div className="chat-gutter shrink-0 space-y-2 pb-5">
         {chat.error && (
           <p role="alert" className="text-xs text-destructive">
             {errorMessage(chat.error)}

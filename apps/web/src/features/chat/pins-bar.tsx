@@ -84,7 +84,7 @@ export function PinsBar({
   const author = authorOfPin(newest);
   return (
     <section aria-label="Pinned messages" className="border-b bg-card/50 text-xs">
-      <div className="flex items-center gap-2 px-4 py-1.5">
+      <div className="chat-gutter flex items-center gap-2 py-1.5">
         <PushPinIcon aria-hidden="true" weight="fill" className="size-3.5 shrink-0 text-primary" />
         {/* No hint: it shows the pinned text. */}
         <button
@@ -129,7 +129,7 @@ export function PinsBar({
       {open && pins.length > 1 && (
         <ul
           aria-label="All pinned messages"
-          className="max-h-60 space-y-0.5 overflow-y-auto px-3 pb-2"
+          className="chat-gutter max-h-60 space-y-0.5 overflow-y-auto pb-2"
         >
           {pins.map((pin) => (
             <PinItem key={pin.messageId} pin={pin} author={authorOfPin(pin)} onUnpin={onUnpin} />

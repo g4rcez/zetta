@@ -253,7 +253,7 @@ function HoverBar({
       ref={bar}
       role="toolbar"
       aria-label="Message actions"
-      className="absolute -top-4 right-4 z-10 flex items-center rounded-lg border bg-popover p-0.5 opacity-0 shadow-sm transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 has-aria-expanded:opacity-100 [@media(hover:none)]:hidden"
+      className="absolute -top-4 right-(--chat-gutter) z-10 flex items-center rounded-lg border bg-popover p-0.5 opacity-0 shadow-sm transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 has-aria-expanded:opacity-100 [@media(hover:none)]:hidden"
     >
       <RateButtons row={row} />
       {quick.map(({ emoji, name }) => (
@@ -624,8 +624,8 @@ export const MessageRow = memo(function MessageRow({
       id={`message-${row.id}`}
       aria-label={`${author.name} at ${time(row.createdAt, tf)}`}
       className={cn(
-        "flex-wrap gap-x-3 gap-y-0 px-4 py-0.5 text-sm hover:bg-accent/60 has-aria-expanded:bg-accent/60",
-        !continued && "mt-3 pt-1.5",
+        "chat-gutter flex-wrap gap-x-3 gap-y-0 py-1.5 text-sm hover:bg-accent/60 has-aria-expanded:bg-accent/60",
+        !continued && "mt-2 pt-3",
       )}
       onPointerEnter={
         saved && bar === "idle"

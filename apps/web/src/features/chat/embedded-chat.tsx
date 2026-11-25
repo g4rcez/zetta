@@ -43,7 +43,7 @@ function EmbeddedEmpty({
   onPick: (example: string) => void;
 }) {
   return (
-    <div className="mt-auto space-y-3 px-4 pt-6 pb-4">
+    <div className="chat-gutter mt-auto space-y-3 pt-6 pb-4">
       <p className="max-w-prose text-sm text-muted-foreground">{text}</p>
       {examples.length > 0 && (
         <div className="flex flex-wrap gap-2" role="group" aria-label="Example questions">
@@ -234,7 +234,7 @@ export function EmbeddedChat({
           />
         </FeedbackProvider>
       </SetupActionsContext.Provider>
-      <div className="w-full shrink-0 space-y-2 px-3 pb-3">
+      <div className="chat-gutter w-full shrink-0 space-y-2 pb-4">
         <ProposalsPanel
           conversationId={conversationId}
           proposals={proposals}

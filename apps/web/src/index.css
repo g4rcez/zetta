@@ -358,7 +358,7 @@ html.dark {
 }
 
 /* Text sizes (Preferences -> Display). Medium is the default and needs no attribute; DESIGN.md "Reading" lists the values.
-   `--measure` is the widest a line of prose gets: tables, code, diagrams and charts are not held to it. */
+   `--measure` is the width of a document's column (`.reading`). Chat messages fill their panel. */
 :root {
   --measure: 72ch;
   --chat-text: 0.875rem;
@@ -379,6 +379,23 @@ html[data-text-size="large"] {
   --reading-leading: 1.875rem;
 }
 
+/* The safe space at the sides of a chat: 16px in a narrow panel, up to 32px in a wide one. The percentage resolves against each element's
+   own width, so a thread or a chat beside an artifact narrows it with no container query. Message text fills the rest. */
+:root {
+  --chat-gutter: clamp(1rem, 4%, 2rem);
+}
+.chat-gutter {
+  padding-inline: var(--chat-gutter);
+}
+/* A line that starts under the message body: the gutter, the 32px avatar and its 12px gap. */
+.chat-gutter-body {
+  padding-inline: calc(var(--chat-gutter) + 2.75rem) var(--chat-gutter);
+}
+/* A header whose first control has its own 6px of padding: its content starts on the gutter. */
+.chat-gutter-header {
+  padding-inline: calc(var(--chat-gutter) - 0.375rem);
+}
+
 /* Chat message body (Response -> Streamdown). Unlayered, so these beat Streamdown's utility classes (list-inside, space-y-4, mt-6). */
 .chat-response {
   /* Code and inline code: two steps under the text, never below 12px. */
@@ -386,10 +403,6 @@ html[data-text-size="large"] {
   font-size: var(--chat-text);
   line-height: var(--chat-leading);
   overflow-wrap: anywhere;
-}
-
-.chat-response > :is(p, ul, ol, blockquote, [data-streamdown^="heading-"]) {
-  max-width: var(--measure);
 }
 
 .chat-response > * {

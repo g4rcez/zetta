@@ -633,7 +633,7 @@ export function ChatPage() {
             className="flex min-h-0 min-w-0 flex-col bg-background"
             aria-label={current ? `Channel ${current.name}` : "Chat"}
           >
-            <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
+            <header className="chat-gutter-header flex h-12 shrink-0 items-center gap-1 border-b">
               {(() => {
                 const content = (
                   <>
@@ -805,7 +805,7 @@ export function ChatPage() {
                     <>
                       {loadingMessages && saved.length === 0 && (
                         <div
-                          className="space-y-5 px-4 py-4"
+                          className="chat-gutter space-y-5 py-4"
                           role="status"
                           aria-label="Loading messages"
                         >
@@ -824,7 +824,7 @@ export function ChatPage() {
                         </div>
                       )}
                       {!loadingMessages && rows.length === 0 && current && (
-                        <div className="mt-auto space-y-3 px-4 pt-10 pb-4">
+                        <div className="chat-gutter mt-auto space-y-3 pt-10 pb-4">
                           <BotAvatar bot={current} size={64} square />
                           <h3 className="font-heading text-3xl font-medium tracking-tight text-balance">
                             <ChannelIcon
@@ -864,7 +864,7 @@ export function ChatPage() {
                   footer={
                     main.summary && !main.busy ? (
                       <p
-                        className="px-4 pt-1 pl-15 text-xs text-muted-foreground"
+                        className="chat-gutter-body pt-1 text-xs text-muted-foreground"
                         aria-label="Delegation summary"
                       >
                         {main.summary}
@@ -874,7 +874,7 @@ export function ChatPage() {
                 />
               </FeedbackProvider>
             </SetupActionsContext.Provider>
-            <div className="w-full shrink-0 space-y-2 px-4 pb-4">
+            <div className="chat-gutter w-full shrink-0 space-y-2 pb-5">
               <PhoneLiveCalls conversationId={chatId} />
               <ProposalsPanel
                 conversationId={chatId}

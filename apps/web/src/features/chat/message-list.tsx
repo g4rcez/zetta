@@ -159,7 +159,11 @@ const Line = memo(function Line({
   return (
     <Fragment>
       {day && !inThread && (
-        <div role="separator" aria-label={day} className="relative my-3 flex items-center px-4">
+        <div
+          role="separator"
+          aria-label={day}
+          className="chat-gutter relative my-3 flex items-center"
+        >
           <span className="h-px flex-1 bg-border" />
           <span className="label-mono bg-background px-3">{day}</span>
           <span className="h-px flex-1 bg-border" />
@@ -174,7 +178,7 @@ const Line = memo(function Line({
           <PhoneCallNote content={row.content} phone={row.meta.phone} />
         ) : row.role === "system" ? (
           // A loop step the server started (modules/chat/loops.ts): a quiet marker, not a message someone wrote.
-          <div role="note" className="my-2 flex justify-center px-4">
+          <div role="note" className="chat-gutter my-2 flex justify-center">
             <span className="max-w-full truncate rounded-full border bg-muted/50 px-3 py-0.5 text-xs text-muted-foreground">
               {row.content}
             </span>
@@ -248,12 +252,13 @@ export function MessageList({
       {actions.onQuote && <QuoteSelection rows={rows} onQuote={actions.onQuote} />}
       <MessageScrollerProvider autoScroll>
         <FollowOnSend token={followToken} />
-        <MessageScroller className="flex-1">
+        {/* The margin is a band scrolled text never enters, under the header and above the composer. */}
+        <MessageScroller className="my-2 flex-1">
           <PinnedViewport role="log" aria-label={label} aria-live="polite" tabIndex={0}>
             <MessageScrollerContent
               aria-busy={busy}
               // DESIGN.md "Sizes": the chat and a thread fill the panel's width.
-              className={cn("gap-0 pb-4", inThread ? "justify-start" : "w-full justify-end")}
+              className={cn("gap-0 pb-6", inThread ? "justify-start" : "w-full justify-end")}
             >
               {intro}
               {grouped.map(({ row, continued, day }, i) => (

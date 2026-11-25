@@ -1072,14 +1072,14 @@ function RoomView({
                 }}
                 intro={
                   rows.length === 0 ? (
-                    <p role="status" className="px-4 py-6 text-sm text-muted-foreground">
+                    <p role="status" className="chat-gutter py-6 text-sm text-muted-foreground">
                       No messages yet.
                     </p>
                   ) : null
                 }
                 footer={
                   unstreamed.length ? (
-                    <p role="status" className="px-4 py-2 text-xs text-muted-foreground">
+                    <p role="status" className="chat-gutter py-2 text-xs text-muted-foreground">
                       {unstreamed.map((t) => names.get(t.botId) ?? "A bot").join(", ")}{" "}
                       {unstreamed.length === 1 ? "is" : "are"} working…
                     </p>
@@ -1087,7 +1087,7 @@ function RoomView({
                 }
               />
             </BotsContext.Provider>
-            <div className="shrink-0 space-y-2 px-4 pb-4">
+            <div className="chat-gutter shrink-0 space-y-2 pb-5">
               {briefs.length > 0 && (
                 <ProposalsPanel
                   proposals={briefs}

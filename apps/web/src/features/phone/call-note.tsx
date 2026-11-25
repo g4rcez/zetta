@@ -20,7 +20,7 @@ export function callNoteParts(content: string) {
 export function PhoneCallNote({ content, phone }: { content: string; phone: Phone }) {
   const { headline, summary } = callNoteParts(content);
   return (
-    <div role="note" aria-label="Phone call outcome" className="my-2 px-4">
+    <div role="note" aria-label="Phone call outcome" className="chat-gutter my-2">
       <div className="mx-auto max-w-xl space-y-1 rounded-lg border bg-muted/40 px-3 py-2 text-sm">
         <div className="flex items-center gap-2">
           <PhoneIcon aria-hidden="true" className="flex-none text-muted-foreground" />

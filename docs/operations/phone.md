@@ -27,11 +27,29 @@ The API for the Studio and number pages: `GET /api/phone/offer` lists the ready 
 - A number costs every month from the day it is bought, including while it is under review, held (see below) or unused. Zetta buys one **only when an owner asks**, never for every bot, and never above **Most numbers on this server**.
 - Calls are recorded nowhere. Every call opens with a fixed sentence saying an automated assistant is speaking for the owner.
 
+## Telnyx is a plugin (2026-11-24)
+
+Telnyx is registered in the plugin registry as `telnyx` (`apps/server/src/modules/phone/telnyx-plugin.ts`) with its own settings: API key (sealed), public key and Call Control application id. Install it on **Plugins** like any other: for yourself, or, as the administrator, as the **team configuration** so every member and every shared bot uses one account. The plugin has no tools: bots still place and answer calls through the phone module, which asks for the account of the **number's owner** (their own configuration first, then the team's).
+
+- **Webhook address of a plugin account:** `<public address>/api/phone/webhook/<owner user id>`. The id only chooses which key checks the signature, so an unknown id or a wrong signature is refused the same way. The old `<public address>/api/phone/webhook` keeps using the installation's Telnyx settings.
+- **Order of lookup:** the owner's Telnyx plugin account, then the installation's old Telnyx settings (Studio > Phone numbers). Nothing was migrated or deleted. Moving a setup is: install the plugin, paste the same three values, change the application's webhook URL, then Disconnect the Telnyx card in Studio.
+- **Still installation-wide** (shared with Twilio): the public address, countries, limits, request mode and the default provider.
+- **Not done yet:** the Studio card still edits the old installation settings, the Numbers page does not show which account a number uses, the Chief's phone tools do not pass the person to the offer, and no real Telnyx account has been used.
+
+## Twilio is a plugin too (2026-11-25)
+
+Twilio is registered as the `twilio` plugin (`apps/server/src/modules/phone/twilio-plugin.ts`), the same way as Telnyx: **Account SID** and **Auth Token** (sealed) are its settings, saved for yourself or, by the administrator, as the team configuration so a shared bot's members use one account. No tools: bots place and answer calls through the phone module, which asks for the account of the number's owner (their own configuration, then the team's, then the installation's old Twilio settings).
+
+- **Addresses of a plugin account:** `<public address>/api/phone/twilio/voice/<owner user id>` and `.../twilio/status/<owner user id>`. Twilio signs the whole address, so the id is part of what is checked, and it only chooses which Auth Token checks the signature. Zetta sets these addresses on a number itself when it buys or attaches it for that owner. The two plain addresses keep serving the installation's own account.
+- **The public address stays an installation setting** (one address reaches this server whatever the account), so a plugin account needs it set in Studio > Phone numbers.
+- **A number stays on the account that holds it.** A number bought on the installation's Twilio account is not moved by installing the plugin: attach it again after the owner installs it. The same holds for Telnyx.
+- **Not done yet:** same list as Telnyx (the Studio card, `/api/phone/test`, the Chief's phone tools and the Numbers page still use the installation settings). No real Twilio account was used.
+
 ## Telnyx setup, step by step
 
 1. Create a Telnyx account and fund it. Brazilian numbers need identity papers (below) before the order is approved.
 2. **API key**: Telnyx portal > Keys & Credentials > API Keys > create a v2 key. You paste it into Studio; it is sealed in your browser, stored encrypted and never shown again.
-3. **Public key**: Keys & Credentials > Public Key. Telnyx signs every webhook with the matching private key (Ed25519). You paste the public key (base64) into Studio.
+3. **Public key**: Keys & Credentials > Public Key. Telnyx signs every webhook with the matching private key (Ed25519). You paste the public key into Studio: base64 of the 32 raw bytes, an SPKI DER in base64, or a PEM block all work.
 4. **Call Control application**: Voice > Programmable Voice > Applications > add a Call Control application. Set its webhook URL to `<public address>/api/phone/webhook` (the route exists: see Incoming calls), API version v2. Note its **application id**. Optionally attach an **outbound voice profile** with a **daily spend limit** and the destination countries you accept: this is Telnyx's own cap on what a runaway bot could spend, and it is separate from the limits below.
 5. **Public address** of this Zetta (below).
 6. Studio > **Phone numbers** > the **Telnyx** card > **Connect**: paste the API key, the public key, the application id and the public address, then **Save and connect** and **Test**. Then choose who can ask and the countries (`BR, US`) under the cards.
@@ -123,7 +141,7 @@ Instead of letting Zetta order a number, an administrator can give a bot a numbe
 
 ## Brazilian numbers
 
-For Twilio see the Twilio section above (company only, buy in the console, attach). For Telnyx: Telnyx's page for Brazil ([Brazil DID requirements](https://support.telnyx.com/en/articles/5464041-brazil-did-requirements)) lists for an individual: a CPF number, a copy of a passport or ID, a Brazilian address, and a proof of address dated within the last 3 months; review can take up to 3 business days. Other providers say Brazilian local numbers need a company (CNPJ): **confirm with Telnyx support that an individual order is accepted today** before relying on it. Telnyx's order API puts the papers in `regulatory_requirements` of the sub number order (and optional requirement groups for pre-approval); Zetta does not submit papers: you do it in the Telnyx portal, and Zetta only waits for the order to become active.
+For Twilio see the Twilio section above (company only, buy in the console, attach). For Telnyx: Telnyx's page for Brazil ([Brazil DID requirements](https://support.telnyx.com/en/articles/5464041-brazil-did-requirements)) lists for an individual: a CPF number, a copy of a passport or ID, a Brazilian address, and a proof of address dated within the last 3 months; review can take up to 3 business days. Other providers say Brazilian local numbers need a company (CNPJ): **confirm with Telnyx support that an individual order is accepted today** before relying on it. Telnyx's order API puts the papers in `regulatory_requirements` of the sub number order (and optional requirement groups for pre-approval); Zetta does not submit papers and does not send a `requirement_group_id`, so a Brazilian order placed from Zetta can sit in review for good. Buy the number in the Telnyx portal with your papers, then use **Use a number you already own** (attach): Zetta points it at its Call Control application. Checked against Telnyx's developer docs on 2026-11-24: they name no Brazil rule, so the Telnyx support page above stays the reference.
 
 ## Incoming calls
 
@@ -196,7 +214,7 @@ A bot with an active number whose "Outgoing calls" switch is on can call any num
 - That a webhook is answered within Twilio's patience: Zetta waits at most 8 seconds for the call's answer and then rejects with `<Reject reason="busy"/>`; Twilio's page names no timeout.
 - **Replay**: Twilio's signature has no timestamp. Zetta keeps the id of each webhook (`CallSid`, status and sequence number) in the database for an hour, so a replay inside that hour is refused by every instance; a captured request replayed later passes the signature, but a voice webhook for a call that does not exist only creates a ringing row that no stream ever joins and that ends by itself, and a status callback of an unknown call does nothing.
 
-- (Telnyx) Everything about Telnyx's real behaviour: the answer action with stream options, the order and timing of its events, the L16 byte order (assumed big endian), whether the stream also sends key presses (Zetta reads them from `call.dtmf.received` only), and how fast its servers close a socket. The fake Telnyx in the tests follows the documentation, not the service.
+- (Telnyx) Everything about Telnyx's real behaviour: the answer action with stream options, the order and timing of its events, the audio (Telnyx streams PCMU 8 kHz by default; L16's byte order is not documented, so Zetta asks for PCMU), whether the stream also sends key presses (Zetta reads them from `call.dtmf.received` only), and how fast its servers close a socket. The fake Telnyx in the tests follows the documentation, not the service.
 - **No real call was ever placed**: no Telnyx account was available. For outgoing calls in particular: that a dial with `stream_url` opens the stream when the callee answers, the timing of `call.machine.detection.ended` (Zetta waits 8 s for it before it greets, and also reads a late result), the `result` values of the premium detection, that `time_limit_secs` counts as assumed, that the outbound voice profile refuses what it should, how long a call rings before Telnyx gives up (Zetta gives up after 60 s of its own), and how well the detection tells a person from a machine on real lines.
 - Call quality (latency of the recognizer and the voice over a real line, echo, noise), and Brazilian number papers.
 - Several workers: the webhook and the socket must reach the same worker for a call; the person's Hang up must too (it is worker-only like the webhook); with one worker (the default) nothing needs doing.

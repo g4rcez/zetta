@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui";
+import { pollEvery } from "@/lib/query-policy";
 import { ApiError, errorMessage } from "../chat/chat-client";
 import { usePluginApi, usePluginScope } from "./plugins-api";
 import { Modal } from "../shared/ui";
@@ -64,7 +65,7 @@ function PairingSteps({ step, failed }: { step: number; failed: number | undefin
   );
 }
 
-/** Pairing step for the WhatsApp (WAHA) plugin: the server fetches the QR (the API key never reaches the browser) and returns it as a data URL. The dialog polls the session so the user sees live feedback. */
+/** Pairing step for the WhatsApp (WAHA) plugin: the server fetches the QR (the API key never reaches the browser) and returns it as a data URL. The dialog learns that the scan worked from the live channel (WAHA's session webhook), with a slow poll as the safety net. */
 export function WhatsappPairing({
   onClose,
   onPaired,
@@ -111,7 +112,14 @@ export function WhatsappPairing({
     retry: false,
     gcTime: 0,
     staleTime: 0,
-    refetchInterval: (q) => (q.state.data?.status.state === "connected" ? false : 3000),
+    // WAHA calls Zetta when the session changes (`pushed`), and the live channel then refetches this: the poll is a safety net.
+    // Without a webhook address nothing tells the page, so it keeps asking every 3 s.
+    refetchInterval: (q) =>
+      q.state.data?.status.state === "connected"
+        ? false
+        : pairing.data?.data?.pushed === true
+          ? pollEvery(3000, 3000, true)
+          : 3000,
   });
   const statusState = status.data?.status.state;
   useEffect(() => {

@@ -7,11 +7,29 @@ type Hook = Record<string, unknown>;
 let status = "WORKING";
 let webhooks: Record<string, Hook[]> = {}; // by session name
 let puts: { name?: string; config?: { webhooks?: Hook[] } }[] = [];
+let creates: { name?: string; start?: boolean; config?: { webhooks?: Hook[] } }[] = [];
+let starts: string[] = [];
 const server = Bun.serve({
   port: 0,
   async fetch(req) {
     const u = new URL(req.url);
     const named = /^\/api\/sessions\/([^/]+)$/.exec(u.pathname);
+    if (u.pathname === "/api/sessions" && req.method === "POST") {
+      const body = (await req.json()) as (typeof creates)[number];
+      creates.push(body);
+      webhooks[body.name ?? ""] = body.config?.webhooks ?? [];
+      status = "SCAN_QR_CODE";
+      return Response.json({});
+    }
+    const start = /^\/api\/sessions\/([^/]+)\/start$/.exec(u.pathname);
+    if (start && req.method === "POST") {
+      starts.push(decodeURIComponent(start[1]!));
+      status = "SCAN_QR_CODE";
+      return Response.json({});
+    }
+    if (/^\/api\/[^/]+\/auth\/qr$/.test(u.pathname))
+      return Response.json({ mimetype: "image/png", data: "AAAA" });
+    if (named && status === "MISSING") return new Response("nf", { status: 404 });
     if (named) {
       const name = decodeURIComponent(named[1]!);
       if (req.method === "PUT") {
@@ -62,6 +80,8 @@ beforeEach(() => {
   status = "WORKING";
   webhooks = {};
   puts = [];
+  creates = [];
+  starts = [];
   configureWhatsapp({ allowPrivate: true });
 });
 
@@ -83,7 +103,7 @@ describe("whatsapp push (webhook as a doorbell), saved per user in the plugin", 
     expect(puts).toHaveLength(2);
     expect(webhooks["user-a"]![0]).toEqual({
       url: ours("user-a"),
-      events: ["message"],
+      events: ["message", "session.status"],
       hmac: { key: keyOf(a) },
       retries: { policy: "exponential", delaySeconds: 2, attempts: 5 },
     });
@@ -149,9 +169,61 @@ describe("whatsapp push (webhook as a doorbell), saved per user in the plugin", 
     await inbound.enable!(a);
     const verify = inbound.verifyPush!;
     const mine = body("message", true),
-      other = body("session.status");
+      other = body("engine.event");
     expect(verify(a, signed(keyOf(a), mine), mine)).toBe("ignore");
     expect(verify(a, signed(keyOf(a), other), other)).toBe("ignore");
     expect(verify(a, signed(keyOf(a), "not json"), "not json")).toBe("ignore");
+  });
+
+  test("a signed session change is a status doorbell; an unsigned one is refused", async () => {
+    const a = withHook("user-a"),
+      b = withHook("user-b");
+    await inbound.enable!(a);
+    await inbound.enable!(b);
+    const raw = body("session.status");
+    const verify = inbound.verifyPush!;
+    expect(verify(a, signed(keyOf(a), raw), raw)).toBe("status");
+    expect(verify(a, signed(keyOf(b), raw), raw)).toBe("invalid"); // another user's key
+    expect(verify(a, new Headers(), raw)).toBe("invalid");
+  });
+
+  test("pairing sets the webhook up with the session, so WAHA reports the scan", async () => {
+    status = "MISSING";
+    const c = withHook("user-a");
+    const r = (await WHATSAPP.connect!(c)) as { qrDataUrl?: string; data?: { pushed?: boolean } };
+    expect(r.qrDataUrl).toStartWith("data:image/png;base64,");
+    expect(creates).toHaveLength(1);
+    expect(creates[0]!.config!.webhooks).toEqual([
+      {
+        url: ours("user-a"),
+        events: ["message", "session.status"],
+        hmac: { key: keyOf(c) },
+        retries: { policy: "exponential", delaySeconds: 2, attempts: 5 },
+      },
+    ]);
+    expect(keyOf(c)).toMatch(/^[0-9a-f]{64}$/);
+    expect(r.data?.pushed).toBe(true);
+  });
+
+  test("pairing without the user's address sets nothing up and reports no push", async () => {
+    status = "MISSING";
+    const r = (await WHATSAPP.connect!(userCtx("user-a"))) as { data?: { pushed?: boolean } };
+    expect(creates).toHaveLength(1);
+    expect(creates[0]!.config).toBeUndefined();
+    expect(r.data?.pushed).toBe(false);
+  });
+
+  test("a stopped session gets the webhook before it starts; one waiting for the QR is left alone", async () => {
+    status = "STOPPED";
+    const c = withHook("user-a");
+    const r = (await WHATSAPP.connect!(c)) as { data?: { pushed?: boolean } };
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.config!.webhooks!.map((w) => w.url)).toEqual([ours("user-a")]);
+    expect(starts).toEqual(["user-a"]);
+    expect(r.data?.pushed).toBe(true);
+    puts = [];
+    status = "SCAN_QR_CODE"; // the dialog opened again: an update would restart the session and rotate the code
+    await WHATSAPP.connect!(c);
+    expect(puts).toEqual([]);
   });
 });

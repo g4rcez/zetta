@@ -292,6 +292,25 @@ const hookUrl = (c: PluginContext) => {
   }
 };
 type WahaHook = { url?: unknown; events?: unknown; hmac?: { key?: unknown } | null };
+/**
+ * What WAHA is told to call: new messages (a doorbell for the poller) and session changes (a doorbell for the pairing dialog and the
+ * setup card, which read the status again through the normal route). Neither body is ever read as data.
+ */
+const hookEntry = (url: string, key: string) => ({
+  url,
+  events: ["message", "session.status"],
+  hmac: { key },
+  retries: { policy: "exponential", delaySeconds: 2, attempts: 5 },
+});
+/** True when one of the session's webhooks already calls this address with this key for messages. A hook with only `message` still counts: re-registering restarts a working session, so it waits until the session is set up again. */
+const hasHook = (hooks: WahaHook[], url: string, key: string) =>
+  hooks.some(
+    (w) =>
+      w.url === url &&
+      w.hmac?.key === key &&
+      Array.isArray(w.events) &&
+      w.events.includes("message"),
+  );
 const withoutNulls = <T extends object>(o: T) =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null));
 /** True when WAHA sends this user's new messages to Zetta. Never throws: a failure leaves polling at its normal speed and is retried on the next poll. */
@@ -306,14 +325,7 @@ async function registerHook(c: PluginContext, url: string): Promise<boolean> {
     const key = hookKey(c),
       config = s.config ?? {},
       hooks = Array.isArray(config.webhooks) ? config.webhooks : [];
-    const has = hooks.some(
-      (w) =>
-        w.url === url &&
-        w.hmac?.key === key &&
-        Array.isArray(w.events) &&
-        w.events.includes("message"),
-    );
-    if (!has)
+    if (!hasHook(hooks, url, key))
       await waha(c, `/api/sessions/${session(c)}`, {
         method: "PUT",
         body: {
@@ -322,17 +334,52 @@ async function registerHook(c: PluginContext, url: string): Promise<boolean> {
             ...withoutNulls(config),
             webhooks: [
               ...hooks.filter((w) => w.url !== url).map(withoutNulls),
-              {
-                url,
-                events: ["message"],
-                hmac: { key },
-                retries: { policy: "exponential", delaySeconds: 2, attempts: 5 },
-              },
+              hookEntry(url, key),
             ],
           },
         },
       });
     return true;
+  } catch {
+    return false;
+  }
+}
+/** Adds the hook to a stopped or failed session's config (the other settings stay). Never throws: pairing goes on without push. */
+async function putHook(c: PluginContext, entry: ReturnType<typeof hookEntry>) {
+  try {
+    const s = (await waha(c, `/api/sessions/${session(c)}`)) as {
+      config?: { webhooks?: WahaHook[] } & Record<string, unknown>;
+    };
+    const config = s.config ?? {},
+      hooks = Array.isArray(config.webhooks) ? config.webhooks : [];
+    await waha(c, `/api/sessions/${session(c)}`, {
+      method: "PUT",
+      body: {
+        name: sessionName(c),
+        config: {
+          ...withoutNulls(config),
+          webhooks: [...hooks.filter((w) => w.url !== entry.url).map(withoutNulls), entry],
+        },
+      },
+    });
+  } catch {
+    // WAHA keeps its old config: the dialog polls at its normal speed
+  }
+}
+/** True when the session's webhooks include the one for this address that reports session changes. */
+async function pushesStatus(c: PluginContext, url: string): Promise<boolean> {
+  try {
+    const s = (await waha(c, `/api/sessions/${session(c)}`)) as {
+      config?: { webhooks?: WahaHook[] };
+    };
+    const key = hookKey(c);
+    return (s.config?.webhooks ?? []).some(
+      (w) =>
+        w.url === url &&
+        w.hmac?.key === key &&
+        Array.isArray(w.events) &&
+        w.events.includes("session.status"),
+    );
   } catch {
     return false;
   }
@@ -547,6 +594,7 @@ const inbound: PluginInbound = {
       return "invalid";
     try {
       const b = JSON.parse(raw) as { event?: unknown; payload?: { fromMe?: unknown } };
+      if (b.event === "session.status") return "status";
       return b.event === "message" && b.payload?.fromMe !== true ? "wake" : "ignore";
     } catch {
       return "ignore";
@@ -685,13 +733,25 @@ const def: PluginDef = {
   async connect(ctx) {
     let { status } = await sessionStatus(ctx);
     if (status === "WORKING") return { message: "Already connected." };
+    // With a webhook address set, the session is created (or set up again before it starts) with the hook, so WAHA tells Zetta when the
+    // scan works. Never on a session that already waits for the QR code: an update restarts it.
+    const url = hookUrl(ctx);
+    if (url && !hookKey(ctx))
+      await ctx.setConfig({ ...ctx.config, hookKey: randomBytes(32).toString("hex") });
+    const entry = url ? hookEntry(url, hookKey(ctx)) : undefined;
     if (status === "MISSING")
       await waha(ctx, "/api/sessions", {
         method: "POST",
-        body: { name: session(ctx), start: true },
+        body: {
+          name: session(ctx),
+          start: true,
+          ...(entry ? { config: { webhooks: [entry] } } : {}),
+        },
       });
-    else if (status === "STOPPED" || status === "FAILED")
+    else if (status === "STOPPED" || status === "FAILED") {
+      if (entry) await putHook(ctx, entry);
       await waha(ctx, `/api/sessions/${session(ctx)}/start`, { method: "POST", body: {} });
+    }
     for (let i = 0; i < 20 && status !== "SCAN_QR_CODE" && status !== "WORKING"; i++) {
       await new Promise((r) => setTimeout(r, 700));
       status = (await sessionStatus(ctx)).status;
@@ -715,6 +775,8 @@ const def: PluginDef = {
     return {
       qrDataUrl: `data:${q.mimetype};base64,${q.data}`,
       message: "Scan with WhatsApp > Linked devices. The code refreshes about every 20 seconds.",
+      // True when WAHA calls Zetta about session changes: the dialog then reads the status on the live channel and polls slowly.
+      data: { pushed: Boolean(entry) && (await pushesStatus(ctx, url)) },
     };
   },
   inbound,

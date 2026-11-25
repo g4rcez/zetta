@@ -2,7 +2,7 @@ import { BOT_ROLE_MAX } from "@zetta/core/bot-role";
 import { isTimeZone, PROFILE_LIMITS, profileTextProblem } from "@zetta/core/person-profile";
 import { ORG_DESCRIPTION_MAX, ORG_RANKS, ORG_TITLE_MAX, ORG_UNIT_MAX } from "@zetta/core/org";
 import { PROJECT_BRIEF_MAX, PROJECT_STATUSES, PROJECT_WATCH } from "@zetta/db/schema/projects";
-import { NAV_MODES, SIDEBAR_LIMITS, THEMES } from "@zetta/db/schema/preferences";
+import { NAV_MODES, SIDEBAR_LIMITS, TEXT_SIZES, THEMES } from "@zetta/db/schema/preferences";
 import { OUTPUT_STYLE_KEYS, OUTPUT_STYLE_SCOPES } from "@zetta/db/schema/output-styles";
 import { TEAM_ROLE_COLORS, TEAM_ROLE_ICONS } from "@zetta/db/schema/teams";
 import { SETTING_GROUPS } from "@zetta/core/settings";
@@ -635,6 +635,8 @@ export const chiefSchemas = {
       .strictObject({
         action: z.literal("update"),
         timeFormat: z.enum(["24h", "12h"]).optional(),
+        /** The size of chat and document text. */
+        textSize: z.enum(TEXT_SIZES).optional(),
         railMode: z.enum(["expanded", "collapsed"]).optional(),
         sidebarSide: z.enum(["left", "right"]).optional(),
         /** "simple" hides the Advanced group of the sidebar. */

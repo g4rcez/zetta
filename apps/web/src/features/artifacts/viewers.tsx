@@ -57,7 +57,23 @@ function useContent<T>(
   });
   return query.isError ? null : query.data;
 }
-const useText = (a: Artifact) => useContent(a, "text", (r) => r.text());
+const useText = (a: Artifact, enabled = true) => useContent(a, "text", (r) => r.text(), enabled);
+/** Stands in while there is no artifact: its query is never enabled. */
+const NO_ARTIFACT = { id: "none" } as Artifact;
+
+/**
+ * The prose of a document the preview shows (Markdown without its frontmatter, or plain text), for the reading aids. It shares the viewer's
+ * download. `undefined` while loading, for any other kind, and for a file the preview does not show.
+ */
+export function useReadableText(a: Artifact | null | undefined): string | undefined {
+  const enabled = !!a && (a.kind === "markdown" || a.kind === "text") && a.size <= MAX_TEXT;
+  const text = useText(a ?? NO_ARTIFACT, enabled);
+  const markdown = a?.kind === "markdown";
+  return useMemo(() => {
+    if (!enabled || text == null) return undefined;
+    return markdown ? splitFrontmatter(text).body : text;
+  }, [enabled, text, markdown]);
+}
 function useObjectUrl(a: Artifact) {
   const blob = useContent(a, "blob", (r) => r.blob());
   const url = useMemo(() => (blob ? URL.createObjectURL(blob) : blob), [blob]);
@@ -115,7 +131,7 @@ function FrontmatterPanel({ fields }: { fields: FrontmatterField[] }) {
 function MarkdownViewer({ text }: { text: string }) {
   const { fields, body } = useMemo(() => splitFrontmatter(text), [text]);
   return (
-    <div className="rounded-lg border bg-card p-5">
+    <div className="reading">
       {fields.length > 0 && <FrontmatterPanel fields={fields} />}
       <Response text={body} />
     </div>

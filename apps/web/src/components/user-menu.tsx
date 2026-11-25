@@ -8,6 +8,7 @@ import { toast } from "@/lib/notify";
 
 import { usePreferences } from "@/features/preferences/preferences";
 import { useProfile } from "@/features/preferences/profile-api";
+import { TEXT_SIZE_LABEL, TEXT_SIZES } from "@/features/preferences/text-size";
 import { TIME_FORMAT_LABEL, TIME_FORMATS } from "@/features/preferences/time-format";
 import { UserAvatar } from "@/components/user-avatar";
 import { railRow, railRowExpanded } from "@/components/rail-row";
@@ -144,6 +145,20 @@ export default function UserMenu({
         <SlidersHorizontalIcon />
         Preferences
       </MenuItem>
+      <MenuSeparator />
+      <MenuGroup label="Text size">
+        {TEXT_SIZES.map((size) => (
+          <MenuItem
+            key={size}
+            title={TEXT_SIZE_LABEL[size]}
+            role="menuitemradio"
+            checked={size === preferences.textSize}
+            onClick={() => set({ textSize: size })}
+          >
+            {TEXT_SIZE_LABEL[size]}
+          </MenuItem>
+        ))}
+      </MenuGroup>
       <MenuSeparator />
       <MenuGroup label="Time format">
         {TIME_FORMATS.map((f) => (

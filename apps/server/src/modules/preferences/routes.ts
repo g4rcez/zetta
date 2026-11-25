@@ -10,6 +10,7 @@ import {
   NAV_MODES,
   THEMES,
   TIME_FORMATS,
+  TEXT_SIZES,
 } from "@zetta/db/schema/preferences";
 import { AccessError, type createIdentityAccess } from "../identity/access";
 import type { PreferenceStore } from "./store";
@@ -28,6 +29,7 @@ const patch = z.strictObject({
   railWidth: width(SIDEBAR_LIMITS.railWidth).optional(),
   listWidth: width(SIDEBAR_LIMITS.listWidth).optional(),
   timeFormat: z.enum(TIME_FORMATS).optional(),
+  textSize: z.enum(TEXT_SIZES).optional(),
   approvalMode: z.enum(APPROVAL_MODES).optional(),
   pushMode: z.enum(PUSH_MODES).optional(),
   theme: z.enum(THEMES).nullable().optional(),

@@ -47,6 +47,7 @@ export async function runPreferences(ctx: ChiefCtx, a: ChiefArgs<"preferences">)
   const diff: DiffLine[] = [];
   for (const k of [
     "timeFormat",
+    "textSize",
     "railMode",
     "sidebarSide",
     "navMode",

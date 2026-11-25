@@ -15,6 +15,7 @@ import { SIDEBAR_SIDE_LABEL, SIDEBAR_SIDES, usePreferences } from "./preferences
 import { Section } from "./section";
 import { isHexColor, lowestContrast, MIN_PRIMARY_CONTRAST, readGrounds, type Theme } from "./theme";
 import { ThemePicker } from "./theme-picker";
+import { TEXT_SIZE_LABEL, TEXT_SIZES } from "./text-size";
 import { TIME_FORMAT_LABEL, TIME_FORMATS } from "./time-format";
 
 export function DisplaySection() {
@@ -115,6 +116,24 @@ export function DisplaySection() {
               Full: every setting, including Studio, Playground and Computer
             </Radiobox>
           </div>
+        </fieldset>
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Text size</legend>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            {TEXT_SIZES.map((size) => (
+              <Radiobox
+                key={size}
+                name="text-size"
+                checked={preferences.textSize === size}
+                onChange={() => set({ textSize: size })}
+              >
+                {TEXT_SIZE_LABEL[size]}
+              </Radiobox>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            The size of chat messages and of documents such as Markdown artifacts.
+          </p>
         </fieldset>
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium">Time format</legend>

@@ -6,6 +6,7 @@ import {
   ChatIcon,
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 import { toast } from "@/lib/notify";
 
 import { BotIdentity } from "@/components/bot-identity";
@@ -22,7 +23,9 @@ import {
   type Artifact,
 } from "./artifacts-api";
 import { relativeTime } from "../shared/relative-time";
-import { ArtifactViewer, CopyContentButton } from "./viewers";
+import { OutlineMenu, ReadingBody, ReadingProgress, ReadingTime } from "./reading-aids";
+import { useReading } from "./use-reading";
+import { CopyContentButton } from "./viewers";
 import { useTimeFormat } from "@/features/preferences/preferences";
 import { formatDateTime } from "@/features/preferences/time-format";
 
@@ -39,6 +42,8 @@ export function ArtifactPage({ id }: { id: string }) {
   const botId = artifact?.botId;
   const bots = useQuery({ ...chatQueries.bots(), enabled: !!botId }).data;
   const bot = botId ? bots?.find((b) => b.id === botId) : undefined;
+  const scroll = useRef<HTMLDivElement>(null);
+  const reading = useReading(artifact, scroll);
 
   const remove = () =>
     artifactsApi.remove(id).then(
@@ -51,7 +56,18 @@ export function ArtifactPage({ id }: { id: string }) {
     );
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div ref={scroll} className="@container/artifact h-full overflow-y-auto">
+      {/* Stays at the top of the view while the document scrolls. Its height is only the bar, so nothing moves when it appears. */}
+      {reading.text !== undefined && (
+        <div className="sticky top-0 z-10 h-0">
+          <ReadingProgress scroll={scroll} text={reading.text} />
+          {reading.outline.items.length > 0 && (
+            <div className="absolute top-2 right-3 rounded-md border bg-card shadow-sm @min-[60rem]/artifact:hidden">
+              <OutlineMenu outline={reading.outline} />
+            </div>
+          )}
+        </div>
+      )}
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 md:p-8">
         <Link
           to="/artifacts"
@@ -72,6 +88,7 @@ export function ArtifactPage({ id }: { id: string }) {
                   <span className="min-w-0 break-words">{artifact.title}</span>
                   <Badge>{kindLabel(artifact.kind)}</Badge>
                   {artifact.routineRunId && <Badge tone="info">Routine</Badge>}
+                  {reading.minutes !== undefined && <ReadingTime minutes={reading.minutes} />}
                 </h1>
                 {artifact.description && (
                   <p className="text-sm text-muted-foreground">{artifact.description}</p>
@@ -131,7 +148,7 @@ export function ArtifactPage({ id }: { id: string }) {
                 />
               </span>
             </div>
-            <ArtifactViewer a={artifact} />
+            <ReadingBody artifact={artifact} outline={reading.outline} />
           </>
         )}
       </div>

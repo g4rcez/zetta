@@ -255,6 +255,20 @@ A theme passes when all these pairs pass. The current values pass. The lowest te
 - Use `tabular-nums` for counts, times and sizes. Use `text-balance` on headings and `text-pretty` on long text.
 - No text below 12px.
 
+### Reading
+
+Long text has a measure, `--measure` (72ch), and a size the person chooses: Small, Medium (default) or Large (Preferences → Display, or the account menu). The values are tokens in `apps/web/src/index.css`; text size / line height in px:
+
+| Text size | Chat    | Documents |
+| --------- | ------- | --------- |
+| Small     | 13 / 18 | 15 / 25   |
+| Medium    | 14 / 20 | 16 / 27   |
+| Large     | 16 / 24 | 18 / 30   |
+
+- **Chat.** Paragraphs, lists, quotes and headings stop at the measure. Tables, code, diagrams and charts use the full panel. Code stays two pixels under the text, never below 12px.
+- **Documents** (a Markdown artifact, class `reading`). One centered column at the measure, with no card around it. Headings step 1.6 / 1.3 / 1.1em with more air above than below.
+- **Reading aids** (artifact panel and artifact page). "N min read" (230 words a minute) beside the kind, hidden when the view is under 32rem; a 2px progress bar at the top of the view; with 3 or more headings (levels 1 to 3), an outline. The outline is a rail beside the column when the view is 60rem or wider, and a "Contents" menu below that. The heading being read is marked.
+
 ## Layout
 
 ### Shell
@@ -283,7 +297,7 @@ A theme passes when all these pairs pass. The current values pass. The lowest te
 - **Where it lives.** `AppShell` (`apps/web/src/components/app-shell.tsx`) wraps every in-app page in the signed-in layout; pages never draw their own sidebar or list column.
 - **Context panel.** 360px, on the right, opened on demand for thread replies, bot details and the chat's files. It is not a permanent column. Below 1024px it is a sheet.
 - **Spacing.** A 4px grid with even values only: 4, 8, 12, 16, 24, 32, 48. 16px is the standard padding of a card and of the panel; 8px separates related controls; 4px separates a row's icon from its text.
-- **Sizes.** Sidebar rows 28px. Buttons and inputs 32px. Icon buttons 28px (the 24px AA target minimum is met). Header 48px. The message column fills the panel.
+- **Sizes.** Sidebar rows 28px. Buttons and inputs 32px. Icon buttons 28px (the 24px AA target minimum is met). Header 48px. The message column fills the panel; prose inside a message keeps the reading measure (see "Reading").
 - Full-height layouts use `h-dvh`, not `h-screen`. Fixed elements respect `safe-area-inset`.
 
 ### Sidebar structure

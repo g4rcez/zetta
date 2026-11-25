@@ -77,6 +77,7 @@ suite("layout preferences against compose postgres", () => {
       railWidth: 224,
       listWidth: 320,
       timeFormat: "24h",
+      textSize: "medium",
       approvalMode: "hold",
       pushMode: "mentions_and_approvals",
       theme: null,
@@ -98,6 +99,7 @@ suite("layout preferences against compose postgres", () => {
       railWidth: 260,
       listWidth: 400,
       timeFormat: "24h",
+      textSize: "medium",
       approvalMode: "hold",
       pushMode: "mentions_and_approvals",
       theme: null,
@@ -114,6 +116,7 @@ suite("layout preferences against compose postgres", () => {
       railWidth: 224,
       listWidth: 320,
       timeFormat: "24h",
+      textSize: "medium",
       approvalMode: "hold",
       pushMode: "mentions_and_approvals",
       theme: null,
@@ -160,6 +163,14 @@ suite("layout preferences against compose postgres", () => {
     expect(await read(ids[0]!)).toMatchObject({ timeFormat: "12h", railWidth: 260 });
     expect(await read(ids[1]!)).toMatchObject({ timeFormat: "24h" });
     expect((await call(ids[1]!, "PATCH", { timeFormat: "am/pm" })).status).toBe(400);
+  });
+  test("the text size defaults to medium and a change is kept for that person only", async () => {
+    expect(await read(ids[1]!)).toMatchObject({ textSize: "medium" });
+    expect((await call(ids[0]!, "PATCH", { textSize: "large" })).status).toBe(200);
+    expect(await read(ids[0]!)).toMatchObject({ textSize: "large", railWidth: 260 });
+    expect(await read(ids[1]!)).toMatchObject({ textSize: "medium" });
+    expect((await call(ids[1]!, "PATCH", { textSize: "huge" })).status).toBe(400);
+    expect((await call(ids[0]!, "PATCH", { textSize: "medium" })).status).toBe(200);
   });
   test("approving by press and hold is the default; a person can choose a plain click, for themselves only", async () => {
     expect(await read(ids[1]!)).toMatchObject({ approvalMode: "hold" });

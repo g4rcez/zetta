@@ -28,6 +28,10 @@ export type SidebarSide = (typeof SIDEBAR_SIDES)[number];
 export const TIME_FORMATS = ["24h", "12h"] as const;
 export type TimeFormat = (typeof TIME_FORMATS)[number];
 
+/** The size of the text a person reads: chat messages and documents. */
+export const TEXT_SIZES = ["small", "medium", "large"] as const;
+export type TextSize = (typeof TEXT_SIZES)[number];
+
 /** How a person confirms an approval that widens what a bot may do: press and hold the button, or just click it. */
 export const APPROVAL_MODES = ["hold", "click"] as const;
 export type ApprovalMode = (typeof APPROVAL_MODES)[number];
@@ -80,6 +84,8 @@ export const userPreference = zetta.table(
     listWidth: integer("list_width").default(SIDEBAR_LIMITS.listWidth.fallback).notNull(),
     /** How the web app shows the hour of day. */
     timeFormat: text("time_format", { enum: TIME_FORMATS }).default("24h").notNull(),
+    /** How large the web app draws chat messages and documents. */
+    textSize: text("text_size", { enum: TEXT_SIZES }).default("medium").notNull(),
     /** `hold`: an approval that widens a bot's powers needs a press and hold. `click`: one click is enough. The server only labels a card
      * `hold` or `click` by its kind; this choice is the person's, and the web app applies it. */
     approvalMode: text("approval_mode", { enum: APPROVAL_MODES }).default("hold").notNull(),

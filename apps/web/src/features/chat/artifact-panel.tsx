@@ -2,11 +2,14 @@ import { ActionHint } from "@/components/action-hint";
 import { Link } from "@tanstack/react-router";
 import { ArrowSquareOutIcon, DownloadSimpleIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
 
 import { Button } from "@/components/ui";
 
 import { artifactsApi, contentUrl, kindLabel, type Artifact } from "../artifacts/artifacts-api";
-import { ArtifactViewer, CopyContentButton } from "../artifacts/viewers";
+import { OutlineMenu, ReadingBody, ReadingProgress, ReadingTime } from "../artifacts/reading-aids";
+import { useReading } from "../artifacts/use-reading";
+import { CopyContentButton } from "../artifacts/viewers";
 import { Badge, Empty } from "../shared/ui";
 
 const iconButton =
@@ -21,15 +24,34 @@ export function ArtifactPanel({ id, onClose }: { id: string; onClose: () => void
   });
   // `undefined` while loading, `null` when it is gone.
   const artifact: Artifact | null | undefined = isError ? null : data;
+  const scroll = useRef<HTMLDivElement>(null);
+  const reading = useReading(artifact, scroll);
   return (
-    <section aria-label="Artifact" className="flex h-full min-h-0 flex-col bg-background">
+    <section
+      aria-label="Artifact"
+      className="@container/artifact flex h-full min-h-0 flex-col bg-background"
+    >
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h2 className="min-w-0 truncate text-base font-bold leading-tight">
             {artifact?.title ?? "Artifact"}
           </h2>
-          {artifact && <Badge>{kindLabel(artifact.kind)}</Badge>}
+          {artifact && (
+            // On a phone the title needs this room more than the kind does.
+            <span className="shrink-0 @max-[24rem]/artifact:hidden">
+              <Badge>{kindLabel(artifact.kind)}</Badge>
+            </span>
+          )}
+          {reading.minutes !== undefined && (
+            <ReadingTime
+              minutes={reading.minutes}
+              className="hidden @min-[32rem]/artifact:inline"
+            />
+          )}
         </div>
+        {reading.outline.items.length > 0 && (
+          <OutlineMenu outline={reading.outline} className="@min-[60rem]/artifact:!hidden" />
+        )}
         {artifact && <CopyContentButton a={artifact} />}
         {artifact && (
           <ActionHint label="Download">
@@ -60,7 +82,11 @@ export function ArtifactPanel({ id, onClose }: { id: string; onClose: () => void
           </Button>
         </ActionHint>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      {reading.text !== undefined && <ReadingProgress scroll={scroll} text={reading.text} />}
+      <div
+        ref={scroll}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-6 @min-[32rem]/artifact:px-6 @min-[32rem]/artifact:py-8"
+      >
         {artifact === undefined ? (
           <p role="status" className="text-sm text-muted-foreground">
             Loading…
@@ -68,7 +94,7 @@ export function ArtifactPanel({ id, onClose }: { id: string; onClose: () => void
         ) : artifact === null ? (
           <Empty>This artifact does not exist or was deleted.</Empty>
         ) : (
-          <ArtifactViewer a={artifact} />
+          <ReadingBody artifact={artifact} outline={reading.outline} />
         )}
       </div>
     </section>

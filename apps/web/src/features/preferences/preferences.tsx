@@ -15,6 +15,7 @@ import { toast } from "@/lib/notify";
 import { ApiError, call } from "../chat/chat-client";
 import { useTheme } from "@/components/theme-provider";
 import { saveLocal } from "@/lib/local-storage";
+import { applyTextSize, DEFAULT_TEXT_SIZE, type TextSize } from "./text-size";
 import { applyTheme, type Theme } from "./theme";
 import { DEFAULT_TIME_FORMAT, type TimeFormat } from "./time-format";
 
@@ -46,6 +47,8 @@ export type Preferences = {
   listWidth: number;
   /** How hours show everywhere in the app. */
   timeFormat: TimeFormat;
+  /** How large chat messages and documents are drawn. */
+  textSize: TextSize;
   approvalMode: ApprovalMode;
   /** What may wake this phone with a push: everything, a mention or a decision waiting, or nothing. */
   pushMode: PushMode;
@@ -79,6 +82,7 @@ const DEFAULTS: Preferences = {
   railWidth: SIDEBAR_LIMITS.railWidth.fallback,
   listWidth: SIDEBAR_LIMITS.listWidth.fallback,
   timeFormat: DEFAULT_TIME_FORMAT,
+  textSize: DEFAULT_TEXT_SIZE,
   approvalMode: DEFAULT_APPROVAL_MODE,
   pushMode: DEFAULT_PUSH_MODE,
   theme: null,
@@ -184,6 +188,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     () =>
       applyTheme(document.documentElement, preferences.theme, preferences.primaryColor, setTheme),
     [preferences.theme, preferences.primaryColor, setTheme],
+  );
+
+  useEffect(
+    () => applyTextSize(document.documentElement, preferences.textSize),
+    [preferences.textSize],
   );
 
   const value = useMemo(

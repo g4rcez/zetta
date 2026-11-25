@@ -11,6 +11,7 @@ import {
   type NavMode,
   type Theme,
   type TimeFormat,
+  type TextSize,
 } from "@zetta/db/schema/preferences";
 import { DEFAULT_PUSH_MODE, type PushMode } from "@zetta/core/push";
 import type { ActiveActor } from "../identity/access";
@@ -24,6 +25,7 @@ export type Preferences = {
   railWidth: number;
   listWidth: number;
   timeFormat: TimeFormat;
+  textSize: TextSize;
   approvalMode: ApprovalMode;
   /** What may wake this person's phone with a push (`@zetta/core/push`). */
   pushMode: PushMode;
@@ -47,6 +49,7 @@ export function createPreferenceStore(db: Database) {
     railWidth: r.railWidth,
     listWidth: r.listWidth,
     timeFormat: r.timeFormat,
+    textSize: r.textSize,
     approvalMode: r.approvalMode,
     pushMode: r.pushMode,
     theme: r.theme,
@@ -73,6 +76,7 @@ export function createPreferenceStore(db: Database) {
             railWidth: SIDEBAR_LIMITS.railWidth.fallback,
             listWidth: SIDEBAR_LIMITS.listWidth.fallback,
             timeFormat: "24h",
+            textSize: "medium",
             approvalMode: "hold",
             pushMode: DEFAULT_PUSH_MODE,
             theme: null,

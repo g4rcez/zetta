@@ -1202,7 +1202,7 @@ Your answer is read aloud by a computer voice: short plain sentences in the othe
       code,
     });
     // The number's own provider places the call: a bot with a Twilio number dials through Twilio, whatever else is set up.
-    const provider = await deps.reader.provider(await providerOfBot(o.userId, o.botId));
+    const provider = await deps.reader.provider(await providerOfBot(o.userId, o.botId), o.userId);
     if (!provider) return fail("no_provider");
     if (!(await canSpeak())) return fail("no_speech");
     const f = await facts.read({ userId: o.userId, botId: o.botId, to: o.to });
@@ -1310,9 +1310,10 @@ Your answer is read aloud by a computer voice: short plain sentences in the othe
     async webhook(
       raw: string,
       headers: Headers,
-      o: { provider?: PhoneProviderId; path?: string } = {},
+      o: { provider?: PhoneProviderId; path?: string; ownerUserId?: string } = {},
     ): Promise<WebhookResult> {
-      const provider = await deps.reader.provider(o.provider ?? "telnyx");
+      // A webhook at an address with a person's id is checked with that person's Telnyx account; the plain address uses the installation's.
+      const provider = await deps.reader.provider(o.provider ?? "telnyx", o.ownerUserId);
       if (!provider) return refuse(401, "UNAUTHORIZED");
       let ev: PhoneEvent;
       try {

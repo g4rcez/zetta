@@ -830,7 +830,7 @@ suite("phone calls through Twilio against postgres", () => {
       );
       expect(
         (answer.body as { stream_bidirectional_codec: string }).stream_bidirectional_codec,
-      ).toBe("L16");
+      ).toBe("PCMU");
       expect(twilio.updates.filter((u) => u.sid === id)).toHaveLength(0);
       await l.hangup();
     });
@@ -898,7 +898,7 @@ suite("phone calls through Twilio against postgres", () => {
       ws.send(
         JSON.stringify({
           event: "start",
-          start: { media_format: { encoding: "L16" } },
+          start: { media_format: { encoding: "PCMU" } },
           stream_id: "st",
         }),
       );

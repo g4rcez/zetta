@@ -324,7 +324,7 @@ suite("incoming phone calls against postgres", () => {
       ),
     );
     const body = answer.body as { stream_url: string; stream_bidirectional_codec: string };
-    expect(body.stream_bidirectional_codec).toBe("L16");
+    expect(body.stream_bidirectional_codec).toBe("PCMU");
     const address = new URL(body.stream_url);
     expect(address.protocol).toBe("wss:");
     expect(address.pathname).toBe("/api/phone/stream");
@@ -342,7 +342,7 @@ suite("incoming phone calls against postgres", () => {
       ws.send(
         JSON.stringify({
           event: "start",
-          start: { media_format: { encoding: "L16", sample_rate: 16000, channels: 1 } },
+          start: { media_format: { encoding: "PCMU", sample_rate: 8000, channels: 1 } },
           stream_id: "st",
         }),
       );
@@ -362,7 +362,7 @@ suite("incoming phone calls against postgres", () => {
               media: {
                 track: "inbound",
                 chunk: String(chunk++),
-                payload: encodeAudio(pcm.slice(at, at + 320), "L16"),
+                payload: encodeAudio(pcm.slice(at, at + 320), "PCMU"),
               },
             }),
           );

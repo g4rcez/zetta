@@ -295,6 +295,15 @@ describe("webhook signatures", () => {
     expect(code(make({ publicKey: "AAAA" }), w.headers)).toBe("NO_KEY");
   });
 
+  test("the public key may be raw, SPKI DER or PEM", () => {
+    const raw = Buffer.from(fake.publicKey, "base64");
+    const der = Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), raw]);
+    const pem = `-----BEGIN PUBLIC KEY-----\n${der.toString("base64")}\n-----END PUBLIC KEY-----\n`;
+    const w = fake.webhook("call.hangup", { call_control_id: "v3:k" });
+    for (const key of [fake.publicKey, der.toString("base64"), pem])
+      expect(() => make({ publicKey: key }).verifyWebhook(w.body, w.headers)).not.toThrow();
+  });
+
   test("a validly signed event older or newer than five minutes is stale", () => {
     const old = fake.webhook(
       "call.hangup",

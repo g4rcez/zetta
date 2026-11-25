@@ -178,9 +178,14 @@ export type PluginInbound = {
    * Push: the platform calls this with the raw body of a request from the channel's server (public route, no session), and the config of
    * the user named in the address. "invalid" = the signature does not prove the request came from the channel for this user (answered 401).
    * "ignore" = genuine but not news (for example our own message; answered 200 so the channel does not retry). "wake" = genuine news. The
-   * body is never used as message data: "wake" only makes the platform poll that user's route now.
+   * body is never used as message data: "wake" only makes the platform poll that user's route now. "status" = genuine news about the
+   * connection itself (a session got linked or lost): the platform tells the user's open pages to read the plugin status again.
    */
-  verifyPush?(ctx: PluginContext, headers: Headers, raw: string): "wake" | "ignore" | "invalid";
+  verifyPush?(
+    ctx: PluginContext,
+    headers: Headers,
+    raw: string,
+  ): "wake" | "ignore" | "invalid" | "status";
   /**
    * Push that carries the messages (Slack's Events API): the platform calls this with the raw body of a request from the channel's server
    * and the route's filter. The plugin proves the request is genuine (a signature; "invalid" is answered 401), and returns the answer the

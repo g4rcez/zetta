@@ -38,7 +38,7 @@ const REPLAY_MEMORY_MAX = 10_000;
 
 export type TelnyxOptions = {
   apiKey: string;
-  /** The account's public key for webhook signatures: base64 of the 32 raw bytes. */
+  /** The account's public key for webhook signatures: base64 of the 32 raw bytes (an SPKI DER in base64 or a PEM block also work). */
   publicKey: string;
   /** Id of the Call Control application the numbers and calls belong to. */
   connectionRef: string;
@@ -55,9 +55,21 @@ const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
 /** The DER prefix that turns 32 raw Ed25519 public key bytes into an SPKI key Node reads. */
 const SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
-export function ed25519PublicKey(base64: string) {
-  const raw = Buffer.from(base64.trim(), "base64");
-  if (raw.length !== 32) return undefined;
+/**
+ * The public key as Telnyx shows it. Its docs do not say which form: the portal's base64 of the 32 raw bytes, an SPKI DER in base64 (44
+ * bytes) or a PEM block. All three are accepted; anything else is refused (the check then fails closed with NO_KEY).
+ */
+export function ed25519PublicKey(text: string) {
+  const body = text.replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "").replace(/\s+/g, "");
+  const bytes = Buffer.from(body, "base64");
+  let raw: Buffer | undefined;
+  if (bytes.length === 32) raw = bytes;
+  else if (
+    bytes.length === SPKI_PREFIX.length + 32 &&
+    bytes.subarray(0, SPKI_PREFIX.length).equals(SPKI_PREFIX)
+  )
+    raw = bytes.subarray(SPKI_PREFIX.length);
+  if (!raw) return undefined;
   try {
     return createPublicKey({ key: Buffer.concat([SPKI_PREFIX, raw]), format: "der", type: "spki" });
   } catch {
@@ -182,7 +194,9 @@ export function createTelnyxProvider(o: TelnyxOptions): PhoneProvider {
     caps: {
       dtmf: "webhook",
       answered: "webhook",
-      codec: "L16",
+      // PCMU 8 kHz is the default Telnyx documents for the stream. L16 is listed too, but its byte order is not written anywhere, so a
+      // real call could be noise. The code still follows whatever `start.media_format` says (`calls.ts`), so L16 can come back later.
+      codec: "PCMU",
       streamToken: "query",
       streamSid: false,
     },

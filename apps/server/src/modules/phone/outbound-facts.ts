@@ -141,6 +141,7 @@ export function createOutboundFacts(deps: {
           : number?.provider === "telnyx"
             ? "telnyx"
             : undefined,
+        o.userId,
       ))
         ? ("ready" as const)
         : ("off" as const);

@@ -67,6 +67,8 @@ import { createLocalTranscriber } from "./modules/transcribe/transcriber";
 import { createVoiceService } from "./modules/voice/service";
 import { createVoiceReadiness } from "./modules/voice/ready";
 import { createPhoneProviderReader } from "./modules/phone/config";
+import { TELNYX_PLUGIN_ID, telnyxAccountOf } from "./modules/phone/telnyx-plugin";
+import { TWILIO_PLUGIN_ID, twilioAccountOf } from "./modules/phone/twilio-plugin";
 import { createPhoneService, withPhoneHold } from "./modules/phone/service";
 import { createPhoneCalls } from "./modules/phone/calls";
 import { configurePhoneOut } from "./modules/phone/outbound";
@@ -512,6 +514,17 @@ export const phoneReader = createPhoneProviderReader({
   load: () => installation.load(),
   key: phoneKey,
   twilioKey: phoneTwilioKey,
+  // The Telnyx account of the number's owner: the Telnyx plugin's configuration (their own, else the administrator's team one).
+  telnyxAccount: async (userId) => {
+    const actor = await issueBackgroundActor(membershipLookup, userId);
+    if (!actor) return undefined;
+    return telnyxAccountOf((await mcp.plugins.contextFor(actor, TELNYX_PLUGIN_ID)).config);
+  },
+  twilioAccount: async (userId) => {
+    const actor = await issueBackgroundActor(membershipLookup, userId);
+    if (!actor) return undefined;
+    return twilioAccountOf((await mcp.plugins.contextFor(actor, TWILIO_PLUGIN_ID)).config);
+  },
 });
 /** Points the installation at a new WhatsApp server key (or none) and revokes the one it had, whoever saved it. Same as `mailKeyAdmin.set`. */
 export const wahaKeyAdmin = {
@@ -1194,6 +1207,9 @@ const taskHeartbeat = createTaskHeartbeat({
 });
 // A kick reaches the worker even when the request ran on an `api` process (over Postgres NOTIFY, see modules/events).
 loops.onStart = (id) => work.kick("loop", id);
+// A loop's status or step count changed (also with no message written): the banner of that chat refetches.
+loops.onChange = (conversationId, ownerUserId) =>
+  events.publish([ownerUserId], topics.conversation(conversationId));
 if (runsWork) work.on("loop", (id) => id && loopDriver.kick(id));
 // A person moved, or deleted, a task a bot asked for: tell the bot with a turn in its chat. Best effort, after the change is saved.
 tasks.onPersonTask = (e) => void chatServices.chat.notifyTask(e).catch(() => {});

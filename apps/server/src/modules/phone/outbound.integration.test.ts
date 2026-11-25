@@ -372,7 +372,7 @@ suite("outgoing phone calls against postgres", () => {
     ws.send(
       JSON.stringify({
         event: "start",
-        start: { media_format: { encoding: "L16", sample_rate: 16000, channels: 1 } },
+        start: { media_format: { encoding: "PCMU", sample_rate: 8000, channels: 1 } },
         stream_id: "st",
       }),
     );
@@ -393,7 +393,7 @@ suite("outgoing phone calls against postgres", () => {
               media: {
                 track: "inbound",
                 chunk: String(chunk++),
-                payload: encodeAudio(pcm.slice(at, at + 320), "L16"),
+                payload: encodeAudio(pcm.slice(at, at + 320), "PCMU"),
               },
             }),
           );
@@ -444,7 +444,7 @@ suite("outgoing phone calls against postgres", () => {
       to,
       from: number.e164,
       answering_machine_detection: "detect",
-      stream_bidirectional_codec: "L16",
+      stream_bidirectional_codec: "PCMU",
       time_limit_secs: 5 * 60 + 30,
     });
     expect(String(dialled.body.stream_url)).toStartWith(

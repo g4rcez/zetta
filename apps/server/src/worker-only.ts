@@ -13,7 +13,7 @@ export const WORKER_ONLY: readonly Rule[] = [
   // A spoken call: the ticket lives in the memory of the process that serves the socket, and the call runs the bot's turn.
   { path: /^\/api\/voice\/(ticket|socket)$/ },
   // A phone call: the provider's events (Telnyx's webhook, Twilio's voice and status webhooks) and its audio socket reach the process that holds the call and runs the bot's turn.
-  { path: /^\/api\/phone\/(webhook|stream|twilio\/(voice|status))$/ },
+  { path: /^\/api\/phone\/(webhook(\/[^/]+)?|stream|twilio\/(voice|status)(\/[^/]+)?)$/ },
   // A person's "Hang up" on a call a bot placed: the call lives in the process that dialled it.
   { methods: ["POST"], path: /^\/api\/phone\/calls\/[^/]+\/hangup$/ },
   { path: /^\/api\/harnesses$/ },

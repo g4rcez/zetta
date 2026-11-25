@@ -6,9 +6,10 @@ const MAX_WEBHOOK_BYTES = 256 * 1024;
 const MAX_FRAME_BYTES = 128 * 1024;
 
 /**
- * - `POST /api/phone/webhook`: Telnyx's events (a call rings, was answered, a key was pressed, it ended). No session and no origin:
+ * - `POST /api/phone/webhook` and `/api/phone/webhook/:owner`: Telnyx's events (the second is the address of a person's own Telnyx account: the id is only
+ *   used to pick the key that checks the signature, never trusted for anything else) (a call rings, was answered, a key was pressed, it ended). No session and no origin:
  *   the signature of the raw body, its age and its id are checked (`calls.webhook`); every refusal is the same short answer.
- * - `POST /api/phone/twilio/voice` and `/api/phone/twilio/status`: Twilio's webhooks (form encoded, signed over the address and the
+ * - `POST /api/phone/twilio/voice` and `/api/phone/twilio/status` (and the same with `/:owner`, the addresses of a person's own Twilio account): Twilio's webhooks (form encoded, signed over the address and the
  *   parameters). The voice one is answered with TwiML (the call's answer); the status one carries call status and machine detection.
  * - `GET  /api/phone/stream?token=`: the WebSocket the provider opens with a call's audio. The one-time token, made when the call was
  *   answered, is the credential: in the address for Telnyx, in the stream's `start` message for Twilio (its address takes no query).
@@ -26,18 +27,29 @@ export function createPhoneCallRoutes(calls: PhoneCalls) {
       : Response.json(res.body, { status: res.status, headers: { "cache-control": "no-store" } });
   const hook =
     (provider: "telnyx" | "twilio", path?: string) =>
-    async ({ request }: { request: Request }) => {
+    async ({ request, params }: { request: Request; params?: { owner?: string } }) => {
       if (Number(request.headers.get("content-length") ?? 0) > MAX_WEBHOOK_BYTES)
         return Response.json({ error: { code: "TOO_LARGE" } }, { status: 413 });
       const raw = await request.text();
       if (raw.length > MAX_WEBHOOK_BYTES)
         return Response.json({ error: { code: "TOO_LARGE" } }, { status: 413 });
-      return answer(await calls.webhook(raw, request.headers, { provider, path }));
+      const owner = params?.owner;
+      return answer(
+        await calls.webhook(raw, request.headers, {
+          provider,
+          // Twilio signs the whole address, so a person's own address is part of the path that is checked.
+          path: path && owner ? `${path}/${encodeURIComponent(owner)}` : path,
+          ...(owner ? { ownerUserId: owner } : {}),
+        }),
+      );
     };
   return new Elysia({ prefix: "/api/phone", normalize: false })
     .post("/webhook", hook("telnyx"), { parse: "none" })
+    .post("/webhook/:owner", hook("telnyx"), { parse: "none" })
     .post("/twilio/voice", hook("twilio", TWILIO_VOICE_PATH), { parse: "none" })
     .post("/twilio/status", hook("twilio", TWILIO_STATUS_PATH), { parse: "none" })
+    .post("/twilio/voice/:owner", hook("twilio", TWILIO_VOICE_PATH), { parse: "none" })
+    .post("/twilio/status/:owner", hook("twilio", TWILIO_STATUS_PATH), { parse: "none" })
     .ws("/stream", {
       idleTimeout: 960,
       sendPings: true,

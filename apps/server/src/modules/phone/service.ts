@@ -284,8 +284,8 @@ export function createPhoneService(deps: {
       throw new PhoneError("NOT_OFFERED", "This server does not hand out phone numbers to bots.");
     return d;
   }
-  async function providerFor(id: PhoneProviderId): Promise<PhoneProvider> {
-    const provider = await deps.reader.provider(id);
+  async function providerFor(id: PhoneProviderId, ownerUserId?: string): Promise<PhoneProvider> {
+    const provider = await deps.reader.provider(id, ownerUserId);
     if (!provider)
       throw new PhoneError(
         "NOT_OFFERED",
@@ -375,7 +375,7 @@ export function createPhoneService(deps: {
 
   return {
     /** Whether bots can be given numbers here, and how. Nothing in it is secret. */
-    offer: () => deps.reader.offer(),
+    offer: (userId?: string) => deps.reader.offer(userId),
 
     /** The number (or request) of one of the person's bots, or null. */
     async get(a: ActiveActor, botId: string): Promise<PhoneNumberView | null> {
@@ -406,7 +406,7 @@ export function createPhoneService(deps: {
           "BAD_INPUT",
           "Give a two-letter country and, if you like, a numeric area code.",
         );
-      const offer = await deps.reader.offer();
+      const offer = await deps.reader.offer(a.userId);
       await checkAllowed(offer, country);
       const chosen = chooseProvider(offer, input.provider);
       const have = await currentRow(botId);
@@ -435,7 +435,7 @@ export function createPhoneService(deps: {
           throw new PhoneError("HAVE_ONE", "This bot already has a number or a request for one.");
         }
       }
-      const provider = await providerFor(chosen);
+      const provider = await providerFor(chosen, a.userId);
       let row: Row;
       try {
         row = await buy(provider, { ownerUserId: a.userId, botId, country, areaCode });
@@ -594,7 +594,7 @@ export function createPhoneService(deps: {
       for (const row of waiting) {
         if (!row.providerRef) continue;
         // Each order is asked of the provider that holds it.
-        const provider = await deps.reader.provider(providerOf(row));
+        const provider = await deps.reader.provider(providerOf(row), row.ownerUserId);
         if (!provider) continue;
         try {
           const status = await provider.orderStatus(row.providerRef);
@@ -641,11 +641,11 @@ export function createPhoneService(deps: {
       const row = await rowOf(id);
       if (row.status !== "requested")
         throw new PhoneError("WRONG_STATE", "That request was already answered.");
-      const offer = await deps.reader.offer();
+      const offer = await deps.reader.offer(row.ownerUserId);
       await checkAllowed(offer, row.country);
       // The request names its provider (when it was made); it must still be ready now.
       chooseProvider(offer, providerOf(row));
-      const provider = await providerFor(providerOf(row));
+      const provider = await providerFor(providerOf(row), row.ownerUserId);
       const bought = await buy(provider, {
         ownerUserId: row.ownerUserId,
         botId: row.botId,
@@ -687,10 +687,10 @@ export function createPhoneService(deps: {
           "BAD_INPUT",
           "Give a real number with its country code, for example +1 202 555 0123.",
         );
-      const offer = await deps.reader.offer();
-      await checkAllowed(offer, country);
-      const provider = await providerFor(chooseProvider(offer, input.provider));
       const target = await assignTarget(input.botId);
+      const offer = await deps.reader.offer(target.ownerUserId);
+      await checkAllowed(offer, country);
+      const provider = await providerFor(chooseProvider(offer, input.provider), target.ownerUserId);
       const [used] = await db
         .select({ id: phoneNumber.id })
         .from(phoneNumber)
@@ -925,7 +925,7 @@ export function createPhoneService(deps: {
   async function releaseRow(row: Row, actor: string | null): Promise<void> {
     if (row.status === "released") return;
     if (row.e164 && row.status !== "failed" && row.status !== "requested") {
-      const provider = await deps.reader.provider(providerOf(row));
+      const provider = await deps.reader.provider(providerOf(row), row.ownerUserId);
       if (!provider)
         throw new PhoneError(
           "NOT_OFFERED",

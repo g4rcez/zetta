@@ -48,6 +48,11 @@ export type TwilioOptions = {
   authToken: string;
   /** `https://host`, no path: the address Twilio calls. */
   publicUrl: string;
+  /**
+   * The person this account belongs to, when it is the Twilio plugin's account (not the installation's own): the webhook addresses end
+   * in `/<owner>`, so the right Auth Token is chosen before the signature is checked. Only a webhook at exactly that address verifies.
+   */
+  owner?: string;
   baseUrl?: string;
   fetch?: typeof fetch;
   now?: () => number;
@@ -113,8 +118,11 @@ export function createTwilioProvider(o: TwilioOptions): PhoneProvider {
   const account = `${base}/Accounts/${encodeURIComponent(o.accountSid)}`;
   const publicUrl = o.publicUrl.replace(/\/$/, "");
   const publicHost = stripPort(safeHost(publicUrl));
-  const voiceUrl = `${publicUrl}${TWILIO_VOICE_PATH}`;
-  const statusUrl = `${publicUrl}${TWILIO_STATUS_PATH}`;
+  const suffix = o.owner ? `/${encodeURIComponent(o.owner)}` : "";
+  const voicePath = `${TWILIO_VOICE_PATH}${suffix}`;
+  const statusPath = `${TWILIO_STATUS_PATH}${suffix}`;
+  const voiceUrl = `${publicUrl}${voicePath}`;
+  const statusUrl = `${publicUrl}${statusPath}`;
   const basic = `Basic ${Buffer.from(`${o.accountSid}:${o.authToken}`).toString("base64")}`;
 
   function safeHost(u: string) {
@@ -392,8 +400,7 @@ export function createTwilioProvider(o: TwilioOptions): PhoneProvider {
       // Everything below fails closed: a missing token, header or field is a refusal, never a pass.
       if (!o.authToken || !publicHost) throw new WebhookError("NO_KEY");
       const path = ctx?.path;
-      if (path !== TWILIO_VOICE_PATH && path !== TWILIO_STATUS_PATH)
-        throw new WebhookError("MALFORMED");
+      if (path !== voicePath && path !== statusPath) throw new WebhookError("MALFORMED");
       const given = header(headers, "x-twilio-signature");
       if (!given) throw new WebhookError("MALFORMED");
       // The address Twilio called must be the configured public address: a request that names another host is refused.
@@ -417,7 +424,7 @@ export function createTwilioProvider(o: TwilioOptions): PhoneProvider {
         from: params.get("From") || undefined,
         to: params.get("To") || undefined,
       };
-      if (path === TWILIO_VOICE_PATH) {
+      if (path === voicePath) {
         const incoming = params.get("Direction") === "inbound";
         // The call answers in the response of this very request: make room for the answer before the event is handled.
         openReply(sid);

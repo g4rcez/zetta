@@ -151,12 +151,15 @@ await check(
 );
 
 await check("the Studio side nav lists Voice right after Phone numbers", async () => {
-  const tabs = await page.getByRole("tab").allInnerTexts();
+  const tabs = await page
+    .getByRole("navigation", { name: "Studio sections" })
+    .getByRole("link")
+    .allInnerTexts();
   const names = tabs.map((t) => t.trim());
   const at = names.indexOf("Phone numbers");
   assert(at >= 0 && names[at + 1] === "Voice", `tabs: ${names.join(" | ")}`);
   await page.goto(`${ORIGIN}/studio/overview`);
-  await page.getByRole("tab", { name: "Overview" }).waitFor();
+  await page.getByRole("link", { name: "Overview" }).waitFor();
   assert(
     (await page.locator('#studio-panel a[href="/studio/voice"]').count()) === 0,
     "Voice must not be a card of the Overview",

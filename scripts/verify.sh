@@ -27,13 +27,13 @@ if [ ! -f apps/web/src/routeTree.gen.ts ]; then
   echo "-- generating apps/web/src/routeTree.gen.ts"
   (cd apps/web && ZETTA_SERVER_URL="${ZETTA_SERVER_URL:-http://localhost:3000}" bunx vp build >/dev/null)
 fi
-for dir in apps/server apps/web packages/db packages/auth packages/core packages/render packages/laya; do
+for dir in apps/server apps/web packages/db packages/auth packages/core packages/render packages/laya packages/infra; do
   echo "-- $dir"
   (cd "$dir" && bunx tsc --noEmit)
 done
 
 step "unit tests"
-for dir in apps/web apps/cli apps/landing packages/auth packages/core packages/render packages/laya packages/ui; do
+for dir in apps/web apps/cli apps/landing packages/auth packages/core packages/render packages/laya packages/ui packages/infra; do
   echo "-- $dir"
   if [ "$dir" = "apps/web" ]; then
     retry bash -c 'cd apps/web && bun test'

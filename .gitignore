@@ -16,6 +16,9 @@ local.db-*
 # Postgres runtime archives built by packages/db/scripts/pg-runtime.ts
 .pg-runtime
 
+# Reports of the end-to-end scripts (scripts/e2e): local run output, never tracked
+.e2e-reports
+
 # Environment variables (only .env.schema is tracked: names, no values)
 .env
 .env.*

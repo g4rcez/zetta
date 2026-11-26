@@ -1,7 +1,7 @@
 # End-to-end runs
 
 Scripts that run a part of Zetta for real (a real browser, a real model, real images, the real GitHub) and write what happened to
-`docs/verification/e2e/<area>.md`. They are not part of CI or of `bun run verify`: they need things a CI runner does not have, and some cost
+`.e2e-reports/<area>.md`. They are not part of CI or of `bun run verify`: they need things a CI runner does not have, and some cost
 a few small model calls. Run one when you change its area, then update `packages/core/src/maturity.ts` for what came back green.
 
 | Script                     | What it proves                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Needs                                                                                           |

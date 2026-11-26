@@ -379,7 +379,7 @@ try {
       for (const word of [/For each item/, /Ask me first/, /Wait/, /End of item/])
         if (!word.test(text))
           throw new Error(`the canvas does not show ${word}: ${text.slice(0, 400)}`);
-      await page.screenshot({ path: "docs/verification/e2e/ui-workflow-canvas.png" });
+      await page.screenshot({ path: ".e2e-reports/ui-workflow-canvas.png" });
       // A run with nothing to loop over goes straight to the approval step: it must stop there as "waiting", with a card for the person.
       const run = await api("POST", `/workflows/${saved.json.workflow.id}/run`, { input: "" });
       if (run.json.run?.status !== "waiting")

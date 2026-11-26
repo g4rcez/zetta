@@ -1,15 +1,15 @@
-// Shared by every script in scripts/e2e: collects checks and writes docs/verification/e2e/<area>.md.
+// Shared by every script in scripts/e2e: collects checks and writes .e2e-reports/<area>.md.
 // A script that cannot run on this machine (no engine, no network, no image) calls `skip` so the report says so; nothing is faked.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 export const REPO = resolve(import.meta.dir, "../..");
-const OUT = join(REPO, "docs/verification/e2e");
+const OUT = join(REPO, ".e2e-reports");
 
 export type Check = { name: string; result: "pass" | "fail" | "skip"; detail?: string };
 
-/** Reports are committed to a public repository: no absolute path, no home folder, no e-mail address. */
+/** Reports get pasted into issues of a public repository: no absolute path, no home folder, no e-mail address. */
 export const clean = (text: string) =>
   text
     .replaceAll(REPO, "<repo>")
@@ -72,7 +72,7 @@ export function createReport(area: string, title: string) {
       ];
       mkdirSync(OUT, { recursive: true });
       writeFileSync(join(OUT, `${area}.md`), lines.join("\n"));
-      console.log(`\n${verdict}: docs/verification/e2e/${area}.md`);
+      console.log(`\n${verdict}: .e2e-reports/${area}.md`);
       return failed ? 1 : 0;
     },
   };

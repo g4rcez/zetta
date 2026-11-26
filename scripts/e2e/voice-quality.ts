@@ -1,5 +1,5 @@
 // Voice quality on this machine, measured: the local voice (Kokoro, the `local` text-to-speech provider) against macOS `say`, each read
-// back by local Whisper models of growing size. Writes docs/verification/e2e/voice-quality.md. Nothing leaves the machine except the model
+// back by local Whisper models of growing size. Writes .e2e-reports/voice-quality.md. Nothing leaves the machine except the model
 // downloads (about 100 MB for the voice, 0.4 to 1.2 GB per larger Whisper model); a model already in the folder is not downloaded again.
 // Gated: `bun test` never runs this file. It starts no server; each Whisper model runs in a child process (so its memory is freed
 // before the next) that is stopped, by process group, on SIGTERM/SIGINT.
@@ -346,10 +346,10 @@ async function main() {
       for (const [i, t] of SENTENCES.pt.entries())
         lines.push(`- ${m.split("/")[1]} #${i + 1}: "${t}" -> "${heard(m, `local-pt-${i}`)}"`);
     lines.push("");
-    const out = join(REPO, "docs/verification/e2e/voice-quality.md");
-    mkdirSync(join(REPO, "docs/verification/e2e"), { recursive: true });
+    const out = join(REPO, ".e2e-reports/voice-quality.md");
+    mkdirSync(join(REPO, ".e2e-reports"), { recursive: true });
     writeFileSync(out, clean(lines.join("\n")));
-    console.log("written docs/verification/e2e/voice-quality.md");
+    console.log("written .e2e-reports/voice-quality.md");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

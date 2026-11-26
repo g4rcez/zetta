@@ -1,4 +1,4 @@
-// May bots (and the playground's host runner) run code on this server right now? Two things decide, both asked at every call:
+// May bots run code on this server right now? (The playground's host runner asks this and more: `hostRunner` below.) Two things decide, both asked at every call:
 //   1. the setting `codeAccess` (security policy; off turns code off for every bot at once), and
 //   2. the install itself: when Zetta is open to the network and bots do not run in Docker, code on the host would run as the server's own
 //      OS user, so one member's bot could read another member's files, VM tokens and browser profiles. Then code is off **unless an
@@ -32,6 +32,18 @@ export function createCodeAccess({ settings, networkMode, harnessRuntime }: Code
     if (value === undefined) return "unknown";
     return value === "on" ? null : "setting_off";
   };
-  return { verdict, allowed: () => verdict() === null };
+  /**
+   * Whether the host runner (a playground or an app run as the server's own OS user) may be used. Code access decides first. Once Zetta
+   * is open to the network it also takes an administrator's saved `hostRunner = on`, with Docker too: there bots are confined to
+   * containers and this runner is not.
+   */
+  const hostRunner = () => {
+    if (verdict() !== null) return false;
+    const saved = settings.peekStored("hostRunner");
+    // Fail closed, as above: a value that was never read is not consent.
+    if (saved === undefined || saved.value === "off") return false;
+    return networkMode() !== "network" || (saved.stored && saved.value === "on");
+  };
+  return { verdict, allowed: () => verdict() === null, hostRunner };
 }
 export type CodeAccess = ReturnType<typeof createCodeAccess>;

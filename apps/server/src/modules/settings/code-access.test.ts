@@ -161,3 +161,34 @@ describe("code access", () => {
     expect(source).toContain("configureCodeAccess(codeAccess.allowed)");
   });
 });
+
+// The host runner starts a script as the server's own user, in no container: Docker does not make it safe.
+describe("the host runner", () => {
+  test("local: allowed unless turned off; code access off turns it off too", async () => {
+    const { access, set, unset } = await build();
+    expect(access.hostRunner()).toBe(true);
+    await set("hostRunner", "off");
+    expect(access.hostRunner()).toBe(false);
+    await unset("hostRunner");
+    await set("codeAccess", "off");
+    expect(access.hostRunner()).toBe(false);
+    await set("hostRunner", "on");
+    expect(access.hostRunner()).toBe(false);
+  });
+
+  test("open to the network: off until an administrator saves it on, with Docker too", async () => {
+    const { access, set, setRuntime } = await build({ mode: "network", runtime: "docker" });
+    // Bots run in containers, so their code stays on; the host runner does not follow.
+    expect(access.allowed()).toBe(true);
+    expect(access.hostRunner()).toBe(false);
+    await set("hostRunner", "auto");
+    expect(access.hostRunner()).toBe(false);
+    await set("hostRunner", "on");
+    expect(access.hostRunner()).toBe(true);
+    setRuntime(undefined);
+    // Without Docker, code itself still needs its own saved on.
+    expect(access.hostRunner()).toBe(false);
+    await set("codeAccess", "on");
+    expect(access.hostRunner()).toBe(true);
+  });
+});

@@ -155,6 +155,12 @@ export const HOST_ENV: Readonly<Record<string, HostEnvEntry>> = {
   VITE_HIDE_DEVTOOLS: host("Hides the developer tools of the web app in a build."),
   // Deploy tooling.
   ALCHEMY_PASSWORD: host("Encrypts the deploy tool's state (packages/infra)."),
+  DEPLOY_HOST: host("The server the deploy tool connects to (packages/infra)."),
+  DEPLOY_DOMAIN: host("The domain the deploy tool serves Zetta on."),
+  DEPLOY_SSH_USER: host("The admin user the deploy tool logs in as."),
+  DEPLOY_SSH_PORT: host("The SSH port of that server."),
+  DEPLOY_SSH_KEY: host("Path of the SSH key the deploy tool uses."),
+  DEPLOY_ACME_EMAIL: host("Where certificate notices of the deployed server go."),
   // Names the server only SETS, for a process it starts, or shows to a person. They are not configuration it reads.
   ZETTA_INPUTS: host("Set by the server for a playground run: the inputs of the run."),
   ZETTA_LIVE_DIR: host("Set by the server for a bot's shell: where live output goes."),

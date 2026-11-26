@@ -840,12 +840,12 @@ const playgroundContainers = containerConfigPlayground
   ? createContainerRunner(containerConfigPlayground)
   : undefined;
 const playgrounds = createPlayground(db, {
-  hostCode: codeAccess.allowed,
+  hostCode: codeAccess.hostRunner,
   runners: playgroundContainers ? { container: playgroundContainers.run } : {},
 });
 // Zetta Apps: published code whose tools bots call through the built-in `apps` plugin (docs/decisions/apps.md).
 export const apps = createApps(db, {
-  hostCode: codeAccess.allowed,
+  hostCode: codeAccess.hostRunner,
   runners: playgroundContainers ? { container: playgroundContainers.run } : {},
 });
 const appAuthor = createAppAuthor({ apps, playgrounds });

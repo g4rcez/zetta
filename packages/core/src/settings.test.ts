@@ -94,6 +94,7 @@ describe("registry invariants", () => {
       vmOs: ["debian"],
       allowPrivateNetwork: "off",
       codeAccess: "on",
+      hostRunner: "auto",
       wahaUrl: "",
     };
     for (const [key, value] of Object.entries(expected))

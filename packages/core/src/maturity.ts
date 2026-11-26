@@ -4,7 +4,7 @@
  *
  * This is an internal checklist of what still needs a real run or a test. The web app does not show it as a label (no "Beta" or
  * "Experimental" marks): every feature is presented as working, so an area listed here as not stable gets a test or a real run, not a badge.
- * When a scripted end-to-end run (`scripts/e2e`, results in `docs/verification/e2e/`) comes back green for an area, move it to "stable" here in the same change.
+ * When a scripted end-to-end run (`scripts/e2e`, results in `.e2e-reports/`) comes back green for an area, move it to "stable" here in the same change.
  *
  * Only erasable syntax here (no enums, no namespaces): the web app, the server and the tests all import this file.
  */

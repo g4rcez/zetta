@@ -153,7 +153,7 @@ describe("list", () => {
     settings.invalidate(); // written behind the service's back, as another process would
     const { groups, settings: all } = await settings.list(admin);
     expect(Object.keys(groups)).toContain("limits");
-    expect(all.length).toBe(21);
+    expect(all.length).toBe(22);
     const by = Object.fromEntries(all.map((s) => [s.key, s]));
     expect(by.harnessMax).toMatchObject({
       value: 12,

@@ -432,6 +432,20 @@ export const SETTINGS = {
     env: "ZETTA_CODE_ACCESS",
     fromEnv: switchFromEnv.unlessOff,
   },
+  hostRunner: {
+    group: "security",
+    label: "Playgrounds and apps run on the server itself",
+    help: "The server runner starts a script as the server's own user, in no container, so it can read what the server can read. Auto: allowed on a local install, off once Zetta is open to the network, with Docker too. On: every member and their bots may use it. Off: nobody. Code access must be on as well.",
+    type: "choice",
+    default: "auto",
+    options: ["auto", "on", "off"],
+    scope: "installation",
+    sensitive: true,
+    applies: "now",
+    env: "ZETTA_HOST_RUNNER",
+    // This setting never was a variable, so nothing is imported for it.
+    fromEnv: () => undefined,
+  },
 } as const satisfies Record<string, SettingDef>;
 
 /**
